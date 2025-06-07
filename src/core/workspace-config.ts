@@ -19,6 +19,9 @@ export interface WorkspaceConfig {
     prompts?: {
       system?: string;
       user?: string;
+      intent?: string;
+      evaluation?: string;
+      session?: string;
     };
     lazyLoad?: boolean;
   };
@@ -83,72 +86,5 @@ export interface WorkflowStep {
   next?: string[]; // Step IDs
 }
 
-// Example workspace config
-export const exampleWorkspaceConfig: WorkspaceConfig = {
-  name: "My AI Workspace",
-  description: "Example workspace configuration",
-  version: "1.0.0",
-  owner: "user@example.com",
-  
-  supervisor: {
-    provider: "anthropic",
-    model: "claude-3-5-sonnet-20241022",
-    prompts: {
-      system: "You are a helpful workspace supervisor."
-    }
-  },
-  
-  providers: [
-    {
-      id: "github-webhook",
-      type: "signal" as any,
-      provider: "http-webhook",
-      config: {
-        endpoint: "/webhooks/github"
-      }
-    },
-    {
-      id: "claude-provider",
-      type: "agent" as any,
-      provider: "anthropic",
-      config: {
-        defaultModel: "claude-3-haiku-20240307"
-      }
-    }
-  ],
-  
-  signals: [
-    {
-      id: "pr-opened",
-      name: "Pull Request Opened",
-      providerId: "github-webhook",
-      config: {
-        event: "pull_request",
-        action: "opened"
-      }
-    }
-  ],
-  
-  agents: [
-    {
-      id: "code-reviewer",
-      name: "Code Review Agent",
-      providerId: "claude-provider",
-      type: "reviewer",
-      config: {
-        model: "claude-3-5-sonnet-20241022",
-        temperature: 0.3
-      }
-    }
-  ],
-  
-  sessions: {
-    maxConcurrent: 3,
-    timeout: 300000
-  },
-  
-  server: {
-    port: 8080,
-    host: "localhost"
-  }
-};
+// Note: See examples/workspaces/ for real workspace configuration examples
+// The actual workspace.yml format differs from this interface and uses a more direct structure

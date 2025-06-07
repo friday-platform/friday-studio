@@ -291,19 +291,30 @@ Provide a brief evaluation.`;
         evaluationPrompt
       );
 
-      // Parse evaluation response more carefully
-      // Look for explicit indicators of completion
+      // First check: Have all agents from execution plan actually executed?
+      const totalAgentsInPlan = this.executionPlan!.phases.reduce((sum, phase) => sum + phase.agents.length, 0);
+      const agentsExecuted = results.length;
+      
+      // If not all agents have executed, session cannot be complete regardless of LLM response
+      if (agentsExecuted < totalAgentsInPlan) {
+        return {
+          isComplete: false,
+          nextAction: 'continue',
+          feedback: `${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent. LLM evaluation: ${response}`
+        };
+      }
+
+      // All agents have executed - now check for quality/success via LLM
       const lowerResponse = response.toLowerCase();
-      const isComplete = (
-        lowerResponse.includes('all agents have processed') ||
-        lowerResponse.includes('success criteria been met? yes') ||
-        lowerResponse.includes('session goal achieved? yes') ||
-        (lowerResponse.includes('complete') && !lowerResponse.includes('incomplete'))
+      const hasFailures = (
+        lowerResponse.includes('failed') ||
+        lowerResponse.includes('error') ||
+        lowerResponse.includes('unsuccessful')
       );
       
       return {
-        isComplete,
-        nextAction: isComplete ? undefined : 'continue',
+        isComplete: !hasFailures,
+        nextAction: hasFailures ? 'retry' : undefined,
         feedback: response
       };
     } catch (error) {

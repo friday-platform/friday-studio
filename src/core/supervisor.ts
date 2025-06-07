@@ -483,8 +483,8 @@ Provide a structured analysis.`;
         },
         additionalPrompts: {
           signal: this.config.signalPrompts?.[signal.id] || '',
-          session: this.config.sessionPrompt || '',
-          evaluation: this.config.evaluationPrompt || ''
+          session: this.config.prompts?.session || '',
+          evaluation: this.config.prompts?.evaluation || ''
         }
       };
     } catch (error) {

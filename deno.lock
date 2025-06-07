@@ -5,6 +5,7 @@
     "jsr:@std/fs@1": "1.0.18",
     "jsr:@std/path@1": "1.1.0",
     "jsr:@std/path@^1.1.0": "1.1.0",
+    "jsr:@std/yaml@*": "1.0.7",
     "npm:@ai-sdk/anthropic@*": "1.2.12_zod@3.24.3",
     "npm:@ai-sdk/anthropic@^1.0.2": "1.2.12_zod@3.24.3",
     "npm:ai@*": "4.3.16_react@18.3.1_zod@3.24.3",
@@ -32,6 +33,9 @@
     },
     "@std/path@1.1.0": {
       "integrity": "ddc94f8e3c275627281cbc23341df6b8bcc874d70374f75fec2533521e3d6886"
+    },
+    "@std/yaml@1.0.7": {
+      "integrity": "b4b9f6a625a6827ca2b75a3d240558b5ffd8b9a29945ec7614871be7b711a10a"
     }
   },
   "npm": {
