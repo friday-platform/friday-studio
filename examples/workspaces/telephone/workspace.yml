@@ -1,0 +1,71 @@
+version: "1.0"
+workspace:
+  id: "6aefeb06-d04a-486c-acd4-11e5c6d47365"
+  name: "Telephone Game"
+  description: "A game where messages transform through multiple agents"
+supervisor:
+  model: "claude-4-sonnet-20250514"
+  prompts:
+    system: |
+      You are the WorkspaceSupervisor for a telephone game workspace.
+      Your role is to coordinate agents that transform messages sequentially.
+    intent: |
+      You are coordinating a telephone game where a message passes through agents that:
+      1. Mishear the message (mishearing-agent)
+      2. Embellish it with details (embellishment-agent)  
+      3. Reinterpret the meaning (reinterpretation-agent)
+      
+      Each agent should transform the message in their unique way.
+    evaluation: |
+      CRITICAL FOR TELEPHONE GAME:
+      - The session is ONLY complete when ALL THREE agents have processed the message
+      - You must see outputs from: mishearing-agent, embellishment-agent, AND reinterpretation-agent
+      - Even if transformations seem complete, continue until all 3 agents have run
+      - The telephone game requires the full chain of transformations
+    session: |
+      This is a telephone game session. The message must pass through ALL agents in sequence.
+agents:
+  mishearing-agent:
+    type: "local"
+    path: "./agents/mishearing-agent.ts"
+    purpose: "Specializes in phonetic errors and mishearing"
+    model: "claude-4-sonnet-20250514"
+  embellishment-agent:
+    type: "local"
+    path: "./agents/embellishment-agent.ts"
+    purpose: "Adds context and embellishes stories"
+    model: "claude-4-sonnet-20250514"
+  reinterpretation-agent:
+    type: "local"
+    path: "./agents/reinterpretation-agent.ts"
+    purpose: "Dramatically transforms messages"
+    model: "claude-4-sonnet-20250514"
+signals:
+  telephone-message:
+    description: "Trigger a telephone game with a message"
+    provider: "cli"
+    schema:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          description: "The message to transform"
+      required: ["message"]
+    mappings:
+      - agents: ["mishearing-agent", "embellishment-agent", "reinterpretation-agent"]
+        strategy: "sequential"
+        prompt: |
+          Process this message through all three agents in sequence.
+          Each agent should transform the output of the previous one.
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"

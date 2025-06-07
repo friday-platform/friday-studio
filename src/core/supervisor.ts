@@ -1,0 +1,752 @@
+import type { 
+  IWorkspaceSupervisor, 
+  IWorkspace, 
+  IWorkspaceSignal, 
+  IWorkspaceSession,
+  IAtlasScope,
+  IWorkspaceAgent
+} from "../types/core.ts";
+import { BaseAgent } from "./agents/base-agent.ts";
+import { Session, SessionIntent, SessionPlan } from "./session.ts";
+import { createMachine, createActor, assign, fromPromise } from "xstate";
+
+// XState types for WorkspaceSupervisor FSM
+interface SupervisorContext {
+  currentSignal: IWorkspaceSignal | null;
+  currentPayload: any;
+  executionPlan: any;
+  activeSessions: Map<string, IWorkspaceSession>;
+  error: Error | null;
+}
+
+type SupervisorEvent = 
+  | { type: 'SIGNAL_RECEIVED'; signal: IWorkspaceSignal; payload: any }
+  | { type: 'PLAN_GENERATED'; plan: any }
+  | { type: 'SESSION_SPAWNED'; session: IWorkspaceSession }
+  | { type: 'SESSION_COMPLETED'; sessionId: string; result: any }
+  | { type: 'SESSION_FAILED'; sessionId: string; error: Error }
+  | { type: 'ERROR'; error: Error }
+  | { type: 'RESET' };
+
+// Create the supervisor state machine
+function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
+  return createMachine({
+    id: 'workspaceSupervisor',
+    initial: 'idle',
+    context: {
+      currentSignal: null,
+      currentPayload: null,
+      executionPlan: null,
+      activeSessions: new Map(),
+      error: null
+    } as SupervisorContext,
+    states: {
+      idle: {
+        on: {
+          SIGNAL_RECEIVED: {
+            target: 'analyzing',
+            actions: assign({
+              currentSignal: ({ event }) => event.signal,
+              currentPayload: ({ event }) => event.payload,
+              error: () => null
+            })
+          }
+        }
+      },
+      analyzing: {
+        invoke: {
+          id: 'generatePlan',
+          src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; payload: any } }) => {
+            return supervisor.generateExecutionPlan(input.signal, input.payload);
+          }),
+          input: ({ context }) => ({
+            signal: context.currentSignal!,
+            payload: context.currentPayload
+          }),
+          onDone: {
+            target: 'spawningSession',
+            actions: assign({
+              executionPlan: ({ event }) => event.output
+            })
+          },
+          onError: {
+            target: 'error',
+            actions: assign({
+              error: ({ event }) => new Error(`Failed to generate plan: ${event.error}`)
+            })
+          }
+        }
+      },
+      spawningSession: {
+        invoke: {
+          id: 'spawnSession',
+          src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; plan: any; payload: any } }) => {
+            // Create intent from signal and payload
+            const intent = supervisor.createSessionIntent(input.signal, input.payload);
+            
+            // Create session with intent
+            const session = new Session(
+              supervisor.id,
+              {
+                triggers: [input.signal],
+                callback: (result: any) => Promise.resolve()
+              },
+              supervisor.workspace?.agents ? Object.values(supervisor.workspace.agents) : undefined,
+              undefined, // workflows
+              undefined, // sources
+              intent
+            );
+            
+            supervisor.addSession(session);
+            await supervisor.executeSessionPlan(session, input.plan, input.payload);
+            return session;
+          }),
+          input: ({ context }) => ({
+            signal: context.currentSignal!,
+            plan: context.executionPlan,
+            payload: context.currentPayload
+          }),
+          onDone: {
+            target: 'coordinating',
+            actions: assign({
+              activeSessions: ({ context, event }) => {
+                const sessions = new Map(context.activeSessions);
+                sessions.set(event.output.id, event.output);
+                return sessions;
+              }
+            })
+          },
+          onError: {
+            target: 'error',
+            actions: assign({
+              error: ({ event }) => new Error(`Failed to spawn session: ${event.error}`)
+            })
+          }
+        }
+      },
+      coordinating: {
+        on: {
+          SIGNAL_RECEIVED: {
+            target: 'analyzing',
+            actions: assign({
+              currentSignal: ({ event }) => event.signal,
+              currentPayload: ({ event }) => event.payload
+            })
+          },
+          SESSION_COMPLETED: {
+            actions: assign({
+              activeSessions: ({ context, event }) => {
+                const sessions = new Map(context.activeSessions);
+                sessions.delete(event.sessionId);
+                return sessions;
+              }
+            })
+          },
+          SESSION_FAILED: {
+            actions: [
+              assign({
+                activeSessions: ({ context, event }) => {
+                  const sessions = new Map(context.activeSessions);
+                  sessions.delete(event.sessionId);
+                  return sessions;
+                }
+              }),
+              ({ event }) => {
+                supervisor.log(`Session ${event.sessionId} failed: ${event.error.message}`);
+              }
+            ]
+          }
+        },
+        always: {
+          target: 'idle',
+          guard: ({ context }) => context.activeSessions.size === 0
+        }
+      },
+      error: {
+        entry: ({ context }) => {
+          supervisor.log(`Supervisor error: ${context.error?.message}`);
+        },
+        on: {
+          RESET: {
+            target: 'idle',
+            actions: assign({
+              error: () => null,
+              currentSignal: () => null,
+              currentPayload: () => null,
+              executionPlan: () => null
+            })
+          }
+        }
+      }
+    }
+  });
+}
+
+export class WorkspaceSupervisor extends BaseAgent implements IWorkspaceSupervisor, IWorkspaceAgent {
+  private workspace?: IWorkspace;
+  private model: string;
+  private config: any;
+  private sessions: Map<string, IWorkspaceSession> = new Map();
+  private stateMachine: ReturnType<typeof createSupervisorMachine>;
+  private stateActor: any; // XState actor type
+
+  constructor(workspaceId: string, config: any = {}) {
+    super(workspaceId);
+    this.config = config;
+    this.model = config.model || "claude-4-sonnet-20250514";
+    
+    // Set supervisor-specific prompts
+    this.prompts = {
+      system: config.prompts?.system || `You are the WorkspaceSupervisor for an Atlas workspace. Your role is to:
+1. Process incoming signals and create execution plans
+2. Spawn and coordinate agents within sessions  
+3. Manage inter-agent communication
+4. Ensure proper isolation between sessions
+5. Track progress and handle errors
+
+You have access to the full workspace context and configuration. Create structured plans using Agentic Behavior Trees (ABT) to coordinate agent activities.`,
+      user: config.prompts?.user || ""
+    };
+
+    // Initialize the state machine
+    this.stateMachine = createSupervisorMachine(this);
+    this.stateActor = createActor(this.stateMachine);
+    
+    // Subscribe to state changes for logging
+    this.stateActor.subscribe((state) => {
+      this.log(`State transition: ${state.value} | Active sessions: ${state.context.activeSessions.size}`);
+    });
+    
+    // Start the state machine
+    this.stateActor.start();
+  }
+
+  // IAtlasAgent interface methods
+  name(): string {
+    return "WorkspaceSupervisor";
+  }
+
+  nickname(): string {
+    return "Supervisor";
+  }
+
+  version(): string {
+    return "1.0.0";
+  }
+
+  provider(): string {
+    return "anthropic";
+  }
+
+  purpose(): string {
+    return "Manages workspace lifecycle, agent coordination, and signal processing";
+  }
+
+  getAgentPrompts(): { system: string; user: string } {
+    return this.prompts;
+  }
+
+  scope(): IAtlasScope {
+    return this;
+  }
+
+  controls(): object {
+    return {
+      canSpawnSessions: true,
+      canManageAgents: true,
+      canProcessSignals: true,
+      hasGlobalAccess: true,
+      model: this.model
+    };
+  }
+
+  // IWorkspaceAgent interface methods
+  status: string = "active";
+  host: string = "local";
+
+  async invoke(message: string): Promise<string> {
+    // Process supervisor-level commands
+    if (message.startsWith("/")) {
+      return this.processCommand(message);
+    }
+
+    // Use Claude to process the message
+    const response = await this.generateLLM(
+      this.model,
+      this.prompts.system,
+      message
+    );
+    
+    return response;
+  }
+
+  async* invokeStream(message: string): AsyncIterableIterator<string> {
+    // For commands, return immediately
+    if (message.startsWith("/")) {
+      yield this.processCommand(message);
+      return;
+    }
+
+    // Use Claude to generate response
+    const response = await this.generateLLM(
+      this.model,
+      this.prompts.system,
+      message
+    );
+    
+    // Stream the response
+    yield* this.createTextStream(response, 10, 50);
+  }
+
+  setWorkspace(workspace: IWorkspace): void {
+    this.workspace = workspace;
+  }
+
+  // State machine integration methods
+  getCurrentState(): string {
+    return this.stateActor.getSnapshot().value as string;
+  }
+
+  getStateMachineContext(): SupervisorContext {
+    return this.stateActor.getSnapshot().context;
+  }
+
+  isIdle(): boolean {
+    return this.getCurrentState() === 'idle';
+  }
+
+  isProcessingSignal(): boolean {
+    const state = this.getCurrentState();
+    return state === 'analyzing' || state === 'spawningSession';
+  }
+
+  hasActiveSessions(): boolean {
+    return this.getStateMachineContext().activeSessions.size > 0;
+  }
+
+  canAcceptSignal(): boolean {
+    const state = this.getCurrentState();
+    return state === 'idle' || state === 'coordinating';
+  }
+
+  // IWorkspaceSupervisor specific methods
+  async spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession> {
+    this.log(`Processing signal: ${signal.id} with payload: ${JSON.stringify(payload || {})}`);
+    
+    // Use empty object if no payload provided
+    const signalPayload = payload || {};
+    
+    // Send signal to state machine
+    this.stateActor.send({ type: 'SIGNAL_RECEIVED', signal, payload: signalPayload });
+    
+    // Wait for the state machine to process the signal
+    return new Promise((resolve, reject) => {
+      const checkState = () => {
+        const state = this.stateActor.getSnapshot();
+        
+        if (state.value === 'coordinating') {
+          // Session successfully spawned
+          const sessions = Array.from(state.context.activeSessions.values());
+          const latestSession = sessions[sessions.length - 1];
+          if (latestSession) {
+            resolve(latestSession);
+          } else {
+            reject(new Error('Session spawned but not found in context'));
+          }
+        } else if (state.value === 'error') {
+          // Error occurred
+          reject(state.context.error || new Error('Unknown error during session spawn'));
+        } else {
+          // Still processing, check again
+          setTimeout(checkState, 100);
+        }
+      };
+      
+      checkState();
+    });
+  }
+
+  // Helper method to add session to internal tracking
+  addSession(session: IWorkspaceSession): void {
+    this.sessions.set(session.id, session);
+  }
+
+  // Create session intent from signal and payload
+  // Create session intent (synchronous for backward compatibility)
+  createSessionIntent(signal: IWorkspaceSignal, payload: any): SessionIntent {
+    return {
+      id: crypto.randomUUID(),
+      signal: {
+        type: signal.id,
+        data: payload,
+        metadata: {
+          provider: signal.provider.name,
+          timestamp: new Date().toISOString()
+        }
+      },
+      goals: this.inferGoalsFromSignal(signal, payload),
+      constraints: {
+        timeLimit: 300000, // 5 minutes default
+      },
+      suggestedAgents: this.workspace ? Object.keys(this.workspace.agents) : [],
+      executionHints: {
+        strategy: 'iterative',
+        parallelism: false,
+        maxIterations: 3
+      },
+      userPrompt: this.config.intentPrompt || ''
+    };
+  }
+
+  // Analyze signal using LLM to create intelligent session intent
+  async analyzeSignal(signal: IWorkspaceSignal, payload: any): Promise<SessionIntent> {
+    const analysisPrompt = `Analyze this incoming signal and determine the session intent:
+
+Signal: ${signal.id}
+Provider: ${signal.provider.name}
+Payload: ${JSON.stringify(payload, null, 2)}
+
+Workspace Context:
+- Available Agents: ${this.workspace ? Object.keys(this.workspace.agents || {}).join(', ') : 'none'}
+- Active Sessions: ${this.getStateMachineContext().activeSessions.size}
+
+${this.config.intentPrompt || ''}
+
+Determine:
+1. What are the specific goals of this signal?
+2. What constraints should apply (time, cost, etc)?
+3. Which agents would be most relevant?
+4. What execution strategy would work best (sequential, parallel, iterative)?
+
+Provide a structured analysis.`;
+
+    try {
+      const response = await this.generateLLM(
+        this.config.model || "claude-4-sonnet-20250514",
+        this.prompts.system,
+        analysisPrompt
+      );
+
+      // Parse the response into SessionIntent
+      const goals = this.extractGoalsFromResponse(response);
+      const suggestedAgents = this.extractSuggestedAgentsFromResponse(response);
+      const strategy = this.extractStrategyFromResponse(response);
+
+      return {
+        id: crypto.randomUUID(),
+        signal: {
+          type: signal.id,
+          data: payload,
+          metadata: {
+            provider: signal.provider.name,
+            timestamp: new Date().toISOString()
+          }
+        },
+        goals: goals.length > 0 ? goals : this.inferGoalsFromSignal(signal, payload),
+        constraints: {
+          timeLimit: 300000,
+          costLimit: 100
+        },
+        suggestedAgents: suggestedAgents.length > 0 ? suggestedAgents : (this.workspace ? Object.keys(this.workspace.agents) : []),
+        executionHints: {
+          strategy: strategy as any || 'iterative',
+          parallelism: response.toLowerCase().includes('parallel'),
+          maxIterations: 3
+        },
+        userPrompt: this.config.intentPrompt || ''
+      };
+    } catch (error) {
+      this.log(`Error analyzing signal with LLM: ${error}`);
+      // Fallback to synchronous method
+      return this.createSessionIntent(signal, payload);
+    }
+  }
+
+  // Create filtered session context based on intent
+  async createSessionContext(intent: SessionIntent, signal: IWorkspaceSignal, payload: any): Promise<any> {
+    // For now, skip the second LLM call and just use the suggested agents from the intent
+    // This speeds up the process significantly
+    try {
+      // If intent already has suggested agents, use those
+      const availableAgents = intent.suggestedAgents && intent.suggestedAgents.length > 0
+        ? this.getAllAgentMetadata().filter(agent => 
+            intent.suggestedAgents?.includes(agent.id))
+        : this.getAllAgentMetadata();
+      
+      return {
+        availableAgents,
+        filteredMemory: [], // TODO: Implement memory filtering
+        constraints: intent.constraints,
+        additionalContext: {
+          workspaceId: this.workspace?.id,
+          sessionIntent: intent
+        },
+        additionalPrompts: {
+          signal: this.config.signalPrompts?.[signal.id] || '',
+          session: this.config.sessionPrompt || '',
+          evaluation: this.config.evaluationPrompt || ''
+        }
+      };
+    } catch (error) {
+      this.log(`Error creating session context: ${error}`);
+      // Fallback to all agents
+      return {
+        availableAgents: this.getAllAgentMetadata(),
+        filteredMemory: [],
+        constraints: intent.constraints
+      };
+    }
+  }
+
+  // Infer goals from signal type and payload
+  private inferGoalsFromSignal(signal: IWorkspaceSignal, payload: any): string[] {
+    // Let the signal provider define its own goals if available
+    if (signal.provider?.inferGoals) {
+      return signal.provider.inferGoals(payload);
+    }
+    
+    // Otherwise use LLM to analyze the signal and payload
+    // For now, return generic goals
+    return [
+      `Process ${signal.id} signal from ${signal.provider.name}`,
+      'Execute appropriate actions based on signal data',
+      'Return results to signal callback'
+    ];
+  }
+
+  async generateExecutionPlan(signal: IWorkspaceSignal, payload: any): Promise<SessionPlan> {
+    const intent = this.createSessionIntent(signal, payload);
+    
+    const planPrompt = `Given the following session intent, create an execution plan:
+
+Intent: ${JSON.stringify(intent, null, 2)}
+Available Agents: ${this.getAvailableAgents()}
+
+Create a structured plan that:
+1. Identifies which agents to use for each goal
+2. Determines the execution phases and order
+3. Specifies dependencies between agent tasks
+
+Respond with a JSON object matching the SessionPlan interface with phases array.`;
+
+    // For now, skip LLM call and use default plan
+    // TODO: Implement proper LLM integration
+    this.log("Using default plan (LLM integration pending)");
+    return this.getDefaultPlan(signal, payload, intent);
+  }
+
+  private getAvailableAgents(): string {
+    if (!this.workspace) return "No workspace set";
+    
+    // Handle serialized workspace with agent metadata
+    if (this.workspace.agents && typeof this.workspace.agents === 'object') {
+      return Object.entries(this.workspace.agents)
+        .map(([id, agent]: [string, any]) => {
+          if (typeof agent === 'object' && agent.name) {
+            return `- ${agent.name}: ${agent.purpose || ''}`;
+          }
+          return `- ${id}`;
+        })
+        .join('\n');
+    }
+    
+    return "No agents available";
+  }
+
+  private getDefaultPlan(signal: IWorkspaceSignal, payload: any, intent: SessionIntent): SessionPlan {
+    // Create a generic plan based on available agents
+    this.log(`Workspace agents:`, this.workspace?.agents);
+    
+    // Handle both full workspace objects and serialized metadata
+    let availableAgents: string[] = [];
+    if (this.workspace?.agents) {
+      // Check if agents is already an object with agent metadata
+      if (typeof this.workspace.agents === 'object' && !Array.isArray(this.workspace.agents)) {
+        availableAgents = Object.keys(this.workspace.agents);
+      }
+    }
+    
+    this.log(`Creating default plan with agents: ${availableAgents.join(', ')}`);
+    
+    return {
+      intentId: intent.id,
+      phases: [{
+        id: "default-phase",
+        name: "Default Processing",
+        agents: availableAgents.map(agentId => ({
+          agentId,
+          task: `Process signal with ${agentId}`
+        })),
+        executionStrategy: "sequential"
+      }],
+      reasoning: "Default plan using available agents"
+    };
+  }
+
+  async executeSessionPlan(session: IWorkspaceSession, plan: SessionPlan, initialPayload: any): Promise<void> {
+    this.log(`Executing plan: ${plan.reasoning}`);
+    
+    try {
+      // Start the session - it will handle its own lifecycle through FSM
+      await session.start();
+      
+      // The session FSM will handle:
+      // 1. Planning phase (using the intent)
+      // 2. Executing agents
+      // 3. Evaluating results
+      // 4. Refining if needed
+      // 5. Completing or failing
+      
+      // Monitor session state changes
+      const checkInterval = setInterval(() => {
+        const status = (session as Session).status;
+        
+        if (status === 'completed') {
+          clearInterval(checkInterval);
+          this.stateActor.send({
+            type: 'SESSION_COMPLETED',
+            sessionId: session.id,
+            result: (session as Session).getArtifacts()
+          });
+        } else if (status === 'failed' || status === 'cancelled') {
+          clearInterval(checkInterval);
+          this.stateActor.send({
+            type: 'SESSION_FAILED',
+            sessionId: session.id,
+            error: new Error(`Session ${status}`)
+          });
+        }
+      }, 500);
+      
+    } catch (error) {
+      // Handle any startup errors
+      this.stateActor.send({
+        type: 'SESSION_FAILED',
+        sessionId: session.id,
+        error: error as Error
+      });
+      throw error;
+    }
+  }
+
+  private processCommand(command: string): string {
+    const [cmd, ...args] = command.slice(1).split(" ");
+    
+    switch (cmd) {
+      case "status":
+        return this.workspace ? JSON.stringify(this.workspace.snapshot(), null, 2) : "No workspace set";
+      case "agents":
+        return this.workspace ? `Active agents: ${Object.keys(this.workspace.agents).join(", ") || "none"}` : "No workspace set";
+      case "signals":
+        return this.workspace ? `Configured signals: ${Object.keys(this.workspace.signals).join(", ") || "none"}` : "No workspace set";
+      case "sessions":
+        return `Active sessions: ${this.sessions.size}`;
+      case "state":
+        const state = this.getCurrentState();
+        const context = this.getStateMachineContext();
+        return `State Machine Status:
+  Current State: ${state}
+  Active Sessions: ${context.activeSessions.size}
+  Current Signal: ${context.currentSignal?.id || 'none'}
+  Has Error: ${context.error ? 'yes' : 'no'}`;
+      case "reset":
+        this.stateActor.send({ type: 'RESET' });
+        return "State machine reset to idle state";
+      case "help":
+        return "Available commands: /status, /agents, /signals, /sessions, /state, /reset, /help";
+      default:
+        return `Unknown command: ${cmd}. Use /help for available commands.`;
+    }
+  }
+
+  // Helper methods for parsing LLM responses
+  private extractGoalsFromResponse(response: string): string[] {
+    const goals = [];
+    const lines = response.split('\n');
+    let inGoalsSection = false;
+    
+    for (const line of lines) {
+      if (line.toLowerCase().includes('goal') || line.toLowerCase().includes('objective')) {
+        inGoalsSection = true;
+      }
+      if (inGoalsSection && line.trim().startsWith('-')) {
+        goals.push(line.trim().substring(1).trim());
+      }
+      if (line.trim() === '' && inGoalsSection) {
+        inGoalsSection = false;
+      }
+    }
+    
+    return goals;
+  }
+
+  private extractSuggestedAgentsFromResponse(response: string): string[] {
+    const agents = [];
+    const agentIds = this.workspace ? Object.keys(this.workspace.agents || {}) : [];
+    
+    for (const agentId of agentIds) {
+      if (response.toLowerCase().includes(agentId.toLowerCase())) {
+        agents.push(agentId);
+      }
+    }
+    
+    return agents;
+  }
+
+  private extractStrategyFromResponse(response: string): string {
+    if (response.toLowerCase().includes('sequential')) return 'deterministic';
+    if (response.toLowerCase().includes('parallel')) return 'exploratory';
+    if (response.toLowerCase().includes('iterative')) return 'iterative';
+    return 'exploratory';
+  }
+
+  private extractAvailableAgentsFromResponse(response: string): any[] {
+    if (!this.workspace || !this.workspace.agents) return [];
+    
+    const allAgents = Object.entries(this.workspace.agents);
+    const selectedAgents = [];
+    
+    // If response mentions specific agents, filter to those
+    for (const [id, agent] of allAgents) {
+      if (response.toLowerCase().includes(id.toLowerCase()) || 
+          response.toLowerCase().includes('all agents')) {
+        selectedAgents.push({
+          id,
+          name: agent.name?.() || id,
+          type: (agent as any).type || id.replace('-agent', ''),
+          purpose: agent.purpose?.() || ''
+        });
+      }
+    }
+    
+    return selectedAgents;
+  }
+
+  private getAllAgentMetadata(): any[] {
+    if (!this.workspace || !this.workspace.agents) return [];
+    
+    return Object.entries(this.workspace.agents).map(([id, agent]) => {
+      // Check if agent is already metadata (has name as property) or actual agent (has name as function)
+      const isMetadata = typeof (agent as any).name === 'string';
+      
+      if (isMetadata) {
+        // Agent is already metadata
+        return agent as any;
+      } else {
+        // Agent is actual instance, extract metadata
+        return {
+          id,
+          name: agent.name?.() || id,
+          type: (agent as any).type || id.replace('-agent', ''),
+          purpose: agent.purpose?.() || ''
+        };
+      }
+    });
+  }
+
+  // Cleanup method
+  destroy(): void {
+    this.log("Shutting down WorkspaceSupervisor state machine");
+    this.stateActor.stop();
+  }
+}

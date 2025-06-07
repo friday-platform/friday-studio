@@ -1,0 +1,24 @@
+# Environment variables
+.env
+
+# Atlas local data
+.atlas/
+
+# Deno
+.deno/
+
+# Node modules (from npm imports)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+lgtm/

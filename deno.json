@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options /Users/kenneth/tempest/atlas/src/cli.tsx",
+    "dev": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel --watch src/cli.tsx",
+    "start": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel src/cli.tsx",
+    "test": "OTEL_DENO=true deno test --allow-read --allow-write --unstable-broadcast-channel --unstable-worker-options --unstable-otel",
+    "fmt": "deno fmt",
+    "lint": "deno lint"
+  },
+  "imports": {
+    "@std/fs": "jsr:@std/fs@^1.0.0",
+    "@std/path": "jsr:@std/path@^1.0.0",
+    "@std/async": "jsr:@std/async@^1.0.0",
+    "@std/dotenv": "jsr:@std/dotenv@^0.225.0",
+    "ink": "npm:ink@^5.0.1",
+    "react": "npm:react@^18.3.1",
+    "meow": "npm:meow@^13.2.0",
+    "ai": "npm:ai@^4.0.7",
+    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
+    "xstate": "npm:xstate@^5.18.0"
+  },
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["dom", "deno.ns"]
+  }
+}

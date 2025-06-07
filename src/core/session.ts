@@ -1,0 +1,684 @@
+import type { 
+  IWorkspaceSession, 
+  IWorkspaceSignal, 
+  IWorkspaceSignalCallback,
+  IWorkspaceAgent,
+  IWorkspaceWorkflow,
+  IWorkspaceSource,
+  IWorkspaceArtifact
+} from "../types/core.ts";
+import { AtlasScope } from "./scope.ts";
+import { createMachine, createActor, assign, fromPromise } from "xstate";
+
+// Session Intent types
+export interface SessionIntent {
+  id: string;
+  signal: {
+    type: string;
+    data: any;
+    metadata?: Record<string, any>;
+  };
+  goals: string[];
+  constraints?: {
+    timeLimit?: number;
+    costLimit?: number;
+    requiredApprovals?: string[];
+  };
+  suggestedAgents?: string[];
+  executionHints?: {
+    strategy?: 'exploratory' | 'deterministic' | 'iterative';
+    parallelism?: boolean;
+    maxIterations?: number;
+  };
+  successCriteria?: {
+    type: 'all' | 'any' | 'custom';
+    conditions: Array<{
+      description: string;
+      evaluator?: (result: any) => boolean;
+    }>;
+  };
+  userPrompt?: string;
+}
+
+export interface SessionPlan {
+  intentId: string;
+  phases: Array<{
+    id: string;
+    name: string;
+    agents: Array<{
+      agentId: string;
+      task: string;
+      dependencies?: string[];
+      expectedOutputs?: string[];
+    }>;
+    executionStrategy: 'sequential' | 'parallel';
+    successCriteria?: string;
+  }>;
+  estimatedDuration?: number;
+  reasoning?: string;
+}
+
+// Session state machine types
+type SessionContext = {
+  sessionId: string;
+  intent?: SessionIntent;
+  plan?: SessionPlan;
+  signals: IWorkspaceSignal[];
+  currentSignalIndex: number;
+  artifacts: IWorkspaceArtifact[];
+  agents?: IWorkspaceAgent[];
+  workflows?: IWorkspaceWorkflow[];
+  sources?: IWorkspaceSource[];
+  error?: Error;
+  startTime?: Date;
+  progress: number;
+  currentIteration?: number;
+  maxIterations?: number;
+};
+
+type SessionEvent = 
+  | { type: "START" }
+  | { type: "INTENT_CREATED"; intent: SessionIntent }
+  | { type: "PLAN_CREATED"; plan: SessionPlan }
+  | { type: "SIGNAL_PROCESSED"; artifact: IWorkspaceArtifact }
+  | { type: "AGENTS_EXECUTED"; results: any[] }
+  | { type: "EVALUATION_COMPLETE"; decision: 'complete' | 'refine' | 'retry' | 'escalate' }
+  | { type: "REFINEMENT_COMPLETE"; refinedPlan: SessionPlan }
+  | { type: "RESULTS_COLLECTED" }
+  | { type: "ERROR"; error: Error }
+  | { type: "CANCEL" };
+
+// Create the session state machine
+const sessionMachine = createMachine({
+  id: "session",
+  types: {} as {
+    context: SessionContext;
+    events: SessionEvent;
+    input: SessionContext;
+  },
+  initial: "created",
+  context: ({ input }: { input: SessionContext }) => ({
+    sessionId: input.sessionId,
+    signals: input.signals,
+    currentSignalIndex: 0,
+    artifacts: [],
+    agents: input.agents,
+    workflows: input.workflows,
+    sources: input.sources,
+    progress: 0,
+  }),
+  states: {
+    created: {
+      on: {
+        START: {
+          target: "planning",
+          actions: assign({
+            startTime: () => new Date(),
+            currentIteration: 0,
+          }),
+        },
+      },
+    },
+    planning: {
+      entry: assign({
+        progress: 10,
+      }),
+      invoke: {
+        id: "createPlan",
+        src: fromPromise(async ({ input }: { input: { intent?: SessionIntent; sessionId: string } }) => {
+          console.log(`[Session ${input.sessionId}] Creating execution plan from intent`);
+          // In a real implementation, this would use the supervisor to create a plan
+          // For now, return a simple plan
+          const plan: SessionPlan = {
+            intentId: input.intent?.id || "default",
+            phases: [{
+              id: "phase1",
+              name: "Process signals and execute agents",
+              agents: [],
+              executionStrategy: "sequential",
+            }],
+            reasoning: "Default execution plan",
+          };
+          return plan;
+        }),
+        input: ({ context }) => ({
+          intent: context.intent,
+          sessionId: context.sessionId,
+        }),
+        onDone: {
+          target: "processingSignals",
+          actions: assign({
+            plan: ({ event }) => event.output,
+          }),
+        },
+        onError: {
+          target: "#session.failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    processingSignals: {
+      entry: assign({
+        progress: ({ context }) => 20 + (context.currentSignalIndex / context.signals.length) * 30,
+      }),
+      invoke: {
+        id: "processSignal",
+        src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; sessionId: string } }) => {
+          console.log(`[Session ${input.sessionId}] Processing signal ${input.signal.id} from ${input.signal.provider.name}`);
+          await input.signal.trigger();
+          
+          const artifact: IWorkspaceArtifact = {
+            id: crypto.randomUUID(),
+            type: "signal_result",
+            data: {
+              signalId: input.signal.id,
+              provider: input.signal.provider,
+              processedAt: new Date()
+            },
+            createdAt: new Date(),
+            createdBy: input.sessionId
+          };
+          
+          return artifact;
+        }),
+        input: ({ context }) => ({
+          signal: context.signals[context.currentSignalIndex],
+          sessionId: context.sessionId,
+        }),
+        onDone: {
+          actions: [
+            assign({
+              artifacts: ({ context, event }) => [...context.artifacts, event.output],
+              currentSignalIndex: ({ context }) => context.currentSignalIndex + 1,
+            }),
+          ],
+          target: "checkSignals",
+        },
+        onError: {
+          target: "#session.failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    checkSignals: {
+      always: [
+        {
+          target: "executingAgents",
+          guard: ({ context }) => context.currentSignalIndex >= context.signals.length,
+        },
+        {
+          target: "processingSignals",
+        },
+      ],
+    },
+    executingAgents: {
+      entry: assign({
+        progress: 50,
+      }),
+      invoke: {
+        id: "executeAgents",
+        src: fromPromise(async ({ input }: { input: { agents?: IWorkspaceAgent[]; sessionId: string } }) => {
+          if (!input.agents || input.agents.length === 0) {
+            return [];
+          }
+          
+          console.log(`[Session ${input.sessionId}] Executing ${input.agents.length} agents`);
+          const results = [];
+          
+          for (const agent of input.agents) {
+            console.log(`[Session ${input.sessionId}] Running agent ${agent.name()}`);
+            // Agent execution would happen here
+            results.push({ agentId: agent.id, status: "completed" });
+          }
+          
+          return results;
+        }),
+        input: ({ context }) => ({
+          agents: context.agents,
+          sessionId: context.sessionId,
+        }),
+        onDone: {
+          target: "evaluating",
+          actions: assign({
+            progress: 60,
+            artifacts: ({ context, event }) => [
+              ...context.artifacts,
+              {
+                id: crypto.randomUUID(),
+                type: "agent_results",
+                data: event.output,
+                createdAt: new Date(),
+                createdBy: context.sessionId,
+              },
+            ],
+          }),
+        },
+        onError: {
+          target: "#session.failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    evaluating: {
+      entry: assign({
+        progress: 70,
+      }),
+      invoke: {
+        id: "evaluateResults",
+        src: fromPromise(async ({ input }: { input: { 
+          artifacts: IWorkspaceArtifact[]; 
+          intent?: SessionIntent;
+          currentIteration?: number;
+          sessionId: string;
+        }}) => {
+          console.log(`[Session ${input.sessionId}] Evaluating results (iteration ${input.currentIteration || 0})`);
+          
+          // In a real implementation, supervisor would evaluate against success criteria
+          // For now, simple logic
+          const maxIterations = input.intent?.executionHints?.maxIterations || 3;
+          const currentIteration = input.currentIteration || 0;
+          
+          if (currentIteration >= maxIterations - 1) {
+            return 'complete';
+          }
+          
+          // Simulate evaluation logic
+          const hasAllResults = input.artifacts.length > 0;
+          if (hasAllResults) {
+            return 'complete';
+          } else {
+            return 'refine';
+          }
+        }),
+        input: ({ context }) => ({
+          artifacts: context.artifacts,
+          intent: context.intent,
+          currentIteration: context.currentIteration,
+          sessionId: context.sessionId,
+        }),
+        onDone: {
+          actions: assign({
+            currentIteration: ({ context }) => (context.currentIteration || 0) + 1,
+            artifacts: ({ context, event }) => [
+              ...context.artifacts,
+              {
+                id: crypto.randomUUID(),
+                type: "evaluation_decision",
+                data: event.output,
+                createdAt: new Date(),
+                createdBy: context.sessionId,
+              },
+            ],
+          }),
+          target: "decidingNext",
+        },
+        onError: {
+          target: "#session.failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    decidingNext: {
+      always: [
+        {
+          target: "completed",
+          guard: ({ context }) => {
+            const lastResult = context.artifacts[context.artifacts.length - 1];
+            return lastResult?.data === 'complete';
+          },
+        },
+        {
+          target: "refining",
+          guard: ({ context }) => {
+            const lastResult = context.artifacts[context.artifacts.length - 1];
+            return lastResult?.data === 'refine';
+          },
+        },
+        {
+          target: "executingAgents",
+          guard: ({ context }) => {
+            const lastResult = context.artifacts[context.artifacts.length - 1];
+            return lastResult?.data === 'retry';
+          },
+        },
+        {
+          target: "failed",
+          guard: ({ context }) => {
+            const lastResult = context.artifacts[context.artifacts.length - 1];
+            return lastResult?.data === 'escalate';
+          },
+        },
+      ],
+    },
+    refining: {
+      entry: assign({
+        progress: 80,
+      }),
+      invoke: {
+        id: "refinePlan",
+        src: fromPromise(async ({ input }: { input: { 
+          plan?: SessionPlan;
+          artifacts: IWorkspaceArtifact[];
+          sessionId: string;
+        }}) => {
+          console.log(`[Session ${input.sessionId}] Refining execution plan based on evaluation`);
+          
+          // In a real implementation, supervisor would refine the plan
+          // For now, return the same plan with a modification note
+          const refinedPlan: SessionPlan = {
+            ...(input.plan || {
+              intentId: "refined",
+              phases: [],
+              reasoning: "Refined plan",
+            }),
+            reasoning: `${input.plan?.reasoning || ""} - Refined based on iteration results`,
+          };
+          
+          return refinedPlan;
+        }),
+        input: ({ context }) => ({
+          plan: context.plan,
+          artifacts: context.artifacts,
+          sessionId: context.sessionId,
+        }),
+        onDone: {
+          target: "executingAgents",
+          actions: assign({
+            plan: ({ event }) => event.output,
+          }),
+        },
+        onError: {
+          target: "#session.failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    completed: {
+      type: "final",
+      entry: assign({
+        progress: 100,
+      }),
+    },
+    failed: {
+      type: "final",
+      entry: ({ context }) => {
+        console.error(`[Session ${context.sessionId}] Failed:`, context.error);
+      },
+    },
+  },
+  on: {
+    CANCEL: {
+      target: ".failed",
+      actions: assign({
+        error: () => new Error("Session cancelled"),
+      }),
+    },
+    ERROR: {
+      target: ".failed",
+      actions: assign({
+        error: ({ event }) => event.error,
+      }),
+    },
+  },
+});
+
+export class Session extends AtlasScope implements IWorkspaceSession {
+  public signals: {
+    triggers: IWorkspaceSignal[];
+    callback: IWorkspaceSignalCallback;
+  };
+  public agents?: IWorkspaceAgent[];
+  public workflows?: IWorkspaceWorkflow[];
+  public sources?: IWorkspaceSource[];
+  public intent?: SessionIntent;
+
+  private _progress: number = 0;
+  private _isRunning: boolean = false;
+  private _artifacts: IWorkspaceArtifact[] = [];
+  private _startTime?: Date;
+  private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
+
+  constructor(
+    workspaceId: string, 
+    signals: {
+      triggers: IWorkspaceSignal[];
+      callback: IWorkspaceSignalCallback | ((result: any) => Promise<void>);
+    },
+    agents?: IWorkspaceAgent[],
+    workflows?: IWorkspaceWorkflow[],
+    sources?: IWorkspaceSource[],
+    intent?: SessionIntent
+  ) {
+    super(workspaceId);
+    
+    this.signals = {
+      triggers: signals.triggers,
+      callback: typeof signals.callback === 'function' 
+        ? new FunctionCallback(signals.callback)
+        : signals.callback
+    };
+    
+    this.agents = agents;
+    this.workflows = workflows;
+    this.sources = sources;
+    this.intent = intent;
+    
+    // Initialize the state machine
+    this._stateMachine = createActor(sessionMachine, {
+      input: {
+        sessionId: this.id,
+        intent: intent,
+        signals: signals.triggers,
+        currentSignalIndex: 0,
+        artifacts: [],
+        agents: agents,
+        workflows: workflows,
+        sources: sources,
+        progress: 0,
+        currentIteration: 0,
+        maxIterations: intent?.executionHints?.maxIterations || 3,
+      },
+    });
+    
+    // Subscribe to state changes
+    this._stateMachine.subscribe((snapshot) => {
+      const context = snapshot.context;
+      this._progress = context.progress;
+      this._artifacts = context.artifacts;
+      this._startTime = context.startTime;
+      
+      // Handle state transitions
+      if (snapshot.matches("completed")) {
+        this._isRunning = false;
+        this.signals.callback.onSuccess(this._artifacts);
+        this.signals.callback.onComplete();
+      } else if (snapshot.matches("failed")) {
+        this._isRunning = false;
+        this.signals.callback.onError(context.error || new Error("Session failed"));
+      } else if (snapshot.matches("processingSignals") || snapshot.matches("executingAgents")) {
+        this._isRunning = true;
+      }
+      
+      // Add context to session for each processed signal
+      if (snapshot.matches("processingSignals") && context.artifacts.length > 0) {
+        const lastArtifact = context.artifacts[context.artifacts.length - 1];
+        this.context.add({
+          source: {
+            type: "signal",
+            id: lastArtifact.data.signalId
+          },
+          detail: `Signal from ${lastArtifact.data.provider.name} processed at ${lastArtifact.data.processedAt}`
+        });
+      }
+    });
+    
+    // Start the state machine
+    this._stateMachine.start();
+  }
+
+  async start(): Promise<void> {
+    console.log(`[Session ${this.id}] Starting session with ${this.signals.triggers.length} signals`);
+    
+    // Send START event to the state machine
+    this._stateMachine.send({ type: "START" });
+    
+    // Wait for the state machine to reach a final state
+    await new Promise<void>((resolve) => {
+      const subscription = this._stateMachine.subscribe((snapshot) => {
+        if (snapshot.status === "done") {
+          subscription.unsubscribe();
+          resolve();
+        }
+      });
+    });
+  }
+
+  async cancel(): Promise<void> {
+    console.log(`[Session ${this.id}] Cancelling session`);
+    
+    // Send CANCEL event to the state machine
+    this._stateMachine.send({ type: "CANCEL" });
+    
+    // Cancel any running agents
+    if (this.agents) {
+      for (const agent of this.agents) {
+        console.log(`[Session ${this.id}] Stopping agent ${agent.name()}`);
+      }
+    }
+  }
+
+  progress(): number {
+    return Math.round(this._progress);
+  }
+
+  summarize(): string {
+    const duration = this._startTime ? Date.now() - this._startTime.getTime() : 0;
+    const status = this._isRunning ? "running" : this._progress === 100 ? "completed" : "cancelled";
+    
+    return `Session ${this.id}: ${status} (${this.progress()}%) - ${this.signals.triggers.length} signals, ${this._artifacts.length} artifacts, ${duration}ms`;
+  }
+
+  getArtifacts(): IWorkspaceArtifact[] {
+    return [...this._artifacts];
+  }
+  
+  get status(): string {
+    const snapshot = this._stateMachine.getSnapshot();
+    
+    if (snapshot.matches("created")) return "pending";
+    if (snapshot.matches("starting") || snapshot.matches("processingSignals") || 
+        snapshot.matches("executingAgents") || snapshot.matches("collectingResults")) {
+      return "running";
+    }
+    if (snapshot.matches("completed")) return "completed";
+    if (snapshot.matches("failed")) {
+      return snapshot.context.error?.message === "Session cancelled" ? "cancelled" : "failed";
+    }
+    
+    return "pending";
+  }
+  
+  complete(result: any): void {
+    this._progress = 100;
+    this._isRunning = false;
+    this.signals.callback.onSuccess(result);
+    this.signals.callback.onComplete();
+  }
+  
+  updateProgress(step: string, data: any): void {
+    const snapshot = this._stateMachine.getSnapshot();
+    const state = snapshot.value;
+    console.log(`[Session ${this.id}] State: ${state}, Progress: ${step}`, data);
+    
+    // Log detailed state machine information
+    console.log(`[Session ${this.id}] Current state machine context:`, {
+      state: state,
+      progress: snapshot.context.progress,
+      signalsProcessed: snapshot.context.currentSignalIndex,
+      totalSignals: snapshot.context.signals.length,
+      artifactsGenerated: snapshot.context.artifacts.length,
+    });
+  }
+
+  // Add a method to get the current state for debugging
+  getCurrentState(): string {
+    return String(this._stateMachine.getSnapshot().value);
+  }
+  
+  // Add a method to get state machine context for monitoring
+  getStateMachineContext(): SessionContext {
+    return this._stateMachine.getSnapshot().context;
+  }
+}
+
+// For backwards compatibility
+export class WorkspaceSession extends Session {
+  constructor(workspaceId: string, triggerSignal: IWorkspaceSignal) {
+    super(
+      workspaceId, 
+      {
+        triggers: [triggerSignal],
+        callback: new DefaultSignalCallback()
+      },
+      undefined, // agents
+      undefined, // workflows
+      undefined  // sources
+    );
+  }
+}
+
+class DefaultSignalCallback implements IWorkspaceSignalCallback {
+  async execute(): Promise<void> {
+    // Default implementation
+  }
+
+  validate(): boolean {
+    return true;
+  }
+
+  onSuccess(result: any): void {
+    console.log("Signal processed successfully:", result);
+  }
+
+  onError(error: Error): void {
+    console.error("Signal processing failed:", error);
+  }
+
+  onComplete(): void {
+    console.log("All signals processed");
+  }
+}
+
+class FunctionCallback implements IWorkspaceSignalCallback {
+  constructor(private fn: (result: any) => Promise<void>) {}
+  
+  async execute(): Promise<void> {
+    // Function callback doesn't use execute
+  }
+  
+  validate(): boolean {
+    return true;
+  }
+  
+  async onSuccess(result: any): Promise<void> {
+    await this.fn(result);
+  }
+  
+  onError(error: Error): void {
+    console.error("Signal processing failed:", error);
+  }
+  
+  onComplete(): void {
+    console.log("All signals processed");
+  }
+}
