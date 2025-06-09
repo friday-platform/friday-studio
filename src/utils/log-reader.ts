@@ -11,20 +11,22 @@ async function readLogs(target: string = "global", lines: number = 50, follow: b
     for (const log of logs) {
       try {
         const entry = JSON.parse(log);
-        const color = {
+        const level: string = entry.level || "info";
+        const colorMap: Record<string, string> = {
           error: "\x1b[31m",
           warn: "\x1b[33m",
           info: "\x1b[36m",
           debug: "\x1b[90m",
           trace: "\x1b[35m"
-        }[entry.level] || "\x1b[0m";
+        };
+        const color = colorMap[level] || "\x1b[0m";
         
         const reset = "\x1b[0m";
         const prefix = entry.context ? 
           `[${entry.context.workerType || "main"}${entry.context.workerId ? ":" + entry.context.workerId.slice(0, 8) : ""}]` : 
           "[main]";
         
-        console.log(`${color}${entry.timestamp} ${entry.level.toUpperCase()} ${prefix}${reset} ${entry.message}`);
+        console.log(`${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${entry.message}`);
         
         if (entry.context && Object.keys(entry.context).length > 2) {
           console.log(`  Context:`, entry.context);

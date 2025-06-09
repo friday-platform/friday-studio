@@ -214,7 +214,7 @@ export abstract class BaseWorker<TContext extends BaseWorkerContext = BaseWorker
         setupMessagePort: ({ context, event }) => {
           if (event.type === 'SET_PORT') {
             context.ports.set(event.peerId, event.port);
-            event.port.onmessage = (e) => this.handleDirectMessage(event.peerId, e.data);
+            event.port.onmessage = (e: MessageEvent) => this.handleDirectMessage(event.peerId, e.data);
           }
         }
       },

@@ -82,7 +82,7 @@ class SessionSupervisorWorker extends BaseWorker {
         for (const phase of plan.phases) {
           this.log(`Executing phase: ${phase.name}`);
           
-          const phaseResults = [];
+          const phaseResults: AgentResult[] = [];
           
           // Execute agents in the phase based on strategy
           if (phase.executionStrategy === 'sequential') {
@@ -270,7 +270,7 @@ class SessionSupervisorWorker extends BaseWorker {
     const startTime = Date.now();
     
     // Resolve input based on inputSource
-    let input = this.supervisor.getSessionContext()?.payload;
+    let input = this.supervisor?.getSessionContext()?.payload;
     
     if (inputSource === 'previous' && previousResults.length > 0) {
       // Use the output from the last result

@@ -145,7 +145,7 @@ You have access to a filtered view of the workspace tailored for this specific s
     const planPrompt = `Given the following session context, create an execution plan:
 
 Signal: ${this.sessionContext.signal.id}
-Signal Type: ${this.sessionContext.signal.type || 'unknown'}
+Signal Provider: ${this.sessionContext.signal.provider.name}
 Payload: ${JSON.stringify(this.sessionContext.payload, null, 2)}
 
 Available Agents:

@@ -12,7 +12,7 @@ import type { IWorkspaceSignal } from "../../../types/core.ts";
 
 export class HttpWebhookProvider implements ISignalProvider {
   id: string;
-  type = ProviderType.SIGNAL;
+  readonly type = ProviderType.SIGNAL;
   name = "HTTP Webhook Provider";
   version = "1.0.0";
   

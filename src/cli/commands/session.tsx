@@ -170,7 +170,7 @@ function SessionOutput({ data }: { data: any }) {
           <Text> </Text>
           <Text>Agents Executed:</Text>
           {session.agents?.map((agent: any, i: number) => (
-            <Text key={i}>  - {agent.name} <Text color="gray">({agent.status})</Text></Text>
+            <Box key={i}><Text>  - {agent.name} <Text color="gray">({agent.status})</Text></Text></Box>
           ))}
         </Box>
       );

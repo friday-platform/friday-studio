@@ -90,7 +90,7 @@ function HelpComponent() {
       <Text color="gray">  agent describe &lt;name&gt;       Show agent details</Text>
       <Text color="gray">  agent test &lt;name&gt; -m        Test an agent</Text>
       <Newline />
-      <Text dim italic>Pro tip: Use w, s, x, a, l for even faster access</Text>
+      <Text dimColor italic>Pro tip: Use w, s, x, a, l for even faster access</Text>
       <Newline />
       <Text bold>Examples:</Text>
       <Text color="gray">  atlas workspace init my-project</Text>

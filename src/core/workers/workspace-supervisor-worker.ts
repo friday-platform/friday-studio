@@ -30,7 +30,9 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     // If workspace info provided, store it
     if (config.workspace) {
       this.workspace = config.workspace;
-      this.supervisor.setWorkspace(this.workspace);
+      if (this.workspace) {
+        this.supervisor.setWorkspace(this.workspace);
+      }
     }
     
     this.log("Supervisor initialized");
@@ -273,7 +275,9 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       case 'setWorkspace':
         if (this.supervisor && message.workspace) {
           this.workspace = message.workspace;
-          this.supervisor.setWorkspace(this.workspace);
+          if (this.workspace) {
+            this.supervisor.setWorkspace(this.workspace);
+          }
           self.postMessage({ type: 'workspaceSet' });
         }
         break;
