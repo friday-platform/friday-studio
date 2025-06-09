@@ -1,5 +1,3 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/testing/asserts.ts";
-
 export interface CLIResult {
   stdout: string;
   stderr: string;
@@ -17,8 +15,8 @@ export interface CLIOptions {
  * Run the Atlas CLI with given arguments
  */
 export async function runCLI(
-  args: string[], 
-  options: CLIOptions = {}
+  args: string[],
+  options: CLIOptions = {},
 ): Promise<CLIResult> {
   const cmd = new Deno.Command("deno", {
     args: [
@@ -26,31 +24,31 @@ export async function runCLI(
       "--allow-all",
       "--unstable-broadcast-channel",
       "--unstable-worker-options",
-      "/Users/kenneth/tempest/atlas/src/cli.tsx",
-      ...args
+      new URL("../cli.tsx", import.meta.url).pathname,
+      ...args,
     ],
     cwd: options.cwd || Deno.cwd(),
     env: { ...Deno.env.toObject(), ...options.env },
     stdout: "piped",
     stderr: "piped",
-    stdin: options.stdin ? "piped" : undefined
+    stdin: options.stdin ? "piped" : undefined,
   });
-  
+
   const child = cmd.spawn();
-  
+
   if (options.stdin && child.stdin) {
     const writer = child.stdin.getWriter();
     await writer.write(new TextEncoder().encode(options.stdin));
     writer.close();
   }
-  
+
   const output = await child.output();
-  
+
   return {
     stdout: new TextDecoder().decode(output.stdout),
     stderr: new TextDecoder().decode(output.stderr),
     success: output.success,
-    code: output.code
+    code: output.code,
   };
 }
 
@@ -66,8 +64,8 @@ export async function createTestDir(): Promise<string> {
  * Set up a test workspace with basic configuration
  */
 export async function setupTestWorkspace(dir?: string): Promise<string> {
-  const workspaceDir = dir || await createTestDir();
-  
+  const workspaceDir = dir || (await createTestDir());
+
   // Create workspace.yml
   const workspaceConfig = `
 version: "1.0"
@@ -100,28 +98,40 @@ runtime:
     port: 8888
     host: "localhost"
 `;
-  
+
   await Deno.writeTextFile(`${workspaceDir}/workspace.yml`, workspaceConfig);
-  
+
   // Create .atlas directory
   await Deno.mkdir(`${workspaceDir}/.atlas`, { recursive: true });
   await Deno.mkdir(`${workspaceDir}/.atlas/sessions`, { recursive: true });
   await Deno.mkdir(`${workspaceDir}/.atlas/logs`, { recursive: true });
-  
+
   // Create workspace metadata
-  await Deno.writeTextFile(`${workspaceDir}/.atlas/workspace.json`, JSON.stringify({
-    id: "test-workspace-id",
-    name: "Test Workspace",
-    createdAt: new Date().toISOString(),
-    version: "1.0.0"
-  }, null, 2));
-  
+  await Deno.writeTextFile(
+    `${workspaceDir}/.atlas/workspace.json`,
+    JSON.stringify(
+      {
+        id: "test-workspace-id",
+        name: "Test Workspace",
+        createdAt: new Date().toISOString(),
+        version: "1.0.0",
+      },
+      null,
+      2,
+    ),
+  );
+
   // Create .env
-  await Deno.writeTextFile(`${workspaceDir}/.env`, `ANTHROPIC_API_KEY=test-key`);
-  
+  await Deno.writeTextFile(
+    `${workspaceDir}/.env`,
+    `ANTHROPIC_API_KEY=test-key`,
+  );
+
   // Create test agent
   await Deno.mkdir(`${workspaceDir}/agents`, { recursive: true });
-  await Deno.writeTextFile(`${workspaceDir}/agents/test-agent.ts`, `
+  await Deno.writeTextFile(
+    `${workspaceDir}/agents/test-agent.ts`,
+    `
 import { BaseAgent } from "https://raw.githubusercontent.com/your-org/atlas/main/src/core/agents/base-agent.ts";
 import { AgentRegistry } from "https://raw.githubusercontent.com/your-org/atlas/main/src/core/agent-registry.ts";
 
@@ -135,27 +145,31 @@ export class TestAgent extends BaseAgent {
 }
 
 AgentRegistry.register("test", TestAgent);
-`);
-  
+`,
+  );
+
   return workspaceDir;
 }
 
 /**
  * Wait for a port to be available
  */
-export async function waitForPort(port: number, timeout: number = 10000): Promise<boolean> {
+export async function waitForPort(
+  port: number,
+  timeout: number = 10000,
+): Promise<boolean> {
   const start = Date.now();
-  
+
   while (Date.now() - start < timeout) {
     try {
       const conn = await Deno.connect({ port });
       conn.close();
       return true;
     } catch {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  
+
   return false;
 }
 

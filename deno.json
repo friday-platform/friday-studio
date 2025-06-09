@@ -4,12 +4,12 @@
   "compilerOptions": {
     "lib": [
       "deno.window",
-      "deno.worker", 
+      "deno.worker",
       "deno.unstable"
     ]
   },
   "tasks": {
-    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options /Users/kenneth/tempest/atlas/src/cli.tsx",
+    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ./src/cli.tsx",
     "dev": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-read --allow-write --unstable-broadcast-channel --unstable-worker-options --unstable-otel",
