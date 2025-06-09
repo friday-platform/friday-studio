@@ -21,7 +21,7 @@ autonomous agents in a secure, auditable, and scalable environment.
 ### Prerequisites
 
 - [Deno](https://deno.land/) v2.0+
-- Anthropic API key (for Claude)
+- Anthropic API key (for Claude) - [Get one here](https://console.anthropic.com/)
 
 ### Installation
 
@@ -29,6 +29,14 @@ autonomous agents in a secure, auditable, and scalable environment.
 git clone https://github.com/your-org/atlas.git
 cd atlas
 ```
+
+### Running Examples
+
+All examples include helper scripts with OpenTelemetry integration enabled:
+
+- **`start-server.sh`** - Starts the workspace server with proper flags
+- **`trigger-signal.sh`** - Triggers the example workflow
+- Both scripts include `OTEL_DENO=true` and `--unstable-otel` for telemetry
 
 ### Quick Start - Telephone Game Example
 
@@ -38,31 +46,33 @@ cd atlas
 cd examples/workspaces/telephone
 ```
 
-2. **Initialize workspace** (or use existing config)
+2. **Configure API key**
 
 ```bash
-deno task atlas workspace init
-# This creates workspace.yml if it doesn't exist
+# Edit .env file with your actual Anthropic API key
+ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-3. **Configure API key**
+3. **Start workspace server (Terminal 1)**
 
 ```bash
-# Edit .env file
-ANTHROPIC_API_KEY=your_actual_api_key_here
+./start-server.sh
+# Server starts on http://localhost:8080 with OpenTelemetry enabled
 ```
 
-4. **Start workspace server**
+4. **Trigger a signal (Terminal 2)**
 
 ```bash
-deno task atlas workspace serve
-# Server starts on http://localhost:8080
+./trigger-signal.sh
+# Runs the telephone game: mishearing → embellishment → reinterpretation
 ```
 
-5. **Trigger a signal** (new terminal)
+5. **Alternative: Use curl directly**
 
 ```bash
-deno task atlas signal trigger telephone-message --data '{"message": "The cat sat on the mat"}'
+curl -X POST http://localhost:8080/signals/telephone-message \
+  -H "Content-Type: application/json" \
+  -d '{"message": "The cat sat on the mat"}'
 ```
 
 6. **Monitor execution**
@@ -220,10 +230,17 @@ Demonstrates agent chaining where messages transform through multiple agents:
 
 ```bash
 cd examples/workspaces/telephone
-deno task atlas workspace serve
-# In another terminal
-deno task atlas signal trigger telephone-message --data '{"message": "Hello world"}'
+# Add your API key to .env file first
+./start-server.sh          # Terminal 1
+./trigger-signal.sh        # Terminal 2
 ```
+
+**What happens:**
+1. **Mishearing Agent** - Introduces phonetic errors and mishearing
+2. **Embellishment Agent** - Adds dramatic context and details  
+3. **Reinterpretation Agent** - Transforms the meaning entirely
+
+Your message gets hilariously transformed through this chain!
 
 ### More Examples Coming Soon
 
