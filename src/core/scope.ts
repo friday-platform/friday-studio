@@ -1,10 +1,10 @@
-import type { 
-  IAtlasScope, 
-  IWorkspaceSupervisor, 
-  ITempestContextManager, 
-  ITempestMemoryManager, 
+import type {
+  IAtlasGate,
+  IAtlasScope,
+  ITempestContextManager,
+  ITempestMemoryManager,
   ITempestMessageManager,
-  IAtlasGate
+  IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { ContextManager } from "./context.ts";
 import { MemoryManager } from "./memory.ts";
@@ -22,7 +22,7 @@ export class AtlasScope implements IAtlasScope {
 
   constructor(
     parentScopeId?: string,
-    supervisor?: IWorkspaceSupervisor
+    supervisor?: IWorkspaceSupervisor,
   ) {
     this.id = crypto.randomUUID();
     this.parentScopeId = parentScopeId;
@@ -32,7 +32,7 @@ export class AtlasScope implements IAtlasScope {
     this.messages = new MessageManager();
     this.prompts = {
       system: "",
-      user: ""
+      user: "",
     };
   }
 
@@ -47,7 +47,10 @@ export class AtlasScope implements IAtlasScope {
 
   archiveConversation(): void {
     // Store current conversation in memory before clearing
-    this.memory.remember(`conversation_${Date.now()}`, this.messages.getHistory());
+    this.memory.remember(
+      `conversation_${Date.now()}`,
+      this.messages.getHistory(),
+    );
     this.messages = new MessageManager();
   }
 

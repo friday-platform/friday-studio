@@ -32,7 +32,7 @@ export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
   override getAgentPrompts(): { system: string; user: string } {
     return {
       system: "You are an echo agent that repeats and elaborates on user messages.",
-      user: ""
+      user: "",
     };
   }
 
@@ -40,37 +40,38 @@ export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
     return {
       canProcessText: true,
       canStream: true,
-      isBuiltIn: true
+      isBuiltIn: true,
     };
   }
 
-  async* invokeStream(message: string): AsyncIterableIterator<string> {
+  async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`Processing message: ${message}`);
-    
+
     // Add to message history
     this.messages.newMessage(message, "human" as any);
 
     // Simulate streaming response
-    const response = `Echo: "${message}"\n\nElaboration: This message contains ${message.length} characters and demonstrates Atlas streaming capabilities. The echo agent successfully processed your input and is now streaming this response back to you in chunks.`;
-    
+    const response =
+      `Echo: "${message}"\n\nElaboration: This message contains ${message.length} characters and demonstrates Atlas streaming capabilities. The echo agent successfully processed your input and is now streaming this response back to you in chunks.`;
+
     // Stream the response
     yield* this.createTextStream(response, 15, 100);
-    
+
     // Add response to message history
     this.messages.newMessage(response, "agent" as any);
-    
+
     this.log("Streaming completed");
   }
 
   async invoke(message: string): Promise<string> {
     this.status = "processing";
-    
+
     try {
       let fullResponse = "";
       for await (const chunk of this.invokeStream(message)) {
         fullResponse += chunk;
       }
-      
+
       this.status = "idle";
       return fullResponse;
     } catch (error) {
@@ -79,10 +80,14 @@ export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
     }
   }
 
-  private async* createTextStream(text: string, chunkSize: number, delayMs: number): AsyncIterableIterator<string> {
+  private async *createTextStream(
+    text: string,
+    chunkSize: number,
+    delayMs: number,
+  ): AsyncIterableIterator<string> {
     for (let i = 0; i < text.length; i += chunkSize) {
       yield text.slice(i, i + chunkSize);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 }

@@ -1,11 +1,11 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
+import { Box, Text } from "ink";
 
 export interface Column {
   key: string;
   label: string;
   width?: number;
-  align?: 'left' | 'right' | 'center';
+  align?: "left" | "right" | "center";
   color?: string;
 }
 
@@ -15,12 +15,12 @@ export interface TableProps {
   borderColor?: string;
 }
 
-export function Table({ columns, data, borderColor = 'gray' }: TableProps) {
+export function Table({ columns, data, borderColor = "gray" }: TableProps) {
   // Calculate column widths
-  const columnWidths = columns.map(col => {
+  const columnWidths = columns.map((col) => {
     const maxDataWidth = Math.max(
       col.label.length,
-      ...data.map(row => String(row[col.key] || '').length)
+      ...data.map((row) => String(row[col.key] || "").length),
     );
     return col.width || Math.min(maxDataWidth + 2, 40);
   });
@@ -31,12 +31,12 @@ export function Table({ columns, data, borderColor = 'gray' }: TableProps) {
       {columns.map((col, i) => (
         <Box key={col.key} width={columnWidths[i]} paddingRight={1}>
           <Text bold color="cyan">
-            {col.align === 'right' ? 
-              col.label.padStart(columnWidths[i] - 2) :
-              col.align === 'center' ?
-                col.label.padStart((columnWidths[i] - 2 + col.label.length) / 2).padEnd(columnWidths[i] - 2) :
-                col.label.padEnd(columnWidths[i] - 2)
-            }
+            {col.align === "right"
+              ? col.label.padStart(columnWidths[i] - 2)
+              : col.align === "center"
+              ? col.label.padStart((columnWidths[i] - 2 + col.label.length) / 2)
+                .padEnd(columnWidths[i] - 2)
+              : col.label.padEnd(columnWidths[i] - 2)}
           </Text>
         </Box>
       ))}
@@ -47,18 +47,19 @@ export function Table({ columns, data, borderColor = 'gray' }: TableProps) {
   const renderRow = (row: any, rowIndex: number) => (
     <Box key={rowIndex}>
       {columns.map((col, i) => {
-        const value = String(row[col.key] || '');
-        const color = col.color || (typeof row[col.key + 'Color'] === 'string' ? row[col.key + 'Color'] : 'white');
-        
+        const value = String(row[col.key] || "");
+        const color = col.color ||
+          (typeof row[col.key + "Color"] === "string" ? row[col.key + "Color"] : "white");
+
         return (
           <Box key={col.key} width={columnWidths[i]} paddingRight={1}>
             <Text color={color}>
-              {col.align === 'right' ? 
-                value.padStart(columnWidths[i] - 2) :
-                col.align === 'center' ?
-                  value.padStart((columnWidths[i] - 2 + value.length) / 2).padEnd(columnWidths[i] - 2) :
-                  value.padEnd(columnWidths[i] - 2)
-              }
+              {col.align === "right"
+                ? value.padStart(columnWidths[i] - 2)
+                : col.align === "center"
+                ? value.padStart((columnWidths[i] - 2 + value.length) / 2)
+                  .padEnd(columnWidths[i] - 2)
+                : value.padEnd(columnWidths[i] - 2)}
             </Text>
           </Box>
         );
@@ -68,7 +69,9 @@ export function Table({ columns, data, borderColor = 'gray' }: TableProps) {
 
   // Render separator
   const renderSeparator = () => {
-    const line = columns.map((_, i) => '─'.repeat(columnWidths[i] - 1)).join('─');
+    const line = columns.map((_, i) => "─".repeat(columnWidths[i] - 1)).join(
+      "─",
+    );
     return <Text color={borderColor}>{line}</Text>;
   };
 

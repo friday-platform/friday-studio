@@ -1,7 +1,7 @@
-import type { IWorkspace, IWorkspaceSignal, IWorkspaceSession } from "../types/core.ts";
+import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import { WorkerManager, type WorkerMetadata } from "./utils/worker-manager.ts";
 import { Session } from "./session.ts";
-import { createMachine, createActor, assign, fromPromise, type Actor } from "xstate";
+import { type Actor, assign, createActor, createMachine, fromPromise } from "xstate";
 import { logger } from "../utils/logger.ts";
 
 export interface WorkspaceRuntimeOptions {
@@ -22,11 +22,11 @@ interface WorkspaceRuntimeContext {
 
 // Define the events for the state machine
 type WorkspaceRuntimeEvent =
-  | { type: 'INITIALIZE' }
-  | { type: 'PROCESS_SIGNAL'; signal: IWorkspaceSignal; payload: any }
-  | { type: 'SESSION_COMPLETE'; sessionId: string }
-  | { type: 'SHUTDOWN' }
-  | { type: 'ERROR'; error: Error };
+  | { type: "INITIALIZE" }
+  | { type: "PROCESS_SIGNAL"; signal: IWorkspaceSignal; payload: any }
+  | { type: "SESSION_COMPLETE"; sessionId: string }
+  | { type: "SHUTDOWN" }
+  | { type: "ERROR"; error: Error };
 
 /**
  * WorkspaceRuntime orchestrates the execution of a workspace.
@@ -40,12 +40,16 @@ export class WorkspaceRuntime {
   private config?: any;
   private stateMachine: Actor<typeof workspaceRuntimeMachine>;
 
-  constructor(workspace: IWorkspace, config?: any, options: WorkspaceRuntimeOptions = {}) {
+  constructor(
+    workspace: IWorkspace,
+    config?: any,
+    options: WorkspaceRuntimeOptions = {},
+  ) {
     this.workspace = workspace;
     this.config = config;
     this.options = options;
     this.workerManager = new WorkerManager();
-    
+
     // Create and start the state machine
     this.stateMachine = createActor(workspaceRuntimeMachine, {
       input: {
@@ -53,28 +57,30 @@ export class WorkspaceRuntime {
         config,
         options,
         sessions: new Map(),
-        workerManager: this.workerManager
-      }
+        workerManager: this.workerManager,
+      },
     });
-    
+
     // Add a unique ID to track this FSM instance
     const fsmId = crypto.randomUUID().slice(0, 8);
-    
+
     // Subscribe to state changes for debugging
     this.stateMachine.subscribe((state) => {
       logger.info(`Runtime FSM state change: ${state.value}`, {
         workspaceId: workspace.id,
         fsmId,
-        state: state.value
+        state: state.value,
       });
     });
-    
+
     this.stateMachine.start();
-    
+
     // Initialize supervisor if not lazy
     if (!options.lazy) {
-      logger.info('Sending INITIALIZE event (not lazy)', { workspaceId: workspace.id });
-      this.stateMachine.send({ type: 'INITIALIZE' });
+      logger.info("Sending INITIALIZE event (not lazy)", {
+        workspaceId: workspace.id,
+      });
+      this.stateMachine.send({ type: "INITIALIZE" });
     }
   }
 
@@ -83,106 +89,113 @@ export class WorkspaceRuntime {
    */
   getState(): string {
     const state = this.stateMachine.getSnapshot();
-    return typeof state.value === 'string' ? state.value : JSON.stringify(state.value);
+    return typeof state.value === "string" ? state.value : JSON.stringify(state.value);
   }
-
 
   /**
    * Process a signal and create a session
    */
-  async processSignal(signal: IWorkspaceSignal, payload: any): Promise<IWorkspaceSession> {
+  async processSignal(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<IWorkspaceSession> {
     const state = this.stateMachine.getSnapshot();
-    
+
     // Check if we're in a valid state to process signals
-    if (state.value !== 'ready' && state.value !== 'processing') {
+    if (state.value !== "ready" && state.value !== "processing") {
       // If uninitialized, initialize first
-      if (state.value === 'uninitialized') {
-        this.stateMachine.send({ type: 'INITIALIZE' });
+      if (state.value === "uninitialized") {
+        this.stateMachine.send({ type: "INITIALIZE" });
         // Wait for ready state
-        await this.waitForState(['ready']);
+        await this.waitForState(["ready"]);
       } else {
         throw new Error(`Cannot process signal in state: ${state.value}`);
       }
     }
-    
+
     // Get supervisor ID from FSM context
     const currentState = this.stateMachine.getSnapshot();
     const supervisorId = currentState.context.supervisorId;
-    
+
     if (!supervisorId) {
-      throw new Error('Supervisor not initialized in FSM context');
+      throw new Error("Supervisor not initialized in FSM context");
     }
-    
+
     const supervisor = this.workerManager.getWorker(supervisorId);
     if (!supervisor) {
-      throw new Error('Supervisor worker not found');
+      throw new Error("Supervisor worker not found");
     }
-    
-    logger.info(`Processing signal: ${signal.id}`, { 
+
+    logger.info(`Processing signal: ${signal.id}`, {
       workspaceId: this.workspace.id,
-      signalId: signal.id
+      signalId: signal.id,
     });
-    
+
     // Generate task ID for tracking
     const taskId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
-    
+
     // Create session
     const session = new Session(this.workspace.id, {
       triggers: [signal],
       callback: async (result) => {
-        logger.info(`Session completed`, { 
+        logger.info(`Session completed`, {
           workspaceId: this.workspace.id,
           sessionId,
-          result 
+          result,
         });
-      }
+      },
     });
-    
+
     // Override session ID
     (session as any).id = sessionId;
-    
+
     // Store session
     this.sessions.set(sessionId, session);
-    
+
     // Send event to state machine
-    this.stateMachine.send({ type: 'PROCESS_SIGNAL', signal, payload });
-    
+    this.stateMachine.send({ type: "PROCESS_SIGNAL", signal, payload });
+
     // Send task to supervisor for processing
     const taskResult = await this.workerManager.sendTask(
       supervisorId,
       taskId,
       {
-        action: 'processSignal',
+        action: "processSignal",
         signal: {
           id: signal.id,
           provider: signal.provider,
           // Only send serializable signal data
         },
         payload,
-        sessionId
-      }
+        sessionId,
+      },
     );
-    
+
     // Task result contains the session info
-    logger.debug(`Session task completed`, { 
+    logger.debug(`Session task completed`, {
       workspaceId: this.workspace.id,
       sessionId,
-      taskResult 
+      taskResult,
     });
-    
+
     return session;
   }
 
   /**
    * Wait for specific states
    */
-  private async waitForState(targetStates: string[], timeout = 30000): Promise<void> {
+  private async waitForState(
+    targetStates: string[],
+    timeout = 30000,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error(`Timeout waiting for states: ${targetStates.join(', ')}`));
+        reject(
+          new Error(`Timeout waiting for states: ${targetStates.join(", ")}`),
+        );
       }, timeout);
-      
+
       const checkState = () => {
         const state = this.stateMachine.getSnapshot();
         if (targetStates.includes(state.value as string)) {
@@ -190,10 +203,10 @@ export class WorkspaceRuntime {
           resolve();
         }
       };
-      
+
       // Check immediately
       checkState();
-      
+
       // Subscribe to state changes
       const subscription = this.stateMachine.subscribe((state) => {
         if (targetStates.includes(state.value as string)) {
@@ -204,7 +217,6 @@ export class WorkspaceRuntime {
       });
     });
   }
-
 
   /**
    * Get runtime status
@@ -218,25 +230,25 @@ export class WorkspaceRuntime {
   } {
     const currentState = this.stateMachine.getSnapshot();
     const supervisorId = currentState.context.supervisorId;
-    const supervisorState = supervisorId 
+    const supervisorState = supervisorId
       ? this.workerManager.getWorkerState(supervisorId)
       : undefined;
-      
+
     return {
       workspace: this.workspace.id,
       supervisor: supervisorState,
       sessions: this.sessions.size,
       workers: {
-        total: this.workerManager.getWorkersByType('agent').length +
-               this.workerManager.getWorkersByType('session').length +
-               (supervisorId ? 1 : 0),
+        total: this.workerManager.getWorkersByType("agent").length +
+          this.workerManager.getWorkersByType("session").length +
+          (supervisorId ? 1 : 0),
         byType: {
           supervisor: supervisorId ? 1 : 0,
-          session: this.workerManager.getWorkersByType('session').length,
-          agent: this.workerManager.getWorkersByType('agent').length
-        }
+          session: this.workerManager.getWorkersByType("session").length,
+          agent: this.workerManager.getWorkersByType("agent").length,
+        },
       },
-      state: this.getState()
+      state: this.getState(),
     };
   }
 
@@ -262,9 +274,9 @@ export class WorkspaceRuntime {
     if (session) {
       await session.cancel();
       this.sessions.delete(sessionId);
-      
+
       // Notify state machine
-      this.stateMachine.send({ type: 'SESSION_COMPLETE', sessionId });
+      this.stateMachine.send({ type: "SESSION_COMPLETE", sessionId });
     }
   }
 
@@ -273,14 +285,14 @@ export class WorkspaceRuntime {
    */
   getWorkers(): any[] {
     return [
-      ...this.workerManager.getWorkersByType('supervisor'),
-      ...this.workerManager.getWorkersByType('session'),
-      ...this.workerManager.getWorkersByType('agent')
-    ].map(worker => ({
+      ...this.workerManager.getWorkersByType("supervisor"),
+      ...this.workerManager.getWorkersByType("session"),
+      ...this.workerManager.getWorkersByType("agent"),
+    ].map((worker) => ({
       id: worker.id,
       type: worker.type,
       state: this.workerManager.getWorkerState(worker.id),
-      metadata: worker.metadata
+      metadata: worker.metadata,
     }));
   }
 
@@ -288,23 +300,23 @@ export class WorkspaceRuntime {
    * Save state checkpoint
    */
   async saveStateCheckpoint(): Promise<void> {
-    logger.info('Saving state checkpoint', { workspaceId: this.workspace.id });
-    
+    logger.info("Saving state checkpoint", { workspaceId: this.workspace.id });
+
     const state = {
       workspace: this.workspace.snapshot(),
       sessions: Array.from(this.sessions.entries()).map(([id, session]) => ({
         id,
         status: session.status,
-        summary: session.summarize()
+        summary: session.summarize(),
       })),
       workers: this.getWorkers(),
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     };
-    
+
     // TODO: Implement actual persistence
-    logger.debug('State checkpoint saved', { 
+    logger.debug("State checkpoint saved", {
       workspaceId: this.workspace.id,
-      checkpoint: state 
+      checkpoint: state,
     });
   }
 
@@ -313,25 +325,27 @@ export class WorkspaceRuntime {
    */
   async shutdown(): Promise<void> {
     const state = this.stateMachine.getSnapshot();
-    
+
     // Check if already shutting down or terminated
-    if (state.value === 'draining' || state.value === 'terminated') {
-      logger.warn('Already shutting down or terminated', { workspaceId: this.workspace.id });
+    if (state.value === "draining" || state.value === "terminated") {
+      logger.warn("Already shutting down or terminated", {
+        workspaceId: this.workspace.id,
+      });
       return;
     }
-    
+
     // Send shutdown event
-    this.stateMachine.send({ type: 'SHUTDOWN' });
-    
+    this.stateMachine.send({ type: "SHUTDOWN" });
+
     // Wait for terminated state
-    await this.waitForState(['terminated']);
+    await this.waitForState(["terminated"]);
   }
 }
 
 // Define the state machine
 const workspaceRuntimeMachine = createMachine({
-  id: 'workspaceRuntime',
-  initial: 'uninitialized',
+  id: "workspaceRuntime",
+  initial: "uninitialized",
   types: {} as {
     context: WorkspaceRuntimeContext;
     events: WorkspaceRuntimeEvent;
@@ -350,128 +364,156 @@ const workspaceRuntimeMachine = createMachine({
     sessions: input.sessions,
     workerManager: input.workerManager,
     supervisorId: undefined,
-    error: undefined
+    error: undefined,
   }),
   states: {
     uninitialized: {
       on: {
         INITIALIZE: {
-          target: 'initializing'
+          target: "initializing",
         },
         SHUTDOWN: {
-          target: 'terminated'
-        }
-      }
+          target: "terminated",
+        },
+      },
     },
     initializing: {
       invoke: {
-        id: 'initializeSupervisor',
+        id: "initializeSupervisor",
         src: fromPromise(async ({ input }) => {
           const { context } = input;
-          await logger.info('Initializing supervisor', { workspaceId: context.workspace.id });
-          
+          await logger.info("Initializing supervisor", {
+            workspaceId: context.workspace.id,
+          });
+
           const supervisorMetadata: WorkerMetadata = {
             id: crypto.randomUUID(),
-            type: 'supervisor',
+            type: "supervisor",
             config: {
               id: context.workspace.id,
               workspace: {
                 ...context.workspace.snapshot(),
                 id: context.workspace.id,
                 // Serialize agents to pass only metadata
-                agents: Object.entries(context.workspace.agents || {}).reduce((acc, [key, agent]) => {
-                  const agentTyped = agent as any;
-                  acc[key] = {
-                    id: key,
-                    name: agentTyped.name?.() || key,
-                    type: agentTyped.type || key.replace('-agent', ''),
-                    purpose: agentTyped.purpose?.() || ''
-                  };
-                  return acc;
-                }, {} as Record<string, any>),
+                agents: Object.entries(context.workspace.agents || {}).reduce(
+                  (acc, [key, agent]) => {
+                    const agentTyped = agent as any;
+                    acc[key] = {
+                      id: key,
+                      name: agentTyped.name?.() || key,
+                      type: agentTyped.type || key.replace("-agent", ""),
+                      purpose: agentTyped.purpose?.() || "",
+                    };
+                    return acc;
+                  },
+                  {} as Record<string, any>,
+                ),
                 signals: Object.keys(context.workspace.signals || {}),
-                workflows: Object.keys(context.workspace.workflows || {})
+                workflows: Object.keys(context.workspace.workflows || {}),
               },
               config: context.config?.supervisor || {},
-              model: context.options.supervisorModel || context.config?.supervisor?.model
-            }
+              model: context.options.supervisorModel ||
+                context.config?.supervisor?.model,
+            },
           };
-          
+
           let supervisor;
           try {
             supervisor = await context.workerManager.spawnWorker(
               supervisorMetadata,
-              new URL("./workers/workspace-supervisor-worker.ts", import.meta.url).href
+              new URL(
+                "./workers/workspace-supervisor-worker.ts",
+                import.meta.url,
+              ).href,
             );
           } catch (error) {
             const err = error as Error;
-            await logger.error('Failed to spawn supervisor worker', { 
-              workspaceId: context.workspace.id, 
+            await logger.error("Failed to spawn supervisor worker", {
+              workspaceId: context.workspace.id,
               error: err.message,
-              stack: err.stack 
+              stack: err.stack,
             });
             throw new Error(`Failed to spawn supervisor: ${err.message}`);
           }
-          
+
           context.workerManager.setupBroadcastChannel(
             supervisor.id,
-            `workspace-${context.workspace.id}`
+            `workspace-${context.workspace.id}`,
           );
-          
-          await logger.debug('Waiting for supervisor to be ready', { workspaceId: context.workspace.id, supervisorId: supervisor.id });
-          const ready = await context.workerManager.waitForWorkerReady(supervisor.id, 10000);
-          await logger.debug('Supervisor ready check', { workspaceId: context.workspace.id, supervisorId: supervisor.id, ready });
-          
+
+          await logger.debug("Waiting for supervisor to be ready", {
+            workspaceId: context.workspace.id,
+            supervisorId: supervisor.id,
+          });
+          const ready = await context.workerManager.waitForWorkerReady(
+            supervisor.id,
+            10000,
+          );
+          await logger.debug("Supervisor ready check", {
+            workspaceId: context.workspace.id,
+            supervisorId: supervisor.id,
+            ready,
+          });
+
           if (!ready) {
             const state = context.workerManager.getWorkerState(supervisor.id);
-            await logger.error(`Supervisor not ready after timeout`, { workspaceId: context.workspace.id, supervisorId: supervisor.id, state });
-            throw new Error(`Supervisor failed to initialize (state: ${state})`);
+            await logger.error(`Supervisor not ready after timeout`, {
+              workspaceId: context.workspace.id,
+              supervisorId: supervisor.id,
+              state,
+            });
+            throw new Error(
+              `Supervisor failed to initialize (state: ${state})`,
+            );
           }
-          
-          console.log('[Runtime FSM] Supervisor ready, returning ID:', supervisor.id);
+
+          console.log(
+            "[Runtime FSM] Supervisor ready, returning ID:",
+            supervisor.id,
+          );
           return supervisor.id;
         }),
         input: ({ context }) => ({ context }),
         onDone: {
-          target: 'ready',
+          target: "ready",
           actions: [
             assign({
-              supervisorId: ({ event }) => event.output
+              supervisorId: ({ event }) => event.output,
             }),
-            () => console.log('[Runtime FSM] Transitioned to ready state')
-          ]
+            () => console.log("[Runtime FSM] Transitioned to ready state"),
+          ],
         },
         onError: {
-          target: 'uninitialized',
+          target: "uninitialized",
           actions: [
-            ({ event }) => console.error('[Runtime FSM] Initialization error:', event.error),
+            ({ event }) => console.error("[Runtime FSM] Initialization error:", event.error),
             assign({
-              error: ({ event }) => event.error as Error
-            })
-          ]
-        }
-      }
+              error: ({ event }) => event.error as Error,
+            }),
+          ],
+        },
+      },
     },
     ready: {
       on: {
         PROCESS_SIGNAL: {
-          target: 'processing'
+          target: "processing",
         },
         SHUTDOWN: {
-          target: 'draining'
-        }
-      }
+          target: "draining",
+        },
+      },
     },
     processing: {
       on: {
         PROCESS_SIGNAL: {
           // Can process multiple signals concurrently
-          target: 'processing'
+          target: "processing",
         },
         SESSION_COMPLETE: [
           {
             // If no more sessions, go back to ready
-            target: 'ready',
+            target: "ready",
             guard: ({ context, event }) => {
               // Check if this would be the last session
               let sessionCount = context.sessions.size;
@@ -485,57 +527,57 @@ const workspaceRuntimeMachine = createMachine({
                 const newSessions = new Map(context.sessions);
                 newSessions.delete(event.sessionId);
                 return newSessions;
-              }
-            })
+              },
+            }),
           },
           {
             // Otherwise stay in processing
-            target: 'processing',
+            target: "processing",
             actions: assign({
               sessions: ({ context, event }) => {
                 const newSessions = new Map(context.sessions);
                 newSessions.delete(event.sessionId);
                 return newSessions;
-              }
-            })
-          }
+              },
+            }),
+          },
         ],
         SHUTDOWN: {
-          target: 'draining'
+          target: "draining",
         },
         ERROR: {
-          target: 'ready',
+          target: "ready",
           actions: assign({
-            error: ({ event }) => event.error
-          })
-        }
-      }
+            error: ({ event }) => event.error,
+          }),
+        },
+      },
     },
     draining: {
       entry: async ({ context }) => {
-        console.log('[Runtime FSM] Draining - cancelling all sessions...');
-        
+        console.log("[Runtime FSM] Draining - cancelling all sessions...");
+
         // Cancel all active sessions
         for (const [sessionId, session] of context.sessions) {
           console.log(`[Runtime FSM] Cancelling session: ${sessionId}`);
           await session.cancel();
         }
-        
+
         // Clear sessions
         context.sessions.clear();
       },
       always: [
         {
           // If no sessions, proceed to terminated
-          target: 'terminated',
-          guard: ({ context }) => context.sessions.size === 0
-        }
+          target: "terminated",
+          guard: ({ context }) => context.sessions.size === 0,
+        },
       ],
       on: {
         SESSION_COMPLETE: [
           {
             // If this was the last session, terminate
-            target: 'terminated',
+            target: "terminated",
             guard: ({ context, event }) => {
               // Check if this would be the last session
               let sessionCount = context.sessions.size;
@@ -549,43 +591,45 @@ const workspaceRuntimeMachine = createMachine({
                 const newSessions = new Map(context.sessions);
                 newSessions.delete(event.sessionId);
                 return newSessions;
-              }
-            })
+              },
+            }),
           },
           {
             // Otherwise stay in draining
-            target: 'draining',
+            target: "draining",
             actions: assign({
               sessions: ({ context, event }) => {
                 const newSessions = new Map(context.sessions);
                 newSessions.delete(event.sessionId);
                 return newSessions;
-              }
-            })
-          }
-        ]
-      }
+              },
+            }),
+          },
+        ],
+      },
     },
     terminated: {
-      type: 'final',
+      type: "final",
       entry: async ({ context }) => {
-        console.log('[Runtime FSM] Terminated - shutting down worker manager...');
-        
+        console.log(
+          "[Runtime FSM] Terminated - shutting down worker manager...",
+        );
+
         // Shutdown worker manager
         await context.workerManager.shutdown();
-        
+
         // Save final state checkpoint
         const state = {
           workspace: context.workspace.snapshot(),
           sessions: [],
           workers: [],
           timestamp: new Date().toISOString(),
-          finalState: 'terminated'
+          finalState: "terminated",
         };
-        
-        console.log('[Runtime FSM] Final state checkpoint:', state);
-        console.log('[Runtime FSM] Shutdown complete');
-      }
-    }
-  }
+
+        console.log("[Runtime FSM] Final state checkpoint:", state);
+        console.log("[Runtime FSM] Shutdown complete");
+      },
+    },
+  },
 });

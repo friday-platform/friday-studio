@@ -30,45 +30,53 @@ export class AgentRegistry {
 }
 
 // Register built-in agent types
-AgentRegistry.registerAgent('echo', async (metadata) => {
-  const { EchoAgent } = await import('../../examples/agents/echo-agent.ts');
+AgentRegistry.registerAgent("echo", async (metadata) => {
+  const { EchoAgent } = await import("../../examples/agents/echo-agent.ts");
   const agent = new EchoAgent(metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;
 });
 
-AgentRegistry.registerAgent('claude', async (metadata) => {
-  const { ClaudeAgent } = await import('../../examples/agents/claude-agent.ts');
-  const model = metadata.config?.model || 'claude-3-haiku-20240307';
+AgentRegistry.registerAgent("claude", async (metadata) => {
+  const { ClaudeAgent } = await import("../../examples/agents/claude-agent.ts");
+  const model = metadata.config?.model || "claude-3-haiku-20240307";
   const agent = new ClaudeAgent(model, metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;
 });
 
-AgentRegistry.registerAgent('telephone', async (metadata) => {
-  const { TelephoneAgent } = await import('../../examples/workspaces/telephone/telephone-agent.ts');
+AgentRegistry.registerAgent("telephone", async (metadata) => {
+  const { TelephoneAgent } = await import(
+    "../../examples/workspaces/telephone/telephone-agent.ts"
+  );
   const agentNumber = metadata.config?.agentNumber || 1;
   const agent = new TelephoneAgent(agentNumber, metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;
 });
 
-AgentRegistry.registerAgent('mishearing', async (metadata) => {
-  const { MishearingAgent } = await import('../../examples/workspaces/telephone/agents/mishearing-agent.ts');
+AgentRegistry.registerAgent("mishearing", async (metadata) => {
+  const { MishearingAgent } = await import(
+    "../../examples/workspaces/telephone/agents/mishearing-agent.ts"
+  );
   const agent = new MishearingAgent(metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;
 });
 
-AgentRegistry.registerAgent('embellishment', async (metadata) => {
-  const { EmbellishmentAgent } = await import('../../examples/workspaces/telephone/agents/embellishment-agent.ts');
+AgentRegistry.registerAgent("embellishment", async (metadata) => {
+  const { EmbellishmentAgent } = await import(
+    "../../examples/workspaces/telephone/agents/embellishment-agent.ts"
+  );
   const agent = new EmbellishmentAgent(metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;
 });
 
-AgentRegistry.registerAgent('reinterpretation', async (metadata) => {
-  const { ReinterpretationAgent } = await import('../../examples/workspaces/telephone/agents/reinterpretation-agent.ts');
+AgentRegistry.registerAgent("reinterpretation", async (metadata) => {
+  const { ReinterpretationAgent } = await import(
+    "../../examples/workspaces/telephone/agents/reinterpretation-agent.ts"
+  );
   const agent = new ReinterpretationAgent(metadata.parentScopeId);
   (agent as any).id = metadata.id; // Restore ID
   return agent;

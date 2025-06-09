@@ -14,7 +14,7 @@ export class MemoryManager implements ITempestMemoryManager {
     this.memoryData.set(key, {
       value,
       timestamp: new Date(),
-      type: typeof value
+      type: typeof value,
     });
     this.store.commit(Object.fromEntries(this.memoryData));
   }
@@ -32,9 +32,11 @@ export class MemoryManager implements ITempestMemoryManager {
 
     const summary = entries.map(([key, memory]) => {
       const age = Date.now() - memory.timestamp.getTime();
-      const ageStr = age < 60000 ? "just now" : 
-                    age < 3600000 ? `${Math.floor(age/60000)}m ago` :
-                    `${Math.floor(age/3600000)}h ago`;
+      const ageStr = age < 60000
+        ? "just now"
+        : age < 3600000
+        ? `${Math.floor(age / 60000)}m ago`
+        : `${Math.floor(age / 3600000)}h ago`;
       return `${key}: ${memory.type} (${ageStr})`;
     }).join("\n");
 

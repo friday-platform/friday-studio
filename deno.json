@@ -2,11 +2,7 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "compilerOptions": {
-    "lib": [
-      "deno.window",
-      "deno.worker",
-      "deno.unstable"
-    ]
+    "lib": ["deno.window", "deno.worker", "deno.unstable"]
   },
   "tasks": {
     "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ./src/cli.tsx",
@@ -27,5 +23,13 @@
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
     "xstate": "npm:xstate@^5.18.0"
+  },
+  "fmt": {
+    "lineWidth": 100
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
   }
 }

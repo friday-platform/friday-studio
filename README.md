@@ -4,12 +4,13 @@ AI agent orchestration platform that transforms software delivery through human/
 
 ## Overview
 
-Atlas enables engineers to create workspaces where humans collaborate seamlessly with specialized, autonomous agents in a secure, auditable, and scalable environment.
+Atlas enables engineers to create workspaces where humans collaborate seamlessly with specialized,
+autonomous agents in a secure, auditable, and scalable environment.
 
 ### Key Features
 
 - **Hierarchical Supervision** - Intelligent supervisors coordinate agent execution
-- **Worker Isolation** - Each agent runs in isolated Deno Web Workers  
+- **Worker Isolation** - Each agent runs in isolated Deno Web Workers
 - **Session Management** - Track and manage concurrent agent workflows
 - **Configurable Signals** - Trigger workflows via CLI, webhooks, or schedules
 - **Beautiful CLI** - Full-featured Ink-based terminal UI with tables and colors
@@ -32,34 +33,40 @@ cd atlas
 ### Quick Start - Telephone Game Example
 
 1. **Navigate to example workspace**
+
 ```bash
 cd examples/workspaces/telephone
 ```
 
 2. **Initialize workspace** (or use existing config)
+
 ```bash
 deno task atlas workspace init
 # This creates workspace.yml if it doesn't exist
 ```
 
 3. **Configure API key**
+
 ```bash
 # Edit .env file
 ANTHROPIC_API_KEY=your_actual_api_key_here
 ```
 
 4. **Start workspace server**
+
 ```bash
 deno task atlas workspace serve
 # Server starts on http://localhost:8080
 ```
 
 5. **Trigger a signal** (new terminal)
+
 ```bash
 deno task atlas signal trigger telephone-message --data '{"message": "The cat sat on the mat"}'
 ```
 
 6. **Monitor execution**
+
 ```bash
 # List active sessions
 deno task atlas ps
@@ -71,6 +78,7 @@ deno task atlas logs <session-id>
 ## CLI Commands
 
 ### Workspace Management
+
 ```bash
 atlas workspace init [name]     # Initialize workspace in current directory
 atlas workspace serve           # Start workspace server
@@ -79,6 +87,7 @@ atlas workspace status          # Show current workspace status
 ```
 
 ### Session Monitoring
+
 ```bash
 atlas session list              # List all active sessions
 atlas ps                        # Shorthand for session list
@@ -88,6 +97,7 @@ atlas logs <session-id>         # Stream session logs with colors
 ```
 
 ### Signal Management
+
 ```bash
 atlas signal list               # List configured signals
 atlas signal trigger <name> --data '{...}'  # Trigger a signal
@@ -95,6 +105,7 @@ atlas signal history            # Show trigger history
 ```
 
 ### Agent Management
+
 ```bash
 atlas agent list                # List all agents
 atlas agent describe <name>     # Show agent details
@@ -149,15 +160,19 @@ import { BaseAgent } from "atlas/core/agents/base-agent.ts";
 import { AgentRegistry } from "atlas/core/agent-registry.ts";
 
 export class MyAgent extends BaseAgent {
-  name() { return "MyAgent"; }
-  purpose() { return "Performs specific task"; }
-  
-  async* invokeStream(message: string) {
+  name() {
+    return "MyAgent";
+  }
+  purpose() {
+    return "Performs specific task";
+  }
+
+  async *invokeStream(message: string) {
     // Your agent logic here
     const response = await this.generateLLM(
       "claude-4-sonnet-20250514",
       this.prompts.system,
-      message
+      message,
     );
     yield response;
   }
@@ -200,7 +215,9 @@ AgentRegistry.register("my", MyAgent);
 ## Examples
 
 ### Telephone Game
+
 Demonstrates agent chaining where messages transform through multiple agents:
+
 ```bash
 cd examples/workspaces/telephone
 deno task atlas workspace serve
@@ -209,6 +226,7 @@ deno task atlas signal trigger telephone-message --data '{"message": "Hello worl
 ```
 
 ### More Examples Coming Soon
+
 - Code Review Assistant
 - Documentation Generator
 - Test Suite Runner
@@ -217,11 +235,13 @@ deno task atlas signal trigger telephone-message --data '{"message": "Hello worl
 ## Development
 
 ### Running Tests
+
 ```bash
 deno test src/cli/tests/
 ```
 
 ### Code Style
+
 ```bash
 deno fmt
 deno lint
@@ -233,4 +253,3 @@ deno lint
 - **"Cannot connect to server"** - Run `atlas workspace serve` first
 - **"Agent not found"** - Check agent paths in workspace.yml
 - **API errors** - Verify your Anthropic API key in .env
-

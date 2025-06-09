@@ -1,7 +1,12 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write
 
 import { AtlasWorkspaceManager } from "../src/core/manager.ts";
-import type { IWorkspaceSignal, ITempestContextManager, ITempestMemoryManager, ITempestMessageManager } from "../src/types/core.ts";
+import type {
+  ITempestContextManager,
+  ITempestMemoryManager,
+  ITempestMessageManager,
+  IWorkspaceSignal,
+} from "../src/types/core.ts";
 import { ContextManager } from "../src/core/context.ts";
 import { MemoryManager } from "../src/core/memory.ts";
 import { MessageManager } from "../src/core/messages.ts";
@@ -16,22 +21,22 @@ class TestSignal implements IWorkspaceSignal {
   public messages: ITempestMessageManager;
   public prompts = { system: "", user: "" };
   public gates: any[] = [];
-  
+
   constructor() {
     this.context = new ContextManager();
     this.memory = new MemoryManager();
     this.messages = new MessageManager();
   }
-  
+
   public provider = {
     id: "test",
-    name: "Test Signal Provider"
+    name: "Test Signal Provider",
   };
 
   async trigger(): Promise<void> {
     console.log(`[TestSignal] Triggered signal ${this.id}`);
     // Simulate some async work
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 
   configure(config: any): void {
@@ -39,11 +44,11 @@ class TestSignal implements IWorkspaceSignal {
   }
 
   // IAtlasScope methods
-  newConversation(): ITempestMessageManager { 
-    return new MessageManager(); 
+  newConversation(): ITempestMessageManager {
+    return new MessageManager();
   }
-  getConversation(): ITempestMessageManager { 
-    return this.messages; 
+  getConversation(): ITempestMessageManager {
+    return this.messages;
   }
   archiveConversation(): void {
     console.log("[TestSignal] Conversation archived");
@@ -96,7 +101,9 @@ async function runExample() {
   console.log(`- Memory items: ${finalSnapshot.memorySize || 0}`);
   console.log(`- Context items: ${finalSnapshot.contextSize || 0}`);
 
-  console.log("\n✨ Example completed! Check .atlas/ directory for stored data.");
+  console.log(
+    "\n✨ Example completed! Check .atlas/ directory for stored data.",
+  );
 }
 
 if (import.meta.main) {

@@ -11,7 +11,7 @@ export interface WorkspaceConfig {
   description?: string;
   version: string;
   owner?: string;
-  
+
   // Supervisor configuration
   supervisor?: {
     provider: string; // e.g., "anthropic", "openai"
@@ -25,25 +25,25 @@ export interface WorkspaceConfig {
     };
     lazyLoad?: boolean;
   };
-  
+
   // Providers
   providers?: ProviderConfig[];
-  
+
   // Signals (reference providers)
   signals?: SignalConfig[];
-  
+
   // Agents (reference providers)
   agents?: AgentConfig[];
-  
+
   // Workflows
   workflows?: WorkflowConfig[];
-  
+
   // Session configuration
   sessions?: {
     maxConcurrent?: number;
     timeout?: number;
   };
-  
+
   // Server configuration
   server?: {
     port?: number;

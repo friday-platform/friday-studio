@@ -12,9 +12,9 @@ supervisor:
     intent: |
       You are coordinating a telephone game where a message passes through agents that:
       1. Mishear the message (mishearing-agent)
-      2. Embellish it with details (embellishment-agent)  
+      2. Embellish it with details (embellishment-agent)
       3. Reinterpret the meaning (reinterpretation-agent)
-      
+
       Each agent should transform the message in their unique way.
     evaluation: |
       CRITICAL FOR TELEPHONE GAME:
@@ -52,7 +52,11 @@ signals:
           description: "The message to transform"
       required: ["message"]
     mappings:
-      - agents: ["mishearing-agent", "embellishment-agent", "reinterpretation-agent"]
+      - agents: [
+          "mishearing-agent",
+          "embellishment-agent",
+          "reinterpretation-agent",
+        ]
         strategy: "sequential"
         prompt: |
           Process this message through all three agents in sequence.

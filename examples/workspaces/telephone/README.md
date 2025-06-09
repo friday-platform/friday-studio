@@ -1,12 +1,14 @@
 # Telephone Game Workspace
 
-A demonstration of Atlas AI agent orchestration where a message transforms through multiple agents, similar to the classic "telephone game".
+A demonstration of Atlas AI agent orchestration where a message transforms through multiple agents,
+similar to the classic "telephone game".
 
 ## Overview
 
 This workspace shows how Atlas coordinates multiple AI agents in sequence:
+
 1. **Mishearing Agent** - Introduces phonetic errors
-2. **Embellishment Agent** - Adds narrative details  
+2. **Embellishment Agent** - Adds narrative details
 3. **Reinterpretation Agent** - Dramatically reimagines the story
 
 ## Quick Start
@@ -24,6 +26,7 @@ deno task atlas workspace init
 ### 2. Configure API Key
 
 Edit `.env` and add your Anthropic API key:
+
 ```
 ANTHROPIC_API_KEY=your_actual_api_key_here
 ```
@@ -89,6 +92,7 @@ telephone/
 ## Configuration
 
 The `workspace.yml` file defines:
+
 - **Supervisor prompts** - Instructions for the AI coordinator
 - **Agent mappings** - Which agents process which signals
 - **Evaluation criteria** - When the session is complete
@@ -105,6 +109,7 @@ The `workspace.yml` file defines:
 ## Customization
 
 To modify the transformation chain:
+
 1. Edit agent prompts in `agents/*.ts`
 2. Update supervisor prompts in `workspace.yml`
 3. Add new agents and update mappings

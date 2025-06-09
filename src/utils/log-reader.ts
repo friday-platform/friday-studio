@@ -3,9 +3,13 @@
 import { logger } from "./logger.ts";
 import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
 
-async function readLogs(target: string = "global", lines: number = 50, follow: boolean = false) {
+async function readLogs(
+  target: string = "global",
+  lines: number = 50,
+  follow: boolean = false,
+) {
   const logs = await logger.readLogs(target, lines);
-  
+
   if (!follow) {
     // Just print the logs and exit
     for (const log of logs) {
@@ -17,17 +21,21 @@ async function readLogs(target: string = "global", lines: number = 50, follow: b
           warn: "\x1b[33m",
           info: "\x1b[36m",
           debug: "\x1b[90m",
-          trace: "\x1b[35m"
+          trace: "\x1b[35m",
         };
         const color = colorMap[level] || "\x1b[0m";
-        
+
         const reset = "\x1b[0m";
-        const prefix = entry.context ? 
-          `[${entry.context.workerType || "main"}${entry.context.workerId ? ":" + entry.context.workerId.slice(0, 8) : ""}]` : 
-          "[main]";
-        
-        console.log(`${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${entry.message}`);
-        
+        const prefix = entry.context
+          ? `[${entry.context.workerType || "main"}${
+            entry.context.workerId ? ":" + entry.context.workerId.slice(0, 8) : ""
+          }]`
+          : "[main]";
+
+        console.log(
+          `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${entry.message}`,
+        );
+
         if (entry.context && Object.keys(entry.context).length > 2) {
           console.log(`  Context:`, entry.context);
         }
@@ -45,7 +53,7 @@ async function readLogs(target: string = "global", lines: number = 50, follow: b
 // CLI interface
 if (import.meta.main) {
   const args = Deno.args;
-  
+
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
 Atlas Log Reader
@@ -70,11 +78,11 @@ Examples:
 `);
     Deno.exit(0);
   }
-  
+
   let target = "global";
   let lines = 50;
   let follow = false;
-  
+
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "-n" || args[i] === "--lines") {
       lines = parseInt(args[i + 1]) || 50;
@@ -85,7 +93,7 @@ Examples:
       target = args[i];
     }
   }
-  
+
   await readLogs(target, lines, follow);
 }
 

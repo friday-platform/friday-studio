@@ -7,10 +7,11 @@ export class MishearingAgent extends BaseAgent implements IWorkspaceAgent {
   host: string = "localhost";
   constructor(id?: string) {
     super(id);
-    
+
     // Set agent-specific prompts
     this.prompts = {
-      system: `You are the Mishearing Agent in a game of telephone. Your job is to mishear the message slightly.
+      system:
+        `You are the Mishearing Agent in a game of telephone. Your job is to mishear the message slightly.
 
 When you receive a message, you MUST:
 1. Change at least 1-2 words to similar-sounding words
@@ -23,7 +24,7 @@ Examples:
 
 IMPORTANT: You must actually change some words. Do not repeat the message exactly.
 Always start with "I heard that" followed by your misheard version.`,
-      user: ""
+      user: "",
     };
   }
 
@@ -51,7 +52,7 @@ Always start with "I heard that" followed by your misheard version.`,
     return {
       canProcessText: true,
       canStream: true,
-      errorTypes: ["phonetic", "similar-sounding", "name-confusion"]
+      errorTypes: ["phonetic", "similar-sounding", "name-confusion"],
     };
   }
 
@@ -59,35 +60,35 @@ Always start with "I heard that" followed by your misheard version.`,
     return this.prompts;
   }
 
-  async* invokeStream(message: string): AsyncIterableIterator<string> {
+  async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`Mishearing Agent processing: ${message.slice(0, 50)}...`);
-    
+
     // Add to message history
     this.messages.newMessage(message, "human" as any);
-    
+
     // Use the LLM to process the message
     const response = await this.generateLLM(
       "claude-4-sonnet-20250514",
       this.prompts.system,
-      message
+      message,
     );
-    
+
     // Simply yield the entire response
     yield response;
-    
+
     // Add response to message history
     this.messages.newMessage(response, "agent" as any);
   }
 
   async invoke(message: string): Promise<string> {
     this.status = "processing";
-    
+
     try {
       let fullResponse = "";
       for await (const chunk of this.invokeStream(message)) {
         fullResponse += chunk;
       }
-      
+
       this.status = "idle";
       return fullResponse;
     } catch (error) {

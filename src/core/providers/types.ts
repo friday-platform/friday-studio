@@ -7,22 +7,22 @@ export interface IProvider {
   type: ProviderType;
   name: string;
   version: string;
-  
+
   // Lifecycle methods
   setup(): Promise<void>;
   teardown(): Promise<void>;
-  
-  // State methods  
+
+  // State methods
   getState(): ProviderState;
   checkHealth(): Promise<HealthStatus>;
 }
 
 export enum ProviderType {
   SIGNAL = "signal",
-  AGENT = "agent", 
+  AGENT = "agent",
   WORKFLOW = "workflow",
   SOURCE = "source",
-  ACTION = "action"
+  ACTION = "action",
 }
 
 export interface ProviderState {
@@ -38,7 +38,7 @@ export enum ProviderStatus {
   CONFIGURING = "configuring",
   READY = "ready",
   ERROR = "error",
-  DISABLED = "disabled"
+  DISABLED = "disabled",
 }
 
 export interface ProviderCredentials {
@@ -70,7 +70,7 @@ export interface IProviderSignal {
   id: string;
   providerId: string;
   config: Record<string, any>;
-  
+
   // Methods that will be called by runtime
   validate(): boolean;
   toRuntimeSignal(): any; // Converts to IWorkspaceSignal

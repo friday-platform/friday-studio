@@ -1,4 +1,4 @@
-import type { ITempestContextManager, ITempestContext } from "../types/core.ts";
+import type { ITempestContext, ITempestContextManager } from "../types/core.ts";
 
 export class ContextManager implements ITempestContextManager {
   private contexts: ITempestContext[] = [];
@@ -8,8 +8,8 @@ export class ContextManager implements ITempestContextManager {
   }
 
   remove(context: ITempestContext): void {
-    const index = this.contexts.findIndex(c => 
-      c.source.id === context.source.id && 
+    const index = this.contexts.findIndex((c) =>
+      c.source.id === context.source.id &&
       c.source.type === context.source.type
     );
     if (index !== -1) {
@@ -18,7 +18,7 @@ export class ContextManager implements ITempestContextManager {
   }
 
   search(query: string): ITempestContext[] {
-    return this.contexts.filter(context => 
+    return this.contexts.filter((context) =>
       context.detail.toLowerCase().includes(query.toLowerCase()) ||
       context.source.id.toLowerCase().includes(query.toLowerCase()) ||
       context.source.type.toLowerCase().includes(query.toLowerCase())

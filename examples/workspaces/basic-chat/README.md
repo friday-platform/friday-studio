@@ -16,6 +16,7 @@ Simple Atlas workspace for testing basic agent interaction.
 ```
 
 This will:
+
 1. Create a new workspace called "basic-chat-demo"
 2. Add an echo agent to the workspace
 3. Display workspace and agent IDs for testing
@@ -40,6 +41,7 @@ atlas chat --message "Hello Atlas!" --workspace <workspace-id> --agent <agent-id
 ## Expected Behavior
 
 The echo agent will:
+
 - Repeat your message
 - Add elaboration about the message
 - Stream the response in real-time chunks
@@ -48,6 +50,7 @@ The echo agent will:
 ## Troubleshooting
 
 If chat fails:
+
 1. Verify workspace exists: `atlas workspace list`
 2. Verify agent exists: `atlas agent list`
 3. Check that workspace and agent IDs match setup output

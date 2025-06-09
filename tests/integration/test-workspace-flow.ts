@@ -14,24 +14,24 @@ import type { IWorkspaceSignal } from "../../src/types/core.ts";
 // Mock signal implementation
 class TestSignal extends AtlasScope implements IWorkspaceSignal {
   provider = { id: "test", name: "Test Signal" };
-  
+
   constructor(customId?: string) {
     super();
     // Override the readonly id using Object.defineProperty
     if (customId) {
-      Object.defineProperty(this, 'id', {
+      Object.defineProperty(this, "id", {
         value: customId,
         writable: false,
         enumerable: true,
-        configurable: false
+        configurable: false,
       });
     }
   }
-  
+
   async trigger(): Promise<void> {
     console.log("[Signal] Triggered");
   }
-  
+
   configure(config: any): void {
     // No-op for test
   }
@@ -45,18 +45,19 @@ const testConfig = {
   supervisor: {
     model: "claude-3-5-sonnet-20241022",
     prompts: {
-      system: "You are a test supervisor. When you receive a signal, create a simple execution plan.",
-      user: ""
-    }
+      system:
+        "You are a test supervisor. When you receive a signal, create a simple execution plan.",
+      user: "",
+    },
   },
   signals: [
     {
       id: "test-message",
       provider: { id: "test", name: "Test Signal" },
-      description: "Test signal for integration test"
+      description: "Test signal for integration test",
       // Note: Functions can't be sent to workers, so we omit trigger
-    }
-  ]
+    },
+  ],
 };
 
 async function runTest() {
@@ -65,42 +66,44 @@ async function runTest() {
   try {
     // 1. Create workspace from config
     console.log("1️⃣ Creating workspace...");
-    const workspace = Workspace.fromConfig(testConfig, { 
+    const workspace = Workspace.fromConfig(testConfig, {
       id: "test-owner",
       name: testConfig.owner,
-      role: "owner" as any
+      role: "owner" as any,
     });
-    
+
     // Add a proper signal instance
     const testSignal = new TestSignal("test-message");
     workspace.addSignal(testSignal);
-    
+
     console.log("✅ Workspace created:", workspace.id);
     console.log("   Signals:", Object.keys(workspace.signals));
-    
+
     // 2. Create runtime
     console.log("\n2️⃣ Creating runtime...");
-    const runtime = new WorkspaceRuntime(workspace, testConfig, { lazy: false });
-    
+    const runtime = new WorkspaceRuntime(workspace, testConfig, {
+      lazy: false,
+    });
+
     // Wait a bit for supervisor to initialize
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     console.log("✅ Runtime created");
     console.log("   Status:", runtime.getStatus());
-    
+
     // 3. Process a signal
     console.log("\n3️⃣ Processing signal...");
     const signal = workspace.signals["test-message"];
     if (!signal) {
       throw new Error("Test signal not found");
     }
-    
+
     const session = await runtime.processSignal(signal, {
-      message: "Hello from integration test"
+      message: "Hello from integration test",
     });
     console.log("✅ Signal processed");
     console.log("   Session ID:", session.id);
     console.log("   Session status:", session.status);
-    
+
     // 4. Check session exists
     console.log("\n4️⃣ Verifying session...");
     const retrievedSession = runtime.getSession(session.id);
@@ -110,43 +113,45 @@ async function runTest() {
     console.log("✅ Session verified");
     console.log("   Progress:", retrievedSession.progress(), "%");
     console.log("   Summary:", retrievedSession.summarize());
-    
+
     // 5. Test HTTP server (optional)
     console.log("\n5️⃣ Testing HTTP server...");
     const server = new WorkspaceServer(runtime, { port: 8082 });
-    
+
     // Start server in background
     const serverPromise = server.start();
-    
+
     // Wait for server to start
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Make a test request
     const healthResponse = await fetch("http://localhost:8082/health");
     const health = await healthResponse.json();
     console.log("✅ Server health check:", health.status);
-    
+
     // Test signal endpoint
-    const signalResponse = await fetch("http://localhost:8082/signals/test-message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Test via HTTP" })
-    });
+    const signalResponse = await fetch(
+      "http://localhost:8082/signals/test-message",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Test via HTTP" }),
+      },
+    );
     const signalResult = await signalResponse.json();
     console.log("✅ Signal via HTTP:", signalResult.message);
-    
+
     // 6. Cleanup
     console.log("\n6️⃣ Cleaning up...");
     await runtime.shutdown();
     console.log("✅ Runtime shut down");
-    
+
     console.log("\n✨ All tests passed!");
-    
   } catch (error) {
     console.error("\n❌ Test failed:", error);
     Deno.exit(1);
   }
-  
+
   Deno.exit(0);
 }
 

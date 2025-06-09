@@ -23,27 +23,41 @@ async function claudeExample() {
 
   // Test streaming with real Claude
   console.log("📡 Streaming with Claude:");
-  console.log("Input: 'Help me write a simple TypeScript function that validates email addresses'");
+  console.log(
+    "Input: 'Help me write a simple TypeScript function that validates email addresses'",
+  );
   console.log("Output: ");
-  
-  for await (const chunk of claude.invokeStream("Help me write a simple TypeScript function that validates email addresses")) {
+
+  for await (
+    const chunk of claude.invokeStream(
+      "Help me write a simple TypeScript function that validates email addresses",
+    )
+  ) {
     await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n\n");
 
   // Test another query
   console.log("📡 Another Claude query:");
-  console.log("Input: 'What are the key principles of good software deployment?'");
+  console.log(
+    "Input: 'What are the key principles of good software deployment?'",
+  );
   console.log("Output: ");
-  
-  for await (const chunk of claude.invokeStream("What are the key principles of good software deployment?")) {
+
+  for await (
+    const chunk of claude.invokeStream(
+      "What are the key principles of good software deployment?",
+    )
+  ) {
     await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n\n");
 
   // Test non-streaming
   console.log("📄 Non-streaming Claude:");
-  const response = await claude.invoke("Explain what Atlas agent orchestration is in one sentence.");
+  const response = await claude.invoke(
+    "Explain what Atlas agent orchestration is in one sentence.",
+  );
   console.log(response);
 
   console.log("\n✨ Claude example completed!");

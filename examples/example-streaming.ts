@@ -15,9 +15,9 @@ async function streamingExample() {
 
   // Create agents
   const echoAgent = new EchoAgent(workspace.id);
-  const llmAgent = new LLMAgent({ 
-    model: "gpt-4", 
-    temperature: 0.7 
+  const llmAgent = new LLMAgent({
+    model: "gpt-4",
+    temperature: 0.7,
   }, workspace.id);
 
   // Add agents to workspace
@@ -32,7 +32,7 @@ async function streamingExample() {
   console.log("📡 Streaming with EchoAgent:");
   console.log("Input: 'Hello Atlas!'");
   console.log("Output: ");
-  
+
   for await (const chunk of echoAgent.invokeStream("Hello Atlas!")) {
     await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
@@ -42,7 +42,7 @@ async function streamingExample() {
   console.log("📡 Streaming with LLMAgent:");
   console.log("Input: 'Help me deploy my code'");
   console.log("Output: ");
-  
+
   for await (const chunk of llmAgent.invokeStream("Help me deploy my code")) {
     await Deno.stdout.write(new TextEncoder().encode(chunk));
   }

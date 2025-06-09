@@ -80,7 +80,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   async generateLLM(
     model: string,
     systemPrompt: string,
-    userPrompt: string
+    userPrompt: string,
   ): Promise<string> {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
@@ -110,7 +110,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   async *generateLLMStream(
     model: string,
     systemPrompt: string,
-    userPrompt: string
+    userPrompt: string,
   ): AsyncGenerator<string> {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
@@ -120,7 +120,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     const anthropic = createAnthropic({ apiKey });
 
     try {
-      const { textStream } = await streamText({
+      const { textStream } = streamText({
         model: anthropic(model),
         messages: [
           { role: "system", content: systemPrompt },

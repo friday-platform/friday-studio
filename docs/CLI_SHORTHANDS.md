@@ -1,6 +1,7 @@
 # Atlas CLI Shorthand System
 
 ## Design Principles
+
 1. **Single letter for primary commands** (w, s, a, l)
 2. **Two letters for sub-commands** when needed
 3. **Memorable and intuitive** mappings
@@ -9,6 +10,7 @@
 ## Proposed Shorthands
 
 ### Workspace Commands
+
 ```bash
 atlas w                    # atlas workspace (shows help)
 atlas wi [name]            # atlas workspace init
@@ -18,6 +20,7 @@ atlas wt                   # atlas workspace status (think: workspace sTatus)
 ```
 
 ### Session Commands
+
 ```bash
 atlas s                    # atlas session list (default)
 atlas sl                   # atlas session list (explicit)
@@ -27,6 +30,7 @@ atlas ps                   # atlas session list (process style - already exists)
 ```
 
 ### Signal Commands
+
 ```bash
 atlas g                    # atlas signal (think: siGnal)
 atlas gl                   # atlas signal list
@@ -34,7 +38,8 @@ atlas gt <name> -d '{}'    # atlas signal trigger
 atlas gh                   # atlas signal history
 ```
 
-### Agent Commands  
+### Agent Commands
+
 ```bash
 atlas a                    # atlas agent list (default)
 atlas al                   # atlas agent list (explicit)
@@ -43,12 +48,14 @@ atlas at <name> -m "..."   # atlas agent test
 ```
 
 ### Logs Command
+
 ```bash
 atlas l <id>               # atlas logs <session-id>
 atlas logs <id>            # full command still works
 ```
 
 ### Help
+
 ```bash
 atlas h                    # atlas help
 atlas ?                    # atlas help (alternative)
@@ -61,30 +68,30 @@ Update cli.tsx to support these shorthands:
 ```typescript
 // Map shorthands to full commands
 const shorthandMap = {
-  'w': 'workspace',
-  'wi': ['workspace', 'init'],
-  'ws': ['workspace', 'serve'],
-  'wl': ['workspace', 'list'],
-  'wt': ['workspace', 'status'],
-  
-  's': ['session', 'list'],
-  'sl': ['session', 'list'],
-  'sg': ['session', 'get'],
-  'sc': ['session', 'cancel'],
-  
-  'g': 'signal',
-  'gl': ['signal', 'list'],
-  'gt': ['signal', 'trigger'],
-  'gh': ['signal', 'history'],
-  
-  'a': ['agent', 'list'],
-  'al': ['agent', 'list'],
-  'ad': ['agent', 'describe'],
-  'at': ['agent', 'test'],
-  
-  'l': 'logs',
-  'h': 'help',
-  '?': 'help'
+  "w": "workspace",
+  "wi": ["workspace", "init"],
+  "ws": ["workspace", "serve"],
+  "wl": ["workspace", "list"],
+  "wt": ["workspace", "status"],
+
+  "s": ["session", "list"],
+  "sl": ["session", "list"],
+  "sg": ["session", "get"],
+  "sc": ["session", "cancel"],
+
+  "g": "signal",
+  "gl": ["signal", "list"],
+  "gt": ["signal", "trigger"],
+  "gh": ["signal", "history"],
+
+  "a": ["agent", "list"],
+  "al": ["agent", "list"],
+  "ad": ["agent", "describe"],
+  "at": ["agent", "test"],
+
+  "l": "logs",
+  "h": "help",
+  "?": "help",
 };
 ```
 

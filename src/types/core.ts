@@ -86,7 +86,10 @@ export interface IWorkspaceLibrary {
 }
 
 export interface IWorkspaceSupervisor extends IAtlasScope, IWorkspaceAgent {
-  spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession>;
+  spawnSession(
+    signal: IWorkspaceSignal,
+    payload?: any,
+  ): Promise<IWorkspaceSession>;
   manageAgentLifecycle(): void;
   processSignalInterrupts(): void;
 }
@@ -142,7 +145,7 @@ export interface IWorkspaceMember {
 
 export enum WorkspaceMemberRole {
   OWNER = "owner",
-  WATCHER = "watcher"
+  WATCHER = "watcher",
 }
 
 export interface IWorkspaceWorkflow {
@@ -209,6 +212,6 @@ export interface ITempestMessage {
 
 export enum MessageUser {
   HUMAN = "human",
-  AGENT = "agent", 
-  SYSTEM = "system"
+  AGENT = "agent",
+  SYSTEM = "system",
 }

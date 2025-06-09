@@ -25,7 +25,7 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
   }
 
   nickname(): string {
-    return this.config.model.split('/').pop() || "LLM";
+    return this.config.model.split("/").pop() || "LLM";
   }
 
   version(): string {
@@ -33,10 +33,13 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
   }
 
   provider(): string {
-    return this.config.model.includes("gpt") ? "openai" :
-           this.config.model.includes("claude") ? "anthropic" :
-           this.config.model.includes("gemini") ? "google" :
-           "unknown";
+    return this.config.model.includes("gpt")
+      ? "openai"
+      : this.config.model.includes("claude")
+      ? "anthropic"
+      : this.config.model.includes("gemini")
+      ? "google"
+      : "unknown";
   }
 
   purpose(): string {
@@ -45,8 +48,9 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
 
   override getAgentPrompts(): { system: string; user: string } {
     return {
-      system: "You are a helpful AI assistant integrated into the Atlas agent orchestration platform.",
-      user: ""
+      system:
+        "You are a helpful AI assistant integrated into the Atlas agent orchestration platform.",
+      user: "",
     };
   }
 
@@ -56,13 +60,15 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
       canStream: true,
       hasLLMAccess: true,
       model: this.config.model,
-      temperature: this.config.temperature || 0.7
+      temperature: this.config.temperature || 0.7,
     };
   }
 
-  async* invokeStream(message: string): AsyncIterableIterator<string> {
-    this.log(`Processing with ${this.config.model}: ${message.slice(0, 50)}...`);
-    
+  async *invokeStream(message: string): AsyncIterableIterator<string> {
+    this.log(
+      `Processing with ${this.config.model}: ${message.slice(0, 50)}...`,
+    );
+
     // Add to message history
     this.messages.newMessage(message, "human" as any);
 
@@ -70,16 +76,18 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
       // For now, simulate LLM streaming with a mock response
       // TODO: Replace with actual LLM API calls
       const mockResponse = await this.generateMockLLMResponse(message);
-      
+
       // Stream the response
       yield* this.createTextStream(mockResponse, 20, 80);
-      
-      // Add response to message history  
+
+      // Add response to message history
       this.messages.newMessage(mockResponse, "agent" as any);
-      
+
       this.log("LLM response streaming completed");
     } catch (error) {
-      const errorMsg = `Error calling ${this.config.model}: ${error instanceof Error ? error.message : String(error)}`;
+      const errorMsg = `Error calling ${this.config.model}: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
       this.log(errorMsg);
       yield errorMsg;
     }
@@ -87,8 +95,8 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
 
   private async generateMockLLMResponse(message: string): Promise<string> {
     // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
     // Mock response based on message content
     if (message.toLowerCase().includes("code")) {
       return `I can help you with code! Here's a response about coding using ${this.config.model}:\n\n\`\`\`typescript\n// Example code\nfunction processMessage(msg: string) {\n  return msg.toUpperCase();\n}\n\`\`\`\n\nThis demonstrates how I can generate code responses through the Atlas platform.`;
@@ -100,7 +108,9 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
   }
 
   // Method to actually call LLM APIs (to be implemented)
-  private async callLLMAPI(message: string): Promise<AsyncIterableIterator<string>> {
+  private async callLLMAPI(
+    message: string,
+  ): Promise<AsyncIterableIterator<string>> {
     // TODO: Implement actual API calls based on provider
     switch (this.provider()) {
       case "openai":
@@ -114,30 +124,36 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
     }
   }
 
-  private async callOpenAI(message: string): Promise<AsyncIterableIterator<string>> {
+  private async callOpenAI(
+    message: string,
+  ): Promise<AsyncIterableIterator<string>> {
     // TODO: Implement OpenAI streaming API call
     throw new Error("OpenAI integration not implemented yet");
   }
 
-  private async callAnthropic(message: string): Promise<AsyncIterableIterator<string>> {
+  private async callAnthropic(
+    message: string,
+  ): Promise<AsyncIterableIterator<string>> {
     // TODO: Implement Anthropic streaming API call
     throw new Error("Anthropic integration not implemented yet");
   }
 
-  private async callGemini(message: string): Promise<AsyncIterableIterator<string>> {
+  private async callGemini(
+    message: string,
+  ): Promise<AsyncIterableIterator<string>> {
     // TODO: Implement Gemini streaming API call
     throw new Error("Gemini integration not implemented yet");
   }
 
   async invoke(message: string): Promise<string> {
     this.status = "processing";
-    
+
     try {
       let fullResponse = "";
       for await (const chunk of this.invokeStream(message)) {
         fullResponse += chunk;
       }
-      
+
       this.status = "idle";
       return fullResponse;
     } catch (error) {
@@ -146,10 +162,14 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
     }
   }
 
-  private async* createTextStream(text: string, chunkSize: number, delayMs: number): AsyncIterableIterator<string> {
+  private async *createTextStream(
+    text: string,
+    chunkSize: number,
+    delayMs: number,
+  ): AsyncIterableIterator<string> {
     for (let i = 0; i < text.length; i += chunkSize) {
       yield text.slice(i, i + chunkSize);
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 }

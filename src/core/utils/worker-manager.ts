@@ -1,5 +1,5 @@
 /// <reference lib="deno.unstable" />
-import { createActor, createMachine, assign } from "xstate";
+import { assign, createActor, createMachine } from "xstate";
 import { logger } from "../../utils/logger.ts";
 
 // Worker lifecycle states
@@ -302,7 +302,7 @@ export class WorkerManager {
 
   async spawnWorker(
     metadata: WorkerMetadata,
-    url: string
+    url: string,
   ): Promise<ManagedWorker> {
     const { id, type } = metadata;
 
@@ -424,7 +424,7 @@ export class WorkerManager {
         peerId: workerId2,
         port: port1,
       },
-      [port1]
+      [port1],
     );
 
     worker2.worker.postMessage(
@@ -433,7 +433,7 @@ export class WorkerManager {
         peerId: workerId1,
         port: port2,
       },
-      [port2]
+      [port2],
     );
   }
 

@@ -1,8 +1,4 @@
-import type { 
-  IWorkspaceAgent,
-  IWorkspaceSignal,
-  IAtlasScope
-} from "../types/core.ts";
+import type { IAtlasScope, IWorkspaceAgent, IWorkspaceSignal } from "../types/core.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
@@ -21,9 +17,9 @@ export interface SessionContext {
   };
   // Additional prompts to layer onto the session
   additionalPrompts?: {
-    signal?: string;      // Signal-specific prompt
-    session?: string;     // Session-specific prompt
-    evaluation?: string;  // Evaluation-specific prompt
+    signal?: string; // Signal-specific prompt
+    session?: string; // Session-specific prompt
+    evaluation?: string; // Evaluation-specific prompt
   };
 }
 
@@ -40,21 +36,21 @@ export interface ExecutionPlan {
   sessionId: string;
   phases: ExecutionPhase[];
   successCriteria: string[];
-  adaptationStrategy: 'rigid' | 'flexible' | 'exploratory';
+  adaptationStrategy: "rigid" | "flexible" | "exploratory";
 }
 
 export interface ExecutionPhase {
   id: string;
   name: string;
   agents: AgentTask[];
-  executionStrategy: 'sequential' | 'parallel';
+  executionStrategy: "sequential" | "parallel";
   continueCondition?: string;
 }
 
 export interface AgentTask {
   agentId: string;
   task: string;
-  inputSource: 'signal' | 'previous' | 'combined';
+  inputSource: "signal" | "previous" | "combined";
   dependencies?: string[];
 }
 
@@ -74,10 +70,11 @@ export class SessionSupervisor extends BaseAgent {
 
   constructor(parentScopeId?: string) {
     super(parentScopeId);
-    
+
     // Set supervisor-specific prompts
     this.prompts = {
-      system: `You are a Session Supervisor responsible for coordinating agent execution within a workspace session.
+      system:
+        `You are a Session Supervisor responsible for coordinating agent execution within a workspace session.
 Your role is to:
 1. Analyze incoming signals and their payloads
 2. Create intelligent execution plans based on available agents
@@ -86,7 +83,7 @@ Your role is to:
 5. Determine when the session goal has been achieved
 
 You have access to a filtered view of the workspace tailored for this specific session.`,
-      user: ""
+      user: "",
     };
   }
 
@@ -115,7 +112,7 @@ You have access to a filtered view of the workspace tailored for this specific s
       canPlan: true,
       canCoordinate: true,
       canEvaluate: true,
-      canAdapt: true
+      canAdapt: true,
     };
   }
 
@@ -130,8 +127,10 @@ You have access to a filtered view of the workspace tailored for this specific s
   // Initialize session with context from WorkspaceSupervisor
   async initializeSession(context: SessionContext): Promise<void> {
     this.sessionContext = context;
-    this.log(`Initializing session ${context.sessionId} for signal ${context.signal.id}`);
-    
+    this.log(
+      `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
+    );
+
     // Add context to memory
     this.memory.remember("sessionContext", context);
   }
@@ -149,12 +148,16 @@ Signal Provider: ${this.sessionContext.signal.provider.name}
 Payload: ${JSON.stringify(this.sessionContext.payload, null, 2)}
 
 Available Agents:
-${this.sessionContext.availableAgents.map(a => 
-  `- ${a.id}: ${a.purpose}${a.capabilities ? '\n  Capabilities: ' + a.capabilities.join(', ') : ''}`
-).join('\n')}
+${
+      this.sessionContext.availableAgents.map((a) =>
+        `- ${a.id}: ${a.purpose}${
+          a.capabilities ? "\n  Capabilities: " + a.capabilities.join(", ") : ""
+        }`
+      ).join("\n")
+    }
 
-${this.sessionContext.additionalPrompts?.signal || ''}
-${this.sessionContext.additionalPrompts?.session || ''}
+${this.sessionContext.additionalPrompts?.signal || ""}
+${this.sessionContext.additionalPrompts?.session || ""}
 
 Create an execution plan that:
 1. Identifies which agents to use and in what order
@@ -172,7 +175,7 @@ Respond with a structured plan.`;
       const response = await this.generateLLM(
         "claude-3-5-sonnet-20241022",
         this.prompts.system,
-        planPrompt
+        planPrompt,
       );
 
       // Parse the LLM response into ExecutionPlan
@@ -193,31 +196,31 @@ Respond with a structured plan.`;
       sessionId: this.sessionContext!.sessionId,
       phases: [],
       successCriteria: ["All agents have processed the input successfully"],
-      adaptationStrategy: 'flexible'
+      adaptationStrategy: "flexible",
     };
 
     // Extract agent ordering from response
     const agents = this.sessionContext!.availableAgents;
-    
+
     // For telephone game, create sequential phases
-    if (this.sessionContext!.signal.id.includes('telephone')) {
+    if (this.sessionContext!.signal.id.includes("telephone")) {
       plan.phases.push({
-        id: 'telephone-phase',
-        name: 'Message Transformation',
+        id: "telephone-phase",
+        name: "Message Transformation",
         agents: agents.map((agent, index) => ({
           agentId: agent.id,
           task: `Transform the message using ${agent.name}`,
-          inputSource: index === 0 ? 'signal' : 'previous',
-          dependencies: index > 0 ? [agents[index - 1].id] : []
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [agents[index - 1].id] : [],
         })),
-        executionStrategy: 'sequential'
+        executionStrategy: "sequential",
       });
-      
+
       // Update success criteria to be more specific for telephone game
       plan.successCriteria = [
         `All ${agents.length} agents must process the message in sequence`,
-        'Each agent must transform the output of the previous agent',
-        'The final output should be significantly different from the original'
+        "Each agent must transform the output of the previous agent",
+        "The final output should be significantly different from the original",
       ];
     }
 
@@ -228,30 +231,30 @@ Respond with a structured plan.`;
   // Create a default plan when LLM fails
   private createDefaultPlan(): ExecutionPlan {
     const agents = this.sessionContext!.availableAgents;
-    
+
     return {
       id: crypto.randomUUID(),
       sessionId: this.sessionContext!.sessionId,
       phases: [{
-        id: 'default-phase',
-        name: 'Default Processing',
-        agents: agents.map(agent => ({
+        id: "default-phase",
+        name: "Default Processing",
+        agents: agents.map((agent) => ({
           agentId: agent.id,
           task: `Process signal with ${agent.id}`,
-          inputSource: 'signal',
-          dependencies: []
+          inputSource: "signal",
+          dependencies: [],
         })),
-        executionStrategy: 'sequential'
+        executionStrategy: "sequential",
       }],
       successCriteria: ["All agents executed"],
-      adaptationStrategy: 'rigid'
+      adaptationStrategy: "rigid",
     };
   }
 
   // Evaluate execution progress and determine next steps
   async evaluateProgress(results: AgentResult[]): Promise<{
     isComplete: boolean;
-    nextAction?: 'continue' | 'retry' | 'adapt' | 'escalate';
+    nextAction?: "continue" | "retry" | "adapt" | "escalate";
     feedback?: string;
   }> {
     this.executionResults = results;
@@ -262,20 +265,24 @@ Original Signal: ${this.sessionContext!.signal.id}
 Payload: ${JSON.stringify(this.sessionContext!.payload)}
 
 Execution Plan:
-- Total agents to execute: ${this.executionPlan!.phases.reduce((sum, phase) => sum + phase.agents.length, 0)}
+- Total agents to execute: ${
+      this.executionPlan!.phases.reduce((sum, phase) => sum + phase.agents.length, 0)
+    }
 - Agents executed so far: ${results.length}
 
 Execution Results:
-${results.map(r => 
-  `Agent: ${r.agentId}
+${
+      results.map((r) =>
+        `Agent: ${r.agentId}
    Task: ${r.task}
    Input: ${JSON.stringify(r.input).slice(0, 100)}...
    Output: ${JSON.stringify(r.output).slice(0, 200)}...
    Duration: ${r.duration}ms`
-).join('\n\n')}
+      ).join("\n\n")
+    }
 
 Success Criteria:
-${this.executionPlan!.successCriteria.join('\n')}
+${this.executionPlan!.successCriteria.join("\n")}
 
 Determine:
 1. Have ALL success criteria been met? (NOT just some)
@@ -284,7 +291,7 @@ Determine:
 
 IMPORTANT: The session is ONLY complete when ALL planned agents have executed successfully.
 
-${this.sessionContext?.additionalPrompts?.evaluation || ''}
+${this.sessionContext?.additionalPrompts?.evaluation || ""}
 
 Provide a brief evaluation.`;
 
@@ -292,41 +299,43 @@ Provide a brief evaluation.`;
       const response = await this.generateLLM(
         "claude-4-sonnet-20250514",
         this.prompts.system,
-        evaluationPrompt
+        evaluationPrompt,
       );
 
       // First check: Have all agents from execution plan actually executed?
-      const totalAgentsInPlan = this.executionPlan!.phases.reduce((sum, phase) => sum + phase.agents.length, 0);
+      const totalAgentsInPlan = this.executionPlan!.phases.reduce(
+        (sum, phase) => sum + phase.agents.length,
+        0,
+      );
       const agentsExecuted = results.length;
-      
+
       // If not all agents have executed, session cannot be complete regardless of LLM response
       if (agentsExecuted < totalAgentsInPlan) {
         return {
           isComplete: false,
-          nextAction: 'continue',
-          feedback: `${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent. LLM evaluation: ${response}`
+          nextAction: "continue",
+          feedback:
+            `${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent. LLM evaluation: ${response}`,
         };
       }
 
       // All agents have executed - now check for quality/success via LLM
       const lowerResponse = response.toLowerCase();
-      const hasFailures = (
-        lowerResponse.includes('failed') ||
-        lowerResponse.includes('error') ||
-        lowerResponse.includes('unsuccessful')
-      );
-      
+      const hasFailures = lowerResponse.includes("failed") ||
+        lowerResponse.includes("error") ||
+        lowerResponse.includes("unsuccessful");
+
       return {
         isComplete: !hasFailures,
-        nextAction: hasFailures ? 'retry' : undefined,
-        feedback: response
+        nextAction: hasFailures ? "retry" : undefined,
+        feedback: response,
       };
     } catch (error) {
       this.log(`Error evaluating progress: ${error}`);
       // Default to complete if all phases executed
       return {
         isComplete: results.length >= this.sessionContext!.availableAgents.length,
-        feedback: "Evaluation completed based on execution count"
+        feedback: "Evaluation completed based on execution count",
       };
     }
   }
@@ -335,26 +344,27 @@ Provide a brief evaluation.`;
   getExecutionSummary(): {
     plan: ExecutionPlan | null;
     results: AgentResult[];
-    status: 'planning' | 'executing' | 'completed' | 'failed';
+    status: "planning" | "executing" | "completed" | "failed";
   } {
-    let status: 'planning' | 'executing' | 'completed' | 'failed' = 'planning';
-    
+    let status: "planning" | "executing" | "completed" | "failed" = "planning";
+
     if (this.executionPlan && this.executionResults.length > 0) {
       const totalTasks = this.executionPlan.phases.reduce(
-        (sum, phase) => sum + phase.agents.length, 0
+        (sum, phase) => sum + phase.agents.length,
+        0,
       );
-      
+
       if (this.executionResults.length >= totalTasks) {
-        status = 'completed';
+        status = "completed";
       } else {
-        status = 'executing';
+        status = "executing";
       }
     }
 
     return {
       plan: this.executionPlan,
       results: this.executionResults,
-      status
+      status,
     };
   }
 
@@ -364,20 +374,27 @@ Provide a brief evaluation.`;
       return "No session context available for summary.";
     }
 
-    const allResults = phaseResults.flatMap(phase => phase.results);
-    
+    const allResults = phaseResults.flatMap((phase) => phase.results);
+
     const summaryPrompt = `Summarize this session execution:
 
 Signal: ${this.sessionContext.signal.id}
 Original Input: ${JSON.stringify(this.sessionContext.payload)}
 
 Agent Execution Chain:
-${allResults.map((r, i) => `${i + 1}. ${r.agentId}:
+${
+      allResults.map((r, i) =>
+        `${i + 1}. ${r.agentId}:
    Input: ${JSON.stringify(r.input).slice(0, 100)}...
    Output: ${r.output}
-   Duration: ${r.duration}ms`).join('\n\n')}
+   Duration: ${r.duration}ms`
+      ).join("\n\n")
+    }
 
-Session Goals: ${this.executionPlan?.successCriteria.join(', ') || 'Process signal through agents'}
+Session Goals: ${
+      this.executionPlan?.successCriteria.join(", ") ||
+      "Process signal through agents"
+    }
 
 Provide a concise but informative summary that:
 1. Describes what happened in the session
@@ -391,9 +408,9 @@ Keep the summary focused and relevant to the specific use case.`;
       const summary = await this.generateLLM(
         "claude-4-sonnet-20250514",
         this.prompts.system,
-        summaryPrompt
+        summaryPrompt,
       );
-      
+
       return summary;
     } catch (error) {
       this.log(`Error generating summary: ${error}`);

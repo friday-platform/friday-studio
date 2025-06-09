@@ -19,7 +19,8 @@ export class AtlasLogger {
 
   private constructor() {
     // Set up .atlas directory in home or current directory
-    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
+    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") ||
+      Deno.cwd();
     this.logDir = join(homeDir, ".atlas", "logs");
     this.globalLogPath = join(this.logDir, "global.log");
   }
@@ -135,9 +136,7 @@ export class AtlasLogger {
 
     // File output only if initialized
     if (this.fileWriter) {
-      const target = context?.workspaceId
-        ? `workspace:${context.workspaceId}`
-        : "global";
+      const target = context?.workspaceId ? `workspace:${context.workspaceId}` : "global";
       await this.writeLog(target, entry);
     }
   }

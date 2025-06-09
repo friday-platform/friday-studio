@@ -1,14 +1,14 @@
-import type { 
-  IWorkspaceSupervisor, 
-  IWorkspace, 
-  IWorkspaceSignal, 
-  IWorkspaceSession,
+import type {
   IAtlasScope,
-  IWorkspaceAgent
+  IWorkspace,
+  IWorkspaceAgent,
+  IWorkspaceSession,
+  IWorkspaceSignal,
+  IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
 import { Session, SessionIntent, SessionPlan } from "./session.ts";
-import { createMachine, createActor, assign, fromPromise } from "xstate";
+import { assign, createActor, createMachine, fromPromise } from "xstate";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -19,119 +19,139 @@ interface SupervisorContext {
   error: Error | null;
 }
 
-type SupervisorEvent = 
-  | { type: 'SIGNAL_RECEIVED'; signal: IWorkspaceSignal; payload: any }
-  | { type: 'PLAN_GENERATED'; plan: any }
-  | { type: 'SESSION_SPAWNED'; session: IWorkspaceSession }
-  | { type: 'SESSION_COMPLETED'; sessionId: string; result: any }
-  | { type: 'SESSION_FAILED'; sessionId: string; error: Error }
-  | { type: 'ERROR'; error: Error }
-  | { type: 'RESET' };
+type SupervisorEvent =
+  | { type: "SIGNAL_RECEIVED"; signal: IWorkspaceSignal; payload: any }
+  | { type: "PLAN_GENERATED"; plan: any }
+  | { type: "SESSION_SPAWNED"; session: IWorkspaceSession }
+  | { type: "SESSION_COMPLETED"; sessionId: string; result: any }
+  | { type: "SESSION_FAILED"; sessionId: string; error: Error }
+  | { type: "ERROR"; error: Error }
+  | { type: "RESET" };
 
 // Create the supervisor state machine
 function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
   return createMachine({
-    id: 'workspaceSupervisor',
-    initial: 'idle',
+    id: "workspaceSupervisor",
+    initial: "idle",
     context: {
       currentSignal: null,
       currentPayload: null,
       executionPlan: null,
       activeSessions: new Map(),
-      error: null
+      error: null,
     } as SupervisorContext,
     states: {
       idle: {
         on: {
           SIGNAL_RECEIVED: {
-            target: 'analyzing',
+            target: "analyzing",
             actions: assign({
               currentSignal: ({ event }) => event.signal,
               currentPayload: ({ event }) => event.payload,
-              error: () => null
-            })
-          }
-        }
+              error: () => null,
+            }),
+          },
+        },
       },
       analyzing: {
         invoke: {
-          id: 'generatePlan',
-          src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; payload: any } }) => {
-            return supervisor.generateExecutionPlan(input.signal, input.payload);
-          }),
+          id: "generatePlan",
+          src: fromPromise(
+            async (
+              { input }: { input: { signal: IWorkspaceSignal; payload: any } },
+            ) => {
+              return supervisor.generateExecutionPlan(
+                input.signal,
+                input.payload,
+              );
+            },
+          ),
           input: ({ context }) => ({
             signal: context.currentSignal!,
-            payload: context.currentPayload
+            payload: context.currentPayload,
           }),
           onDone: {
-            target: 'spawningSession',
+            target: "spawningSession",
             actions: assign({
-              executionPlan: ({ event }) => event.output
-            })
+              executionPlan: ({ event }) => event.output,
+            }),
           },
           onError: {
-            target: 'error',
+            target: "error",
             actions: assign({
-              error: ({ event }) => new Error(`Failed to generate plan: ${event.error}`)
-            })
-          }
-        }
+              error: ({ event }) => new Error(`Failed to generate plan: ${event.error}`),
+            }),
+          },
+        },
       },
       spawningSession: {
         invoke: {
-          id: 'spawnSession',
-          src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; plan: any; payload: any } }) => {
-            // Create intent from signal and payload
-            const intent = supervisor.createSessionIntent(input.signal, input.payload);
-            
-            // Create session with intent
-            const session = new Session(
-              supervisor.id,
-              {
-                triggers: [input.signal],
-                callback: (result: any) => Promise.resolve()
+          id: "spawnSession",
+          src: fromPromise(
+            async (
+              { input }: {
+                input: { signal: IWorkspaceSignal; plan: any; payload: any };
               },
-              supervisor.getWorkspaceAgents(),
-              undefined, // workflows
-              undefined, // sources
-              intent
-            );
-            
-            supervisor.addSession(session);
-            await supervisor.executeSessionPlan(session, input.plan, input.payload);
-            return session;
-          }),
+            ) => {
+              // Create intent from signal and payload
+              const intent = supervisor.createSessionIntent(
+                input.signal,
+                input.payload,
+              );
+
+              // Create session with intent
+              const session = new Session(
+                supervisor.id,
+                {
+                  triggers: [input.signal],
+                  callback: (result: any) => Promise.resolve(),
+                },
+                supervisor.getWorkspaceAgents(),
+                undefined, // workflows
+                undefined, // sources
+                intent,
+              );
+
+              supervisor.addSession(session);
+              await supervisor.executeSessionPlan(
+                session,
+                input.plan,
+                input.payload,
+              );
+              return session;
+            },
+          ),
           input: ({ context }) => ({
             signal: context.currentSignal!,
             plan: context.executionPlan,
-            payload: context.currentPayload
+            payload: context.currentPayload,
           }),
           onDone: {
-            target: 'coordinating',
+            target: "coordinating",
             actions: assign({
               activeSessions: ({ context, event }) => {
                 const sessions = new Map(context.activeSessions);
                 sessions.set(event.output.id, event.output);
                 return sessions;
-              }
-            })
+              },
+            }),
           },
           onError: {
-            target: 'error',
+            target: "error",
             actions: assign({
-              error: ({ event }) => new Error(`Failed to spawn session: ${event.error}`)
-            })
-          }
-        }
+              error: ({ event }) => new Error(`Failed to spawn session: ${event.error}`),
+            }),
+          },
+        },
       },
       coordinating: {
         on: {
           SIGNAL_RECEIVED: {
-            target: 'analyzing',
+            target: "analyzing",
             actions: assign({
               currentSignal: ({ event }) => event.signal,
-              currentPayload: ({ event }) => event.payload
-            })
+              currentPayload: ({ event }) => event.payload,
+            }),
           },
           SESSION_COMPLETED: {
             actions: assign({
@@ -139,8 +159,8 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 const sessions = new Map(context.activeSessions);
                 sessions.delete(event.sessionId);
                 return sessions;
-              }
-            })
+              },
+            }),
           },
           SESSION_FAILED: {
             actions: [
@@ -149,18 +169,20 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                   const sessions = new Map(context.activeSessions);
                   sessions.delete(event.sessionId);
                   return sessions;
-                }
+                },
               }),
               ({ event }) => {
-                console.log(`Session ${event.sessionId} failed: ${event.error.message}`);
-              }
-            ]
-          }
+                console.log(
+                  `Session ${event.sessionId} failed: ${event.error.message}`,
+                );
+              },
+            ],
+          },
         },
         always: {
-          target: 'idle',
-          guard: ({ context }) => context.activeSessions.size === 0
-        }
+          target: "idle",
+          guard: ({ context }) => context.activeSessions.size === 0,
+        },
       },
       error: {
         entry: ({ context }) => {
@@ -168,21 +190,22 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
         },
         on: {
           RESET: {
-            target: 'idle',
+            target: "idle",
             actions: assign({
               error: () => null,
               currentSignal: () => null,
               currentPayload: () => null,
-              executionPlan: () => null
-            })
-          }
-        }
-      }
-    }
+              executionPlan: () => null,
+            }),
+          },
+        },
+      },
+    },
   });
 }
 
-export class WorkspaceSupervisor extends BaseAgent implements IWorkspaceSupervisor, IWorkspaceAgent {
+export class WorkspaceSupervisor extends BaseAgent
+  implements IWorkspaceSupervisor, IWorkspaceAgent {
   private workspace?: IWorkspace;
   private model: string;
   private config: any;
@@ -194,10 +217,11 @@ export class WorkspaceSupervisor extends BaseAgent implements IWorkspaceSupervis
     super(workspaceId);
     this.config = config;
     this.model = config.model || "claude-4-sonnet-20250514";
-    
+
     // Set supervisor-specific prompts
     this.prompts = {
-      system: config.prompts?.system || `You are the WorkspaceSupervisor for an Atlas workspace. Your role is to:
+      system: config.prompts?.system ||
+        `You are the WorkspaceSupervisor for an Atlas workspace. Your role is to:
 1. Process incoming signals and create execution plans
 2. Spawn and coordinate agents within sessions  
 3. Manage inter-agent communication
@@ -205,18 +229,20 @@ export class WorkspaceSupervisor extends BaseAgent implements IWorkspaceSupervis
 5. Track progress and handle errors
 
 You have access to the full workspace context and configuration. Create structured plans using Agentic Behavior Trees (ABT) to coordinate agent activities.`,
-      user: config.prompts?.user || ""
+      user: config.prompts?.user || "",
     };
 
     // Initialize the state machine
     this.stateMachine = createSupervisorMachine(this);
     this.stateActor = createActor(this.stateMachine);
-    
+
     // Subscribe to state changes for logging
     this.stateActor.subscribe((state: any) => {
-      this.log(`State transition: ${state.value} | Active sessions: ${state.context.activeSessions.size}`);
+      this.log(
+        `State transition: ${state.value} | Active sessions: ${state.context.activeSessions.size}`,
+      );
     });
-    
+
     // Start the state machine
     this.stateActor.start();
   }
@@ -256,7 +282,7 @@ You have access to the full workspace context and configuration. Create structur
       canManageAgents: true,
       canProcessSignals: true,
       hasGlobalAccess: true,
-      model: this.model
+      model: this.model,
     };
   }
 
@@ -274,13 +300,13 @@ You have access to the full workspace context and configuration. Create structur
     const response = await this.generateLLM(
       this.model,
       this.prompts.system,
-      message
+      message,
     );
-    
+
     return response;
   }
 
-  async* invokeStream(message: string): AsyncIterableIterator<string> {
+  async *invokeStream(message: string): AsyncIterableIterator<string> {
     // For commands, return immediately
     if (message.startsWith("/")) {
       yield this.processCommand(message);
@@ -291,14 +317,14 @@ You have access to the full workspace context and configuration. Create structur
     const response = await this.generateLLM(
       this.model,
       this.prompts.system,
-      message
+      message,
     );
-    
+
     // Stream the response
     // Stream the response character by character
     for (let i = 0; i < response.length; i++) {
       yield response[i];
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
   }
 
@@ -320,12 +346,12 @@ You have access to the full workspace context and configuration. Create structur
   }
 
   isIdle(): boolean {
-    return this.getCurrentState() === 'idle';
+    return this.getCurrentState() === "idle";
   }
 
   isProcessingSignal(): boolean {
     const state = this.getCurrentState();
-    return state === 'analyzing' || state === 'spawningSession';
+    return state === "analyzing" || state === "spawningSession";
   }
 
   hasActiveSessions(): boolean {
@@ -334,42 +360,54 @@ You have access to the full workspace context and configuration. Create structur
 
   canAcceptSignal(): boolean {
     const state = this.getCurrentState();
-    return state === 'idle' || state === 'coordinating';
+    return state === "idle" || state === "coordinating";
   }
 
   // IWorkspaceSupervisor specific methods
-  async spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession> {
-    this.log(`Processing signal: ${signal.id} with payload: ${JSON.stringify(payload || {})}`);
-    
+  async spawnSession(
+    signal: IWorkspaceSignal,
+    payload?: any,
+  ): Promise<IWorkspaceSession> {
+    this.log(
+      `Processing signal: ${signal.id} with payload: ${JSON.stringify(payload || {})}`,
+    );
+
     // Use empty object if no payload provided
     const signalPayload = payload || {};
-    
+
     // Send signal to state machine
-    this.stateActor.send({ type: 'SIGNAL_RECEIVED', signal, payload: signalPayload });
-    
+    this.stateActor.send({
+      type: "SIGNAL_RECEIVED",
+      signal,
+      payload: signalPayload,
+    });
+
     // Wait for the state machine to process the signal
     return new Promise((resolve, reject) => {
       const checkState = () => {
         const state = this.stateActor.getSnapshot();
-        
-        if (state.value === 'coordinating') {
+
+        if (state.value === "coordinating") {
           // Session successfully spawned
           const sessions = Array.from(state.context.activeSessions.values());
           const latestSession = sessions[sessions.length - 1];
           if (latestSession) {
             resolve(latestSession as IWorkspaceSession);
           } else {
-            reject(new Error('Session spawned but not found in context'));
+            reject(new Error("Session spawned but not found in context"));
           }
-        } else if (state.value === 'error') {
+        } else if (state.value === "error") {
           // Error occurred
-          reject(state.context.error || new Error('Unknown error during session spawn'));
+          reject(
+            state.context.error ||
+              new Error("Unknown error during session spawn"),
+          );
         } else {
           // Still processing, check again
           setTimeout(checkState, 100);
         }
       };
-      
+
       checkState();
     });
   }
@@ -389,8 +427,8 @@ You have access to the full workspace context and configuration. Create structur
         data: payload,
         metadata: {
           provider: signal.provider.name,
-          timestamp: new Date().toISOString()
-        }
+          timestamp: new Date().toISOString(),
+        },
       },
       goals: this.inferGoalsFromSignal(signal, payload),
       constraints: {
@@ -398,16 +436,19 @@ You have access to the full workspace context and configuration. Create structur
       },
       suggestedAgents: this.workspace ? Object.keys(this.workspace.agents) : [],
       executionHints: {
-        strategy: 'iterative',
+        strategy: "iterative",
         parallelism: false,
-        maxIterations: 3
+        maxIterations: 3,
       },
-      userPrompt: this.config.intentPrompt || ''
+      userPrompt: this.config.intentPrompt || "",
     };
   }
 
   // Analyze signal using LLM to create intelligent session intent
-  async analyzeSignal(signal: IWorkspaceSignal, payload: any): Promise<SessionIntent> {
+  async analyzeSignal(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<SessionIntent> {
     const analysisPrompt = `Analyze this incoming signal and determine the session intent:
 
 Signal: ${signal.id}
@@ -415,10 +456,10 @@ Provider: ${signal.provider.name}
 Payload: ${JSON.stringify(payload, null, 2)}
 
 Workspace Context:
-- Available Agents: ${this.workspace ? Object.keys(this.workspace.agents || {}).join(', ') : 'none'}
+- Available Agents: ${this.workspace ? Object.keys(this.workspace.agents || {}).join(", ") : "none"}
 - Active Sessions: ${this.getStateMachineContext().activeSessions.size}
 
-${this.config.intentPrompt || ''}
+${this.config.intentPrompt || ""}
 
 Determine:
 1. What are the specific goals of this signal?
@@ -432,7 +473,7 @@ Provide a structured analysis.`;
       const response = await this.generateLLM(
         this.config.model || "claude-4-sonnet-20250514",
         this.prompts.system,
-        analysisPrompt
+        analysisPrompt,
       );
 
       // Parse the response into SessionIntent
@@ -447,21 +488,23 @@ Provide a structured analysis.`;
           data: payload,
           metadata: {
             provider: signal.provider.name,
-            timestamp: new Date().toISOString()
-          }
+            timestamp: new Date().toISOString(),
+          },
         },
         goals: goals.length > 0 ? goals : this.inferGoalsFromSignal(signal, payload),
         constraints: {
           timeLimit: 300000,
-          costLimit: 100
+          costLimit: 100,
         },
-        suggestedAgents: suggestedAgents.length > 0 ? suggestedAgents : (this.workspace ? Object.keys(this.workspace.agents) : []),
+        suggestedAgents: suggestedAgents.length > 0
+          ? suggestedAgents
+          : (this.workspace ? Object.keys(this.workspace.agents) : []),
         executionHints: {
-          strategy: strategy as any || 'iterative',
-          parallelism: response.toLowerCase().includes('parallel'),
-          maxIterations: 3
+          strategy: strategy as any || "iterative",
+          parallelism: response.toLowerCase().includes("parallel"),
+          maxIterations: 3,
         },
-        userPrompt: this.config.intentPrompt || ''
+        userPrompt: this.config.intentPrompt || "",
       };
     } catch (error) {
       this.log(`Error analyzing signal with LLM: ${error}`);
@@ -471,29 +514,32 @@ Provide a structured analysis.`;
   }
 
   // Create filtered session context based on intent
-  async createSessionContext(intent: SessionIntent, signal: IWorkspaceSignal, payload: any): Promise<any> {
+  async createSessionContext(
+    intent: SessionIntent,
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<any> {
     // For now, skip the second LLM call and just use the suggested agents from the intent
     // This speeds up the process significantly
     try {
       // If intent already has suggested agents, use those
       const availableAgents = intent.suggestedAgents && intent.suggestedAgents.length > 0
-        ? this.getAllAgentMetadata().filter(agent => 
-            intent.suggestedAgents?.includes(agent.id))
+        ? this.getAllAgentMetadata().filter((agent) => intent.suggestedAgents?.includes(agent.id))
         : this.getAllAgentMetadata();
-      
+
       return {
         availableAgents,
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,
         additionalContext: {
           workspaceId: this.workspace?.id,
-          sessionIntent: intent
+          sessionIntent: intent,
         },
         additionalPrompts: {
-          signal: this.config.signalPrompts?.[signal.id] || '',
-          session: this.config.prompts?.session || '',
-          evaluation: this.config.prompts?.evaluation || ''
-        }
+          signal: this.config.signalPrompts?.[signal.id] || "",
+          session: this.config.prompts?.session || "",
+          evaluation: this.config.prompts?.evaluation || "",
+        },
       };
     } catch (error) {
       this.log(`Error creating session context: ${error}`);
@@ -501,30 +547,39 @@ Provide a structured analysis.`;
       return {
         availableAgents: this.getAllAgentMetadata(),
         filteredMemory: [],
-        constraints: intent.constraints
+        constraints: intent.constraints,
       };
     }
   }
 
   // Infer goals from signal type and payload
-  private inferGoalsFromSignal(signal: IWorkspaceSignal, payload: any): string[] {
+  private inferGoalsFromSignal(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): string[] {
     // Let the signal provider define its own goals if available
-    if ('inferGoals' in signal.provider && typeof signal.provider.inferGoals === 'function') {
+    if (
+      "inferGoals" in signal.provider &&
+      typeof signal.provider.inferGoals === "function"
+    ) {
       return (signal.provider as any).inferGoals(payload);
     }
-    
+
     // Otherwise use LLM to analyze the signal and payload
     // For now, return generic goals
     return [
       `Process ${signal.id} signal from ${signal.provider.name}`,
-      'Execute appropriate actions based on signal data',
-      'Return results to signal callback'
+      "Execute appropriate actions based on signal data",
+      "Return results to signal callback",
     ];
   }
 
-  async generateExecutionPlan(signal: IWorkspaceSignal, payload: any): Promise<SessionPlan> {
+  async generateExecutionPlan(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<SessionPlan> {
     const intent = this.createSessionIntent(signal, payload);
-    
+
     const planPrompt = `Given the following session intent, create an execution plan:
 
 Intent: ${JSON.stringify(intent, null, 2)}
@@ -545,93 +600,105 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
 
   private getAvailableAgents(): string {
     if (!this.workspace) return "No workspace set";
-    
+
     // Handle serialized workspace with agent metadata
-    if (this.workspace.agents && typeof this.workspace.agents === 'object') {
+    if (this.workspace.agents && typeof this.workspace.agents === "object") {
       return Object.entries(this.workspace.agents)
         .map(([id, agent]: [string, any]) => {
-          if (typeof agent === 'object' && agent.name) {
-            return `- ${agent.name}: ${agent.purpose || ''}`;
+          if (typeof agent === "object" && agent.name) {
+            return `- ${agent.name}: ${agent.purpose || ""}`;
           }
           return `- ${id}`;
         })
-        .join('\n');
+        .join("\n");
     }
-    
+
     return "No agents available";
   }
 
-  private getDefaultPlan(signal: IWorkspaceSignal, payload: any, intent: SessionIntent): SessionPlan {
+  private getDefaultPlan(
+    signal: IWorkspaceSignal,
+    payload: any,
+    intent: SessionIntent,
+  ): SessionPlan {
     // Create a generic plan based on available agents
     this.log(`Workspace agents:`, this.workspace?.agents);
-    
+
     // Handle both full workspace objects and serialized metadata
     let availableAgents: string[] = [];
     if (this.workspace?.agents) {
       // Check if agents is already an object with agent metadata
-      if (typeof this.workspace.agents === 'object' && !Array.isArray(this.workspace.agents)) {
+      if (
+        typeof this.workspace.agents === "object" &&
+        !Array.isArray(this.workspace.agents)
+      ) {
         availableAgents = Object.keys(this.workspace.agents);
       }
     }
-    
-    this.log(`Creating default plan with agents: ${availableAgents.join(', ')}`);
-    
+
+    this.log(
+      `Creating default plan with agents: ${availableAgents.join(", ")}`,
+    );
+
     return {
       intentId: intent.id,
       phases: [{
         id: "default-phase",
         name: "Default Processing",
-        agents: availableAgents.map(agentId => ({
+        agents: availableAgents.map((agentId) => ({
           agentId,
-          task: `Process signal with ${agentId}`
+          task: `Process signal with ${agentId}`,
         })),
-        executionStrategy: "sequential"
+        executionStrategy: "sequential",
       }],
-      reasoning: "Default plan using available agents"
+      reasoning: "Default plan using available agents",
     };
   }
 
-  async executeSessionPlan(session: IWorkspaceSession, plan: SessionPlan, initialPayload: any): Promise<void> {
+  async executeSessionPlan(
+    session: IWorkspaceSession,
+    plan: SessionPlan,
+    initialPayload: any,
+  ): Promise<void> {
     this.log(`Executing plan: ${plan.reasoning}`);
-    
+
     try {
       // Start the session - it will handle its own lifecycle through FSM
       await session.start();
-      
+
       // The session FSM will handle:
       // 1. Planning phase (using the intent)
       // 2. Executing agents
       // 3. Evaluating results
       // 4. Refining if needed
       // 5. Completing or failing
-      
+
       // Monitor session state changes
       const checkInterval = setInterval(() => {
         const status = (session as Session).status;
-        
-        if (status === 'completed') {
+
+        if (status === "completed") {
           clearInterval(checkInterval);
           this.stateActor.send({
-            type: 'SESSION_COMPLETED',
+            type: "SESSION_COMPLETED",
             sessionId: session.id,
-            result: (session as Session).getArtifacts()
+            result: (session as Session).getArtifacts(),
           });
-        } else if (status === 'failed' || status === 'cancelled') {
+        } else if (status === "failed" || status === "cancelled") {
           clearInterval(checkInterval);
           this.stateActor.send({
-            type: 'SESSION_FAILED',
+            type: "SESSION_FAILED",
             sessionId: session.id,
-            error: new Error(`Session ${status}`)
+            error: new Error(`Session ${status}`),
           });
         }
       }, 500);
-      
     } catch (error) {
       // Handle any startup errors
       this.stateActor.send({
-        type: 'SESSION_FAILED',
+        type: "SESSION_FAILED",
         sessionId: session.id,
-        error: error as Error
+        error: error as Error,
       });
       throw error;
     }
@@ -639,14 +706,20 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
 
   private processCommand(command: string): string {
     const [cmd, ...args] = command.slice(1).split(" ");
-    
+
     switch (cmd) {
       case "status":
-        return this.workspace ? JSON.stringify(this.workspace.snapshot(), null, 2) : "No workspace set";
+        return this.workspace
+          ? JSON.stringify(this.workspace.snapshot(), null, 2)
+          : "No workspace set";
       case "agents":
-        return this.workspace ? `Active agents: ${Object.keys(this.workspace.agents).join(", ") || "none"}` : "No workspace set";
+        return this.workspace
+          ? `Active agents: ${Object.keys(this.workspace.agents).join(", ") || "none"}`
+          : "No workspace set";
       case "signals":
-        return this.workspace ? `Configured signals: ${Object.keys(this.workspace.signals).join(", ") || "none"}` : "No workspace set";
+        return this.workspace
+          ? `Configured signals: ${Object.keys(this.workspace.signals).join(", ") || "none"}`
+          : "No workspace set";
       case "sessions":
         return `Active sessions: ${this.sessions.size}`;
       case "state":
@@ -655,10 +728,10 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
         return `State Machine Status:
   Current State: ${state}
   Active Sessions: ${context.activeSessions.size}
-  Current Signal: ${context.currentSignal?.id || 'none'}
-  Has Error: ${context.error ? 'yes' : 'no'}`;
+  Current Signal: ${context.currentSignal?.id || "none"}
+  Has Error: ${context.error ? "yes" : "no"}`;
       case "reset":
-        this.stateActor.send({ type: 'RESET' });
+        this.stateActor.send({ type: "RESET" });
         return "State machine reset to idle state";
       case "help":
         return "Available commands: /status, /agents, /signals, /sessions, /state, /reset, /help";
@@ -670,73 +743,78 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
   // Helper methods for parsing LLM responses
   private extractGoalsFromResponse(response: string): string[] {
     const goals = [];
-    const lines = response.split('\n');
+    const lines = response.split("\n");
     let inGoalsSection = false;
-    
+
     for (const line of lines) {
-      if (line.toLowerCase().includes('goal') || line.toLowerCase().includes('objective')) {
+      if (
+        line.toLowerCase().includes("goal") ||
+        line.toLowerCase().includes("objective")
+      ) {
         inGoalsSection = true;
       }
-      if (inGoalsSection && line.trim().startsWith('-')) {
+      if (inGoalsSection && line.trim().startsWith("-")) {
         goals.push(line.trim().substring(1).trim());
       }
-      if (line.trim() === '' && inGoalsSection) {
+      if (line.trim() === "" && inGoalsSection) {
         inGoalsSection = false;
       }
     }
-    
+
     return goals;
   }
 
   private extractSuggestedAgentsFromResponse(response: string): string[] {
     const agents = [];
     const agentIds = this.workspace ? Object.keys(this.workspace.agents || {}) : [];
-    
+
     for (const agentId of agentIds) {
       if (response.toLowerCase().includes(agentId.toLowerCase())) {
         agents.push(agentId);
       }
     }
-    
+
     return agents;
   }
 
   private extractStrategyFromResponse(response: string): string {
-    if (response.toLowerCase().includes('sequential')) return 'deterministic';
-    if (response.toLowerCase().includes('parallel')) return 'exploratory';
-    if (response.toLowerCase().includes('iterative')) return 'iterative';
-    return 'exploratory';
+    if (response.toLowerCase().includes("sequential")) return "deterministic";
+    if (response.toLowerCase().includes("parallel")) return "exploratory";
+    if (response.toLowerCase().includes("iterative")) return "iterative";
+    return "exploratory";
   }
 
   private extractAvailableAgentsFromResponse(response: string): any[] {
     if (!this.workspace || !this.workspace.agents) return [];
-    
+
     const allAgents = Object.entries(this.workspace.agents);
     const selectedAgents = [];
-    
+
     // If response mentions specific agents, filter to those
     for (const [id, agent] of allAgents) {
-      if (response.toLowerCase().includes(id.toLowerCase()) || 
-          response.toLowerCase().includes('all agents')) {
+      if (
+        response.toLowerCase().includes(id.toLowerCase()) ||
+        response.toLowerCase().includes("all agents")
+      ) {
         selectedAgents.push({
           id,
           name: agent.name?.() || id,
-          type: (agent as any).type || id.replace('-agent', ''),
-          purpose: agent.purpose?.() || ''
+          type: (agent as any).type || id.replace("-agent", ""),
+          purpose: agent.purpose?.() || "",
         });
       }
     }
-    
+
     return selectedAgents;
   }
 
   private getAllAgentMetadata(): any[] {
     if (!this.workspace || !this.workspace.agents) return [];
-    
+
     return Object.entries(this.workspace.agents).map(([id, agent]) => {
       // Check if agent is already metadata (has name as property) or actual agent (has name as function)
-      const isMetadata = typeof (agent as any).name === 'string';
-      
+      const isMetadata = typeof (agent as any).name === "string";
+
       if (isMetadata) {
         // Agent is already metadata
         return agent as any;
@@ -745,8 +823,8 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
         return {
           id,
           name: agent.name?.() || id,
-          type: (agent as any).type || id.replace('-agent', ''),
-          purpose: agent.purpose?.() || ''
+          type: (agent as any).type || id.replace("-agent", ""),
+          purpose: agent.purpose?.() || "",
         };
       }
     });

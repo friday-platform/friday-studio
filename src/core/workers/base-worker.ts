@@ -1,31 +1,31 @@
 /// <reference no-default-lib="true" />
 /// <reference lib="deno.worker" />
 
-import { createActor, createMachine, assign, fromPromise } from "xstate";
-import { logger, type ChildLogger } from "../../utils/logger.ts";
+import { assign, createActor, createMachine, fromPromise } from "xstate";
+import { type ChildLogger, logger } from "../../utils/logger.ts";
 
 // Base worker states
-export type BaseWorkerState = 
-  | 'uninitialized'
-  | 'initializing'
-  | 'ready'
-  | 'busy'
-  | 'error'
-  | 'shutting_down'
-  | 'terminated';
+export type BaseWorkerState =
+  | "uninitialized"
+  | "initializing"
+  | "ready"
+  | "busy"
+  | "error"
+  | "shutting_down"
+  | "terminated";
 
 // Base worker events
 export type BaseWorkerEvent =
-  | { type: 'INIT'; config: any }
-  | { type: 'INIT_SUCCESS' }
-  | { type: 'INIT_ERROR'; error: string }
-  | { type: 'TASK'; taskId: string; data: any }
-  | { type: 'TASK_COMPLETE'; taskId: string; result?: any }
-  | { type: 'TASK_ERROR'; taskId: string; error: string }
-  | { type: 'JOIN_CHANNEL'; channel: string }
-  | { type: 'SET_PORT'; peerId: string; port: MessagePort }
-  | { type: 'SHUTDOWN' }
-  | { type: 'CLEANUP_COMPLETE' };
+  | { type: "INIT"; config: any }
+  | { type: "INIT_SUCCESS" }
+  | { type: "INIT_ERROR"; error: string }
+  | { type: "TASK"; taskId: string; data: any }
+  | { type: "TASK_COMPLETE"; taskId: string; result?: any }
+  | { type: "TASK_ERROR"; taskId: string; error: string }
+  | { type: "JOIN_CHANNEL"; channel: string }
+  | { type: "SET_PORT"; peerId: string; port: MessagePort }
+  | { type: "SHUTDOWN" }
+  | { type: "CLEANUP_COMPLETE" };
 
 // Base worker context
 export interface BaseWorkerContext {
@@ -43,184 +43,199 @@ export interface BaseWorkerContext {
 export function createBaseWorkerMachine(id: string, type: string) {
   return createMachine({
     id: `worker-${id}`,
-    initial: 'uninitialized',
+    initial: "uninitialized",
     context: {
       id,
       type,
       channels: new Set(),
       ports: new Map(),
-      broadcastChannels: new Map()
+      broadcastChannels: new Map(),
     } as BaseWorkerContext,
     states: {
       uninitialized: {
         on: {
           INIT: {
-            target: 'initializing',
+            target: "initializing",
             actions: [
-              ({ event }) => console.log(`[BaseWorker] INIT event received with config:`, event.config),
+              ({ event }) =>
+                console.log(
+                  `[BaseWorker] INIT event received with config:`,
+                  event.config,
+                ),
               assign({
-                config: ({ event }) => event.config
-              })
-            ]
-          }
-        }
+                config: ({ event }) => event.config,
+              }),
+            ],
+          },
+        },
       },
       initializing: {
         entry: () => console.log(`[BaseWorker] Entering initializing state`),
         invoke: {
-          id: 'initialize',
-          src: 'performInitialization',
+          id: "initialize",
+          src: "performInitialization",
           input: ({ context }) => ({ config: context.config }),
           onDone: {
-            target: 'ready',
-            actions: 'notifyInitialized'
+            target: "ready",
+            actions: "notifyInitialized",
           },
           onError: {
-            target: 'error',
+            target: "error",
             actions: [
               ({ event }) => console.log(`[BaseWorker] Initialization error:`, event),
               assign({
-                error: ({ event }) => String(event.error)
-              })
-            ]
-          }
-        }
+                error: ({ event }) => String(event.error),
+              }),
+            ],
+          },
+        },
       },
       ready: {
         on: {
           TASK: {
-            target: 'busy',
+            target: "busy",
             actions: assign({
-              currentTask: ({ event }) => event.taskId
-            })
+              currentTask: ({ event }) => event.taskId,
+            }),
           },
           JOIN_CHANNEL: {
-            actions: 'joinBroadcastChannel'
+            actions: "joinBroadcastChannel",
           },
           SET_PORT: {
-            actions: 'setupMessagePort'
+            actions: "setupMessagePort",
           },
           SHUTDOWN: {
-            target: 'shutting_down'
-          }
-        }
+            target: "shutting_down",
+          },
+        },
       },
       busy: {
         invoke: {
-          id: 'processTask',
-          src: 'performTask',
-          input: ({ event, context }) => ({ 
+          id: "processTask",
+          src: "performTask",
+          input: ({ event, context }) => ({
             taskId: context.currentTask,
-            data: event.type === 'TASK' ? event.data : undefined 
+            data: event.type === "TASK" ? event.data : undefined,
           }),
           onDone: {
-            target: 'ready',
-            actions: ['notifyTaskComplete', assign({ currentTask: undefined })]
+            target: "ready",
+            actions: ["notifyTaskComplete", assign({ currentTask: undefined })],
           },
           onError: {
-            target: 'ready',
-            actions: ['notifyTaskError', assign({ currentTask: undefined })]
-          }
+            target: "ready",
+            actions: ["notifyTaskError", assign({ currentTask: undefined })],
+          },
         },
         on: {
           SHUTDOWN: {
-            target: 'shutting_down'
-          }
-        }
+            target: "shutting_down",
+          },
+        },
       },
       error: {
         on: {
           INIT: {
-            target: 'initializing',
+            target: "initializing",
             actions: assign({
-              error: undefined
-            })
+              error: undefined,
+            }),
           },
           SHUTDOWN: {
-            target: 'shutting_down'
-          }
-        }
+            target: "shutting_down",
+          },
+        },
       },
       shutting_down: {
         invoke: {
-          id: 'cleanup',
-          src: 'performCleanup',
+          id: "cleanup",
+          src: "performCleanup",
           onDone: {
-            target: 'terminated'
-          }
-        }
+            target: "terminated",
+          },
+        },
       },
       terminated: {
-        type: 'final',
-        entry: () => self.close()
-      }
-    }
+        type: "final",
+        entry: () => self.close(),
+      },
+    },
   });
 }
 
 // Base worker class that specific workers can extend
-export abstract class BaseWorker<TContext extends BaseWorkerContext = BaseWorkerContext> {
+export abstract class BaseWorker<
+  TContext extends BaseWorkerContext = BaseWorkerContext,
+> {
   protected actor: any;
   protected context: TContext;
   protected logger: ChildLogger;
-  
+
   constructor(id: string, type: string) {
     this.context = {
       id,
       type,
       channels: new Set(),
       ports: new Map(),
-      broadcastChannels: new Map()
+      broadcastChannels: new Map(),
     } as TContext;
-    
+
     // Create child logger for this worker
     this.logger = logger.createChildLogger({
       workerId: id,
-      workerType: type
+      workerType: type,
     });
-    
+
     const machine = createBaseWorkerMachine(id, type).provide({
       actions: {
         notifyInitialized: () => {
-          self.postMessage({ type: 'initialized' });
+          self.postMessage({ type: "initialized" });
         },
         notifyTaskComplete: ({ context, event }) => {
-          console.log(`[BaseWorker] Task complete event:`, event.type, 'taskId:', context.currentTask);
-          self.postMessage({ 
-            type: 'result',
+          console.log(
+            `[BaseWorker] Task complete event:`,
+            event.type,
+            "taskId:",
+            context.currentTask,
+          );
+          self.postMessage({
+            type: "result",
             taskId: context.currentTask,
-            result: event.output
+            result: event.output,
           });
         },
         notifyTaskError: ({ context, event }) => {
-          if (event.type === 'error.platform.processTask') {
+          if (event.type === "error.platform.processTask") {
             self.postMessage({
-              type: 'error',
+              type: "error",
               taskId: context.currentTask,
-              error: event.error
+              error: event.error,
             });
           }
         },
         joinBroadcastChannel: ({ context, event }) => {
-          if (event.type === 'JOIN_CHANNEL') {
+          if (event.type === "JOIN_CHANNEL") {
             const channel = new BroadcastChannel(event.channel);
             context.broadcastChannels.set(event.channel, channel);
             context.channels.add(event.channel);
-            
+
             // Setup channel listener
             channel.onmessage = (e) => this.handleBroadcast(event.channel, e.data);
           }
         },
         setupMessagePort: ({ context, event }) => {
-          if (event.type === 'SET_PORT') {
+          if (event.type === "SET_PORT") {
             context.ports.set(event.peerId, event.port);
-            event.port.onmessage = (e: MessageEvent) => this.handleDirectMessage(event.peerId, e.data);
+            event.port.onmessage = (e: MessageEvent) =>
+              this.handleDirectMessage(event.peerId, e.data);
           }
-        }
+        },
       },
       actors: {
         performInitialization: fromPromise(async ({ input }) => {
-          console.log(`[BaseWorker] Starting initialization with config:`, input.config);
+          console.log(
+            `[BaseWorker] Starting initialization with config:`,
+            input.config,
+          );
           await this.initialize(input.config);
           console.log(`[BaseWorker] Initialization complete`);
         }),
@@ -230,48 +245,57 @@ export abstract class BaseWorker<TContext extends BaseWorkerContext = BaseWorker
         }),
         performCleanup: fromPromise(async () => {
           await this.cleanup();
-          
+
           // Close all channels and ports
-          this.context.broadcastChannels.forEach(channel => channel.close());
-          this.context.ports.forEach(port => port.close());
-        })
-      }
+          this.context.broadcastChannels.forEach((channel) => channel.close());
+          this.context.ports.forEach((port) => port.close());
+        }),
+      },
     });
-    
+
     this.actor = createActor(machine);
     this.actor.start();
-    
+
     // Setup message handler
     self.onmessage = (event) => this.handleMessage(event.data);
   }
-  
+
   private handleMessage(message: any) {
-    console.log(`[BaseWorker ${this.context.type}] Received message:`, message.type);
+    console.log(
+      `[BaseWorker ${this.context.type}] Received message:`,
+      message.type,
+    );
     switch (message.type) {
-      case 'init':
-        console.log(`[BaseWorker ${this.context.type}] Init with config:`, message.config);
+      case "init":
+        console.log(
+          `[BaseWorker ${this.context.type}] Init with config:`,
+          message.config,
+        );
         this.context.config = message.config;
-        this.actor.send({ type: 'INIT', config: message.config });
+        this.actor.send({ type: "INIT", config: message.config });
         break;
-      case 'shutdown':
-        this.actor.send({ type: 'SHUTDOWN' });
+      case "shutdown":
+        this.actor.send({ type: "SHUTDOWN" });
         break;
-      case 'joinChannel':
-        this.actor.send({ type: 'JOIN_CHANNEL', channel: message.channel });
+      case "joinChannel":
+        this.actor.send({ type: "JOIN_CHANNEL", channel: message.channel });
         break;
-      case 'setPort':
-        this.actor.send({ 
-          type: 'SET_PORT', 
-          peerId: message.peerId, 
-          port: message.port 
+      case "setPort":
+        this.actor.send({
+          type: "SET_PORT",
+          peerId: message.peerId,
+          port: message.port,
         });
         break;
-      case 'task':
-        console.log(`[BaseWorker ${this.context.type}] Task received:`, message.taskId);
-        this.actor.send({ 
-          type: 'TASK', 
-          taskId: message.taskId, 
-          data: message.data 
+      case "task":
+        console.log(
+          `[BaseWorker ${this.context.type}] Task received:`,
+          message.taskId,
+        );
+        this.actor.send({
+          type: "TASK",
+          taskId: message.taskId,
+          data: message.data,
         });
         break;
       default:
@@ -279,25 +303,25 @@ export abstract class BaseWorker<TContext extends BaseWorkerContext = BaseWorker
         this.handleCustomMessage(message);
     }
   }
-  
+
   // Abstract methods that subclasses must implement
   protected abstract initialize(config: any): Promise<void>;
   protected abstract processTask(taskId: string, data: any): Promise<any>;
   protected abstract cleanup(): Promise<void>;
-  
+
   // Optional methods that subclasses can override
   protected handleCustomMessage(message: any): void {
     console.warn(`[${this.context.type}] Unhandled message:`, message);
   }
-  
+
   protected handleBroadcast(channel: string, data: any): void {
     console.log(`[${this.context.type}] Broadcast on ${channel}:`, data);
   }
-  
+
   protected handleDirectMessage(peerId: string, data: any): void {
     console.log(`[${this.context.type}] Direct message from ${peerId}:`, data);
   }
-  
+
   // Utility methods for workers
   protected broadcast(channel: string, message: any): void {
     const broadcastChannel = this.context.broadcastChannels.get(channel);
@@ -305,18 +329,17 @@ export abstract class BaseWorker<TContext extends BaseWorkerContext = BaseWorker
       broadcastChannel.postMessage(message);
     }
   }
-  
+
   protected sendDirect(peerId: string, message: any): void {
     const port = this.context.ports.get(peerId);
     if (port) {
       port.postMessage(message);
     }
   }
-  
+
   protected log(...args: any[]): void {
-    const message = args.map(arg => 
-      typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-    ).join(' ');
+    const message = args.map((arg) => typeof arg === "object" ? JSON.stringify(arg) : String(arg))
+      .join(" ");
     this.logger.info(message);
   }
 }

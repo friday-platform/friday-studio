@@ -1,14 +1,14 @@
-import type { 
-  IWorkspaceSession, 
-  IWorkspaceSignal, 
-  IWorkspaceSignalCallback,
+import type {
   IWorkspaceAgent,
-  IWorkspaceWorkflow,
+  IWorkspaceArtifact,
+  IWorkspaceSession,
+  IWorkspaceSignal,
+  IWorkspaceSignalCallback,
   IWorkspaceSource,
-  IWorkspaceArtifact
+  IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";
-import { createMachine, createActor, assign, fromPromise } from "xstate";
+import { assign, createActor, createMachine, fromPromise } from "xstate";
 
 // Session Intent types
 export interface SessionIntent {
@@ -26,12 +26,12 @@ export interface SessionIntent {
   };
   suggestedAgents?: string[];
   executionHints?: {
-    strategy?: 'exploratory' | 'deterministic' | 'iterative';
+    strategy?: "exploratory" | "deterministic" | "iterative";
     parallelism?: boolean;
     maxIterations?: number;
   };
   successCriteria?: {
-    type: 'all' | 'any' | 'custom';
+    type: "all" | "any" | "custom";
     conditions: Array<{
       description: string;
       evaluator?: (result: any) => boolean;
@@ -51,7 +51,7 @@ export interface SessionPlan {
       dependencies?: string[];
       expectedOutputs?: string[];
     }>;
-    executionStrategy: 'sequential' | 'parallel';
+    executionStrategy: "sequential" | "parallel";
     successCriteria?: string;
   }>;
   estimatedDuration?: number;
@@ -76,13 +76,16 @@ type SessionContext = {
   maxIterations?: number;
 };
 
-type SessionEvent = 
+type SessionEvent =
   | { type: "START" }
   | { type: "INTENT_CREATED"; intent: SessionIntent }
   | { type: "PLAN_CREATED"; plan: SessionPlan }
   | { type: "SIGNAL_PROCESSED"; artifact: IWorkspaceArtifact }
   | { type: "AGENTS_EXECUTED"; results: any[] }
-  | { type: "EVALUATION_COMPLETE"; decision: 'complete' | 'refine' | 'retry' | 'escalate' }
+  | {
+    type: "EVALUATION_COMPLETE";
+    decision: "complete" | "refine" | "retry" | "escalate";
+  }
   | { type: "REFINEMENT_COMPLETE"; refinedPlan: SessionPlan }
   | { type: "RESULTS_COLLECTED" }
   | { type: "ERROR"; error: Error }
@@ -125,22 +128,28 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "createPlan",
-        src: fromPromise(async ({ input }: { input: { intent?: SessionIntent; sessionId: string } }) => {
-          console.log(`[Session ${input.sessionId}] Creating execution plan from intent`);
-          // In a real implementation, this would use the supervisor to create a plan
-          // For now, return a simple plan
-          const plan: SessionPlan = {
-            intentId: input.intent?.id || "default",
-            phases: [{
-              id: "phase1",
-              name: "Process signals and execute agents",
-              agents: [],
-              executionStrategy: "sequential",
-            }],
-            reasoning: "Default execution plan",
-          };
-          return plan;
-        }),
+        src: fromPromise(
+          async (
+            { input }: { input: { intent?: SessionIntent; sessionId: string } },
+          ) => {
+            console.log(
+              `[Session ${input.sessionId}] Creating execution plan from intent`,
+            );
+            // In a real implementation, this would use the supervisor to create a plan
+            // For now, return a simple plan
+            const plan: SessionPlan = {
+              intentId: input.intent?.id || "default",
+              phases: [{
+                id: "phase1",
+                name: "Process signals and execute agents",
+                agents: [],
+                executionStrategy: "sequential",
+              }],
+              reasoning: "Default execution plan",
+            };
+            return plan;
+          },
+        ),
         input: ({ context }) => ({
           intent: context.intent,
           sessionId: context.sessionId,
@@ -165,24 +174,32 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "processSignal",
-        src: fromPromise(async ({ input }: { input: { signal: IWorkspaceSignal; sessionId: string } }) => {
-          console.log(`[Session ${input.sessionId}] Processing signal ${input.signal.id} from ${input.signal.provider.name}`);
-          await input.signal.trigger();
-          
-          const artifact: IWorkspaceArtifact = {
-            id: crypto.randomUUID(),
-            type: "signal_result",
-            data: {
-              signalId: input.signal.id,
-              provider: input.signal.provider,
-              processedAt: new Date()
+        src: fromPromise(
+          async (
+            { input }: {
+              input: { signal: IWorkspaceSignal; sessionId: string };
             },
-            createdAt: new Date(),
-            createdBy: input.sessionId
-          };
-          
-          return artifact;
-        }),
+          ) => {
+            console.log(
+              `[Session ${input.sessionId}] Processing signal ${input.signal.id} from ${input.signal.provider.name}`,
+            );
+            await input.signal.trigger();
+
+            const artifact: IWorkspaceArtifact = {
+              id: crypto.randomUUID(),
+              type: "signal_result",
+              data: {
+                signalId: input.signal.id,
+                provider: input.signal.provider,
+                processedAt: new Date(),
+              },
+              createdAt: new Date(),
+              createdBy: input.sessionId,
+            };
+
+            return artifact;
+          },
+        ),
         input: ({ context }) => ({
           signal: context.signals[context.currentSignalIndex],
           sessionId: context.sessionId,
@@ -190,7 +207,9 @@ const sessionMachine = createMachine({
         onDone: {
           actions: [
             assign({
-              artifacts: ({ context, event }) => [...context.artifacts, event.output],
+              artifacts: (
+                { context, event },
+              ) => [...context.artifacts, event.output],
               currentSignalIndex: ({ context }) => context.currentSignalIndex + 1,
             }),
           ],
@@ -221,22 +240,32 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "executeAgents",
-        src: fromPromise(async ({ input }: { input: { agents?: IWorkspaceAgent[]; sessionId: string } }) => {
-          if (!input.agents || input.agents.length === 0) {
-            return [];
-          }
-          
-          console.log(`[Session ${input.sessionId}] Executing ${input.agents.length} agents`);
-          const results = [];
-          
-          for (const agent of input.agents) {
-            console.log(`[Session ${input.sessionId}] Running agent ${agent.name()}`);
-            // Agent execution would happen here
-            results.push({ agentId: agent.id, status: "completed" });
-          }
-          
-          return results;
-        }),
+        src: fromPromise(
+          async (
+            { input }: {
+              input: { agents?: IWorkspaceAgent[]; sessionId: string };
+            },
+          ) => {
+            if (!input.agents || input.agents.length === 0) {
+              return [];
+            }
+
+            console.log(
+              `[Session ${input.sessionId}] Executing ${input.agents.length} agents`,
+            );
+            const results = [];
+
+            for (const agent of input.agents) {
+              console.log(
+                `[Session ${input.sessionId}] Running agent ${agent.name()}`,
+              );
+              // Agent execution would happen here
+              results.push({ agentId: agent.id, status: "completed" });
+            }
+
+            return results;
+          },
+        ),
         input: ({ context }) => ({
           agents: context.agents,
           sessionId: context.sessionId,
@@ -271,29 +300,36 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "evaluateResults",
-        src: fromPromise(async ({ input }: { input: { 
-          artifacts: IWorkspaceArtifact[]; 
-          intent?: SessionIntent;
-          currentIteration?: number;
-          sessionId: string;
-        }}) => {
-          console.log(`[Session ${input.sessionId}] Evaluating results (iteration ${input.currentIteration || 0})`);
-          
+        src: fromPromise(async ({ input }: {
+          input: {
+            artifacts: IWorkspaceArtifact[];
+            intent?: SessionIntent;
+            currentIteration?: number;
+            sessionId: string;
+          };
+        }) => {
+          console.log(
+            `[Session ${input.sessionId}] Evaluating results (iteration ${
+              input.currentIteration || 0
+            })`,
+          );
+
           // In a real implementation, supervisor would evaluate against success criteria
           // For now, simple logic
-          const maxIterations = input.intent?.executionHints?.maxIterations || 3;
+          const maxIterations = input.intent?.executionHints?.maxIterations ||
+            3;
           const currentIteration = input.currentIteration || 0;
-          
+
           if (currentIteration >= maxIterations - 1) {
-            return 'complete';
+            return "complete";
           }
-          
+
           // Simulate evaluation logic
           const hasAllResults = input.artifacts.length > 0;
           if (hasAllResults) {
-            return 'complete';
+            return "complete";
           } else {
-            return 'refine';
+            return "refine";
           }
         }),
         input: ({ context }) => ({
@@ -332,28 +368,28 @@ const sessionMachine = createMachine({
           target: "completed",
           guard: ({ context }) => {
             const lastResult = context.artifacts[context.artifacts.length - 1];
-            return lastResult?.data === 'complete';
+            return lastResult?.data === "complete";
           },
         },
         {
           target: "refining",
           guard: ({ context }) => {
             const lastResult = context.artifacts[context.artifacts.length - 1];
-            return lastResult?.data === 'refine';
+            return lastResult?.data === "refine";
           },
         },
         {
           target: "executingAgents",
           guard: ({ context }) => {
             const lastResult = context.artifacts[context.artifacts.length - 1];
-            return lastResult?.data === 'retry';
+            return lastResult?.data === "retry";
           },
         },
         {
           target: "failed",
           guard: ({ context }) => {
             const lastResult = context.artifacts[context.artifacts.length - 1];
-            return lastResult?.data === 'escalate';
+            return lastResult?.data === "escalate";
           },
         },
       ],
@@ -364,13 +400,17 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "refinePlan",
-        src: fromPromise(async ({ input }: { input: { 
-          plan?: SessionPlan;
-          artifacts: IWorkspaceArtifact[];
-          sessionId: string;
-        }}) => {
-          console.log(`[Session ${input.sessionId}] Refining execution plan based on evaluation`);
-          
+        src: fromPromise(async ({ input }: {
+          input: {
+            plan?: SessionPlan;
+            artifacts: IWorkspaceArtifact[];
+            sessionId: string;
+          };
+        }) => {
+          console.log(
+            `[Session ${input.sessionId}] Refining execution plan based on evaluation`,
+          );
+
           // In a real implementation, supervisor would refine the plan
           // For now, return the same plan with a modification note
           const refinedPlan: SessionPlan = {
@@ -381,7 +421,7 @@ const sessionMachine = createMachine({
             }),
             reasoning: `${input.plan?.reasoning || ""} - Refined based on iteration results`,
           };
-          
+
           return refinedPlan;
         }),
         input: ({ context }) => ({
@@ -449,7 +489,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
 
   constructor(
-    workspaceId: string, 
+    workspaceId: string,
     signals: {
       triggers: IWorkspaceSignal[];
       callback: IWorkspaceSignalCallback | ((result: any) => Promise<void>);
@@ -457,22 +497,22 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     agents?: IWorkspaceAgent[],
     workflows?: IWorkspaceWorkflow[],
     sources?: IWorkspaceSource[],
-    intent?: SessionIntent
+    intent?: SessionIntent,
   ) {
     super(workspaceId);
-    
+
     this.signals = {
       triggers: signals.triggers,
-      callback: typeof signals.callback === 'function' 
+      callback: typeof signals.callback === "function"
         ? new FunctionCallback(signals.callback)
-        : signals.callback
+        : signals.callback,
     };
-    
+
     this.agents = agents;
     this.workflows = workflows;
     this.sources = sources;
     this.intent = intent;
-    
+
     // Initialize the state machine
     this._stateMachine = createActor(sessionMachine, {
       input: {
@@ -489,14 +529,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         maxIterations: intent?.executionHints?.maxIterations || 3,
       },
     });
-    
+
     // Subscribe to state changes
     this._stateMachine.subscribe((snapshot) => {
       const context = snapshot.context;
       this._progress = context.progress;
       this._artifacts = context.artifacts;
       this._startTime = context.startTime;
-      
+
       // Handle state transitions
       if (snapshot.matches("completed")) {
         this._isRunning = false;
@@ -504,34 +544,44 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         this.signals.callback.onComplete();
       } else if (snapshot.matches("failed")) {
         this._isRunning = false;
-        this.signals.callback.onError(context.error || new Error("Session failed"));
-      } else if (snapshot.matches("processingSignals") || snapshot.matches("executingAgents")) {
+        this.signals.callback.onError(
+          context.error || new Error("Session failed"),
+        );
+      } else if (
+        snapshot.matches("processingSignals") ||
+        snapshot.matches("executingAgents")
+      ) {
         this._isRunning = true;
       }
-      
+
       // Add context to session for each processed signal
-      if (snapshot.matches("processingSignals") && context.artifacts.length > 0) {
+      if (
+        snapshot.matches("processingSignals") && context.artifacts.length > 0
+      ) {
         const lastArtifact = context.artifacts[context.artifacts.length - 1];
         this.context.add({
           source: {
             type: "signal",
-            id: lastArtifact.data.signalId
+            id: lastArtifact.data.signalId,
           },
-          detail: `Signal from ${lastArtifact.data.provider.name} processed at ${lastArtifact.data.processedAt}`
+          detail:
+            `Signal from ${lastArtifact.data.provider.name} processed at ${lastArtifact.data.processedAt}`,
         });
       }
     });
-    
+
     // Start the state machine
     this._stateMachine.start();
   }
 
   async start(): Promise<void> {
-    console.log(`[Session ${this.id}] Starting session with ${this.signals.triggers.length} signals`);
-    
+    console.log(
+      `[Session ${this.id}] Starting session with ${this.signals.triggers.length} signals`,
+    );
+
     // Send START event to the state machine
     this._stateMachine.send({ type: "START" });
-    
+
     // Wait for the state machine to reach a final state
     await new Promise<void>((resolve) => {
       const subscription = this._stateMachine.subscribe((snapshot) => {
@@ -545,10 +595,10 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
   async cancel(): Promise<void> {
     console.log(`[Session ${this.id}] Cancelling session`);
-    
+
     // Send CANCEL event to the state machine
     this._stateMachine.send({ type: "CANCEL" });
-    
+
     // Cancel any running agents
     if (this.agents) {
       for (const agent of this.agents) {
@@ -564,42 +614,48 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   summarize(): string {
     const duration = this._startTime ? Date.now() - this._startTime.getTime() : 0;
     const status = this._isRunning ? "running" : this._progress === 100 ? "completed" : "cancelled";
-    
+
     return `Session ${this.id}: ${status} (${this.progress()}%) - ${this.signals.triggers.length} signals, ${this._artifacts.length} artifacts, ${duration}ms`;
   }
 
   getArtifacts(): IWorkspaceArtifact[] {
     return [...this._artifacts];
   }
-  
+
   get status(): string {
     const snapshot = this._stateMachine.getSnapshot();
-    
+
     if (snapshot.matches("created")) return "pending";
-    if (snapshot.matches("starting") || snapshot.matches("processingSignals") || 
-        snapshot.matches("executingAgents") || snapshot.matches("collectingResults")) {
+    if (
+      snapshot.matches("starting") || snapshot.matches("processingSignals") ||
+      snapshot.matches("executingAgents") ||
+      snapshot.matches("collectingResults")
+    ) {
       return "running";
     }
     if (snapshot.matches("completed")) return "completed";
     if (snapshot.matches("failed")) {
       return snapshot.context.error?.message === "Session cancelled" ? "cancelled" : "failed";
     }
-    
+
     return "pending";
   }
-  
+
   complete(result: any): void {
     this._progress = 100;
     this._isRunning = false;
     this.signals.callback.onSuccess(result);
     this.signals.callback.onComplete();
   }
-  
+
   updateProgress(step: string, data: any): void {
     const snapshot = this._stateMachine.getSnapshot();
     const state = snapshot.value;
-    console.log(`[Session ${this.id}] State: ${state}, Progress: ${step}`, data);
-    
+    console.log(
+      `[Session ${this.id}] State: ${state}, Progress: ${step}`,
+      data,
+    );
+
     // Log detailed state machine information
     console.log(`[Session ${this.id}] Current state machine context:`, {
       state: state,
@@ -614,7 +670,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   getCurrentState(): string {
     return String(this._stateMachine.getSnapshot().value);
   }
-  
+
   // Add a method to get state machine context for monitoring
   getStateMachineContext(): SessionContext {
     return this._stateMachine.getSnapshot().context;
@@ -625,14 +681,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 export class WorkspaceSession extends Session {
   constructor(workspaceId: string, triggerSignal: IWorkspaceSignal) {
     super(
-      workspaceId, 
+      workspaceId,
       {
         triggers: [triggerSignal],
-        callback: new DefaultSignalCallback()
+        callback: new DefaultSignalCallback(),
       },
       undefined, // agents
       undefined, // workflows
-      undefined  // sources
+      undefined, // sources
     );
   }
 }
@@ -661,23 +717,23 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
 
 class FunctionCallback implements IWorkspaceSignalCallback {
   constructor(private fn: (result: any) => Promise<void>) {}
-  
+
   async execute(): Promise<void> {
     // Function callback doesn't use execute
   }
-  
+
   validate(): boolean {
     return true;
   }
-  
+
   async onSuccess(result: any): Promise<void> {
     await this.fn(result);
   }
-  
+
   onError(error: Error): void {
     console.error("Signal processing failed:", error);
   }
-  
+
   onComplete(): void {
     console.log("All signals processed");
   }
