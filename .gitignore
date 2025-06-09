@@ -21,4 +21,7 @@ Thumbs.db
 # Logs
 *.log
 
+# AI-related files
+tasks
+
 lgtm/

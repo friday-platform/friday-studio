@@ -2,12 +2,11 @@ import type {
   ISignalProvider, 
   IProvider,
   ProviderState, 
-  ProviderStatus,
   HealthStatus,
-  ProviderType,
   IProviderSignal,
   ProviderConfig
 } from "../types.ts";
+import { ProviderStatus, ProviderType } from "../types.ts";
 import { AtlasScope } from "../../scope.ts";
 import type { IWorkspaceSignal } from "../../../types/core.ts";
 
@@ -42,7 +41,7 @@ export class HttpWebhookProvider implements ISignalProvider {
       
     } catch (error) {
       this.state.status = ProviderStatus.ERROR;
-      this.state.error = error.message;
+      this.state.error = error instanceof Error ? error.message : String(error);
       throw error;
     }
   }

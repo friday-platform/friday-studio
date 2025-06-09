@@ -1,14 +1,12 @@
-import type { 
-  IWorkspace, 
-  IWorkspaceMember, 
-  IWorkspaceSignal, 
-  IWorkspaceAgent,
-  IWorkspaceWorkflow,
-  IWorkspaceSource,
+import type {
+  IWorkspace,
   IWorkspaceAction,
-  IWorkspaceSession,
-  IWorkspaceArtifact,
-  IWorkspaceSupervisor
+  IWorkspaceAgent,
+  IWorkspaceMember,
+  IWorkspaceSignal,
+  IWorkspaceSource,
+  IWorkspaceSupervisor,
+  IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";
 
@@ -24,8 +22,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
   public sources: Record<string, IWorkspaceSource> = {};
   public actions: Record<string, IWorkspaceAction> = {};
 
-  // Note: supervisor is created by runtime, not by workspace
-  public supervisor?: IWorkspaceSupervisor;
+  // Note: supervisor is inherited from AtlasScope and created by runtime, not by workspace
 
   constructor(owner: IWorkspaceMember) {
     super();
@@ -135,7 +132,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
       actions: Object.keys(this.actions).length,
       memory: this.memory.size(),
       context: this.context.size(),
-      messages: this.messages.history.length
+      messages: this.messages.history.length,
     };
   }
 
@@ -146,20 +143,20 @@ export class Workspace extends AtlasScope implements IWorkspace {
     return {
       id: this.id,
       members: this.members,
-      signals: Object.values(this.signals).map(s => ({
+      signals: Object.values(this.signals).map((s) => ({
         id: s.id,
         provider: s.provider,
         // Add other signal properties as needed
       })),
-      agents: Object.values(this.agents).map(a => ({
+      agents: Object.values(this.agents).map((a) => ({
         id: a.id,
         name: a.name(),
-        type: (a as any).type || 'unknown',
-        status: a.status
+        type: (a as any).type || "unknown",
+        status: a.status,
       })),
       workflows: Object.values(this.workflows),
       sources: Object.values(this.sources),
-      actions: Object.values(this.actions)
+      actions: Object.values(this.actions),
     };
   }
 
@@ -168,22 +165,22 @@ export class Workspace extends AtlasScope implements IWorkspace {
    */
   static fromConfig(config: any, owner: IWorkspaceMember): Workspace {
     const workspace = new Workspace(owner);
-    
+
     // Restore ID if provided
     if (config.id) {
       (workspace as any).id = config.id;
     }
-    
+
     // Add signals
     if (config.signals) {
       for (const signal of config.signals) {
         workspace.addSignal(signal);
       }
     }
-    
+
     // Note: Agents are not added here as they need to be created via AgentRegistry
     // The runtime will handle agent recreation
-    
+
     return workspace;
   }
 }

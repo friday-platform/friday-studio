@@ -1,4 +1,11 @@
-import type { IAtlasAgent, IAtlasScope, ITempestContextManager, ITempestMemoryManager, ITempestMessageManager } from "../../types/core.ts";
+import type {
+  IAtlasAgent,
+  IAtlasScope,
+  ITempestContextManager,
+  ITempestMemoryManager,
+  ITempestMessageManager,
+  IWorkspaceSupervisor,
+} from "../../types/core.ts";
 import { ContextManager as Context } from "../context.ts";
 import { MemoryManager as Memory } from "../memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
@@ -8,13 +15,13 @@ import { generateText, streamText } from "npm:ai";
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
   parentScopeId?: string;
-  supervisor?: any;
+  supervisor?: IWorkspaceSupervisor;
   context: ITempestContextManager;
   memory: ITempestMemoryManager;
   messages: ITempestMessageManager;
   prompts: { system: string; user: string };
   gates: any[] = [];
-  
+
   constructor(id?: string) {
     this.id = id || crypto.randomUUID();
     this.context = new Context();
@@ -22,10 +29,10 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     this.messages = new Messages();
     this.prompts = {
       system: "",
-      user: ""
+      user: "",
     };
   }
-  
+
   // IAtlasAgent interface methods
   abstract name(): string;
   abstract nickname(): string;
@@ -33,32 +40,32 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   abstract provider(): string;
   abstract purpose(): string;
   abstract controls(): object;
-  
+
   getAgentPrompts(): { system: string; user: string } {
     return this.prompts;
   }
-  
+
   scope(): IAtlasScope {
     return this;
   }
-  
+
   // IAtlasScope methods
   newConversation(): ITempestMessageManager {
     return new Messages();
   }
-  
+
   getConversation(): ITempestMessageManager {
     return this.messages;
   }
-  
+
   archiveConversation(): void {
     // TODO: Implement conversation archiving
   }
-  
+
   deleteConversation(): void {
     this.messages = new Messages();
   }
-  
+
   // Utility methods for logging
   protected log(message: string, context?: any): void {
     const prefix = `[${this.name()}]`;
@@ -68,53 +75,61 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       console.log(prefix, message);
     }
   }
-  
+
   // LLM generation methods
-  protected async generateLLM(model: string, systemPrompt: string, userPrompt: string): Promise<string> {
+  async generateLLM(
+    model: string,
+    systemPrompt: string,
+    userPrompt: string
+  ): Promise<string> {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY not found in environment variables");
     }
-    
+
     const anthropic = createAnthropic({ apiKey });
-    
+
     try {
       const { text } = await generateText({
         model: anthropic(model),
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
         temperature: 0.7,
-        maxTokens: 2000
+        maxTokens: 2000,
       });
-      
+
       return text;
     } catch (error) {
       this.log(`LLM generation error: ${error}`);
       throw error;
     }
   }
-  
-  protected async *generateLLMStream(model: string, systemPrompt: string, userPrompt: string): AsyncGenerator<string> {
+
+  async *generateLLMStream(
+    model: string,
+    systemPrompt: string,
+    userPrompt: string
+  ): AsyncGenerator<string> {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY not found in environment variables");
     }
-    
+
     const anthropic = createAnthropic({ apiKey });
-    
+
     try {
       const { textStream } = await streamText({
         model: anthropic(model),
         messages: [
           { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt }
+          { role: "user", content: userPrompt },
         ],
         temperature: 0.7,
-        maxTokens: 2000
+        maxTokens: 2000,
       });
-      
+
       for await (const chunk of textStream) {
         yield chunk;
       }

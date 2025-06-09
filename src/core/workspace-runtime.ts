@@ -380,11 +380,12 @@ const workspaceRuntimeMachine = createMachine({
                 id: context.workspace.id,
                 // Serialize agents to pass only metadata
                 agents: Object.entries(context.workspace.agents || {}).reduce((acc, [key, agent]) => {
+                  const agentTyped = agent as any;
                   acc[key] = {
                     id: key,
-                    name: agent.name?.() || key,
-                    type: (agent as any).type || key.replace('-agent', ''),
-                    purpose: agent.purpose?.() || ''
+                    name: agentTyped.name?.() || key,
+                    type: agentTyped.type || key.replace('-agent', ''),
+                    purpose: agentTyped.purpose?.() || ''
                   };
                   return acc;
                 }, {} as Record<string, any>),
@@ -403,12 +404,13 @@ const workspaceRuntimeMachine = createMachine({
               new URL("./workers/workspace-supervisor-worker.ts", import.meta.url).href
             );
           } catch (error) {
+            const err = error as Error;
             await logger.error('Failed to spawn supervisor worker', { 
               workspaceId: context.workspace.id, 
-              error: error.message,
-              stack: error.stack 
+              error: err.message,
+              stack: err.stack 
             });
-            throw new Error(`Failed to spawn supervisor: ${error.message}`);
+            throw new Error(`Failed to spawn supervisor: ${err.message}`);
           }
           
           context.workerManager.setupBroadcastChannel(

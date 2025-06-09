@@ -33,7 +33,7 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
             setStatus('error');
         }
       } catch (err) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
       }
     };
@@ -73,7 +73,7 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
     try {
       payload = JSON.parse(data);
     } catch (err) {
-      throw new Error(`Invalid JSON data: ${err.message}`);
+      throw new Error(`Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`);
     }
     
     const port = flags.port || flags.p || 8080;
@@ -99,7 +99,7 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
       });
       setStatus('ready');
     } catch (err) {
-      if (err.message.includes('Connection refused')) {
+      if (err instanceof Error && err.message.includes('Connection refused')) {
         throw new Error(`Cannot connect to workspace server on port ${port}. Is it running? Use 'atlas workspace serve' to start it.`);
       }
       throw err;

@@ -39,7 +39,7 @@ export function WorkspaceCommand({ subcommand, args, flags }: WorkspaceCommandPr
             setStatus('error');
         }
       } catch (err) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
       }
     };
@@ -360,7 +360,7 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
                   (workspace as any).agents[agentId] = agent;
                 }
               } catch (error) {
-                console.error(`Failed to load ${agentId}: ${error.message}`);
+                console.error(`Failed to load ${agentId}: ${error instanceof Error ? error.message : String(error)}`);
               }
             }
           }
@@ -388,7 +388,7 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         await server.start();
         setStatus('running');
       } catch (err) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
       }
     };

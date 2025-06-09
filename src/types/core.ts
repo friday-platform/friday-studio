@@ -86,7 +86,7 @@ export interface IWorkspaceLibrary {
 }
 
 export interface IWorkspaceSupervisor extends IAtlasScope, IWorkspaceAgent {
-  spawnSession(signal: IWorkspaceSignal): IWorkspaceSession;
+  spawnSession(signal: IWorkspaceSignal, payload?: any): Promise<IWorkspaceSession>;
   manageAgentLifecycle(): void;
   processSignalInterrupts(): void;
 }

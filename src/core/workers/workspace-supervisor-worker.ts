@@ -268,7 +268,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
 
   // Override to handle supervisor-specific messages
-  protected handleCustomMessage(message: any): void {
+  protected override handleCustomMessage(message: any): void {
     switch (message.type) {
       case 'setWorkspace':
         if (this.supervisor && message.workspace) {
@@ -284,7 +284,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
   
   // Handle broadcast messages from other agents
-  protected handleBroadcast(channel: string, data: any): void {
+  protected override handleBroadcast(channel: string, data: any): void {
     this.log(`Received broadcast on ${channel}:`, data);
     
     // Supervisor could coordinate based on broadcasts

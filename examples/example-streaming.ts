@@ -34,7 +34,7 @@ async function streamingExample() {
   console.log("Output: ");
   
   for await (const chunk of echoAgent.invokeStream("Hello Atlas!")) {
-    process.stdout.write(chunk);
+    await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n");
 
@@ -44,7 +44,7 @@ async function streamingExample() {
   console.log("Output: ");
   
   for await (const chunk of llmAgent.invokeStream("Help me deploy my code")) {
-    process.stdout.write(chunk);
+    await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n");
 

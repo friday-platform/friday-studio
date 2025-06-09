@@ -56,7 +56,8 @@ try {
   console.log("  ✓ Goals:", session.intent?.goals.length, "goals defined");
   console.log("  ✓ Max iterations:", session.intent?.executionHints?.maxIterations);
 } catch (error) {
-  console.error("  ✗ Error:", error.message);
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.error("  ✗ Error:", errorMessage);
 }
 
 // Test 2: Session FSM lifecycle
@@ -123,7 +124,8 @@ try {
   });
 
 } catch (error) {
-  console.error("  ✗ Error:", error.message);
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  console.error("  ✗ Error:", errorMessage);
 }
 
 function testSupervisor() {
@@ -150,6 +152,7 @@ function testSupervisor() {
     
     console.log("\n✅ All tests completed!");
   } catch (error) {
-    console.error("  ✗ Error:", error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("  ✗ Error:", errorMessage);
   }
 }

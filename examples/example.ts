@@ -1,18 +1,27 @@
 #!/usr/bin/env -S deno run --allow-read --allow-write
 
 import { AtlasWorkspaceManager } from "../src/core/manager.ts";
-import type { IWorkspaceSignal } from "../src/types/core.ts";
+import type { IWorkspaceSignal, ITempestContextManager, ITempestMemoryManager, ITempestMessageManager } from "../src/types/core.ts";
+import { ContextManager } from "../src/core/context.ts";
+import { MemoryManager } from "../src/core/memory.ts";
+import { MessageManager } from "../src/core/messages.ts";
 
 // Simple example signal for testing
 class TestSignal implements IWorkspaceSignal {
   public readonly id: string = crypto.randomUUID();
   public parentScopeId?: string;
   public supervisor = undefined;
-  public context: any;
-  public memory: any;
-  public messages: any;
+  public context: ITempestContextManager;
+  public memory: ITempestMemoryManager;
+  public messages: ITempestMessageManager;
   public prompts = { system: "", user: "" };
   public gates: any[] = [];
+  
+  constructor() {
+    this.context = new ContextManager();
+    this.memory = new MemoryManager();
+    this.messages = new MessageManager();
+  }
   
   public provider = {
     id: "test",
@@ -30,10 +39,18 @@ class TestSignal implements IWorkspaceSignal {
   }
 
   // IAtlasScope methods
-  newConversation(): any { return this.messages; }
-  getConversation(): any { return this.messages; }
-  archiveConversation(): void {}
-  deleteConversation(): void {}
+  newConversation(): ITempestMessageManager { 
+    return new MessageManager(); 
+  }
+  getConversation(): ITempestMessageManager { 
+    return this.messages; 
+  }
+  archiveConversation(): void {
+    console.log("[TestSignal] Conversation archived");
+  }
+  deleteConversation(): void {
+    this.messages = new MessageManager();
+  }
 }
 
 async function runExample() {
@@ -66,18 +83,18 @@ async function runExample() {
   // Trigger signal processing via supervisor
   console.log("4. Processing signal via supervisor...");
   if (workspace.supervisor) {
-    const session = workspace.supervisor.spawnSession(signal);
+    const session = await workspace.supervisor.spawnSession(signal);
     await session.start();
     console.log(`✓ Session completed: ${session.summarize()}\n`);
   }
 
   // Show final status
   console.log("5. Final workspace status:");
-  const finalSnapshot = workspace.snapshot();
-  console.log(`- Active sessions: ${finalSnapshot.activeSessionCount}`);
-  console.log(`- Artifacts: ${finalSnapshot.artifactCount}`);
-  console.log(`- Memory items: ${finalSnapshot.memorySize}`);
-  console.log(`- Context items: ${finalSnapshot.contextSize}`);
+  const finalSnapshot = workspace.snapshot() as any;
+  console.log(`- Active sessions: ${finalSnapshot.activeSessionCount || 0}`);
+  console.log(`- Artifacts: ${finalSnapshot.artifactCount || 0}`);
+  console.log(`- Memory items: ${finalSnapshot.memorySize || 0}`);
+  console.log(`- Context items: ${finalSnapshot.contextSize || 0}`);
 
   console.log("\n✨ Example completed! Check .atlas/ directory for stored data.");
 }

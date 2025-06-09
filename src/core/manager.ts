@@ -174,7 +174,7 @@ export class AtlasWorkspaceManager {
       const agentMetadata = state.agentMetadata || state.agents || {}; // Backward compatibility
       for (const [id, metadata] of Object.entries(agentMetadata)) {
         try {
-          if (typeof metadata === 'object' && metadata.type) {
+          if (typeof metadata === 'object' && metadata !== null && 'type' in metadata) {
             // New format with metadata
             const agent = await AgentRegistry.createAgent(metadata as AgentMetadata);
             workspace.agents[id] = agent;

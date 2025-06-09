@@ -32,7 +32,7 @@ async function testSupervisorWorker() {
     
     const supervisor = await manager.spawnWorker(
       supervisorMetadata,
-      new URL("../../src/core/workers/supervisor-worker.ts", import.meta.url).href
+      new URL("../../src/core/workers/workspace-supervisor-worker.ts", import.meta.url).href
     );
     
     console.log("✅ Supervisor spawned:", supervisor.id);

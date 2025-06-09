@@ -1,6 +1,13 @@
 {
   "version": "1.0.0",
   "exports": "./mod.ts",
+  "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "deno.worker", 
+      "deno.unstable"
+    ]
+  },
   "tasks": {
     "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options /Users/kenneth/tempest/atlas/src/cli.tsx",
     "dev": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel --watch src/cli.tsx",
@@ -20,9 +27,5 @@
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
     "xstate": "npm:xstate@^5.18.0"
-  },
-  "compilerOptions": {
-    "strict": true,
-    "lib": ["dom", "deno.ns"]
   }
 }

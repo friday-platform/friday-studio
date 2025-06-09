@@ -4,7 +4,7 @@
  * Simplified integration test focusing on the core issue
  */
 
-import { WorkerManager } from "./src/core/utils/worker-manager.ts";
+import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
 
 async function testWorkerManager() {
   console.log("🧪 Testing WorkerManager...\n");

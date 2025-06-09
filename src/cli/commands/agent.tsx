@@ -35,7 +35,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
             setStatus('error');
         }
       } catch (err) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
       }
     };
@@ -154,7 +154,9 @@ function AgentOutput({ data }: { data: any }) {
             <>
               <Text>Prompts:</Text>
               {Object.entries(agent.prompts).map(([key, value]: [string, any]) => (
-                <Text key={key}>  {key}: <Text color="gray">{String(value).substring(0, 50)}...</Text></Text>
+                <React.Fragment key={key}>
+                  <Text>  {key}: <Text color="gray">{String(value).substring(0, 50)}...</Text></Text>
+                </React.Fragment>
               ))}
             </>
           )}

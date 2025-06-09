@@ -1,9 +1,12 @@
 import { BaseAgent } from "../../../../src/core/agents/base-agent.ts";
 import { AgentRegistry } from "../../../../src/core/agent-registry.ts";
+import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 
-export class MishearingAgent extends BaseAgent {
-  constructor(parentScopeId?: string) {
-    super(parentScopeId);
+export class MishearingAgent extends BaseAgent implements IWorkspaceAgent {
+  status: string = "idle";
+  host: string = "localhost";
+  constructor(id?: string) {
+    super(id);
     
     // Set agent-specific prompts
     this.prompts = {
@@ -52,7 +55,7 @@ Always start with "I heard that" followed by your misheard version.`,
     };
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return this.prompts;
   }
 
@@ -74,6 +77,23 @@ Always start with "I heard that" followed by your misheard version.`,
     
     // Add response to message history
     this.messages.newMessage(response, "agent" as any);
+  }
+
+  async invoke(message: string): Promise<string> {
+    this.status = "processing";
+    
+    try {
+      let fullResponse = "";
+      for await (const chunk of this.invokeStream(message)) {
+        fullResponse += chunk;
+      }
+      
+      this.status = "idle";
+      return fullResponse;
+    } catch (error) {
+      this.status = "error";
+      throw error;
+    }
   }
 }
 

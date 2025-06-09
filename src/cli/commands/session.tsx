@@ -33,7 +33,7 @@ export function SessionCommand({ subcommand, args, flags }: SessionCommandProps)
             setStatus('error');
         }
       } catch (err) {
-        setError(err.message);
+        setError(err instanceof Error ? err.message : String(err));
         setStatus('error');
       }
     };
@@ -68,7 +68,7 @@ export function SessionCommand({ subcommand, args, flags }: SessionCommandProps)
       setData({ type: 'list', sessions: formattedSessions });
       setStatus('ready');
     } catch (err) {
-      if (err.message.includes('Connection refused')) {
+      if (err instanceof Error && err.message.includes('Connection refused')) {
         setData({ type: 'list', sessions: [] });
         setStatus('ready');
         return;

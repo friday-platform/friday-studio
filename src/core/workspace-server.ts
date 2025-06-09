@@ -50,7 +50,7 @@ export class WorkspaceServer {
     this.app.get('/signals', (c) => {
       const workspace = (this.runtime as any).workspace;
       const signals = Object.values(workspace.signals);
-      return c.json(signals.map(s => ({
+      return c.json(signals.map((s: any) => ({
         id: s.id,
         provider: s.provider,
         // Add other public signal properties
@@ -80,7 +80,7 @@ export class WorkspaceServer {
         });
       } catch (error) {
         return c.json({ 
-          error: `Failed to process signal: ${error.message}` 
+          error: `Failed to process signal: ${error instanceof Error ? error.message : String(error)}` 
         }, 500);
       }
     });
@@ -140,7 +140,7 @@ export class WorkspaceServer {
         return c.json({ message: `Session ${sessionId} cancelled` });
       } catch (error) {
         return c.json({ 
-          error: `Failed to cancel session: ${error.message}` 
+          error: `Failed to cancel session: ${error instanceof Error ? error.message : String(error)}` 
         }, 500);
       }
     });

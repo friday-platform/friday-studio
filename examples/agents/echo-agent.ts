@@ -1,8 +1,11 @@
 import { BaseAgent } from "../../src/core/agents/base-agent.ts";
+import type { IWorkspaceAgent } from "../../src/types/core.ts";
 
-export class EchoAgent extends BaseAgent {
-  constructor(parentScopeId?: string) {
-    super(parentScopeId);
+export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
+  status: string = "idle";
+  host: string = "localhost";
+  constructor(id?: string) {
+    super(id);
     this.prompts = this.getAgentPrompts();
   }
 
@@ -26,7 +29,7 @@ export class EchoAgent extends BaseAgent {
     return "Echoes messages back with elaboration for testing streaming functionality";
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return {
       system: "You are an echo agent that repeats and elaborates on user messages.",
       user: ""
@@ -57,5 +60,29 @@ export class EchoAgent extends BaseAgent {
     this.messages.newMessage(response, "agent" as any);
     
     this.log("Streaming completed");
+  }
+
+  async invoke(message: string): Promise<string> {
+    this.status = "processing";
+    
+    try {
+      let fullResponse = "";
+      for await (const chunk of this.invokeStream(message)) {
+        fullResponse += chunk;
+      }
+      
+      this.status = "idle";
+      return fullResponse;
+    } catch (error) {
+      this.status = "error";
+      throw error;
+    }
+  }
+
+  private async* createTextStream(text: string, chunkSize: number, delayMs: number): AsyncIterableIterator<string> {
+    for (let i = 0; i < text.length; i += chunkSize) {
+      yield text.slice(i, i + chunkSize);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
   }
 }

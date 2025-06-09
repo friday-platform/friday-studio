@@ -1,4 +1,5 @@
 import { BaseAgent } from "../../src/core/agents/base-agent.ts";
+import type { IWorkspaceAgent } from "../../src/types/core.ts";
 
 export interface LLMConfig {
   model: string;
@@ -8,11 +9,13 @@ export interface LLMConfig {
   maxTokens?: number;
 }
 
-export class LLMAgent extends BaseAgent {
+export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
   private config: LLMConfig;
+  status: string = "idle";
+  host: string = "localhost";
 
-  constructor(config: LLMConfig, parentScopeId?: string) {
-    super(parentScopeId);
+  constructor(config: LLMConfig, id?: string) {
+    super(id);
     this.config = config;
     this.prompts = this.getAgentPrompts();
   }
@@ -40,7 +43,7 @@ export class LLMAgent extends BaseAgent {
     return `AI assistant powered by ${this.config.model} for general task processing`;
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return {
       system: "You are a helpful AI assistant integrated into the Atlas agent orchestration platform.",
       user: ""
@@ -124,5 +127,29 @@ export class LLMAgent extends BaseAgent {
   private async callGemini(message: string): Promise<AsyncIterableIterator<string>> {
     // TODO: Implement Gemini streaming API call
     throw new Error("Gemini integration not implemented yet");
+  }
+
+  async invoke(message: string): Promise<string> {
+    this.status = "processing";
+    
+    try {
+      let fullResponse = "";
+      for await (const chunk of this.invokeStream(message)) {
+        fullResponse += chunk;
+      }
+      
+      this.status = "idle";
+      return fullResponse;
+    } catch (error) {
+      this.status = "error";
+      throw error;
+    }
+  }
+
+  private async* createTextStream(text: string, chunkSize: number, delayMs: number): AsyncIterableIterator<string> {
+    for (let i = 0; i < text.length; i += chunkSize) {
+      yield text.slice(i, i + chunkSize);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
   }
 }

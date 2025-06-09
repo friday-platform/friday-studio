@@ -5,19 +5,27 @@
  * Tests: Create workspace → Start runtime → Process signal → Get session
  */
 
-import { Workspace } from "./src/core/workspace.ts";
-import { WorkspaceRuntime } from "./src/core/workspace-runtime.ts";
-import { WorkspaceServer } from "./src/core/workspace-server.ts";
-import { AtlasScope } from "./src/core/scope.ts";
-import type { IWorkspaceSignal } from "./src/types/core.ts";
+import { Workspace } from "../../src/core/workspace.ts";
+import { WorkspaceRuntime } from "../../src/core/workspace-runtime.ts";
+import { WorkspaceServer } from "../../src/core/workspace-server.ts";
+import { AtlasScope } from "../../src/core/scope.ts";
+import type { IWorkspaceSignal } from "../../src/types/core.ts";
 
 // Mock signal implementation
 class TestSignal extends AtlasScope implements IWorkspaceSignal {
   provider = { id: "test", name: "Test Signal" };
   
-  constructor(id: string) {
+  constructor(customId?: string) {
     super();
-    (this as any).id = id;
+    // Override the readonly id using Object.defineProperty
+    if (customId) {
+      Object.defineProperty(this, 'id', {
+        value: customId,
+        writable: false,
+        enumerable: true,
+        configurable: false
+      });
+    }
   }
   
   async trigger(): Promise<void> {

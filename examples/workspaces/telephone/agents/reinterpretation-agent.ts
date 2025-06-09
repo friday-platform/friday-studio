@@ -1,9 +1,12 @@
 import { BaseAgent } from "../../../../src/core/agents/base-agent.ts";
 import { AgentRegistry } from "../../../../src/core/agent-registry.ts";
+import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 
-export class ReinterpretationAgent extends BaseAgent {
-  constructor(parentScopeId?: string) {
-    super(parentScopeId);
+export class ReinterpretationAgent extends BaseAgent implements IWorkspaceAgent {
+  status: string = "idle";
+  host: string = "localhost";
+  constructor(id?: string) {
+    super(id);
     
     // Set agent-specific prompts
     this.prompts = {
@@ -48,7 +51,7 @@ Always start your response with "I heard that" and then give your version of the
     };
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return {
       system: `You are the Reinterpretation Agent in a game of telephone. You dramatically reinterpret messages.
 When you hear a message, creatively transform it:
@@ -81,6 +84,23 @@ Always start your response with "I heard that" and then give your version of the
     
     // Add response to message history
     this.messages.newMessage(response, "agent" as any);
+  }
+
+  async invoke(message: string): Promise<string> {
+    this.status = "processing";
+    
+    try {
+      let fullResponse = "";
+      for await (const chunk of this.invokeStream(message)) {
+        fullResponse += chunk;
+      }
+      
+      this.status = "idle";
+      return fullResponse;
+    } catch (error) {
+      this.status = "error";
+      throw error;
+    }
   }
 }
 

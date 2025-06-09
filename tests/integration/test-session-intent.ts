@@ -3,15 +3,10 @@
 import { Session, SessionIntent } from "../../src/core/session.ts";
 import { WorkspaceSupervisor } from "../../src/core/supervisor.ts";
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { createMockSignal } from "../fixtures/mocks.ts";
 
 // Mock signal for testing
-const mockSignal = {
-  id: "test-signal",
-  provider: { name: "test-provider" },
-  trigger: async () => {
-    console.log("Signal triggered");
-  }
-};
+const mockSignal = createMockSignal("test-signal", "test-provider", "test-provider");
 
 // Test 1: Session creation with intent
 Deno.test("Session can be created with intent", async () => {
@@ -64,11 +59,7 @@ Deno.test("WorkspaceSupervisor creates session intent from signal", () => {
   });
 
   const payload = { message: "Test message for telephone game" };
-  const telephoneSignal = {
-    id: "telephone-message",
-    provider: { name: "test" },
-    trigger: async () => {}
-  };
+  const telephoneSignal = createMockSignal("telephone-message", "test", "test");
 
   const intent = supervisor.createSessionIntent(telephoneSignal, payload);
 
@@ -167,11 +158,7 @@ Deno.test("WorkspaceSupervisor generates execution plan from intent", async () =
     });
   };
 
-  const signal = {
-    id: "test-signal",
-    provider: { name: "test" },
-    trigger: async () => {}
-  };
+  const signal = createMockSignal("test-signal", "test", "test");
 
   const plan = await supervisor.generateExecutionPlan(signal, { data: "test" });
 

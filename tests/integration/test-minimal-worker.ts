@@ -39,8 +39,8 @@ worker.onmessage = (e) => {
 async function runWorkspaceTest() {
   console.log("\n2️⃣ Testing workspace flow without workers...");
   
-  const { Workspace } = await import("./src/core/workspace.ts");
-  const { Session } = await import("./src/core/session.ts");
+  const { Workspace } = await import("../../src/core/workspace.ts");
+  const { Session } = await import("../../src/core/session.ts");
   
   // Create workspace
   const workspace = new Workspace({ id: "test", name: "Test User", role: "owner" as any });

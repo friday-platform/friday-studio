@@ -134,7 +134,7 @@ class SessionSupervisorWorker extends BaseWorker {
         // Log both diagnostic info and LLM summary
         this.log(`\n📊 Session Results Summary:`);
         this.log(`Session ID: ${this.sessionId}`);
-        this.log(`Signal: ${this.supervisor.sessionContext?.signal.id}`);
+        this.log(`Signal: ${this.supervisor.getSessionContext()?.signal.id}`);
         this.log(`Phases executed: ${results.length}`);
         this.log(`Total agents invoked: ${results.flatMap(r => r.results).length}`);
         this.log(`Status: ${summary.status}`);
@@ -270,7 +270,7 @@ class SessionSupervisorWorker extends BaseWorker {
     const startTime = Date.now();
     
     // Resolve input based on inputSource
-    let input = this.supervisor.sessionContext?.payload;
+    let input = this.supervisor.getSessionContext()?.payload;
     
     if (inputSource === 'previous' && previousResults.length > 0) {
       // Use the output from the last result
@@ -389,7 +389,7 @@ class SessionSupervisorWorker extends BaseWorker {
   }
   
   // Handle broadcast messages in the session
-  protected handleBroadcast(channel: string, data: any): void {
+  protected override handleBroadcast(channel: string, data: any): void {
     switch (data.type) {
       case 'agentMessage':
         this.log(`Agent ${data.from} broadcast: ${data.message}`);

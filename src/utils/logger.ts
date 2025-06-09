@@ -203,6 +203,7 @@ export class ChildLogger {
 export const logger = AtlasLogger.getInstance();
 
 // Initialize logger on import (only in main thread)
+// @ts-ignore - WorkerGlobalScope may not be defined in all environments
 if (typeof WorkerGlobalScope === 'undefined' || !(self instanceof WorkerGlobalScope)) {
   await logger.initialize();
 }

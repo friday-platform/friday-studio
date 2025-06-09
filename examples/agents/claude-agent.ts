@@ -1,10 +1,13 @@
 import { BaseAgent } from "../../src/core/agents/base-agent.ts";
+import type { IWorkspaceAgent } from "../../src/types/core.ts";
 
-export class ClaudeAgent extends BaseAgent {
+export class ClaudeAgent extends BaseAgent implements IWorkspaceAgent {
   private model: string;
+  status: string = "idle";
+  host: string = "localhost";
 
-  constructor(model: string = "claude-3-haiku-20240307", parentScopeId?: string) {
-    super(parentScopeId);
+  constructor(model: string = "claude-3-haiku-20240307", id?: string) {
+    super(id);
     this.model = model;
     this.prompts = this.getAgentPrompts();
   }
@@ -29,7 +32,7 @@ export class ClaudeAgent extends BaseAgent {
     return `AI assistant powered by ${this.model} for software development and automation tasks`;
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return {
       system: "You are Claude, an AI assistant integrated into the Atlas agent orchestration platform. You help with software development, deployment, and automation tasks. Be concise and practical in your responses.",
       user: ""
@@ -54,7 +57,7 @@ export class ClaudeAgent extends BaseAgent {
 
     try {
       // Stream response from Claude
-      yield* this.streamLLM(this.model, this.prompts.system, message);
+      yield* this.generateLLMStream(this.model, this.prompts.system, message);
       
       this.log("Claude response streaming completed");
     } catch (error) {
@@ -64,8 +67,7 @@ export class ClaudeAgent extends BaseAgent {
     }
   }
 
-  // Override invoke to use streaming and collect response
-  override async invoke(message: string): Promise<string> {
+  async invoke(message: string): Promise<string> {
     this.status = "processing";
     
     try {

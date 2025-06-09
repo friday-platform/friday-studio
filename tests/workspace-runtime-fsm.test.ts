@@ -1,24 +1,10 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { WorkspaceRuntime } from "../src/core/workspace-runtime.ts";
 import type { IWorkspace } from "../src/types/core.ts";
+import { createMockWorkspace } from "./fixtures/mocks.ts";
 
 // Mock workspace for testing
-const mockWorkspace: IWorkspace = {
-  id: "test-workspace",
-  name: "Test Workspace",
-  snapshot: () => ({
-    id: "test-workspace",
-    name: "Test Workspace",
-    description: "Test workspace for FSM",
-    agents: {},
-    signals: {},
-    workflows: {},
-    sources: {},
-    actions: {},
-    members: []
-  }),
-  // Add other required IWorkspace properties as needed
-} as IWorkspace;
+const mockWorkspace = createMockWorkspace("test-workspace", "Test Workspace");
 
 Deno.test("WorkspaceRuntime FSM - Initial state", async () => {
   const runtime = new WorkspaceRuntime(mockWorkspace, {}, { lazy: true });

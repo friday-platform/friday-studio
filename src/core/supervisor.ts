@@ -91,7 +91,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 triggers: [input.signal],
                 callback: (result: any) => Promise.resolve()
               },
-              supervisor.workspace?.agents ? Object.values(supervisor.workspace.agents) : undefined,
+              supervisor.getWorkspaceAgents(),
               undefined, // workflows
               undefined, // sources
               intent
@@ -152,7 +152,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 }
               }),
               ({ event }) => {
-                supervisor.log(`Session ${event.sessionId} failed: ${event.error.message}`);
+                console.log(`Session ${event.sessionId} failed: ${event.error.message}`);
               }
             ]
           }
@@ -164,7 +164,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
       },
       error: {
         entry: ({ context }) => {
-          supervisor.log(`Supervisor error: ${context.error?.message}`);
+          console.log(`Supervisor error: ${context.error?.message}`);
         },
         on: {
           RESET: {
@@ -213,7 +213,7 @@ You have access to the full workspace context and configuration. Create structur
     this.stateActor = createActor(this.stateMachine);
     
     // Subscribe to state changes for logging
-    this.stateActor.subscribe((state) => {
+    this.stateActor.subscribe((state: any) => {
       this.log(`State transition: ${state.value} | Active sessions: ${state.context.activeSessions.size}`);
     });
     
@@ -242,11 +242,11 @@ You have access to the full workspace context and configuration. Create structur
     return "Manages workspace lifecycle, agent coordination, and signal processing";
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return this.prompts;
   }
 
-  scope(): IAtlasScope {
+  override scope(): IAtlasScope {
     return this;
   }
 
@@ -295,11 +295,19 @@ You have access to the full workspace context and configuration. Create structur
     );
     
     // Stream the response
-    yield* this.createTextStream(response, 10, 50);
+    // Stream the response character by character
+    for (let i = 0; i < response.length; i++) {
+      yield response[i];
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
   }
 
   setWorkspace(workspace: IWorkspace): void {
     this.workspace = workspace;
+  }
+
+  getWorkspaceAgents(): IWorkspaceAgent[] | undefined {
+    return this.workspace?.agents ? Object.values(this.workspace.agents) : undefined;
   }
 
   // State machine integration methods
@@ -349,7 +357,7 @@ You have access to the full workspace context and configuration. Create structur
           const sessions = Array.from(state.context.activeSessions.values());
           const latestSession = sessions[sessions.length - 1];
           if (latestSession) {
-            resolve(latestSession);
+            resolve(latestSession as IWorkspaceSession);
           } else {
             reject(new Error('Session spawned but not found in context'));
           }
@@ -501,8 +509,8 @@ Provide a structured analysis.`;
   // Infer goals from signal type and payload
   private inferGoalsFromSignal(signal: IWorkspaceSignal, payload: any): string[] {
     // Let the signal provider define its own goals if available
-    if (signal.provider?.inferGoals) {
-      return signal.provider.inferGoals(payload);
+    if ('inferGoals' in signal.provider && typeof signal.provider.inferGoals === 'function') {
+      return (signal.provider as any).inferGoals(payload);
     }
     
     // Otherwise use LLM to analyze the signal and payload
@@ -742,6 +750,17 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
         };
       }
     });
+  }
+
+  // IWorkspaceSupervisor interface methods
+  manageAgentLifecycle(): void {
+    // TODO: Implement agent lifecycle management
+    this.log("Managing agent lifecycle");
+  }
+
+  processSignalInterrupts(): void {
+    // TODO: Implement signal interrupt processing
+    this.log("Processing signal interrupts");
   }
 
   // Cleanup method

@@ -69,12 +69,12 @@ async function testFullWorkerCommunication() {
     
     // Spawn test worker
     const worker1 = await manager.spawnWorker(
-      { id: "worker-1", type: "test", config: { name: "Worker 1" } },
+      { id: "worker-1", type: "agent", config: { name: "Worker 1" } },
       new URL(`file://${tempFile}`).href
     );
     
     const worker2 = await manager.spawnWorker(
-      { id: "worker-2", type: "test", config: { name: "Worker 2" } },
+      { id: "worker-2", type: "agent", config: { name: "Worker 2" } },
       new URL(`file://${tempFile}`).href
     );
     
@@ -136,7 +136,8 @@ async function testFullWorkerCommunication() {
     console.log("\n✅ All tests passed!");
     
   } catch (error) {
-    console.error("❌ Error:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("❌ Error:", errorMessage);
   }
 }
 

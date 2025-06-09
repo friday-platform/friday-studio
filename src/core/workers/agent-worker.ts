@@ -122,7 +122,7 @@ class AgentWorker extends BaseWorker {
   }
   
   // Handle direct messages from supervisor
-  protected handleDirectMessage(peerId: string, data: any): void {
+  protected override handleDirectMessage(peerId: string, data: any): void {
     this.log(`Direct message from ${peerId}:`, data);
     
     if (peerId === 'supervisor') {
@@ -142,7 +142,7 @@ class AgentWorker extends BaseWorker {
   }
   
   // Handle broadcast messages from other agents in session
-  protected handleBroadcast(channel: string, data: any): void {
+  protected override handleBroadcast(channel: string, data: any): void {
     if (data.type === 'agentMessage' && data.from !== this.agentId) {
       this.log(`Agent ${data.from} sent: ${data.message}`);
       // Could track other agent messages in conversation context

@@ -64,7 +64,7 @@ export function LogViewer({ sessionId, follow = true, tail = 100, filter }: LogV
       setIsFollowing(!isFollowing);
     }
     if (key.ctrl && input === 'c') {
-      process.exit(0);
+      Deno.exit(0);
     }
   });
   
@@ -93,7 +93,7 @@ export function LogViewer({ sessionId, follow = true, tail = 100, filter }: LogV
   }, [sessionId, isFollowing, tail]);
   
   // Apply filters
-  const filteredLogs = logs.filter(log => {
+  const filteredLogs = logs.filter((log: LogEntry) => {
     if (filter?.agent && !log.component.includes(filter.agent)) {
       return false;
     }
@@ -105,13 +105,13 @@ export function LogViewer({ sessionId, follow = true, tail = 100, filter }: LogV
   
   return (
     <Box flexDirection="column">
-      {filteredLogs.map((log, i) => (
+      {filteredLogs.map((log: LogEntry, i: number) => (
         <Box key={i}>
           <Text color="gray">[{formatTimestamp(log.timestamp)}] </Text>
           <Text color={getComponentColor(log.component)}>[{log.component}] </Text>
           <Text color={levelColors[log.level]}>{log.message}</Text>
         </Box>
-      ))}
+      ) as any)}
       {isFollowing && (
         <Box marginTop={1}>
           <Text color="gray" italic>Following logs... Press 'f' to stop following, Ctrl+C to exit</Text>
@@ -130,7 +130,7 @@ export function LogStream({ url }: { url: string }) {
     
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      setLogs(prev => [...prev.slice(-100), data.message]);
+      setLogs((prev: string[]) => [...prev.slice(-100), data.message]);
     };
     
     return () => eventSource.close();
@@ -138,8 +138,10 @@ export function LogStream({ url }: { url: string }) {
   
   return (
     <Box flexDirection="column">
-      {logs.map((log, i) => (
-        <Text key={i}>{log}</Text>
+      {logs.map((log: string, i: number) => (
+        <React.Fragment key={i}>
+          <Text>{log}</Text>
+        </React.Fragment>
       ))}
     </Box>
   );

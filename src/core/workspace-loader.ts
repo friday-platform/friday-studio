@@ -7,7 +7,8 @@ import { WorkspaceConfig } from "./workspace-config.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { ProviderStateManager } from "./providers/state-manager.ts";
 import type { IWorkspace, IWorkspaceSignal } from "../types/core.ts";
-import type { ISignalProvider, ProviderType } from "./providers/types.ts";
+import type { ISignalProvider } from "./providers/types.ts";
+import { ProviderType } from "./providers/types.ts";
 
 export class WorkspaceLoader {
   private config: WorkspaceConfig;

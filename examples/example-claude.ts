@@ -27,7 +27,7 @@ async function claudeExample() {
   console.log("Output: ");
   
   for await (const chunk of claude.invokeStream("Help me write a simple TypeScript function that validates email addresses")) {
-    process.stdout.write(chunk);
+    await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n\n");
 
@@ -37,7 +37,7 @@ async function claudeExample() {
   console.log("Output: ");
   
   for await (const chunk of claude.invokeStream("What are the key principles of good software deployment?")) {
-    process.stdout.write(chunk);
+    await Deno.stdout.write(new TextEncoder().encode(chunk));
   }
   console.log("\n\n");
 

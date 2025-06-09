@@ -68,7 +68,7 @@ export interface AgentResult {
 }
 
 export class SessionSupervisor extends BaseAgent {
-  private sessionContext: SessionContext | null = null;
+  protected sessionContext: SessionContext | null = null;
   private executionPlan: ExecutionPlan | null = null;
   private executionResults: AgentResult[] = [];
 
@@ -119,8 +119,12 @@ You have access to a filtered view of the workspace tailored for this specific s
     };
   }
 
-  getAgentPrompts(): { system: string; user: string } {
+  override getAgentPrompts(): { system: string; user: string } {
     return this.prompts;
+  }
+
+  getSessionContext(): SessionContext | null {
+    return this.sessionContext;
   }
 
   // Initialize session with context from WorkspaceSupervisor
