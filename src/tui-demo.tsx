@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput, useStdout } from 'ink';
+import { Box, Text, useInput, useApp } from 'ink';
+import { FullScreenBox } from 'fullscreen-ink';
 
 // Mock data
 const mockConversation = [
@@ -20,17 +21,11 @@ const TUIDemo: React.FC = () => {
   const [input, setInput] = useState('');
   const [conversation, setConversation] = useState(mockConversation);
   const [currentPanel, setCurrentPanel] = useState<'diagnostic' | 'artifact'>('diagnostic');
+  const { exit } = useApp();
   
-  // Calculate height once on mount to avoid re-renders but still be responsive
-  const { stdout } = useStdout();
-  const [terminalHeight] = useState(() => {
-    const availableHeight = (stdout.rows || 54) - 10; // Reserve space for tab bar and UI chrome
-    return Math.max(20, Math.min(50, availableHeight)); // Clamp between 20-50 for safety
-  });
-
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === 'c') {
-      process.exit(0);
+      exit();
     } else if (key.tab) {
       setCurrentPanel(prev => prev === 'diagnostic' ? 'artifact' : 'diagnostic');
     } else if (key.return) {
@@ -61,9 +56,9 @@ const TUIDemo: React.FC = () => {
   });
 
   return (
-    <Box flexDirection="column" paddingTop={3}>
-      <Box height={terminalHeight} flexDirection="row" width="100%">
-        <Box flexGrow={1} flexBasis={0} flexDirection="column" paddingX={2}>
+    <FullScreenBox flexDirection="column">
+      <Box flexDirection="row" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1} paddingX={2}>
           <Text bold color="blue">💬 Session Conversation</Text>
           <Box flexDirection="column" marginTop={1}>
             {conversation.slice(-6).map((msg, i) => (
@@ -81,7 +76,7 @@ const TUIDemo: React.FC = () => {
             ))}
           </Box>
         </Box>
-        <Box flexGrow={1} flexBasis={0} flexDirection="column" paddingX={2}>
+        <Box flexDirection="column" flexGrow={1} paddingX={2}>
           <Text bold color="magenta">🔍 Diagnostics (Tab)</Text>
           <Box flexDirection="column" marginTop={1}>
             <Text bold>Agent Status:</Text>
@@ -118,7 +113,7 @@ const TUIDemo: React.FC = () => {
         <Text color="green">● </Text>
         <Text>Sessions: {conversation.filter(m => m.type === 'user').length} | Agents: 1 running, 1 idle, 1 ready</Text>
       </Box>
-    </Box>
+    </FullScreenBox>
   );
 };
 
