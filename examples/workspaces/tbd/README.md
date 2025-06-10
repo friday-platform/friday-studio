@@ -1,15 +1,15 @@
-# Telephone Game Workspace
+# TBD (To Be Determined) Workspace
 
-A demonstration of Atlas AI agent orchestration where a message transforms through multiple agents,
-similar to the classic "telephone game".
+A demonstration of Atlas AI agent orchestration with continuous learning capabilities.
+This workspace provides helpful assistance while learning from every interaction to improve over time.
 
 ## Overview
 
-This workspace shows how Atlas coordinates multiple AI agents in sequence:
+This workspace shows how Atlas coordinates AI agents with memory enhancement:
 
-1. **Mishearing Agent** - Introduces phonetic errors
-2. **Embellishment Agent** - Adds narrative details
-3. **Reinterpretation Agent** - Dramatically reimagines the story
+0. **Memory Agent (Load)** - Loads context and patterns from past user interactions
+1. **TBD Agent** - Provides helpful assistance for questions and tasks
+2. **Memory Agent (Store)** - Stores session learnings for continuous improvement
 
 ## Quick Start
 
@@ -45,12 +45,12 @@ In another terminal:
 
 ```bash
 # Using the CLI
-deno task atlas signal trigger telephone-message --data '{"message": "The cat sat on the mat"}'
+deno task atlas signal trigger tbd-message --data '{"message": "How do I learn TypeScript?"}'
 
 # Or using curl
-curl -X POST http://localhost:8080/signals/telephone-message \
+curl -X POST http://localhost:8080/signals/tbd-message \
   -H "Content-Type: application/json" \
-  -d '{"message": "The cat sat on the mat"}'
+  -d '{"message": "How do I learn TypeScript?"}'
 ```
 
 ### 5. Monitor Progress
@@ -63,30 +63,43 @@ deno task atlas ps
 deno task atlas logs <session-id>
 ```
 
-## Example Transformation
+## Example Interaction
 
 ```
-Original: "The cat sat on the mat"
+User Request: "How do I learn TypeScript?"
 ↓
-Mishearing: "The cat sat on the hat"  
+Memory Load: "Based on past interactions, users prefer structured learning paths with hands-on examples..."
 ↓
-Embellishment: "The cat carefully sat on the old woolen hat that was left on the chair..."
+TBD Agent: "Here's a comprehensive TypeScript learning path:
+1. Start with JavaScript fundamentals if needed
+2. Learn TypeScript basics (types, interfaces, generics)
+3. Practice with small projects
+4. Explore advanced features (decorators, modules)
+5. Build a real application
+
+Recommended resources: TypeScript Handbook, exercises on TypeScript playground..."
 ↓
-Reinterpretation: "The legendary feline warrior infiltrated the ancient fortress chair to claim the mystical Woolen Hat..."
+Memory Store: "Stored successful response pattern: structured learning paths, practical examples, specific resources. User satisfied with comprehensive guidance."
 ```
 
 ## Project Structure
 
 ```
-telephone/
+tbd/
 ├── agents/                    # Agent implementations
-│   ├── mishearing-agent.ts
-│   ├── embellishment-agent.ts
-│   └── reinterpretation-agent.ts
+│   ├── memory-agent.ts       # Memory management (load/store)
+│   └── tbd-agent.ts          # Helpful assistant
 ├── workspace.yml             # Workspace configuration
 ├── setup-workspace.sh        # Quick setup script
 ├── .env                      # API keys (create from .env.example)
 └── .atlas/                   # Runtime data (gitignored)
+    └── memory/               # CoALA memory storage by type
+        ├── working.json      # Short-term working memory
+        ├── episodic.json     # User interaction history
+        ├── semantic.json     # Knowledge topics and facts
+        ├── procedural.json   # Response techniques
+        ├── contextual.json   # User preferences
+        └── index.json        # Memory statistics
 ```
 
 ## Configuration
@@ -100,23 +113,36 @@ The `workspace.yml` file defines:
 
 ## How It Works
 
-1. **Signal Triggered** - You send a message via CLI or HTTP
-2. **Supervisor Plans** - AI supervisor creates execution plan
-3. **Agents Execute** - Each agent transforms the message
-4. **Progress Tracked** - Supervisor ensures all agents run
-5. **Summary Generated** - AI summarizes the transformation chain
+1. **Signal Triggered** - You send a request via CLI or HTTP
+2. **Supervisor Plans** - AI supervisor creates execution plan with memory context
+3. **Memory Load** - Memory agent loads relevant patterns from past interactions
+4. **TBD Agent Responds** - Provides helpful response informed by memory context
+5. **Memory Store** - Memory agent extracts and stores session learnings
+6. **Continuous Improvement** - Each interaction improves future responses
 
 ## Customization
 
-To modify the transformation chain:
+To modify the assistant behavior:
 
-1. Edit agent prompts in `agents/*.ts`
-2. Update supervisor prompts in `workspace.yml`
-3. Add new agents and update mappings
-4. Restart the workspace server
+1. Edit agent prompts in `agents/*.ts` to change response style
+2. Update supervisor prompts in `workspace.yml` for different coordination
+3. Modify memory agent categories to store different types of insights
+4. Add new agents and update mappings for extended functionality
+5. Restart the workspace server
+
+## Memory Learning
+
+The workspace continuously learns from:
+
+- **User Questions** - Common topics and question patterns
+- **Response Quality** - What approaches work best
+- **User Preferences** - Communication styles and information depth
+- **Knowledge Domains** - Areas of expertise frequently requested
+- **Interaction Patterns** - Successful conversation flows
 
 ## Troubleshooting
 
-- **"No workspace.yml found"** - Run from the telephone directory
+- **"No workspace.yml found"** - Run from the tbd directory
 - **"Session ended early"** - Check evaluation prompts in workspace.yml
-- **"Agent not transforming"** - Verify API key and model availability
+- **"Agent not responding"** - Verify API key and model availability
+- **"Memory not loading"** - Check .atlas/memory/ directory permissions

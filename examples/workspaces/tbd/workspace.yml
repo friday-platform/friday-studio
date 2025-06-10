@@ -2,29 +2,43 @@ version: "1.0"
 workspace:
   id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "TBD"
-  description: "A helpful assistant that can answer questions and help with tasks"
+  description: "A memory-enhanced helpful assistant that learns from interactions and improves over time"
 supervisor:
   model: "claude-4-sonnet-20250514"
   prompts:
     system: |
-      You are the WorkspaceSupervisor for a TBD workspace.
-      Your role is to coordinate agents that answer questions and help with tasks.
+      You are the WorkspaceSupervisor for a memory-enhanced TBD workspace.
+      Your role is to coordinate agents that provide helpful assistance with continuous learning.
     intent: |
-      You are coordinating a workspace that responds to user requests.
-
-      Each agent should respond to the user request in their unique way.
+      You are coordinating a memory-enhanced workspace that responds to user requests with continuous learning:
+      0. Load context and patterns from past user interactions (memory-agent - LOAD)
+      1. Process user request with contextual awareness (tbd-agent)
+      2. Store session learnings for future improvement (memory-agent - STORE)
+      
+      The memory agent provides context at the start and captures learnings at the end.
     evaluation: |
-      CRITICAL FOR TBD:
-      - Always check the memory for relevant information.
-      - Try to remember as much as possible from both the user request and the agent's response.
+      CRITICAL FOR MEMORY-ENHANCED TBD:
+      - The session is ONLY complete when ALL THREE agent invocations have processed the request
+      - Required sequence: memory-agent (load) → tbd-agent → memory-agent (store)
+      - You must see outputs from ALL agents in the correct order
+      - The first memory-agent call loads context, the last stores learnings
+      - The TBD workflow requires the complete pipeline including memory operations
     session: |
-      This is a TBD session. The user request must pass through ALL agents in sequence.
+      This is a memory-enhanced TBD session. The user request must pass through ALL agents in sequence:
+      memory-agent (load context) → tbd-agent (process request) → memory-agent (store learnings)
 agents:
+  memory-agent:
+    type: "local"
+    path: "./agents/memory-agent.ts"
+    purpose: "Manages memory operations for continuous learning and improvement"
+    model: "claude-4-sonnet-20250514"
+    priority: 1  # Run first and last
   tbd-agent:
     type: "local"
     path: "./agents/tbd-agent.ts"
     purpose: "Specializes in answering questions and helping with tasks"
     model: "claude-4-sonnet-20250514"
+    priority: 2
 signals:
   tbd-message:
     description: "Trigger a TBD workspace with a message"
@@ -37,11 +51,26 @@ signals:
           description: "The message to transform"
       required: ["message"]
     mappings:
-      - agents: ["tbd-agent"]
+      - agents: ["memory-agent", "tbd-agent", "memory-agent"]
         strategy: "sequential"
+        conditions:
+          memory-agent-start:
+            position: "first"
+            prompt: |
+              LOAD MODE: Load relevant context and patterns from past user interactions.
+              Analyze previous sessions to provide guidance for this user request.
+              User message: "{message}"
+          memory-agent-end:
+            position: "last"
+            prompt: |
+              STORE MODE: Analyze the complete TBD session and extract learnings.
+              Store insights in appropriate memory types for future improvement.
+              Session results: {session_results}
         prompt: |
-          Process this message through all three agents in sequence.
-          Each agent should transform the output of the previous one.
+          Process this user request through the complete TBD pipeline:
+          1. Memory Agent loads context and patterns from past interactions
+          2. TBD Agent processes the request with contextual awareness
+          3. Memory Agent stores session learnings and insights
 runtime:
   server:
     port: 8080
