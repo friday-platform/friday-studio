@@ -1,5 +1,6 @@
 /// <reference no-default-lib="true" />
 /// <reference lib="deno.worker" />
+/// <reference lib="deno.unstable" />
 
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
@@ -219,7 +220,7 @@ export abstract class BaseWorker<
             context.channels.add(event.channel);
 
             // Setup channel listener
-            channel.onmessage = (e) => this.handleBroadcast(event.channel, e.data);
+            channel.onmessage = (e: MessageEvent) => this.handleBroadcast(event.channel, e.data);
           }
         },
         setupMessagePort: ({ context, event }) => {
@@ -338,7 +339,8 @@ export abstract class BaseWorker<
   }
 
   protected log(...args: any[]): void {
-    const message = args.map((arg) => typeof arg === "object" ? JSON.stringify(arg) : String(arg))
+    const message = args
+      .map((arg) => typeof arg === "object" ? JSON.stringify(arg) : String(arg))
       .join(" ");
     this.logger.info(message);
   }

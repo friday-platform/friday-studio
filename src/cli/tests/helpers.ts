@@ -18,13 +18,14 @@ export async function runCLI(
   args: string[],
   options: CLIOptions = {},
 ): Promise<CLIResult> {
+  const cliPath = new URL("../../cli.tsx", import.meta.url).pathname;
   const cmd = new Deno.Command("deno", {
     args: [
       "run",
       "--allow-all",
       "--unstable-broadcast-channel",
       "--unstable-worker-options",
-      new URL("../cli.tsx", import.meta.url).pathname,
+      cliPath,
       ...args,
     ],
     cwd: options.cwd || Deno.cwd(),

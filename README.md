@@ -236,8 +236,9 @@ cd examples/workspaces/telephone
 ```
 
 **What happens:**
+
 1. **Mishearing Agent** - Introduces phonetic errors and mishearing
-2. **Embellishment Agent** - Adds dramatic context and details  
+2. **Embellishment Agent** - Adds dramatic context and details
 3. **Reinterpretation Agent** - Transforms the meaning entirely
 
 Your message gets hilariously transformed through this chain!

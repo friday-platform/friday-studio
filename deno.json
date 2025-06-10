@@ -1,18 +1,21 @@
 {
+  "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
   "exports": "./mod.ts",
   "compilerOptions": {
     "lib": ["deno.window", "deno.worker", "deno.unstable"]
   },
+  "unstable": ["broadcast-channel", "worker-options", "otel"],
   "tasks": {
-    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ./src/cli.tsx",
-    "dev": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel --watch src/cli.tsx",
-    "start": "OTEL_DENO=true deno run --allow-read --allow-write --allow-net --allow-env --unstable-broadcast-channel --unstable-worker-options --unstable-otel src/cli.tsx",
-    "test": "OTEL_DENO=true deno test --allow-read --allow-write --unstable-broadcast-channel --unstable-worker-options --unstable-otel",
+    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all ./src/cli.tsx",
+    "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
+    "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
+    "test": "OTEL_DENO=true deno test --allow-all",
     "fmt": "deno fmt",
     "lint": "deno lint"
   },
   "imports": {
+    "@std/assert": "jsr:@std/assert@^1.0.13",
     "@std/fs": "jsr:@std/fs@^1.0.0",
     "@std/path": "jsr:@std/path@^1.0.0",
     "@std/async": "jsr:@std/async@^1.0.0",

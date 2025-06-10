@@ -1,4 +1,3 @@
-/// <reference lib="deno.unstable" />
 import { assign, createActor, createMachine } from "xstate";
 import { logger } from "../../utils/logger.ts";
 
@@ -307,12 +306,13 @@ export class WorkerManager {
     const { id, type } = metadata;
 
     // Create worker with permissions to use BroadcastChannel
+    // @ts-ignore - Unstable API
     const worker = new Worker(url, {
       type: "module",
       deno: {
         permissions: "inherit",
       },
-    } as any);
+    });
 
     // Create state machine for this worker
     const workerMachine = createWorkerMachine(id, type);
@@ -441,6 +441,12 @@ export class WorkerManager {
     const worker = this.workers.get(workerId);
     if (!worker) return;
 
+    // Check if BroadcastChannel is available
+    if (typeof BroadcastChannel === "undefined") {
+      logger.warn("BroadcastChannel not available, skipping channel setup");
+      return;
+    }
+
     worker.broadcastChannel = new BroadcastChannel(channelName);
     worker.worker.postMessage({
       type: "joinChannel",
@@ -449,6 +455,12 @@ export class WorkerManager {
   }
 
   broadcast(channel: string, message: any): void {
+    // Check if BroadcastChannel is available
+    if (typeof BroadcastChannel === "undefined") {
+      logger.warn("BroadcastChannel not available, skipping broadcast");
+      return;
+    }
+
     const broadcastChannel = new BroadcastChannel(channel);
     broadcastChannel.postMessage(message);
     broadcastChannel.close();

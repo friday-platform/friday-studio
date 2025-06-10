@@ -1,9 +1,11 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@1": "1.0.13",
     "jsr:@std/dotenv@0.225": "0.225.5",
     "jsr:@std/fs@1": "1.0.18",
+    "jsr:@std/internal@^1.0.6": "1.0.8",
     "jsr:@std/path@1": "1.1.0",
     "jsr:@std/path@^1.1.0": "1.1.0",
     "jsr:@std/yaml@*": "1.0.7",
@@ -18,6 +20,12 @@
     "npm:xstate@^5.18.0": "5.19.2"
   },
   "jsr": {
+    "@std/assert@1.0.13": {
+      "integrity": "ae0d31e41919b12c656c742b22522c32fb26ed0cba32975cb0de2a273cb68b29",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
     "@std/async@1.0.13": {
       "integrity": "1d76ca5d324aef249908f7f7fe0d39aaf53198e5420604a59ab5c035adc97c96"
     },
@@ -32,6 +40,9 @@
       "dependencies": [
         "jsr:@std/path@^1.1.0"
       ]
+    },
+    "@std/internal@1.0.8": {
+      "integrity": "fc66e846d8d38a47cffd274d80d2ca3f0de71040f855783724bb6b87f60891f5"
     },
     "@std/path@1.0.8": {
       "integrity": "548fa456bb6a04d3c1a1e7477986b6cffbce95102d0bb447c67c4ee70e0364be"
@@ -691,7 +702,7 @@
     "https://deno.land/std@0.224.0/assert/assertion_error.ts": "ba8752bd27ebc51f723702fac2f54d3e94447598f54264a6653d6413738a8917",
     "https://deno.land/std@0.224.0/assert/equal.ts": "bddf07bb5fc718e10bb72d5dc2c36c1ce5a8bdd3b647069b6319e07af181ac47",
     "https://deno.land/std@0.224.0/assert/fail.ts": "0eba674ffb47dff083f02ced76d5130460bff1a9a68c6514ebe0cdea4abadb68",
-    "https://deno.land/std@0.224.0/assert/mod.ts": "48b8cb8a619ea0b7958ad7ee9376500fe902284bb36f0e32c598c3dc34cbd6f3",
+    "@std/assert": "48b8cb8a619ea0b7958ad7ee9376500fe902284bb36f0e32c598c3dc34cbd6f3",
     "https://deno.land/std@0.224.0/assert/unimplemented.ts": "8c55a5793e9147b4f1ef68cd66496b7d5ba7a9e7ca30c6da070c1a58da723d73",
     "https://deno.land/std@0.224.0/assert/unreachable.ts": "5ae3dbf63ef988615b93eb08d395dda771c96546565f9e521ed86f6510c29e19",
     "https://deno.land/std@0.224.0/fmt/colors.ts": "508563c0659dd7198ba4bbf87e97f654af3c34eb56ba790260f252ad8012e1c5",
@@ -955,6 +966,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/assert@^1.0.13",
       "jsr:@std/async@1",
       "jsr:@std/dotenv@0.225",
       "jsr:@std/fs@1",
