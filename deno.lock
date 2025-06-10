@@ -19,7 +19,8 @@
     "npm:ink@^5.0.1": "5.2.1_react@18.3.1",
     "npm:meow@^13.2.0": "13.2.0",
     "npm:react@^18.3.1": "18.3.1",
-    "npm:xstate@^5.18.0": "5.19.2"
+    "npm:xstate@^5.18.0": "5.19.2",
+    "npm:zod@^3.25.57": "3.25.57"
   },
   "jsr": {
     "@std/assert@1.0.13": {
@@ -62,7 +63,7 @@
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
-        "zod"
+        "zod@3.24.3"
       ]
     },
     "@ai-sdk/provider-utils@2.2.8_zod@3.24.3": {
@@ -71,7 +72,7 @@
         "@ai-sdk/provider",
         "nanoid",
         "secure-json-parse",
-        "zod"
+        "zod@3.24.3"
       ]
     },
     "@ai-sdk/provider@1.1.3": {
@@ -88,10 +89,10 @@
         "react",
         "swr",
         "throttleit",
-        "zod"
+        "zod@3.24.3"
       ],
       "optionalPeers": [
-        "zod"
+        "zod@3.24.3"
       ]
     },
     "@ai-sdk/ui-utils@1.2.11_zod@3.24.3": {
@@ -99,7 +100,7 @@
       "dependencies": [
         "@ai-sdk/provider",
         "@ai-sdk/provider-utils",
-        "zod",
+        "zod@3.24.3",
         "zod-to-json-schema"
       ]
     },
@@ -132,7 +133,7 @@
         "@opentelemetry/api",
         "jsondiffpatch",
         "react",
-        "zod"
+        "zod@3.24.3"
       ],
       "optionalPeers": [
         "react"
@@ -412,11 +413,14 @@
     "zod-to-json-schema@3.24.5_zod@3.24.3": {
       "integrity": "sha512-/AuWwMP+YqiPbsJx5D6TfgRTc4kTLjsh5SOcd4bLsfUg2RcEXrFMJl1DGgdHy2aCfsIA/cr/1JM0xcB2GZji8g==",
       "dependencies": [
-        "zod"
+        "zod@3.24.3"
       ]
     },
     "zod@3.24.3": {
       "integrity": "sha512-HhY1oqzWCQWuUqvBFnsyrtZRhyPeR7SUGv+C4+MsisMuVfSPx8HpwWqH8tRahSlt6M3PiFAcoeFhZAqIXTxoSg=="
+    },
+    "zod@3.25.57": {
+      "integrity": "sha512-6tgzLuwVST5oLUxXTmBqoinKMd3JeesgbgseXeFasKKj8Q1FCZrHnbqJOyiEvr4cVAlbug+CgIsmJ8cl/pU5FA=="
     }
   },
   "remote": {
@@ -986,7 +990,8 @@
       "npm:ink@^5.0.1",
       "npm:meow@^13.2.0",
       "npm:react@^18.3.1",
-      "npm:xstate@^5.18.0"
+      "npm:xstate@^5.18.0",
+      "npm:zod@^3.25.57"
     ]
   }
 }

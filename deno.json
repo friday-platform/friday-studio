@@ -26,7 +26,8 @@
     "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
-    "xstate": "npm:xstate@^5.18.0"
+    "xstate": "npm:xstate@^5.18.0",
+    "zod": "npm:zod@^3.25.57"
   },
   "fmt": {
     "lineWidth": 100
