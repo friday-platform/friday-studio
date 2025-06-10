@@ -4,6 +4,7 @@
 import { BaseWorker } from "./base-worker.ts";
 import { AgentRegistry } from "../agent-registry.ts";
 import type { IWorkspaceAgent } from "../../types/core.ts";
+import { AtlasTelemetry } from "../../utils/telemetry.ts";
 
 class AgentWorker extends BaseWorker {
   private agent: IWorkspaceAgent | null = null;
@@ -51,56 +52,74 @@ class AgentWorker extends BaseWorker {
 
     switch (data.action) {
       case "invoke": {
-        const { input } = data;
-        this.log(`Processing input:`, JSON.stringify(input));
+        const { input, traceHeaders } = data;
 
-        // Extract message from input if it's an object
-        const message = typeof input === "object" && input.message ? input.message : input;
+        return await AtlasTelemetry.withWorkerSpan(
+          {
+            operation: "invoke",
+            component: "agent",
+            traceHeaders,
+            workerId: this.context.id,
+            sessionId: this.sessionId!,
+            agentId: this.agentId!,
+            agentType: this.agentType!,
+            attributes: {
+              "input.size": JSON.stringify(input).length
+            }
+          },
+          async (span) => {
 
-        // Check if agent supports streaming
-        if (
-          "invokeStream" in this.agent &&
-          typeof this.agent.invokeStream === "function"
-        ) {
-          let result = "";
-          for await (const chunk of this.agent.invokeStream(message)) {
-            result += chunk;
+            this.log(`Processing input:`, JSON.stringify(input));
 
-            // Send chunks to supervisor via direct message
-            this.sendDirect("supervisor", {
-              type: "chunk",
-              chunk,
-              agentId: this.agentId,
-              taskId,
-            });
+            // Extract message from input if it's an object
+            const message = typeof input === "object" && input.message ? input.message : input;
+
+            // Check if agent supports streaming
+            if (
+              "invokeStream" in this.agent! &&
+              typeof this.agent!.invokeStream === "function"
+            ) {
+              let result = "";
+              for await (const chunk of this.agent!.invokeStream(message)) {
+                result += chunk;
+
+                // Send chunks to supervisor via direct message
+                this.sendDirect("supervisor", {
+                  type: "chunk",
+                  chunk,
+                  agentId: this.agentId,
+                  taskId,
+                });
+              }
+
+              // Broadcast completion to session
+              this.broadcast(`session-${this.sessionId}`, {
+                type: "agentMessage",
+                from: this.agentId,
+                message: result,
+                timestamp: new Date().toISOString(),
+              });
+
+              return result;
+            } else if (
+              "invoke" in this.agent! && typeof this.agent!.invoke === "function"
+            ) {
+              const result = await this.agent!.invoke(message);
+
+              // Broadcast to session
+              this.broadcast(`session-${this.sessionId}`, {
+                type: "agentMessage",
+                from: this.agentId,
+                message: result,
+                timestamp: new Date().toISOString(),
+              });
+
+              return result;
+            } else {
+              throw new Error(`Agent ${this.agentId} does not support invoke or invokeStream`);
+            }
           }
-
-          // Broadcast completion to session
-          this.broadcast(`session-${this.sessionId}`, {
-            type: "agentMessage",
-            from: this.agentId,
-            message: result,
-            timestamp: new Date().toISOString(),
-          });
-
-          return result;
-        } else if (
-          "invoke" in this.agent && typeof this.agent.invoke === "function"
-        ) {
-          const result = await this.agent.invoke(message);
-
-          // Broadcast to session
-          this.broadcast(`session-${this.sessionId}`, {
-            type: "agentMessage",
-            from: this.agentId,
-            message: result,
-            timestamp: new Date().toISOString(),
-          });
-
-          return result;
-        } else {
-          throw new Error("Agent does not support invoke or invokeStream");
-        }
+        );
       }
 
       case "query": {

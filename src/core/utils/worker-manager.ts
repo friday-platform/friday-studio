@@ -475,7 +475,7 @@ export class WorkerManager {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Task ${taskId} timeout`));
-      }, 60000);
+      }, 180000);
 
       // Listen for result
       const handleMessage = (event: MessageEvent) => {

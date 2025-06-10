@@ -3,6 +3,7 @@
 
 import { BaseWorker } from "./base-worker.ts";
 import { AgentResult, SessionContext, SessionSupervisor } from "../session-supervisor.ts";
+import { AtlasTelemetry } from "../../utils/telemetry.ts";
 
 interface SessionConfig {
   sessionId: string;
@@ -51,113 +52,157 @@ class SessionSupervisorWorker extends BaseWorker {
 
     switch (data.action) {
       case "initialize": {
-        // Receive session context from WorkspaceSupervisor
-        const { intent, signal, payload, workspaceId, agents } = data;
+        const { intent, signal, payload, workspaceId, agents, traceHeaders } = data;
 
-        const sessionContext: SessionContext = {
-          sessionId: this.sessionId!,
-          workspaceId,
-          signal,
-          payload,
-          availableAgents: agents,
-          filteredMemory: [], // WorkspaceSupervisor would provide this
-          constraints: intent?.constraints,
-          additionalPrompts: data.additionalPrompts,
-        };
+        return await AtlasTelemetry.withWorkerSpan(
+          {
+            operation: "initialize",
+            component: "session",
+            traceHeaders,
+            workerId: this.context.id,
+            sessionId: this.sessionId!,
+            workspaceId
+          },
+          async (span) => {
 
-        await this.supervisor.initializeSession(sessionContext);
+            const sessionContext: SessionContext = {
+              sessionId: this.sessionId!,
+              workspaceId,
+              signal,
+              payload,
+              availableAgents: agents,
+              filteredMemory: [], // WorkspaceSupervisor would provide this
+              constraints: intent?.constraints,
+              additionalPrompts: data.additionalPrompts,
+            };
 
-        this.log(`Session initialized with intent: ${intent?.id || "none"}`);
-        return { status: "initialized", intentId: intent?.id };
+            await this.supervisor!.initializeSession(sessionContext);
+
+            this.log(`Session initialized with intent: ${intent?.id || "none"}`);
+            return { status: "initialized", intentId: intent?.id };
+          }
+        );
       }
 
       case "executeSession": {
-        // Create execution plan using SessionSupervisor's intelligence
-        const plan = await this.supervisor.createExecutionPlan();
-        this.log(`Execution plan created with ${plan.phases.length} phases`);
+        const { traceHeaders } = data;
 
-        const results = [];
+        return await AtlasTelemetry.withWorkerSpan(
+          {
+            operation: "executeSession",
+            component: "session",
+            traceHeaders,
+            workerId: this.context.id,
+            sessionId: this.sessionId!
+          },
+          async (span) => {
 
-        // Execute each phase of the plan
-        for (const phase of plan.phases) {
-          this.log(`Executing phase: ${phase.name}`);
+            // Create execution plan using SessionSupervisor's intelligence
+            const plan = await AtlasTelemetry.withSpan(
+              "session.createExecutionPlan",
+              async () => {
+                return await this.supervisor!.createExecutionPlan();
+              },
+              { "session.id": this.sessionId! }
+            );
+            this.log(`Execution plan created with ${plan.phases.length} phases`);
 
-          const phaseResults: AgentResult[] = [];
+            const results = [];
 
-          // Execute agents in the phase based on strategy
-          if (phase.executionStrategy === "sequential") {
-            for (const agentTask of phase.agents) {
-              const result = await this.executeAgentTask(
-                agentTask,
-                phaseResults,
+            // Execute each phase of the plan
+            for (const phase of plan.phases) {
+              await AtlasTelemetry.withSpan(
+                `session.executePhase.${phase.name}`,
+                async (phaseSpan) => {
+                  this.log(`Executing phase: ${phase.name}`);
+                  phaseSpan?.setAttribute("phase.name", phase.name);
+                  phaseSpan?.setAttribute("phase.strategy", phase.executionStrategy);
+
+                  const phaseResults: AgentResult[] = [];
+
+                  // Create trace headers for agent communication
+                  const agentTraceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+                  // Execute agents in the phase based on strategy
+                  if (phase.executionStrategy === "sequential") {
+                    for (const agentTask of phase.agents) {
+                      const result = await this.executeAgentTask(
+                        agentTask,
+                        phaseResults,
+                        agentTraceHeaders
+                      );
+                      phaseResults.push(result);
+
+                      // Let supervisor evaluate progress
+                      const evaluation = await this.supervisor!.evaluateProgress(
+                        phaseResults,
+                      );
+                      if (evaluation.isComplete) {
+                        this.log("Session goal achieved early");
+                        break;
+                      }
+                    }
+                  } else {
+                    // Parallel execution
+                    const promises = phase.agents.map((agentTask) =>
+                      this.executeAgentTask(agentTask, phaseResults, agentTraceHeaders)
+                    );
+                    const parallelResults = await Promise.all(promises);
+                    phaseResults.push(...parallelResults);
+                  }
+
+                  results.push({
+                    phaseId: phase.id,
+                    phaseName: phase.name,
+                    results: phaseResults,
+                  });
+                },
+                { "phase.id": phase.id }
               );
-              phaseResults.push(result);
 
-              // Let supervisor evaluate progress
-              const evaluation = await this.supervisor.evaluateProgress(
-                phaseResults,
+              // Check if we should continue to next phase
+              const evaluation = await this.supervisor!.evaluateProgress(
+                results.flatMap((r) => r.results),
               );
+
               if (evaluation.isComplete) {
-                this.log("Session goal achieved early");
                 break;
+              } else if (evaluation.nextAction === "adapt") {
+                // Supervisor could adapt the plan here
+                this.log("Adapting execution plan based on results");
               }
             }
-          } else {
-            // Parallel execution
-            const promises = phase.agents.map((agentTask) =>
-              this.executeAgentTask(agentTask, phaseResults)
+
+            // Get final execution summary
+            const summary = this.supervisor!.getExecutionSummary();
+
+            // Get LLM-generated session summary
+            const sessionSummary = await this.supervisor!.generateSessionSummary(
+              results,
             );
-            const parallelResults = await Promise.all(promises);
-            phaseResults.push(...parallelResults);
+
+            // Log both diagnostic info and LLM summary
+            this.log(`\n📊 Session Results Summary:`);
+            this.log(`Session ID: ${this.sessionId}`);
+            this.log(`Signal: ${this.supervisor!.getSessionContext()?.signal.id}`);
+            this.log(`Phases executed: ${results.length}`);
+            this.log(
+              `Total agents invoked: ${results.flatMap((r) => r.results).length}`,
+            );
+            this.log(`Status: ${summary.status}`);
+            this.log(`\n🤖 AI Summary:\n${sessionSummary}`);
+
+            return {
+              status: summary.status,
+              results,
+              plan: summary.plan,
+              evaluation: await this.supervisor!.evaluateProgress(
+                results.flatMap((r) => r.results),
+              ),
+              summary: sessionSummary,
+            };
           }
-
-          results.push({
-            phaseId: phase.id,
-            phaseName: phase.name,
-            results: phaseResults,
-          });
-
-          // Check if we should continue to next phase
-          const evaluation = await this.supervisor.evaluateProgress(
-            results.flatMap((r) => r.results),
-          );
-
-          if (evaluation.isComplete) {
-            break;
-          } else if (evaluation.nextAction === "adapt") {
-            // Supervisor could adapt the plan here
-            this.log("Adapting execution plan based on results");
-          }
-        }
-
-        // Get final execution summary
-        const summary = this.supervisor.getExecutionSummary();
-
-        // Get LLM-generated session summary
-        const sessionSummary = await this.supervisor.generateSessionSummary(
-          results,
         );
-
-        // Log both diagnostic info and LLM summary
-        this.log(`\n📊 Session Results Summary:`);
-        this.log(`Session ID: ${this.sessionId}`);
-        this.log(`Signal: ${this.supervisor.getSessionContext()?.signal.id}`);
-        this.log(`Phases executed: ${results.length}`);
-        this.log(
-          `Total agents invoked: ${results.flatMap((r) => r.results).length}`,
-        );
-        this.log(`Status: ${summary.status}`);
-        this.log(`\n🤖 AI Summary:\n${sessionSummary}`);
-
-        return {
-          status: summary.status,
-          results,
-          plan: summary.plan,
-          evaluation: await this.supervisor.evaluateProgress(
-            results.flatMap((r) => r.results),
-          ),
-          summary: sessionSummary,
-        };
       }
 
       case "spawnAgent": {
@@ -277,6 +322,7 @@ class SessionSupervisorWorker extends BaseWorker {
   private async executeAgentTask(
     agentTask: any,
     previousResults: any[],
+    traceHeaders?: Record<string, string>,
   ): Promise<AgentResult> {
     const { agentId, task, inputSource, dependencies } = agentTask;
     const startTime = Date.now();
@@ -311,8 +357,21 @@ class SessionSupervisorWorker extends BaseWorker {
       await this.spawnAgent(agentId, agentType);
     }
 
-    // Invoke the agent
-    const output = await this.invokeAgent(agentId, input, crypto.randomUUID());
+    // Invoke the agent with telemetry
+    const output = await AtlasTelemetry.withWorkerSpan(
+      {
+        operation: "invokeAgent",
+        component: "session",
+        traceHeaders,
+        workerId: this.context.id,
+        sessionId: this.sessionId!,
+        agentId,
+        agentType: this.getAgentType(agentId)
+      },
+      async (span) => {
+        return await this.invokeAgent(agentId, input, crypto.randomUUID(), traceHeaders);
+      }
+    );
 
     return {
       agentId,
@@ -339,6 +398,7 @@ class SessionSupervisorWorker extends BaseWorker {
     agentId: string,
     input: any,
     taskId: string,
+    traceHeaders?: Record<string, string>,
   ): Promise<any> {
     const agentInfo = this.agents.get(agentId);
     if (!agentInfo) {
@@ -348,7 +408,7 @@ class SessionSupervisorWorker extends BaseWorker {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Agent ${agentId} invocation timeout`));
-      }, 60000);
+      }, 180000);
 
       // Listen for result
       const handleMessage = (event: MessageEvent) => {
@@ -367,13 +427,16 @@ class SessionSupervisorWorker extends BaseWorker {
 
       agentInfo.worker.addEventListener("message", handleMessage);
 
-      // Send task to agent
+      // Send task to agent with trace headers
       agentInfo.worker.postMessage({
         type: "task",
         taskId,
         data: {
           action: "invoke",
           input,
+          agentId,
+          sessionId: this.sessionId,
+          traceHeaders, // Pass trace context to agent
         },
       });
     });

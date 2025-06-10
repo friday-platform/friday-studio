@@ -4,6 +4,7 @@
 import { BaseWorker } from "./base-worker.ts";
 import { WorkspaceSupervisor } from "../supervisor.ts";
 import type { IWorkspace } from "../../types/core.ts";
+import { AtlasTelemetry } from "../../utils/telemetry.ts";
 
 interface SessionWorkerInfo {
   worker: Worker;
@@ -45,80 +46,104 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
     switch (data.action) {
       case "processSignal": {
-        const { signal, payload, sessionId } = data;
+        const { signal, payload, sessionId, traceHeaders } = data;
 
-        // Spawn session worker
-        const sessionWorker = await this.spawnSessionWorker(sessionId);
-
-        // Join the session's broadcast channel
-        this.actor.send({
-          type: "JOIN_CHANNEL",
-          channel: `session-${sessionId}`,
-        });
-
-        // Use WorkspaceSupervisor's intelligence to analyze the signal
-        this.log("Analyzing signal with WorkspaceSupervisor...");
-        const analyzeStart = Date.now();
-        const intent = await this.supervisor.analyzeSignal(signal, payload);
-        const analyzeTime = Date.now() - analyzeStart;
-        this.log(`Signal analysis complete (took ${analyzeTime}ms)`);
-
-        // Create filtered context for this specific session
-        this.log("Creating session context...");
-        const contextStart = Date.now();
-        const sessionContext = await this.supervisor.createSessionContext(
-          intent,
-          signal,
-          payload,
-        );
-        const contextTime = Date.now() - contextStart;
-        this.log(`Session context created (took ${contextTime}ms)`);
-
-        // Send filtered initialization data to session worker
-        this.log(`Sending initialization to session worker ${sessionId}...`);
-        const initTaskId = crypto.randomUUID();
-        await this.sendToSessionWorker(sessionId, {
-          type: "task",
-          taskId: initTaskId,
-          data: {
-            action: "initialize",
-            intent,
-            signal,
-            payload,
-            workspaceId: this.workspace?.id,
-            agents: sessionContext.availableAgents || [],
-            filteredMemory: sessionContext.filteredMemory || [],
-            constraints: sessionContext.constraints,
-            additionalPrompts: sessionContext.additionalPrompts,
-          },
-        });
-        this.log(`Initialization sent to session worker`);
-
-        // Start session execution in worker (SessionSupervisor will create the plan)
-        const executionTaskId = crypto.randomUUID();
-        const result = await this.sendToSessionWorker(sessionId, {
-          type: "task",
-          taskId: executionTaskId,
-          data: {
-            action: "executeSession",
-          },
-        });
-
-        // Check if session completed and notify runtime
-        if (result && result.status === "completed") {
-          this.log(`Session ${sessionId} completed, notifying runtime`);
-          self.postMessage({
-            type: "sessionComplete",
+        return await AtlasTelemetry.withWorkerSpan(
+          {
+            operation: "processSignal",
+            component: "workspace",
+            traceHeaders,
+            workerId: this.context.id,
             sessionId,
-            result,
-          });
-        }
+            signalId: signal.id,
+            signalType: signal.provider || "unknown",
+            workspaceId: this.workspace?.id
+          },
+          async (span) => {
 
-        return {
-          sessionId,
-          status: "started",
-          result,
-        };
+            // Spawn session worker
+            const sessionWorker = await this.spawnSessionWorker(sessionId);
+
+            // Join the session's broadcast channel
+            this.actor.send({
+              type: "JOIN_CHANNEL",
+              channel: `session-${sessionId}`,
+            });
+
+            // Use WorkspaceSupervisor's intelligence to analyze the signal
+            this.log("Analyzing signal with WorkspaceSupervisor...");
+            const intent = await AtlasTelemetry.withSpan(
+              "supervisor.analyzeSignal",
+              async () => {
+                return await this.supervisor!.analyzeSignal(signal, payload);
+              },
+              { "signal.id": signal.id }
+            );
+            this.log(`Signal analysis complete`);
+
+            // Create filtered context for this specific session
+            this.log("Creating session context...");
+            const sessionContext = await AtlasTelemetry.withSpan(
+              "supervisor.createSessionContext",
+              async () => {
+                return await this.supervisor!.createSessionContext(intent, signal, payload);
+              },
+              { "session.id": sessionId }
+            );
+            this.log(`Session context created`);
+
+            // Create trace headers for session worker communication
+            const sessionTraceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+            // Send filtered initialization data to session worker
+            this.log(`Sending initialization to session worker ${sessionId}...`);
+            const initTaskId = crypto.randomUUID();
+            await this.sendToSessionWorker(sessionId, {
+              type: "task",
+              taskId: initTaskId,
+              data: {
+                action: "initialize",
+                intent,
+                signal,
+                payload,
+                workspaceId: this.workspace?.id,
+                agents: sessionContext.availableAgents || [],
+                filteredMemory: sessionContext.filteredMemory || [],
+                constraints: sessionContext.constraints,
+                additionalPrompts: sessionContext.additionalPrompts,
+                traceHeaders: sessionTraceHeaders, // Pass trace context to session
+              },
+            });
+            this.log(`Initialization sent to session worker`);
+
+            // Start session execution in worker (SessionSupervisor will create the plan)
+            const executionTaskId = crypto.randomUUID();
+            const result = await this.sendToSessionWorker(sessionId, {
+              type: "task",
+              taskId: executionTaskId,
+              data: {
+                action: "executeSession",
+                traceHeaders: sessionTraceHeaders, // Pass trace context
+              },
+            });
+
+            // Check if session completed and notify runtime
+            if (result && result.status === "completed") {
+              this.log(`Session ${sessionId} completed, notifying runtime`);
+              self.postMessage({
+                type: "sessionComplete",
+                sessionId,
+                result,
+              });
+            }
+
+            return {
+              sessionId,
+              status: "started",
+              result,
+            };
+          }
+        );
       }
 
       case "getStatus": {
@@ -258,7 +283,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Session worker timeout for task: ${message.taskId}`));
-      }, 60000);
+      }, 180000);
 
       // Listen for result
       const handleMessage = (event: MessageEvent) => {

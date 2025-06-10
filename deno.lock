@@ -11,6 +11,7 @@
     "jsr:@std/yaml@*": "1.0.7",
     "npm:@ai-sdk/anthropic@*": "1.2.12_zod@3.24.3",
     "npm:@ai-sdk/anthropic@^1.0.2": "1.2.12_zod@3.24.3",
+    "npm:@opentelemetry/api@1": "1.9.0",
     "npm:@types/node@*": "22.15.15",
     "npm:ai@*": "4.3.16_react@18.3.1_zod@3.24.3",
     "npm:ai@^4.0.7": "4.3.16_react@18.3.1_zod@3.24.3",

@@ -1,6 +1,7 @@
 import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
 import { cors } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
+import { AtlasTelemetry } from "../utils/telemetry.ts";
 
 export interface WorkspaceServerOptions {
   port?: number;
@@ -72,22 +73,37 @@ export class WorkspaceServer {
         return c.json({ error: `Signal not found: ${signalId}` }, 404);
       }
 
-      try {
-        // Process signal through runtime
-        const session = await this.runtime.processSignal(signal, payload);
+      // Create root span for HTTP request to establish proper trace hierarchy
+      return await AtlasTelemetry.withServerSpan(
+        "POST /signals/:signalId",
+        async (span) => {
+          // Add HTTP and signal attributes to root span
+          AtlasTelemetry.addSignalAttributes(span, signalId, signal.provider || "http");
 
-        return c.json({
-          message: "Signal processed",
-          sessionId: session.id,
-          status: session.status,
-        });
-      } catch (error) {
-        return c.json({
-          error: `Failed to process signal: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
+          try {
+            // Process signal through runtime with proper trace context
+            const session = await this.runtime.processSignal(signal, payload);
+
+            return c.json({
+              message: "Signal processed",
+              sessionId: session.id,
+              status: session.status,
+            });
+          } catch (error) {
+            return c.json({
+              error: `Failed to process signal: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }, 500);
+          }
+        },
+        {
+          "http.method": "POST",
+          "http.url": `/signals/${signalId}`,
+          "signal.id": signalId,
+          "payload.size": JSON.stringify(payload).length
+        }
+      );
     });
 
     // Get session status

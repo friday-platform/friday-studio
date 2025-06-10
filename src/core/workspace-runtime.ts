@@ -3,6 +3,7 @@ import { WorkerManager, type WorkerMetadata } from "./utils/worker-manager.ts";
 import { Session } from "./session.ts";
 import { type Actor, assign, createActor, createMachine, fromPromise } from "xstate";
 import { logger } from "../utils/logger.ts";
+import { AtlasTelemetry } from "../utils/telemetry.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -99,87 +100,97 @@ export class WorkspaceRuntime {
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<IWorkspaceSession> {
-    const state = this.stateMachine.getSnapshot();
+    return await AtlasTelemetry.withServerSpan(
+      "workspace.processSignal", 
+      async (span) => {
+        // Add workspace and signal attributes
+        AtlasTelemetry.addWorkspaceAttributes(span, this.workspace.id);
+        AtlasTelemetry.addSignalAttributes(span, signal.id, signal.provider || "unknown");
 
-    // Check if we're in a valid state to process signals
-    if (state.value !== "ready" && state.value !== "processing") {
-      // If uninitialized, initialize first
-      if (state.value === "uninitialized") {
-        this.stateMachine.send({ type: "INITIALIZE" });
-        // Wait for ready state
-        await this.waitForState(["ready"]);
-      } else {
-        throw new Error(`Cannot process signal in state: ${state.value}`);
-      }
-    }
+        const state = this.stateMachine.getSnapshot();
 
-    // Get supervisor ID from FSM context
-    const currentState = this.stateMachine.getSnapshot();
-    const supervisorId = currentState.context.supervisorId;
+        // Check if we're in a valid state to process signals
+        if (state.value !== "ready" && state.value !== "processing") {
+          // If uninitialized, initialize first
+          if (state.value === "uninitialized") {
+            this.stateMachine.send({ type: "INITIALIZE" });
+            // Wait for ready state
+            await this.waitForState(["ready"]);
+          } else {
+            throw new Error(`Cannot process signal in state: ${state.value}`);
+          }
+        }
 
-    if (!supervisorId) {
-      throw new Error("Supervisor not initialized in FSM context");
-    }
+        // Get supervisor ID from FSM context
+        const currentState = this.stateMachine.getSnapshot();
+        const supervisorId = currentState.context.supervisorId;
 
-    const supervisor = this.workerManager.getWorker(supervisorId);
-    if (!supervisor) {
-      throw new Error("Supervisor worker not found");
-    }
+        if (!supervisorId) {
+          throw new Error("Supervisor not initialized in FSM context");
+        }
 
-    logger.info(`Processing signal: ${signal.id}`, {
-      workspaceId: this.workspace.id,
-      signalId: signal.id,
-    });
+        const supervisor = this.workerManager.getWorker(supervisorId);
+        if (!supervisor) {
+          throw new Error("Supervisor worker not found");
+        }
 
-    // Generate task ID for tracking
-    const taskId = crypto.randomUUID();
-    const sessionId = crypto.randomUUID();
-
-    // Create session
-    const session = new Session(this.workspace.id, {
-      triggers: [signal],
-      callback: async (result) => {
-        logger.info(`Session completed`, {
+        logger.info(`Processing signal: ${signal.id}`, {
           workspaceId: this.workspace.id,
-          sessionId,
-          result,
+          signalId: signal.id,
         });
+
+        // Generate task ID for tracking
+        const taskId = crypto.randomUUID();
+        const sessionId = crypto.randomUUID();
+
+        // Create session
+        const session = new Session(this.workspace.id, {
+          triggers: [signal],
+          callback: async (result) => {
+            logger.info(`Session completed`, {
+              workspaceId: this.workspace.id,
+              sessionId,
+              result,
+            });
+          },
+        });
+
+        // Override session ID
+        (session as any).id = sessionId;
+
+        // Store session
+        this.sessions.set(sessionId, session);
+
+        // Send event to state machine
+        this.stateMachine.send({ type: "PROCESS_SIGNAL", signal, payload });
+
+        // Create trace headers for supervisor communication
+        const traceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+        // Send task to supervisor for processing
+        const taskResult = await this.workerManager.sendTask(
+          supervisorId,
+          taskId,
+          {
+            action: "processSignal",
+            signal: {
+              id: signal.id,
+              provider: signal.provider,
+              // Only send serializable signal data
+            },
+            payload,
+            sessionId,
+            traceHeaders, // Pass trace context to supervisor
+          },
+        );
+
+        return session;
       },
-    });
-
-    // Override session ID
-    (session as any).id = sessionId;
-
-    // Store session
-    this.sessions.set(sessionId, session);
-
-    // Send event to state machine
-    this.stateMachine.send({ type: "PROCESS_SIGNAL", signal, payload });
-
-    // Send task to supervisor for processing
-    const taskResult = await this.workerManager.sendTask(
-      supervisorId,
-      taskId,
       {
-        action: "processSignal",
-        signal: {
-          id: signal.id,
-          provider: signal.provider,
-          // Only send serializable signal data
-        },
-        payload,
-        sessionId,
-      },
+        "workspace.state": this.getState(),
+        "signal.payload.size": JSON.stringify(payload).length
+      }
     );
-
-    // Task result contains the session info
-    logger.debug(`Session task completed`, {
-      workspaceId: this.workspace.id,
-      sessionId,
-      taskResult,
-    });
-
-    return session;
   }
 
   /**
