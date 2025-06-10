@@ -38,7 +38,9 @@ All examples include helper scripts with OpenTelemetry integration enabled:
 - **`trigger-signal.sh`** - Triggers the example workflow
 - Both scripts include `OTEL_DENO=true` and `--unstable-otel` for telemetry
 
-### Quick Start - Telephone Game Example
+### Quick Start - Terminal UI (TUI)
+
+The fastest way to get started is with Atlas's built-in terminal interface:
 
 1. **Navigate to example workspace**
 
@@ -53,21 +55,58 @@ cd examples/workspaces/telephone
 ANTHROPIC_API_KEY=sk-ant-api03-...
 ```
 
-3. **Start workspace server (Terminal 1)**
+3. **Launch Atlas TUI**
+
+```bash
+deno task atlas tui
+```
+
+This launches an interactive terminal interface that:
+- ✅ **Auto-starts** the workspace server
+- ✅ **Real-time logs** in dual-panel layout
+- ✅ **Vi-style navigation** (j/k/gg/G/Ctrl+D/U)
+- ✅ **Slash commands** for all Atlas operations
+- ✅ **Help system** - type `help` to see available commands
+- ✅ **Copy to clipboard** - press `y` on any selected line
+
+**TUI Navigation:**
+- `Tab` / `Shift+Tab` - Switch between panels
+- `j/k` - Navigate up/down
+- `gg` / `G` - Jump to top/bottom
+- `Ctrl+D/U` - Page up/down
+- `/` - Start typing commands
+- `y` - Copy selected line to clipboard
+- `Enter` - Expand long content or copy command
+- `Esc` - Close expanded view
+
+**Try these commands in the TUI:**
+```bash
+help                                    # Show all commands
+/signal list                           # List available signals
+/signal trigger telephone-message --data {"message": "Hello"}
+/session list                          # View active sessions
+/ps                                    # List sessions (shorthand)
+```
+
+### Alternative: Manual Command Line
+
+If you prefer manual control or separate terminals:
+
+1. **Start workspace server (Terminal 1)**
 
 ```bash
 ./start-server.sh
 # Server starts on http://localhost:8080 with OpenTelemetry enabled
 ```
 
-4. **Trigger a signal (Terminal 2)**
+2. **Trigger a signal (Terminal 2)**
 
 ```bash
 ./trigger-signal.sh
 # Runs the telephone game: mishearing → embellishment → reinterpretation
 ```
 
-5. **Alternative: Use curl directly**
+3. **Alternative: Use curl directly**
 
 ```bash
 curl -X POST http://localhost:8080/signals/telephone-message \
@@ -75,7 +114,7 @@ curl -X POST http://localhost:8080/signals/telephone-message \
   -d '{"message": "The cat sat on the mat"}'
 ```
 
-6. **Monitor execution**
+4. **Monitor execution**
 
 ```bash
 # List active sessions
@@ -86,6 +125,13 @@ deno task atlas logs <session-id>
 ```
 
 ## CLI Commands
+
+### Terminal UI
+
+```bash
+atlas tui                       # Launch interactive terminal interface
+# Features: auto-server startup, dual-panel logs, vi navigation, slash commands
+```
 
 ### Workspace Management
 
