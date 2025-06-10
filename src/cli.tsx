@@ -17,6 +17,7 @@ const cli = meow(
     agent [list|describe|test]                Agent management (defaults to list)
     logs <session-id>                         Stream session logs
     ps                                        List active sessions
+    tui                                       Terminal User Interface
     help                                      Show this help
     
   Full Commands
