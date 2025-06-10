@@ -1,6 +1,6 @@
 version: "1.0"
 workspace:
-  id: "6aefeb06-d04a-486c-acd4-11e5c6d47365"
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Telephone Game"
   description: "A game where messages transform through multiple agents"
 supervisor:
@@ -10,36 +10,49 @@ supervisor:
       You are the WorkspaceSupervisor for a telephone game workspace.
       Your role is to coordinate agents that transform messages sequentially.
     intent: |
-      You are coordinating a telephone game where a message passes through agents that:
+      You are coordinating a memory-enhanced telephone game where a message passes through agents that:
+      0. Load context and patterns from past sessions (memory-agent - LOAD)
       1. Mishear the message (mishearing-agent)
-      2. Embellish it with details (embellishment-agent)
+      2. Embellish it with details (embellishment-agent)  
       3. Reinterpret the meaning (reinterpretation-agent)
-
-      Each agent should transform the message in their unique way.
+      4. Store session learnings for future use (memory-agent - STORE)
+      
+      The memory agent provides context at the start and captures learnings at the end.
     evaluation: |
-      CRITICAL FOR TELEPHONE GAME:
-      - The session is ONLY complete when ALL THREE agents have processed the message
-      - You must see outputs from: mishearing-agent, embellishment-agent, AND reinterpretation-agent
-      - Even if transformations seem complete, continue until all 3 agents have run
-      - The telephone game requires the full chain of transformations
+      CRITICAL FOR TELEPHONE GAME WITH MEMORY:
+      - The session is ONLY complete when ALL FIVE agent invocations have processed the message
+      - Required sequence: memory-agent (load) → mishearing-agent → embellishment-agent → reinterpretation-agent → memory-agent (store)
+      - You must see outputs from ALL agents in the correct order
+      - The first memory-agent call loads context, the last stores learnings
+      - The telephone game requires the complete pipeline including memory operations
     session: |
-      This is a telephone game session. The message must pass through ALL agents in sequence.
+      This is a memory-enhanced telephone game session. The message must pass through ALL agents in sequence:
+      memory-agent (load context) → mishearing-agent → embellishment-agent → reinterpretation-agent → memory-agent (store learnings)
 agents:
+  memory-agent:
+    type: "local"
+    path: "./agents/memory-agent.ts"
+    purpose: "Manages memory operations at session start and end"
+    model: "claude-4-sonnet-20250514"
+    priority: 1  # Run first and last
   mishearing-agent:
     type: "local"
     path: "./agents/mishearing-agent.ts"
     purpose: "Specializes in phonetic errors and mishearing"
     model: "claude-4-sonnet-20250514"
+    priority: 2
   embellishment-agent:
     type: "local"
     path: "./agents/embellishment-agent.ts"
     purpose: "Adds context and embellishes stories"
     model: "claude-4-sonnet-20250514"
+    priority: 3
   reinterpretation-agent:
     type: "local"
     path: "./agents/reinterpretation-agent.ts"
     purpose: "Dramatically transforms messages"
     model: "claude-4-sonnet-20250514"
+    priority: 4
 signals:
   telephone-message:
     description: "Trigger a telephone game with a message"
@@ -52,15 +65,28 @@ signals:
           description: "The message to transform"
       required: ["message"]
     mappings:
-      - agents: [
-          "mishearing-agent",
-          "embellishment-agent",
-          "reinterpretation-agent",
-        ]
+      - agents: ["memory-agent", "mishearing-agent", "embellishment-agent", "reinterpretation-agent", "memory-agent"]
         strategy: "sequential"
+        conditions:
+          memory-agent-start:
+            position: "first"
+            prompt: |
+              LOAD MODE: Load relevant context and patterns from past telephone game sessions.
+              Analyze previous transformations and provide guidance for this session.
+              Message to process: "{message}"
+          memory-agent-end:
+            position: "last" 
+            prompt: |
+              STORE MODE: Analyze the complete telephone game session and extract learnings.
+              Store insights in appropriate memory types for future sessions.
+              Session results: {session_results}
         prompt: |
-          Process this message through all three agents in sequence.
-          Each agent should transform the output of the previous one.
+          Process this message through the complete telephone game pipeline:
+          1. Memory Agent loads context and patterns from past sessions
+          2. Mishearing Agent introduces phonetic errors
+          3. Embellishment Agent adds creative details  
+          4. Reinterpretation Agent dramatically transforms the message
+          5. Memory Agent stores session learnings and patterns
 runtime:
   server:
     port: 8080

@@ -1,8 +1,7 @@
 import { BaseAgent } from "../../../../src/core/agents/base-agent.ts";
-import { AgentRegistry } from "../../../../src/core/agent-registry.ts";
-import type { ITempestMemoryManager, IWorkspaceAgent } from "../../../../src/types/core.ts";
+import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 
-export class EmbellishmentAgent extends BaseAgent implements IWorkspaceAgent {
+export class TBDAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";
   host: string = "localhost";
   constructor(id?: string) {
@@ -11,25 +10,17 @@ export class EmbellishmentAgent extends BaseAgent implements IWorkspaceAgent {
     // Set agent-specific prompts
     this.prompts = {
       system:
-        `You are the Embellishment Agent in a game of telephone. You embellish and add context.
-When you hear a message, add small embellishments like:
-- Add time context (yesterday, in the morning)
-- Add manner/method (quickly, carefully)
-- Add minor details (with a friend, in the rain)
-- Slightly change the purpose or add motivation
-
-Keep the core message but make it slightly more detailed.
-Always start your response with "I heard that" and then give your version of the message.`,
+        `You are the TBD Agent. You are a helpful assistant that can answer questions and help with tasks.`,
       user: "",
     };
   }
 
   name(): string {
-    return "EmbellishmentAgent";
+    return "TBDAgent";
   }
 
   nickname(): string {
-    return "Embellisher";
+    return "TBD";
   }
 
   version(): string {
@@ -41,35 +32,28 @@ Always start your response with "I heard that" and then give your version of the
   }
 
   purpose(): string {
-    return "Adds context and embellishes stories in the telephone game";
+    return "Helpful assistant that can answer questions and help with tasks";
   }
 
   controls(): object {
     return {
       canProcessText: true,
       canStream: true,
-      embellishmentTypes: ["temporal", "manner", "details", "motivation"],
+      canAnswerQuestions: true,
+      canHelpWithTasks: true,
     };
   }
 
   override getAgentPrompts(): { system: string; user: string } {
     return {
       system:
-        `You are the Embellishment Agent in a game of telephone. You embellish and add context.
-When you hear a message, add small embellishments like:
-- Add time context (yesterday, in the morning)
-- Add manner/method (quickly, carefully)
-- Add minor details (with a friend, in the rain)
-- Slightly change the purpose or add motivation
-
-Keep the core message but make it slightly more detailed.
-Always start your response with "I heard that" and then give your version of the message.`,
+        `You are the TBD Agent. You are a helpful assistant that can answer questions and help with tasks.`,
       user: "",
     };
   }
 
   async *invokeStream(message: string): AsyncIterableIterator<string> {
-    this.log(`Embellishment Agent processing: ${message.slice(0, 50)}...`);
+    this.log(`TBD Agent processing: ${message.slice(0, 50)}...`);
 
     // Add to message history
     this.messages.newMessage(message, "human" as any);

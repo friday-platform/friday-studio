@@ -5,11 +5,13 @@ similar to the classic "telephone game".
 
 ## Overview
 
-This workspace shows how Atlas coordinates multiple AI agents in sequence:
+This workspace shows how Atlas coordinates multiple AI agents in sequence with memory enhancement:
 
+0. **Memory Agent (Load)** - Loads context and patterns from past sessions
 1. **Mishearing Agent** - Introduces phonetic errors
 2. **Embellishment Agent** - Adds narrative details
 3. **Reinterpretation Agent** - Dramatically reimagines the story
+4. **Memory Agent (Store)** - Stores session learnings for future improvement
 
 ## Quick Start
 
@@ -68,11 +70,15 @@ deno task atlas logs <session-id>
 ```
 Original: "The cat sat on the mat"
 ↓
+Memory Load: "Based on past sessions, focus on creative sound changes and narrative expansion..."
+↓
 Mishearing: "The cat sat on the hat"  
 ↓
 Embellishment: "The cat carefully sat on the old woolen hat that was left on the chair..."
 ↓
 Reinterpretation: "The legendary feline warrior infiltrated the ancient fortress chair to claim the mystical Woolen Hat..."
+↓
+Memory Store: "Stored successful transformation patterns: sound substitution (mat→hat), narrative expansion (simple→detailed), genre shift (realistic→fantasy)"
 ```
 
 ## Project Structure
@@ -80,6 +86,7 @@ Reinterpretation: "The legendary feline warrior infiltrated the ancient fortress
 ```
 telephone/
 ├── agents/                    # Agent implementations
+│   ├── memory-agent.ts       # Memory management (load/store)
 │   ├── mishearing-agent.ts
 │   ├── embellishment-agent.ts
 │   └── reinterpretation-agent.ts
@@ -87,6 +94,13 @@ telephone/
 ├── setup-workspace.sh        # Quick setup script
 ├── .env                      # API keys (create from .env.example)
 └── .atlas/                   # Runtime data (gitignored)
+    └── memory/               # CoALA memory storage by type
+        ├── working.json      # Short-term working memory
+        ├── episodic.json     # Specific session experiences
+        ├── semantic.json     # General knowledge patterns
+        ├── procedural.json   # Transformation techniques
+        ├── contextual.json   # Session-specific context
+        └── index.json        # Memory statistics and overview
 ```
 
 ## Configuration
@@ -101,10 +115,12 @@ The `workspace.yml` file defines:
 ## How It Works
 
 1. **Signal Triggered** - You send a message via CLI or HTTP
-2. **Supervisor Plans** - AI supervisor creates execution plan
-3. **Agents Execute** - Each agent transforms the message
-4. **Progress Tracked** - Supervisor ensures all agents run
-5. **Summary Generated** - AI summarizes the transformation chain
+2. **Supervisor Plans** - AI supervisor creates execution plan with memory context
+3. **Memory Load** - Memory agent loads relevant patterns from past sessions
+4. **Agents Execute** - Each agent transforms the message in sequence
+5. **Progress Tracked** - Supervisor ensures all agents run successfully
+6. **Memory Store** - Memory agent extracts and stores session learnings
+7. **Summary Generated** - AI summarizes the transformation chain with insights
 
 ## Customization
 

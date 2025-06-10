@@ -8,6 +8,7 @@ import type {
   IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 
 // Session Intent types
@@ -513,6 +514,27 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.sources = sources;
     this.intent = intent;
 
+    // Store session initialization in CoALA memory
+    const coalaMemory = this.memory as CoALAMemoryManager;
+    coalaMemory.rememberWithMetadata(
+      'session-initialization',
+      {
+        workspaceId,
+        signalCount: signals.triggers.length,
+        agentCount: agents?.length || 0,
+        workflowCount: workflows?.length || 0,
+        sourceCount: sources?.length || 0,
+        intent: intent?.id,
+        strategy: intent?.executionHints?.strategy
+      },
+      {
+        memoryType: CoALAMemoryType.CONTEXTUAL,
+        tags: ['session', 'initialization', 'metadata'],
+        relevanceScore: 1.0,
+        confidence: 1.0
+      }
+    );
+
     // Initialize the state machine
     this._stateMachine = createActor(sessionMachine, {
       input: {
@@ -537,13 +559,47 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       this._artifacts = context.artifacts;
       this._startTime = context.startTime;
 
-      // Handle state transitions
+      // Handle state transitions and store in CoALA memory
+      const coalaMemory = this.memory as CoALAMemoryManager;
+      
       if (snapshot.matches("completed")) {
         this._isRunning = false;
+        // Remember successful completion
+        coalaMemory.rememberWithMetadata(
+          `session-completed-${Date.now()}`,
+          {
+            sessionId: this.id,
+            duration: this._startTime ? Date.now() - this._startTime.getTime() : 0,
+            artifactCount: this._artifacts.length,
+            finalProgress: this._progress
+          },
+          {
+            memoryType: CoALAMemoryType.EPISODIC,
+            tags: ['session', 'completion', 'success'],
+            relevanceScore: 0.8,
+            confidence: 1.0
+          }
+        );
         this.signals.callback.onSuccess(this._artifacts);
         this.signals.callback.onComplete();
       } else if (snapshot.matches("failed")) {
         this._isRunning = false;
+        // Remember failure for learning
+        coalaMemory.rememberWithMetadata(
+          `session-failed-${Date.now()}`,
+          {
+            sessionId: this.id,
+            error: context.error?.message,
+            progress: this._progress,
+            artifacts: this._artifacts.length
+          },
+          {
+            memoryType: CoALAMemoryType.EPISODIC,
+            tags: ['session', 'failure', 'error'],
+            relevanceScore: 0.9, // Failures are highly relevant for learning
+            confidence: 1.0
+          }
+        );
         this.signals.callback.onError(
           context.error || new Error("Session failed"),
         );
@@ -554,7 +610,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         this._isRunning = true;
       }
 
-      // Add context to session for each processed signal
+      // Add context to session for each processed signal and store in CoALA memory
       if (
         snapshot.matches("processingSignals") && context.artifacts.length > 0
       ) {
@@ -567,6 +623,24 @@ export class Session extends AtlasScope implements IWorkspaceSession {
           detail:
             `Signal from ${lastArtifact.data.provider.name} processed at ${lastArtifact.data.processedAt}`,
         });
+
+        // Store signal processing result in CoALA memory
+        coalaMemory.rememberWithMetadata(
+          `signal-processed-${lastArtifact.data.signalId}`,
+          {
+            signalId: lastArtifact.data.signalId,
+            provider: lastArtifact.data.provider.name,
+            processedAt: lastArtifact.data.processedAt,
+            sessionId: this.id,
+            artifactType: lastArtifact.type
+          },
+          {
+            memoryType: CoALAMemoryType.EPISODIC,
+            tags: ['signal', 'processed', lastArtifact.data.provider.name],
+            relevanceScore: 0.6,
+            confidence: 1.0
+          }
+        );
       }
     });
 

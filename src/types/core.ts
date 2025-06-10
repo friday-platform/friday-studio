@@ -183,17 +183,54 @@ export interface ITempestContext {
   detail: string;
 }
 
+// Enhanced memory interface supporting both legacy and CoALA methods
 export interface ITempestMemoryManager {
+  // Legacy compatibility methods
   remember(key: string, value: any): void;
   recall(key: string): any;
   summarize(): string;
   size(): number;
   forget(key: string): void;
+  
+  // CoALA-specific methods (optional for backwards compatibility)
+  rememberWithMetadata?(key: string, content: any, metadata: {
+    memoryType: string;
+    tags: string[];
+    relevanceScore: number;
+    associations?: string[];
+    confidence?: number;
+    decayRate?: number;
+  }): void;
+  
+  queryMemories?(query: {
+    content?: string;
+    memoryType?: string;
+    tags?: string[];
+    minRelevance?: number;
+    maxAge?: number;
+    sourceScope?: string;
+    limit?: number;
+  }): any[];
+  
+  // Cognitive loop methods
+  reflect?(): Promise<any[]>;
+  consolidate?(): Promise<void>;
+  prune?(): Promise<void>;
+  adapt?(feedback: any): Promise<void>;
 }
 
 export interface ITempestMemoryStorageAdapter {
   commit(data: any): Promise<void>;
   load(): Promise<any>;
+}
+
+// Enhanced storage adapter for CoALA memory types
+export interface ICoALAMemoryStorageAdapter extends ITempestMemoryStorageAdapter {
+  commitByType(memoryType: string, data: any): Promise<void>;
+  loadByType(memoryType: string): Promise<any>;
+  commitAll(dataByType: Record<string, any>): Promise<void>;
+  loadAll(): Promise<Record<string, any>>;
+  listMemoryTypes(): Promise<string[]>;
 }
 
 export interface ITempestMessageManager {
