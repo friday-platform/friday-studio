@@ -1,6 +1,6 @@
 import { BaseAgent } from "../../../../src/core/agents/base-agent.ts";
 import { AgentRegistry } from "../../../../src/core/agent-registry.ts";
-import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
+import type { ITempestMemoryManager, IWorkspaceAgent } from "../../../../src/types/core.ts";
 
 export class EmbellishmentAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";

@@ -1,6 +1,6 @@
 version: "1.0"
 workspace:
-  id: "6aefeb06-d04a-486c-acd4-11e5c6d47365"
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Telephone Game"
   description: "A game where messages transform through multiple agents"
 supervisor:
@@ -12,9 +12,9 @@ supervisor:
     intent: |
       You are coordinating a telephone game where a message passes through agents that:
       1. Mishear the message (mishearing-agent)
-      2. Embellish it with details (embellishment-agent)
+      2. Embellish it with details (embellishment-agent)  
       3. Reinterpret the meaning (reinterpretation-agent)
-
+      
       Each agent should transform the message in their unique way.
     evaluation: |
       CRITICAL FOR TELEPHONE GAME:
@@ -52,11 +52,7 @@ signals:
           description: "The message to transform"
       required: ["message"]
     mappings:
-      - agents: [
-          "mishearing-agent",
-          "embellishment-agent",
-          "reinterpretation-agent",
-        ]
+      - agents: ["mishearing-agent", "embellishment-agent", "reinterpretation-agent"]
         strategy: "sequential"
         prompt: |
           Process this message through all three agents in sequence.

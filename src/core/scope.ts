@@ -7,7 +7,7 @@ import type {
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { ContextManager } from "./context.ts";
-import { MemoryManager } from "./memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { MessageManager } from "./messages.ts";
 
 export class AtlasScope implements IAtlasScope {
@@ -28,7 +28,7 @@ export class AtlasScope implements IAtlasScope {
     this.parentScopeId = parentScopeId;
     this.supervisor = supervisor;
     this.context = new ContextManager();
-    this.memory = new MemoryManager();
+    this.memory = new CoALAMemoryManager(this);
     this.messages = new MessageManager();
     this.prompts = {
       system: "",
@@ -46,10 +46,18 @@ export class AtlasScope implements IAtlasScope {
   }
 
   archiveConversation(): void {
-    // Store current conversation in memory before clearing
-    this.memory.remember(
+    // Store current conversation in CoALA memory with appropriate metadata
+    const coalaMemory = this.memory as CoALAMemoryManager;
+    coalaMemory.rememberWithMetadata(
       `conversation_${Date.now()}`,
       this.messages.getHistory(),
+      {
+        memoryType: CoALAMemoryType.EPISODIC,
+        tags: ['conversation', 'archived', 'historical'],
+        relevanceScore: 0.5,
+        confidence: 1.0,
+        decayRate: 0.05 // Conversations decay slowly
+      }
     );
     this.messages = new MessageManager();
   }
