@@ -7,7 +7,7 @@
   },
   "unstable": ["broadcast-channel", "worker-options", "otel"],
   "tasks": {
-    "atlas": "cd \"$INIT_CWD\" && deno run --allow-all ./src/cli.tsx",
+    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=false OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all",
