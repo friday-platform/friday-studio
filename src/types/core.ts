@@ -224,6 +224,15 @@ export interface ITempestMemoryStorageAdapter {
   load(): Promise<any>;
 }
 
+// Enhanced storage adapter for CoALA memory types
+export interface ICoALAMemoryStorageAdapter extends ITempestMemoryStorageAdapter {
+  commitByType(memoryType: string, data: any): Promise<void>;
+  loadByType(memoryType: string): Promise<any>;
+  commitAll(dataByType: Record<string, any>): Promise<void>;
+  loadAll(): Promise<Record<string, any>>;
+  listMemoryTypes(): Promise<string[]>;
+}
+
 export interface ITempestMessageManager {
   history: ITempestMessage[];
   newMessage(content: string, user: MessageUser): ITempestMessage;

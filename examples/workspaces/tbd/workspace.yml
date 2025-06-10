@@ -1,0 +1,56 @@
+version: "1.0"
+workspace:
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
+  name: "TBD"
+  description: "A helpful assistant that can answer questions and help with tasks"
+supervisor:
+  model: "claude-4-sonnet-20250514"
+  prompts:
+    system: |
+      You are the WorkspaceSupervisor for a TBD workspace.
+      Your role is to coordinate agents that answer questions and help with tasks.
+    intent: |
+      You are coordinating a workspace that responds to user requests.
+
+      Each agent should respond to the user request in their unique way.
+    evaluation: |
+      CRITICAL FOR TBD:
+      - Always check the memory for relevant information.
+      - Try to remember as much as possible from both the user request and the agent's response.
+    session: |
+      This is a TBD session. The user request must pass through ALL agents in sequence.
+agents:
+  tbd-agent:
+    type: "local"
+    path: "./agents/tbd-agent.ts"
+    purpose: "Specializes in answering questions and helping with tasks"
+    model: "claude-4-sonnet-20250514"
+signals:
+  tbd-message:
+    description: "Trigger a TBD workspace with a message"
+    provider: "cli"
+    schema:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          description: "The message to transform"
+      required: ["message"]
+    mappings:
+      - agents: ["tbd-agent"]
+        strategy: "sequential"
+        prompt: |
+          Process this message through all three agents in sequence.
+          Each agent should transform the output of the previous one.
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"

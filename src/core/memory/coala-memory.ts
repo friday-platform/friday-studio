@@ -11,8 +11,10 @@
 import type { 
   ITempestMemoryManager, 
   ITempestMemoryStorageAdapter,
+  ICoALAMemoryStorageAdapter,
   IAtlasScope 
 } from "../../types/core.ts";
+import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
 import { LocalFileStorageAdapter } from "../../storage/local.ts";
 
 export interface CoALAMemoryEntry {
@@ -56,19 +58,35 @@ export interface CoALAMemoryQuery {
 }
 
 export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitiveLoop {
-  private store: ITempestMemoryStorageAdapter;
+  private store: ICoALAMemoryStorageAdapter;
   private memories: Map<string, CoALAMemoryEntry> = new Map();
+  private memoriesByType: Map<CoALAMemoryType, Map<string, CoALAMemoryEntry>> = new Map();
   private scope: IAtlasScope;
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
 
   constructor(
     scope: IAtlasScope,
-    storageAdapter?: ITempestMemoryStorageAdapter,
+    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true
   ) {
     this.scope = scope;
-    this.store = storageAdapter || new LocalFileStorageAdapter();
+    
+    // Use CoALA storage adapter if provided, otherwise create new one
+    if (storageAdapter && 'commitByType' in storageAdapter) {
+      this.store = storageAdapter as ICoALAMemoryStorageAdapter;
+    } else if (storageAdapter) {
+      // Wrap legacy adapter for backwards compatibility
+      this.store = new CoALALocalFileStorageAdapter();
+    } else {
+      this.store = new CoALALocalFileStorageAdapter();
+    }
+    
+    // Initialize memory type maps
+    Object.values(CoALAMemoryType).forEach(type => {
+      this.memoriesByType.set(type, new Map());
+    });
+    
     this.loadFromStorage();
     
     if (enableCognitiveLoop) {
@@ -125,7 +143,13 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       decayRate: metadata.decayRate || 0.1
     };
 
+    // Store in both global and type-specific maps
     this.memories.set(key, memory);
+    const typeMap = this.memoriesByType.get(metadata.memoryType);
+    if (typeMap) {
+      typeMap.set(key, memory);
+    }
+    
     this.updateAssociations(memory);
     this.commitToStorage();
   }
@@ -225,7 +249,12 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       });
 
     for (const memory of memoriesToPrune) {
+      // Remove from both global and type-specific maps
       this.memories.delete(memory.id);
+      const typeMap = this.memoriesByType.get(memory.memoryType);
+      if (typeMap) {
+        typeMap.delete(memory.id);
+      }
     }
 
     this.commitToStorage();
@@ -272,7 +301,15 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   forget(key: string): void {
-    this.memories.delete(key);
+    const memory = this.memories.get(key);
+    if (memory) {
+      // Remove from both global and type-specific maps
+      this.memories.delete(key);
+      const typeMap = this.memoriesByType.get(memory.memoryType);
+      if (typeMap) {
+        typeMap.delete(key);
+      }
+    }
     this.commitToStorage();
   }
 
@@ -353,36 +390,175 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   private async commitToStorage(): Promise<void> {
-    const serializedMemories = Object.fromEntries(
-      Array.from(this.memories.entries()).map(([key, memory]) => [
-        key,
-        {
-          ...memory,
-          timestamp: memory.timestamp.toISOString(),
-          lastAccessed: memory.lastAccessed.toISOString()
-        }
-      ])
-    );
+    // Organize memories by type for multi-file storage
+    const dataByType: Record<string, any> = {};
     
-    await this.store.commit(serializedMemories);
+    for (const [memoryType, typeMap] of this.memoriesByType.entries()) {
+      if (typeMap.size > 0) {
+        const serializedTypeMemories = Object.fromEntries(
+          Array.from(typeMap.entries()).map(([key, memory]) => [
+            key,
+            {
+              ...memory,
+              timestamp: memory.timestamp.toISOString(),
+              lastAccessed: memory.lastAccessed.toISOString()
+            }
+          ])
+        );
+        dataByType[memoryType] = serializedTypeMemories;
+      }
+    }
+
+    // Use type-specific storage if available
+    if ('commitAll' in this.store && typeof this.store.commitAll === 'function') {
+      await (this.store as any).commitAll(dataByType);
+    } else {
+      // Fallback to legacy storage (combine all types)
+      const allMemories = Object.fromEntries(
+        Array.from(this.memories.entries()).map(([key, memory]) => [
+          key,
+          {
+            ...memory,
+            timestamp: memory.timestamp.toISOString(),
+            lastAccessed: memory.lastAccessed.toISOString()
+          }
+        ])
+      );
+      await (this.store as ITempestMemoryStorageAdapter).commit(allMemories);
+    }
   }
 
   private async loadFromStorage(): Promise<void> {
     try {
-      const data = await this.store.load();
-      if (data) {
-        for (const [key, serializedMemory] of Object.entries(data)) {
-          const memory = serializedMemory as any;
-          this.memories.set(key, {
-            ...memory,
-            timestamp: new Date(memory.timestamp),
-            lastAccessed: new Date(memory.lastAccessed)
-          });
+      // Try to load type-specific data first
+      if ('loadAll' in this.store && typeof this.store.loadAll === 'function') {
+        const dataByType = await (this.store as any).loadAll();
+        
+        for (const [memoryType, typeData] of Object.entries(dataByType)) {
+          const memoryTypeEnum = memoryType as CoALAMemoryType;
+          const typeMap = this.memoriesByType.get(memoryTypeEnum);
+          
+          if (typeMap && typeData) {
+            for (const [key, serializedMemory] of Object.entries(typeData)) {
+              const memory = serializedMemory as any;
+              const restoredMemory = {
+                ...memory,
+                timestamp: new Date(memory.timestamp),
+                lastAccessed: new Date(memory.lastAccessed)
+              };
+              
+              // Store in both global and type-specific maps
+              this.memories.set(key, restoredMemory);
+              typeMap.set(key, restoredMemory);
+            }
+          }
+        }
+      } else {
+        // Fallback to legacy loading
+        const data = await (this.store as ITempestMemoryStorageAdapter).load();
+        if (data) {
+          for (const [key, serializedMemory] of Object.entries(data)) {
+            const memory = serializedMemory as any;
+            const restoredMemory = {
+              ...memory,
+              timestamp: new Date(memory.timestamp),
+              lastAccessed: new Date(memory.lastAccessed)
+            };
+            
+            // Store in global map
+            this.memories.set(key, restoredMemory);
+            
+            // Store in type-specific map
+            const typeMap = this.memoriesByType.get(restoredMemory.memoryType);
+            if (typeMap) {
+              typeMap.set(key, restoredMemory);
+            }
+          }
         }
       }
     } catch (error) {
       console.warn("Failed to load CoALA memories from storage:", error);
     }
+  }
+
+  // Type-specific memory access methods
+  getMemoriesByType(memoryType: CoALAMemoryType): CoALAMemoryEntry[] {
+    const typeMap = this.memoriesByType.get(memoryType);
+    return typeMap ? Array.from(typeMap.values()) : [];
+  }
+
+  getMemoryTypeStatistics(): Record<string, { count: number; avgRelevance: number; oldestEntry: Date | null }> {
+    const stats: Record<string, any> = {};
+    
+    for (const [memoryType, typeMap] of this.memoriesByType.entries()) {
+      const memories = Array.from(typeMap.values());
+      const relevanceScores = memories.map(m => m.relevanceScore);
+      const timestamps = memories.map(m => m.timestamp);
+      
+      stats[memoryType] = {
+        count: memories.length,
+        avgRelevance: relevanceScores.length > 0 
+          ? relevanceScores.reduce((sum, score) => sum + score, 0) / relevanceScores.length 
+          : 0,
+        oldestEntry: timestamps.length > 0 
+          ? new Date(Math.min(...timestamps.map(t => t.getTime())))
+          : null
+      };
+    }
+    
+    return stats;
+  }
+
+  async compactMemoryType(memoryType: CoALAMemoryType): Promise<number> {
+    if ('compactMemoryType' in this.store && typeof this.store.compactMemoryType === 'function') {
+      await (this.store as any).compactMemoryType(memoryType);
+      
+      // Reload the specific memory type to reflect compaction
+      if ('loadByType' in this.store && typeof this.store.loadByType === 'function') {
+        const typeData = await (this.store as any).loadByType(memoryType);
+        const typeMap = this.memoriesByType.get(memoryType);
+        
+        if (typeMap && typeData) {
+          // Clear current type map
+          typeMap.clear();
+          
+          // Remove from global map (will be re-added below)
+          for (const [key, memory] of this.memories.entries()) {
+            if (memory.memoryType === memoryType) {
+              this.memories.delete(key);
+            }
+          }
+          
+          // Reload compacted memories
+          for (const [key, serializedMemory] of Object.entries(typeData)) {
+            const memory = serializedMemory as any;
+            const restoredMemory = {
+              ...memory,
+              timestamp: new Date(memory.timestamp),
+              lastAccessed: new Date(memory.lastAccessed)
+            };
+            
+            this.memories.set(key, restoredMemory);
+            typeMap.set(key, restoredMemory);
+          }
+          
+          return Object.keys(typeData).length;
+        }
+      }
+    }
+    
+    return this.getMemoriesByType(memoryType).length;
+  }
+
+  async getStorageStatistics(): Promise<any> {
+    if ('getMemoryStatistics' in this.store && typeof this.store.getMemoryStatistics === 'function') {
+      return await (this.store as any).getMemoryStatistics();
+    }
+    
+    return {
+      lastUpdated: new Date().toISOString(),
+      memoryTypes: this.getMemoryTypeStatistics()
+    };
   }
 
   // Cleanup
