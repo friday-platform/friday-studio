@@ -1,10 +1,11 @@
-import React from "react";
-import { Box, Newline, Text } from "ink";
-import { WorkspaceCommand } from "./commands/workspace.tsx";
-import { SessionCommand } from "./commands/session.tsx";
-import { SignalCommand } from "./commands/signal.tsx";
-import { AgentCommand } from "./commands/agent.tsx";
-import { LogsCommand } from "./commands/logs.tsx";
+import React from 'react';
+import { Text, Box, Newline } from 'ink';
+import { WorkspaceCommand } from './commands/workspace.tsx';
+import { SessionCommand } from './commands/session.tsx';
+import { SignalCommand } from './commands/signal.tsx';
+import { AgentCommand } from './commands/agent.tsx';
+import { LogsCommand } from './commands/logs.tsx';
+import TUIDemo from '../tui-demo.tsx';
 
 interface AppProps {
   command: string;
@@ -49,7 +50,10 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "logs":
     case "log": // Support both
       return <LogsCommand sessionId={subcommand || args[0]} flags={flags} />;
-
+      
+    case 'tui':
+      return <TUIDemo />;
+      
     default:
       return (
         <Text color="red">
