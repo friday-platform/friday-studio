@@ -21,9 +21,12 @@ const TUIDemo: React.FC = () => {
   const [conversation, setConversation] = useState(mockConversation);
   const [currentPanel, setCurrentPanel] = useState<'diagnostic' | 'artifact'>('diagnostic');
   
-  // Use Ink's built-in stdout hook for terminal dimensions
+  // Calculate height once on mount to avoid re-renders but still be responsive
   const { stdout } = useStdout();
-  const terminalHeight = (stdout.rows || 24) - 4; // Reserve space for input and status
+  const [terminalHeight] = useState(() => {
+    const availableHeight = (stdout.rows || 54) - 10; // Reserve space for tab bar and UI chrome
+    return Math.max(20, Math.min(50, availableHeight)); // Clamp between 20-50 for safety
+  });
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === 'c') {
@@ -58,12 +61,10 @@ const TUIDemo: React.FC = () => {
   });
 
   return (
-    <Box flexDirection="column">
-      <Box height={Math.max(8, terminalHeight)}>
-        <Box width="50%" flexDirection="column" borderStyle="single" borderColor="blue" paddingX={1}>
-          <Box borderBottom>
-            <Text bold color="blue">💬 Session Conversation</Text>
-          </Box>
+    <Box flexDirection="column" paddingTop={3}>
+      <Box height={terminalHeight} flexDirection="row" width="100%">
+        <Box flexGrow={1} flexBasis={0} flexDirection="column" paddingX={2}>
+          <Text bold color="blue">💬 Session Conversation</Text>
           <Box flexDirection="column" marginTop={1}>
             {conversation.slice(-6).map((msg, i) => (
               <Text key={i}>
@@ -80,10 +81,8 @@ const TUIDemo: React.FC = () => {
             ))}
           </Box>
         </Box>
-        <Box width="50%" flexDirection="column" borderStyle="single" borderColor="magenta" paddingX={1}>
-          <Box borderBottom>
-            <Text bold color="magenta">🔍 Diagnostics (Tab)</Text>
-          </Box>
+        <Box flexGrow={1} flexBasis={0} flexDirection="column" paddingX={2}>
+          <Text bold color="magenta">🔍 Diagnostics (Tab)</Text>
           <Box flexDirection="column" marginTop={1}>
             <Text bold>Agent Status:</Text>
             {mockAgents.map((agent, i) => (
@@ -108,13 +107,13 @@ const TUIDemo: React.FC = () => {
           <Text>❯ {input}<Text backgroundColor="white" color="black"> </Text></Text>
         </Box>
         <Box width="25%" paddingX={1} borderLeft borderColor="green">
-          <Text bold color="green">Hints</Text>
-          <Text color="gray">Tab: Switch  Ctrl+C: Exit</Text>
+          <Text bold color="green"> Hints</Text>
+          <Text color="gray"> Tab: Switch  Ctrl+C: Exit</Text>
         </Box>
       </Box>
 
       {/* Status Bar */}
-      <Box borderStyle="single" borderColor="yellow" paddingX={1}>
+      <Box paddingX={1}>
         <Text bold color="yellow">🏢 frontend-dev-team </Text>
         <Text color="green">● </Text>
         <Text>Sessions: {conversation.filter(m => m.type === 'user').length} | Agents: 1 running, 1 idle, 1 ready</Text>
