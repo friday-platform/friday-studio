@@ -1,16 +1,14 @@
 #!/usr/bin/env -S deno run --allow-env --allow-read
 
+/**
+ * Session lifecycle integration tests
+ * Merged from test-session-intent-simple and test-session-intent
+ */
+
 import { Session, SessionIntent } from "../../src/core/session.ts";
 import { WorkspaceSupervisor } from "../../src/core/supervisor.ts";
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { createMockSignal } from "../fixtures/mocks.ts";
-
-// Mock signal for testing
-const mockSignal = createMockSignal(
-  "test-signal",
-  "test-provider",
-  "test-provider",
-);
 
 // Test 1: Session creation with intent
 Deno.test("Session can be created with intent", async () => {
@@ -34,6 +32,12 @@ Deno.test("Session can be created with intent", async () => {
       maxIterations: 2,
     },
   };
+
+  const mockSignal = createMockSignal(
+    "test-signal",
+    "test-provider",
+    "test-provider",
+  );
 
   const session = new Session(
     "test-workspace",
@@ -77,9 +81,10 @@ Deno.test("WorkspaceSupervisor creates session intent from signal", () => {
   supervisor.destroy();
 });
 
-// Test 3: Session FSM transitions through new states
+// Test 3: Session FSM transitions through enhanced lifecycle
 Deno.test("Session FSM transitions through planning-executing-evaluating-refining cycle", async () => {
   const states: string[] = [];
+  const mockSignal = createMockSignal("test-signal", "test-provider", "test-provider");
 
   const intent: SessionIntent = {
     id: "test-intent-fsm",
@@ -190,4 +195,53 @@ Deno.test("WorkspaceSupervisor generates execution plan from intent", async () =
   supervisor.destroy();
 });
 
-console.log("\n✅ All session intent tests passed!");
+// Test 5: Session status and progress (from test-session-intent-simple)
+Deno.test("Session status and progress tracking", async () => {
+  const intent: SessionIntent = {
+    id: "test-intent-progress",
+    signal: {
+      type: "test",
+      data: { message: "Progress test" },
+    },
+    goals: ["Track progress through session"],
+    executionHints: {
+      strategy: "iterative",
+      maxIterations: 1,
+    },
+  };
+
+  const mockSignal = createMockSignal("test-signal", "test", "test");
+
+  const session = new Session(
+    "test-workspace",
+    {
+      triggers: [mockSignal],
+      callback: async (result) => {
+        console.log("Session callback:", result);
+      },
+    },
+    undefined,
+    undefined,
+    undefined,
+    intent,
+  );
+
+  console.log("✓ Session created with status:", session.status);
+  console.log("✓ Initial progress:", session.progress(), "%");
+
+  // Start session and monitor progress
+  const progressPromise = session.start();
+
+  // Allow some processing time
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  console.log("✓ Mid-session progress:", session.progress(), "%");
+  console.log("✓ Session summary:", session.summarize());
+
+  await progressPromise;
+
+  console.log("✓ Final status:", session.status);
+  console.log("✓ Final progress:", session.progress(), "%");
+});
+
+console.log("\n✅ All session lifecycle tests completed!");
