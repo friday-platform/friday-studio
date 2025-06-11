@@ -17,13 +17,11 @@ export class WorkspaceServer {
   private app: Hono;
   private runtime: WorkspaceRuntime;
   private options: WorkspaceServerOptions;
-  private abortController: AbortController;
 
   constructor(runtime: WorkspaceRuntime, options: WorkspaceServerOptions = {}) {
     this.runtime = runtime;
     this.options = options;
     this.app = new Hono();
-    this.abortController = new AbortController();
 
     this.setupRoutes();
     this.setupSignalHandlers();
@@ -183,20 +181,20 @@ export class WorkspaceServer {
         config: workspace.toConfig(),
       });
     });
+
   }
 
+  private server: any = null;
+
   private setupSignalHandlers() {
-    // Handle SIGINT/SIGTERM for graceful shutdown
     const handleShutdown = async () => {
-      console.log("\n[Server] Graceful shutdown initiated...");
-
-      // Let runtime handle the shutdown
+      console.log("\n[Server] Shutting down gracefully...");
+      
+      if (this.server && this.server.shutdown) {
+        await this.server.shutdown();
+      }
+      
       await this.runtime.shutdown();
-
-      // Abort HTTP server
-      this.abortController.abort();
-
-      console.log("[Server] Shutdown complete");
       Deno.exit(0);
     };
 
@@ -208,22 +206,23 @@ export class WorkspaceServer {
     const port = this.options.port || 8080;
     const hostname = this.options.hostname || "localhost";
 
-    console.log(
-      `[Server] Starting workspace server on http://${hostname}:${port}`,
-    );
+    console.log(`[Server] Starting on http://${hostname}:${port}`);
 
-    await Deno.serve(
-      {
-        port,
-        hostname,
-        signal: this.abortController.signal,
-        onListen: ({ hostname, port }) => {
-          console.log(
-            `[Server] Workspace server running on http://${hostname}:${port}`,
-          );
-        },
+    this.server = Deno.serve({
+      port,
+      hostname,
+      onListen: ({ hostname, port }) => {
+        console.log(`[Server] Running on http://${hostname}:${port}`);
       },
-      this.app.fetch,
-    );
+    }, this.app.fetch);
+
+    await this.server.finished;
+  }
+
+  async shutdown(): Promise<void> {
+    if (this.server && this.server.shutdown) {
+      await this.server.shutdown();
+    }
+    await this.runtime.shutdown();
   }
 }

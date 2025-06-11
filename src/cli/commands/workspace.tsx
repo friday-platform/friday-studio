@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, Newline, Text } from "ink";
+import { Box, Newline, Text, useApp } from "ink";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
 import { ensureDir } from "https://deno.land/std@0.208.0/fs/ensure_dir.ts";
 import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
@@ -31,6 +31,9 @@ export function WorkspaceCommand(
             break;
           case "serve":
             await handleServe(flags);
+            break;
+          case "stop":
+            await handleStop(flags);
             break;
           case "list":
             await handleList();
@@ -352,150 +355,50 @@ function WorkspaceOutput({ data, flags }: { data: any; flags: any }) {
 }
 
 function ServingComponent({ port, flags }: { port: number; flags: any }) {
-  const [status, setStatus] = useState<"starting" | "running" | "error">(
-    "starting",
-  );
-  const [error, setError] = useState<string>("");
+  const { exit } = useApp();
 
   useEffect(() => {
     const startServer = async () => {
       try {
-        // Load environment variables
+        console.log("Starting workspace server...");
+        exit();
+
+        await new Promise(resolve => setTimeout(resolve, 100));
         await load({ export: true });
 
-        // Load workspace config
         const workspaceYaml = await Deno.readTextFile("workspace.yml");
         const config = yaml.parse(workspaceYaml) as any;
 
-        // Import required modules
         const { Workspace } = await import("../../core/workspace.ts");
-        const { WorkspaceRuntime } = await import(
-          "../../core/workspace-runtime.ts"
-        );
-        const { WorkspaceServer } = await import(
-          "../../core/workspace-server.ts"
-        );
-        const { AgentRegistry } = await import("../../core/agent-registry.ts");
+        const { WorkspaceRuntime } = await import("../../core/workspace-runtime.ts");
+        const { WorkspaceServer } = await import("../../core/workspace-server.ts");
         const { WorkspaceMemberRole } = await import("../../types/core.ts");
 
-        // Create workspace
-        const workspace = Workspace.fromConfig(
-          {
-            id: config.workspace.id,
-            name: config.workspace.name,
-            signals: config.signals
-              ? Object.entries(config.signals).map((
-                [id, signal]: [string, any],
-              ) => ({
-                id,
-                ...signal,
-              }))
-              : [],
-          },
-          {
-            id: config.workspace.id,
-            name: config.workspace.name,
-            role: WorkspaceMemberRole.OWNER,
-          },
-        );
+        const workspace = Workspace.fromConfig(config, {
+          id: config.workspace.id,
+          name: config.workspace.name,
+          role: WorkspaceMemberRole.OWNER,
+        });
 
-        // Register agents
-        if (config.agents) {
-          for (
-            const [agentId, agentConfig] of Object.entries(config.agents) as [
-              string,
-              any,
-            ][]
-          ) {
-            if (agentConfig.type === "local" && agentConfig.path) {
-              try {
-                await import(
-                  new URL(agentConfig.path, `file://${Deno.cwd()}/`).href
-                );
-                const agent = await AgentRegistry.createAgent({
-                  id: agentId,
-                  type: agentId.replace("-agent", ""),
-                  parentScopeId: workspace.id,
-                });
-
-                if (agent) {
-                  (workspace as any).agents[agentId] = agent;
-                }
-              } catch (error) {
-                console.error(
-                  `Failed to load ${agentId}: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                );
-              }
-            }
-          }
-        }
-
-        // Configure signals
-        if (config.signals) {
-          for (
-            const [signalId, signalConfig] of Object.entries(
-              config.signals,
-            ) as [string, any][]
-          ) {
-            (workspace as any).signals[signalId] = {
-              id: signalId,
-              ...signalConfig,
-            };
-          }
-        }
-
-        // Create runtime
         const runtime = new WorkspaceRuntime(workspace, config, {
           lazy: flags.lazy || false,
         });
 
-        // Create and start server
         const server = new WorkspaceServer(runtime, {
           port: port || config.runtime?.server?.port || 8080,
           hostname: config.runtime?.server?.host || "localhost",
         });
 
         await server.start();
-        setStatus("running");
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStatus("error");
+        console.error("Failed to start server:", err instanceof Error ? err.message : String(err));
+        Deno.exit(1);
       }
     };
 
     startServer();
-  }, []);
+  }, [exit]);
 
-  if (status === "starting") {
-    return <Text color="yellow">Starting workspace server...</Text>;
-  }
-
-  if (status === "error") {
-    return <Text color="red">Failed to start server: {error}</Text>;
-  }
-
-  return (
-    <Box flexDirection="column">
-      <Text color="green">✓ Workspace server running</Text>
-      <Text>Port: {port}</Text>
-      <Text>
-        Mode: {flags.lazy ? "Lazy (supervisor loads on first signal)" : "Eager (supervisor loaded)"}
-      </Text>
-      <Newline />
-      <Text bold>Send signals:</Text>
-      <Text color="gray">
-        atlas signal trigger telephone-message --data '{`{"message": "Hello world"}`}'
-      </Text>
-      <Newline />
-      <Text color="gray">
-        curl -X POST http://localhost:{port}/signals/telephone-message \
-      </Text>
-      <Text color="gray">-H "Content-Type: application/json" \</Text>
-      <Text color="gray">-d '{`{"message": "Hello world"}`}'</Text>
-      <Newline />
-      <Text color="yellow">Press Ctrl+C to stop the server</Text>
-    </Box>
-  );
+  // Show initial loading state briefly before exiting Ink
+  return <Text color="yellow">Starting workspace server...</Text>;
 }
