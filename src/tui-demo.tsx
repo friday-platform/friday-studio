@@ -5,6 +5,44 @@ import { Alert, Badge } from '@inkjs/ui';
 import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
 
+// Parse command arguments while preserving JSON structure
+function parseCommandArgs(command: string): string[] {
+  const args: string[] = [];
+  let current = '';
+  let inQuotes = false;
+  let braceDepth = 0;
+  let i = 0;
+  
+  while (i < command.length) {
+    const char = command[i];
+    
+    if (char === '"' && braceDepth === 0) {
+      inQuotes = !inQuotes;
+      current += char;
+    } else if (char === '{') {
+      braceDepth++;
+      current += char;
+    } else if (char === '}') {
+      braceDepth--;
+      current += char;
+    } else if (char === ' ' && !inQuotes && braceDepth === 0) {
+      if (current.trim()) {
+        args.push(current.trim());
+        current = '';
+      }
+    } else {
+      current += char;
+    }
+    i++;
+  }
+  
+  if (current.trim()) {
+    args.push(current.trim());
+  }
+  
+  return args;
+}
+
 interface LogEntry {
   type: 'server' | 'user' | 'command' | 'error';
   content: string;
@@ -245,7 +283,7 @@ const TUIDemo: React.FC = () => {
       // ONLY handle slash commands
       if (commandText.startsWith('/')) {
         const command = commandText.slice(1); // Remove the '/'
-        const args = command.split(' ');
+        const args = parseCommandArgs(command);
         
         // Prevent workspace serve since TUI already has server running
         if (args[0] === 'workspace' && args[1] === 'serve') {
