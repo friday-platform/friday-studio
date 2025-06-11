@@ -323,6 +323,8 @@ Focus on safety, efficiency, and reliability.`;
       `Preparing environment for agent ${agent.id} with ${analysis.execution_strategy.isolation_level} isolation`,
     );
 
+    const modelValue = (agent.config as any).model;
+
     const environment: AgentEnvironment = {
       worker_config: {
         memory_limit: analysis.resource_requirements.memory_mb,
@@ -332,6 +334,7 @@ Focus on safety, efficiency, and reliability.`;
       },
       agent_config: {
         type: agent.type,
+        model: modelValue,
         parameters: {
           ...analysis.optimization_suggestions.model_parameters,
           safety_level: analysis.safety_assessment.risk_level,
@@ -350,10 +353,7 @@ Focus on safety, efficiency, and reliability.`;
     };
 
     // Add agent-type specific configuration
-    if (agent.type === "llm") {
-      const llmConfig = agent.config as LLMAgentConfig;
-      environment.agent_config.model = llmConfig.model;
-    } else if (agent.type === "remote") {
+    if (agent.type === "remote") {
       const remoteConfig = agent.config as RemoteAgentConfig;
       environment.agent_config.endpoint = remoteConfig.endpoint;
       environment.agent_config.auth = remoteConfig.auth;

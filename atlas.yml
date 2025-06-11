@@ -1,0 +1,121 @@
+version: "1.0"
+
+# Atlas Platform Configuration
+# This file contains platform-managed supervisor logic and built-in agents
+
+platform:
+  name: "Atlas"
+  version: "1.0.0"
+  
+# Platform-managed agents (available to all workspaces)
+agents:
+  # Memory management agent
+  memory-agent:
+    type: "llm"
+    model: "claude-4-sonnet-20250514"
+    purpose: "Manages memory operations at session start and end"
+    tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
+    prompts:
+      system: |
+        You are a memory management agent for Atlas workspaces.
+        You can operate in two modes: LOAD (retrieve context) and STORE (save learnings).
+        
+        LOAD mode: Retrieve relevant patterns and context from past sessions
+        to inform the current execution pipeline.
+        
+        STORE mode: Analyze the complete session results and extract learnings about
+        execution patterns, successful strategies, and interesting outcomes.
+
+  # Security analysis agent  
+  security-scanner:
+    type: "remote"
+    endpoint: "https://security-api.example.com/analyze"
+    purpose: "Analyzes content for security concerns and sensitive information"
+    auth:
+      type: "bearer"
+      token_env: "SECURITY_API_TOKEN"
+    timeout: 30000
+    schema:
+      input:
+        type: "object"
+        properties:
+          content: 
+            type: "string"
+            description: "Content to analyze for security issues"
+          analysis_type:
+            type: "string"
+            enum: ["content_safety", "data_privacy", "malware_detection"]
+        required: ["content"]
+      output:
+        type: "object"
+        properties:
+          risk_score:
+            type: "number"
+            minimum: 0
+            maximum: 10
+          findings:
+            type: "array"
+            items:
+              type: "object"
+              properties:
+                type: {type: "string"}
+                severity: {type: "string"}
+                description: {type: "string"}
+          recommendations:
+            type: "array"
+            items: {type: "string"}
+
+  # Content synthesis agent
+  tempest-synthesizer:
+    type: "tempest"
+    agent: "content-synthesizer"
+    version: "2.1.0"
+    purpose: "Synthesizes multiple inputs into coherent summaries and analyses"
+    config:
+      synthesis_modes: ["comprehensive", "summary", "analytical"]
+      output_formats: ["markdown", "json", "plain_text"]
+      max_input_sources: 10
+
+# Supervisor configuration
+supervisors:
+  workspace:
+    model: "claude-4-sonnet-20250514"
+    prompts:
+      system: |
+        You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
+        Your role is to analyze signals, create filtered session contexts, and manage workspace-level concerns.
+        
+        Key responsibilities:
+        - Analyze incoming signals to understand intent and goals
+        - Filter workspace context for relevant session data
+        - Spawn SessionSupervisors with appropriate context
+        - Coordinate multiple concurrent sessions
+        - Manage signal-to-agent mappings dynamically
+
+  session:
+    model: "claude-4-sonnet-20250514"
+    prompts:
+      system: |
+        You are a SessionSupervisor responsible for coordinating agent execution within a session.
+        Your role is to create execution plans, orchestrate agents, and evaluate progress.
+        
+        Key responsibilities:
+        - Create dynamic execution plans using LLM reasoning
+        - Determine agent selection, order, and data flow
+        - Coordinate agent execution through AgentSupervisor
+        - Evaluate progress and adapt strategy as needed
+        - Support iterative refinement loops
+
+  agent:
+    model: "claude-4-sonnet-20250514"
+    prompts:
+      system: |
+        You are an AgentSupervisor responsible for safe agent loading and execution.
+        Your role is to analyze agents for safety, prepare secure environments, and supervise execution.
+        
+        Key responsibilities:
+        - Analyze agents for safety and optimization before loading
+        - Prepare secure execution environments
+        - Monitor agent execution in real-time
+        - Validate outputs for quality and safety
+        - Handle failures and recovery scenarios

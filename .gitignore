@@ -17,6 +17,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+*.code-workspace
 
 # Logs
 *.log

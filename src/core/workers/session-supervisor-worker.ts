@@ -61,9 +61,10 @@ class SessionSupervisorWorker extends BaseWorker {
             traceHeaders,
             workerId: this.context.id,
             sessionId: this.sessionId!,
-            workspaceId,
+            workspaceId
           },
           async (span) => {
+
             const sessionContext: SessionContext = {
               sessionId: this.sessionId!,
               workspaceId,
@@ -71,6 +72,7 @@ class SessionSupervisorWorker extends BaseWorker {
               payload,
               availableAgents: agents,
               filteredMemory: [], // WorkspaceSupervisor would provide this
+              jobSpec: data.jobSpec, // Job specification from WorkspaceSupervisor
               constraints: intent?.constraints,
               additionalPrompts: data.additionalPrompts,
             };
@@ -79,7 +81,7 @@ class SessionSupervisorWorker extends BaseWorker {
 
             this.log(`Session initialized with intent: ${intent?.id || "none"}`);
             return { status: "initialized", intentId: intent?.id };
-          },
+          }
         );
       }
 
@@ -92,20 +94,21 @@ class SessionSupervisorWorker extends BaseWorker {
             component: "session",
             traceHeaders,
             workerId: this.context.id,
-            sessionId: this.sessionId!,
+            sessionId: this.sessionId!
           },
           async (span) => {
+
             // Create execution plan using SessionSupervisor's intelligence
             const plan = await AtlasTelemetry.withSpan(
               "session.createExecutionPlan",
               async () => {
                 return await this.supervisor!.createExecutionPlan();
               },
-              { "session.id": this.sessionId! },
+              { "session.id": this.sessionId! }
             );
             this.log(`Execution plan created with ${plan.phases.length} phases`);
 
-            const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
+            const results = [];
 
             // Execute each phase of the plan
             for (const phase of plan.phases) {
@@ -127,7 +130,7 @@ class SessionSupervisorWorker extends BaseWorker {
                       const result = await this.executeAgentTask(
                         agentTask,
                         phaseResults,
-                        agentTraceHeaders,
+                        agentTraceHeaders
                       );
                       phaseResults.push(result);
 
@@ -155,7 +158,7 @@ class SessionSupervisorWorker extends BaseWorker {
                     results: phaseResults,
                   });
                 },
-                { "phase.id": phase.id },
+                { "phase.id": phase.id }
               );
 
               // Check if we should continue to next phase
@@ -199,7 +202,7 @@ class SessionSupervisorWorker extends BaseWorker {
               ),
               summary: sessionSummary,
             };
-          },
+          }
         );
       }
 
@@ -349,26 +352,19 @@ class SessionSupervisorWorker extends BaseWorker {
       }
     }
 
-    // Spawn agent if not already spawned
-    if (!this.agents.has(agentId)) {
-      const agentType = this.getAgentType(agentId);
-      await this.spawnAgent(agentId, agentType);
-    }
-
-    // Invoke the agent with telemetry
+    // Execute agent through AgentSupervisor (supervised execution)
     const output = await AtlasTelemetry.withWorkerSpan(
       {
-        operation: "invokeAgent",
+        operation: "executeAgentSupervised",
         component: "session",
         traceHeaders,
         workerId: this.context.id,
         sessionId: this.sessionId!,
-        agentId,
-        agentType: this.getAgentType(agentId),
+        agentId
       },
       async (span) => {
         return await this.invokeAgent(agentId, input, crypto.randomUUID(), traceHeaders);
-      },
+      }
     );
 
     return {
@@ -398,46 +394,25 @@ class SessionSupervisorWorker extends BaseWorker {
     taskId: string,
     traceHeaders?: Record<string, string>,
   ): Promise<any> {
-    const agentInfo = this.agents.get(agentId);
-    if (!agentInfo) {
-      throw new Error(`Agent not found: ${agentId}`);
+    // Use AgentSupervisor for supervised execution instead of direct agent workers
+    if (!this.supervisor) {
+      throw new Error("SessionSupervisor not initialized");
     }
 
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        reject(new Error(`Agent ${agentId} invocation timeout`));
-      }, 180000);
+    const task = {
+      task: `Process input: ${JSON.stringify(input)}`,
+      inputSource: "direct",
+      dependencies: [],
+    };
 
-      // Listen for result
-      const handleMessage = (event: MessageEvent) => {
-        if (event.data.type === "result" && event.data.taskId === taskId) {
-          clearTimeout(timeout);
-          agentInfo.worker.removeEventListener("message", handleMessage);
-          resolve(event.data.result);
-        } else if (
-          event.data.type === "error" && event.data.taskId === taskId
-        ) {
-          clearTimeout(timeout);
-          agentInfo.worker.removeEventListener("message", handleMessage);
-          reject(new Error(event.data.error));
-        }
-      };
-
-      agentInfo.worker.addEventListener("message", handleMessage);
-
-      // Send task to agent with trace headers
-      agentInfo.worker.postMessage({
-        type: "task",
-        taskId,
-        data: {
-          action: "invoke",
-          input,
-          agentId,
-          sessionId: this.sessionId,
-          traceHeaders, // Pass trace context to agent
-        },
-      });
-    });
+    try {
+      // Execute through SessionSupervisor which uses AgentSupervisor
+      const result = await this.supervisor.executeAgent(agentId, task, input);
+      return result.output;
+    } catch (error) {
+      this.log(`Error executing agent ${agentId}: ${error}`);
+      throw error;
+    }
   }
 
   private handleAgentMessage(agentId: string, message: any): void {

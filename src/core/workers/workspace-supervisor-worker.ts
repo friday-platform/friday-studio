@@ -46,7 +46,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
     switch (data.action) {
       case "processSignal": {
-        const { signal, payload, sessionId, traceHeaders } = data;
+        const { signal, payload, sessionId, signalConfig, jobs, traceHeaders } = data;
 
         return await AtlasTelemetry.withWorkerSpan(
           {
@@ -85,7 +85,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             const sessionContext = await AtlasTelemetry.withSpan(
               "supervisor.createSessionContext",
               async () => {
-                return await this.supervisor!.createSessionContext(intent, signal, payload);
+                return await this.supervisor!.createSessionContext(intent, signal, payload, { signalConfig, jobs });
               },
               { "session.id": sessionId },
             );
@@ -108,6 +108,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
                 workspaceId: this.workspace?.id,
                 agents: sessionContext.availableAgents || [],
                 filteredMemory: sessionContext.filteredMemory || [],
+                jobSpec: sessionContext.jobSpec, // Pass job specification to session
                 constraints: sessionContext.constraints,
                 additionalPrompts: sessionContext.additionalPrompts,
                 traceHeaders: sessionTraceHeaders, // Pass trace context to session

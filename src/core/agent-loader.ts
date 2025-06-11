@@ -81,6 +81,7 @@ export class AgentLoader {
     agentId: string,
     agentConfig: any,
   ): Promise<IWorkspaceAgent> {
+
     const metadata: AgentMetadata = {
       id: agentId,
       type: agentConfig.type,
@@ -88,23 +89,41 @@ export class AgentLoader {
       parentScopeId: workspace.id,
     };
 
-    // Create agent via registry
-    const agent = await AgentRegistry.createAgent(metadata);
+    // Create a metadata-only agent object that the AgentSupervisor can use
+    const metadataAgent = {
+      id: agentId,
+      name: agentConfig.name || agentId,
+      nickname: agentConfig.nickname || agentId,
+      version: agentConfig.version || "1.0.0",
+      provider: agentConfig.provider || "user",
+      purpose: agentConfig.purpose || "",
+      type: agentConfig.type,
+      config: agentConfig,
+      // Add metadata flag so supervisor knows this is config-only
+      isMetadata: true,
+      // Required IWorkspaceAgent interface methods
+      status: "ready",
+      host: "supervisor",
+      controls: () => ({}),
+      getAgentPrompts: () => ({ system: agentConfig.prompts?.system || "", user: "" }),
+      // These will not be called for metadata-only agents, but required by interface
+      invoke: async (message: string) => { 
+        throw new Error(`Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`); 
+      },
+      invokeStream: async function* (message: string) { 
+        throw new Error(`Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`); 
+      },
+      // Base agent interface methods
+      prompts: { system: agentConfig.prompts?.system || "", user: "" },
+      gates: [],
+      newConversation: () => { throw new Error("Not implemented for metadata agents"); },
+      getConversation: () => { throw new Error("Not implemented for metadata agents"); },
+      archiveConversation: () => { throw new Error("Not implemented for metadata agents"); },
+      deleteConversation: () => { throw new Error("Not implemented for metadata agents"); },
+      scope: () => { throw new Error("Not implemented for metadata agents"); },
+    };
 
-    // Ensure agent has the correct ID (consolidates the (agent as any).id pattern)
-    if ((agent as any).id !== agentId) {
-      (agent as any).id = agentId;
-    }
-
-    // Set agent type for metadata if not already set
-    if (!(agent as any).type) {
-      (agent as any).type = agentConfig.type;
-    }
-
-    // Pass through agent configuration for model selection and other settings
-    (agent as any).config = agentConfig;
-
-    return agent;
+    return metadataAgent as unknown as IWorkspaceAgent;
   }
 
   /**
@@ -132,9 +151,12 @@ export class AgentLoader {
         const agentTyped = agent as any;
         acc[key] = {
           id: key,
-          name: agentTyped.name?.() || key,
+          name: typeof agentTyped.name === 'function' ? agentTyped.name() : agentTyped.name || key,
           type: agentTyped.type || key.replace("-agent", ""),
-          purpose: agentTyped.purpose?.() || "",
+          purpose: typeof agentTyped.purpose === 'function' ? agentTyped.purpose() : agentTyped.purpose || "",
+          // CRITICAL: Preserve config and metadata flags for proper agent execution
+          config: agentTyped.config || {},
+          isMetadata: agentTyped.isMetadata || false,
         };
         return acc;
       },

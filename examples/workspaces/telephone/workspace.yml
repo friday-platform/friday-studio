@@ -3,24 +3,93 @@ version: "1.0"
 workspace:
   id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Telephone Game"
-  description: "A simple telephone game where messages transform through agents"
+  description: "A game where messages transform through multiple agents"
 
+# User-defined agents for telephone game
 agents:
+  # LLM-based agent with specialized prompts  
   mishearing-agent:
-    type: "mishearing"
-    model: "claude-4-sonnet-20250514" # Configurable model per agent
+    type: "llm"
+    model: "claude-4-sonnet-20250514"
+    purpose: "Specializes in phonetic errors and mishearing transformations"
+    tools: ["text-analysis", "phonetic-processing"]
+    prompts:
+      system: |
+        You are a mishearing specialist agent. Your role is to transform messages
+        as if they were misheard in a noisy environment.
+        
+        Focus on:
+        - Phonetic similarities and sound-alike words
+        - Common mishearing patterns
+        - Plausible but incorrect interpretations
+        - Maintaining some connection to the original meaning
 
+  # LLM-based agent for creative embellishment
   embellishment-agent:
-    type: "embellishment"
+    type: "llm"
     model: "claude-4-sonnet-20250514"
+    purpose: "Adds creative context and embellishments to messages"
+    tools: ["creative-writing", "context-generation"]
+    prompts:
+      system: |
+        You are a creative embellishment agent. Your role is to add vivid details,
+        context, and creative flourishes to messages while preserving the core meaning.
+        
+        Focus on:
+        - Adding sensory details and vivid imagery
+        - Expanding simple statements into richer narratives
+        - Introducing creative context and backstory
+        - Maintaining logical coherence while being imaginative
 
+  # LLM-based agent for dramatic reinterpretation
   reinterpretation-agent:
-    type: "reinterpretation"
+    type: "llm" 
     model: "claude-4-sonnet-20250514"
+    purpose: "Dramatically transforms and reinterprets messages"
+    tools: ["semantic-analysis", "creative-reinterpretation"]
+    prompts:
+      system: |
+        You are a reinterpretation specialist agent. Your role is to dramatically
+        transform messages by finding alternative meanings and creative interpretations.
+        
+        Focus on:
+        - Finding unexpected connections and alternative meanings
+        - Dramatic shifts in context or perspective
+        - Creative reframing of the core elements
+        - Surprising but plausible reinterpretations
 
+# Signal definitions with job references
 signals:
   telephone-message:
+    description: "Trigger a telephone game with a message"
     provider: "cli"
+    schema:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          description: "The message to transform through the telephone game"
+      required: ["message"]
+    
+    # Jobs triggered by this signal
     jobs:
       - name: "telephone"
+        condition: "message && message.length > 0 && message.length < 100"
         job: "./jobs/telephone-game.yml"
+      - name: "comprehensive-multi-agent-example"
+        condition: "message && message.length >= 100"
+        job: "./jobs/comprehensive-example.yml"
+
+# Runtime configuration
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"
