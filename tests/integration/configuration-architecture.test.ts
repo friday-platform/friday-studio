@@ -7,14 +7,6 @@
 
 import { expect } from "@std/expect";
 import { ConfigLoader } from "../../src/core/config-loader.ts";
-
-// Simple validation error class for testing
-class ConfigValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ConfigValidationError";
-  }
-}
 import { join } from "@std/path";
 
 // Test fixtures
@@ -169,7 +161,7 @@ async function createTestEnvironment() {
   // Write workspace.yml
   await Deno.writeTextFile(
     join(tempDir, "workspace.yml"),
-    validWorkspaceConfig,
+    validWorkspaceConfig
   );
 
   // Create jobs directory and write job spec
@@ -204,24 +196,24 @@ Deno.test("Atlas configuration loads platform settings", async () => {
 
     // Test supervisor configurations
     expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
-      "claude-4-sonnet-20250514",
+      "claude-4-sonnet-20250514"
     );
     expect(mergedConfig.atlas.supervisors.session.model).toBe(
-      "claude-4-sonnet-20250514",
+      "claude-4-sonnet-20250514"
     );
     expect(mergedConfig.atlas.supervisors.agent.model).toBe(
-      "claude-4-sonnet-20250514",
+      "claude-4-sonnet-20250514"
     );
 
     // Test supervisor prompts exist
     expect(mergedConfig.atlas.supervisors.workspace.prompts.system).toContain(
-      "WorkspaceSupervisor",
+      "WorkspaceSupervisor"
     );
     expect(mergedConfig.atlas.supervisors.session.prompts.system).toContain(
-      "SessionSupervisor",
+      "SessionSupervisor"
     );
     expect(mergedConfig.atlas.supervisors.agent.prompts.system).toContain(
-      "AgentSupervisor",
+      "AgentSupervisor"
     );
 
     // Test platform agents exist
@@ -257,31 +249,31 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
 
     // Test workspace metadata
     expect(workspaceConfig.workspace.id).toBe(
-      "7821d138-71a6-434c-bc64-10addcf33532",
+      "7821d138-71a6-434c-bc64-10addcf33532"
     );
     expect(workspaceConfig.workspace.name).toBe("Test Workspace");
     expect(workspaceConfig.workspace.description).toBe(
-      "A test workspace for configuration validation",
+      "A test workspace for configuration validation"
     );
 
     // Test agent definitions
     expect(workspaceConfig.agents["test-llm-agent"].type).toBe("llm");
     expect(workspaceConfig.agents["test-llm-agent"].model).toBe(
-      "claude-4-sonnet-20250514",
+      "claude-4-sonnet-20250514"
     );
     expect(workspaceConfig.agents["test-llm-agent"].purpose).toBe(
-      "Test LLM agent for configuration testing",
+      "Test LLM agent for configuration testing"
     );
 
     expect(workspaceConfig.agents["test-tempest-agent"].type).toBe("tempest");
     expect(workspaceConfig.agents["test-tempest-agent"].agent).toBe(
-      "test-agent",
+      "test-agent"
     );
     expect(workspaceConfig.agents["test-tempest-agent"].version).toBe("1.0.0");
 
     expect(workspaceConfig.agents["test-remote-agent"].type).toBe("remote");
     expect(workspaceConfig.agents["test-remote-agent"].endpoint).toBe(
-      "https://api.test.com/agent",
+      "https://api.test.com/agent"
     );
 
     // Test signals
@@ -322,7 +314,7 @@ Deno.test(
       // Verify atlas config is loaded
       expect(mergedConfig.atlas.platform.name).toBe("Atlas");
       expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
-        "claude-4-sonnet-20250514",
+        "claude-4-sonnet-20250514"
       );
 
       // Verify workspace config is loaded
@@ -335,7 +327,7 @@ Deno.test(
       expect(mergedConfig.jobs["test-job"]).toBeDefined();
       expect(mergedConfig.jobs["test-job"].name).toBe("test-job");
       expect(mergedConfig.jobs["test-job"].execution?.strategy).toBe(
-        "sequential",
+        "sequential"
       );
 
       // Verify agent references in jobs are valid
@@ -343,7 +335,8 @@ Deno.test(
       if (testJob.execution?.agents) {
         for (const agentRef of testJob.execution.agents) {
           const agentId = typeof agentRef === "string" ? agentRef : agentRef.id;
-          const agentExists = mergedConfig.workspace.agents[agentId] ||
+          const agentExists =
+            mergedConfig.workspace.agents[agentId] ||
             mergedConfig.atlas.agents?.[agentId];
           expect(agentExists).toBeDefined();
         }
@@ -354,7 +347,7 @@ Deno.test(
         await Deno.remove(tempDir, { recursive: true });
       }
     }
-  },
+  }
 );
 
 Deno.test.ignore("Job specifications define execution patterns", async () => {
@@ -427,18 +420,18 @@ Deno.test("Agent type configurations validate correctly", async () => {
     // Find LLM agent in atlas
     const atlasLlmAgent = atlasAgents?.["memory-agent"];
     expect(atlasLlmAgent?.type).toBe("llm");
-    expect((atlasLlmAgent as any)?.model).toBeDefined();
+    expect(atlasLlmAgent?.model).toBeDefined();
 
     // Find Remote agent in atlas
     const atlasRemoteAgent = atlasAgents?.["security-scanner"];
     expect(atlasRemoteAgent?.type).toBe("remote");
-    expect((atlasRemoteAgent as any)?.endpoint).toBeDefined();
+    expect(atlasRemoteAgent?.endpoint).toBeDefined();
 
     // Find Tempest agent in atlas
     const atlasTempestAgent = atlasAgents?.["tempest-synthesizer"];
     expect(atlasTempestAgent?.type).toBe("tempest");
-    expect((atlasTempestAgent as any)?.agent).toBeDefined();
-    expect((atlasTempestAgent as any)?.version).toBeDefined();
+    expect(atlasTempestAgent?.agent).toBeDefined();
+    expect(atlasTempestAgent?.version).toBeDefined();
   } finally {
     Deno.chdir(originalCwd);
     if (tempDir) {
@@ -481,7 +474,7 @@ signals:
 
     await Deno.writeTextFile(
       join(tempDir, "workspace.yml"),
-      invalidWorkspaceContent,
+      invalidWorkspaceContent
     );
     Deno.chdir(tempDir);
 
@@ -495,7 +488,7 @@ signals:
       errorCaught = true;
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).toContain(
-        "LLM agents require 'model' field",
+        "LLM agents require 'model' field"
       );
     }
 
