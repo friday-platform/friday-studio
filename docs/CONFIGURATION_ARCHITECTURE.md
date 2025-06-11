@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document outlines the new configuration architecture for Atlas that separates concerns between platform-managed components and user-configurable elements, while enabling natural language job definition with structured execution.
+This document outlines the new configuration architecture for Atlas that separates concerns between
+platform-managed components and user-configurable elements, while enabling natural language job
+definition with structured execution.
 
 ## Architecture Principles
 
@@ -11,7 +13,8 @@ This document outlines the new configuration architecture for Atlas that separat
 1. **Atlas-managed** (`atlas.yml`): WorkspaceSupervisor and SessionSupervisor core logic
 2. **User-defined** (`workspace.yml`): Agents and signals specific to their workspace
 3. **Job-specific** (`jobs/*.yml`): Execution patterns for signal-agent combinations
-4. **Natural Language Interface**: Users describe jobs in natural language, system generates structured configurations
+4. **Natural Language Interface**: Users describe jobs in natural language, system generates
+   structured configurations
 
 ### Key Design Decisions
 
@@ -87,7 +90,7 @@ agents:
     config:
       browsers: ["chromium", "firefox"]
       viewport: "1920x1080"
-      
+
   # User-defined LLM agent
   frontend-reviewer:
     type: "llm"
@@ -98,7 +101,7 @@ agents:
       system: |
         You are a senior frontend engineer reviewing code changes.
         Focus on performance, accessibility, and maintainability.
-        
+
   # Remote agent service
   security-scanner:
     type: "remote"
@@ -108,16 +111,16 @@ agents:
       token_env: "SECURITY_API_TOKEN"
     timeout: 30000
     schema:
-      input: 
+      input:
         type: "object"
         properties:
-          files: {type: "array"}
-          diff: {type: "string"}
+          files: { type: "array" }
+          diff: { type: "string" }
       output:
         type: "object"
         properties:
-          vulnerabilities: {type: "array"}
-          score: {type: "number"}
+          vulnerabilities: { type: "array" }
+          score: { type: "number" }
 
 signals:
   github-pr:
@@ -126,8 +129,8 @@ signals:
     schema:
       type: "object"
       properties:
-        action: {type: "string"}
-        pull_request: {type: "object"}
+        action: { type: "string" }
+        pull_request: { type: "object" }
     jobs:
       - name: "frontend-review"
         condition: "pull_request.changed_files.some(f => f.filename.match(/\\.(tsx|css|js)$/))"
@@ -135,7 +138,7 @@ signals:
       - name: "security-review"
         condition: "action == 'opened' && pull_request.additions > 100"
         job: "./jobs/security-review.yml"
-        
+
   deploy-failed:
     provider: "webhook"
     description: "Deployment failure notifications"
@@ -154,7 +157,7 @@ version: "1.0"
 job:
   name: "frontend-pr-review"
   description: "Comprehensive frontend PR review with visual and accessibility testing"
-  
+
   execution:
     strategy: "parallel-then-sequential"
     stages:
@@ -169,16 +172,16 @@ job:
             prompt: |
               Capture visual changes from this PR.
               Focus on layout shifts and component changes.
-              
-          - id: "security-scanner" 
+
+          - id: "security-scanner"
             input:
               files: "{signal.pull_request.changed_files}"
               diff: "{signal.pull_request.diff}"
             prompt: |
               Analyze the security scan results and prioritize findings.
               Focus on high-severity issues that block deployment.
-              
-      # Stage 2: Synthesis (sequential)  
+
+      # Stage 2: Synthesis (sequential)
       - name: "review"
         strategy: "sequential"
         agents:
@@ -187,9 +190,9 @@ job:
               Provide comprehensive frontend code review incorporating:
               Visual analysis: {stage.analysis.playwright-agent.output}
               Security findings: {stage.analysis.security-scanner.output}
-              
+
               Focus on code quality, performance, and integration with existing systems.
-              
+
   # SessionSupervisor guidance for this job type
   session_prompts:
     planning: |
@@ -216,9 +219,13 @@ job:
 ### Example Natural Language Input
 
 **User Input:**
-> "When a GitHub PR contains frontend files, first have the playwright agent take screenshots, then the accessibility agent should review for issues, finally the frontend reviewer provides comprehensive feedback"
+
+> "When a GitHub PR contains frontend files, first have the playwright agent take screenshots, then
+> the accessibility agent should review for issues, finally the frontend reviewer provides
+> comprehensive feedback"
 
 **System Processing:**
+
 - **Signal**: "GitHub PR" → maps to `github-pr` signal
 - **Condition**: "contains frontend files" → infers file pattern matching
 - **Agents**: playwright-agent, accessibility-agent, frontend-reviewer (validated against workspace)
@@ -226,11 +233,12 @@ job:
 - **Tasks**: Extracted from natural language descriptions
 
 **Generated Structure:**
+
 ```yaml
 job:
   name: "frontend-pr-review" # inferred from context
   description: "Frontend PR review with visual testing and accessibility analysis"
-  trigger: 
+  trigger:
     signal: "github-pr"
     condition: "Pull request modifies frontend files (.tsx, .css, .js)"
   execution:
@@ -238,7 +246,7 @@ job:
     agents:
       - id: "playwright-agent"
         task: "Take screenshots of changes"
-      - id: "accessibility-agent" 
+      - id: "accessibility-agent"
         task: "Review for accessibility issues"
       - id: "frontend-reviewer"
         task: "Provide comprehensive feedback incorporating visual and accessibility analysis"
@@ -250,7 +258,8 @@ job:
 - **Signal Validation**: Verify signals exist and are properly configured
 - **Visual Highlighting**: Recognized entities get distinct visual treatment
 - **Condition Inference**: Natural language conditions converted to executable expressions
-- **Strategy Detection**: Execution patterns inferred from temporal language ("first", "then", "parallel")
+- **Strategy Detection**: Execution patterns inferred from temporal language ("first", "then",
+  "parallel")
 
 ## Agent Type Handling
 
@@ -259,7 +268,7 @@ job:
 ```yaml
 playwright-agent:
   type: "tempest"
-  agent: "playwright-visual-tester"  # Catalog reference
+  agent: "playwright-visual-tester" # Catalog reference
   version: "1.2.0"
   config:
     browsers: ["chromium", "firefox"]
@@ -267,6 +276,7 @@ playwright-agent:
 ```
 
 **Characteristics:**
+
 - Managed by Atlas platform
 - Version-controlled capabilities
 - Configuration-driven behavior
@@ -286,6 +296,7 @@ frontend-reviewer:
 ```
 
 **Characteristics:**
+
 - User-defined prompts and behavior
 - Flexible tool selection
 - Custom domain expertise
@@ -301,11 +312,12 @@ security-scanner:
     type: "bearer"
     token_env: "SECURITY_API_TOKEN"
   schema:
-    input: {type: "object", properties: {...}}
-    output: {type: "object", properties: {...}}
+    input: { type: "object", properties: { ... } }
+    output: { type: "object", properties: { ... } }
 ```
 
 **Characteristics:**
+
 - External service integration
 - Structured input/output contracts
 - Authentication and timeout handling
@@ -314,18 +326,21 @@ security-scanner:
 ## Implementation Benefits
 
 ### Developer Experience
+
 - **Natural language job creation** removes YAML/DSL learning curve
 - **Entity recognition** provides autocomplete and validation
 - **Visual feedback** shows recognized components
 - **Structured output** maintains precision and debuggability
 
 ### Platform Benefits
+
 - **Separation of concerns** between Atlas logic and user configuration
 - **Multi-agent support** enables diverse integration patterns
 - **M:M signal-job relationships** support complex workflow scenarios
 - **Reusable jobs** can be shared across workspaces and teams
 
 ### Operational Benefits
+
 - **Clear audit trail** from natural language to structured execution
 - **Version control** for all configuration components
 - **Testing support** through manual job triggering

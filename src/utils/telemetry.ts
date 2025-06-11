@@ -36,7 +36,7 @@ const WORKER_ATTRIBUTE_MAPPING = {
   agentId: "atlas.agent.id",
   agentType: "atlas.agent.type",
   signalId: "atlas.signal.id",
-  signalType: "atlas.signal.type"
+  signalType: "atlas.signal.type",
 } as const;
 
 // Dynamic imports for OpenTelemetry to avoid worker import issues
@@ -90,13 +90,16 @@ export class AtlasTelemetry {
         logger.info("🔍 OpenTelemetry enabled for Atlas", {
           serviceName: Deno.env.get("OTEL_SERVICE_NAME"),
           endpoint: Deno.env.get("OTEL_EXPORTER_OTLP_ENDPOINT") || "default",
-          protocol: Deno.env.get("OTEL_EXPORTER_OTLP_PROTOCOL") || "http/protobuf"
+          protocol: Deno.env.get("OTEL_EXPORTER_OTLP_PROTOCOL") || "http/protobuf",
         });
       } catch (error) {
-        logger.warn("Failed to initialize OpenTelemetry (worker environment may not support npm imports)", {
-          error: String(error),
-          workerType: typeof globalThis.WorkerGlobalScope !== "undefined" ? "worker" : "main"
-        });
+        logger.warn(
+          "Failed to initialize OpenTelemetry (worker environment may not support npm imports)",
+          {
+            error: String(error),
+            workerType: typeof globalThis.WorkerGlobalScope !== "undefined" ? "worker" : "main",
+          },
+        );
         this.isEnabled = false;
       }
     })();
@@ -127,7 +130,7 @@ export class AtlasTelemetry {
     name: string,
     fn: (span: any) => Promise<T> | T,
     attributes?: Record<string, any>,
-    spanKind?: any
+    spanKind?: any,
   ): Promise<T> {
     const enabled = await this.ensureInitialized();
     if (!enabled || !this.tracer) {
@@ -158,7 +161,7 @@ export class AtlasTelemetry {
         }
         span.setStatus({
           code: SpanStatusCode?.ERROR || 2,
-          message: String(error)
+          message: String(error),
         });
         throw error;
       } finally {
@@ -173,7 +176,7 @@ export class AtlasTelemetry {
   static async withServerSpan<T>(
     operationName: string,
     fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>
+    attributes?: Record<string, any>,
   ): Promise<T> {
     await this.ensureInitialized();
     const kind = SpanKind?.SERVER;
@@ -186,7 +189,7 @@ export class AtlasTelemetry {
   static async withClientSpan<T>(
     operationName: string,
     fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>
+    attributes?: Record<string, any>,
   ): Promise<T> {
     await this.ensureInitialized();
     const kind = SpanKind?.CLIENT;
@@ -199,7 +202,7 @@ export class AtlasTelemetry {
   static addAtlasAttributes(
     span: any,
     component: "workspace" | "supervisor" | "agent" | "signal" | "session",
-    attributes: Record<string, any>
+    attributes: Record<string, any>,
   ) {
     if (!span) return;
 
@@ -220,7 +223,11 @@ export class AtlasTelemetry {
   /**
    * Convenience method for workspace attributes
    */
-  static addWorkspaceAttributes(span: any, workspaceId: string, additionalAttributes?: Record<string, any>) {
+  static addWorkspaceAttributes(
+    span: any,
+    workspaceId: string,
+    additionalAttributes?: Record<string, any>,
+  ) {
     const attributes = { id: workspaceId, ...additionalAttributes };
     this.addAtlasAttributes(span, "workspace", attributes);
   }
@@ -228,7 +235,12 @@ export class AtlasTelemetry {
   /**
    * Convenience method for supervisor attributes
    */
-  static addSupervisorAttributes(span: any, supervisorType: string, sessionId?: string, additionalAttributes?: Record<string, any>) {
+  static addSupervisorAttributes(
+    span: any,
+    supervisorType: string,
+    sessionId?: string,
+    additionalAttributes?: Record<string, any>,
+  ) {
     const attributes: Record<string, any> = { type: supervisorType, ...additionalAttributes };
     if (sessionId) {
       attributes["atlas.session.id"] = sessionId;
@@ -239,7 +251,12 @@ export class AtlasTelemetry {
   /**
    * Convenience method for agent attributes
    */
-  static addAgentAttributes(span: any, agentId: string, agentType: string, additionalAttributes?: Record<string, any>) {
+  static addAgentAttributes(
+    span: any,
+    agentId: string,
+    agentType: string,
+    additionalAttributes?: Record<string, any>,
+  ) {
     const attributes = { id: agentId, type: agentType, ...additionalAttributes };
     this.addAtlasAttributes(span, "agent", attributes);
   }
@@ -247,7 +264,12 @@ export class AtlasTelemetry {
   /**
    * Convenience method for signal attributes
    */
-  static addSignalAttributes(span: any, signalId: string, signalType: string, additionalAttributes?: Record<string, any>) {
+  static addSignalAttributes(
+    span: any,
+    signalId: string,
+    signalType: string,
+    additionalAttributes?: Record<string, any>,
+  ) {
     const attributes = { id: signalId, type: signalType, ...additionalAttributes };
     this.addAtlasAttributes(span, "signal", attributes);
   }
@@ -267,7 +289,9 @@ export class AtlasTelemetry {
       if (activeSpan) {
         const spanContext = activeSpan.spanContext();
         // Return W3C trace context format for propagation
-        return `00-${spanContext.traceId}-${spanContext.spanId}-${spanContext.traceFlags.toString(16).padStart(2, '0')}`;
+        return `00-${spanContext.traceId}-${spanContext.spanId}-${
+          spanContext.traceFlags.toString(16).padStart(2, "0")
+        }`;
       }
     } catch (error) {
       logger.warn("Failed to get span context", { error: String(error) });
@@ -283,7 +307,7 @@ export class AtlasTelemetry {
     name: string,
     parentTraceContext: string | null,
     fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>
+    attributes?: Record<string, any>,
   ): Promise<T> {
     const enabled = await this.ensureInitialized();
     if (!enabled || !this.tracer) {
@@ -297,8 +321,8 @@ export class AtlasTelemetry {
     if (parentTraceContext && context && trace) {
       try {
         // Parse W3C traceparent header: 00-{traceId}-{spanId}-{flags}
-        const parts = parentTraceContext.split('-');
-        if (parts.length === 4 && parts[0] === '00') {
+        const parts = parentTraceContext.split("-");
+        if (parts.length === 4 && parts[0] === "00") {
           const traceId = parts[1];
           const spanId = parts[2];
           const traceFlags = parseInt(parts[3], 16);
@@ -307,7 +331,7 @@ export class AtlasTelemetry {
             parentTraceContext,
             traceId,
             spanId,
-            spanName: name
+            spanName: name,
           });
 
           // Create span context manually - this ensures we use the EXACT trace ID from parent
@@ -315,7 +339,7 @@ export class AtlasTelemetry {
             traceId,
             spanId,
             traceFlags,
-            isRemote: true
+            isRemote: true,
           };
 
           // Set the span context in the parent context to force inheritance
@@ -325,7 +349,7 @@ export class AtlasTelemetry {
             parentTraceContext,
             traceId,
             spanId,
-            spanName: name
+            spanName: name,
           });
         } else {
           logger.warn("Invalid traceparent format", { parentTraceContext });
@@ -333,7 +357,7 @@ export class AtlasTelemetry {
       } catch (error) {
         logger.warn("Failed to extract parent trace context manually", {
           parentTraceContext,
-          error: String(error)
+          error: String(error),
         });
         // Fall back to current context
       }
@@ -362,7 +386,7 @@ export class AtlasTelemetry {
         }
         span.setStatus({
           code: SpanStatusCode?.ERROR || 2,
-          message: String(error)
+          message: String(error),
         });
         throw error;
       } finally {
@@ -390,12 +414,14 @@ export class AtlasTelemetry {
         if (spanContext.traceId && spanContext.spanId) {
           // Create W3C traceparent header manually since propagation API is failing
           const traceFlags = spanContext.traceFlags || 0;
-          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId}-${traceFlags.toString(16).padStart(2, '0')}`;
+          const traceparent = `00-${spanContext.traceId}-${spanContext.spanId}-${
+            traceFlags.toString(16).padStart(2, "0")
+          }`;
 
           logger.debug("Created trace headers from active span", {
             traceparent,
             traceId: spanContext.traceId,
-            spanId: spanContext.spanId
+            spanId: spanContext.spanId,
           });
 
           return { traceparent };
@@ -403,14 +429,14 @@ export class AtlasTelemetry {
       }
 
       // Try propagation API as fallback
-      const propagation = await import("npm:@opentelemetry/api@1").then(m => m.propagation);
+      const propagation = await import("npm:@opentelemetry/api@1").then((m) => m.propagation);
       if (propagation) {
         const carrier: Record<string, string> = {};
         propagation.inject(activeContext, carrier);
 
         if (carrier.traceparent) {
           logger.debug("Created trace headers using propagation API fallback", {
-            traceparent: carrier.traceparent
+            traceparent: carrier.traceparent,
           });
           return carrier;
         }
@@ -436,10 +462,12 @@ export class AtlasTelemetry {
    */
   static async withWorkerSpan<T>(
     context: WorkerSpanContext,
-    fn: (span: any) => Promise<T> | T
+    fn: (span: any) => Promise<T> | T,
   ): Promise<T> {
     // Generate span name from context using array join
-    const spanName = [context.component, context.operation, context.agentType].filter(Boolean).join('.');
+    const spanName = [context.component, context.operation, context.agentType].filter(Boolean).join(
+      ".",
+    );
 
     // Extract trace context from headers
     const parentTraceContext = this.extractTraceContext(context.traceHeaders || {});
@@ -468,7 +496,7 @@ export class AtlasTelemetry {
 
         // Execute the business logic
         return await fn(span);
-      }
+      },
     );
   }
 }

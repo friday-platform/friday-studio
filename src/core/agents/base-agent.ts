@@ -64,7 +64,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     // Archive conversation using CoALA memory with agent-specific context
     const coalaMemory = this.memory as CoALAMemoryManager;
     const conversationHistory = this.messages.getHistory();
-    
+
     if (conversationHistory.length > 0) {
       coalaMemory.rememberWithMetadata(
         `conversation_${this.name()}_${Date.now()}`,
@@ -72,15 +72,15 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
           agentName: this.name(),
           messageCount: conversationHistory.length,
           messages: conversationHistory,
-          archivedAt: new Date()
+          archivedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['conversation', 'archived', this.name(), 'agent-interaction'],
+          tags: ["conversation", "archived", this.name(), "agent-interaction"],
           relevanceScore: 0.6,
           confidence: 1.0,
-          decayRate: 0.03 // Agent conversations decay slower than general conversations
-        }
+          decayRate: 0.03, // Agent conversations decay slower than general conversations
+        },
       );
     }
   }
@@ -93,21 +93,21 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   private rememberAgentInitialization(): void {
     const coalaMemory = this.memory as CoALAMemoryManager;
     coalaMemory.rememberWithMetadata(
-      'agent-initialization',
+      "agent-initialization",
       {
         agentId: this.id,
         agentName: this.name(),
         agentType: this.constructor.name,
         provider: this.provider(),
         purpose: this.purpose(),
-        initializedAt: new Date()
+        initializedAt: new Date(),
       },
       {
         memoryType: CoALAMemoryType.CONTEXTUAL,
-        tags: ['agent', 'initialization', this.name(), 'startup'],
+        tags: ["agent", "initialization", this.name(), "startup"],
         relevanceScore: 0.8,
-        confidence: 1.0
-      }
+        confidence: 1.0,
+      },
     );
   }
 
@@ -122,20 +122,20 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         success,
         agentName: this.name(),
         executedAt: new Date(),
-        duration: task.duration || 0
+        duration: task.duration || 0,
       },
       {
         memoryType: success ? CoALAMemoryType.PROCEDURAL : CoALAMemoryType.EPISODIC,
         tags: [
-          'task', 
-          this.name(), 
-          success ? 'success' : 'failure',
-          task.type || 'general'
+          "task",
+          this.name(),
+          success ? "success" : "failure",
+          task.type || "general",
         ],
         relevanceScore: success ? 0.7 : 0.9, // Failures are more relevant for learning
         confidence: 1.0,
-        decayRate: success ? 0.05 : 0.02 // Keep failures longer for learning
-      }
+        decayRate: success ? 0.05 : 0.02, // Keep failures longer for learning
+      },
     );
   }
 
@@ -147,14 +147,14 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         type: interactionType,
         agentName: this.name(),
         data,
-        timestamp: new Date()
+        timestamp: new Date(),
       },
       {
         memoryType: CoALAMemoryType.EPISODIC,
-        tags: ['interaction', this.name(), interactionType],
+        tags: ["interaction", this.name(), interactionType],
         relevanceScore: 0.5,
-        confidence: 1.0
-      }
+        confidence: 1.0,
+      },
     );
   }
 
@@ -164,16 +164,16 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       content: query,
       tags: [this.name()],
       minRelevance: 0.3,
-      limit
+      limit,
     }) || [];
   }
 
   protected getPastSuccesses(taskType?: string): any[] {
     const coalaMemory = this.memory as CoALAMemoryManager;
     const query: any = {
-      tags: ['success', this.name()],
+      tags: ["success", this.name()],
       minRelevance: 0.5,
-      limit: 10
+      limit: 10,
     };
     if (taskType) {
       query.tags.push(taskType);
@@ -184,9 +184,9 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   protected getPastFailures(taskType?: string): any[] {
     const coalaMemory = this.memory as CoALAMemoryManager;
     const query: any = {
-      tags: ['failure', this.name()],
+      tags: ["failure", this.name()],
       minRelevance: 0.5,
-      limit: 5
+      limit: 5,
     };
     if (taskType) {
       query.tags.push(taskType);
@@ -202,10 +202,10 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     } else {
       console.log(prefix, message);
     }
-    
+
     // Remember significant log events
-    if (message.includes('error') || message.includes('failed')) {
-      this.rememberInteraction('log_error', { message, context });
+    if (message.includes("error") || message.includes("failed")) {
+      this.rememberInteraction("log_error", { message, context });
     }
   }
 
@@ -214,7 +214,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     model: string,
     systemPrompt: string,
     userPrompt: string,
-    includeMemoryContext: boolean = true
+    includeMemoryContext: boolean = true,
   ): Promise<string> {
     const startTime = Date.now();
 
@@ -236,42 +236,42 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       });
 
       const duration = Date.now() - startTime;
-      
+
       // Remember this LLM interaction
       this.rememberTask(
         `llm_generation_${Date.now()}`,
         {
           model,
-          type: 'llm_generation',
+          type: "llm_generation",
           userPrompt: userPrompt.substring(0, 200),
           includeMemoryContext,
-          duration
+          duration,
         },
         {
           responseLength: text.length,
-          truncatedResponse: text.substring(0, 500)
+          truncatedResponse: text.substring(0, 500),
         },
-        true
+        true,
       );
 
       return text;
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       // Remember LLM failure for learning
       this.rememberTask(
         `llm_failure_${Date.now()}`,
         {
           model,
-          type: 'llm_generation',
+          type: "llm_generation",
           userPrompt: userPrompt.substring(0, 200),
           includeMemoryContext,
-          duration
+          duration,
         },
         {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         },
-        false
+        false,
       );
 
       this.log(`LLM generation error: ${error}`);
@@ -283,7 +283,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     model: string,
     systemPrompt: string,
     userPrompt: string,
-    includeMemoryContext: boolean = true
+    includeMemoryContext: boolean = true,
   ): AsyncGenerator<string> {
     const startTime = Date.now();
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
@@ -321,41 +321,40 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       }
 
       const duration = Date.now() - startTime;
-      
+
       // Remember successful streaming interaction
       this.rememberTask(
         `llm_stream_${Date.now()}`,
         {
           model,
-          type: 'llm_streaming',
+          type: "llm_streaming",
           userPrompt: userPrompt.substring(0, 200),
           includeMemoryContext,
-          duration
+          duration,
         },
         {
           responseLength: fullResponse.length,
-          truncatedResponse: fullResponse.substring(0, 500)
+          truncatedResponse: fullResponse.substring(0, 500),
         },
-        true
+        true,
       );
-
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       // Remember streaming failure
       this.rememberTask(
         `llm_stream_failure_${Date.now()}`,
         {
           model,
-          type: 'llm_streaming',
+          type: "llm_streaming",
           userPrompt: userPrompt.substring(0, 200),
           includeMemoryContext,
-          duration
+          duration,
         },
         {
-          error: error instanceof Error ? error.message : String(error)
+          error: error instanceof Error ? error.message : String(error),
         },
-        false
+        false,
       );
 
       this.log(`LLM stream generation error: ${error}`);
@@ -416,7 +415,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
    */
   async invoke(message: string, model?: string): Promise<string> {
     const modelToUse = model || this.getDefaultModel();
-    
+
     try {
       let fullResponse = "";
       for await (const chunk of this.invokeStream(message, modelToUse)) {
@@ -436,7 +435,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   async *invokeStream(message: string, model?: string): AsyncIterableIterator<string> {
     const modelToUse = model || this.getDefaultModel();
     const prompts = this.getAgentPrompts();
-    
+
     this.log(`${this.name()} processing: ${message.slice(0, 50)}...`);
 
     // Add to message history

@@ -61,10 +61,9 @@ class SessionSupervisorWorker extends BaseWorker {
             traceHeaders,
             workerId: this.context.id,
             sessionId: this.sessionId!,
-            workspaceId
+            workspaceId,
           },
           async (span) => {
-
             const sessionContext: SessionContext = {
               sessionId: this.sessionId!,
               workspaceId,
@@ -80,7 +79,7 @@ class SessionSupervisorWorker extends BaseWorker {
 
             this.log(`Session initialized with intent: ${intent?.id || "none"}`);
             return { status: "initialized", intentId: intent?.id };
-          }
+          },
         );
       }
 
@@ -93,17 +92,16 @@ class SessionSupervisorWorker extends BaseWorker {
             component: "session",
             traceHeaders,
             workerId: this.context.id,
-            sessionId: this.sessionId!
+            sessionId: this.sessionId!,
           },
           async (span) => {
-
             // Create execution plan using SessionSupervisor's intelligence
             const plan = await AtlasTelemetry.withSpan(
               "session.createExecutionPlan",
               async () => {
                 return await this.supervisor!.createExecutionPlan();
               },
-              { "session.id": this.sessionId! }
+              { "session.id": this.sessionId! },
             );
             this.log(`Execution plan created with ${plan.phases.length} phases`);
 
@@ -129,7 +127,7 @@ class SessionSupervisorWorker extends BaseWorker {
                       const result = await this.executeAgentTask(
                         agentTask,
                         phaseResults,
-                        agentTraceHeaders
+                        agentTraceHeaders,
                       );
                       phaseResults.push(result);
 
@@ -157,7 +155,7 @@ class SessionSupervisorWorker extends BaseWorker {
                     results: phaseResults,
                   });
                 },
-                { "phase.id": phase.id }
+                { "phase.id": phase.id },
               );
 
               // Check if we should continue to next phase
@@ -201,7 +199,7 @@ class SessionSupervisorWorker extends BaseWorker {
               ),
               summary: sessionSummary,
             };
-          }
+          },
         );
       }
 
@@ -366,11 +364,11 @@ class SessionSupervisorWorker extends BaseWorker {
         workerId: this.context.id,
         sessionId: this.sessionId!,
         agentId,
-        agentType: this.getAgentType(agentId)
+        agentType: this.getAgentType(agentId),
       },
       async (span) => {
         return await this.invokeAgent(agentId, input, crypto.randomUUID(), traceHeaders);
-      }
+      },
     );
 
     return {

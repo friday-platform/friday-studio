@@ -5,13 +5,14 @@ import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 export class MemoryAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";
   host: string = "localhost";
-  
+
   constructor(id?: string) {
     super(id);
 
     // Set agent-specific prompts
     this.prompts = {
-      system: `You are the Memory Agent for the Telephone Game workspace. Your role is to manage memory operations at the beginning and end of each session.
+      system:
+        `You are the Memory Agent for the Telephone Game workspace. Your role is to manage memory operations at the beginning and end of each session.
 
 **At Session Start (LOAD mode):**
 - Analyze relevant past telephone game sessions
@@ -97,37 +98,38 @@ export class MemoryAgent extends BaseAgent implements IWorkspaceAgent {
 
   async loadSessionContext(sessionIntent?: string): Promise<string> {
     this.log("Loading relevant memory context for new session");
-    
+
     const coalaMemory = this.memory as CoALAMemoryManager;
-    
+
     // Get relevant memories from different types
     const proceduralMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.PROCEDURAL);
     const episodicMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.EPISODIC);
     const semanticMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.SEMANTIC);
-    
+
     // Query for telephone game specific memories
     const telephoneMemories = coalaMemory.queryMemories({
       tags: ["telephone-game", "transformation", "pattern"],
       minRelevance: 0.4,
-      limit: 10
+      limit: 10,
     });
 
     // Build context prompt for LLM analysis
-    const contextPrompt = `LOAD MODE: Analyze past telephone game memories and provide session context.
+    const contextPrompt =
+      `LOAD MODE: Analyze past telephone game memories and provide session context.
 
 PROCEDURAL MEMORIES (${proceduralMemories.length} entries):
-${proceduralMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${proceduralMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 EPISODIC MEMORIES (${episodicMemories.length} entries):
-${episodicMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${episodicMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 SEMANTIC MEMORIES (${semanticMemories.length} entries):
-${semanticMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${semanticMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 TELEPHONE-SPECIFIC MEMORIES (${telephoneMemories.length} entries):
-${telephoneMemories.slice(0, 5).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${telephoneMemories.slice(0, 5).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
-SESSION INTENT: ${sessionIntent || 'Standard telephone game transformation'}
+SESSION INTENT: ${sessionIntent || "Standard telephone game transformation"}
 
 Provide structured context that will help the mishearing, embellishment, and reinterpretation agents perform better based on past learnings. Focus on:
 1. Successful transformation patterns
@@ -141,26 +143,25 @@ Provide structured context that will help the mishearing, embellishment, and rei
         "claude-4-sonnet-20250514",
         this.prompts.system,
         contextPrompt,
-        false // Don't include memory context to avoid recursion
+        false, // Don't include memory context to avoid recursion
       );
 
       // Remember this context loading operation
-      this.rememberInteraction('context-load', {
+      this.rememberInteraction("context-load", {
         sessionIntent,
         memoriesAnalyzed: {
           procedural: proceduralMemories.length,
           episodic: episodicMemories.length,
           semantic: semanticMemories.length,
-          telephoneSpecific: telephoneMemories.length
+          telephoneSpecific: telephoneMemories.length,
         },
-        contextGenerated: contextAnalysis.length
+        contextGenerated: contextAnalysis.length,
       });
 
       return contextAnalysis;
-
     } catch (error) {
       this.log(`Error loading session context: ${error}`);
-      
+
       // Provide fallback context
       return `TELEPHONE GAME CONTEXT (Fallback):
 - Focus on creative but believable transformations
@@ -173,11 +174,12 @@ Provide structured context that will help the mishearing, embellishment, and rei
 
   async storeSessionLearnings(sessionResults: any): Promise<string> {
     this.log("Storing session learnings in memory");
-    
+
     const coalaMemory = this.memory as CoALAMemoryManager;
-    
+
     // Build analysis prompt
-    const analysisPrompt = `STORE MODE: Analyze telephone game session results and extract learnings.
+    const analysisPrompt =
+      `STORE MODE: Analyze telephone game session results and extract learnings.
 
 SESSION RESULTS:
 ${JSON.stringify(sessionResults, null, 2)}
@@ -197,37 +199,36 @@ Provide specific, actionable insights that will improve future telephone game se
         "claude-4-sonnet-20250514",
         this.prompts.system,
         analysisPrompt,
-        false // Don't include memory context to avoid recursion
+        false, // Don't include memory context to avoid recursion
       );
 
       // Parse analysis and store in appropriate memory types
       await this.extractAndStoreInsights(analysis, sessionResults);
 
       // Remember this storage operation
-      this.rememberInteraction('session-storage', {
+      this.rememberInteraction("session-storage", {
         sessionId: sessionResults.sessionId,
         analysisLength: analysis.length,
-        insightsExtracted: true
+        insightsExtracted: true,
       });
 
       return analysis;
-
     } catch (error) {
       this.log(`Error storing session learnings: ${error}`);
-      
+
       // Still try to store basic session info
       coalaMemory.rememberWithMetadata(
         `session-basic-${Date.now()}`,
         {
           sessionResults,
           timestamp: new Date(),
-          analysisStatus: 'failed'
+          analysisStatus: "failed",
         },
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['telephone-game', 'session', 'basic-storage'],
-          relevanceScore: 0.3
-        }
+          tags: ["telephone-game", "session", "basic-storage"],
+          relevanceScore: 0.3,
+        },
       );
 
       return `Session data stored with basic information due to analysis error: ${error}`;
@@ -239,9 +240,9 @@ Provide specific, actionable insights that will improve future telephone game se
     const timestamp = Date.now();
 
     // Simple pattern extraction (could be enhanced with more sophisticated parsing)
-    const lines = analysis.split('\n').filter(line => line.trim());
-    
-    let currentSection = '';
+    const lines = analysis.split("\n").filter((line) => line.trim());
+
+    let currentSection = "";
     let proceduralInsights: string[] = [];
     let episodicInsights: string[] = [];
     let semanticInsights: string[] = [];
@@ -249,30 +250,30 @@ Provide specific, actionable insights that will improve future telephone game se
 
     for (const line of lines) {
       const cleanLine = line.trim();
-      
-      if (cleanLine.includes('PROCEDURAL')) {
-        currentSection = 'procedural';
-      } else if (cleanLine.includes('EPISODIC')) {
-        currentSection = 'episodic';
-      } else if (cleanLine.includes('SEMANTIC')) {
-        currentSection = 'semantic';
-      } else if (cleanLine.includes('CONTEXTUAL')) {
-        currentSection = 'contextual';
-      } else if (cleanLine.startsWith('-') || cleanLine.match(/^\d+\./)) {
+
+      if (cleanLine.includes("PROCEDURAL")) {
+        currentSection = "procedural";
+      } else if (cleanLine.includes("EPISODIC")) {
+        currentSection = "episodic";
+      } else if (cleanLine.includes("SEMANTIC")) {
+        currentSection = "semantic";
+      } else if (cleanLine.includes("CONTEXTUAL")) {
+        currentSection = "contextual";
+      } else if (cleanLine.startsWith("-") || cleanLine.match(/^\d+\./)) {
         // This is an insight point
-        const insight = cleanLine.replace(/^[-\d.]\s*/, '');
-        
+        const insight = cleanLine.replace(/^[-\d.]\s*/, "");
+
         switch (currentSection) {
-          case 'procedural':
+          case "procedural":
             proceduralInsights.push(insight);
             break;
-          case 'episodic':
+          case "episodic":
             episodicInsights.push(insight);
             break;
-          case 'semantic':
+          case "semantic":
             semanticInsights.push(insight);
             break;
-          case 'contextual':
+          case "contextual":
             contextualInsights.push(insight);
             break;
         }
@@ -284,17 +285,17 @@ Provide specific, actionable insights that will improve future telephone game se
       coalaMemory.rememberWithMetadata(
         `procedural-insights-${timestamp}`,
         {
-          type: 'transformation-techniques',
+          type: "transformation-techniques",
           insights: proceduralInsights,
           sourceSession: sessionResults.sessionId,
-          extractedAt: new Date()
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.PROCEDURAL,
-          tags: ['telephone-game', 'transformation', 'technique', 'pattern'],
+          tags: ["telephone-game", "transformation", "technique", "pattern"],
           relevanceScore: 0.8,
-          confidence: 0.9
-        }
+          confidence: 0.9,
+        },
       );
     }
 
@@ -303,17 +304,17 @@ Provide specific, actionable insights that will improve future telephone game se
       coalaMemory.rememberWithMetadata(
         `episodic-insights-${timestamp}`,
         {
-          type: 'session-highlights',
+          type: "session-highlights",
           insights: episodicInsights,
           sessionResults: sessionResults,
-          extractedAt: new Date()
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['telephone-game', 'session', 'highlight', 'example'],
+          tags: ["telephone-game", "session", "highlight", "example"],
           relevanceScore: 0.7,
-          confidence: 0.9
-        }
+          confidence: 0.9,
+        },
       );
     }
 
@@ -322,17 +323,17 @@ Provide specific, actionable insights that will improve future telephone game se
       coalaMemory.rememberWithMetadata(
         `semantic-insights-${timestamp}`,
         {
-          type: 'language-patterns',
+          type: "language-patterns",
           insights: semanticInsights,
-          domain: 'telephone-game',
-          extractedAt: new Date()
+          domain: "telephone-game",
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.SEMANTIC,
-          tags: ['telephone-game', 'language', 'pattern', 'knowledge'],
+          tags: ["telephone-game", "language", "pattern", "knowledge"],
           relevanceScore: 0.9,
-          confidence: 0.8
-        }
+          confidence: 0.8,
+        },
       );
     }
 
@@ -341,23 +342,25 @@ Provide specific, actionable insights that will improve future telephone game se
       coalaMemory.rememberWithMetadata(
         `contextual-insights-${timestamp}`,
         {
-          type: 'session-context',
+          type: "session-context",
           insights: contextualInsights,
           sessionMetadata: {
             sessionId: sessionResults.sessionId,
-            timestamp: new Date()
-          }
+            timestamp: new Date(),
+          },
         },
         {
           memoryType: CoALAMemoryType.CONTEXTUAL,
-          tags: ['telephone-game', 'session', 'context', 'metadata'],
+          tags: ["telephone-game", "session", "context", "metadata"],
           relevanceScore: 0.5,
-          confidence: 0.8
-        }
+          confidence: 0.8,
+        },
       );
     }
 
-    this.log(`Stored insights: ${proceduralInsights.length} procedural, ${episodicInsights.length} episodic, ${semanticInsights.length} semantic, ${contextualInsights.length} contextual`);
+    this.log(
+      `Stored insights: ${proceduralInsights.length} procedural, ${episodicInsights.length} episodic, ${semanticInsights.length} semantic, ${contextualInsights.length} contextual`,
+    );
   }
 
   async *invokeStream(message: string): AsyncIterableIterator<string> {
@@ -369,9 +372,15 @@ Provide specific, actionable insights that will improve future telephone game se
     let response: string;
 
     // Determine if this is a LOAD or STORE operation
-    if (message.toLowerCase().includes('load') || message.toLowerCase().includes('start') || message.toLowerCase().includes('begin')) {
+    if (
+      message.toLowerCase().includes("load") || message.toLowerCase().includes("start") ||
+      message.toLowerCase().includes("begin")
+    ) {
       response = await this.loadSessionContext(message);
-    } else if (message.toLowerCase().includes('store') || message.toLowerCase().includes('end') || message.toLowerCase().includes('complete')) {
+    } else if (
+      message.toLowerCase().includes("store") || message.toLowerCase().includes("end") ||
+      message.toLowerCase().includes("complete")
+    ) {
       // Try to parse session results from message
       let sessionResults;
       try {
@@ -385,14 +394,14 @@ Provide specific, actionable insights that will improve future telephone game se
       } catch {
         sessionResults = { sessionData: message, sessionId: `session-${Date.now()}` };
       }
-      
+
       response = await this.storeSessionLearnings(sessionResults);
     } else {
       // General memory query
       response = await this.generateLLM(
         "claude-4-sonnet-20250514",
         this.prompts.system,
-        message
+        message,
       );
     }
 

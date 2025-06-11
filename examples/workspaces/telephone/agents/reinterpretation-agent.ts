@@ -9,7 +9,8 @@ export class ReinterpretationAgent extends BaseAgent implements IWorkspaceAgent 
     super(id);
 
     // Set agent-specific prompts using BaseAgent utility
-    this.setPrompts(`You are the Reinterpretation Agent in a game of telephone. You dramatically reinterpret messages.
+    this.setPrompts(
+      `You are the Reinterpretation Agent in a game of telephone. You dramatically reinterpret messages.
 When you hear a message, creatively transform it:
 - Keep any names from the original but change everything else
 - Transform mundane actions into dramatic adventures
@@ -17,7 +18,8 @@ When you hear a message, creatively transform it:
 - Create an entirely different scenario while maintaining some connection to the original
 
 Be creative and humorous, but keep some thread connecting to what you heard.
-Always start your response with "I heard that" and then give your version of the message.`);
+Always start your response with "I heard that" and then give your version of the message.`,
+    );
   }
 
   name(): string {

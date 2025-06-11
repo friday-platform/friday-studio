@@ -103,7 +103,7 @@ export class WorkspaceRuntime {
     payload: any,
   ): Promise<IWorkspaceSession> {
     return await AtlasTelemetry.withServerSpan(
-      "workspace.processSignal", 
+      "workspace.processSignal",
       async (span) => {
         // Add workspace and signal attributes
         AtlasTelemetry.addWorkspaceAttributes(span, this.workspace.id);
@@ -190,8 +190,8 @@ export class WorkspaceRuntime {
       },
       {
         "workspace.state": this.getState(),
-        "signal.payload.size": JSON.stringify(payload).length
-      }
+        "signal.payload.size": JSON.stringify(payload).length,
+      },
     );
   }
 
@@ -309,7 +309,6 @@ export class WorkspaceRuntime {
     }));
   }
 
-
   /**
    * Save state checkpoint
    */
@@ -403,13 +402,19 @@ const workspaceRuntimeMachine = createMachine({
           // Load agents from config using centralized loader
           if (context.config?.agents) {
             const { AgentLoader } = await import("./agent-loader.ts");
-            const loadResult = await AgentLoader.loadAgents(context.workspace, context.config.agents);
-            
-            logger.info(`Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`, {
-              workspaceId: context.workspace.id,
-              loadedCount: loadResult.loaded.length,
-              failedCount: loadResult.failed.length,
-            });
+            const loadResult = await AgentLoader.loadAgents(
+              context.workspace,
+              context.config.agents,
+            );
+
+            logger.info(
+              `Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`,
+              {
+                workspaceId: context.workspace.id,
+                loadedCount: loadResult.loaded.length,
+                failedCount: loadResult.failed.length,
+              },
+            );
           }
 
           // Use consolidated worker creation method
@@ -418,7 +423,9 @@ const workspaceRuntimeMachine = createMachine({
               ...context.workspace.snapshot(),
               id: context.workspace.id,
               // Serialize agents to pass only metadata
-              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
+              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(
+                context.workspace.agents || {},
+              ),
               signals: Object.keys(context.workspace.signals || {}),
               workflows: Object.keys(context.workspace.workflows || {}),
             },
@@ -433,7 +440,7 @@ const workspaceRuntimeMachine = createMachine({
               {
                 model: context.options.supervisorModel || context.config?.supervisor?.model,
                 timeout: 10000,
-              }
+              },
             );
           } catch (error) {
             const err = error as Error;

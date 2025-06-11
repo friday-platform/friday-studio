@@ -371,10 +371,10 @@ export class WorkerManager {
         break;
       case "result":
         // Update both worker state and manager state
-        worker.actor.send({ 
-          type: "COMPLETE_PROCESSING", 
-          taskId: message.taskId, 
-          result: message.result 
+        worker.actor.send({
+          type: "COMPLETE_PROCESSING",
+          taskId: message.taskId,
+          result: message.result,
         });
         this.actor.send({
           type: "TASK_COMPLETED",
@@ -413,7 +413,7 @@ export class WorkerManager {
           };
           worker.worker.addEventListener("message", handler);
         }),
-        new Promise<void>((resolve) => setTimeout(resolve, 5000)) // 5 second timeout
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)), // 5 second timeout
       ]);
     } catch (error) {
       logger.warn(`Worker ${workerId} graceful shutdown failed`, { error });
@@ -429,10 +429,14 @@ export class WorkerManager {
     // Clean up with error handling
     try {
       worker.ports.forEach((port) => {
-        try { port.close(); } catch (e) { /* ignore */ }
+        try {
+          port.close();
+        } catch (e) { /* ignore */ }
       });
       if (worker.broadcastChannel) {
-        try { worker.broadcastChannel.close(); } catch (e) { /* ignore */ }
+        try {
+          worker.broadcastChannel.close();
+        } catch (e) { /* ignore */ }
       }
       worker.actor.send({ type: "TERMINATED" });
       worker.actor.stop();
@@ -571,7 +575,7 @@ export class WorkerManager {
       logger.info("WorkerManager shutdown completed gracefully");
     } catch (error) {
       logger.error("WorkerManager shutdown timed out, forcing termination", { error });
-      
+
       // Force terminate all remaining workers
       for (const [workerId, worker] of this.workers) {
         try {
@@ -581,7 +585,7 @@ export class WorkerManager {
           // Ignore errors during force termination
         }
       }
-      
+
       // Stop the actor
       this.actor.stop();
     }
@@ -636,10 +640,10 @@ export class WorkerManager {
   async spawnSupervisorWorker(
     workspaceId: string,
     config: any,
-    options: { model?: string; timeout?: number } = {}
+    options: { model?: string; timeout?: number } = {},
   ): Promise<ManagedWorker> {
     const { timeout = 10000 } = options;
-    
+
     const supervisorMetadata: WorkerMetadata = {
       id: crypto.randomUUID(),
       type: "supervisor",
@@ -662,7 +666,7 @@ export class WorkerManager {
 
     // Wait for supervisor to be ready
     const ready = await this.waitForWorkerReady(supervisor.id, timeout);
-    
+
     if (!ready) {
       const state = this.getWorkerState(supervisor.id);
       await this.terminateWorker(supervisor.id);
@@ -680,7 +684,7 @@ export class WorkerManager {
     sessionId: string,
     workspaceId: string,
     config: any,
-    options: { timeout?: number } = {}
+    options: { timeout?: number } = {},
   ): Promise<ManagedWorker> {
     const { timeout = 10000 } = options;
 
@@ -702,7 +706,7 @@ export class WorkerManager {
 
     // Wait for session worker to be ready
     const ready = await this.waitForWorkerReady(sessionWorker.id, timeout);
-    
+
     if (!ready) {
       const state = this.getWorkerState(sessionWorker.id);
       await this.terminateWorker(sessionWorker.id);
@@ -720,7 +724,7 @@ export class WorkerManager {
     agentId: string,
     agentConfig: any,
     sessionId: string,
-    options: { timeout?: number } = {}
+    options: { timeout?: number } = {},
   ): Promise<ManagedWorker> {
     const { timeout = 10000 } = options;
 
@@ -742,7 +746,7 @@ export class WorkerManager {
 
     // Wait for agent worker to be ready
     const ready = await this.waitForWorkerReady(agentWorker.id, timeout);
-    
+
     if (!ready) {
       const state = this.getWorkerState(agentWorker.id);
       await this.terminateWorker(agentWorker.id);

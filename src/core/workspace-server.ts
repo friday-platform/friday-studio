@@ -99,8 +99,8 @@ export class WorkspaceServer {
           "http.method": "POST",
           "http.url": `/signals/${signalId}`,
           "signal.id": signalId,
-          "payload.size": JSON.stringify(payload).length
-        }
+          "payload.size": JSON.stringify(payload).length,
+        },
       );
     });
 
@@ -181,7 +181,6 @@ export class WorkspaceServer {
         config: workspace.toConfig(),
       });
     });
-
   }
 
   private server: any = null;
@@ -189,11 +188,11 @@ export class WorkspaceServer {
   private setupSignalHandlers() {
     const handleShutdown = async () => {
       console.log("\n[Server] Shutting down gracefully...");
-      
+
       if (this.server && this.server.shutdown) {
         await this.server.shutdown();
       }
-      
+
       await this.runtime.shutdown();
       Deno.exit(0);
     };

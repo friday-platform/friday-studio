@@ -8,7 +8,7 @@ workspace:
 agents:
   mishearing-agent:
     type: "mishearing"
-    model: "claude-4-sonnet-20250514"  # Configurable model per agent
+    model: "claude-4-sonnet-20250514" # Configurable model per agent
 
   embellishment-agent:
     type: "embellishment"

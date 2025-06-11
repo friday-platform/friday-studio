@@ -64,11 +64,10 @@ class AgentWorker extends BaseWorker {
             agentId: this.agentId!,
             agentType: this.agentType!,
             attributes: {
-              "input.size": JSON.stringify(input).length
-            }
+              "input.size": JSON.stringify(input).length,
+            },
           },
           async (span) => {
-
             this.log(`Processing input:`, JSON.stringify(input));
 
             // Extract message from input if it's an object
@@ -118,7 +117,7 @@ class AgentWorker extends BaseWorker {
             } else {
               throw new Error(`Agent ${this.agentId} does not support invoke or invokeStream`);
             }
-          }
+          },
         );
       }
 

@@ -363,7 +363,7 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         console.log("Starting workspace server...");
         exit();
 
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise((resolve) => setTimeout(resolve, 100));
         await load({ export: true });
 
         const workspaceYaml = await Deno.readTextFile("workspace.yml");

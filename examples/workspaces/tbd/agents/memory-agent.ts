@@ -5,13 +5,14 @@ import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 export class MemoryAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";
   host: string = "localhost";
-  
+
   constructor(id?: string) {
     super(id);
 
     // Set agent-specific prompts
     this.prompts = {
-      system: `You are the Memory Agent for the TBD (To Be Determined) workspace. Your role is to manage memory operations at the beginning and end of each session.
+      system:
+        `You are the Memory Agent for the TBD (To Be Determined) workspace. Your role is to manage memory operations at the beginning and end of each session.
 
 **At Session Start (LOAD mode):**
 - Analyze relevant past sessions and user interactions
@@ -99,37 +100,38 @@ export class MemoryAgent extends BaseAgent implements IWorkspaceAgent {
 
   async loadSessionContext(userMessage?: string): Promise<string> {
     this.log("Loading relevant memory context for new TBD session");
-    
+
     const coalaMemory = this.memory as CoALAMemoryManager;
-    
+
     // Get relevant memories from different types
     const proceduralMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.PROCEDURAL);
     const episodicMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.EPISODIC);
     const semanticMemories = coalaMemory.getMemoriesByType(CoALAMemoryType.SEMANTIC);
-    
+
     // Query for user interaction specific memories
     const userInteractionMemories = coalaMemory.queryMemories({
       tags: ["user-interaction", "question", "task", "helpful"],
       minRelevance: 0.4,
-      limit: 10
+      limit: 10,
     });
 
     // Build context prompt for LLM analysis
-    const contextPrompt = `LOAD MODE: Analyze past TBD workspace interactions and provide session context.
+    const contextPrompt =
+      `LOAD MODE: Analyze past TBD workspace interactions and provide session context.
 
-USER MESSAGE: ${userMessage || 'General assistance request'}
+USER MESSAGE: ${userMessage || "General assistance request"}
 
 PROCEDURAL MEMORIES (${proceduralMemories.length} entries):
-${proceduralMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${proceduralMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 EPISODIC MEMORIES (${episodicMemories.length} entries):
-${episodicMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${episodicMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 SEMANTIC MEMORIES (${semanticMemories.length} entries):
-${semanticMemories.slice(0, 3).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${semanticMemories.slice(0, 3).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 USER INTERACTION MEMORIES (${userInteractionMemories.length} entries):
-${userInteractionMemories.slice(0, 5).map(m => `- ${JSON.stringify(m.content)}`).join('\n')}
+${userInteractionMemories.slice(0, 5).map((m) => `- ${JSON.stringify(m.content)}`).join("\n")}
 
 Provide structured context that will help the TBD agent respond better based on past learnings. Focus on:
 1. User communication patterns and preferences
@@ -144,26 +146,25 @@ Provide structured context that will help the TBD agent respond better based on 
         "claude-4-sonnet-20250514",
         this.prompts.system,
         contextPrompt,
-        false // Don't include memory context to avoid recursion
+        false, // Don't include memory context to avoid recursion
       );
 
       // Remember this context loading operation
-      this.rememberInteraction('context-load', {
+      this.rememberInteraction("context-load", {
         userMessage,
         memoriesAnalyzed: {
           procedural: proceduralMemories.length,
           episodic: episodicMemories.length,
           semantic: semanticMemories.length,
-          userInteraction: userInteractionMemories.length
+          userInteraction: userInteractionMemories.length,
         },
-        contextGenerated: contextAnalysis.length
+        contextGenerated: contextAnalysis.length,
       });
 
       return contextAnalysis;
-
     } catch (error) {
       this.log(`Error loading session context: ${error}`);
-      
+
       // Provide fallback context
       return `TBD WORKSPACE CONTEXT (Fallback):
 - Be helpful, accurate, and clear in responses
@@ -176,9 +177,9 @@ Provide structured context that will help the TBD agent respond better based on 
 
   async storeSessionLearnings(sessionResults: any): Promise<string> {
     this.log("Storing TBD session learnings in memory");
-    
+
     const coalaMemory = this.memory as CoALAMemoryManager;
-    
+
     // Build analysis prompt
     const analysisPrompt = `STORE MODE: Analyze TBD workspace session results and extract learnings.
 
@@ -200,37 +201,36 @@ Focus on improving future responses and user satisfaction.`;
         "claude-4-sonnet-20250514",
         this.prompts.system,
         analysisPrompt,
-        false // Don't include memory context to avoid recursion
+        false, // Don't include memory context to avoid recursion
       );
 
       // Parse analysis and store in appropriate memory types
       await this.extractAndStoreInsights(analysis, sessionResults);
 
       // Remember this storage operation
-      this.rememberInteraction('session-storage', {
+      this.rememberInteraction("session-storage", {
         sessionId: sessionResults.sessionId,
         analysisLength: analysis.length,
-        insightsExtracted: true
+        insightsExtracted: true,
       });
 
       return analysis;
-
     } catch (error) {
       this.log(`Error storing session learnings: ${error}`);
-      
+
       // Still try to store basic session info
       coalaMemory.rememberWithMetadata(
         `session-basic-${Date.now()}`,
         {
           sessionResults,
           timestamp: new Date(),
-          analysisStatus: 'failed'
+          analysisStatus: "failed",
         },
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['tbd-workspace', 'session', 'basic-storage'],
-          relevanceScore: 0.3
-        }
+          tags: ["tbd-workspace", "session", "basic-storage"],
+          relevanceScore: 0.3,
+        },
       );
 
       return `Session data stored with basic information due to analysis error: ${error}`;
@@ -242,9 +242,9 @@ Focus on improving future responses and user satisfaction.`;
     const timestamp = Date.now();
 
     // Simple pattern extraction (could be enhanced with more sophisticated parsing)
-    const lines = analysis.split('\n').filter(line => line.trim());
-    
-    let currentSection = '';
+    const lines = analysis.split("\n").filter((line) => line.trim());
+
+    let currentSection = "";
     let proceduralInsights: string[] = [];
     let episodicInsights: string[] = [];
     let semanticInsights: string[] = [];
@@ -252,30 +252,30 @@ Focus on improving future responses and user satisfaction.`;
 
     for (const line of lines) {
       const cleanLine = line.trim();
-      
-      if (cleanLine.includes('PROCEDURAL')) {
-        currentSection = 'procedural';
-      } else if (cleanLine.includes('EPISODIC')) {
-        currentSection = 'episodic';
-      } else if (cleanLine.includes('SEMANTIC')) {
-        currentSection = 'semantic';
-      } else if (cleanLine.includes('CONTEXTUAL')) {
-        currentSection = 'contextual';
-      } else if (cleanLine.startsWith('-') || cleanLine.match(/^\d+\./)) {
+
+      if (cleanLine.includes("PROCEDURAL")) {
+        currentSection = "procedural";
+      } else if (cleanLine.includes("EPISODIC")) {
+        currentSection = "episodic";
+      } else if (cleanLine.includes("SEMANTIC")) {
+        currentSection = "semantic";
+      } else if (cleanLine.includes("CONTEXTUAL")) {
+        currentSection = "contextual";
+      } else if (cleanLine.startsWith("-") || cleanLine.match(/^\d+\./)) {
         // This is an insight point
-        const insight = cleanLine.replace(/^[-\d.]\s*/, '');
-        
+        const insight = cleanLine.replace(/^[-\d.]\s*/, "");
+
         switch (currentSection) {
-          case 'procedural':
+          case "procedural":
             proceduralInsights.push(insight);
             break;
-          case 'episodic':
+          case "episodic":
             episodicInsights.push(insight);
             break;
-          case 'semantic':
+          case "semantic":
             semanticInsights.push(insight);
             break;
-          case 'contextual':
+          case "contextual":
             contextualInsights.push(insight);
             break;
         }
@@ -287,17 +287,17 @@ Focus on improving future responses and user satisfaction.`;
       coalaMemory.rememberWithMetadata(
         `procedural-insights-${timestamp}`,
         {
-          type: 'response-techniques',
+          type: "response-techniques",
           insights: proceduralInsights,
           sourceSession: sessionResults.sessionId,
-          extractedAt: new Date()
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.PROCEDURAL,
-          tags: ['tbd-workspace', 'response-technique', 'helpful', 'approach'],
+          tags: ["tbd-workspace", "response-technique", "helpful", "approach"],
           relevanceScore: 0.8,
-          confidence: 0.9
-        }
+          confidence: 0.9,
+        },
       );
     }
 
@@ -306,17 +306,17 @@ Focus on improving future responses and user satisfaction.`;
       coalaMemory.rememberWithMetadata(
         `episodic-insights-${timestamp}`,
         {
-          type: 'user-interactions',
+          type: "user-interactions",
           insights: episodicInsights,
           sessionResults: sessionResults,
-          extractedAt: new Date()
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['tbd-workspace', 'user-interaction', 'conversation', 'session'],
+          tags: ["tbd-workspace", "user-interaction", "conversation", "session"],
           relevanceScore: 0.7,
-          confidence: 0.9
-        }
+          confidence: 0.9,
+        },
       );
     }
 
@@ -325,17 +325,17 @@ Focus on improving future responses and user satisfaction.`;
       coalaMemory.rememberWithMetadata(
         `semantic-insights-${timestamp}`,
         {
-          type: 'knowledge-topics',
+          type: "knowledge-topics",
           insights: semanticInsights,
-          domain: 'tbd-workspace',
-          extractedAt: new Date()
+          domain: "tbd-workspace",
+          extractedAt: new Date(),
         },
         {
           memoryType: CoALAMemoryType.SEMANTIC,
-          tags: ['tbd-workspace', 'knowledge', 'topic', 'information'],
+          tags: ["tbd-workspace", "knowledge", "topic", "information"],
           relevanceScore: 0.9,
-          confidence: 0.8
-        }
+          confidence: 0.8,
+        },
       );
     }
 
@@ -344,23 +344,25 @@ Focus on improving future responses and user satisfaction.`;
       coalaMemory.rememberWithMetadata(
         `contextual-insights-${timestamp}`,
         {
-          type: 'user-preferences',
+          type: "user-preferences",
           insights: contextualInsights,
           sessionMetadata: {
             sessionId: sessionResults.sessionId,
-            timestamp: new Date()
-          }
+            timestamp: new Date(),
+          },
         },
         {
           memoryType: CoALAMemoryType.CONTEXTUAL,
-          tags: ['tbd-workspace', 'user-preference', 'context', 'metadata'],
+          tags: ["tbd-workspace", "user-preference", "context", "metadata"],
           relevanceScore: 0.6,
-          confidence: 0.8
-        }
+          confidence: 0.8,
+        },
       );
     }
 
-    this.log(`Stored insights: ${proceduralInsights.length} procedural, ${episodicInsights.length} episodic, ${semanticInsights.length} semantic, ${contextualInsights.length} contextual`);
+    this.log(
+      `Stored insights: ${proceduralInsights.length} procedural, ${episodicInsights.length} episodic, ${semanticInsights.length} semantic, ${contextualInsights.length} contextual`,
+    );
   }
 
   async *invokeStream(message: string): AsyncIterableIterator<string> {
@@ -372,12 +374,18 @@ Focus on improving future responses and user satisfaction.`;
     let response: string;
 
     // Determine if this is a LOAD or STORE operation
-    if (message.toLowerCase().includes('load') || message.toLowerCase().includes('start') || message.toLowerCase().includes('begin')) {
+    if (
+      message.toLowerCase().includes("load") || message.toLowerCase().includes("start") ||
+      message.toLowerCase().includes("begin")
+    ) {
       // Extract user message from load request
       const userMessageMatch = message.match(/user message:?\s*["']?([^"'\n]+)["']?/i);
       const userMessage = userMessageMatch ? userMessageMatch[1] : message;
       response = await this.loadSessionContext(userMessage);
-    } else if (message.toLowerCase().includes('store') || message.toLowerCase().includes('end') || message.toLowerCase().includes('complete')) {
+    } else if (
+      message.toLowerCase().includes("store") || message.toLowerCase().includes("end") ||
+      message.toLowerCase().includes("complete")
+    ) {
       // Try to parse session results from message
       let sessionResults;
       try {
@@ -391,14 +399,14 @@ Focus on improving future responses and user satisfaction.`;
       } catch {
         sessionResults = { sessionData: message, sessionId: `session-${Date.now()}` };
       }
-      
+
       response = await this.storeSessionLearnings(sessionResults);
     } else {
       // General memory query or analysis
       response = await this.generateLLM(
         "claude-4-sonnet-20250514",
         this.prompts.system,
-        message
+        message,
       );
     }
 

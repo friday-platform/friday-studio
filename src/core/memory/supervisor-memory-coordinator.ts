@@ -1,17 +1,17 @@
 /**
  * Supervisor Memory Coordinator
- * 
+ *
  * Integrates CoALA memory systems with Atlas supervisor architecture
  * Provides memory coordination between WorkspaceSupervisor and SessionSupervisor
  */
 
-import type { 
-  IWorkspaceSupervisor, 
-  IWorkspaceSession, 
+import type {
+  IAtlasScope,
+  IWorkspaceSession,
   IWorkspaceSignal,
-  IAtlasScope 
+  IWorkspaceSupervisor,
 } from "../../types/core.ts";
-import { CoALAMemoryManager, CoALAMemoryType, CoALAMemoryQuery } from "./coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryQuery, CoALAMemoryType } from "./coala-memory.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 
 export interface SupervisorMemoryContext {
@@ -22,12 +22,12 @@ export interface SupervisorMemoryContext {
 
 export interface MemoryFilteringPolicy {
   filterForSession(
-    workspaceMemories: any[], 
-    sessionContext: IWorkspaceSession
+    workspaceMemories: any[],
+    sessionContext: IWorkspaceSession,
   ): any[];
   filterForAgent(
-    sessionMemories: any[], 
-    agentId: string
+    sessionMemories: any[],
+    agentId: string,
   ): any[];
 }
 
@@ -39,7 +39,7 @@ export class SupervisorMemoryCoordinator {
 
   constructor(
     workspace: IAtlasScope,
-    filteringPolicy?: MemoryFilteringPolicy
+    filteringPolicy?: MemoryFilteringPolicy,
   ) {
     this.workspaceMemory = new CoALAMemoryManager(workspace);
     this.consolidator = new WorkspaceMemoryConsolidator(this.workspaceMemory);
@@ -58,23 +58,23 @@ export class SupervisorMemoryCoordinator {
       content: signalContent,
       memoryType: CoALAMemoryType.SEMANTIC,
       minRelevance: 0.3,
-      limit: 10
+      limit: 10,
     });
 
     // Look for procedural memories (workflows, patterns)
     const proceduralMemories = this.workspaceMemory.queryMemories({
       memoryType: CoALAMemoryType.PROCEDURAL,
-      tags: ['workflow', 'pattern'],
+      tags: ["workflow", "pattern"],
       minRelevance: 0.4,
-      limit: 5
+      limit: 5,
     });
 
     // Combine and analyze
     const allRelevantMemories = [...relevantMemories, ...proceduralMemories];
-    
+
     // Extract agent suggestions from memory patterns
     const suggestedAgents = this.extractAgentSuggestions(allRelevantMemories);
-    
+
     // Create analysis context
     const analysisContext = this.createAnalysisContext(allRelevantMemories, signal);
 
@@ -83,40 +83,40 @@ export class SupervisorMemoryCoordinator {
       `signal-analysis-${signal.id || Date.now()}`,
       {
         signal: signalContent,
-        relevantMemories: allRelevantMemories.map(m => m.id),
+        relevantMemories: allRelevantMemories.map((m) => m.id),
         suggestedAgents,
-        analysisResult: analysisContext
+        analysisResult: analysisContext,
       },
       {
         memoryType: CoALAMemoryType.EPISODIC,
-        tags: ['signal-analysis', 'workspace-decision'],
-        relevanceScore: 0.6
-      }
+        tags: ["signal-analysis", "workspace-decision"],
+        relevanceScore: 0.6,
+      },
     );
 
     return {
       relevantMemories: allRelevantMemories,
       analysisContext,
-      suggestedAgents
+      suggestedAgents,
     };
   }
 
   async createSessionMemoryContext(
     sessionId: string,
     session: IWorkspaceSession,
-    workspaceAnalysis: any
+    workspaceAnalysis: any,
   ): Promise<CoALAMemoryManager> {
     // Create isolated session memory
     const sessionMemory = new CoALAMemoryManager(
       session,
       undefined, // Use default storage
-      false // Disable cognitive loop for sessions (managed by workspace)
+      false, // Disable cognitive loop for sessions (managed by workspace)
     );
 
     // Filter and provide relevant workspace memories to session
     const relevantWorkspaceMemories = this.filteringPolicy.filterForSession(
       workspaceAnalysis.relevantMemories,
-      session
+      session,
     );
 
     // Seed session memory with filtered workspace context
@@ -126,27 +126,27 @@ export class SupervisorMemoryCoordinator {
         memory.content,
         {
           memoryType: CoALAMemoryType.CONTEXTUAL,
-          tags: [...memory.tags, 'inherited', 'workspace-context'],
+          tags: [...memory.tags, "inherited", "workspace-context"],
           relevanceScore: memory.relevanceScore * 0.8, // Slight reduction for inherited memories
-          associations: memory.associations
-        }
+          associations: memory.associations,
+        },
       );
     }
 
     // Remember session creation context
     sessionMemory.rememberWithMetadata(
-      'session-context',
+      "session-context",
       {
         sessionId,
         workspaceAnalysis: workspaceAnalysis.analysisContext,
         suggestedAgents: workspaceAnalysis.suggestedAgents,
-        inheritedMemoryCount: relevantWorkspaceMemories.length
+        inheritedMemoryCount: relevantWorkspaceMemories.length,
       },
       {
         memoryType: CoALAMemoryType.CONTEXTUAL,
-        tags: ['session-meta', 'context'],
-        relevanceScore: 1.0
-      }
+        tags: ["session-meta", "context"],
+        relevanceScore: 1.0,
+      },
     );
 
     // Register with consolidator
@@ -159,7 +159,7 @@ export class SupervisorMemoryCoordinator {
   // SessionSupervisor Memory Operations
   async createExecutionPlanWithMemory(
     sessionMemory: CoALAMemoryManager,
-    sessionContext: any
+    sessionContext: any,
   ): Promise<{
     executionPlan: any;
     memoryGuidance: string[];
@@ -168,18 +168,18 @@ export class SupervisorMemoryCoordinator {
     // Query session memories for execution planning
     const contextualMemories = sessionMemory.queryMemories({
       memoryType: CoALAMemoryType.CONTEXTUAL,
-      minRelevance: 0.4
+      minRelevance: 0.4,
     });
 
     const proceduralMemories = sessionMemory.queryMemories({
       memoryType: CoALAMemoryType.PROCEDURAL,
-      tags: ['workflow', 'strategy'],
-      minRelevance: 0.3
+      tags: ["workflow", "strategy"],
+      minRelevance: 0.3,
     });
 
     // Create execution plan based on memory guidance
     const memoryGuidance = this.extractExecutionGuidance(
-      [...contextualMemories, ...proceduralMemories]
+      [...contextualMemories, ...proceduralMemories],
     );
 
     // Create agent-specific memory contexts
@@ -189,12 +189,12 @@ export class SupervisorMemoryCoordinator {
     for (const agentId of suggestedAgents) {
       const agentMemories = this.filteringPolicy.filterForAgent(
         contextualMemories,
-        agentId
+        agentId,
       );
-      
+
       agentMemoryContexts.set(agentId, {
         relevantMemories: agentMemories,
-        guidance: this.createAgentGuidance(agentMemories, agentId)
+        guidance: this.createAgentGuidance(agentMemories, agentId),
       });
     }
 
@@ -203,32 +203,32 @@ export class SupervisorMemoryCoordinator {
       steps: memoryGuidance.map((guidance, index) => ({
         id: `step-${index}`,
         guidance,
-        agentId: suggestedAgents[index % suggestedAgents.length]
+        agentId: suggestedAgents[index % suggestedAgents.length],
       })),
-      memoryBasedStrategy: 'sequential', // Could be enhanced with memory-based strategy selection
-      estimatedComplexity: this.estimateComplexity(memoryGuidance)
+      memoryBasedStrategy: "sequential", // Could be enhanced with memory-based strategy selection
+      estimatedComplexity: this.estimateComplexity(memoryGuidance),
     };
 
     sessionMemory.rememberWithMetadata(
-      'execution-plan',
+      "execution-plan",
       executionPlan,
       {
         memoryType: CoALAMemoryType.PROCEDURAL,
-        tags: ['execution-plan', 'session-strategy'],
-        relevanceScore: 0.8
-      }
+        tags: ["execution-plan", "session-strategy"],
+        relevanceScore: 0.8,
+      },
     );
 
     return {
       executionPlan,
       memoryGuidance,
-      agentMemoryContexts
+      agentMemoryContexts,
     };
   }
 
   async evaluateProgressWithMemory(
     sessionMemory: CoALAMemoryManager,
-    agentResults: any[]
+    agentResults: any[],
   ): Promise<{
     shouldContinue: boolean;
     refinements: string[];
@@ -241,37 +241,37 @@ export class SupervisorMemoryCoordinator {
         result,
         {
           memoryType: CoALAMemoryType.EPISODIC,
-          tags: ['agent-result', result.agentId, result.success ? 'success' : 'failure'],
-          relevanceScore: result.success ? 0.7 : 0.9 // Failures are more memorable
-        }
+          tags: ["agent-result", result.agentId, result.success ? "success" : "failure"],
+          relevanceScore: result.success ? 0.7 : 0.9, // Failures are more memorable
+        },
       );
     }
 
     // Query historical patterns for evaluation
     const similarResults = sessionMemory.queryMemories({
-      tags: ['agent-result'],
+      tags: ["agent-result"],
       minRelevance: 0.3,
-      limit: 20
+      limit: 20,
     });
 
     // Analyze patterns and determine next steps
     const successRate = this.calculateSuccessRate(similarResults);
-    const shouldContinue = successRate < 0.8 && agentResults.some(r => !r.success);
-    
+    const shouldContinue = successRate < 0.8 && agentResults.some((r) => !r.success);
+
     const refinements = this.generateRefinements(similarResults, agentResults);
-    
+
     // Create memory updates for consolidation
-    const memoryUpdates = agentResults.map(result => ({
-      type: 'agent-performance',
+    const memoryUpdates = agentResults.map((result) => ({
+      type: "agent-performance",
       agentId: result.agentId,
-      performance: result.success ? 'good' : 'needs-improvement',
-      context: result.context
+      performance: result.success ? "good" : "needs-improvement",
+      context: result.context,
     }));
 
     return {
       shouldContinue,
       refinements,
-      memoryUpdates
+      memoryUpdates,
     };
   }
 
@@ -283,13 +283,13 @@ export class SupervisorMemoryCoordinator {
     // Get important memories from session
     const importantMemories = sessionMemory.queryMemories({
       minRelevance: 0.6,
-      tags: ['success', 'pattern', 'learning']
+      tags: ["success", "pattern", "learning"],
     });
 
     // Consolidate up to workspace level
     await this.consolidator.syncUp(
       { id: sessionId } as IAtlasScope,
-      importantMemories
+      importantMemories,
     );
 
     // Cleanup session memory
@@ -300,7 +300,7 @@ export class SupervisorMemoryCoordinator {
   // Maintenance and optimization
   async performMemoryMaintenance(): Promise<void> {
     await this.consolidator.performMaintenance();
-    
+
     // Cleanup old session memories
     const oldSessions = Array.from(this.sessionMemories.entries())
       .filter(([sessionId, memory]) => {
@@ -317,12 +317,12 @@ export class SupervisorMemoryCoordinator {
   // Private helper methods
   private extractAgentSuggestions(memories: any[]): string[] {
     const agentMentions = new Map<string, number>();
-    
+
     for (const memory of memories) {
-      if (memory.tags.includes('agent-result')) {
-        const agentTag = memory.tags.find((tag: string) => tag.startsWith('agent-'));
+      if (memory.tags.includes("agent-result")) {
+        const agentTag = memory.tags.find((tag: string) => tag.startsWith("agent-"));
         if (agentTag) {
-          const agentId = agentTag.replace('agent-', '');
+          const agentId = agentTag.replace("agent-", "");
           agentMentions.set(agentId, (agentMentions.get(agentId) || 0) + 1);
         }
       }
@@ -336,26 +336,28 @@ export class SupervisorMemoryCoordinator {
 
   private createAnalysisContext(memories: any[], signal: IWorkspaceSignal): string {
     const patterns = memories
-      .filter(m => m.tags.includes('pattern'))
-      .map(m => m.content)
+      .filter((m) => m.tags.includes("pattern"))
+      .map((m) => m.content)
       .slice(0, 3);
 
     return `Signal analysis based on ${memories.length} relevant memories. ` +
-           `Identified patterns: ${patterns.length > 0 ? patterns.map(p => p.type).join(', ') : 'none'}`;
+      `Identified patterns: ${
+        patterns.length > 0 ? patterns.map((p) => p.type).join(", ") : "none"
+      }`;
   }
 
   private extractExecutionGuidance(memories: any[]): string[] {
     return memories
-      .filter(m => m.memoryType === CoALAMemoryType.PROCEDURAL)
-      .map(m => `Execute based on: ${m.content.type || 'procedure'}`)
+      .filter((m) => m.memoryType === CoALAMemoryType.PROCEDURAL)
+      .map((m) => `Execute based on: ${m.content.type || "procedure"}`)
       .slice(0, 5);
   }
 
   private createAgentGuidance(memories: any[], agentId: string): string {
-    const relevantMemories = memories.filter(m => 
+    const relevantMemories = memories.filter((m) =>
       m.tags.some((tag: string) => tag.includes(agentId))
     );
-    
+
     return `Agent ${agentId} should consider ${relevantMemories.length} relevant memories`;
   }
 
@@ -365,17 +367,15 @@ export class SupervisorMemoryCoordinator {
 
   private calculateSuccessRate(results: any[]): number {
     if (results.length === 0) return 1.0;
-    
-    const successes = results.filter(r => 
-      r.tags && r.tags.includes('success')
-    ).length;
-    
+
+    const successes = results.filter((r) => r.tags && r.tags.includes("success")).length;
+
     return successes / results.length;
   }
 
   private generateRefinements(historical: any[], current: any[]): string[] {
-    const failures = current.filter(r => !r.success);
-    return failures.map(f => `Refine approach for ${f.agentId}: ${f.error || 'unknown error'}`);
+    const failures = current.filter((r) => !r.success);
+    return failures.map((f) => `Refine approach for ${f.agentId}: ${f.error || "unknown error"}`);
   }
 }
 
@@ -383,18 +383,18 @@ export class SupervisorMemoryCoordinator {
 class DefaultMemoryFilteringPolicy implements MemoryFilteringPolicy {
   filterForSession(workspaceMemories: any[], sessionContext: IWorkspaceSession): any[] {
     // Provide general knowledge and relevant patterns to sessions
-    return workspaceMemories.filter(memory => 
+    return workspaceMemories.filter((memory) =>
       memory.memoryType === CoALAMemoryType.SEMANTIC ||
       memory.memoryType === CoALAMemoryType.PROCEDURAL ||
-      memory.tags.includes('session-relevant')
+      memory.tags.includes("session-relevant")
     );
   }
 
   filterForAgent(sessionMemories: any[], agentId: string): any[] {
     // Provide agent-specific and contextual memories
-    return sessionMemories.filter(memory => 
+    return sessionMemories.filter((memory) =>
       memory.tags.includes(agentId) ||
-      memory.tags.includes('context') ||
+      memory.tags.includes("context") ||
       memory.memoryType === CoALAMemoryType.CONTEXTUAL
     );
   }

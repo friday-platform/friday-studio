@@ -1,5 +1,5 @@
 import { createAnthropic } from "npm:@ai-sdk/anthropic";
-import { generateText, streamText, type CoreMessage } from "npm:ai";
+import { type CoreMessage, generateText, streamText } from "npm:ai";
 import { logger } from "../utils/logger.ts";
 
 export interface LLMConfig {
@@ -37,7 +37,7 @@ export class LLMService {
       if (!apiKey) {
         throw new Error("ANTHROPIC_API_KEY environment variable is required");
       }
-      
+
       this.anthropicClient = createAnthropic({
         apiKey,
       });
@@ -50,24 +50,24 @@ export class LLMService {
    */
   static async generateText(
     userPrompt: string,
-    options: LLMGenerationOptions & LLMConfig = {}
+    options: LLMGenerationOptions & LLMConfig = {},
   ): Promise<string> {
     const startTime = Date.now();
     const config = { ...this.defaultConfig, ...options };
-    
+
     // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutMs = options.timeout || 30000; // 30 second default timeout
     const timeout = setTimeout(() => {
       controller.abort();
     }, timeoutMs);
-    
+
     try {
       const anthropic = this.getAnthropicClient(config);
-      
+
       // Build messages array
       const messages: CoreMessage[] = [];
-      
+
       // Add system context if provided
       if (options.systemPrompt) {
         messages.push({
@@ -75,13 +75,13 @@ export class LLMService {
           content: options.systemPrompt,
         });
       }
-      
+
       // Add memory context if provided
       let contextualPrompt = userPrompt;
       if (options.memoryContext) {
         contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
       }
-      
+
       messages.push({
         role: "user",
         content: contextualPrompt,
@@ -97,7 +97,7 @@ export class LLMService {
 
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
-      
+
       logger.debug("LLM generation completed", {
         model: config.model,
         duration,
@@ -110,9 +110,9 @@ export class LLMService {
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
+
       // Check if it was a timeout
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.name === "AbortError") {
         logger.error("LLM generation timed out", {
           model: config.model,
           duration,
@@ -121,14 +121,14 @@ export class LLMService {
         });
         throw new Error(`LLM generation timed out after ${timeoutMs}ms`);
       }
-      
+
       logger.error("LLM generation failed", {
         model: config.model,
         duration,
         error: errorMessage,
         promptLength: userPrompt.length,
       });
-      
+
       throw new Error(`LLM generation failed: ${errorMessage}`);
     }
   }
@@ -138,17 +138,17 @@ export class LLMService {
    */
   static async *generateTextStream(
     userPrompt: string,
-    options: LLMGenerationOptions & LLMConfig = {}
+    options: LLMGenerationOptions & LLMConfig = {},
   ): AsyncGenerator<string> {
     const startTime = Date.now();
     const config = { ...this.defaultConfig, ...options };
-    
+
     try {
       const anthropic = this.getAnthropicClient(config);
-      
+
       // Build messages array
       const messages: CoreMessage[] = [];
-      
+
       // Add system context if provided
       if (options.systemPrompt) {
         messages.push({
@@ -156,13 +156,13 @@ export class LLMService {
           content: options.systemPrompt,
         });
       }
-      
+
       // Add memory context if provided
       let contextualPrompt = userPrompt;
       if (options.memoryContext) {
         contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
       }
-      
+
       messages.push({
         role: "user",
         content: contextualPrompt,
@@ -188,18 +188,17 @@ export class LLMService {
         promptLength: userPrompt.length,
         responseLength: totalLength,
       });
-
     } catch (error) {
       const duration = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
-      
+
       logger.error("LLM streaming failed", {
         model: config.model,
         duration,
         error: errorMessage,
         promptLength: userPrompt.length,
       });
-      
+
       throw new Error(`LLM streaming failed: ${errorMessage}`);
     }
   }
@@ -210,9 +209,10 @@ export class LLMService {
   static async analyzeIntent(
     signal: any,
     payload: any,
-    config?: LLMConfig
+    config?: LLMConfig,
   ): Promise<{ intent: string; goals: string[]; strategy: string }> {
-    const systemPrompt = `You are a WorkspaceSupervisor analyzing incoming signals to understand user intent.
+    const systemPrompt =
+      `You are a WorkspaceSupervisor analyzing incoming signals to understand user intent.
 
 Analyze the signal and payload to determine:
 1. The user's primary intent
@@ -240,7 +240,7 @@ Please analyze this signal and provide your assessment.`;
       return JSON.parse(response);
     } catch (error) {
       logger.error("Intent analysis failed", { error });
-      
+
       // Fallback response
       return {
         intent: "Process user request",

@@ -62,6 +62,7 @@ deno task atlas tui
 ```
 
 This launches an interactive terminal interface that:
+
 - ✅ **Auto-starts** the workspace server
 - ✅ **Real-time logs** in dual-panel layout
 - ✅ **Vi-style navigation** (j/k/gg/G/Ctrl+D/U)
@@ -70,6 +71,7 @@ This launches an interactive terminal interface that:
 - ✅ **Copy to clipboard** - press `y` on any selected line
 
 **TUI Navigation:**
+
 - `Tab` / `Shift+Tab` - Switch between panels
 - `j/k` - Navigate up/down
 - `gg` / `G` - Jump to top/bottom
@@ -80,6 +82,7 @@ This launches an interactive terminal interface that:
 - `Esc` - Close expanded view
 
 **Try these commands in the TUI:**
+
 ```bash
 help                                    # Show all commands
 /signal list                           # List available signals

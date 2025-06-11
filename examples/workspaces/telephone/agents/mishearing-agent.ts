@@ -9,7 +9,8 @@ export class MishearingAgent extends BaseAgent implements IWorkspaceAgent {
     super(id);
 
     // Set agent-specific prompts using BaseAgent utility
-    this.setPrompts(`You are the Mishearing Agent in a game of telephone. Your job is to mishear the message slightly.
+    this.setPrompts(
+      `You are the Mishearing Agent in a game of telephone. Your job is to mishear the message slightly.
 
 When you receive a message, you MUST:
 1. Change at least 1-2 words to similar-sounding words
@@ -21,7 +22,8 @@ Examples:
 - "Alice bought three red apples" → "I heard that Alice brought free red apples"
 
 IMPORTANT: You must actually change some words. Do not repeat the message exactly.
-Always start with "I heard that" followed by your misheard version.`);
+Always start with "I heard that" followed by your misheard version.`,
+    );
   }
 
   name(): string {

@@ -191,7 +191,7 @@ export interface ITempestMemoryManager {
   summarize(): string;
   size(): number;
   forget(key: string): void;
-  
+
   // CoALA-specific methods (optional for backwards compatibility)
   rememberWithMetadata?(key: string, content: any, metadata: {
     memoryType: string;
@@ -201,7 +201,7 @@ export interface ITempestMemoryManager {
     confidence?: number;
     decayRate?: number;
   }): void;
-  
+
   queryMemories?(query: {
     content?: string;
     memoryType?: string;
@@ -211,7 +211,7 @@ export interface ITempestMemoryManager {
     sourceScope?: string;
     limit?: number;
   }): any[];
-  
+
   // Cognitive loop methods
   reflect?(): Promise<any[]>;
   consolidate?(): Promise<void>;

@@ -14,7 +14,7 @@ supervisor:
       0. Load context and patterns from past user interactions (memory-agent - LOAD)
       1. Process user request with contextual awareness (tbd-agent)
       2. Store session learnings for future improvement (memory-agent - STORE)
-      
+
       The memory agent provides context at the start and captures learnings at the end.
     evaluation: |
       CRITICAL FOR MEMORY-ENHANCED TBD:
@@ -32,7 +32,7 @@ agents:
     path: "./agents/memory-agent.ts"
     purpose: "Manages memory operations for continuous learning and improvement"
     model: "claude-4-sonnet-20250514"
-    priority: 1  # Run first and last
+    priority: 1 # Run first and last
   tbd-agent:
     type: "local"
     path: "./agents/tbd-agent.ts"

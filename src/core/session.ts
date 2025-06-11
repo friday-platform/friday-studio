@@ -517,7 +517,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     // Store session initialization in CoALA memory
     const coalaMemory = this.memory as CoALAMemoryManager;
     coalaMemory.rememberWithMetadata(
-      'session-initialization',
+      "session-initialization",
       {
         workspaceId,
         signalCount: signals.triggers.length,
@@ -525,14 +525,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         workflowCount: workflows?.length || 0,
         sourceCount: sources?.length || 0,
         intent: intent?.id,
-        strategy: intent?.executionHints?.strategy
+        strategy: intent?.executionHints?.strategy,
       },
       {
         memoryType: CoALAMemoryType.CONTEXTUAL,
-        tags: ['session', 'initialization', 'metadata'],
+        tags: ["session", "initialization", "metadata"],
         relevanceScore: 1.0,
-        confidence: 1.0
-      }
+        confidence: 1.0,
+      },
     );
 
     // Initialize the state machine
@@ -561,7 +561,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
       // Handle state transitions and store in CoALA memory
       const coalaMemory = this.memory as CoALAMemoryManager;
-      
+
       if (snapshot.matches("completed")) {
         this._isRunning = false;
         // Remember successful completion
@@ -571,14 +571,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
             sessionId: this.id,
             duration: this._startTime ? Date.now() - this._startTime.getTime() : 0,
             artifactCount: this._artifacts.length,
-            finalProgress: this._progress
+            finalProgress: this._progress,
           },
           {
             memoryType: CoALAMemoryType.EPISODIC,
-            tags: ['session', 'completion', 'success'],
+            tags: ["session", "completion", "success"],
             relevanceScore: 0.8,
-            confidence: 1.0
-          }
+            confidence: 1.0,
+          },
         );
         this.signals.callback.onSuccess(this._artifacts);
         this.signals.callback.onComplete();
@@ -591,14 +591,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
             sessionId: this.id,
             error: context.error?.message,
             progress: this._progress,
-            artifacts: this._artifacts.length
+            artifacts: this._artifacts.length,
           },
           {
             memoryType: CoALAMemoryType.EPISODIC,
-            tags: ['session', 'failure', 'error'],
+            tags: ["session", "failure", "error"],
             relevanceScore: 0.9, // Failures are highly relevant for learning
-            confidence: 1.0
-          }
+            confidence: 1.0,
+          },
         );
         this.signals.callback.onError(
           context.error || new Error("Session failed"),
@@ -632,14 +632,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
             provider: lastArtifact.data.provider.name,
             processedAt: lastArtifact.data.processedAt,
             sessionId: this.id,
-            artifactType: lastArtifact.type
+            artifactType: lastArtifact.type,
           },
           {
             memoryType: CoALAMemoryType.EPISODIC,
-            tags: ['signal', 'processed', lastArtifact.data.provider.name],
+            tags: ["signal", "processed", lastArtifact.data.provider.name],
             relevanceScore: 0.6,
-            confidence: 1.0
-          }
+            confidence: 1.0,
+          },
         );
       }
     });

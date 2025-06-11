@@ -316,17 +316,17 @@ You have access to a filtered view of the workspace tailored for this specific s
   // Extract success criteria from job specification
   private extractSuccessCriteria(jobSpec: JobSpecification): string[] {
     const criteria = [];
-    
+
     if (jobSpec.success_criteria) {
       Object.entries(jobSpec.success_criteria).forEach(([key, value]) => {
         criteria.push(`${key}: ${value}`);
       });
     }
-    
+
     // Default criteria
     criteria.push(`Execute all ${jobSpec.execution.agents.length} agents successfully`);
     criteria.push("Produce meaningful outputs from each agent");
-    
+
     return criteria;
   }
 
@@ -464,7 +464,9 @@ Execution Plan:
 Execution Results:
 ${
       results.map((r) =>
-        `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${JSON.stringify(r.input).slice(0, 100)}...\n   Output: ${JSON.stringify(r.output).slice(0, 200)}...\n   Duration: ${r.duration}ms`
+        `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${
+          JSON.stringify(r.input).slice(0, 100)
+        }...\n   Output: ${JSON.stringify(r.output).slice(0, 200)}...\n   Duration: ${r.duration}ms`
       ).join("\n\n")
     }
 
@@ -566,7 +568,7 @@ Provide a brief evaluation.`;
       throw new Error("AgentSupervisor not initialized. Call initializeAgentSupervisor() first.");
     }
 
-    const agent = this.sessionContext!.availableAgents.find(a => a.id === agentId);
+    const agent = this.sessionContext!.availableAgents.find((a) => a.id === agentId);
     if (!agent) {
       throw new Error(`Agent ${agentId} not found in available agents`);
     }
@@ -578,7 +580,7 @@ Provide a brief evaluation.`;
       const analysis = await this.agentSupervisor.analyzeAgent(
         agent,
         task,
-        this.sessionContext!
+        this.sessionContext!,
       );
 
       // Step 2: Prepare secure execution environment
@@ -608,7 +610,7 @@ Provide a brief evaluation.`;
         workerInstance,
         input,
         task,
-        supervision
+        supervision,
       );
 
       // Step 5: Clean up worker
@@ -616,7 +618,6 @@ Provide a brief evaluation.`;
 
       this.log(`Agent ${agentId} executed successfully with supervision`);
       return result;
-
     } catch (error) {
       this.log(`Supervised execution failed for agent ${agentId}: ${error}`);
       throw new Error(`Supervised agent execution failed: ${error}`);
@@ -626,13 +627,15 @@ Provide a brief evaluation.`;
   // Legacy method kept for backward compatibility - now delegates to supervised execution
   async executeLegacyAgent(
     agent: AgentMetadata,
-    task: AgentTask, 
+    task: AgentTask,
     input: any,
-    context: Record<string, any>
+    context: Record<string, any>,
   ): Promise<any> {
-    this.log(`Legacy agent execution requested for ${agent.id} - delegating to supervised execution`);
+    this.log(
+      `Legacy agent execution requested for ${agent.id} - delegating to supervised execution`,
+    );
     const supervisedResult = await this.executeAgent(agent.id, task, input, context);
-    
+
     // Return legacy format for backward compatibility
     return {
       agent_type: agent.type,
@@ -650,13 +653,13 @@ Provide a brief evaluation.`;
     variables: Record<string, any>,
   ): string {
     let result = template;
-    
+
     for (const [key, value] of Object.entries(variables)) {
       const placeholder = `{${key}}`;
       const replacement = typeof value === "string" ? value : JSON.stringify(value);
       result = result.replaceAll(placeholder, replacement);
     }
-    
+
     return result;
   }
 
@@ -676,7 +679,9 @@ Original Input: ${JSON.stringify(this.sessionContext.payload)}
 Agent Execution Chain:
 ${
       allResults.map((r, i) =>
-        `${i + 1}. ${r.agentId}:\n   Input: ${JSON.stringify(r.input).slice(0, 100)}...\n   Output: ${r.output}\n   Duration: ${r.duration}ms`
+        `${i + 1}. ${r.agentId}:\n   Input: ${
+          JSON.stringify(r.input).slice(0, 100)
+        }...\n   Output: ${r.output}\n   Duration: ${r.duration}ms`
       ).join("\n\n")
     }
 

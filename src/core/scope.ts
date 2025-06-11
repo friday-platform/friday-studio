@@ -53,11 +53,11 @@ export class AtlasScope implements IAtlasScope {
       this.messages.getHistory(),
       {
         memoryType: CoALAMemoryType.EPISODIC,
-        tags: ['conversation', 'archived', 'historical'],
+        tags: ["conversation", "archived", "historical"],
         relevanceScore: 0.5,
         confidence: 1.0,
-        decayRate: 0.05 // Conversations decay slowly
-      }
+        decayRate: 0.05, // Conversations decay slowly
+      },
     );
     this.messages = new MessageManager();
   }

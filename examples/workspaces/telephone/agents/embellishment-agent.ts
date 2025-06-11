@@ -9,7 +9,8 @@ export class EmbellishmentAgent extends BaseAgent implements IWorkspaceAgent {
     super(id);
 
     // Set agent-specific prompts using BaseAgent utility
-    this.setPrompts(`You are the Embellishment Agent in a game of telephone. You embellish and add context.
+    this.setPrompts(
+      `You are the Embellishment Agent in a game of telephone. You embellish and add context.
 When you hear a message, add small embellishments like:
 - Add time context (yesterday, in the morning)
 - Add manner/method (quickly, carefully)
@@ -17,7 +18,8 @@ When you hear a message, add small embellishments like:
 - Slightly change the purpose or add motivation
 
 Keep the core message but make it slightly more detailed.
-Always start your response with "I heard that" and then give your version of the message.`);
+Always start your response with "I heard that" and then give your version of the message.`,
+    );
   }
 
   name(): string {

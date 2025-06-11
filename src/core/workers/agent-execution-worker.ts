@@ -63,12 +63,12 @@ class AgentExecutionWorker {
   constructor() {
     // Listen for messages from main thread
     self.addEventListener("message", this.handleMessage.bind(this));
-    
+
     // Send ready signal
     this.postMessage({
       type: "ready",
       id: "worker-ready",
-      data: { worker_id: crypto.randomUUID() }
+      data: { worker_id: crypto.randomUUID() },
     });
   }
 
@@ -97,7 +97,7 @@ class AgentExecutionWorker {
       this.postMessage({
         type: "error",
         id,
-        data: { error: error instanceof Error ? error.message : String(error) }
+        data: { error: error instanceof Error ? error.message : String(error) },
       });
     }
   }
@@ -106,13 +106,13 @@ class AgentExecutionWorker {
     this.workerId = data.worker_id || crypto.randomUUID();
     this.isInitialized = true;
     this.startTime = Date.now();
-    
+
     this.log("Worker initialized", "info");
-    
+
     this.postMessage({
       type: "initialized",
       id: messageId,
-      data: { worker_id: this.workerId, status: "ready" }
+      data: { worker_id: this.workerId, status: "ready" },
     });
   }
 
@@ -122,7 +122,7 @@ class AgentExecutionWorker {
     }
 
     this.log(`Executing ${request.agent_config.type} agent: ${request.agent_id}`, "info");
-    
+
     const executionStart = Date.now();
 
     try {
@@ -155,7 +155,7 @@ class AgentExecutionWorker {
           duration,
           memory_used: memoryUsed,
           safety_checks_passed: true,
-        }
+        },
       };
 
       this.log(`Agent ${request.agent_id} executed successfully in ${duration}ms`, "info");
@@ -163,9 +163,8 @@ class AgentExecutionWorker {
       this.postMessage({
         type: "execution_complete",
         id: messageId,
-        data: response
+        data: response,
       });
-
     } catch (error) {
       const duration = Date.now() - executionStart;
       const response: AgentExecutionResponse = {
@@ -175,7 +174,7 @@ class AgentExecutionWorker {
           duration,
           memory_used: this.estimateMemoryUsage(),
           safety_checks_passed: false,
-        }
+        },
       };
 
       this.log(`Agent ${request.agent_id} execution failed: ${response.error}`, "error");
@@ -183,7 +182,7 @@ class AgentExecutionWorker {
       this.postMessage({
         type: "execution_complete",
         id: messageId,
-        data: response
+        data: response,
       });
     }
   }
@@ -226,7 +225,7 @@ class AgentExecutionWorker {
 
     // Execute LLM call with timeout - use direct fetch to avoid SDK issues in worker
     const timeoutMs = request.environment.worker_config.timeout;
-    
+
     try {
       const llmCall = this.callAnthropicAPI(model, systemPrompt, userPrompt, parameters);
       const result = await this.withTimeout(llmCall, timeoutMs);
@@ -246,7 +245,12 @@ class AgentExecutionWorker {
     }
   }
 
-  private async callAnthropicAPI(model: string, system: string, prompt: string, parameters: any): Promise<any> {
+  private async callAnthropicAPI(
+    model: string,
+    system: string,
+    prompt: string,
+    parameters: any,
+  ): Promise<any> {
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
       throw new Error("ANTHROPIC_API_KEY environment variable not set");
@@ -279,7 +283,7 @@ class AgentExecutionWorker {
     }
 
     const data = await response.json();
-    
+
     return {
       text: data.content[0]?.text || "",
       tokens_used: data.usage?.total_tokens || 0,
@@ -312,7 +316,7 @@ class AgentExecutionWorker {
 
   private async executeRemoteAgent(request: AgentExecutionRequest): Promise<any> {
     const { endpoint, auth } = request.agent_config;
-    
+
     if (!endpoint) {
       throw new Error("Remote agent requires endpoint specification");
     }
@@ -343,7 +347,7 @@ class AgentExecutionWorker {
 
     // Make HTTP request with timeout
     const timeoutMs = request.environment.worker_config.timeout;
-    
+
     const fetchCall = fetch(endpoint, {
       method: "POST",
       headers,
@@ -356,7 +360,7 @@ class AgentExecutionWorker {
     });
 
     const response = await this.withTimeout(fetchCall, timeoutMs);
-    
+
     if (!response.ok) {
       throw new Error(`Remote agent request failed: ${response.status} ${response.statusText}`);
     }
@@ -399,7 +403,7 @@ class AgentExecutionWorker {
   }
 
   private async simulateWork(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private estimateMemoryUsage(): number {
@@ -410,11 +414,11 @@ class AgentExecutionWorker {
 
   private async terminate(messageId: string) {
     this.log("Worker terminating", "info");
-    
+
     this.postMessage({
       type: "terminated",
       id: messageId,
-      data: { worker_id: this.workerId, uptime: Date.now() - this.startTime }
+      data: { worker_id: this.workerId, uptime: Date.now() - this.startTime },
     });
 
     // Close the worker
@@ -424,12 +428,12 @@ class AgentExecutionWorker {
   private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
     const timestamp = new Date().toISOString();
     console.log(`[AgentWorker:${this.workerId}:${level.toUpperCase()}] ${timestamp} - ${message}`);
-    
+
     // Send log to main thread for centralized logging
     this.postMessage({
       type: "log",
       id: crypto.randomUUID(),
-      data: { level, message, timestamp, worker_id: this.workerId }
+      data: { level, message, timestamp, worker_id: this.workerId },
     });
   }
 }

@@ -1,7 +1,7 @@
 # TBD (To Be Determined) Workspace
 
-A demonstration of Atlas AI agent orchestration with continuous learning capabilities.
-This workspace provides helpful assistance while learning from every interaction to improve over time.
+A demonstration of Atlas AI agent orchestration with continuous learning capabilities. This
+workspace provides helpful assistance while learning from every interaction to improve over time.
 
 ## Overview
 

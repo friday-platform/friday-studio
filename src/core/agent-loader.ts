@@ -1,5 +1,5 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
-import { AgentRegistry, type AgentMetadata } from "./agent-registry.ts";
+import { type AgentMetadata, AgentRegistry } from "./agent-registry.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface AgentLoadResult {
@@ -17,11 +17,11 @@ export class AgentLoader {
    */
   static async loadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, any>
+    agentConfigs: Record<string, any>,
   ): Promise<AgentLoadResult> {
     const result: AgentLoadResult = {
       loaded: [],
-      failed: []
+      failed: [],
     };
 
     if (!agentConfigs) {
@@ -29,8 +29,7 @@ export class AgentLoader {
     }
 
     const loadPromises = Object.entries(agentConfigs).map(
-      ([agentId, agentConfig]) => 
-        this.loadSingleAgent(workspace, agentId, agentConfig)
+      ([agentId, agentConfig]) => this.loadSingleAgent(workspace, agentId, agentConfig),
     );
 
     const results = await Promise.allSettled(loadPromises);
@@ -42,7 +41,7 @@ export class AgentLoader {
       if (promiseResult.status === "fulfilled") {
         const agent = promiseResult.value;
         result.loaded.push(agent);
-        
+
         // Add to workspace
         const addError = workspace.addAgent(agent);
         if (addError) {
@@ -52,7 +51,7 @@ export class AgentLoader {
           });
           result.failed.push({ id: agentId, error: addError.message });
         } else {
-          logger.info(`Loaded agent: ${agentId} (${(agent as any).type || 'unknown'})`, {
+          logger.info(`Loaded agent: ${agentId} (${(agent as any).type || "unknown"})`, {
             workspaceId: workspace.id,
             agentId,
           });
@@ -60,13 +59,13 @@ export class AgentLoader {
       } else {
         const error = promiseResult.reason;
         const errorMessage = error instanceof Error ? error.message : String(error);
-        
+
         logger.error(`Failed to load agent ${agentId}`, {
           workspaceId: workspace.id,
           agentId,
           error: errorMessage,
         });
-        
+
         result.failed.push({ id: agentId, error: errorMessage });
       }
     }
@@ -80,7 +79,7 @@ export class AgentLoader {
   private static async loadSingleAgent(
     workspace: IWorkspace,
     agentId: string,
-    agentConfig: any
+    agentConfig: any,
   ): Promise<IWorkspaceAgent> {
     const metadata: AgentMetadata = {
       id: agentId,
@@ -113,7 +112,7 @@ export class AgentLoader {
    */
   static async reloadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, any>
+    agentConfigs: Record<string, any>,
   ): Promise<AgentLoadResult> {
     // Clear existing agents
     for (const agentId of Object.keys(workspace.agents)) {
@@ -139,7 +138,7 @@ export class AgentLoader {
         };
         return acc;
       },
-      {} as Record<string, any>
+      {} as Record<string, any>,
     );
   }
 }

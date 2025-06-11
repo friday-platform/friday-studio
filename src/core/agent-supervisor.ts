@@ -3,14 +3,14 @@
  */
 
 import { BaseAgent } from "./agents/base-agent.ts";
-import type { 
-  AgentMetadata, 
-  AgentTask, 
-  SessionContext,
+import type {
   AgentConfig,
-  TempestAgentConfig,
+  AgentMetadata,
+  AgentTask,
   LLMAgentConfig,
-  RemoteAgentConfig 
+  RemoteAgentConfig,
+  SessionContext,
+  TempestAgentConfig,
 } from "./session-supervisor.ts";
 
 // Agent analysis and safety assessment
@@ -139,7 +139,7 @@ export class AgentSupervisor extends BaseAgent {
 
     // Set supervisor-specific prompts
     this.prompts = {
-      system: supervisorConfig?.prompts?.system || 
+      system: supervisorConfig?.prompts?.system ||
         `You are an AgentSupervisor responsible for safe agent loading and execution.
         Your role is to:
         1. Analyze agents for safety and optimization before loading
@@ -187,7 +187,7 @@ export class AgentSupervisor extends BaseAgent {
   async analyzeAgent(
     agent: AgentMetadata,
     task: AgentTask,
-    context: SessionContext
+    context: SessionContext,
   ): Promise<AgentAnalysis> {
     this.log(`Analyzing agent ${agent.id} for task execution`);
 
@@ -239,13 +239,13 @@ Focus on safety, efficiency, and reliability.`;
   private parseAgentAnalysis(
     llmResponse: string,
     agent: AgentMetadata,
-    task: AgentTask
+    task: AgentTask,
   ): AgentAnalysis {
     // For now, create analysis based on agent type and response content
     // In production, this would use structured parsing of LLM output
-    
+
     const responseText = llmResponse.toLowerCase();
-    
+
     // Determine risk level from response
     let riskLevel: "low" | "medium" | "high" = "medium";
     if (responseText.includes("high risk") || responseText.includes("dangerous")) {
@@ -257,7 +257,7 @@ Focus on safety, efficiency, and reliability.`;
     // Base resource requirements on agent type
     let memoryMb = 256;
     let timeoutSeconds = 300;
-    
+
     if (agent.type === "remote") {
       timeoutSeconds = 600; // Remote agents may need more time
     } else if (agent.type === "tempest") {
@@ -317,9 +317,11 @@ Focus on safety, efficiency, and reliability.`;
   // Prepare secure execution environment based on analysis
   async prepareEnvironment(
     agent: AgentMetadata,
-    analysis: AgentAnalysis
+    analysis: AgentAnalysis,
   ): Promise<AgentEnvironment> {
-    this.log(`Preparing environment for agent ${agent.id} with ${analysis.execution_strategy.isolation_level} isolation`);
+    this.log(
+      `Preparing environment for agent ${agent.id} with ${analysis.execution_strategy.isolation_level} isolation`,
+    );
 
     const environment: AgentEnvironment = {
       worker_config: {
@@ -335,7 +337,7 @@ Focus on safety, efficiency, and reliability.`;
           safety_level: analysis.safety_assessment.risk_level,
         },
         prompts: this.preparePrompts(agent, analysis),
-        tools: analysis.optimization_suggestions.tool_selections.length > 0 
+        tools: analysis.optimization_suggestions.tool_selections.length > 0
           ? analysis.optimization_suggestions.tool_selections
           : (agent.config as any).tools || [],
       },
@@ -367,16 +369,16 @@ Focus on safety, efficiency, and reliability.`;
   // Load agent safely in web worker
   async loadAgentSafely(
     agent: AgentMetadata,
-    environment: AgentEnvironment
+    environment: AgentEnvironment,
   ): Promise<AgentWorkerInstance> {
     this.log(`Loading agent ${agent.id} in secure worker`);
 
     // Create worker instance
     const workerId = `${agent.id}-${Date.now()}`;
-    
+
     // Create actual web worker
     const workerScript = new URL("./workers/agent-execution-worker.ts", import.meta.url);
-    const worker = new Worker(workerScript, { 
+    const worker = new Worker(workerScript, {
       type: "module",
       name: `agent-worker-${agent.id}`,
     });
@@ -399,21 +401,21 @@ Focus on safety, efficiency, and reliability.`;
 
       worker.addEventListener("message", (event) => {
         const { type, data } = event.data;
-        
+
         switch (type) {
           case "ready":
             // Worker is ready, now initialize it
             worker.postMessage({
               type: "initialize",
               id: crypto.randomUUID(),
-              data: { 
+              data: {
                 worker_id: workerId,
                 environment,
                 agent_config: agent.config,
-              }
+              },
             });
             break;
-            
+
           case "initialized":
             clearTimeout(timeout);
             workerInstance.status = "ready";
@@ -421,14 +423,14 @@ Focus on safety, efficiency, and reliability.`;
             this.log(`Agent ${agent.id} loaded successfully as worker ${workerId}`);
             resolve(workerInstance);
             break;
-            
+
           case "error":
             clearTimeout(timeout);
             worker.terminate();
             this.log(`Worker initialization failed for agent ${agent.id}: ${data.error}`);
             reject(new Error(`Worker initialization failed: ${data.error}`));
             break;
-            
+
           case "log":
             // Forward worker logs to supervisor
             this.log(`[Worker:${data.worker_id}] ${data.message}`, data.level);
@@ -449,7 +451,7 @@ Focus on safety, efficiency, and reliability.`;
     instance: AgentWorkerInstance,
     input: any,
     task: AgentTask,
-    supervision: ExecutionSupervision
+    supervision: ExecutionSupervision,
   ): Promise<SupervisedAgentResult> {
     this.log(`Executing agent ${instance.agent_id} with supervision`);
 
@@ -504,7 +506,7 @@ Focus on safety, efficiency, and reliability.`;
   async validateOutput(
     output: any,
     task: AgentTask,
-    supervision: ExecutionSupervision
+    supervision: ExecutionSupervision,
   ): Promise<ValidationResult> {
     if (!supervision.post_execution_validation.output_quality) {
       return { is_valid: true, quality_score: 1.0, issues: [], recommendations: [] };
@@ -551,11 +553,11 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
         instance.worker.postMessage({
           type: "terminate",
           id: crypto.randomUUID(),
-          data: { reason: "supervisor_cleanup" }
+          data: { reason: "supervisor_cleanup" },
         });
 
         // Wait a short time for graceful shutdown
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error) {
         this.log(`Error during graceful worker termination: ${error}`);
       } finally {
@@ -618,18 +620,19 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   private preparePrompts(agent: AgentMetadata, analysis: AgentAnalysis): Record<string, string> {
     const config = agent.config as any;
     const prompts = { ...config.prompts };
-    
+
     // Add safety instructions based on risk level
     if (analysis.safety_assessment.risk_level === "high") {
-      prompts.safety = "CRITICAL: Follow all safety protocols. Do not execute any potentially harmful operations.";
+      prompts.safety =
+        "CRITICAL: Follow all safety protocols. Do not execute any potentially harmful operations.";
     }
-    
+
     return prompts;
   }
 
   private async performPreExecutionChecks(
     instance: AgentWorkerInstance,
-    supervision: ExecutionSupervision
+    supervision: ExecutionSupervision,
   ): Promise<void> {
     // Mock pre-execution checks
     this.log(`Performing pre-execution checks for worker ${instance.id}`);
@@ -642,40 +645,44 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   private async executeAgentInWorker(
     instance: AgentWorkerInstance,
     input: any,
-    task: AgentTask
+    task: AgentTask,
   ): Promise<{ output: any; metadata: any }> {
     const messageId = crypto.randomUUID();
-    
+
     return new Promise((resolve, reject) => {
       // Set up timeout
       const timeout = setTimeout(() => {
-        reject(new Error(`Agent execution timeout after ${instance.environment.worker_config.timeout}ms`));
+        reject(
+          new Error(
+            `Agent execution timeout after ${instance.environment.worker_config.timeout}ms`,
+          ),
+        );
       }, instance.environment.worker_config.timeout);
 
       // Listen for worker response
       const messageHandler = (event: MessageEvent) => {
         const { type, id, data } = event.data;
-        
+
         if (id === messageId) {
           clearTimeout(timeout);
           instance.worker.removeEventListener("message", messageHandler);
-          
+
           switch (type) {
             case "execution_complete":
               if (data.success) {
                 resolve({
                   output: data.output,
-                  metadata: data.metadata
+                  metadata: data.metadata,
                 });
               } else {
                 reject(new Error(`Worker execution failed: ${data.error}`));
               }
               break;
-              
+
             case "error":
               reject(new Error(`Worker error: ${data.error}`));
               break;
-              
+
             default:
               // Ignore other message types
               break;
@@ -695,7 +702,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
           task,
           input,
           environment: instance.environment,
-        }
+        },
       });
     });
   }
@@ -703,11 +710,15 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   private parseValidationResult(llmResponse: string): ValidationResult {
     // Simple parsing - in production would use structured output
     const responseText = llmResponse.toLowerCase();
-    
+
     const isValid = !responseText.includes("invalid") && !responseText.includes("failed");
-    const qualityScore = responseText.includes("excellent") ? 0.9 :
-                        responseText.includes("good") ? 0.7 :
-                        responseText.includes("poor") ? 0.3 : 0.6;
+    const qualityScore = responseText.includes("excellent")
+      ? 0.9
+      : responseText.includes("good")
+      ? 0.7
+      : responseText.includes("poor")
+      ? 0.3
+      : 0.6;
 
     return {
       is_valid: isValid,
@@ -718,7 +729,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   }
 
   // Worker lifecycle management methods
-  
+
   // Update worker statistics after execution
   private updateWorkerStats(workerId: string, duration: number, memoryUsed: number): void {
     let stats = this.workerStats.get(workerId);
@@ -745,7 +756,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     if (workerId) {
       const stats = this.workerStats.get(workerId);
       const instance = this.activeWorkers.get(workerId);
-      
+
       if (!stats || !instance) {
         return {};
       }
@@ -786,7 +797,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
     for (const [workerId, instance] of this.activeWorkers) {
       const stats = this.workerStats.get(workerId);
-      
+
       switch (instance.status) {
         case "ready":
           healthy++;
@@ -826,10 +837,10 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
     for (const [workerId, instance] of this.activeWorkers) {
       const stats = this.workerStats.get(workerId);
-      
+
       if (instance.status === "ready" && stats) {
         const idleTime = now - stats.last_execution.getTime();
-        
+
         if (idleTime > maxIdleTime) {
           this.log(`Cleaning up idle worker ${workerId} (idle for ${idleTime}ms)`);
           await this.terminateWorker(workerId);
@@ -852,12 +863,12 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   } {
     const totalExecutions = Array.from(this.workerStats.values())
       .reduce((sum, stats) => sum + stats.executions, 0);
-    
+
     const totalMemory = Array.from(this.workerStats.values())
       .reduce((sum, stats) => sum + stats.memory_peak, 0);
 
     const activeWorkers = this.activeWorkers.size;
-    
+
     let status: "healthy" | "degraded" | "unhealthy" = "healthy";
     if (activeWorkers > 10) {
       status = "degraded"; // Too many workers

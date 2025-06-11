@@ -185,7 +185,6 @@ if (command === "workspace" && subcommand && naturalShorthands[subcommand]) {
   args = args.slice(1);
 }
 
-
 render(React.createElement(App, {
   command,
   subcommand,

@@ -57,10 +57,9 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             sessionId,
             signalId: signal.id,
             signalType: signal.provider || "unknown",
-            workspaceId: this.workspace?.id
+            workspaceId: this.workspace?.id,
           },
           async (span) => {
-
             // Spawn session worker
             const sessionWorker = await this.spawnSessionWorker(sessionId);
 
@@ -77,7 +76,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
               async () => {
                 return await this.supervisor!.analyzeSignal(signal, payload);
               },
-              { "signal.id": signal.id }
+              { "signal.id": signal.id },
             );
             this.log(`Signal analysis complete`);
 
@@ -88,7 +87,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
               async () => {
                 return await this.supervisor!.createSessionContext(intent, signal, payload);
               },
-              { "session.id": sessionId }
+              { "session.id": sessionId },
             );
             this.log(`Session context created`);
 
@@ -142,7 +141,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
               status: "started",
               result,
             };
-          }
+          },
         );
       }
 
