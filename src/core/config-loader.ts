@@ -2,117 +2,177 @@
  * Configuration loader for Atlas that merges atlas.yml and workspace.yml
  */
 
-import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
-import type { 
-  AgentConfig, 
-  JobSpecification, 
-  AgentType,
-  TempestAgentConfig,
+import { parse as parseYaml } from "@std/yaml";
+import { join } from "@std/path";
+import { z } from "zod/v4";
+import type {
+  AgentConfig,
+  JobSpecification,
   LLMAgentConfig,
-  RemoteAgentConfig
+  RemoteAgentConfig,
+  TempestAgentConfig,
 } from "./session-supervisor.ts";
 
-// Atlas platform configuration (atlas.yml)
-export interface AtlasConfig {
-  version: string;
-  platform: {
-    name: string;
-    version: string;
-  };
-  agents: Record<string, AgentConfig>;
-  supervisors: {
-    workspace: {
-      model: string;
-      prompts: {
-        system: string;
-      };
-    };
-    session: {
-      model: string;
-      prompts: {
-        system: string;
-      };
-    };
-    agent: {
-      model: string;
-      prompts: {
-        system: string;
-      };
-    };
-  };
+// Custom error class for configuration validation
+export class ConfigValidationError extends Error {
+  constructor(
+    message: string,
+    public file: string,
+    public field?: string,
+    public value?: unknown
+  ) {
+    super(message);
+    this.name = "ConfigValidationError";
+  }
 }
 
-// New workspace configuration format
-export interface NewWorkspaceConfig {
-  version: string;
-  workspace: {
-    id: string;
-    name: string;
-    description: string;
-  };
-  agents: Record<string, WorkspaceAgentConfig>;
-  signals: Record<string, WorkspaceSignalConfig>;
-  runtime?: {
-    server?: {
-      port: number;
-      host: string;
-    };
-    logging?: {
-      level: string;
-      format: string;
-    };
-    persistence?: {
-      type: string;
-      path: string;
-    };
-    security?: {
-      cors: string;
-    };
-  };
-}
+// Zod schemas for validation
+const AgentTypeSchema = z.enum(["tempest", "llm", "remote"]);
 
-export interface WorkspaceAgentConfig {
-  type: AgentType;
-  model?: string; // For LLM agents
-  purpose: string;
-  tools?: string[]; // For LLM agents
-  prompts?: {
-    system?: string;
-    [key: string]: string | undefined;
-  };
-  // Tempest agent specific
-  agent?: string; // Catalog reference
-  version?: string;
-  config?: Record<string, any>;
-  // Remote agent specific
-  endpoint?: string;
-  auth?: {
-    type: "bearer" | "api_key" | "basic";
-    token_env?: string;
-    [key: string]: any;
-  };
-  timeout?: number;
-  schema?: {
-    input?: Record<string, any>;
-    output?: Record<string, any>;
-  };
-}
+const AuthConfigSchema = z
+  .object({
+    type: z.enum(["bearer", "api_key", "basic"]),
+    token_env: z.string().optional(),
+  })
+  .catchall(z.any());
 
-export interface WorkspaceSignalConfig {
-  description: string;
-  provider: string;
-  schema?: {
-    type: string;
-    properties: Record<string, any>;
-    required?: string[];
-  };
-  jobs: Array<{
-    name: string;
-    condition?: string;
-    job: string; // Path to job file
-  }>;
-}
+const SchemaObjectSchema = z
+  .object({
+    type: z.string(),
+    properties: z.record(z.string(), z.any()).optional(),
+    required: z.array(z.string()).optional(),
+    items: z.any().optional(),
+    minimum: z.number().optional(),
+    maximum: z.number().optional(),
+    enum: z.array(z.string()).optional(),
+    description: z.string().optional(),
+  })
+  .catchall(z.any());
+
+const WorkspaceAgentConfigSchema = z
+  .object({
+    type: AgentTypeSchema,
+    model: z.string().optional(),
+    purpose: z.string(),
+    tools: z.array(z.string()).optional(),
+    prompts: z.record(z.string(), z.string()).optional(),
+    // Tempest agent specific
+    agent: z.string().optional(),
+    version: z.string().optional(),
+    config: z.record(z.string(), z.any()).optional(),
+    // Remote agent specific
+    endpoint: z.url().optional(),
+    auth: AuthConfigSchema.optional(),
+    timeout: z.number().positive().optional(),
+    schema: z
+      .object({
+        input: SchemaObjectSchema.optional(),
+        output: SchemaObjectSchema.optional(),
+      })
+      .optional(),
+  })
+  .refine(
+    (data) => {
+      // Tempest agents require agent and version
+      if (data.type === "tempest") {
+        return data.agent && data.version;
+      }
+      // LLM agents require model
+      if (data.type === "llm") {
+        return data.model;
+      }
+      // Remote agents require endpoint
+      if (data.type === "remote") {
+        return data.endpoint;
+      }
+      return true;
+    },
+    {
+      message: "Agent configuration missing required fields for agent type",
+    }
+  );
+
+const WorkspaceSignalConfigSchema = z.object({
+  description: z.string(),
+  provider: z.string(),
+  schema: SchemaObjectSchema.optional(),
+  jobs: z
+    .array(
+      z.object({
+        name: z.string(),
+        condition: z.string().optional(),
+        job: z.string(),
+      })
+    )
+    .min(1, "Signal must have at least one job mapping"),
+});
+
+const NewWorkspaceConfigSchema = z.object({
+  version: z.string(),
+  workspace: z.object({
+    id: z.uuid("Workspace ID must be a valid UUID"),
+    name: z.string().min(1, "Workspace name cannot be empty"),
+    description: z.string(),
+  }),
+  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
+  signals: z.record(z.string(), WorkspaceSignalConfigSchema),
+  runtime: z
+    .object({
+      server: z
+        .object({
+          port: z.number().int().min(1).max(65535),
+          host: z.string(),
+        })
+        .optional(),
+      logging: z
+        .object({
+          level: z.enum(["debug", "info", "warn", "error"]),
+          format: z.enum(["json", "pretty"]),
+        })
+        .optional(),
+      persistence: z
+        .object({
+          type: z.enum(["local", "memory", "s3", "gcs"]),
+          path: z.string(),
+        })
+        .optional(),
+      security: z
+        .object({
+          cors: z.string(),
+        })
+        .optional(),
+    })
+    .optional(),
+});
+
+const SupervisorConfigSchema = z.object({
+  model: z.string(),
+  prompts: z
+    .object({
+      system: z.string(),
+    })
+    .catchall(z.string()),
+});
+
+const AtlasConfigSchema = z.object({
+  version: z.string(),
+  platform: z.object({
+    name: z.string(),
+    version: z.string(),
+  }),
+  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
+  supervisors: z.object({
+    workspace: SupervisorConfigSchema,
+    session: SupervisorConfigSchema,
+    agent: SupervisorConfigSchema,
+  }),
+});
+
+// Inferred types from Zod schemas
+export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;
+export type NewWorkspaceConfig = z.infer<typeof NewWorkspaceConfigSchema>;
+export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
+export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 
 // Merged configuration that combines both
 export interface MergedConfig {
@@ -122,13 +182,13 @@ export interface MergedConfig {
 }
 
 // Helper method to extract AgentSupervisor config from AtlasConfig
-export function getAgentSupervisorConfig(atlasConfig: AtlasConfig): any {
+export function getAgentSupervisorConfig(atlasConfig: AtlasConfig): {
+  model: string;
+  prompts: Record<string, string>;
+} {
   return {
-    model: atlasConfig.agentSupervisor?.model || atlasConfig.platform.defaults.session_supervisor_model,
-    capabilities: atlasConfig.agentSupervisor?.capabilities || [],
-    prompts: atlasConfig.agentSupervisor?.prompts || {},
-    settings: atlasConfig.platform.settings,
-    security: atlasConfig.platform.security,
+    model: atlasConfig.supervisors.agent.model,
+    prompts: atlasConfig.supervisors.agent.prompts,
   };
 }
 
@@ -136,7 +196,7 @@ export class ConfigLoader {
   private atlasConfigPath: string;
   private workspaceConfigPath: string;
   private workspaceDir: string;
-  
+
   constructor(workspaceDir: string = ".") {
     this.workspaceDir = workspaceDir;
     // Get git root directory to find atlas.yml
@@ -145,26 +205,24 @@ export class ConfigLoader {
       stdout: "piped",
     }).outputSync();
     const rootDir = new TextDecoder().decode(gitRoot.stdout).trim();
-    
+
     this.atlasConfigPath = join(rootDir, "atlas.yml");
     this.workspaceConfigPath = join(workspaceDir, "workspace.yml");
   }
 
   async load(): Promise<MergedConfig> {
-    
     // Load atlas.yml - platform configuration
     const atlasConfig = await this.loadAtlasConfig();
-    
-    // Load workspace.yml - user configuration  
+
+    // Load workspace.yml - user configuration
     const workspaceConfig = await this.loadWorkspaceConfig();
-    
+
     // Load all job specifications
     const jobs = await this.loadJobSpecs(workspaceConfig);
-    
+
     // Validate merged configuration
-    this.validateConfig(atlasConfig, workspaceConfig);
-    
-    
+    this.validateConfig(atlasConfig, workspaceConfig, jobs);
+
     return {
       atlas: atlasConfig,
       workspace: workspaceConfig,
@@ -175,46 +233,69 @@ export class ConfigLoader {
   private async loadAtlasConfig(): Promise<AtlasConfig> {
     try {
       const content = await Deno.readTextFile(this.atlasConfigPath);
-      const config = parseYaml(content) as AtlasConfig;
-      
-      // Validate required fields
-      if (!config.supervisors?.workspace || !config.supervisors?.session) {
-        throw new Error("Atlas configuration missing required supervisor configurations");
-      }
-      
+      const rawConfig = parseYaml(content);
+
+      // Validate with Zod
+      const config = AtlasConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
         // Create default atlas.yml if it doesn't exist
-        console.warn("[ConfigLoader] atlas.yml not found, using default configuration");
+        console.warn(
+          "[ConfigLoader] atlas.yml not found, using default configuration"
+        );
         return this.createDefaultAtlasConfig();
       }
-      throw new Error(`Failed to load atlas.yml: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof z.ZodError) {
+        throw new ConfigValidationError(
+          this.formatZodError(error, "atlas.yml"),
+          "atlas.yml"
+        );
+      }
+      throw new ConfigValidationError(
+        `Failed to load atlas.yml: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        "atlas.yml"
+      );
     }
   }
 
   private async loadWorkspaceConfig(): Promise<NewWorkspaceConfig> {
     try {
       const content = await Deno.readTextFile(this.workspaceConfigPath);
-      const config = parseYaml(content) as NewWorkspaceConfig;
-      
-      // Validate required fields
-      if (!config.workspace || !config.agents || !config.signals) {
-        throw new Error("Workspace configuration missing required fields");
-      }
-      
+      const rawConfig = parseYaml(content);
+
+      // Validate with Zod
+      const config = NewWorkspaceConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
-        throw new Error("workspace.yml not found - this file is required");
+        throw new ConfigValidationError(
+          "workspace.yml not found - this file is required",
+          "workspace.yml"
+        );
       }
-      throw new Error(`Failed to load workspace.yml: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof z.ZodError) {
+        throw new ConfigValidationError(
+          this.formatZodError(error, "workspace.yml"),
+          "workspace.yml"
+        );
+      }
+      throw new ConfigValidationError(
+        `Failed to load workspace.yml: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        "workspace.yml"
+      );
     }
   }
 
-  private async loadJobSpecs(workspaceConfig: NewWorkspaceConfig): Promise<Record<string, JobSpecification>> {
+  private async loadJobSpecs(
+    workspaceConfig: NewWorkspaceConfig
+  ): Promise<Record<string, JobSpecification>> {
     const jobs: Record<string, JobSpecification> = {};
-    
+
     // Collect all job file paths from signals
     const jobPaths = new Set<string>();
     for (const signal of Object.values(workspaceConfig.signals)) {
@@ -222,131 +303,138 @@ export class ConfigLoader {
         jobPaths.add(jobMapping.job);
       }
     }
-    
+
     // Load each job specification
     for (const jobPath of jobPaths) {
       try {
         const fullPath = join(this.workspaceDir, jobPath);
         const content = await Deno.readTextFile(fullPath);
         const jobSpec = parseYaml(content) as { job: JobSpecification };
-        
+
         if (!jobSpec.job || !jobSpec.job.name) {
           throw new Error(`Invalid job specification in ${jobPath}`);
         }
-        
+
         jobs[jobSpec.job.name] = jobSpec.job;
       } catch (error) {
-        console.error(`[ConfigLoader] Failed to load job from ${jobPath}:`, error instanceof Error ? error.message : String(error));
+        console.error(
+          `[ConfigLoader] Failed to load job from ${jobPath}:`,
+          error instanceof Error ? error.message : String(error)
+        );
         // Continue loading other jobs
       }
     }
-    
+
     return jobs;
   }
 
-  private validateConfig(atlasConfig: AtlasConfig, workspaceConfig: NewWorkspaceConfig): void {
-    // Validate agent configurations
-    for (const [agentId, agentConfig] of Object.entries(workspaceConfig.agents)) {
-      this.validateAgentConfig(agentId, agentConfig);
-    }
-    
-    // Validate signal configurations
-    for (const [signalId, signalConfig] of Object.entries(workspaceConfig.signals)) {
-      this.validateSignalConfig(signalId, signalConfig);
-    }
-    
-  }
+  private validateConfig(
+    atlasConfig: AtlasConfig,
+    workspaceConfig: NewWorkspaceConfig,
+    jobs: Record<string, JobSpecification>
+  ): void {
+    // Cross-validate job references in signals
+    for (const [signalId, signalConfig] of Object.entries(
+      workspaceConfig.signals
+    )) {
+      for (const jobMapping of signalConfig.jobs) {
+        const _jobName = jobMapping.job
+          .replace(/^\.\/jobs\//, "")
+          .replace(/\.ya?ml$/, "");
+        const jobSpec = Object.values(jobs).find(
+          (job) => job.name === jobMapping.name
+        );
 
-  private validateAgentConfig(agentId: string, config: WorkspaceAgentConfig): void {
-    if (!config.type || !["tempest", "llm", "remote"].includes(config.type)) {
-      throw new Error(`Agent ${agentId}: Invalid type '${config.type}'. Must be 'tempest', 'llm', or 'remote'`);
-    }
-    
-    switch (config.type) {
-      case "tempest":
-        if (!config.agent || !config.version) {
-          throw new Error(`Agent ${agentId}: Tempest agents require 'agent' and 'version' fields`);
+        if (!jobSpec) {
+          throw new ConfigValidationError(
+            `Signal '${signalId}' references job '${jobMapping.name}' which was not found in job files`,
+            "workspace.yml",
+            `signals.${signalId}.jobs`,
+            jobMapping
+          );
         }
-        break;
-      case "llm":
-        if (!config.model) {
-          throw new Error(`Agent ${agentId}: LLM agents require 'model' field`);
-        }
-        break;
-      case "remote":
-        if (!config.endpoint) {
-          throw new Error(`Agent ${agentId}: Remote agents require 'endpoint' field`);
-        }
-        break;
-    }
-  }
 
-  private validateSignalConfig(signalId: string, config: WorkspaceSignalConfig): void {
-    if (!config.provider) {
-      throw new Error(`Signal ${signalId}: Missing 'provider' field`);
-    }
-    
-    if (!config.jobs || config.jobs.length === 0) {
-      throw new Error(`Signal ${signalId}: Must have at least one job mapping`);
-    }
-    
-    for (const jobMapping of config.jobs) {
-      if (!jobMapping.name || !jobMapping.job) {
-        throw new Error(`Signal ${signalId}: Job mappings require 'name' and 'job' fields`);
+        // Validate that agents referenced in job exist in workspace
+        if (jobSpec.execution?.agents) {
+          for (const agentRef of jobSpec.execution.agents) {
+            const agentId =
+              typeof agentRef === "string" ? agentRef : agentRef.id;
+            if (
+              !workspaceConfig.agents[agentId] &&
+              !atlasConfig.agents[agentId]
+            ) {
+              throw new ConfigValidationError(
+                `Job '${jobSpec.name}' references agent '${agentId}' which is not defined in workspace or atlas agents`,
+                jobMapping.job,
+                "execution.agents",
+                agentRef
+              );
+            }
+          }
+        }
       }
     }
   }
 
+  private formatZodError(error: z.ZodError, filename: string): string {
+    const issues = error.issues.map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+      let message = `  • ${path}: ${issue.message}`;
+
+      // Add received value for certain issue types
+      if ("received" in issue && issue.received !== undefined) {
+        message += ` (received: ${issue.received})`;
+      }
+
+      return message;
+    });
+
+    return `Configuration validation failed in ${filename}:\n${issues.join(
+      "\n"
+    )}\n\nPlease check your configuration file and ensure all required fields are present and valid.`;
+  }
+
   private createDefaultAtlasConfig(): AtlasConfig {
-    return {
+    const defaultConfig: AtlasConfig = {
       version: "1.0",
-      workspaceSupervisor: {
-        model: "claude-4-sonnet-20250514",
-        capabilities: ["signal_analysis", "context_filtering", "session_spawning", "job_selection"],
-        prompts: {
-          system: "You are a WorkspaceSupervisor responsible for analyzing signals and creating session contexts.",
-          signal_analysis: "Analyze incoming signals to understand intent and requirements.",
-          context_filtering: "Create filtered contexts for sessions with relevant workspace data.",
-          job_selection: "Select appropriate jobs to execute based on signal analysis.",
-        },
-      },
-      sessionSupervisor: {
-        model: "claude-4-sonnet-20250514", 
-        capabilities: ["execution_planning", "agent_coordination", "progress_evaluation"],
-        prompts: {
-          system: "You are a SessionSupervisor responsible for coordinating agent execution within a session.",
-          execution_planning: "Create execution plans based on job specifications and session context.",
-          progress_evaluation: "Evaluate agent outputs and session progress.",
-          agent_coordination: "Coordinate different agent types with appropriate interfaces.",
-        },
-      },
       platform: {
+        name: "Atlas",
         version: "1.0.0",
-        api_version: "v1",
-        defaults: {
-          workspace_supervisor_model: "claude-4-sonnet-20250514",
-          session_supervisor_model: "claude-4-sonnet-20250514",
-          default_llm_model: "claude-4-sonnet-20250514",
+      },
+      agents: {},
+      supervisors: {
+        workspace: {
+          model: "claude-4-sonnet-20250514",
+          prompts: {
+            system:
+              "You are a WorkspaceSupervisor responsible for analyzing signals and creating session contexts.",
+          },
         },
-        settings: {
-          max_concurrent_sessions: 10,
-          session_timeout_minutes: 30,
-          agent_timeout_seconds: 300,
-          memory_retention_days: 30,
-          log_level: "info",
+        session: {
+          model: "claude-4-sonnet-20250514",
+          prompts: {
+            system:
+              "You are a SessionSupervisor responsible for coordinating agent execution within a session.",
+          },
         },
-        security: {
-          worker_isolation: true,
-          memory_isolation: true,
-          network_isolation: false,
-          audit_all_operations: true,
+        agent: {
+          model: "claude-4-sonnet-20250514",
+          prompts: {
+            system:
+              "You are an AgentSupervisor responsible for safe agent loading and execution.",
+          },
         },
       },
     };
+
+    // Validate the default config against the schema
+    return AtlasConfigSchema.parse(defaultConfig);
   }
 
   // Convert workspace agent config to SessionSupervisor agent config
-  convertToAgentConfig(workspaceAgentConfig: WorkspaceAgentConfig): AgentConfig {
+  convertToAgentConfig(
+    workspaceAgentConfig: WorkspaceAgentConfig
+  ): AgentConfig {
     switch (workspaceAgentConfig.type) {
       case "tempest":
         return {
@@ -355,7 +443,7 @@ export class ConfigLoader {
           version: workspaceAgentConfig.version!,
           config: workspaceAgentConfig.config,
         } as TempestAgentConfig;
-        
+
       case "llm":
         return {
           type: "llm",
@@ -364,7 +452,7 @@ export class ConfigLoader {
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
         } as LLMAgentConfig;
-        
+
       case "remote":
         return {
           type: "remote",
@@ -373,7 +461,7 @@ export class ConfigLoader {
           timeout: workspaceAgentConfig.timeout,
           schema: workspaceAgentConfig.schema,
         } as RemoteAgentConfig;
-        
+
       default:
         throw new Error(`Unknown agent type: ${workspaceAgentConfig.type}`);
     }
