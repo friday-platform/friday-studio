@@ -5,7 +5,7 @@
  * Tests memory persistence, filtering, scoping, and cross-session sharing
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Memory persistence and storage tests
 

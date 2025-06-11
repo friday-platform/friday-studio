@@ -281,7 +281,7 @@ export abstract class BaseWorker<
   protected handleCustomMessage(message: any): void {
     this.logger.warn(`Unhandled message received`, {
       messageType: message.type,
-      workerType: this.context.type
+      workerType: this.context.type,
     });
   }
 
@@ -289,7 +289,7 @@ export abstract class BaseWorker<
     this.logger.debug(`Broadcast message received`, {
       channel,
       dataType: data.type,
-      workerType: this.context.type
+      workerType: this.context.type,
     });
   }
 
@@ -297,7 +297,7 @@ export abstract class BaseWorker<
     this.logger.debug(`Direct message received`, {
       peerId,
       dataType: data.type,
-      workerType: this.context.type
+      workerType: this.context.type,
     });
   }
 

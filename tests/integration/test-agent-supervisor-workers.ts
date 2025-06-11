@@ -1,6 +1,10 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { AgentSupervisor } from "../../src/core/agent-supervisor.ts";
-import type { AgentMetadata, AgentTask, SessionContext } from "../../src/core/session-supervisor.ts";
+import type {
+  AgentMetadata,
+  AgentTask,
+  SessionContext,
+} from "../../src/core/session-supervisor.ts";
 
 Deno.test("AgentSupervisor - Web Worker Implementation", {
   sanitizeResources: false,
@@ -92,7 +96,7 @@ Deno.test("AgentSupervisor - Web Worker Implementation", {
     workerInstance,
     sessionContext.payload,
     testTask,
-    supervision
+    supervision,
   );
 
   assertExists(result);

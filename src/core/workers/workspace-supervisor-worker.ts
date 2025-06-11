@@ -85,7 +85,10 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             const sessionContext = await AtlasTelemetry.withSpan(
               "supervisor.createSessionContext",
               async () => {
-                return await this.supervisor!.createSessionContext(intent, signal, payload, { signalConfig, jobs });
+                return await this.supervisor!.createSessionContext(intent, signal, payload, {
+                  signalConfig,
+                  jobs,
+                });
               },
               { "session.id": sessionId },
             );
@@ -257,19 +260,19 @@ class WorkspaceSupervisorWorker extends BaseWorker {
         break;
 
       default:
-        this.log(`Session message received`, { 
-          sessionId, 
+        this.log(`Session message received`, {
+          sessionId,
           messageType: message.type,
           taskId: message.taskId,
-          status: message.result?.status 
+          status: message.result?.status,
         });
     }
   }
 
   private handleSessionDirectMessage(sessionId: string, message: any): void {
-    this.log(`Session direct message received`, { 
-      sessionId, 
-      messageType: message.type 
+    this.log(`Session direct message received`, {
+      sessionId,
+      messageType: message.type,
     });
 
     // Handle coordination requests from sessions

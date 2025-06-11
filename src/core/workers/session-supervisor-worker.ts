@@ -106,7 +106,8 @@ class SessionSupervisorWorker extends BaseWorker {
             const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
 
             // Execute each phase of the plan
-            for (const phase of plan.phases) {
+            for (let phaseIndex = 0; phaseIndex < plan.phases.length; phaseIndex++) {
+              const phase = plan.phases[phaseIndex];
               await AtlasTelemetry.withSpan(
                 `session.executePhase.${phase.name}`,
                 async (phaseSpan) => {
@@ -125,7 +126,8 @@ class SessionSupervisorWorker extends BaseWorker {
 
                   // Execute agents in the phase based on strategy
                   if (phase.executionStrategy === "sequential") {
-                    for (const agentTask of phase.agents) {
+                    for (let agentIndex = 0; agentIndex < phase.agents.length; agentIndex++) {
+                      const agentTask = phase.agents[agentIndex];
                       const result = await this.executeAgentTask(
                         agentTask,
                         phaseResults,
@@ -141,7 +143,7 @@ class SessionSupervisorWorker extends BaseWorker {
                         this.log("Session evaluation determined completion", {
                           phase: phaseIndex + 1,
                           agent: agentIndex + 1,
-                          reason: evaluation.reason || "Goals satisfied",
+                          reason: evaluation.feedback || "Goals satisfied",
                           agents_executed: phaseResults.length,
                         });
                         break;

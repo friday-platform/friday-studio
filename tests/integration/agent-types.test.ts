@@ -5,7 +5,7 @@
  * Tests Tempest first-party, LLM-based, and remote agent execution
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Tempest first-party agent tests
 

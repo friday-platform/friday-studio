@@ -11,12 +11,12 @@ Deno.test("Workspace - Configuration Loading", {
   // Test that we can load the telephone workspace config
   const workspaceYaml = await Deno.readTextFile("./examples/workspaces/telephone/workspace.yml");
   assertExists(workspaceYaml);
-  
+
   // Basic validation that config contains expected sections
   const hasAgents = workspaceYaml.includes("agents:");
   const hasSignals = workspaceYaml.includes("signals:");
   const hasTelephoneSignal = workspaceYaml.includes("telephone-message");
-  
+
   assertEquals(hasAgents, true);
   assertEquals(hasSignals, true);
   assertEquals(hasTelephoneSignal, true);

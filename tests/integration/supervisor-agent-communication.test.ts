@@ -5,10 +5,9 @@
  */
 
 import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 Deno.test("Supervisor-mediated agent communication", async () => {
-
   const manager = new WorkerManager();
 
   try {
@@ -111,4 +110,3 @@ Deno.test("Supervisor-mediated agent communication", async () => {
     throw error;
   }
 });
-

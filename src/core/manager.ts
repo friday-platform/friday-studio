@@ -194,7 +194,9 @@ export class AtlasWorkspaceManager {
             "type" in metadata
           ) {
             // Legacy agent restoration - now handled by AgentLoader during runtime
-            console.warn(`Skipping agent restoration for ${id} - agents are now loaded from configuration`);
+            console.warn(
+              `Skipping agent restoration for ${id} - agents are now loaded from configuration`,
+            );
           }
           // Skip old format agents (they'll be lost but we can recreate them)
         } catch (error) {

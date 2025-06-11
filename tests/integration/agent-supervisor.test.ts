@@ -5,7 +5,7 @@
  * Tests the core agent supervision pattern from docs/AGENT_SUPERVISION_ARCHITECTURE.md
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Core AgentSupervisor tests based on architecture docs
 

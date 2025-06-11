@@ -525,7 +525,7 @@ Provide a brief evaluation.`;
         {
           operation: "evaluate_progress",
           sessionId: this.sessionContext?.sessionId,
-          agentsExecuted: phaseResults.length,
+          agentsExecuted: results.length,
         },
       );
 

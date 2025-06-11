@@ -7,7 +7,7 @@ workspace:
 
 # User-defined agents for telephone game
 agents:
-  # LLM-based agent with specialized prompts  
+  # LLM-based agent with specialized prompts
   mishearing-agent:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
@@ -17,7 +17,7 @@ agents:
       system: |
         You are a mishearing specialist agent. Your role is to transform messages
         as if they were misheard in a noisy environment.
-        
+
         Focus on:
         - Phonetic similarities and sound-alike words
         - Common mishearing patterns
@@ -34,7 +34,7 @@ agents:
       system: |
         You are a creative embellishment agent. Your role is to add vivid details,
         context, and creative flourishes to messages while preserving the core meaning.
-        
+
         Focus on:
         - Adding sensory details and vivid imagery
         - Expanding simple statements into richer narratives
@@ -43,7 +43,7 @@ agents:
 
   # LLM-based agent for dramatic reinterpretation
   reinterpretation-agent:
-    type: "llm" 
+    type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Dramatically transforms and reinterprets messages"
     tools: ["semantic-analysis", "creative-reinterpretation"]
@@ -51,7 +51,7 @@ agents:
       system: |
         You are a reinterpretation specialist agent. Your role is to dramatically
         transform messages by finding alternative meanings and creative interpretations.
-        
+
         Focus on:
         - Finding unexpected connections and alternative meanings
         - Dramatic shifts in context or perspective
@@ -70,8 +70,8 @@ signals:
           type: "string"
           description: "The message to transform through the telephone game"
       required: ["message"]
-    
-    # Jobs triggered by this signal  
+
+    # Jobs triggered by this signal
     jobs:
       - name: "telephone"
         condition: "message && message.length > 0 && message.length < 100"

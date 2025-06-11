@@ -6,7 +6,7 @@
  */
 
 import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Test-specific message type for broadcast receipts
 interface BroadcastReceiptMessage {
@@ -17,7 +17,6 @@ interface BroadcastReceiptMessage {
 
 // Test 1: Basic worker communication (from test-minimal-worker)
 Deno.test("Basic worker communication", async () => {
-
   const workerCode = `
     self.postMessage({ type: 'ready' });
     
@@ -50,7 +49,6 @@ Deno.test("Basic worker communication", async () => {
 
 // Test 2: WorkerManager lifecycle (from test-simple-flow)
 Deno.test("WorkerManager lifecycle", async () => {
-
   const manager = new WorkerManager();
 
   // Create a simple test worker file
@@ -90,7 +88,6 @@ Deno.test("WorkerManager lifecycle", async () => {
 
 // Test 3: Full BaseWorker communication (from test-full-worker-communication)
 Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
-
   const manager = new WorkerManager();
 
   const testWorkerCode = `
@@ -157,7 +154,6 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
       new URL(`file://${tempFile}`).href,
     );
 
-
     // Wait for initialization
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
@@ -207,7 +203,6 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
 
 // Test 4: WorkspaceSupervisor worker initialization (from test-supervisor-worker)
 Deno.test("WorkspaceSupervisor worker initialization", async () => {
-
   const manager = new WorkerManager();
 
   try {
@@ -258,4 +253,3 @@ Deno.test("WorkspaceSupervisor worker initialization", async () => {
     throw error;
   }
 });
-

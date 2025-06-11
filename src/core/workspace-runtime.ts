@@ -621,14 +621,14 @@ const workspaceRuntimeMachine = setup({
       entry: async ({ context }) => {
         logger.info("Draining workspace - cancelling all sessions", {
           workspaceId: context.workspace.id,
-          sessionCount: context.sessions.size
+          sessionCount: context.sessions.size,
         });
 
         // Cancel all active sessions
         for (const [sessionId, session] of context.sessions) {
           logger.debug("Cancelling session", {
             workspaceId: context.workspace.id,
-            sessionId
+            sessionId,
           });
           await session.cancel();
         }
@@ -682,7 +682,7 @@ const workspaceRuntimeMachine = setup({
       type: "final",
       entry: async ({ context }) => {
         logger.info("Terminating workspace - shutting down worker manager", {
-          workspaceId: context.workspace.id
+          workspaceId: context.workspace.id,
         });
 
         // Shutdown worker manager
@@ -690,7 +690,7 @@ const workspaceRuntimeMachine = setup({
 
         logger.info("Workspace shutdown complete", {
           workspaceId: context.workspace.id,
-          finalState: "terminated"
+          finalState: "terminated",
         });
       },
     },

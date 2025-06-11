@@ -10,7 +10,7 @@ import { WorkspaceRuntime } from "../../src/core/workspace-runtime.ts";
 import { WorkspaceServer } from "../../src/core/workspace-server.ts";
 import { AtlasScope } from "../../src/core/scope.ts";
 import type { IWorkspaceSignal } from "../../src/types/core.ts";
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Mock signal implementation
 class TestSignal extends AtlasScope implements IWorkspaceSignal {
@@ -29,8 +29,7 @@ class TestSignal extends AtlasScope implements IWorkspaceSignal {
     }
   }
 
-  async trigger(): Promise<void> {
-  }
+  async trigger(): Promise<void> {}
 
   configure(config: any): void {
     // No-op for test
@@ -125,7 +124,7 @@ Deno.test("Workspace integration flow", async () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message: "Test via HTTP" }),
-    }
+    },
   );
   expect(signalResponse.status).toBe(200);
   const signalResult = await signalResponse.json();
@@ -133,6 +132,4 @@ Deno.test("Workspace integration flow", async () => {
 
   // 6. Cleanup
   await runtime.shutdown();
-
 });
-

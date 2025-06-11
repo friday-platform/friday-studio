@@ -5,7 +5,7 @@
  * Tests signal providers, M:M signal-job relationships, and condition evaluation
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // Signal provider integration tests
 

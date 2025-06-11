@@ -5,7 +5,7 @@
  * Tests supervisor LLM capabilities for analysis, planning, and evaluation
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 
 // WorkspaceSupervisor LLM capabilities
 
