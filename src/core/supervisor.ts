@@ -208,7 +208,7 @@ export class WorkspaceSupervisor extends BaseAgent
   implements IWorkspaceSupervisor, IWorkspaceAgent {
   private workspace?: IWorkspace;
   private model: string;
-  private config: any;
+  public config: any;
   private sessions: Map<string, IWorkspaceSession> = new Map();
   private stateMachine: ReturnType<typeof createSupervisorMachine>;
   private stateActor: any; // XState actor type
@@ -290,7 +290,7 @@ You have access to the full workspace context and configuration. Create structur
   status: string = "active";
   host: string = "local";
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     // Process supervisor-level commands
     if (message.startsWith("/")) {
       return this.processCommand(message);
@@ -306,7 +306,7 @@ You have access to the full workspace context and configuration. Create structur
     return response;
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     // For commands, return immediately
     if (message.startsWith("/")) {
       yield this.processCommand(message);

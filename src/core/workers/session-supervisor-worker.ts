@@ -105,7 +105,7 @@ class SessionSupervisorWorker extends BaseWorker {
             );
             this.log(`Execution plan created with ${plan.phases.length} phases`);
 
-            const results = [];
+            const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
 
             // Execute each phase of the plan
             for (const phase of plan.phases) {

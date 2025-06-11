@@ -363,7 +363,7 @@ Provide specific, actionable insights that will improve future telephone game se
     );
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`Memory Agent processing: ${message.slice(0, 50)}...`);
 
     // Add to message history
@@ -412,7 +412,7 @@ Provide specific, actionable insights that will improve future telephone game se
     this.messages.newMessage(response, "agent" as any);
   }
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     this.status = "processing";
 
     try {

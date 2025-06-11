@@ -64,7 +64,7 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
     };
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(
       `Processing with ${this.config.model}: ${message.slice(0, 50)}...`,
     );
@@ -145,7 +145,7 @@ export class LLMAgent extends BaseAgent implements IWorkspaceAgent {
     throw new Error("Gemini integration not implemented yet");
   }
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     this.status = "processing";
 
     try {

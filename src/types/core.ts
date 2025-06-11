@@ -52,6 +52,7 @@ export interface IWorkspace extends IAtlasScope {
   // Private properties handled in implementation
   addSignal(signal: IWorkspaceSignal): Error | null;
   addAgent(agent: IWorkspaceAgent): Error | null;
+  removeAgent(agentId: string): Error | null;
   addWorkflow(workflow: IWorkspaceWorkflow): Error | null;
   addSource(source: IWorkspaceSource): Error | null;
   addAction(action: IWorkspaceAction): Error | null;
@@ -86,6 +87,7 @@ export interface IWorkspaceLibrary {
 }
 
 export interface IWorkspaceSupervisor extends IAtlasScope, IWorkspaceAgent {
+  config?: { defaultModel?: string; [key: string]: any };
   spawnSession(
     signal: IWorkspaceSignal,
     payload?: any,

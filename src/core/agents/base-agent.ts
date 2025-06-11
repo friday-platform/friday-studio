@@ -286,12 +286,6 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     includeMemoryContext: boolean = true,
   ): AsyncGenerator<string> {
     const startTime = Date.now();
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY not found in environment variables");
-    }
-
-    const anthropic = createAnthropic({ apiKey });
 
     try {
       // Enhance prompts with memory context if requested
@@ -304,18 +298,15 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         enhancedUserPrompt = `${userPrompt}\n\n${memoryContext.userContext}`;
       }
 
-      const { textStream } = streamText({
-        model: anthropic(model),
-        messages: [
-          { role: "system", content: enhancedSystemPrompt },
-          { role: "user", content: enhancedUserPrompt },
-        ],
+      const stream = LLMService.generateTextStream(enhancedUserPrompt, {
+        model,
+        systemPrompt: enhancedSystemPrompt,
         temperature: 0.7,
         maxTokens: 2000,
       });
 
       let fullResponse = "";
-      for await (const chunk of textStream) {
+      for await (const chunk of stream) {
         fullResponse += chunk;
         yield chunk;
       }

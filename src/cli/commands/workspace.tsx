@@ -180,6 +180,34 @@ OPENAI_API_KEY=your_api_key_here
     // The actual server starting will be handled by the ServingComponent
   }
 
+  async function handleStop(flags: any) {
+    if (!await exists("workspace.yml")) {
+      throw new Error(
+        'No workspace.yml found. Run "atlas workspace init" first.',
+      );
+    }
+
+    const metadata = await exists(".atlas/workspace.json")
+      ? JSON.parse(await Deno.readTextFile(".atlas/workspace.json"))
+      : {};
+
+    const port = flags.port || metadata.port || 3000;
+
+    // Try to stop the server
+    try {
+      const response = await fetch(`http://localhost:${port}/health`);
+      if (response.ok) {
+        // Server is running, try to stop it
+        await fetch(`http://localhost:${port}/shutdown`, { method: "POST" });
+        console.log(`✓ Workspace server stopped on port ${port}`);
+      } else {
+        console.log("⚠ Workspace server is not running");
+      }
+    } catch (error) {
+      console.log("⚠ Workspace server is not running");
+    }
+  }
+
   async function handleList() {
     // For now, just list the current workspace
     // In future, this could list all workspaces from ~/.atlas

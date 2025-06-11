@@ -180,9 +180,10 @@ export class Workspace extends AtlasScope implements IWorkspace {
       } else {
         // Handle object format from YAML
         for (const [id, signalConfig] of Object.entries(config.signals)) {
+          const typedSignalConfig = signalConfig as Record<string, any>;
           workspace.addSignal({
             id,
-            ...signalConfig,
+            ...typedSignalConfig,
           } as IWorkspaceSignal);
         }
       }

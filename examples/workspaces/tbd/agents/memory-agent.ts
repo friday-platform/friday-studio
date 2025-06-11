@@ -365,7 +365,7 @@ Focus on improving future responses and user satisfaction.`;
     );
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`Memory Agent processing: ${message.slice(0, 50)}...`);
 
     // Add to message history
@@ -417,7 +417,7 @@ Focus on improving future responses and user satisfaction.`;
     this.messages.newMessage(response, "agent" as any);
   }
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     this.status = "processing";
 
     try {

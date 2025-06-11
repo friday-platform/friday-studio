@@ -52,7 +52,7 @@ export class TBDAgent extends BaseAgent implements IWorkspaceAgent {
     };
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`TBD Agent processing: ${message.slice(0, 50)}...`);
 
     // Add to message history
@@ -72,7 +72,7 @@ export class TBDAgent extends BaseAgent implements IWorkspaceAgent {
     this.messages.newMessage(response, "agent" as any);
   }
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     this.status = "processing";
 
     try {

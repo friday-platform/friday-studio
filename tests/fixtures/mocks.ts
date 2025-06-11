@@ -244,6 +244,14 @@ export function createMockWorkspace(
       return null;
     },
 
+    removeAgent(agentId: string): Error | null {
+      if (!this.agents[agentId]) {
+        return new Error(`Agent ${agentId} not found`);
+      }
+      delete this.agents[agentId];
+      return null;
+    },
+
     addWorkflow(workflow: IWorkspaceWorkflow): Error | null {
       if (this.workflows[workflow.id]) {
         return new Error(`Workflow ${workflow.id} already exists`);

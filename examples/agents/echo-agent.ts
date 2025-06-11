@@ -44,7 +44,7 @@ export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
     };
   }
 
-  async *invokeStream(message: string): AsyncIterableIterator<string> {
+  override async *invokeStream(message: string): AsyncIterableIterator<string> {
     this.log(`Processing message: ${message}`);
 
     // Add to message history
@@ -63,7 +63,7 @@ export class EchoAgent extends BaseAgent implements IWorkspaceAgent {
     this.log("Streaming completed");
   }
 
-  async invoke(message: string): Promise<string> {
+  override async invoke(message: string): Promise<string> {
     this.status = "processing";
 
     try {
