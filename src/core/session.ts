@@ -10,6 +10,7 @@ import type {
 import { AtlasScope } from "./scope.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
+import { type ChildLogger, logger } from "../utils/logger.ts";
 
 // Session Intent types
 export interface SessionIntent {
@@ -133,9 +134,12 @@ const sessionMachine = createMachine({
           async (
             { input }: { input: { intent?: SessionIntent; sessionId: string } },
           ) => {
-            console.log(
-              `[Session ${input.sessionId}] Creating execution plan from intent`,
-            );
+            // Create logger with session context for FSM operations
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.sessionId,
+              workerType: "session-fsm",
+            });
+            fsmLogger.debug("Creating execution plan from intent");
             // In a real implementation, this would use the supervisor to create a plan
             // For now, return a simple plan
             const plan: SessionPlan = {
@@ -181,9 +185,15 @@ const sessionMachine = createMachine({
               input: { signal: IWorkspaceSignal; sessionId: string };
             },
           ) => {
-            console.log(
-              `[Session ${input.sessionId}] Processing signal ${input.signal.id} from ${input.signal.provider.name}`,
-            );
+            // Create logger for signal processing
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.sessionId,
+              workerType: "session-fsm",
+            });
+            fsmLogger.info(`Processing signal ${input.signal.id}`, {
+              signalId: input.signal.id,
+              provider: input.signal.provider?.name
+            });
             await input.signal.trigger();
 
             const artifact: IWorkspaceArtifact = {
@@ -251,15 +261,21 @@ const sessionMachine = createMachine({
               return [];
             }
 
-            console.log(
-              `[Session ${input.sessionId}] Executing ${input.agents.length} agents`,
-            );
+            // Create logger for agent execution
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.sessionId,
+              workerType: "session-fsm",
+            });
+            fsmLogger.info(`Executing ${input.agents.length} agents`, {
+              agentCount: input.agents.length
+            });
             const results = [];
 
             for (const agent of input.agents) {
-              console.log(
-                `[Session ${input.sessionId}] Running agent ${agent.name()}`,
-              );
+              fsmLogger.debug(`Running agent ${agent.name()}`, {
+                agentId: agent.id,
+                agentName: agent.name()
+              });
               // Agent execution would happen here
               results.push({ agentId: agent.id, status: "completed" });
             }
@@ -309,11 +325,15 @@ const sessionMachine = createMachine({
             sessionId: string;
           };
         }) => {
-          console.log(
-            `[Session ${input.sessionId}] Evaluating results (iteration ${
-              input.currentIteration || 0
-            })`,
-          );
+          // Create logger for result evaluation
+          const fsmLogger = logger.createChildLogger({
+            sessionId: input.sessionId,
+            workerType: "session-fsm",
+          });
+          fsmLogger.debug(`Evaluating results`, {
+            iteration: input.currentIteration || 0,
+            artifactCount: input.artifacts.length
+          });
 
           // In a real implementation, supervisor would evaluate against success criteria
           // For now, simple logic
@@ -408,9 +428,14 @@ const sessionMachine = createMachine({
             sessionId: string;
           };
         }) => {
-          console.log(
-            `[Session ${input.sessionId}] Refining execution plan based on evaluation`,
-          );
+          // Create logger for plan refinement
+          const fsmLogger = logger.createChildLogger({
+            sessionId: input.sessionId,
+            workerType: "session-fsm",
+          });
+          fsmLogger.debug("Refining execution plan based on evaluation", {
+            artifactCount: input.artifacts.length
+          });
 
           // In a real implementation, supervisor would refine the plan
           // For now, return the same plan with a modification note
@@ -488,6 +513,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private _artifacts: IWorkspaceArtifact[] = [];
   private _startTime?: Date;
   private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
+  protected logger: ChildLogger;
 
   constructor(
     workspaceId: string,
@@ -501,6 +527,12 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     intent?: SessionIntent,
   ) {
     super(workspaceId);
+
+    // Initialize logger for this session
+    this.logger = logger.createChildLogger({
+      sessionId: this.id,
+      workerType: "session",
+    });
 
     this.signals = {
       triggers: signals.triggers,
@@ -649,9 +681,9 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   }
 
   async start(): Promise<void> {
-    console.log(
-      `[Session ${this.id}] Starting session with ${this.signals.triggers.length} signals`,
-    );
+    this.logger.info(`Starting session with ${this.signals.triggers.length} signals`, {
+      signalCount: this.signals.triggers.length
+    });
 
     // Send START event to the state machine
     this._stateMachine.send({ type: "START" });
@@ -668,7 +700,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   }
 
   async cancel(): Promise<void> {
-    console.log(`[Session ${this.id}] Cancelling session`);
+    this.logger.info("Cancelling session");
 
     // Send CANCEL event to the state machine
     this._stateMachine.send({ type: "CANCEL" });
@@ -676,7 +708,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     // Cancel any running agents
     if (this.agents) {
       for (const agent of this.agents) {
-        console.log(`[Session ${this.id}] Stopping agent ${agent.name()}`);
+        this.logger.debug(`Stopping agent ${agent.name()}`, { agentName: agent.name() });
       }
     }
   }
@@ -725,13 +757,14 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   updateProgress(step: string, data: any): void {
     const snapshot = this._stateMachine.getSnapshot();
     const state = snapshot.value;
-    console.log(
-      `[Session ${this.id}] State: ${state}, Progress: ${step}`,
-      data,
-    );
+    this.logger.debug(`State: ${state}, Progress: ${step}`, {
+      state,
+      step,
+      data
+    });
 
     // Log detailed state machine information
-    console.log(`[Session ${this.id}] Current state machine context:`, {
+    this.logger.trace("Current state machine context", {
       state: state,
       progress: snapshot.context.progress,
       signalsProcessed: snapshot.context.currentSignalIndex,
@@ -768,6 +801,14 @@ export class WorkspaceSession extends Session {
 }
 
 class DefaultSignalCallback implements IWorkspaceSignalCallback {
+  private logger: ChildLogger;
+
+  constructor() {
+    this.logger = logger.createChildLogger({
+      workerType: "signal-callback",
+    });
+  }
+
   async execute(): Promise<void> {
     // Default implementation
   }
@@ -777,20 +818,26 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
   }
 
   onSuccess(result: any): void {
-    console.log("Signal processed successfully:", result);
+    this.logger.info("Signal processed successfully", { result });
   }
 
   onError(error: Error): void {
-    console.error("Signal processing failed:", error);
+    this.logger.error("Signal processing failed", { error: error.message });
   }
 
   onComplete(): void {
-    console.log("All signals processed");
+    this.logger.info("All signals processed");
   }
 }
 
 class FunctionCallback implements IWorkspaceSignalCallback {
-  constructor(private fn: (result: any) => Promise<void>) {}
+  private logger: ChildLogger;
+
+  constructor(private fn: (result: any) => Promise<void>) {
+    this.logger = logger.createChildLogger({
+      workerType: "function-callback",
+    });
+  }
 
   async execute(): Promise<void> {
     // Function callback doesn't use execute
@@ -805,10 +852,10 @@ class FunctionCallback implements IWorkspaceSignalCallback {
   }
 
   onError(error: Error): void {
-    console.error("Signal processing failed:", error);
+    this.logger.error("Signal processing failed", { error: error.message });
   }
 
   onComplete(): void {
-    console.log("All signals processed");
+    this.logger.info("All signals processed");
   }
 }

@@ -125,10 +125,10 @@ export class AtlasLogger {
 
     const reset = "\x1b[0m";
     const prefix = context
-      ? `[${context.workerType || "main"}${
+      ? `[${context.workerType || "atlas"}${
         context.workerId ? ":" + context.workerId.slice(0, 8) : ""
-      }]`
-      : "[main]";
+      }${context.agentName ? ":" + context.agentName : ""}]`
+      : "[atlas]";
 
     console.log(
       `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
