@@ -10,7 +10,7 @@ agents:
   # LLM-based agent with specialized prompts  
   mishearing-agent:
     type: "llm"
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-haiku-20241022"
     purpose: "Specializes in phonetic errors and mishearing transformations"
     tools: ["text-analysis", "phonetic-processing"]
     prompts:
@@ -27,7 +27,7 @@ agents:
   # LLM-based agent for creative embellishment
   embellishment-agent:
     type: "llm"
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative context and embellishments to messages"
     tools: ["creative-writing", "context-generation"]
     prompts:
@@ -44,7 +44,7 @@ agents:
   # LLM-based agent for dramatic reinterpretation
   reinterpretation-agent:
     type: "llm" 
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-haiku-20241022"
     purpose: "Dramatically transforms and reinterprets messages"
     tools: ["semantic-analysis", "creative-reinterpretation"]
     prompts:

@@ -12,7 +12,7 @@ agents:
   # Memory management agent
   memory-agent:
     type: "llm"
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-haiku-20241022"
     purpose: "Manages memory operations at session start and end"
     tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
     prompts:
@@ -79,7 +79,7 @@ agents:
 # Supervisor configuration
 supervisors:
   workspace:
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-sonnet-20241022"
     prompts:
       system: |
         You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
@@ -93,7 +93,7 @@ supervisors:
         - Manage signal-to-agent mappings dynamically
 
   session:
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-sonnet-20241022"
     prompts:
       system: |
         You are a SessionSupervisor responsible for coordinating agent execution within a session.
@@ -107,7 +107,7 @@ supervisors:
         - Support iterative refinement loops
 
   agent:
-    model: "claude-4-sonnet-20250514"
+    model: "claude-3-5-sonnet-20241022"
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.
