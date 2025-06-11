@@ -6,18 +6,22 @@
  */
 
 import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { expect } from "jsr:@std/expect";
+
+// Test-specific message type for broadcast receipts
+interface BroadcastReceiptMessage {
+  type: "broadcastReceived";
+  channel: string;
+  data: any;
+}
 
 // Test 1: Basic worker communication (from test-minimal-worker)
 Deno.test("Basic worker communication", async () => {
-  console.log("🧪 Testing basic worker communication...");
 
   const workerCode = `
-    console.log("[Worker] Started");
     self.postMessage({ type: 'ready' });
     
     self.onmessage = (e) => {
-      console.log("[Worker] Received:", e.data);
       if (e.data.type === 'ping') {
         self.postMessage({ type: 'pong' });
       }
@@ -39,27 +43,22 @@ Deno.test("Basic worker communication", async () => {
   });
 
   const result = await messagePromise;
-  assertEquals(result, "pong");
+  expect(result).toBe("pong");
 
   worker.terminate();
-  console.log("✅ Basic worker communication works!");
 });
 
 // Test 2: WorkerManager lifecycle (from test-simple-flow)
 Deno.test("WorkerManager lifecycle", async () => {
-  console.log("🧪 Testing WorkerManager lifecycle...");
 
   const manager = new WorkerManager();
 
   // Create a simple test worker file
   const testWorkerCode = `
-    console.log("[TestWorker] Starting...");
     
     self.onmessage = (event) => {
-      console.log("[TestWorker] Received:", event.data);
       
       if (event.data.type === 'init') {
-        console.log("[TestWorker] Initializing...");
         self.postMessage({ type: 'initialized' });
       }
     };
@@ -74,17 +73,16 @@ Deno.test("WorkerManager lifecycle", async () => {
       new URL(`file://${tempFile}`).href,
     );
 
-    console.log("✅ Worker spawned:", worker.id);
+    expect(worker.id).toBe("test-1");
 
     // Wait for initialization
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const state = manager.getWorkerState(worker.id);
-    console.log("   State:", state);
+    expect(state).toBeDefined();
 
     // Clean up
     await manager.shutdown();
-    console.log("✅ Manager shut down");
   } finally {
     await Deno.remove(tempFile);
   }
@@ -92,7 +90,6 @@ Deno.test("WorkerManager lifecycle", async () => {
 
 // Test 3: Full BaseWorker communication (from test-full-worker-communication)
 Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
-  console.log("🧪 Testing BaseWorker implementation...");
 
   const manager = new WorkerManager();
 
@@ -160,7 +157,6 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
       new URL(`file://${tempFile}`).href,
     );
 
-    console.log("✅ Workers spawned");
 
     // Wait for initialization
     await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -171,17 +167,18 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
       message: "Hello from test!",
     });
 
-    console.log("✅ Echo result:", echoResult);
+    expect(echoResult).toBeDefined();
+    expect(echoResult.echo).toBe("Hello from test!");
 
     // Test broadcast communication
     manager.setupBroadcastChannel("worker-1", "test-channel");
     manager.setupBroadcastChannel("worker-2", "test-channel");
 
     // Listen for broadcast receipts
-    const broadcastPromise = new Promise((resolve) => {
+    const broadcastPromise = new Promise<BroadcastReceiptMessage>((resolve) => {
       worker2.worker.onmessage = (event) => {
         if (event.data.type === "broadcastReceived") {
-          resolve(event.data);
+          resolve(event.data as BroadcastReceiptMessage);
         }
       };
     });
@@ -194,15 +191,15 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
     });
 
     const broadcastReceipt = await broadcastPromise;
-    console.log("✅ Worker 2 received broadcast:", broadcastReceipt);
+    expect(broadcastReceipt).toBeDefined();
+    expect(broadcastReceipt.type).toBe("broadcastReceived");
+    expect(broadcastReceipt.channel).toBe("test-channel");
 
     // Test direct communication via MessagePort
     manager.createMessageChannel("worker-1", "worker-2");
     await new Promise((resolve) => setTimeout(resolve, 500));
-    console.log("✅ MessagePorts established between workers");
 
     await manager.shutdown();
-    console.log("✅ All BaseWorker tests passed!");
   } finally {
     await Deno.remove(tempFile);
   }
@@ -210,7 +207,6 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
 
 // Test 4: WorkspaceSupervisor worker initialization (from test-supervisor-worker)
 Deno.test("WorkspaceSupervisor worker initialization", async () => {
-  console.log("🧪 Testing WorkspaceSupervisor worker...");
 
   const manager = new WorkerManager();
 
@@ -239,30 +235,27 @@ Deno.test("WorkspaceSupervisor worker initialization", async () => {
       ).href,
     );
 
-    console.log("✅ Supervisor spawned:", supervisor.id);
+    expect(supervisor.id).toBe("test-supervisor");
 
     // Check state periodically
     for (let i = 0; i < 5; i++) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
       const state = manager.getWorkerState(supervisor.id);
-      console.log(`   State after ${i + 1}s:`, state);
+      expect(state).toBeDefined();
 
       if (state === "ready") {
-        console.log("✅ Supervisor is ready!");
         break;
       }
 
       if (state === "error") {
-        console.log("❌ Supervisor entered error state");
+        expect(state).not.toBe("error"); // This will fail the test if supervisor errors
         break;
       }
     }
 
     await manager.shutdown();
   } catch (error) {
-    console.error("❌ Supervisor test error:", error);
     throw error;
   }
 });
 
-console.log("\n✅ All worker communication tests completed!");

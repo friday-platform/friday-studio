@@ -5,7 +5,7 @@
  * Tests the core agent supervision pattern from docs/AGENT_SUPERVISION_ARCHITECTURE.md
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { expect } from "jsr:@std/expect";
 
 // Core AgentSupervisor tests based on architecture docs
 

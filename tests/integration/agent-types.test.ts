@@ -5,7 +5,7 @@
  * Tests Tempest first-party, LLM-based, and remote agent execution
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { expect } from "jsr:@std/expect";
 
 // Tempest first-party agent tests
 

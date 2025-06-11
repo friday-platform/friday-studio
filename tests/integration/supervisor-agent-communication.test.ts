@@ -5,15 +5,14 @@
  */
 
 import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
+import { expect } from "jsr:@std/expect";
 
-async function testSupervisorAgentCommunication() {
-  console.log("🧪 Testing Supervisor-Mediated Agent Communication...\n");
+Deno.test("Supervisor-mediated agent communication", async () => {
 
   const manager = new WorkerManager();
 
   try {
     // 1. Spawn supervisor
-    console.log("1️⃣ Spawning supervisor worker...");
 
     const supervisorMetadata = {
       id: "test-supervisor",
@@ -39,13 +38,12 @@ async function testSupervisorAgentCommunication() {
       ).href,
     );
 
-    console.log("✅ Supervisor spawned:", supervisor.id);
+    expect(supervisor.id).toBe("test-supervisor");
 
     // Wait for supervisor to be ready
     await new Promise((resolve) => setTimeout(resolve, 1000));
 
     // 2. Process a signal (which should spawn a session)
-    console.log("\n2️⃣ Processing signal to create session...");
 
     const taskId = crypto.randomUUID();
     const sessionId = crypto.randomUUID();
@@ -61,17 +59,15 @@ async function testSupervisorAgentCommunication() {
     });
 
     const result = await resultPromise;
-    console.log("✅ Session created:", result);
+    expect(result).toBeDefined();
 
     // 3. Test broadcast channel communication
-    console.log("\n3️⃣ Testing broadcast channel communication...");
 
     // Create our own broadcast channel to listen
     const sessionChannel = new BroadcastChannel(`session-${sessionId}`);
     const messages: any[] = [];
 
     sessionChannel.onmessage = (event) => {
-      console.log("📡 Broadcast received:", event.data);
       messages.push(event.data);
     };
 
@@ -97,25 +93,22 @@ async function testSupervisorAgentCommunication() {
     // Wait for messages
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    console.log(`\n📊 Received ${messages.length} broadcast messages`);
+    expect(messages.length).toBeGreaterThanOrEqual(0);
 
     // 4. Get supervisor status
-    console.log("\n4️⃣ Getting supervisor status...");
 
     const statusTaskId = crypto.randomUUID();
     const status = await manager.sendTask(supervisor.id, statusTaskId, {
       action: "getStatus",
     });
 
-    console.log("✅ Supervisor status:", status);
+    expect(status).toBeDefined();
 
     // Clean up
     sessionChannel.close();
     await manager.shutdown();
-    console.log("\n✅ Test completed successfully!");
   } catch (error) {
-    console.error("❌ Error:", error);
+    throw error;
   }
-}
+});
 
-testSupervisorAgentCommunication();

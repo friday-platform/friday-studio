@@ -7,7 +7,7 @@
 
 import { Session, SessionIntent } from "../../src/core/session.ts";
 import { WorkspaceSupervisor } from "../../src/core/supervisor.ts";
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { expect } from "jsr:@std/expect";
 import { createMockSignal } from "../fixtures/mocks.ts";
 
 // Test 1: Session creation with intent
@@ -44,7 +44,6 @@ Deno.test("Session can be created with intent", async () => {
     {
       triggers: [mockSignal],
       callback: async (result) => {
-        console.log("Session callback received:", result);
       },
     },
     undefined, // agents
@@ -53,11 +52,10 @@ Deno.test("Session can be created with intent", async () => {
     intent,
   );
 
-  assertEquals(session.intent?.id, "test-intent-1");
-  assertEquals(session.intent?.goals.length, 3);
-  assertEquals(session.intent?.executionHints?.maxIterations, 2);
+  expect(session.intent?.id).toBe("test-intent-1");
+  expect(session.intent?.goals.length).toBe(3);
+  expect(session.intent?.executionHints?.maxIterations).toBe(2);
 
-  console.log("✓ Session created with intent successfully");
 });
 
 // Test 2: WorkspaceSupervisor creates intent from signal
@@ -71,12 +69,11 @@ Deno.test("WorkspaceSupervisor creates session intent from signal", () => {
 
   const intent = supervisor.createSessionIntent(telephoneSignal, payload);
 
-  assertEquals(intent.signal.type, "telephone-message");
-  assertEquals(intent.signal.data, payload);
-  assertEquals(intent.goals.length > 0, true);
-  assertEquals(intent.executionHints?.strategy, "iterative");
+  expect(intent.signal.type).toBe("telephone-message");
+  expect(intent.signal.data).toBe(payload);
+  expect(intent.goals.length).toBeGreaterThan(0);
+  expect(intent.executionHints?.strategy).toBe("iterative");
 
-  console.log("✓ Supervisor created intent with goals:", intent.goals);
 
   supervisor.destroy();
 });
@@ -104,7 +101,6 @@ Deno.test("Session FSM transitions through planning-executing-evaluating-refinin
     {
       triggers: [mockSignal],
       callback: async (result) => {
-        console.log("Session completed with result:", result);
       },
     },
     undefined,
@@ -118,7 +114,6 @@ Deno.test("Session FSM transitions through planning-executing-evaluating-refinin
     const currentState = session.getCurrentState();
     if (!states.includes(currentState)) {
       states.push(currentState);
-      console.log(`  → State: ${currentState}`);
     }
   };
 
@@ -136,20 +131,10 @@ Deno.test("Session FSM transitions through planning-executing-evaluating-refinin
   }
 
   // Verify we went through expected states
-  console.log("States traversed:", states);
-  assertEquals(states.includes("planning"), true, "Should have planning state");
-  assertEquals(
-    states.includes("executingAgents"),
-    true,
-    "Should have executingAgents state",
-  );
-  assertEquals(
-    states.includes("evaluating"),
-    true,
-    "Should have evaluating state",
-  );
+  expect(states).toContain("planning");
+  expect(states).toContain("executingAgents");
+  expect(states).toContain("evaluating");
 
-  console.log("✓ Session FSM transitioned through enhanced lifecycle");
 });
 
 // Test 4: Session plan generation
@@ -186,11 +171,10 @@ Deno.test("WorkspaceSupervisor generates execution plan from intent", async () =
 
   const plan = await supervisor.generateExecutionPlan(signal, { data: "test" });
 
-  assertEquals(plan.phases.length, 1);
-  assertEquals(plan.phases[0].agents.length, 2);
-  assertEquals(plan.reasoning, "Test execution plan");
+  expect(plan.phases.length).toBe(1);
+  expect(plan.phases[0].agents.length).toBe(2);
+  expect(plan.reasoning).toBe("Test execution plan");
 
-  console.log("✓ Supervisor generated execution plan with phases");
 
   supervisor.destroy();
 });
@@ -217,7 +201,6 @@ Deno.test("Session status and progress tracking", async () => {
     {
       triggers: [mockSignal],
       callback: async (result) => {
-        console.log("Session callback:", result);
       },
     },
     undefined,
@@ -226,8 +209,8 @@ Deno.test("Session status and progress tracking", async () => {
     intent,
   );
 
-  console.log("✓ Session created with status:", session.status);
-  console.log("✓ Initial progress:", session.progress(), "%");
+  expect(session.status).toBeDefined();
+  expect(session.progress()).toBeGreaterThanOrEqual(0);
 
   // Start session and monitor progress
   const progressPromise = session.start();
@@ -235,13 +218,12 @@ Deno.test("Session status and progress tracking", async () => {
   // Allow some processing time
   await new Promise((resolve) => setTimeout(resolve, 500));
 
-  console.log("✓ Mid-session progress:", session.progress(), "%");
-  console.log("✓ Session summary:", session.summarize());
+  expect(session.progress()).toBeGreaterThanOrEqual(0);
+  expect(session.summarize()).toBeDefined();
 
   await progressPromise;
 
-  console.log("✓ Final status:", session.status);
-  console.log("✓ Final progress:", session.progress(), "%");
+  expect(session.status).toBeDefined();
+  expect(session.progress()).toBeGreaterThanOrEqual(0);
 });
 
-console.log("\n✅ All session lifecycle tests completed!");

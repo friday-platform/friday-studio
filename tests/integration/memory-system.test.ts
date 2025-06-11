@@ -5,7 +5,7 @@
  * Tests memory persistence, filtering, scoping, and cross-session sharing
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { expect } from "jsr:@std/expect";
 
 // Memory persistence and storage tests
 
