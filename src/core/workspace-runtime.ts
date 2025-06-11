@@ -19,6 +19,7 @@ interface WorkspaceRuntimeContext {
   sessions: Map<string, IWorkspaceSession>;
   workerManager: WorkerManager;
   error?: Error;
+  mergedConfig?: any; // Store merged configuration for signal processing
 }
 
 // Define the events for the state machine
@@ -103,11 +104,11 @@ export class WorkspaceRuntime {
     payload: any,
   ): Promise<IWorkspaceSession> {
     return await AtlasTelemetry.withServerSpan(
-      "workspace.processSignal",
+      "workspace.processSignal", 
       async (span) => {
         // Add workspace and signal attributes
         AtlasTelemetry.addWorkspaceAttributes(span, this.workspace.id);
-        AtlasTelemetry.addSignalAttributes(span, signal.id, signal.provider?.name || "unknown");
+        AtlasTelemetry.addSignalAttributes(span, signal.id, signal.provider || "unknown");
 
         const state = this.stateMachine.getSnapshot();
 
@@ -123,9 +124,10 @@ export class WorkspaceRuntime {
           }
         }
 
-        // Get supervisor ID from FSM context
+        // Get supervisor ID and merged config from FSM context
         const currentState = this.stateMachine.getSnapshot();
         const supervisorId = currentState.context.supervisorId;
+        const mergedConfig = currentState.context.mergedConfig;
 
         if (!supervisorId) {
           throw new Error("Supervisor not initialized in FSM context");
@@ -182,6 +184,9 @@ export class WorkspaceRuntime {
             },
             payload,
             sessionId,
+            // Pass job configuration for this signal processing
+            signalConfig: mergedConfig?.workspace?.signals?.[signal.id],
+            jobs: mergedConfig?.jobs,
             traceHeaders, // Pass trace context to supervisor
           },
         );
@@ -190,8 +195,8 @@ export class WorkspaceRuntime {
       },
       {
         "workspace.state": this.getState(),
-        "signal.payload.size": JSON.stringify(payload).length,
-      },
+        "signal.payload.size": JSON.stringify(payload).length
+      }
     );
   }
 
@@ -309,6 +314,7 @@ export class WorkspaceRuntime {
     }));
   }
 
+
   /**
    * Save state checkpoint
    */
@@ -378,6 +384,7 @@ const workspaceRuntimeMachine = createMachine({
     workerManager: input.workerManager,
     supervisorId: undefined,
     error: undefined,
+    mergedConfig: undefined,
   }),
   states: {
     uninitialized: {
@@ -399,22 +406,28 @@ const workspaceRuntimeMachine = createMachine({
             workspaceId: context.workspace.id,
           });
 
-          // Load agents from config using centralized loader
-          if (context.config?.agents) {
+          // Load merged configuration (atlas.yml + workspace.yml)
+          const { ConfigLoader } = await import("./config-loader.ts");
+          const configLoader = new ConfigLoader();
+          const mergedConfig = await configLoader.load();
+          
+          // Return both supervisorId and mergedConfig for assign action
+          
+          // Load all agents (platform + user)
+          const allAgents = {
+            ...mergedConfig.atlas.agents,
+            ...mergedConfig.workspace.agents
+          };
+          
+          if (allAgents && Object.keys(allAgents).length > 0) {
             const { AgentLoader } = await import("./agent-loader.ts");
-            const loadResult = await AgentLoader.loadAgents(
-              context.workspace,
-              context.config.agents,
-            );
-
-            logger.info(
-              `Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`,
-              {
-                workspaceId: context.workspace.id,
-                loadedCount: loadResult.loaded.length,
-                failedCount: loadResult.failed.length,
-              },
-            );
+            const loadResult = await AgentLoader.loadAgents(context.workspace, allAgents);
+            
+            logger.info(`Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`, {
+              workspaceId: context.workspace.id,
+              loadedCount: loadResult.loaded.length,
+              failedCount: loadResult.failed.length,
+            });
           }
 
           // Use consolidated worker creation method
@@ -423,14 +436,18 @@ const workspaceRuntimeMachine = createMachine({
               ...context.workspace.snapshot(),
               id: context.workspace.id,
               // Serialize agents to pass only metadata
-              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(
-                context.workspace.agents || {},
-              ),
+              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
               signals: Object.keys(context.workspace.signals || {}),
               workflows: Object.keys(context.workspace.workflows || {}),
             },
-            supervisor: context.config?.supervisor || {},
+            config: {
+              ...(context.config?.supervisor || {}),
+              // Pass only serializable parts of the merged configuration
+              workspaceSignals: mergedConfig.workspace.signals,
+              jobs: mergedConfig.jobs,
+            },
           };
+
 
           let supervisor;
           try {
@@ -440,7 +457,7 @@ const workspaceRuntimeMachine = createMachine({
               {
                 model: context.options.supervisorModel || context.config?.supervisor?.model,
                 timeout: 10000,
-              },
+              }
             );
           } catch (error) {
             const err = error as Error;
@@ -456,14 +473,15 @@ const workspaceRuntimeMachine = createMachine({
             "[Runtime FSM] Supervisor ready, returning ID:",
             supervisor.id,
           );
-          return supervisor.id;
+          return { supervisorId: supervisor.id, mergedConfig };
         }),
         input: ({ context }) => ({ context }),
         onDone: {
           target: "ready",
           actions: [
             assign({
-              supervisorId: ({ event }) => event.output,
+              supervisorId: ({ event }) => event.output.supervisorId,
+              mergedConfig: ({ event }) => event.output.mergedConfig,
             }),
             () => console.log("[Runtime FSM] Transitioned to ready state"),
           ],

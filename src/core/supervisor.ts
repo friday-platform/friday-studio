@@ -208,7 +208,8 @@ export class WorkspaceSupervisor extends BaseAgent
   implements IWorkspaceSupervisor, IWorkspaceAgent {
   private workspace?: IWorkspace;
   private model: string;
-  public config: any;
+  private config: any;
+  private mergedConfig: any; // Contains atlas.yml + workspace.yml + jobs
   private sessions: Map<string, IWorkspaceSession> = new Map();
   private stateMachine: ReturnType<typeof createSupervisorMachine>;
   private stateActor: any; // XState actor type
@@ -216,6 +217,7 @@ export class WorkspaceSupervisor extends BaseAgent
   constructor(workspaceId: string, config: any = {}) {
     super(workspaceId);
     this.config = config;
+    this.mergedConfig = null; // No longer needed at initialization time
     this.model = config.model || "claude-4-sonnet-20250514";
 
     // Set supervisor-specific prompts
@@ -290,7 +292,7 @@ You have access to the full workspace context and configuration. Create structur
   status: string = "active";
   host: string = "local";
 
-  override async invoke(message: string): Promise<string> {
+  async invoke(message: string): Promise<string> {
     // Process supervisor-level commands
     if (message.startsWith("/")) {
       return this.processCommand(message);
@@ -306,7 +308,7 @@ You have access to the full workspace context and configuration. Create structur
     return response;
   }
 
-  override async *invokeStream(message: string): AsyncIterableIterator<string> {
+  async *invokeStream(message: string): AsyncIterableIterator<string> {
     // For commands, return immediately
     if (message.startsWith("/")) {
       yield this.processCommand(message);
@@ -518,19 +520,31 @@ Provide a structured analysis.`;
     intent: SessionIntent,
     signal: IWorkspaceSignal,
     payload: any,
+    signalData?: { signalConfig?: any; jobs?: any },
   ): Promise<any> {
-    // For now, skip the second LLM call and just use the suggested agents from the intent
-    // This speeds up the process significantly
     try {
-      // If intent already has suggested agents, use those
-      const availableAgents = intent.suggestedAgents && intent.suggestedAgents.length > 0
-        ? this.getAllAgentMetadata().filter((agent) => intent.suggestedAgents?.includes(agent.id))
-        : this.getAllAgentMetadata();
+      // Step 1: Select appropriate job based on signal configuration and payload
+      const selectedJob = this.selectJobForSignal(signal, payload, signalData);
+      // Step 2: Determine available agents based on job specification or fallback
+      let availableAgents;
+      if (selectedJob) {
+        // Get agents specified in the job
+        const jobAgentIds = this.extractAgentIdsFromJob(selectedJob);
+        availableAgents = this.getAllAgentMetadata().filter(agent => 
+          jobAgentIds.includes(agent.id)
+        );
+      } else {
+        // Fallback to intent-based or all agents
+        availableAgents = intent.suggestedAgents && intent.suggestedAgents.length > 0
+          ? this.getAllAgentMetadata().filter((agent) => intent.suggestedAgents?.includes(agent.id))
+          : this.getAllAgentMetadata();
+      }
 
       return {
         availableAgents,
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,
+        jobSpec: selectedJob, // Include job specification for SessionSupervisor
         additionalContext: {
           workspaceId: this.workspace?.id,
           sessionIntent: intent,
@@ -543,13 +557,92 @@ Provide a structured analysis.`;
       };
     } catch (error) {
       this.log(`Error creating session context: ${error}`);
-      // Fallback to all agents
+      // Fallback to all agents without job specification
       return {
         availableAgents: this.getAllAgentMetadata(),
         filteredMemory: [],
         constraints: intent.constraints,
+        jobSpec: null,
       };
     }
+  }
+
+  // Select appropriate job based on signal configuration and payload
+  private selectJobForSignal(signal: IWorkspaceSignal, payload: any, signalData?: { signalConfig?: any; jobs?: any }): any | null {
+    try {
+      // Use passed signal data if available, fallback to stored config
+      const signalConfig = signalData?.signalConfig || this.mergedConfig?.workspace?.signals?.[signal.id];
+      const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
+      
+      if (!signalConfig?.jobs) {
+        return null;
+      }
+
+      // Evaluate job conditions to find the first matching job
+      for (const jobMapping of signalConfig.jobs) {
+        if (this.evaluateJobCondition(jobMapping.condition, payload)) {
+          // Get the job specification from loaded jobs
+          const jobSpec = availableJobs[jobMapping.name];
+          if (jobSpec) {
+            return jobSpec;
+          }
+        }
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Evaluate job condition against payload
+  private evaluateJobCondition(condition: string | undefined, payload: any): boolean {
+    if (!condition) return true; // No condition means always match
+
+    try {
+      // Create evaluation context with payload properties
+      const context = { ...payload };
+      
+      // Simple condition evaluation - in production would use safer evaluation
+      // For now, handle the specific telephone game condition
+      if (condition.includes("message && message.length")) {
+        const message = payload.message;
+        if (!message) return false;
+        
+        // Parse the condition to extract length comparison
+        if (condition.includes("< 100")) {
+          return message.length > 0 && message.length < 100;
+        } else if (condition.includes(">= 100")) {
+          return message.length >= 100;
+        }
+      }
+
+      // Default: condition not understood, return false
+      this.log(`Unknown condition format: ${condition}`);
+      return false;
+    } catch (error) {
+      this.log(`Error evaluating condition "${condition}": ${error}`);
+      return false;
+    }
+  }
+
+  // Extract agent IDs from job specification
+  private extractAgentIdsFromJob(jobSpec: any): string[] {
+    const agentIds: string[] = [];
+
+    if (jobSpec.execution?.agents) {
+      // Sequential or parallel strategy
+      agentIds.push(...jobSpec.execution.agents.map((agent: any) => agent.id));
+    }
+
+    if (jobSpec.execution?.stages) {
+      // Staged strategy
+      for (const stage of jobSpec.execution.stages) {
+        agentIds.push(...stage.agents.map((agent: any) => agent.id));
+      }
+    }
+
+    return agentIds;
   }
 
   // Infer goals from signal type and payload
@@ -814,19 +907,26 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
     if (!this.workspace || !this.workspace.agents) return [];
 
     return Object.entries(this.workspace.agents).map(([id, agent]) => {
-      // Check if agent is already metadata (has name as property) or actual agent (has name as function)
-      const isMetadata = typeof (agent as any).name === "string";
+      // Check if agent is metadata-only (has isMetadata flag) or actual agent instance
+      const isMetadataOnly = (agent as any).isMetadata === true;
 
-      if (isMetadata) {
-        // Agent is already metadata
-        return agent as any;
-      } else {
-        // Agent is actual instance, extract metadata
+      if (isMetadataOnly) {
+        // Agent is metadata-only, extract full configuration
         return {
           id,
-          name: agent.name?.() || id,
+          name: typeof (agent as any).name === 'function' ? (agent as any).name() : (agent as any).name || id,
+          type: (agent as any).type,
+          purpose: typeof (agent as any).purpose === 'function' ? (agent as any).purpose() : (agent as any).purpose || "",
+          config: (agent as any).config, // Include full configuration for AgentSupervisor
+        };
+      } else {
+        // Legacy agent instance, extract basic metadata
+        return {
+          id,
+          name: typeof agent.name === 'function' ? agent.name() : agent.name || id,
           type: (agent as any).type || id.replace("-agent", ""),
-          purpose: agent.purpose?.() || "",
+          purpose: typeof agent.purpose === 'function' ? agent.purpose() : agent.purpose || "",
+          config: (agent as any).config || {}, // Include any stored config
         };
       }
     });

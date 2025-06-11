@@ -223,6 +223,14 @@ You have access to a filtered view of the workspace tailored for this specific s
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
     );
 
+    // Initialize AgentSupervisor for supervised execution
+    this.initializeAgentSupervisor({
+      model: "claude-4-sonnet-20250514",
+      prompts: {
+        system: "You are an AgentSupervisor responsible for safe agent execution."
+      }
+    });
+
     // Add context to memory
     this.memory.remember("sessionContext", context);
   }
