@@ -46,16 +46,22 @@ export class AgentLoader {
         // Add to workspace
         const addError = workspace.addAgent(agent);
         if (addError) {
-          logger.error(`Failed to add agent to workspace: ${addError.message}`, {
-            workspaceId: workspace.id,
-            agentId,
-          });
+          logger.error(
+            `Failed to add agent to workspace: ${addError.message}`,
+            {
+              workspaceId: workspace.id,
+              agentId,
+            },
+          );
           result.failed.push({ id: agentId, error: addError.message });
         } else {
-          logger.info(`Loaded agent: ${agentId} (${(agent as any).type || "unknown"})`, {
-            workspaceId: workspace.id,
-            agentId,
-          });
+          logger.info(
+            `Loaded agent: ${agentId} (${(agent as any).type || "unknown"})`,
+            {
+              workspaceId: workspace.id,
+              agentId,
+            },
+          );
         }
       } else {
         const error = promiseResult.reason;
@@ -82,13 +88,6 @@ export class AgentLoader {
     agentId: string,
     agentConfig: RuntimeAgentConfig,
   ): Promise<IWorkspaceAgent> {
-    const metadata: AgentMetadata = {
-      id: agentId,
-      type: agentConfig.type,
-      config: agentConfig,
-      parentScopeId: workspace.id,
-    };
-
     // Create a metadata-only agent object that the AgentSupervisor can use
     const metadataAgent = {
       id: agentId,
@@ -105,7 +104,10 @@ export class AgentLoader {
       status: "ready",
       host: "supervisor",
       controls: () => ({}),
-      getAgentPrompts: () => ({ system: agentConfig.prompts?.system || "", user: "" }),
+      getAgentPrompts: () => ({
+        system: agentConfig.prompts?.system || "",
+        user: "",
+      }),
       // These will not be called for metadata-only agents, but required by interface
       invoke: async (message: string) => {
         throw new Error(
@@ -159,24 +161,23 @@ export class AgentLoader {
   /**
    * Get agent metadata for serialization (used by workspace-runtime)
    */
-  static serializeAgentMetadata(agents: Record<string, IWorkspaceAgent>): Record<string, any> {
-    return Object.entries(agents).reduce(
-      (acc, [key, agent]) => {
-        const agentTyped = agent as any;
-        acc[key] = {
-          id: key,
-          name: typeof agentTyped.name === "function" ? agentTyped.name() : agentTyped.name || key,
-          type: agentTyped.type || key.replace("-agent", ""),
-          purpose: typeof agentTyped.purpose === "function"
-            ? agentTyped.purpose()
-            : agentTyped.purpose || "",
-          // CRITICAL: Preserve config and metadata flags for proper agent execution
-          config: agentTyped.config || {},
-          isMetadata: agentTyped.isMetadata || false,
-        };
-        return acc;
-      },
-      {} as Record<string, any>,
-    );
+  static serializeAgentMetadata(
+    agents: Record<string, IWorkspaceAgent>,
+  ): Record<string, any> {
+    return Object.entries(agents).reduce((acc, [key, agent]) => {
+      const agentTyped = agent as any;
+      acc[key] = {
+        id: key,
+        name: typeof agentTyped.name === "function" ? agentTyped.name() : agentTyped.name || key,
+        type: agentTyped.type || key.replace("-agent", ""),
+        purpose: typeof agentTyped.purpose === "function"
+          ? agentTyped.purpose()
+          : agentTyped.purpose || "",
+        // CRITICAL: Preserve config and metadata flags for proper agent execution
+        config: agentTyped.config || {},
+        isMetadata: agentTyped.isMetadata || false,
+      };
+      return acc;
+    }, {} as Record<string, any>);
   }
 }

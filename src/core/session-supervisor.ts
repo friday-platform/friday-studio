@@ -82,7 +82,10 @@ export interface RemoteAgentConfig {
   };
 }
 
-export type AgentConfig = TempestAgentConfig | LLMAgentConfig | RemoteAgentConfig;
+export type AgentConfig =
+  | TempestAgentConfig
+  | LLMAgentConfig
+  | RemoteAgentConfig;
 
 // Session-specific context provided by WorkspaceSupervisor
 export interface SessionContext {
@@ -105,14 +108,18 @@ export interface SessionContext {
   };
 }
 
-export interface AgentMetadata {
-  id: string;
-  name: string;
-  type: AgentType;
-  purpose: string;
-  capabilities?: string[];
-  config: AgentConfig;
-}
+export type AgentMetadata =
+  & {
+    id: string;
+    name: string;
+    purpose: string;
+    capabilities?: string[];
+  }
+  & (
+    | { type: "tempest"; config: TempestAgentConfig }
+    | { type: "llm"; config: LLMAgentConfig }
+    | { type: "remote"; config: RemoteAgentConfig }
+  );
 
 export interface ExecutionPlan {
   id: string;
@@ -243,16 +250,26 @@ You have access to a filtered view of the workspace tailored for this specific s
 
     this.log(`[createExecutionPlan] Checking for jobSpec...`);
     this.log(
-      `[createExecutionPlan] SessionContext keys: ${Object.keys(this.sessionContext).join(", ")}`,
+      `[createExecutionPlan] SessionContext keys: ${
+        Object.keys(
+          this.sessionContext,
+        ).join(", ")
+      }`,
     );
-    this.log(`[createExecutionPlan] JobSpec present: ${!!this.sessionContext.jobSpec}`);
+    this.log(
+      `[createExecutionPlan] JobSpec present: ${!!this.sessionContext.jobSpec}`,
+    );
     if (this.sessionContext.jobSpec) {
-      this.log(`[createExecutionPlan] JobSpec name: ${this.sessionContext.jobSpec.name}`);
+      this.log(
+        `[createExecutionPlan] JobSpec name: ${this.sessionContext.jobSpec.name}`,
+      );
     }
 
     // If we have a job specification, use it directly (fast path)
     if (this.sessionContext.jobSpec) {
-      this.log(`Using fast job spec path for: ${this.sessionContext.jobSpec.name}`);
+      this.log(
+        `Using fast job spec path for: ${this.sessionContext.jobSpec.name}`,
+      );
       return this.createPlanFromJobSpec(this.sessionContext.jobSpec);
     }
 
@@ -293,7 +310,10 @@ You have access to a filtered view of the workspace tailored for this specific s
         })),
         executionStrategy: "sequential",
       });
-    } else if (jobSpec.execution.strategy === "staged" && jobSpec.execution.stages) {
+    } else if (
+      jobSpec.execution.strategy === "staged" &&
+      jobSpec.execution.stages
+    ) {
       // Create multiple phases from stages
       jobSpec.execution.stages.forEach((stage, stageIndex) => {
         plan.phases.push({
@@ -332,7 +352,10 @@ You have access to a filtered view of the workspace tailored for this specific s
   }
 
   // Build agent task from job specification
-  private buildAgentTask(agentSpec: JobAgentSpec, jobSpec: JobSpecification): string {
+  private buildAgentTask(
+    agentSpec: JobAgentSpec,
+    jobSpec: JobSpecification,
+  ): string {
     if (agentSpec.prompt) {
       return agentSpec.prompt;
     }
@@ -350,7 +373,9 @@ You have access to a filtered view of the workspace tailored for this specific s
     }
 
     // Default criteria
-    criteria.push(`Execute all ${jobSpec.execution.agents.length} agents successfully`);
+    criteria.push(
+      `Execute all ${jobSpec.execution.agents.length} agents successfully`,
+    );
     criteria.push("Produce meaningful outputs from each agent");
 
     return criteria;
@@ -366,10 +391,11 @@ Payload: ${JSON.stringify(this.sessionContext!.payload, null, 2)}
 
 Available Agents:
 ${
-      this.sessionContext!.availableAgents.map((a) =>
-        `- ${a.id}: ${a.purpose}${
-          a.capabilities ? "\n  Capabilities: " + a.capabilities.join(", ") : ""
-        }`
+      this.sessionContext!.availableAgents.map(
+        (a) =>
+          `- ${a.id}: ${a.purpose}${
+            a.capabilities ? "\n  Capabilities: " + a.capabilities.join(", ") : ""
+          }`,
       ).join("\n")
     }
 
@@ -458,17 +484,19 @@ Respond with a structured plan.`;
     return {
       id: crypto.randomUUID(),
       sessionId: this.sessionContext!.sessionId,
-      phases: [{
-        id: "default-phase",
-        name: "Default Processing",
-        agents: agents.map((agent) => ({
-          agentId: agent.id,
-          task: `Process signal with ${agent.id}`,
-          inputSource: "signal",
-          dependencies: [],
-        })),
-        executionStrategy: "sequential",
-      }],
+      phases: [
+        {
+          id: "default-phase",
+          name: "Default Processing",
+          agents: agents.map((agent) => ({
+            agentId: agent.id,
+            task: `Process signal with ${agent.id}`,
+            inputSource: "signal",
+            dependencies: [],
+          })),
+          executionStrategy: "sequential",
+        },
+      ],
       successCriteria: ["All agents executed"],
       adaptationStrategy: "rigid",
     };
@@ -489,17 +517,30 @@ Payload: ${JSON.stringify(this.sessionContext!.payload)}
 
 Execution Plan:
 - Total agents to execute: ${
-      this.executionPlan!.phases.reduce((sum, phase) => sum + phase.agents.length, 0)
+      this.executionPlan!.phases.reduce(
+        (sum, phase) => sum + phase.agents.length,
+        0,
+      )
     }
 - Agents executed so far: ${results.length}
 
 Execution Results:
 ${
-      results.map((r) =>
-        `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${
-          JSON.stringify(r.input).slice(0, 100)
-        }...\n   Output: ${JSON.stringify(r.output).slice(0, 200)}...\n   Duration: ${r.duration}ms`
-      ).join("\n\n")
+      results
+        .map(
+          (r) =>
+            `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${
+              JSON.stringify(
+                r.input,
+              ).slice(0, 100)
+            }...\n   Output: ${
+              JSON.stringify(r.output).slice(
+                0,
+                200,
+              )
+            }...\n   Duration: ${r.duration}ms`,
+        )
+        .join("\n\n")
     }
 
 Success Criteria:
@@ -603,10 +644,14 @@ Provide a brief evaluation.`;
     context: Record<string, any> = {},
   ): Promise<SupervisedAgentResult> {
     if (!this.agentSupervisor) {
-      throw new Error("AgentSupervisor not initialized. Call initializeAgentSupervisor() first.");
+      throw new Error(
+        "AgentSupervisor not initialized. Call initializeAgentSupervisor() first.",
+      );
     }
 
-    const agent = this.sessionContext!.availableAgents.find((a) => a.id === agentId);
+    const agent = this.sessionContext!.availableAgents.find(
+      (a) => a.id === agentId,
+    );
     if (!agent) {
       throw new Error(`Agent ${agentId} not found in available agents`);
     }
@@ -622,14 +667,24 @@ Provide a brief evaluation.`;
       );
 
       // Step 2: Prepare secure execution environment
-      const environment = await this.agentSupervisor.prepareEnvironment(agent, analysis);
+      const environment = await this.agentSupervisor.prepareEnvironment(
+        agent,
+        analysis,
+      );
 
       // Step 3: Load agent safely in worker
-      const workerInstance = await this.agentSupervisor.loadAgentSafely(agent, environment);
+      const workerInstance = await this.agentSupervisor.loadAgentSafely(
+        agent,
+        environment,
+      );
 
       // Step 4: Execute with supervision
       const supervision = {
-        pre_execution_checks: ["safety_validation", "resource_check", "permission_verify"],
+        pre_execution_checks: [
+          "safety_validation",
+          "resource_check",
+          "permission_verify",
+        ],
         runtime_monitoring: {
           resource_usage: true,
           output_validation: true,
@@ -672,7 +727,12 @@ Provide a brief evaluation.`;
     this.log(
       `Legacy agent execution requested for ${agent.id} - delegating to supervised execution`,
     );
-    const supervisedResult = await this.executeAgent(agent.id, task, input, context);
+    const supervisedResult = await this.executeAgent(
+      agent.id,
+      task,
+      input,
+      context,
+    );
 
     // Return legacy format for backward compatibility
     return {
@@ -716,11 +776,17 @@ Original Input: ${JSON.stringify(this.sessionContext.payload)}
 
 Agent Execution Chain:
 ${
-      allResults.map((r, i) =>
-        `${i + 1}. ${r.agentId}:\n   Input: ${
-          JSON.stringify(r.input).slice(0, 100)
-        }...\n   Output: ${r.output}\n   Duration: ${r.duration}ms`
-      ).join("\n\n")
+      allResults
+        .map(
+          (r, i) =>
+            `${i + 1}. ${r.agentId}:\n   Input: ${
+              JSON.stringify(r.input).slice(
+                0,
+                100,
+              )
+            }...\n   Output: ${r.output}\n   Duration: ${r.duration}ms`,
+        )
+        .join("\n\n")
     }
 
 Session Goals: ${

@@ -2,17 +2,10 @@
  * Configuration loader for Atlas that merges atlas.yml and workspace.yml
  */
 
-import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { logger } from "../utils/logger.ts";
-import type {
-  AgentConfig,
-  AgentType,
-  JobSpecification,
-  LLMAgentConfig,
-  RemoteAgentConfig,
-  TempestAgentConfig,
-} from "./session-supervisor.ts";
+import type { AgentConfig, AgentType, JobSpecification } from "./session-supervisor.ts";
 
 // Atlas platform configuration (atlas.yml)
 export interface AtlasConfig {
@@ -227,7 +220,9 @@ export class ConfigLoader {
 
       // Validate required fields
       if (!config.supervisors?.workspace || !config.supervisors?.session) {
-        throw new Error("Atlas configuration missing required supervisor configurations");
+        throw new Error(
+          "Atlas configuration missing required supervisor configurations",
+        );
       }
 
       return config;
@@ -311,19 +306,33 @@ export class ConfigLoader {
     return jobs;
   }
 
-  private validateConfig(atlasConfig: AtlasConfig, workspaceConfig: NewWorkspaceConfig): void {
+  private validateConfig(
+    atlasConfig: AtlasConfig,
+    workspaceConfig: NewWorkspaceConfig,
+  ): void {
     // Validate agent configurations
-    for (const [agentId, agentConfig] of Object.entries(workspaceConfig.agents)) {
+    for (
+      const [agentId, agentConfig] of Object.entries(
+        workspaceConfig.agents,
+      )
+    ) {
       this.validateAgentConfig(agentId, agentConfig);
     }
 
     // Validate signal configurations
-    for (const [signalId, signalConfig] of Object.entries(workspaceConfig.signals)) {
+    for (
+      const [signalId, signalConfig] of Object.entries(
+        workspaceConfig.signals,
+      )
+    ) {
       this.validateSignalConfig(signalId, signalConfig);
     }
   }
 
-  private validateAgentConfig(agentId: string, config: WorkspaceAgentConfig): void {
+  private validateAgentConfig(
+    agentId: string,
+    config: WorkspaceAgentConfig,
+  ): void {
     if (!config.type || !["tempest", "llm", "remote"].includes(config.type)) {
       throw new Error(
         `Agent ${agentId}: Invalid type '${config.type}'. Must be 'tempest', 'llm', or 'remote'`,
@@ -333,7 +342,9 @@ export class ConfigLoader {
     switch (config.type) {
       case "tempest":
         if (!config.agent || !config.version) {
-          throw new Error(`Agent ${agentId}: Tempest agents require 'agent' and 'version' fields`);
+          throw new Error(
+            `Agent ${agentId}: Tempest agents require 'agent' and 'version' fields`,
+          );
         }
         break;
       case "llm":
@@ -343,13 +354,18 @@ export class ConfigLoader {
         break;
       case "remote":
         if (!config.endpoint) {
-          throw new Error(`Agent ${agentId}: Remote agents require 'endpoint' field`);
+          throw new Error(
+            `Agent ${agentId}: Remote agents require 'endpoint' field`,
+          );
         }
         break;
     }
   }
 
-  private validateSignalConfig(signalId: string, config: WorkspaceSignalConfig): void {
+  private validateSignalConfig(
+    signalId: string,
+    config: WorkspaceSignalConfig,
+  ): void {
     if (!config.provider) {
       throw new Error(`Signal ${signalId}: Missing 'provider' field`);
     }
@@ -360,7 +376,9 @@ export class ConfigLoader {
 
     for (const jobMapping of config.jobs) {
       if (!jobMapping.name) {
-        throw new Error(`Signal ${signalId}: Job mappings require 'name' field`);
+        throw new Error(
+          `Signal ${signalId}: Job mappings require 'name' field`,
+        );
       }
       // Support both inline job specs and file references
       if (!jobMapping.job && !jobMapping.execution) {
@@ -372,14 +390,23 @@ export class ConfigLoader {
       // Validate inline execution if provided
       if (jobMapping.execution) {
         if (!jobMapping.execution.strategy) {
-          throw new Error(`Signal ${signalId}: Inline job execution requires 'strategy' field`);
+          throw new Error(
+            `Signal ${signalId}: Inline job execution requires 'strategy' field`,
+          );
         }
-        if (!jobMapping.execution.agents || jobMapping.execution.agents.length === 0) {
-          throw new Error(`Signal ${signalId}: Inline job execution requires at least one agent`);
+        if (
+          !jobMapping.execution.agents ||
+          jobMapping.execution.agents.length === 0
+        ) {
+          throw new Error(
+            `Signal ${signalId}: Inline job execution requires at least one agent`,
+          );
         }
         for (const agent of jobMapping.execution.agents) {
           if (!agent.id) {
-            throw new Error(`Signal ${signalId}: Job execution agents require 'id' field`);
+            throw new Error(
+              `Signal ${signalId}: Job execution agents require 'id' field`,
+            );
           }
         }
       }
@@ -438,7 +465,9 @@ export class ConfigLoader {
   }
 
   // Convert workspace agent config to SessionSupervisor agent config
-  convertToAgentConfig(workspaceAgentConfig: WorkspaceAgentConfig): AgentConfig {
+  convertToAgentConfig(
+    workspaceAgentConfig: WorkspaceAgentConfig,
+  ): AgentConfig {
     switch (workspaceAgentConfig.type) {
       case "tempest":
         return {
@@ -446,7 +475,7 @@ export class ConfigLoader {
           agent: workspaceAgentConfig.agent!,
           version: workspaceAgentConfig.version!,
           config: workspaceAgentConfig.config,
-        } as TempestAgentConfig;
+        };
 
       case "llm":
         return {
@@ -455,7 +484,7 @@ export class ConfigLoader {
           purpose: workspaceAgentConfig.purpose,
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
-        } as LLMAgentConfig;
+        };
 
       case "remote":
         return {
@@ -464,7 +493,7 @@ export class ConfigLoader {
           auth: workspaceAgentConfig.auth,
           timeout: workspaceAgentConfig.timeout,
           schema: workspaceAgentConfig.schema,
-        } as RemoteAgentConfig;
+        };
 
       default:
         throw new Error(`Unknown agent type: ${workspaceAgentConfig.type}`);

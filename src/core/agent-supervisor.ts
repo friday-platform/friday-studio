@@ -3,15 +3,7 @@
  */
 
 import { BaseAgent } from "./agents/base-agent.ts";
-import type {
-  AgentConfig,
-  AgentMetadata,
-  AgentTask,
-  LLMAgentConfig,
-  RemoteAgentConfig,
-  SessionContext,
-  TempestAgentConfig,
-} from "./session-supervisor.ts";
+import type { AgentMetadata, AgentTask, SessionContext } from "./session-supervisor.ts";
 
 // Agent analysis and safety assessment
 export interface AgentAnalysis {
@@ -125,13 +117,16 @@ export class AgentSupervisor extends BaseAgent {
   private activeWorkers: Map<string, AgentWorkerInstance> = new Map();
   private supervisorConfig: any;
   private supervisorCreatedAt: Date = new Date();
-  private workerStats: Map<string, {
-    created_at: Date;
-    executions: number;
-    total_duration: number;
-    last_execution: Date;
-    memory_peak: number;
-  }> = new Map();
+  private workerStats: Map<
+    string,
+    {
+      created_at: Date;
+      executions: number;
+      total_duration: number;
+      last_execution: Date;
+      memory_peak: number;
+    }
+  > = new Map();
 
   constructor(supervisorConfig: any, parentScopeId?: string) {
     super(parentScopeId);
@@ -248,9 +243,15 @@ Focus on safety, efficiency, and reliability.`;
 
     // Determine risk level from response
     let riskLevel: "low" | "medium" | "high" = "medium";
-    if (responseText.includes("high risk") || responseText.includes("dangerous")) {
+    if (
+      responseText.includes("high risk") ||
+      responseText.includes("dangerous")
+    ) {
       riskLevel = "high";
-    } else if (responseText.includes("low risk") || responseText.includes("safe")) {
+    } else if (
+      responseText.includes("low risk") ||
+      responseText.includes("safe")
+    ) {
       riskLevel = "low";
     }
 
@@ -289,12 +290,19 @@ Focus on safety, efficiency, and reliability.`;
   }
 
   // Create conservative analysis when LLM analysis fails
-  private createConservativeAnalysis(agent: AgentMetadata, task: AgentTask): AgentAnalysis {
+  private createConservativeAnalysis(
+    agent: AgentMetadata,
+    task: AgentTask,
+  ): AgentAnalysis {
     return {
       safety_assessment: {
         risk_level: "high", // Conservative approach
         identified_risks: ["Analysis failed - unknown risks"],
-        mitigations: ["Strict isolation", "Enhanced monitoring", "Output validation"],
+        mitigations: [
+          "Strict isolation",
+          "Enhanced monitoring",
+          "Output validation",
+        ],
       },
       resource_requirements: {
         memory_mb: 512,
@@ -354,11 +362,11 @@ Focus on safety, efficiency, and reliability.`;
 
     // Add agent-type specific configuration
     if (agent.type === "remote") {
-      const remoteConfig = agent.config as RemoteAgentConfig;
+      const remoteConfig = agent.config;
       environment.agent_config.endpoint = remoteConfig.endpoint;
       environment.agent_config.auth = remoteConfig.auth;
     } else if (agent.type === "tempest") {
-      const tempestConfig = agent.config as TempestAgentConfig;
+      const tempestConfig = agent.config;
       environment.agent_config.parameters.agent = tempestConfig.agent;
       environment.agent_config.parameters.version = tempestConfig.version;
     }
@@ -377,7 +385,10 @@ Focus on safety, efficiency, and reliability.`;
     const workerId = `${agent.id}-${Date.now()}`;
 
     // Create actual web worker
-    const workerScript = new URL("./workers/agent-execution-worker.ts", import.meta.url);
+    const workerScript = new URL(
+      "./workers/agent-execution-worker.ts",
+      import.meta.url,
+    );
     const worker = new Worker(workerScript, {
       type: "module",
       name: `agent-worker-${agent.id}`,
@@ -396,7 +407,9 @@ Focus on safety, efficiency, and reliability.`;
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         worker.terminate();
-        reject(new Error(`Worker initialization timeout for agent ${agent.id}`));
+        reject(
+          new Error(`Worker initialization timeout for agent ${agent.id}`),
+        );
       }, 10000); // 10 second timeout
 
       worker.addEventListener("message", (event) => {
@@ -420,14 +433,18 @@ Focus on safety, efficiency, and reliability.`;
             clearTimeout(timeout);
             workerInstance.status = "ready";
             this.activeWorkers.set(workerId, workerInstance);
-            this.log(`Agent ${agent.id} loaded successfully as worker ${workerId}`);
+            this.log(
+              `Agent ${agent.id} loaded successfully as worker ${workerId}`,
+            );
             resolve(workerInstance);
             break;
 
           case "error":
             clearTimeout(timeout);
             worker.terminate();
-            this.log(`Worker initialization failed for agent ${agent.id}: ${data.error}`);
+            this.log(
+              `Worker initialization failed for agent ${agent.id}: ${data.error}`,
+            );
             reject(new Error(`Worker initialization failed: ${data.error}`));
             break;
 
@@ -463,15 +480,27 @@ Focus on safety, efficiency, and reliability.`;
       await this.performPreExecutionChecks(instance, supervision);
 
       // Execute agent via worker communication
-      const workerResult = await this.executeAgentInWorker(instance, input, task);
+      const workerResult = await this.executeAgentInWorker(
+        instance,
+        input,
+        task,
+      );
 
       // Post-execution validation
-      const validation = await this.validateOutput(workerResult.output, task, supervision);
+      const validation = await this.validateOutput(
+        workerResult.output,
+        task,
+        supervision,
+      );
 
       const duration = Date.now() - startTime;
 
       // Update worker statistics
-      this.updateWorkerStats(instance.id, duration, workerResult.metadata.memory_used);
+      this.updateWorkerStats(
+        instance.id,
+        duration,
+        workerResult.metadata.memory_used,
+      );
 
       const result: SupervisedAgentResult = {
         agent_id: instance.agent_id,
@@ -509,7 +538,12 @@ Focus on safety, efficiency, and reliability.`;
     supervision: ExecutionSupervision,
   ): Promise<ValidationResult> {
     if (!supervision.post_execution_validation.output_quality) {
-      return { is_valid: true, quality_score: 1.0, issues: [], recommendations: [] };
+      return {
+        is_valid: true,
+        quality_score: 1.0,
+        issues: [],
+        recommendations: [],
+      };
     }
 
     const validationPrompt = `Validate this agent execution output:
@@ -538,7 +572,13 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       return {
         is_valid: false,
         quality_score: 0.5,
-        issues: [{ type: "quality", severity: "medium", description: "Validation failed" }],
+        issues: [
+          {
+            type: "quality",
+            severity: "medium",
+            description: "Validation failed",
+          },
+        ],
         recommendations: ["Review output manually"],
       };
     }
@@ -581,8 +621,12 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
   private generateMitigations(agentType: string, riskLevel: string): string[] {
     const mitigations = ["Worker isolation", "Output validation"];
-    if (riskLevel === "high") mitigations.push("Enhanced monitoring", "Strict timeouts");
-    if (agentType === "remote") mitigations.push("Request sanitization", "Response validation");
+    if (riskLevel === "high") {
+      mitigations.push("Enhanced monitoring", "Strict timeouts");
+    }
+    if (agentType === "remote") {
+      mitigations.push("Request sanitization", "Response validation");
+    }
     return mitigations;
   }
 
@@ -610,14 +654,22 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return ["output_exists", "task_completed", "format_valid"];
   }
 
-  private calculatePermissions(agent: AgentMetadata, analysis: AgentAnalysis): string[] {
+  private calculatePermissions(
+    agent: AgentMetadata,
+    analysis: AgentAnalysis,
+  ): string[] {
     const permissions = ["read"];
     if (agent.type === "remote") permissions.push("network");
-    if (analysis.safety_assessment.risk_level === "low") permissions.push("write");
+    if (analysis.safety_assessment.risk_level === "low") {
+      permissions.push("write");
+    }
     return permissions;
   }
 
-  private preparePrompts(agent: AgentMetadata, analysis: AgentAnalysis): Record<string, string> {
+  private preparePrompts(
+    agent: AgentMetadata,
+    analysis: AgentAnalysis,
+  ): Record<string, string> {
     const config = agent.config as any;
     const prompts = { ...config.prompts };
 
@@ -731,7 +783,11 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   // Worker lifecycle management methods
 
   // Update worker statistics after execution
-  private updateWorkerStats(workerId: string, duration: number, memoryUsed: number): void {
+  private updateWorkerStats(
+    workerId: string,
+    duration: number,
+    memoryUsed: number,
+  ): void {
     let stats = this.workerStats.get(workerId);
     if (!stats) {
       stats = {
@@ -831,7 +887,8 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   }
 
   // Clean up idle workers to free resources
-  async cleanupIdleWorkers(maxIdleTime: number = 300000): Promise<number> { // 5 minutes default
+  async cleanupIdleWorkers(maxIdleTime: number = 300000): Promise<number> {
+    // 5 minutes default
     const now = Date.now();
     let cleanedUp = 0;
 
@@ -842,7 +899,9 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
         const idleTime = now - stats.last_execution.getTime();
 
         if (idleTime > maxIdleTime) {
-          this.log(`Cleaning up idle worker ${workerId} (idle for ${idleTime}ms)`);
+          this.log(
+            `Cleaning up idle worker ${workerId} (idle for ${idleTime}ms)`,
+          );
           await this.terminateWorker(workerId);
           cleanedUp++;
         }
@@ -861,11 +920,15 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     memory_usage: number;
     uptime: number;
   } {
-    const totalExecutions = Array.from(this.workerStats.values())
-      .reduce((sum, stats) => sum + stats.executions, 0);
+    const totalExecutions = Array.from(this.workerStats.values()).reduce(
+      (sum, stats) => sum + stats.executions,
+      0,
+    );
 
-    const totalMemory = Array.from(this.workerStats.values())
-      .reduce((sum, stats) => sum + stats.memory_peak, 0);
+    const totalMemory = Array.from(this.workerStats.values()).reduce(
+      (sum, stats) => sum + stats.memory_peak,
+      0,
+    );
 
     const activeWorkers = this.activeWorkers.size;
 
@@ -873,7 +936,8 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     if (activeWorkers > 10) {
       status = "degraded"; // Too many workers
     }
-    if (totalMemory > 2048) { // Over 2GB total
+    if (totalMemory > 2048) {
+      // Over 2GB total
       status = "unhealthy";
     }
 
