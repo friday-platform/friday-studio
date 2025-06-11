@@ -12,15 +12,8 @@ interface SessionConfig {
   payload?: any;
 }
 
-interface AgentWorkerInfo {
-  worker: Worker;
-  port: MessagePort;
-  type: string;
-}
-
 class SessionSupervisorWorker extends BaseWorker {
   private supervisor: SessionSupervisor | null = null;
-  private agents: Map<string, AgentWorkerInfo> = new Map();
   private sessionId: string | null = null;
 
   constructor() {
@@ -108,7 +101,7 @@ class SessionSupervisorWorker extends BaseWorker {
             );
             this.log(`Execution plan created with ${plan.phases.length} phases`);
 
-            const results = [];
+            const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
 
             // Execute each phase of the plan
             for (const phase of plan.phases) {
@@ -206,12 +199,6 @@ class SessionSupervisorWorker extends BaseWorker {
         );
       }
 
-      case "spawnAgent": {
-        const { agentType, agentId } = data;
-        await this.spawnAgent(agentId, agentType);
-        return { agentId, status: "spawned" };
-      }
-
       case "invokeAgent": {
         const { agentId, input } = data;
         return await this.invokeAgent(agentId, input, taskId);
@@ -221,11 +208,8 @@ class SessionSupervisorWorker extends BaseWorker {
         const summary = this.supervisor?.getExecutionSummary();
         return {
           sessionId: this.sessionId,
-          agentCount: this.agents.size,
-          agents: Array.from(this.agents.entries()).map(([id, info]) => ({
-            id,
-            type: info.type,
-          })),
+          agentCount: 0,
+          agents: [],
           executionStatus: summary?.status || "unknown",
         };
       }
@@ -237,87 +221,8 @@ class SessionSupervisorWorker extends BaseWorker {
 
   protected async cleanup(): Promise<void> {
     this.log("Cleaning up session supervisor...");
-
-    // Terminate all agent workers
-    for (const [agentId, info] of this.agents) {
-      info.worker.postMessage({ type: "shutdown" });
-      info.worker.terminate();
-      info.port.close();
-    }
-
-    this.agents.clear();
     this.supervisor = null;
     this.sessionId = null;
-  }
-
-  private async spawnAgent(agentId: string, agentType: string): Promise<void> {
-    this.log(`Spawning agent: ${agentType} (${agentId})`);
-
-    // Create agent worker with permissions to use BroadcastChannel
-    const agentWorker = new Worker(
-      new URL("./agent-worker.ts", import.meta.url).href,
-      {
-        type: "module",
-        deno: {
-          permissions: "inherit",
-        },
-      } as any,
-    );
-
-    // Create message channel for direct communication
-    const { port1, port2 } = new MessageChannel();
-
-    // Store agent info
-    this.agents.set(agentId, {
-      worker: agentWorker,
-      port: port1,
-      type: agentType,
-    });
-
-    // Setup worker message handling
-    agentWorker.onmessage = (event) => {
-      this.handleAgentMessage(agentId, event.data);
-    };
-
-    agentWorker.onerror = (error) => {
-      this.log(`Agent ${agentId} error:`, error);
-      self.postMessage({
-        type: "agentError",
-        agentId,
-        error: error.toString(),
-      });
-    };
-
-    // Initialize agent
-    agentWorker.postMessage({
-      type: "init",
-      id: agentId,
-      workerType: "agent",
-      config: {
-        agentId,
-        agentType,
-        sessionId: this.sessionId,
-      },
-    });
-
-    // Send port for direct communication
-    agentWorker.postMessage({
-      type: "setPort",
-      peerId: "session",
-      port: port2,
-    }, [port2]);
-
-    // Setup port message handling
-    port1.onmessage = (event) => {
-      this.handleAgentDirectMessage(agentId, event.data);
-    };
-
-    // Notify that agent is spawned
-    self.postMessage({
-      type: "agentSpawned",
-      agentId,
-      agentType,
-    });
   }
 
   private async executeAgentTask(
@@ -400,8 +305,9 @@ class SessionSupervisorWorker extends BaseWorker {
     }
 
     const task = {
+      agentId,
       task: `Process input: ${JSON.stringify(input)}`,
-      inputSource: "direct",
+      inputSource: "signal" as const,
       dependencies: [],
     };
 
@@ -412,36 +318,6 @@ class SessionSupervisorWorker extends BaseWorker {
     } catch (error) {
       this.log(`Error executing agent ${agentId}: ${error}`);
       throw error;
-    }
-  }
-
-  private handleAgentMessage(agentId: string, message: any): void {
-    switch (message.type) {
-      case "initialized":
-        this.log(`Agent ${agentId} initialized`);
-        break;
-
-      case "result":
-      case "error":
-        // These are handled by the promise in invokeAgent
-        break;
-
-      default:
-        this.log(`Agent ${agentId} message:`, message);
-    }
-  }
-
-  private handleAgentDirectMessage(agentId: string, message: any): void {
-    this.log(`Agent ${agentId} direct message:`, message);
-
-    // Forward important messages to supervisor or handle coordination
-    if (message.type === "chunk") {
-      // Forward streaming chunks
-      self.postMessage({
-        type: "agentChunk",
-        agentId,
-        chunk: message.chunk,
-      });
     }
   }
 

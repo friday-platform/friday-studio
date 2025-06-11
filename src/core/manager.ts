@@ -2,7 +2,7 @@ import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import type { IWorkspace, IWorkspaceMember, WorkspaceMemberRole } from "../types/core.ts";
 import { Workspace } from "./workspace.ts";
-import { type AgentMetadata, AgentRegistry } from "./agent-registry.ts";
+import type { AgentMetadata } from "../types/agent.ts";
 
 export class AtlasWorkspaceManager {
   private workspacesPath: string;
@@ -193,11 +193,8 @@ export class AtlasWorkspaceManager {
             typeof metadata === "object" && metadata !== null &&
             "type" in metadata
           ) {
-            // New format with metadata
-            const agent = await AgentRegistry.createAgent(
-              metadata as AgentMetadata,
-            );
-            workspace.agents[id] = agent;
+            // Legacy agent restoration - now handled by AgentLoader during runtime
+            console.warn(`Skipping agent restoration for ${id} - agents are now loaded from configuration`);
           }
           // Skip old format agents (they'll be lost but we can recreate them)
         } catch (error) {

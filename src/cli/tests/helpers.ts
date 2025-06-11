@@ -134,7 +134,6 @@ runtime:
     `${workspaceDir}/agents/test-agent.ts`,
     `
 import { BaseAgent } from "https://raw.githubusercontent.com/your-org/atlas/main/src/core/agents/base-agent.ts";
-import { AgentRegistry } from "https://raw.githubusercontent.com/your-org/atlas/main/src/core/agent-registry.ts";
 
 export class TestAgent extends BaseAgent {
   name() { return "TestAgent"; }
@@ -144,8 +143,6 @@ export class TestAgent extends BaseAgent {
     yield "Test response: " + message;
   }
 }
-
-AgentRegistry.register("test", TestAgent);
 `,
   );
 

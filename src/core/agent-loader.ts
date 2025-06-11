@@ -1,5 +1,5 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
-import { type AgentMetadata, AgentRegistry } from "./agent-registry.ts";
+import type { AgentMetadata } from "../types/agent.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface AgentLoadResult {
