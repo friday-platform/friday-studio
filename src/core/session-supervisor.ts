@@ -227,8 +227,8 @@ You have access to a filtered view of the workspace tailored for this specific s
     this.initializeAgentSupervisor({
       model: "claude-4-sonnet-20250514",
       prompts: {
-        system: "You are an AgentSupervisor responsible for safe agent execution."
-      }
+        system: "You are an AgentSupervisor responsible for safe agent execution.",
+      },
     });
 
     // Add context to memory
@@ -241,12 +241,30 @@ You have access to a filtered view of the workspace tailored for this specific s
       throw new Error("Session not initialized");
     }
 
-    // If we have a job specification, use it directly
+    this.log(`[createExecutionPlan] Checking for jobSpec...`);
+    this.log(
+      `[createExecutionPlan] SessionContext keys: ${Object.keys(this.sessionContext).join(", ")}`,
+    );
+    this.log(`[createExecutionPlan] JobSpec present: ${!!this.sessionContext.jobSpec}`);
     if (this.sessionContext.jobSpec) {
+      this.log(`[createExecutionPlan] JobSpec name: ${this.sessionContext.jobSpec.name}`);
+    }
+
+    // If we have a job specification, use it directly (fast path)
+    if (this.sessionContext.jobSpec) {
+      this.log(`Using fast job spec path for: ${this.sessionContext.jobSpec.name}`);
       return this.createPlanFromJobSpec(this.sessionContext.jobSpec);
     }
 
-    // Fallback to LLM-based planning for backward compatibility
+    // Debug why jobSpec is missing
+    this.log(
+      `No jobSpec found - signal: ${this.sessionContext.signal.id}, context has: ${
+        Object.keys(this.sessionContext).join(", ")
+      }`,
+    );
+
+    // Fallback to LLM-based planning
+    this.log("Using LLM-based planning fallback");
     return this.createLLMBasedPlan();
   }
 
@@ -375,6 +393,12 @@ Respond with a structured plan.`;
         "claude-3-5-sonnet-20241022",
         this.prompts.system,
         planPrompt,
+        true,
+        {
+          operation: "create_execution_plan",
+          sessionId: this.sessionContext?.sessionId,
+          signalType: this.sessionContext?.signal.id,
+        },
       );
 
       // Parse the LLM response into ExecutionPlan
@@ -497,6 +521,12 @@ Provide a brief evaluation.`;
         "claude-4-sonnet-20250514",
         this.prompts.system,
         evaluationPrompt,
+        true,
+        {
+          operation: "evaluate_progress",
+          sessionId: this.sessionContext?.sessionId,
+          agentsExecuted: phaseResults.length,
+        },
       );
 
       // First check: Have all agents from execution plan actually executed?
@@ -711,6 +741,12 @@ Keep the summary focused and relevant to the specific use case.`;
         "claude-4-sonnet-20250514",
         this.prompts.system,
         summaryPrompt,
+        true,
+        {
+          operation: "generate_session_summary",
+          sessionId: this.sessionContext?.sessionId,
+          resultsCount: allResults.length,
+        },
       );
 
       return summary;

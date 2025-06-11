@@ -637,7 +637,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     // Mock pre-execution checks
     this.log(`Performing pre-execution checks for worker ${instance.id}`);
     for (const check of supervision.pre_execution_checks) {
-      this.log(`✓ ${check}`);
+      this.log(`Pre-execution check passed`, { checkType: check });
     }
   }
 

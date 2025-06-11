@@ -244,7 +244,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   private handleSessionMessage(sessionId: string, message: any): void {
     switch (message.type) {
       case "initialized":
-        this.log(`Session ${sessionId} initialized`);
+        // Session initialization logged by SessionSupervisorWorker
         break;
 
       case "agentSpawned":
@@ -257,12 +257,20 @@ class WorkspaceSupervisorWorker extends BaseWorker {
         break;
 
       default:
-        this.log(`Session ${sessionId} message:`, message);
+        this.log(`Session message received`, { 
+          sessionId, 
+          messageType: message.type,
+          taskId: message.taskId,
+          status: message.result?.status 
+        });
     }
   }
 
   private handleSessionDirectMessage(sessionId: string, message: any): void {
-    this.log(`Session ${sessionId} direct message:`, message);
+    this.log(`Session direct message received`, { 
+      sessionId, 
+      messageType: message.type 
+    });
 
     // Handle coordination requests from sessions
     if (message.type === "requestGuidance") {

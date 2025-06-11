@@ -217,7 +217,15 @@ export class WorkspaceSupervisor extends BaseAgent
   constructor(workspaceId: string, config: any = {}) {
     super(workspaceId);
     this.config = config;
-    this.mergedConfig = null; // No longer needed at initialization time
+    // Store merged configuration if provided
+    this.mergedConfig = config.workspaceSignals || config.jobs
+      ? {
+        workspace: {
+          signals: config.workspaceSignals || {},
+        },
+        jobs: config.jobs || {},
+      }
+      : null;
     this.model = config.model || "claude-4-sonnet-20250514";
 
     // Set supervisor-specific prompts
@@ -320,6 +328,8 @@ You have access to the full workspace context and configuration. Create structur
       this.model,
       this.prompts.system,
       message,
+      true,
+      { operation: "workspace_supervisor_response", workspaceId: this.id },
     );
 
     // Stream the response
@@ -476,6 +486,13 @@ Provide a structured analysis.`;
         this.config.model || "claude-4-sonnet-20250514",
         this.prompts.system,
         analysisPrompt,
+        true,
+        {
+          operation: "signal_analysis",
+          signalId: signal.id,
+          workspaceId: this.id,
+          payloadSize: JSON.stringify(payload).length,
+        },
       );
 
       // Parse the response into SessionIntent
@@ -579,7 +596,13 @@ Provide a structured analysis.`;
         this.mergedConfig?.workspace?.signals?.[signal.id];
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
+      this.log(`[selectJobForSignal] Signal: ${signal.id}`);
+      this.log(`[selectJobForSignal] SignalData provided: ${!!signalData}`);
+      this.log(`[selectJobForSignal] SignalConfig: ${JSON.stringify(signalConfig)}`);
+      this.log(`[selectJobForSignal] AvailableJobs: ${Object.keys(availableJobs)}`);
+
       if (!signalConfig?.jobs) {
+        this.log(`[selectJobForSignal] No jobs found in signal config`);
         return null;
       }
 

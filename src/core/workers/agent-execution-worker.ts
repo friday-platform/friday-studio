@@ -4,6 +4,8 @@
 
 // Using direct fetch instead of AI SDK to avoid Tokio runtime conflicts in workers
 
+import { type ChildLogger, logger } from "../../utils/logger.ts";
+
 interface WorkerMessage {
   type: "initialize" | "execute" | "terminate";
   id: string;
@@ -59,8 +61,15 @@ class AgentExecutionWorker {
   private workerId: string = "";
   private isInitialized: boolean = false;
   private startTime: number = 0;
+  private logger: ChildLogger;
 
   constructor() {
+    // Initialize logger first
+    this.logger = logger.createChildLogger({
+      workerId: crypto.randomUUID(),
+      workerType: "agent-execution",
+    });
+
     // Listen for messages from main thread
     self.addEventListener("message", this.handleMessage.bind(this));
 
@@ -106,6 +115,12 @@ class AgentExecutionWorker {
     this.workerId = data.worker_id || crypto.randomUUID();
     this.isInitialized = true;
     this.startTime = Date.now();
+
+    // Update logger with actual worker ID
+    this.logger = logger.createChildLogger({
+      workerId: this.workerId,
+      workerType: "agent-execution",
+    });
 
     this.log("Worker initialized", "info");
 
@@ -207,7 +222,7 @@ class AgentExecutionWorker {
 
     // Safety checks from environment
     for (const check of request.environment.monitoring_config.safety_checks) {
-      this.log(`✓ Safety check: ${check}`, "debug");
+      this.logger.debug(`Safety check passed`, { checkType: check });
     }
   }
 
@@ -426,14 +441,16 @@ class AgentExecutionWorker {
   }
 
   private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
-    const timestamp = new Date().toISOString();
-    console.log(`[AgentWorker:${this.workerId}:${level.toUpperCase()}] ${timestamp} - ${message}`);
+    this.logger[level](message, {
+      workerId: this.workerId,
+      workerType: "agent-execution",
+    });
 
     // Send log to main thread for centralized logging
     this.postMessage({
       type: "log",
       id: crypto.randomUUID(),
-      data: { level, message, timestamp, worker_id: this.workerId },
+      data: { level, message, timestamp: new Date().toISOString(), worker_id: this.workerId },
     });
   }
 }

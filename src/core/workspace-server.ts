@@ -2,6 +2,7 @@ import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
 import { cors } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
+import { logger } from "../utils/logger.ts";
 
 export interface WorkspaceServerOptions {
   port?: number;
@@ -187,7 +188,9 @@ export class WorkspaceServer {
 
   private setupSignalHandlers() {
     const handleShutdown = async () => {
-      console.log("\n[Server] Shutting down gracefully...");
+      logger.info("Shutting down server gracefully", {
+        workspaceId: (this.runtime as any).workspace?.id,
+      });
 
       if (this.server && this.server.shutdown) {
         await this.server.shutdown();
@@ -205,13 +208,21 @@ export class WorkspaceServer {
     const port = this.options.port || 8080;
     const hostname = this.options.hostname || "localhost";
 
-    console.log(`[Server] Starting on http://${hostname}:${port}`);
+    logger.info(`Starting server on http://${hostname}:${port}`, {
+      hostname,
+      port,
+      workspaceId: (this.runtime as any).workspace?.id,
+    });
 
     this.server = Deno.serve({
       port,
       hostname,
       onListen: ({ hostname, port }) => {
-        console.log(`[Server] Running on http://${hostname}:${port}`);
+        logger.info(`Server running on http://${hostname}:${port}`, {
+          hostname,
+          port,
+          workspaceId: (this.runtime as any).workspace?.id,
+        });
       },
     }, this.app.fetch);
 

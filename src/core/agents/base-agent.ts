@@ -10,6 +10,7 @@ import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
 import { LLMService } from "../llm-service.ts";
+import { type ChildLogger, logger } from "../../utils/logger.ts";
 
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
@@ -20,6 +21,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   messages: ITempestMessageManager;
   prompts: { system: string; user: string };
   gates: any[] = [];
+  protected logger: ChildLogger;
 
   constructor(id?: string) {
     this.id = id || crypto.randomUUID();
@@ -30,6 +32,12 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       system: "",
       user: "",
     };
+
+    // Initialize logger for this agent
+    this.logger = logger.createChildLogger({
+      agentId: this.id,
+      agentName: this.name?.() || "BaseAgent",
+    });
 
     // Initialize agent memory with startup context
     this.rememberAgentInitialization();
@@ -196,12 +204,11 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
 
   // Utility methods for logging
   protected log(message: string, context?: any): void {
-    const prefix = `[${this.name()}]`;
-    if (context) {
-      console.log(prefix, message, context);
-    } else {
-      console.log(prefix, message);
-    }
+    this.logger.info(message, {
+      agentName: this.name(),
+      agentId: this.id,
+      ...context,
+    });
 
     // Remember significant log events
     if (message.includes("error") || message.includes("failed")) {
@@ -215,6 +222,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     systemPrompt: string,
     userPrompt: string,
     includeMemoryContext: boolean = true,
+    operationContext?: { operation: string; [key: string]: any },
   ): Promise<string> {
     const startTime = Date.now();
 
@@ -233,6 +241,8 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         memoryContext: memoryContext || undefined,
         maxTokens: 2000,
         temperature: 0.7,
+        operationContext: operationContext ||
+          { operation: "agent_generation", agentId: this.id, agentName: this.name() },
       });
 
       const duration = Date.now() - startTime;

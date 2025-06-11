@@ -58,11 +58,6 @@ export function createBaseWorkerMachine(id: string, type: string) {
           INIT: {
             target: "initializing",
             actions: [
-              ({ event }) =>
-                console.log(
-                  `[BaseWorker] INIT event received with config:`,
-                  event.config,
-                ),
               assign({
                 config: ({ event }) => event.config,
               }),
@@ -71,7 +66,6 @@ export function createBaseWorkerMachine(id: string, type: string) {
         },
       },
       initializing: {
-        entry: () => console.log(`[BaseWorker] Entering initializing state`),
         invoke: {
           id: "initialize",
           src: "performInitialization",
@@ -83,7 +77,6 @@ export function createBaseWorkerMachine(id: string, type: string) {
           onError: {
             target: "error",
             actions: [
-              ({ event }) => console.log(`[BaseWorker] Initialization error:`, event),
               assign({
                 error: ({ event }) => String(event.error),
               }),
@@ -192,12 +185,6 @@ export abstract class BaseWorker<
           self.postMessage({ type: "initialized" });
         },
         notifyTaskComplete: ({ context, event }) => {
-          console.log(
-            `[BaseWorker] Task complete event:`,
-            event.type,
-            "taskId:",
-            context.currentTask,
-          );
           self.postMessage({
             type: "result",
             taskId: context.currentTask,
@@ -216,7 +203,6 @@ export abstract class BaseWorker<
         joinBroadcastChannel: ({ context, event }) => {
           if (event.type === "JOIN_CHANNEL") {
             // Disable BroadcastChannel in workers due to Tokio runtime conflicts
-            console.log(`[BaseWorker] BroadcastChannel ${event.channel} disabled in worker`);
             context.channels.add(event.channel);
           }
         },
@@ -230,12 +216,7 @@ export abstract class BaseWorker<
       },
       actors: {
         performInitialization: fromPromise(async ({ input }) => {
-          console.log(
-            `[BaseWorker] Starting initialization with config:`,
-            input.config,
-          );
           await this.initialize(input.config);
-          console.log(`[BaseWorker] Initialization complete`);
         }),
         performTask: fromPromise(async ({ input }) => {
           const { taskId, data } = input;
@@ -258,16 +239,8 @@ export abstract class BaseWorker<
   }
 
   private handleMessage(message: any) {
-    console.log(
-      `[BaseWorker ${this.context.type}] Received message:`,
-      message.type,
-    );
     switch (message.type) {
       case "init":
-        console.log(
-          `[BaseWorker ${this.context.type}] Init with config:`,
-          message.config,
-        );
         this.context.config = message.config;
         this.actor.send({ type: "INIT", config: message.config });
         break;
@@ -287,10 +260,6 @@ export abstract class BaseWorker<
         });
         break;
       case "task":
-        console.log(
-          `[BaseWorker ${this.context.type}] Task received:`,
-          message.taskId,
-        );
         this.actor.send({
           type: "TASK",
           taskId: message.taskId,
@@ -310,21 +279,32 @@ export abstract class BaseWorker<
 
   // Optional methods that subclasses can override
   protected handleCustomMessage(message: any): void {
-    console.warn(`[${this.context.type}] Unhandled message:`, message);
+    this.logger.warn(`Unhandled message received`, {
+      messageType: message.type,
+      workerType: this.context.type
+    });
   }
 
   protected handleBroadcast(channel: string, data: any): void {
-    console.log(`[${this.context.type}] Broadcast on ${channel}:`, data);
+    this.logger.debug(`Broadcast message received`, {
+      channel,
+      dataType: data.type,
+      workerType: this.context.type
+    });
   }
 
   protected handleDirectMessage(peerId: string, data: any): void {
-    console.log(`[${this.context.type}] Direct message from ${peerId}:`, data);
+    this.logger.debug(`Direct message received`, {
+      peerId,
+      dataType: data.type,
+      workerType: this.context.type
+    });
   }
 
   // Utility methods for workers
   protected broadcast(channel: string, message: any): void {
     // BroadcastChannel disabled in workers due to Tokio runtime conflicts
-    console.log(`[BaseWorker] Broadcast to ${channel} disabled in worker:`, message);
+    // Note: Broadcast functionality disabled in worker context
   }
 
   protected sendDirect(peerId: string, message: any): void {

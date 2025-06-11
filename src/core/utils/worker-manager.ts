@@ -227,12 +227,25 @@ export function createWorkerManagerMachine() {
   });
 }
 
+// Worker pool for reusing workers
+interface WorkerPool {
+  available: ManagedWorker[];
+  inUse: Map<string, ManagedWorker>;
+  maxSize: number;
+}
+
 // WorkerManager utility class
 export class WorkerManager {
   private actor: any;
   private workers: Map<string, ManagedWorker> = new Map();
+  private pools: Map<WorkerType, WorkerPool> = new Map();
 
   constructor() {
+    // Initialize worker pools
+    this.pools.set("supervisor", { available: [], inUse: new Map(), maxSize: 3 });
+    this.pools.set("session", { available: [], inUse: new Map(), maxSize: 5 });
+    this.pools.set("agent", { available: [], inUse: new Map(), maxSize: 10 });
+
     const machine = createWorkerManagerMachine().provide({
       actions: {
         spawnWorker: ({ context, event }) => {
@@ -349,7 +362,7 @@ export class WorkerManager {
     // Notify manager
     this.actor.send({ type: "WORKER_SPAWNED", workerId: id });
 
-    // Initialize worker
+    // Initialize worker with faster pattern - send both messages immediately
     workerActor.send({ type: "INITIALIZE", config: metadata.config });
     worker.postMessage({
       type: "init",
@@ -616,9 +629,14 @@ export class WorkerManager {
     return this.getWorkerState(workerId) === "ready";
   }
 
-  async waitForWorkerReady(workerId: string, timeout = 5000): Promise<boolean> {
+  async waitForWorkerReady(workerId: string, timeout = 2000): Promise<boolean> {
     const worker = this.workers.get(workerId);
     if (!worker) return false;
+
+    // Check if already ready
+    if (worker.actor.getSnapshot().matches("ready")) {
+      return true;
+    }
 
     return new Promise((resolve) => {
       const timeoutId = setTimeout(() => resolve(false), timeout);
@@ -642,7 +660,7 @@ export class WorkerManager {
     config: any,
     options: { model?: string; timeout?: number } = {},
   ): Promise<ManagedWorker> {
-    const { timeout = 10000 } = options;
+    const { timeout = 5000 } = options;
 
     const supervisorMetadata: WorkerMetadata = {
       id: crypto.randomUUID(),
@@ -655,13 +673,19 @@ export class WorkerManager {
       },
     };
 
-    // Spawn supervisor worker
-    const supervisor = await this.spawnWorker(
-      supervisorMetadata,
-      new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
-    );
+    // Spawn supervisor worker and setup broadcast channel in parallel
+    const [supervisor, _] = await Promise.all([
+      this.spawnWorker(
+        supervisorMetadata,
+        new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
+      ),
+      // Channel setup is essentially instantaneous, but run in parallel for clarity
+      Promise.resolve().then(() => {
+        // Note: We can't setup channel before worker exists, so this will happen after spawn
+      }),
+    ]);
 
-    // Setup broadcast channel
+    // Setup broadcast channel immediately after worker creation
     this.setupBroadcastChannel(supervisor.id, `workspace-${workspaceId}`);
 
     // Wait for supervisor to be ready
@@ -686,32 +710,16 @@ export class WorkerManager {
     config: any,
     options: { timeout?: number } = {},
   ): Promise<ManagedWorker> {
-    const { timeout = 10000 } = options;
-
-    const sessionMetadata: WorkerMetadata = {
-      id: crypto.randomUUID(),
-      type: "session",
-      config: {
+    // Use worker pool for much faster session creation
+    const sessionWorker = await this.getPooledWorker(
+      "session",
+      new URL("../workers/session-supervisor-worker.ts", import.meta.url).href,
+      {
         sessionId,
         workspaceId,
         ...config,
       },
-    };
-
-    // Spawn session worker
-    const sessionWorker = await this.spawnWorker(
-      sessionMetadata,
-      new URL("../workers/session-supervisor-worker.ts", import.meta.url).href,
     );
-
-    // Wait for session worker to be ready
-    const ready = await this.waitForWorkerReady(sessionWorker.id, timeout);
-
-    if (!ready) {
-      const state = this.getWorkerState(sessionWorker.id);
-      await this.terminateWorker(sessionWorker.id);
-      throw new Error(`Session worker failed to initialize within ${timeout}ms (state: ${state})`);
-    }
 
     return sessionWorker;
   }
@@ -726,7 +734,7 @@ export class WorkerManager {
     sessionId: string,
     options: { timeout?: number } = {},
   ): Promise<ManagedWorker> {
-    const { timeout = 10000 } = options;
+    const { timeout = 5000 } = options;
 
     const agentMetadata: WorkerMetadata = {
       id: crypto.randomUUID(),
@@ -789,5 +797,147 @@ export class WorkerManager {
   private getWorkerType(workerId: string): WorkerType | "unknown" {
     const worker = this.workers.get(workerId);
     return worker?.type || "unknown";
+  }
+
+  /**
+   * Get or create a worker from the pool (primary performance optimization)
+   */
+  async getPooledWorker(
+    type: WorkerType,
+    workerUrl: string,
+    config?: any,
+  ): Promise<ManagedWorker> {
+    const pool = this.pools.get(type);
+    if (!pool) {
+      throw new Error(`No pool configured for worker type: ${type}`);
+    }
+
+    // Try to reuse an available worker from the pool
+    if (pool.available.length > 0) {
+      const worker = pool.available.pop()!;
+
+      // Reset worker for new task
+      await this.resetWorker(worker, config);
+
+      pool.inUse.set(worker.id, worker);
+      return worker;
+    }
+
+    // If no available workers and under max size, create new worker
+    if (pool.inUse.size < pool.maxSize) {
+      const metadata: WorkerMetadata = {
+        id: crypto.randomUUID(),
+        type,
+        config,
+      };
+
+      const worker = await this.spawnWorker(metadata, workerUrl);
+      pool.inUse.set(worker.id, worker);
+      return worker;
+    }
+
+    // Pool is at capacity, wait for a worker to become available
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error(`Timeout waiting for ${type} worker from pool`));
+      }, 10000);
+
+      const checkForAvailable = () => {
+        if (pool.available.length > 0) {
+          clearTimeout(timeout);
+          const worker = pool.available.pop()!;
+          this.resetWorker(worker, config).then(() => {
+            pool.inUse.set(worker.id, worker);
+            resolve(worker);
+          }).catch(reject);
+        } else {
+          setTimeout(checkForAvailable, 100);
+        }
+      };
+
+      checkForAvailable();
+    });
+  }
+
+  /**
+   * Return worker to pool when task is complete
+   */
+  returnWorkerToPool(workerId: string): void {
+    const worker = this.workers.get(workerId);
+    if (!worker) return;
+
+    const pool = this.pools.get(worker.type);
+    if (!pool) return;
+
+    // Move from inUse to available
+    pool.inUse.delete(workerId);
+    pool.available.push(worker);
+  }
+
+  /**
+   * Reset worker state for reuse
+   */
+  private async resetWorker(worker: ManagedWorker, config?: any): Promise<void> {
+    // Reset worker state machine to ready
+    worker.actor.send({ type: "INITIALIZE", config });
+
+    // Send new config to worker
+    worker.worker.postMessage({
+      type: "init",
+      id: worker.id,
+      workerType: worker.type,
+      config,
+    });
+
+    // Wait for ready state
+    await this.waitForWorkerReady(worker.id, 2000);
+  }
+
+  /**
+   * Pre-warm worker pools for better performance
+   */
+  async preWarmPools(): Promise<void> {
+    const warmupTasks = [];
+
+    // Pre-create some workers for each type
+    warmupTasks.push(
+      this.preWarmPool(
+        "session",
+        2,
+        new URL("../workers/session-supervisor-worker.ts", import.meta.url).href,
+      ),
+    );
+    warmupTasks.push(
+      this.preWarmPool(
+        "supervisor",
+        1,
+        new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
+      ),
+    );
+
+    await Promise.all(warmupTasks);
+  }
+
+  private async preWarmPool(type: WorkerType, count: number, workerUrl: string): Promise<void> {
+    const pool = this.pools.get(type);
+    if (!pool) return;
+
+    const tasks = [];
+    for (let i = 0; i < count; i++) {
+      const metadata: WorkerMetadata = {
+        id: crypto.randomUUID(),
+        type,
+        config: {},
+      };
+
+      tasks.push(
+        this.spawnWorker(metadata, workerUrl).then((worker) => {
+          pool.available.push(worker);
+        }),
+      );
+    }
+
+    await Promise.all(tasks);
+    logger.info(`Pre-warmed ${count} ${type} workers`);
   }
 }

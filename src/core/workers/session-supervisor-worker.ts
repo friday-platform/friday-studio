@@ -17,25 +17,21 @@ class SessionSupervisorWorker extends BaseWorker {
   private sessionId: string | null = null;
 
   constructor() {
-    super("session", "session");
+    super(crypto.randomUUID().slice(0, 8), "session");
   }
 
   protected async initialize(config: SessionConfig): Promise<void> {
-    this.log("Initializing session supervisor:", config.sessionId);
-
     this.sessionId = config.sessionId;
     (this.context as any).sessionId = config.sessionId;
 
-    // Create the SessionSupervisor (intelligent agent)
+    // Create the SessionSupervisor (intelligent agent) - this is the main bottleneck
     this.supervisor = new SessionSupervisor(config.workspaceId);
 
-    // Join session broadcast channel
+    // Join session broadcast channel (async, non-blocking)
     this.actor.send({
       type: "JOIN_CHANNEL",
       channel: `session-${config.sessionId}`,
     });
-
-    this.log("Session supervisor initialized");
   }
 
   protected async processTask(taskId: string, data: any): Promise<any> {
@@ -54,10 +50,9 @@ class SessionSupervisorWorker extends BaseWorker {
             traceHeaders,
             workerId: this.context.id,
             sessionId: this.sessionId!,
-            workspaceId
+            workspaceId,
           },
           async (span) => {
-
             const sessionContext: SessionContext = {
               sessionId: this.sessionId!,
               workspaceId,
@@ -72,9 +67,12 @@ class SessionSupervisorWorker extends BaseWorker {
 
             await this.supervisor!.initializeSession(sessionContext);
 
-            this.log(`Session initialized with intent: ${intent?.id || "none"}`);
+            this.logger.info(`Session initialized with intent: ${intent?.id || "none"}`, {
+              sessionId: this.sessionId!,
+              intentId: intent?.id,
+            });
             return { status: "initialized", intentId: intent?.id };
-          }
+          },
         );
       }
 
@@ -87,9 +85,10 @@ class SessionSupervisorWorker extends BaseWorker {
             component: "session",
             traceHeaders,
             workerId: this.context.id,
-            sessionId: this.sessionId!
+            sessionId: this.sessionId!,
           },
           async (span) => {
+            const sessionStartTime = Date.now();
 
             // Create execution plan using SessionSupervisor's intelligence
             const plan = await AtlasTelemetry.withSpan(
@@ -97,9 +96,12 @@ class SessionSupervisorWorker extends BaseWorker {
               async () => {
                 return await this.supervisor!.createExecutionPlan();
               },
-              { "session.id": this.sessionId! }
+              { "session.id": this.sessionId! },
             );
-            this.log(`Execution plan created with ${plan.phases.length} phases`);
+            this.logger.info(`Execution plan created with ${plan.phases.length} phases`, {
+              sessionId: this.sessionId!,
+              phaseCount: plan.phases.length,
+            });
 
             const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
 
@@ -108,7 +110,11 @@ class SessionSupervisorWorker extends BaseWorker {
               await AtlasTelemetry.withSpan(
                 `session.executePhase.${phase.name}`,
                 async (phaseSpan) => {
-                  this.log(`Executing phase: ${phase.name}`);
+                  this.logger.info(`Executing phase: ${phase.name}`, {
+                    sessionId: this.sessionId!,
+                    phaseName: phase.name,
+                    phaseId: phase.id,
+                  });
                   phaseSpan?.setAttribute("phase.name", phase.name);
                   phaseSpan?.setAttribute("phase.strategy", phase.executionStrategy);
 
@@ -123,7 +129,7 @@ class SessionSupervisorWorker extends BaseWorker {
                       const result = await this.executeAgentTask(
                         agentTask,
                         phaseResults,
-                        agentTraceHeaders
+                        agentTraceHeaders,
                       );
                       phaseResults.push(result);
 
@@ -132,7 +138,12 @@ class SessionSupervisorWorker extends BaseWorker {
                         phaseResults,
                       );
                       if (evaluation.isComplete) {
-                        this.log("Session goal achieved early");
+                        this.log("Session evaluation determined completion", {
+                          phase: phaseIndex + 1,
+                          agent: agentIndex + 1,
+                          reason: evaluation.reason || "Goals satisfied",
+                          agents_executed: phaseResults.length,
+                        });
                         break;
                       }
                     }
@@ -151,7 +162,7 @@ class SessionSupervisorWorker extends BaseWorker {
                     results: phaseResults,
                   });
                 },
-                { "phase.id": phase.id }
+                { "phase.id": phase.id },
               );
 
               // Check if we should continue to next phase
@@ -175,16 +186,31 @@ class SessionSupervisorWorker extends BaseWorker {
               results,
             );
 
-            // Log both diagnostic info and LLM summary
-            this.log(`\n📊 Session Results Summary:`);
-            this.log(`Session ID: ${this.sessionId}`);
-            this.log(`Signal: ${this.supervisor!.getSessionContext()?.signal.id}`);
-            this.log(`Phases executed: ${results.length}`);
-            this.log(
-              `Total agents invoked: ${results.flatMap((r) => r.results).length}`,
-            );
-            this.log(`Status: ${summary.status}`);
-            this.log(`\n🤖 AI Summary:\n${sessionSummary}`);
+            // Log structured session results
+            const sessionContext = this.supervisor!.getSessionContext();
+            const timing = {
+              total_duration: Date.now() - sessionStartTime,
+              agent_executions: results.flatMap((r) => r.results).map((r) => ({
+                agent: r.agentId,
+                duration: r.duration,
+                input_size: JSON.stringify(r.input).length,
+                output_size: JSON.stringify(r.output).length,
+              })),
+            };
+
+            this.log("Session completed", {
+              sessionId: this.sessionId,
+              signal: sessionContext?.signal.id,
+              original_input: sessionContext?.payload,
+              phases_executed: results.length,
+              total_agents_invoked: results.flatMap((r) => r.results).length,
+              status: summary.status,
+              timing: timing,
+              final_output: results[results.length - 1]
+                ?.results[results[results.length - 1]?.results.length - 1]?.output,
+            });
+
+            this.log("AI Summary", { summary: sessionSummary });
 
             return {
               status: summary.status,
@@ -195,7 +221,7 @@ class SessionSupervisorWorker extends BaseWorker {
               ),
               summary: sessionSummary,
             };
-          }
+          },
         );
       }
 
@@ -265,11 +291,11 @@ class SessionSupervisorWorker extends BaseWorker {
         traceHeaders,
         workerId: this.context.id,
         sessionId: this.sessionId!,
-        agentId
+        agentId,
       },
       async (span) => {
         return await this.invokeAgent(agentId, input, crypto.randomUUID(), traceHeaders);
-      }
+      },
     );
 
     return {

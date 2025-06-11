@@ -50,7 +50,9 @@ export class LLMService {
    */
   static async generateText(
     userPrompt: string,
-    options: LLMGenerationOptions & LLMConfig = {},
+    options: LLMGenerationOptions & LLMConfig & {
+      operationContext?: { operation: string; [key: string]: any };
+    } = {},
   ): Promise<string> {
     const startTime = Date.now();
     const config = { ...this.defaultConfig, ...options };
@@ -99,10 +101,12 @@ export class LLMService {
       const duration = Date.now() - startTime;
 
       logger.debug("LLM generation completed", {
+        operation: options.operationContext?.operation || "unknown",
         model: config.model,
         duration,
         promptLength: userPrompt.length,
         responseLength: text.length,
+        ...options.operationContext,
       });
 
       return text;

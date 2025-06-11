@@ -526,7 +526,7 @@ const workspaceRuntimeMachine = setup({
               supervisorId: ({ event }) => event.output.supervisorId,
               mergedConfig: ({ event }) => event.output.mergedConfig,
             }),
-            () => console.log("[Runtime FSM] Transitioned to ready state"),
+            ({ context }) => logger.info("Workspace ready", { workspaceId: context.workspace.id }),
           ],
         },
         onError: {
@@ -568,24 +568,42 @@ const workspaceRuntimeMachine = setup({
               }
               return sessionCount === 0;
             },
-            actions: assign({
-              sessions: ({ context, event }) => {
-                const newSessions = new Map(context.sessions);
-                newSessions.delete(event.sessionId);
-                return newSessions;
+            actions: [
+              assign({
+                sessions: ({ context, event }) => {
+                  const newSessions = new Map(context.sessions);
+                  newSessions.delete(event.sessionId);
+                  return newSessions;
+                },
+              }),
+              ({ context, event }) => {
+                // Return session worker to pool for reuse (major performance optimization)
+                const session = context.sessions.get(event.sessionId);
+                if (session && (session as any).workerId) {
+                  context.workerManager.returnWorkerToPool((session as any).workerId);
+                }
               },
-            }),
+            ],
           },
           {
             // Otherwise stay in processing
             target: "processing",
-            actions: assign({
-              sessions: ({ context, event }) => {
-                const newSessions = new Map(context.sessions);
-                newSessions.delete(event.sessionId);
-                return newSessions;
+            actions: [
+              assign({
+                sessions: ({ context, event }) => {
+                  const newSessions = new Map(context.sessions);
+                  newSessions.delete(event.sessionId);
+                  return newSessions;
+                },
+              }),
+              ({ context, event }) => {
+                // Return session worker to pool for reuse (major performance optimization)
+                const session = context.sessions.get(event.sessionId);
+                if (session && (session as any).workerId) {
+                  context.workerManager.returnWorkerToPool((session as any).workerId);
+                }
               },
-            }),
+            ],
           },
         ],
         SHUTDOWN: {
@@ -601,11 +619,17 @@ const workspaceRuntimeMachine = setup({
     },
     draining: {
       entry: async ({ context }) => {
-        console.log("[Runtime FSM] Draining - cancelling all sessions...");
+        logger.info("Draining workspace - cancelling all sessions", {
+          workspaceId: context.workspace.id,
+          sessionCount: context.sessions.size
+        });
 
         // Cancel all active sessions
         for (const [sessionId, session] of context.sessions) {
-          console.log(`[Runtime FSM] Cancelling session: ${sessionId}`);
+          logger.debug("Cancelling session", {
+            workspaceId: context.workspace.id,
+            sessionId
+          });
           await session.cancel();
         }
 
@@ -657,24 +681,17 @@ const workspaceRuntimeMachine = setup({
     terminated: {
       type: "final",
       entry: async ({ context }) => {
-        console.log(
-          "[Runtime FSM] Terminated - shutting down worker manager...",
-        );
+        logger.info("Terminating workspace - shutting down worker manager", {
+          workspaceId: context.workspace.id
+        });
 
         // Shutdown worker manager
         await context.workerManager.shutdown();
 
-        // Save final state checkpoint
-        const state = {
-          workspace: context.workspace.snapshot(),
-          sessions: [],
-          workers: [],
-          timestamp: new Date().toISOString(),
-          finalState: "terminated",
-        };
-
-        console.log("[Runtime FSM] Final state checkpoint:", state);
-        console.log("[Runtime FSM] Shutdown complete");
+        logger.info("Workspace shutdown complete", {
+          workspaceId: context.workspace.id,
+          finalState: "terminated"
+        });
       },
     },
   },

@@ -71,14 +71,17 @@ signals:
           description: "The message to transform through the telephone game"
       required: ["message"]
     
-    # Jobs triggered by this signal
+    # Jobs triggered by this signal  
     jobs:
       - name: "telephone"
         condition: "message && message.length > 0 && message.length < 100"
-        job: "./jobs/telephone-game.yml"
-      - name: "comprehensive-multi-agent-example"
-        condition: "message && message.length >= 100"
-        job: "./jobs/comprehensive-example.yml"
+        description: "Telephone game with sequential agent processing"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "mishearing-agent"
+            - id: "embellishment-agent"
+            - id: "reinterpretation-agent"
 
 # Runtime configuration
 runtime:
