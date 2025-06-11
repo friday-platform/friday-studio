@@ -1,5 +1,6 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
 import type { AgentMetadata } from "../types/agent.ts";
+import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
 import { logger } from "../utils/logger.ts";
 
 export interface AgentLoadResult {
@@ -17,7 +18,7 @@ export class AgentLoader {
    */
   static async loadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, any>,
+    agentConfigs: Record<string, RuntimeAgentConfig>,
   ): Promise<AgentLoadResult> {
     const result: AgentLoadResult = {
       loaded: [],
@@ -79,9 +80,8 @@ export class AgentLoader {
   private static async loadSingleAgent(
     workspace: IWorkspace,
     agentId: string,
-    agentConfig: any,
+    agentConfig: RuntimeAgentConfig,
   ): Promise<IWorkspaceAgent> {
-
     const metadata: AgentMetadata = {
       id: agentId,
       type: agentConfig.type,
@@ -107,20 +107,34 @@ export class AgentLoader {
       controls: () => ({}),
       getAgentPrompts: () => ({ system: agentConfig.prompts?.system || "", user: "" }),
       // These will not be called for metadata-only agents, but required by interface
-      invoke: async (message: string) => { 
-        throw new Error(`Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`); 
+      invoke: async (message: string) => {
+        throw new Error(
+          `Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`,
+        );
       },
-      invokeStream: async function* (message: string) { 
-        throw new Error(`Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`); 
+      invokeStream: async function* (message: string) {
+        throw new Error(
+          `Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`,
+        );
       },
       // Base agent interface methods
       prompts: { system: agentConfig.prompts?.system || "", user: "" },
       gates: [],
-      newConversation: () => { throw new Error("Not implemented for metadata agents"); },
-      getConversation: () => { throw new Error("Not implemented for metadata agents"); },
-      archiveConversation: () => { throw new Error("Not implemented for metadata agents"); },
-      deleteConversation: () => { throw new Error("Not implemented for metadata agents"); },
-      scope: () => { throw new Error("Not implemented for metadata agents"); },
+      newConversation: () => {
+        throw new Error("Not implemented for metadata agents");
+      },
+      getConversation: () => {
+        throw new Error("Not implemented for metadata agents");
+      },
+      archiveConversation: () => {
+        throw new Error("Not implemented for metadata agents");
+      },
+      deleteConversation: () => {
+        throw new Error("Not implemented for metadata agents");
+      },
+      scope: () => {
+        throw new Error("Not implemented for metadata agents");
+      },
     };
 
     return metadataAgent as unknown as IWorkspaceAgent;
@@ -131,7 +145,7 @@ export class AgentLoader {
    */
   static async reloadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, any>,
+    agentConfigs: Record<string, RuntimeAgentConfig>,
   ): Promise<AgentLoadResult> {
     // Clear existing agents
     for (const agentId of Object.keys(workspace.agents)) {
@@ -151,9 +165,11 @@ export class AgentLoader {
         const agentTyped = agent as any;
         acc[key] = {
           id: key,
-          name: typeof agentTyped.name === 'function' ? agentTyped.name() : agentTyped.name || key,
+          name: typeof agentTyped.name === "function" ? agentTyped.name() : agentTyped.name || key,
           type: agentTyped.type || key.replace("-agent", ""),
-          purpose: typeof agentTyped.purpose === 'function' ? agentTyped.purpose() : agentTyped.purpose || "",
+          purpose: typeof agentTyped.purpose === "function"
+            ? agentTyped.purpose()
+            : agentTyped.purpose || "",
           // CRITICAL: Preserve config and metadata flags for proper agent execution
           config: agentTyped.config || {},
           isMetadata: agentTyped.isMetadata || false,

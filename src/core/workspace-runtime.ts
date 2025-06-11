@@ -1,13 +1,28 @@
+import { type Actor, assign, createActor, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import { WorkerManager } from "./utils/worker-manager.ts";
-import { Session } from "./session.ts";
-import { type Actor, assign, createActor, createMachine, fromPromise } from "xstate";
 import { logger } from "../utils/logger.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
+import { Session } from "./session.ts";
+import { WorkerManager } from "./utils/worker-manager.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   supervisorModel?: string;
+}
+
+export interface RuntimeAgentConfig {
+  type: string;
+  name?: string;
+  nickname?: string;
+  version?: string;
+  provider?: string;
+  purpose?: string;
+  prompts?: {
+    system?: string;
+    user?: string;
+  };
+  model?: string;
+  [key: string]: any; // Allow additional properties
 }
 
 // Define the context for the state machine
@@ -19,7 +34,16 @@ interface WorkspaceRuntimeContext {
   sessions: Map<string, IWorkspaceSession>;
   workerManager: WorkerManager;
   error?: Error;
-  mergedConfig?: any; // Store merged configuration for signal processing
+  mergedConfig?: {
+    atlas: {
+      agents: Record<string, RuntimeAgentConfig>;
+    };
+    workspace: {
+      agents: Record<string, RuntimeAgentConfig>;
+      signals?: Record<string, any>;
+    };
+    jobs?: Record<string, any>;
+  };
 }
 
 // Define the events for the state machine
@@ -29,6 +53,15 @@ type WorkspaceRuntimeEvent =
   | { type: "SESSION_COMPLETE"; sessionId: string }
   | { type: "SHUTDOWN" }
   | { type: "ERROR"; error: Error };
+
+// Define the machine input
+interface WorkspaceRuntimeMachineInput {
+  workspace: IWorkspace;
+  config?: any;
+  options: WorkspaceRuntimeOptions;
+  sessions: Map<string, IWorkspaceSession>;
+  workerManager: WorkerManager;
+}
 
 /**
  * WorkspaceRuntime orchestrates the execution of a workspace.
@@ -104,11 +137,15 @@ export class WorkspaceRuntime {
     payload: any,
   ): Promise<IWorkspaceSession> {
     return await AtlasTelemetry.withServerSpan(
-      "workspace.processSignal", 
+      "workspace.processSignal",
       async (span) => {
         // Add workspace and signal attributes
         AtlasTelemetry.addWorkspaceAttributes(span, this.workspace.id);
-        AtlasTelemetry.addSignalAttributes(span, signal.id, signal.provider || "unknown");
+        AtlasTelemetry.addSignalAttributes(
+          span,
+          signal.id,
+          signal.provider?.name || signal.provider?.id || "unknown",
+        );
 
         const state = this.stateMachine.getSnapshot();
 
@@ -195,8 +232,8 @@ export class WorkspaceRuntime {
       },
       {
         "workspace.state": this.getState(),
-        "signal.payload.size": JSON.stringify(payload).length
-      }
+        "signal.payload.size": JSON.stringify(payload).length,
+      },
     );
   }
 
@@ -314,7 +351,6 @@ export class WorkspaceRuntime {
     }));
   }
 
-
   /**
    * Save state checkpoint
    */
@@ -361,21 +397,102 @@ export class WorkspaceRuntime {
   }
 }
 
-// Define the state machine
-const workspaceRuntimeMachine = createMachine({
+// Define the state machine using setup for better type inference
+const workspaceRuntimeMachine = setup({
+  types: {
+    context: {} as WorkspaceRuntimeContext,
+    events: {} as WorkspaceRuntimeEvent,
+    input: {} as WorkspaceRuntimeMachineInput,
+  },
+  actors: {
+    initializeSupervisor: fromPromise<
+      { supervisorId: string; mergedConfig: any },
+      { context: WorkspaceRuntimeContext }
+    >(async ({ input }) => {
+      const { context } = input;
+      await logger.info("Initializing supervisor", {
+        workspaceId: context.workspace.id,
+      });
+
+      // Load merged configuration (atlas.yml + workspace.yml)
+      const { ConfigLoader } = await import("./config-loader.ts");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+
+      // Load all agents (platform + user)
+      const allAgents: Record<string, RuntimeAgentConfig> = {
+        ...mergedConfig.atlas.agents,
+        ...mergedConfig.workspace.agents,
+      };
+
+      if (allAgents && Object.keys(allAgents).length > 0) {
+        const { AgentLoader } = await import("./agent-loader.ts");
+        const loadResult = await AgentLoader.loadAgents(
+          context.workspace,
+          allAgents,
+        );
+
+        logger.info(
+          `Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`,
+          {
+            workspaceId: context.workspace.id,
+            loadedCount: loadResult.loaded.length,
+            failedCount: loadResult.failed.length,
+          },
+        );
+      }
+
+      // Use consolidated worker creation method
+      const supervisorConfig = {
+        workspace: {
+          ...context.workspace.snapshot(),
+          id: context.workspace.id,
+          // Serialize agents to pass only metadata
+          agents: (
+            await import("./agent-loader.ts")
+          ).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
+          signals: Object.keys(context.workspace.signals || {}),
+          workflows: Object.keys(context.workspace.workflows || {}),
+        },
+        config: {
+          ...(context.config?.supervisor || {}),
+          // Pass only serializable parts of the merged configuration
+          workspaceSignals: mergedConfig.workspace.signals,
+          jobs: mergedConfig.jobs,
+        },
+      };
+
+      let supervisor;
+      try {
+        supervisor = await context.workerManager.spawnSupervisorWorker(
+          context.workspace.id,
+          supervisorConfig,
+          {
+            model: context.options.supervisorModel ||
+              context.config?.supervisor?.model,
+            timeout: 10000,
+          },
+        );
+      } catch (error) {
+        const err = error as Error;
+        await logger.error("Failed to spawn supervisor worker", {
+          workspaceId: context.workspace.id,
+          error: err.message,
+          stack: err.stack,
+        });
+        throw new Error(`Failed to spawn supervisor: ${err.message}`);
+      }
+
+      console.log(
+        "[Runtime FSM] Supervisor ready, returning ID:",
+        supervisor.id,
+      );
+      return { supervisorId: supervisor.id, mergedConfig };
+    }),
+  },
+}).createMachine({
   id: "workspaceRuntime",
   initial: "uninitialized",
-  types: {} as {
-    context: WorkspaceRuntimeContext;
-    events: WorkspaceRuntimeEvent;
-    input: {
-      workspace: IWorkspace;
-      config?: any;
-      options: WorkspaceRuntimeOptions;
-      sessions: Map<string, IWorkspaceSession>;
-      workerManager: WorkerManager;
-    };
-  },
   context: ({ input }) => ({
     workspace: input.workspace,
     config: input.config,
@@ -400,81 +517,7 @@ const workspaceRuntimeMachine = createMachine({
     initializing: {
       invoke: {
         id: "initializeSupervisor",
-        src: fromPromise(async ({ input }) => {
-          const { context } = input;
-          await logger.info("Initializing supervisor", {
-            workspaceId: context.workspace.id,
-          });
-
-          // Load merged configuration (atlas.yml + workspace.yml)
-          const { ConfigLoader } = await import("./config-loader.ts");
-          const configLoader = new ConfigLoader();
-          const mergedConfig = await configLoader.load();
-          
-          // Return both supervisorId and mergedConfig for assign action
-          
-          // Load all agents (platform + user)
-          const allAgents = {
-            ...mergedConfig.atlas.agents,
-            ...mergedConfig.workspace.agents
-          };
-          
-          if (allAgents && Object.keys(allAgents).length > 0) {
-            const { AgentLoader } = await import("./agent-loader.ts");
-            const loadResult = await AgentLoader.loadAgents(context.workspace, allAgents);
-            
-            logger.info(`Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`, {
-              workspaceId: context.workspace.id,
-              loadedCount: loadResult.loaded.length,
-              failedCount: loadResult.failed.length,
-            });
-          }
-
-          // Use consolidated worker creation method
-          const supervisorConfig = {
-            workspace: {
-              ...context.workspace.snapshot(),
-              id: context.workspace.id,
-              // Serialize agents to pass only metadata
-              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
-              signals: Object.keys(context.workspace.signals || {}),
-              workflows: Object.keys(context.workspace.workflows || {}),
-            },
-            config: {
-              ...(context.config?.supervisor || {}),
-              // Pass only serializable parts of the merged configuration
-              workspaceSignals: mergedConfig.workspace.signals,
-              jobs: mergedConfig.jobs,
-            },
-          };
-
-
-          let supervisor;
-          try {
-            supervisor = await context.workerManager.spawnSupervisorWorker(
-              context.workspace.id,
-              supervisorConfig,
-              {
-                model: context.options.supervisorModel || context.config?.supervisor?.model,
-                timeout: 10000,
-              }
-            );
-          } catch (error) {
-            const err = error as Error;
-            await logger.error("Failed to spawn supervisor worker", {
-              workspaceId: context.workspace.id,
-              error: err.message,
-              stack: err.stack,
-            });
-            throw new Error(`Failed to spawn supervisor: ${err.message}`);
-          }
-
-          console.log(
-            "[Runtime FSM] Supervisor ready, returning ID:",
-            supervisor.id,
-          );
-          return { supervisorId: supervisor.id, mergedConfig };
-        }),
+        src: "initializeSupervisor",
         input: ({ context }) => ({ context }),
         onDone: {
           target: "ready",
