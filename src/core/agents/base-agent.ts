@@ -9,8 +9,7 @@ import type {
 import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
-import { createAnthropic } from "npm:@ai-sdk/anthropic";
-import { generateText, streamText } from "npm:ai";
+import { LLMService } from "../llm-service.ts";
 
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
@@ -218,32 +217,22 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     includeMemoryContext: boolean = true
   ): Promise<string> {
     const startTime = Date.now();
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY not found in environment variables");
-    }
-
-    const anthropic = createAnthropic({ apiKey });
 
     try {
       // Enhance prompts with memory context if requested
-      let enhancedSystemPrompt = systemPrompt;
-      let enhancedUserPrompt = userPrompt;
-
+      let memoryContext = "";
       if (includeMemoryContext) {
-        const memoryContext = this.buildMemoryContext(userPrompt);
-        enhancedSystemPrompt = `${systemPrompt}\n\n${memoryContext.systemContext}`;
-        enhancedUserPrompt = `${userPrompt}\n\n${memoryContext.userContext}`;
+        const memContext = this.buildMemoryContext(userPrompt);
+        memoryContext = `${memContext.systemContext}\n\n${memContext.userContext}`;
       }
 
-      const { text } = await generateText({
-        model: anthropic(model),
-        messages: [
-          { role: "system", content: enhancedSystemPrompt },
-          { role: "user", content: enhancedUserPrompt },
-        ],
-        temperature: 0.7,
+      // Use centralized LLM service
+      const text = await LLMService.generateText(userPrompt, {
+        model,
+        systemPrompt,
+        memoryContext: memoryContext || undefined,
         maxTokens: 2000,
+        temperature: 0.7,
       });
 
       const duration = Date.now() - startTime;
@@ -254,13 +243,13 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         {
           model,
           type: 'llm_generation',
-          userPrompt: userPrompt.substring(0, 200), // Truncate for storage
+          userPrompt: userPrompt.substring(0, 200),
           includeMemoryContext,
           duration
         },
         {
           responseLength: text.length,
-          truncatedResponse: text.substring(0, 500) // Store truncated response
+          truncatedResponse: text.substring(0, 500)
         },
         true
       );
@@ -419,5 +408,78 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     userContext += `Provider: ${this.provider()}\n`;
 
     return { systemContext, userContext };
+  }
+
+  /**
+   * Standard invoke implementation that most agents can use
+   * Eliminates boilerplate code duplication across agents
+   */
+  async invoke(message: string, model?: string): Promise<string> {
+    const modelToUse = model || this.getDefaultModel();
+    
+    try {
+      let fullResponse = "";
+      for await (const chunk of this.invokeStream(message, modelToUse)) {
+        fullResponse += chunk;
+      }
+      return fullResponse;
+    } catch (error) {
+      this.log(`Agent invoke error: ${error}`);
+      throw error;
+    }
+  }
+
+  /**
+   * Standard streaming invoke implementation
+   * Eliminates boilerplate code duplication across agents
+   */
+  async *invokeStream(message: string, model?: string): AsyncIterableIterator<string> {
+    const modelToUse = model || this.getDefaultModel();
+    const prompts = this.getAgentPrompts();
+    
+    this.log(`${this.name()} processing: ${message.slice(0, 50)}...`);
+
+    // Add to message history
+    this.messages.newMessage(message, "human" as any);
+
+    // Use the LLM to process the message
+    const response = await this.generateLLM(
+      modelToUse,
+      prompts.system,
+      message,
+    );
+
+    // Simply yield the entire response
+    yield response;
+
+    // Add response to message history
+    this.messages.newMessage(response, "agent" as any);
+  }
+
+  /**
+   * Get the default model for this agent
+   * Uses configuration hierarchy: agent config > workspace config > system default
+   */
+  protected getDefaultModel(): string {
+    // Try agent-specific config first
+    const agentConfig = (this as any).config;
+    if (agentConfig?.model) {
+      return agentConfig.model;
+    }
+
+    // Try workspace-level default model
+    if (this.supervisor?.config?.defaultModel) {
+      return this.supervisor.config.defaultModel;
+    }
+
+    // Fall back to environment variable or system default
+    return Deno.env.get("ATLAS_DEFAULT_MODEL") || "claude-4-sonnet-20250514";
+  }
+
+  /**
+   * Set agent prompts (consolidates prompt duplication pattern)
+   */
+  protected setPrompts(system: string, user: string = ""): void {
+    this.prompts = { system, user };
   }
 }

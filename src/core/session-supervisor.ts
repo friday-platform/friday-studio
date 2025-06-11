@@ -2,6 +2,87 @@ import type { IAtlasScope, IWorkspaceAgent, IWorkspaceSignal } from "../types/co
 import { BaseAgent } from "./agents/base-agent.ts";
 import { generateText } from "ai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { AgentSupervisor, type SupervisedAgentResult } from "./agent-supervisor.ts";
+
+// Job specification types
+export interface JobSpecification {
+  name: string;
+  description: string;
+  session_prompts?: {
+    planning?: string;
+    evaluation?: string;
+  };
+  execution: JobExecution;
+  success_criteria?: Record<string, any>;
+  error_handling?: {
+    max_retries?: number;
+    retry_delay_seconds?: number;
+    timeout_seconds?: number;
+  };
+  resources?: {
+    estimated_duration_seconds?: number;
+    max_memory_mb?: number;
+    required_capabilities?: string[];
+  };
+}
+
+export interface JobExecution {
+  strategy: "sequential" | "parallel" | "conditional" | "staged";
+  agents: JobAgentSpec[];
+  stages?: JobStage[];
+}
+
+export interface JobAgentSpec {
+  id: string;
+  mode?: string; // For agents that have multiple modes (e.g., "load", "store")
+  prompt?: string;
+  config?: Record<string, any>;
+  input?: Record<string, any>;
+}
+
+export interface JobStage {
+  name: string;
+  strategy: "sequential" | "parallel";
+  agents: JobAgentSpec[];
+}
+
+// Agent type definitions
+export type AgentType = "tempest" | "llm" | "remote";
+
+export interface TempestAgentConfig {
+  type: "tempest";
+  agent: string; // Catalog reference
+  version: string;
+  config?: Record<string, any>;
+}
+
+export interface LLMAgentConfig {
+  type: "llm";
+  model: string;
+  purpose: string;
+  tools?: string[];
+  prompts?: {
+    system?: string;
+    [key: string]: string | undefined;
+  };
+}
+
+export interface RemoteAgentConfig {
+  type: "remote";
+  endpoint: string;
+  auth?: {
+    type: "bearer" | "api_key" | "basic";
+    token_env?: string;
+    [key: string]: any;
+  };
+  timeout?: number;
+  schema?: {
+    input?: Record<string, any>;
+    output?: Record<string, any>;
+  };
+}
+
+export type AgentConfig = TempestAgentConfig | LLMAgentConfig | RemoteAgentConfig;
 
 // Session-specific context provided by WorkspaceSupervisor
 export interface SessionContext {
@@ -11,6 +92,7 @@ export interface SessionContext {
   payload: any;
   availableAgents: AgentMetadata[];
   filteredMemory: any[];
+  jobSpec?: JobSpecification; // Job specification to execute
   constraints?: {
     timeLimit?: number;
     costLimit?: number;
@@ -26,9 +108,10 @@ export interface SessionContext {
 export interface AgentMetadata {
   id: string;
   name: string;
-  type: string;
+  type: AgentType;
   purpose: string;
   capabilities?: string[];
+  config: AgentConfig;
 }
 
 export interface ExecutionPlan {
@@ -52,6 +135,8 @@ export interface AgentTask {
   task: string;
   inputSource: "signal" | "previous" | "combined";
   dependencies?: string[];
+  mode?: string; // For agents with multiple modes
+  config?: Record<string, any>; // Agent-specific configuration
 }
 
 export interface AgentResult {
@@ -67,6 +152,7 @@ export class SessionSupervisor extends BaseAgent {
   protected sessionContext: SessionContext | null = null;
   private executionPlan: ExecutionPlan | null = null;
   private executionResults: AgentResult[] = [];
+  private agentSupervisor!: AgentSupervisor;
 
   constructor(parentScopeId?: string) {
     super(parentScopeId);
@@ -124,6 +210,12 @@ You have access to a filtered view of the workspace tailored for this specific s
     return this.sessionContext;
   }
 
+  // Initialize AgentSupervisor for supervised execution
+  initializeAgentSupervisor(agentSupervisorConfig: any): void {
+    this.agentSupervisor = new AgentSupervisor(agentSupervisorConfig, this.id);
+    this.log("AgentSupervisor initialized for supervised agent execution");
+  }
+
   // Initialize session with context from WorkspaceSupervisor
   async initializeSession(context: SessionContext): Promise<void> {
     this.sessionContext = context;
@@ -135,29 +227,128 @@ You have access to a filtered view of the workspace tailored for this specific s
     this.memory.remember("sessionContext", context);
   }
 
-  // Create execution plan using LLM reasoning
+  // Create execution plan using job specification or LLM reasoning
   async createExecutionPlan(): Promise<ExecutionPlan> {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
 
+    // If we have a job specification, use it directly
+    if (this.sessionContext.jobSpec) {
+      return this.createPlanFromJobSpec(this.sessionContext.jobSpec);
+    }
+
+    // Fallback to LLM-based planning for backward compatibility
+    return this.createLLMBasedPlan();
+  }
+
+  // Create execution plan from job specification
+  private createPlanFromJobSpec(jobSpec: JobSpecification): ExecutionPlan {
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext!.sessionId,
+      phases: [],
+      successCriteria: this.extractSuccessCriteria(jobSpec),
+      adaptationStrategy: "flexible",
+    };
+
+    if (jobSpec.execution.strategy === "sequential") {
+      // Create single phase with sequential execution
+      plan.phases.push({
+        id: "main-phase",
+        name: jobSpec.name,
+        agents: jobSpec.execution.agents.map((agentSpec, index) => ({
+          agentId: agentSpec.id,
+          task: this.buildAgentTask(agentSpec, jobSpec),
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [jobSpec.execution.agents[index - 1].id] : [],
+          mode: agentSpec.mode,
+          config: agentSpec.config,
+        })),
+        executionStrategy: "sequential",
+      });
+    } else if (jobSpec.execution.strategy === "staged" && jobSpec.execution.stages) {
+      // Create multiple phases from stages
+      jobSpec.execution.stages.forEach((stage, stageIndex) => {
+        plan.phases.push({
+          id: `stage-${stageIndex}`,
+          name: stage.name,
+          agents: stage.agents.map((agentSpec) => ({
+            agentId: agentSpec.id,
+            task: this.buildAgentTask(agentSpec, jobSpec),
+            inputSource: stageIndex === 0 ? "signal" : "previous",
+            dependencies: [],
+            mode: agentSpec.mode,
+            config: agentSpec.config,
+          })),
+          executionStrategy: stage.strategy,
+        });
+      });
+    } else {
+      // Parallel or other strategies
+      plan.phases.push({
+        id: "main-phase",
+        name: jobSpec.name,
+        agents: jobSpec.execution.agents.map((agentSpec) => ({
+          agentId: agentSpec.id,
+          task: this.buildAgentTask(agentSpec, jobSpec),
+          inputSource: "signal",
+          dependencies: [],
+          mode: agentSpec.mode,
+          config: agentSpec.config,
+        })),
+        executionStrategy: jobSpec.execution.strategy === "parallel" ? "parallel" : "sequential",
+      });
+    }
+
+    this.executionPlan = plan;
+    return plan;
+  }
+
+  // Build agent task from job specification
+  private buildAgentTask(agentSpec: JobAgentSpec, jobSpec: JobSpecification): string {
+    if (agentSpec.prompt) {
+      return agentSpec.prompt;
+    }
+    return `Execute ${agentSpec.id} according to job specification: ${jobSpec.description}`;
+  }
+
+  // Extract success criteria from job specification
+  private extractSuccessCriteria(jobSpec: JobSpecification): string[] {
+    const criteria = [];
+    
+    if (jobSpec.success_criteria) {
+      Object.entries(jobSpec.success_criteria).forEach(([key, value]) => {
+        criteria.push(`${key}: ${value}`);
+      });
+    }
+    
+    // Default criteria
+    criteria.push(`Execute all ${jobSpec.execution.agents.length} agents successfully`);
+    criteria.push("Produce meaningful outputs from each agent");
+    
+    return criteria;
+  }
+
+  // Fallback LLM-based planning for backward compatibility
+  private async createLLMBasedPlan(): Promise<ExecutionPlan> {
     const planPrompt = `Given the following session context, create an execution plan:
 
-Signal: ${this.sessionContext.signal.id}
-Signal Provider: ${this.sessionContext.signal.provider.name}
-Payload: ${JSON.stringify(this.sessionContext.payload, null, 2)}
+Signal: ${this.sessionContext!.signal.id}
+Signal Provider: ${this.sessionContext!.signal.provider.name}
+Payload: ${JSON.stringify(this.sessionContext!.payload, null, 2)}
 
 Available Agents:
 ${
-      this.sessionContext.availableAgents.map((a) =>
+      this.sessionContext!.availableAgents.map((a) =>
         `- ${a.id}: ${a.purpose}${
           a.capabilities ? "\n  Capabilities: " + a.capabilities.join(", ") : ""
         }`
       ).join("\n")
     }
 
-${this.sessionContext.additionalPrompts?.signal || ""}
-${this.sessionContext.additionalPrompts?.session || ""}
+${this.sessionContext!.additionalPrompts?.signal || ""}
+${this.sessionContext!.additionalPrompts?.session || ""}
 
 Create an execution plan that:
 1. Identifies which agents to use and in what order
@@ -273,11 +464,7 @@ Execution Plan:
 Execution Results:
 ${
       results.map((r) =>
-        `Agent: ${r.agentId}
-   Task: ${r.task}
-   Input: ${JSON.stringify(r.input).slice(0, 100)}...
-   Output: ${JSON.stringify(r.output).slice(0, 200)}...
-   Duration: ${r.duration}ms`
+        `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${JSON.stringify(r.input).slice(0, 100)}...\n   Output: ${JSON.stringify(r.output).slice(0, 200)}...\n   Duration: ${r.duration}ms`
       ).join("\n\n")
     }
 
@@ -368,6 +555,111 @@ Provide a brief evaluation.`;
     };
   }
 
+  // Execute agent with supervision through AgentSupervisor
+  async executeAgent(
+    agentId: string,
+    task: AgentTask,
+    input: any,
+    context: Record<string, any> = {},
+  ): Promise<SupervisedAgentResult> {
+    if (!this.agentSupervisor) {
+      throw new Error("AgentSupervisor not initialized. Call initializeAgentSupervisor() first.");
+    }
+
+    const agent = this.sessionContext!.availableAgents.find(a => a.id === agentId);
+    if (!agent) {
+      throw new Error(`Agent ${agentId} not found in available agents`);
+    }
+
+    this.log(`Executing ${agent.type} agent: ${agentId} with supervision`);
+
+    try {
+      // Step 1: Analyze agent for safety and optimization
+      const analysis = await this.agentSupervisor.analyzeAgent(
+        agent,
+        task,
+        this.sessionContext!
+      );
+
+      // Step 2: Prepare secure execution environment
+      const environment = await this.agentSupervisor.prepareEnvironment(agent, analysis);
+
+      // Step 3: Load agent safely in worker
+      const workerInstance = await this.agentSupervisor.loadAgentSafely(agent, environment);
+
+      // Step 4: Execute with supervision
+      const supervision = {
+        pre_execution_checks: ["safety_validation", "resource_check", "permission_verify"],
+        runtime_monitoring: {
+          resource_usage: true,
+          output_validation: true,
+          safety_monitoring: analysis.safety_assessment.risk_level !== "low",
+          timeout_enforcement: true,
+        },
+        post_execution_validation: {
+          output_quality: true,
+          success_criteria: true,
+          security_compliance: true,
+          format_validation: true,
+        },
+      };
+
+      const result = await this.agentSupervisor.executeAgentSupervised(
+        workerInstance,
+        input,
+        task,
+        supervision
+      );
+
+      // Step 5: Clean up worker
+      await this.agentSupervisor.terminateWorker(workerInstance.id);
+
+      this.log(`Agent ${agentId} executed successfully with supervision`);
+      return result;
+
+    } catch (error) {
+      this.log(`Supervised execution failed for agent ${agentId}: ${error}`);
+      throw new Error(`Supervised agent execution failed: ${error}`);
+    }
+  }
+
+  // Legacy method kept for backward compatibility - now delegates to supervised execution
+  async executeLegacyAgent(
+    agent: AgentMetadata,
+    task: AgentTask, 
+    input: any,
+    context: Record<string, any>
+  ): Promise<any> {
+    this.log(`Legacy agent execution requested for ${agent.id} - delegating to supervised execution`);
+    const supervisedResult = await this.executeAgent(agent.id, task, input, context);
+    
+    // Return legacy format for backward compatibility
+    return {
+      agent_type: agent.type,
+      agent_id: supervisedResult.agent_id,
+      result: supervisedResult.output,
+      input: supervisedResult.input,
+      supervised: true,
+      quality_score: supervisedResult.validation.quality_score,
+    };
+  }
+
+  // Replace placeholders in prompt strings
+  private replacePlaceholders(
+    template: string,
+    variables: Record<string, any>,
+  ): string {
+    let result = template;
+    
+    for (const [key, value] of Object.entries(variables)) {
+      const placeholder = `{${key}}`;
+      const replacement = typeof value === "string" ? value : JSON.stringify(value);
+      result = result.replaceAll(placeholder, replacement);
+    }
+    
+    return result;
+  }
+
   // Generate an intelligent summary of the session results
   async generateSessionSummary(phaseResults: any[]): Promise<string> {
     if (!this.sessionContext) {
@@ -384,10 +676,7 @@ Original Input: ${JSON.stringify(this.sessionContext.payload)}
 Agent Execution Chain:
 ${
       allResults.map((r, i) =>
-        `${i + 1}. ${r.agentId}:
-   Input: ${JSON.stringify(r.input).slice(0, 100)}...
-   Output: ${r.output}
-   Duration: ${r.duration}ms`
+        `${i + 1}. ${r.agentId}:\n   Input: ${JSON.stringify(r.input).slice(0, 100)}...\n   Output: ${r.output}\n   Duration: ${r.duration}ms`
       ).join("\n\n")
     }
 

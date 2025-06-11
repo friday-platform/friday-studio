@@ -1,5 +1,5 @@
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import { WorkerManager, type WorkerMetadata } from "./utils/worker-manager.ts";
+import { WorkerManager } from "./utils/worker-manager.ts";
 import { Session } from "./session.ts";
 import { type Actor, assign, createActor, createMachine, fromPromise } from "xstate";
 import { logger } from "../utils/logger.ts";
@@ -50,6 +50,8 @@ export class WorkspaceRuntime {
     this.config = config;
     this.options = options;
     this.workerManager = new WorkerManager();
+
+    // Agent loading will happen during initialization
 
     // Create and start the state machine
     this.stateMachine = createActor(workspaceRuntimeMachine, {
@@ -307,6 +309,7 @@ export class WorkspaceRuntime {
     }));
   }
 
+
   /**
    * Save state checkpoint
    */
@@ -397,45 +400,40 @@ const workspaceRuntimeMachine = createMachine({
             workspaceId: context.workspace.id,
           });
 
-          const supervisorMetadata: WorkerMetadata = {
-            id: crypto.randomUUID(),
-            type: "supervisor",
-            config: {
+          // Load agents from config using centralized loader
+          if (context.config?.agents) {
+            const { AgentLoader } = await import("./agent-loader.ts");
+            const loadResult = await AgentLoader.loadAgents(context.workspace, context.config.agents);
+            
+            logger.info(`Agent loading complete: ${loadResult.loaded.length} loaded, ${loadResult.failed.length} failed`, {
+              workspaceId: context.workspace.id,
+              loadedCount: loadResult.loaded.length,
+              failedCount: loadResult.failed.length,
+            });
+          }
+
+          // Use consolidated worker creation method
+          const supervisorConfig = {
+            workspace: {
+              ...context.workspace.snapshot(),
               id: context.workspace.id,
-              workspace: {
-                ...context.workspace.snapshot(),
-                id: context.workspace.id,
-                // Serialize agents to pass only metadata
-                agents: Object.entries(context.workspace.agents || {}).reduce(
-                  (acc, [key, agent]) => {
-                    const agentTyped = agent as any;
-                    acc[key] = {
-                      id: key,
-                      name: agentTyped.name?.() || key,
-                      type: agentTyped.type || key.replace("-agent", ""),
-                      purpose: agentTyped.purpose?.() || "",
-                    };
-                    return acc;
-                  },
-                  {} as Record<string, any>,
-                ),
-                signals: Object.keys(context.workspace.signals || {}),
-                workflows: Object.keys(context.workspace.workflows || {}),
-              },
-              config: context.config?.supervisor || {},
-              model: context.options.supervisorModel ||
-                context.config?.supervisor?.model,
+              // Serialize agents to pass only metadata
+              agents: (await import("./agent-loader.ts")).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
+              signals: Object.keys(context.workspace.signals || {}),
+              workflows: Object.keys(context.workspace.workflows || {}),
             },
+            supervisor: context.config?.supervisor || {},
           };
 
           let supervisor;
           try {
-            supervisor = await context.workerManager.spawnWorker(
-              supervisorMetadata,
-              new URL(
-                "./workers/workspace-supervisor-worker.ts",
-                import.meta.url,
-              ).href,
+            supervisor = await context.workerManager.spawnSupervisorWorker(
+              context.workspace.id,
+              supervisorConfig,
+              {
+                model: context.options.supervisorModel || context.config?.supervisor?.model,
+                timeout: 10000,
+              }
             );
           } catch (error) {
             const err = error as Error;
@@ -445,37 +443,6 @@ const workspaceRuntimeMachine = createMachine({
               stack: err.stack,
             });
             throw new Error(`Failed to spawn supervisor: ${err.message}`);
-          }
-
-          context.workerManager.setupBroadcastChannel(
-            supervisor.id,
-            `workspace-${context.workspace.id}`,
-          );
-
-          await logger.debug("Waiting for supervisor to be ready", {
-            workspaceId: context.workspace.id,
-            supervisorId: supervisor.id,
-          });
-          const ready = await context.workerManager.waitForWorkerReady(
-            supervisor.id,
-            10000,
-          );
-          await logger.debug("Supervisor ready check", {
-            workspaceId: context.workspace.id,
-            supervisorId: supervisor.id,
-            ready,
-          });
-
-          if (!ready) {
-            const state = context.workerManager.getWorkerState(supervisor.id);
-            await logger.error(`Supervisor not ready after timeout`, {
-              workspaceId: context.workspace.id,
-              supervisorId: supervisor.id,
-              state,
-            });
-            throw new Error(
-              `Supervisor failed to initialize (state: ${state})`,
-            );
           }
 
           console.log(

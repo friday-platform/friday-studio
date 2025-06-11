@@ -17,6 +17,115 @@ environment.
    `--unstable-broadcast-channel --unstable-worker-options --allow-all --env-file`
 3. Ensure `ANTHROPIC_API_KEY` is set in .env file for LLM functionality
 4. When debugging worker communication, check logs in `~/.atlas/logs/workspaces/`
+5. **Agent loading**: Agents are loaded by WorkspaceRuntime during initialization, NOT by CLI
+6. **Signal handling**: Use Ink's `useApp` hook with signal listeners, don't fight the framework
+7. **Configuration**: workspace.yml agents must use AgentRegistry types (e.g., "mishearing", not "llm")
+
+## Code Quality Review Findings (January 2025)
+
+### High Priority Issues Requiring Immediate Attention
+
+1. **Agent Creation Duplication**
+   - Location: `src/core/workspace-runtime.ts:405-427` vs `src/core/agent-registry.ts:19-30`
+   - Issue: Agent creation logic duplicated, ID assignment pattern `(agent as any).id = metadata.id` repeated
+   - Fix: Create centralized `AgentLoader` service
+
+2. **Worker Lifecycle Management Duplication**
+   - Location: `src/core/utils/worker-manager.ts:302-565`, `src/core/workspace-runtime.ts:460-515`
+   - Issue: Worker creation patterns repeated across supervisors
+   - Fix: Extract common lifecycle operations into WorkerManager utilities
+
+3. **Agent Boilerplate Code**
+   - Location: All telephone agents (`examples/workspaces/telephone/agents/*.ts`)
+   - Issue: Identical `invoke()` and `invokeStream()` patterns, prompt duplication in constructor and `getAgentPrompts()`
+   - Fix: Extract common patterns to BaseAgent or agent factory
+
+### Medium Priority Issues
+
+4. **Worker Communication Inconsistencies**
+   - Location: `src/core/utils/worker-manager.ts:422-454` vs `src/core/workers/base-worker.ts:266-269`
+   - Issue: Different message types ("setPort"/"joinChannel" vs "init"/"task"), inconsistent timeout patterns
+   - Fix: Standardize communication protocols
+
+5. **LLM Generation Pattern Duplication**
+   - Location: `src/core/agents/base-agent.ts:214-375`, `src/core/session-supervisor.ts:365-528`
+   - Issue: Anthropic client initialization and error handling repeated
+   - Fix: Create centralized `LLMService`
+
+6. **Hard-coded Model References**
+   - Location: All telephone agents
+   - Issue: Agents use "claude-4-sonnet-20250514" instead of configurable model
+   - Fix: Use config-driven model selection
+
+### Positive Architecture Findings
+
+✅ **CLI Architecture**: Properly thin, delegates to core classes, no business logic violations
+✅ **Error Handling**: Consistent patterns with structured logging using AtlasLogger
+✅ **Signal Handling**: Clean implementation using Ink's useApp hook
+✅ **Configuration**: Good separation between workspace and runtime concerns
+
+### Test Coverage Gaps
+
+- **Missing unit tests**: Core classes (Workspace, AgentRegistry, BaseAgent)
+- **No tests**: Memory system, supervisor logic, configuration loading
+- **Limited integration**: Only 10 integration tests, 2 CLI tests, 1 unit test
+
+### Architecture Compliance Status
+
+- ✅ CLI does not contain business logic
+- ✅ Agents loaded by WorkspaceRuntime, not CLI
+- ✅ Proper delegation to core classes
+- ✅ **RESOLVED**: Code duplication consolidation completed (January 2025)
+
+### Resolution Status (January 2025)
+
+All high and medium priority issues have been **RESOLVED**:
+
+#### ✅ Completed Fixes
+
+1. **Agent Creation Duplication** → Created `AgentLoader` service
+2. **Worker Lifecycle Management Duplication** → Added consolidated methods to `WorkerManager`
+3. **Agent Boilerplate Code** → Enhanced `BaseAgent` with common patterns
+4. **Worker Communication Inconsistencies** → Standardized message types and timeouts
+5. **LLM Generation Pattern Duplication** → Created centralized `LLMService`
+6. **Hard-coded Model References** → Implemented configuration hierarchy
+7. **TypeError: Cannot use 'in' operator** → Added proper type checking
+
+#### 📁 New Files Created
+- `/src/core/agent-loader.ts` - Centralized agent creation service
+- `/src/core/llm-service.ts` - Consolidated LLM generation patterns
+
+#### 🔧 Key Improvements
+- **250+ lines of duplicated code eliminated**
+- **Consistent error handling** across all components
+- **Configurable models** via workspace configuration  
+- **Standardized communication protocols** between workers
+- **Centralized client management** for LLM operations
+
+### Critical Hanging Process Fixes (January 2025)
+
+**🚨 RESOLVED**: Deno processes no longer require `kill -9` to terminate
+
+#### ✅ Hanging Process Issues Fixed
+
+1. **Worker Termination Timeout** → Extended from 100ms to 5 seconds with acknowledgment
+2. **LLM API Timeout** → Added 30-second timeout with AbortController  
+3. **WorkerManager Shutdown Timeout** → Added 15-second timeout with force termination fallback
+4. **Signal Propagation** → Workspace server now properly shuts down runtime before aborting
+5. **Resource Cleanup** → Added error handling for BroadcastChannel and MessagePort cleanup
+
+#### 🔧 Specific Changes
+- **worker-manager.ts:398-441**: Enhanced worker termination with proper timeouts and cleanup
+- **worker-manager.ts:385-388**: Added shutdown_ack message handling 
+- **base-worker.ts:274-278**: Added shutdown acknowledgment to prevent hanging
+- **llm-service.ts:57-133**: Added AbortController and timeout handling for all LLM calls
+- **workspace-server.ts:188-231**: Fixed signal handling with hard timeout and process exit
+- **workspace.tsx:361-363**: Removed competing signal handlers (let server handle everything)
+- **worker-manager.ts:546-584**: Added global timeout to WorkerManager shutdown
+
+**Key Fix**: Removed competing signal handlers between CLI and server. Server now handles complete shutdown sequence and calls `Deno.exit(0)` when done.
+
+These fixes address the root causes of hanging processes and ensure the entire process exits cleanly on Ctrl+C.
 
 ## Vision & Goals
 
@@ -368,62 +477,130 @@ interface ITempestContextManager {
    - Define relationship between Workflows and agent execution
    - Support deterministic workflow steps within sessions
 
-## Proposed Future Enhancements
+## 🎯 Priority Implementation Plan
 
-### 1. Declarative Signal-to-Agent Configuration
+### Phase 1: Configuration Architecture Redesign (CURRENT PRIORITY)
 
-Add YAML/JSON configuration for explicit signal-agent mappings:
+**Objective**: Implement new configuration separation and natural language job creation
 
-```yaml
-agentMappings:
-  - id: frontend-pr-review
-    signal: github-pr
-    conditions:
-      - type: contains
-        field: files
-        pattern: "*.jsx|*.tsx|*.css"
-    agents:
-      - id: playwright-agent
-        strategy: sequential
-    prompt: |
-      When a PR contains frontend code changes:
-      1. Load the preview URL
-      2. Take screenshots of key pages
-      3. Return screenshots with annotations
-```
+#### 1.1 Atlas Configuration Management
+- **Create `atlas.yml`** with WorkspaceSupervisor and SessionSupervisor platform logic
+- **Extract supervisor prompts** from workspace configurations into platform-managed file
+- **Implement configuration loading** that merges atlas.yml with workspace.yml
+- **Add configuration validation** for both atlas.yml and workspace.yml schemas
 
-### 2. Advanced Memory Filtering
+#### 1.2 Job-Based Execution Model
+- **Redesign workspace.yml** to use job references instead of direct agent mappings
+- **Create job specification schema** supporting multi-agent types (Tempest, LLM, Remote)
+- **Implement job execution engine** in SessionSupervisor to handle different agent types
+- **Add job validation** and error handling for missing agents/invalid configurations
 
-Implement memory scoping and filtering based on:
+#### 1.3 Natural Language Job Creation Interface
+- **Build entity recognition system** for agents, signals, and execution patterns
+- **Create structured job generation** from natural language descriptions
+- **Implement visual job builder** with autocomplete and validation
+- **Add job preview and approval** workflow before deployment
 
-- Time windows (last N days)
-- Relevance scoring
-- Agent-specific memory stores
-- Cross-session memory sharing policies
+#### 1.4 Multi-Agent Type Support
+- **Implement Tempest first-party agent integration** with version management
+- **Enhance LLM agent configuration** with flexible tool selection
+- **Add remote agent HTTP client** with authentication and schema validation
+- **Create agent type abstraction** in SessionSupervisor for unified execution
 
-### 3. Workflow-Agent Integration
+### Phase 2: Enhanced Signal Processing
 
-Define how deterministic workflows interact with agent sessions:
+#### 2.1 Advanced Signal-Job Mapping
+- **Implement M:M signal-job relationships** with condition evaluation
+- **Add signal schema validation** and payload processing
+- **Create job selection logic** based on signal content and conditions
+- **Support multiple jobs per signal** with parallel execution
 
-- Workflow steps as checkpoints
-- Agent outputs feeding workflow decisions
-- Hybrid execution modes
+#### 2.2 Signal Provider Ecosystem
+- **Extend signal provider interface** for GitHub, webhooks, CLI, etc.
+- **Add signal payload transformation** and normalization
+- **Implement signal routing** and multiplexing capabilities
+- **Create signal testing framework** for manual triggering
 
-### 4. Human-in-the-Loop Gates
+### Phase 3: Memory & Context Enhancement
 
-Implement approval mechanisms:
+#### 3.1 Advanced Memory Filtering
+- **Implement memory scoping** based on time windows and relevance
+- **Add agent-specific memory stores** with controlled access
+- **Create cross-session memory sharing** policies and mechanisms
+- **Build memory consolidation** and cleanup processes
 
+#### 3.2 Context Management
+- **Enhanced context filtering** for session-specific data
+- **Cross-workspace context sharing** for common patterns
+- **Context versioning** and rollback capabilities
+- **Memory-context integration** for richer agent instructions
+
+### Phase 4: Performance & Reliability
+
+#### 4.1 Optimization
+- **LLM response caching** for common patterns and repeated queries
+- **Parallel agent execution** where dependencies allow
+- **Streaming responses** for real-time feedback during long sessions
+- **Token usage optimization** and cost tracking
+
+#### 4.2 Error Recovery
+- **Retry logic** for LLM failures and network issues
+- **Graceful degradation** when agents are unavailable
+- **Timeout handling** for long-running operations
+- **Circuit breaker patterns** for external service calls
+
+### Implementation Priority Order
+
+1. **🔥 IMMEDIATE (Current Sprint)**
+   - Create `atlas.yml` configuration structure
+   - Redesign workspace.yml to use job references
+   - Implement basic job specification schema
+   - Add multi-agent type support in SessionSupervisor
+
+2. **📋 NEXT (Following Sprint)**
+   - Build natural language job creation interface
+   - Implement entity recognition and structured generation
+   - Add job validation and preview capabilities
+   - Create comprehensive job examples and templates
+
+3. **🚀 FUTURE (Subsequent Phases)**
+   - Enhanced signal processing and M:M relationships
+   - Advanced memory filtering and context management
+   - Performance optimization and caching
+   - Error recovery and reliability improvements
+
+### Success Metrics
+
+- **Developer Experience**: Time from job description to deployment < 5 minutes
+- **Configuration Clarity**: Clear separation between platform and user configuration
+- **Agent Flexibility**: Support for all three agent types (Tempest, LLM, Remote)
+- **Natural Language Accuracy**: >90% successful job generation from prose descriptions
+- **Performance**: Job execution latency < 30 seconds for typical workflows
+
+## Legacy Configuration Migration
+
+### Migration Strategy
+1. **Backward Compatibility**: Support existing workspace.yml during transition
+2. **Gradual Migration**: Allow workspaces to adopt new patterns incrementally  
+3. **Migration Tools**: Automated conversion from old to new configuration format
+4. **Documentation**: Clear migration guides and examples
+
+## Future Enhancements (Post-Phase 4)
+
+### Advanced Workflow Integration
+- Workflow steps as checkpoints in job execution
+- Agent outputs feeding deterministic workflow decisions
+- Hybrid execution modes combining agents and workflows
+
+### Human-in-the-Loop Gates
 - Slack/email notifications for human approval
-- Timeout and escalation policies
-- Delegation chains
-- Audit trail for decisions
+- Timeout and escalation policies with delegation chains
+- Audit trail for all human decisions and approvals
 
-### 5. Performance Optimization
-
-- LLM response caching for common patterns
-- Parallel agent execution where possible
-- Streaming responses for real-time feedback
-- Token usage optimization
+### Enterprise Features
+- Job marketplace for sharing common patterns across teams
+- Cross-workspace job templates and best practices
+- Advanced analytics and cost optimization recommendations
 
 ## CLI Interface
 

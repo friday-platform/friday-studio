@@ -1,0 +1,10 @@
+job:
+  name: "telephone"
+  description: "Telephone game"
+  
+  execution:
+    strategy: "sequential"
+    agents:
+      - id: "mishearing-agent"
+      - id: "embellishment-agent" 
+      - id: "reinterpretation-agent"

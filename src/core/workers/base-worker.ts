@@ -215,12 +215,9 @@ export abstract class BaseWorker<
         },
         joinBroadcastChannel: ({ context, event }) => {
           if (event.type === "JOIN_CHANNEL") {
-            const channel = new BroadcastChannel(event.channel);
-            context.broadcastChannels.set(event.channel, channel);
+            // Disable BroadcastChannel in workers due to Tokio runtime conflicts
+            console.log(`[BaseWorker] BroadcastChannel ${event.channel} disabled in worker`);
             context.channels.add(event.channel);
-
-            // Setup channel listener
-            channel.onmessage = (e: MessageEvent) => this.handleBroadcast(event.channel, e.data);
           }
         },
         setupMessagePort: ({ context, event }) => {
@@ -248,7 +245,6 @@ export abstract class BaseWorker<
           await this.cleanup();
 
           // Close all channels and ports
-          this.context.broadcastChannels.forEach((channel) => channel.close());
           this.context.ports.forEach((port) => port.close());
         }),
       },
@@ -277,6 +273,8 @@ export abstract class BaseWorker<
         break;
       case "shutdown":
         this.actor.send({ type: "SHUTDOWN" });
+        // Send acknowledgment back to manager
+        self.postMessage({ type: "shutdown_ack" });
         break;
       case "joinChannel":
         this.actor.send({ type: "JOIN_CHANNEL", channel: message.channel });
@@ -325,10 +323,8 @@ export abstract class BaseWorker<
 
   // Utility methods for workers
   protected broadcast(channel: string, message: any): void {
-    const broadcastChannel = this.context.broadcastChannels.get(channel);
-    if (broadcastChannel) {
-      broadcastChannel.postMessage(message);
-    }
+    // BroadcastChannel disabled in workers due to Tokio runtime conflicts
+    console.log(`[BaseWorker] Broadcast to ${channel} disabled in worker:`, message);
   }
 
   protected sendDirect(peerId: string, message: any): void {

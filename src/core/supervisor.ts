@@ -559,6 +559,8 @@ Provide a structured analysis.`;
   ): string[] {
     // Let the signal provider define its own goals if available
     if (
+      signal.provider &&
+      typeof signal.provider === "object" &&
       "inferGoals" in signal.provider &&
       typeof signal.provider.inferGoals === "function"
     ) {

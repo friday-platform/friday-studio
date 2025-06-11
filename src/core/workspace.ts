@@ -171,10 +171,20 @@ export class Workspace extends AtlasScope implements IWorkspace {
       (workspace as any).id = config.id;
     }
 
-    // Add signals
+    // Add signals - handle both array and object formats
     if (config.signals) {
-      for (const signal of config.signals) {
-        workspace.addSignal(signal);
+      if (Array.isArray(config.signals)) {
+        for (const signal of config.signals) {
+          workspace.addSignal(signal);
+        }
+      } else {
+        // Handle object format from YAML
+        for (const [id, signalConfig] of Object.entries(config.signals)) {
+          workspace.addSignal({
+            id,
+            ...signalConfig,
+          } as IWorkspaceSignal);
+        }
       }
     }
 

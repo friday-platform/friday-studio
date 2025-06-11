@@ -370,11 +370,21 @@ export class WorkerManager {
         worker.actor.send({ type: "ERROR", error: message.error });
         break;
       case "result":
+        // Update both worker state and manager state
+        worker.actor.send({ 
+          type: "COMPLETE_PROCESSING", 
+          taskId: message.taskId, 
+          result: message.result 
+        });
         this.actor.send({
           type: "TASK_COMPLETED",
           workerId: worker.id,
           taskId: message.taskId,
         });
+        break;
+      case "shutdown_ack":
+        // Worker acknowledged shutdown - this is handled in terminateWorker's Promise.race
+        // No action needed here, the event listener in terminateWorker will handle it
         break;
     }
   }
@@ -389,17 +399,46 @@ export class WorkerManager {
     // Send shutdown message to worker
     worker.worker.postMessage({ type: "shutdown" });
 
-    // Wait a bit for graceful shutdown
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Wait for graceful shutdown with proper timeout
+    let gracefulShutdown = false;
+    try {
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          const handler = (e: MessageEvent) => {
+            if (e.data.type === "shutdown_ack") {
+              worker.worker.removeEventListener("message", handler);
+              gracefulShutdown = true;
+              resolve();
+            }
+          };
+          worker.worker.addEventListener("message", handler);
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 5000)) // 5 second timeout
+      ]);
+    } catch (error) {
+      logger.warn(`Worker ${workerId} graceful shutdown failed`, { error });
+    }
+
+    if (!gracefulShutdown) {
+      logger.warn(`Worker ${workerId} did not shut down gracefully, force terminating`);
+    }
 
     // Force terminate
     worker.worker.terminate();
 
-    // Clean up
-    worker.ports.forEach((port) => port.close());
-    worker.broadcastChannel?.close();
-    worker.actor.send({ type: "TERMINATED" });
-    worker.actor.stop();
+    // Clean up with error handling
+    try {
+      worker.ports.forEach((port) => {
+        try { port.close(); } catch (e) { /* ignore */ }
+      });
+      if (worker.broadcastChannel) {
+        try { worker.broadcastChannel.close(); } catch (e) { /* ignore */ }
+      }
+      worker.actor.send({ type: "TERMINATED" });
+      worker.actor.stop();
+    } catch (error) {
+      logger.error(`Error during worker cleanup for ${workerId}`, { error });
+    }
 
     this.workers.delete(workerId);
     this.actor.send({ type: "WORKER_TERMINATED", workerId });
@@ -473,9 +512,10 @@ export class WorkerManager {
     }
 
     return new Promise((resolve, reject) => {
+      const timeoutMs = 60000; // Standardize to 60 second timeout
       const timeout = setTimeout(() => {
-        reject(new Error(`Task ${taskId} timeout`));
-      }, 180000);
+        reject(new Error(`Task ${taskId} timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
 
       // Listen for result
       const handleMessage = (event: MessageEvent) => {
@@ -502,22 +542,49 @@ export class WorkerManager {
         data,
       });
 
-      // Update worker state
-      worker.actor.send({ type: "PROCESS_TASK", taskId });
+      // Update worker state (use correct event type)
+      worker.actor.send({ type: "START_PROCESSING", taskId });
     });
   }
 
   async shutdown(): Promise<void> {
     this.actor.send({ type: "SHUTDOWN" });
 
-    // Wait for shutdown to complete
-    await new Promise<void>((resolve) => {
-      this.actor.subscribe((state: any) => {
+    // Wait for shutdown to complete with timeout
+    const shutdownPromise = new Promise<void>((resolve) => {
+      const subscription = this.actor.subscribe((state: any) => {
         if (state.matches("terminated")) {
+          subscription.unsubscribe();
           resolve();
         }
       });
     });
+
+    const timeoutPromise = new Promise<void>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("WorkerManager shutdown timed out after 15 seconds"));
+      }, 15000);
+    });
+
+    try {
+      await Promise.race([shutdownPromise, timeoutPromise]);
+      logger.info("WorkerManager shutdown completed gracefully");
+    } catch (error) {
+      logger.error("WorkerManager shutdown timed out, forcing termination", { error });
+      
+      // Force terminate all remaining workers
+      for (const [workerId, worker] of this.workers) {
+        try {
+          worker.worker.terminate();
+          this.workers.delete(workerId);
+        } catch (e) {
+          // Ignore errors during force termination
+        }
+      }
+      
+      // Stop the actor
+      this.actor.stop();
+    }
   }
 
   private async shutdownAllWorkers(): Promise<void> {
@@ -560,5 +627,163 @@ export class WorkerManager {
         }
       });
     });
+  }
+
+  /**
+   * Common worker creation pattern with timeout and ready check
+   * Consolidates duplicated supervisor worker creation logic
+   */
+  async spawnSupervisorWorker(
+    workspaceId: string,
+    config: any,
+    options: { model?: string; timeout?: number } = {}
+  ): Promise<ManagedWorker> {
+    const { timeout = 10000 } = options;
+    
+    const supervisorMetadata: WorkerMetadata = {
+      id: crypto.randomUUID(),
+      type: "supervisor",
+      config: {
+        id: workspaceId,
+        workspace: config.workspace,
+        config: config.supervisor || {},
+        model: options.model || config.supervisor?.model,
+      },
+    };
+
+    // Spawn supervisor worker
+    const supervisor = await this.spawnWorker(
+      supervisorMetadata,
+      new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
+    );
+
+    // Setup broadcast channel
+    this.setupBroadcastChannel(supervisor.id, `workspace-${workspaceId}`);
+
+    // Wait for supervisor to be ready
+    const ready = await this.waitForWorkerReady(supervisor.id, timeout);
+    
+    if (!ready) {
+      const state = this.getWorkerState(supervisor.id);
+      await this.terminateWorker(supervisor.id);
+      throw new Error(`Supervisor failed to initialize within ${timeout}ms (state: ${state})`);
+    }
+
+    return supervisor;
+  }
+
+  /**
+   * Common session worker creation pattern
+   * Consolidates duplicated session worker creation logic
+   */
+  async spawnSessionWorker(
+    sessionId: string,
+    workspaceId: string,
+    config: any,
+    options: { timeout?: number } = {}
+  ): Promise<ManagedWorker> {
+    const { timeout = 10000 } = options;
+
+    const sessionMetadata: WorkerMetadata = {
+      id: crypto.randomUUID(),
+      type: "session",
+      config: {
+        sessionId,
+        workspaceId,
+        ...config,
+      },
+    };
+
+    // Spawn session worker
+    const sessionWorker = await this.spawnWorker(
+      sessionMetadata,
+      new URL("../workers/session-supervisor-worker.ts", import.meta.url).href,
+    );
+
+    // Wait for session worker to be ready
+    const ready = await this.waitForWorkerReady(sessionWorker.id, timeout);
+    
+    if (!ready) {
+      const state = this.getWorkerState(sessionWorker.id);
+      await this.terminateWorker(sessionWorker.id);
+      throw new Error(`Session worker failed to initialize within ${timeout}ms (state: ${state})`);
+    }
+
+    return sessionWorker;
+  }
+
+  /**
+   * Common agent worker creation pattern
+   * Consolidates duplicated agent worker creation logic
+   */
+  async spawnAgentWorker(
+    agentId: string,
+    agentConfig: any,
+    sessionId: string,
+    options: { timeout?: number } = {}
+  ): Promise<ManagedWorker> {
+    const { timeout = 10000 } = options;
+
+    const agentMetadata: WorkerMetadata = {
+      id: crypto.randomUUID(),
+      type: "agent",
+      config: {
+        agentId,
+        sessionId,
+        ...agentConfig,
+      },
+    };
+
+    // Spawn agent worker
+    const agentWorker = await this.spawnWorker(
+      agentMetadata,
+      new URL("../workers/agent-worker.ts", import.meta.url).href,
+    );
+
+    // Wait for agent worker to be ready
+    const ready = await this.waitForWorkerReady(agentWorker.id, timeout);
+    
+    if (!ready) {
+      const state = this.getWorkerState(agentWorker.id);
+      await this.terminateWorker(agentWorker.id);
+      throw new Error(`Agent worker failed to initialize within ${timeout}ms (state: ${state})`);
+    }
+
+    return agentWorker;
+  }
+
+  /**
+   * Standard error handling for worker operations
+   * Consolidates error logging and cleanup patterns
+   */
+  async handleWorkerError(workerId: string, error: Error | string, context?: any): Promise<void> {
+    const errorMessage = error instanceof Error ? error.message : error;
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error(`Worker error: ${errorMessage}`, {
+      workerId: workerId.slice(0, 8),
+      workerType: this.getWorkerType(workerId),
+      error: errorMessage,
+      stack: errorStack,
+      ...context,
+    });
+
+    // Attempt graceful cleanup
+    try {
+      await this.terminateWorker(workerId);
+    } catch (cleanupError) {
+      logger.error(`Failed to cleanup worker after error`, {
+        workerId: workerId.slice(0, 8),
+        cleanupError: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+      });
+    }
+  }
+
+  /**
+   * Get worker type by ID
+   */
+  private getWorkerType(workerId: string): WorkerType | "unknown" {
+    const worker = this.workers.get(workerId);
+    return worker?.type || "unknown";
   }
 }
