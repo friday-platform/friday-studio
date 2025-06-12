@@ -1,0 +1,145 @@
+version: "1.0"
+
+workspace:
+  id: "a8c4d759-2e5b-4f3c-9a1d-8c7b3e6f2a9d"
+  name: "k8s-assistant"
+  description: "Atlas workspace for Kubernetes management using AI-powered agents via ACP protocol"
+
+# Remote agents configuration pointing to k8s main agent
+agents:
+  # Main k8s agent with ReAct framework
+  k8s-main-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "http://localhost:8080"
+    purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, and cluster operations"
+
+    # No authentication needed for local development
+    # auth:
+    #   type: "bearer"
+    #   token_env: "K8S_AGENT_TOKEN"
+
+    # ACP-specific settings
+    acp:
+      agent_name: "k8s-deployment-manager" # Name of agent on k8s server
+      default_mode: "sync" # sync | async | stream
+      timeout_ms: 60000 # 60 second timeout for k8s operations
+      max_retries: 2 # Retry failed requests 2 times
+      health_check_interval: 30000 # Health check every 30 seconds
+
+    # Schema validation (optional)
+    schema:
+      validate_input: false
+      validate_output: false
+
+    # Monitoring and reliability
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 3 # Open circuit after 3 failures
+        timeout_ms: 120000 # Stay open for 2 minutes
+        half_open_max_calls: 2 # Test with 2 calls when half-open
+
+  # Monitor agent for Kubernetes events
+  k8s-monitor-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "http://localhost:8082"
+    purpose: "Real-time Kubernetes event monitoring and signal generation"
+    acp:
+      agent_name: "k8s-event-monitor"
+      default_mode: "stream"
+      health_check_interval: 15000
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5
+        timeout_ms: 30000
+        half_open_max_calls: 1
+
+  # Local LLM agent for fallback and additional processing
+  local-assistant:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Local AI assistant for documentation, explanations, and fallback operations"
+    tools: ["computer_use"]
+    prompts:
+      system: "You are a helpful Kubernetes assistant that works alongside the main k8s agent. You can help with documentation, explanations, and provide fallback support when the main agent is unavailable."
+
+# Simplified signal configurations
+signals:
+  # Single HTTP endpoint for all k8s operations
+  http-k8s:
+    description: "Unified HTTP endpoint for all Kubernetes operations"
+    provider: "http"
+    path: "/k8s"
+    method: "POST"
+    jobs:
+      - name: "k8s-operation"
+        description: "Handle any Kubernetes operation via HTTP"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "k8s-main-agent"
+            - id: "local-assistant"
+
+  # CLI interface for direct operations
+  cli-k8s:
+    description: "CLI interface for Kubernetes operations"
+    provider: "cli"
+    command: "k8s"
+    jobs:
+      - name: "direct-k8s-operation"
+        description: "Direct Kubernetes operation via CLI"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "k8s-main-agent"
+
+  # Monitor agent signals
+  k8s-events:
+    description: "Kubernetes event monitoring signals"
+    provider: "stream"
+    source: "k8s-monitor-agent"
+    jobs:
+      - name: "handle-k8s-event"
+        description: "Handle Kubernetes events and trigger appropriate actions"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "k8s-main-agent"
+            - id: "local-assistant"
+        filters:
+          - type: "pod"
+            events: ["Failed", "CrashLoopBackOff", "ImagePullBackOff"]
+          - type: "deployment"
+            events: ["Failed", "ProgressDeadlineExceeded"]
+          - type: "service"
+            events: ["Failed", "LoadBalancerFailed"]
+
+# Runtime configuration
+runtime:
+  server:
+    port: 3001
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"
+    
+# Memory configuration for k8s operations
+memory:
+  enabled: true
+  scope: "workspace"
+  retention:
+    max_age_days: 7  # Keep k8s operation history for 7 days
+    max_entries: 500
+  include_types:
+    - "deployment_history"
+    - "troubleshooting_patterns"
+    - "successful_configurations"
+    - "error_resolutions" 

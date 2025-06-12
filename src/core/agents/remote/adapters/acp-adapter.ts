@@ -20,6 +20,8 @@ import {
   type ACPRunCreateRequest,
   createACPClient,
 } from "./acp/client.ts";
+import { createEventSource, createSSEAbortController, parseSSEData } from "./sse-utils.ts";
+import { ACPError, SSEError } from "./sse-errors.ts";
 
 export interface ACPAdapterConfig extends BaseRemoteAdapterConfig {
   endpoint: string; // Add endpoint to config
@@ -231,6 +233,8 @@ export class ACPAdapter extends BaseRemoteAdapter {
   async *executeAgentStream(
     request: RemoteExecutionRequest,
   ): AsyncIterableIterator<RemoteExecutionEvent> {
+    const controller = createSSEAbortController(this.config.acp.timeout_ms);
+
     try {
       this.logger.info("Starting ACP streaming execution", {
         agent_name: request.agentName,
@@ -245,32 +249,73 @@ export class ACPAdapter extends BaseRemoteAdapter {
         session_id: request.sessionId,
       };
 
-      // For streaming, we need to handle Server-Sent Events
-      // This is a simplified implementation - in practice, you'd want to use
-      // a proper SSE client or implement SSE parsing
-      const response = await this.client.POST("/runs", {
-        body: runRequest,
-        headers: {
-          "Accept": "text/event-stream",
+      // Build SSE URL for streaming endpoint
+      const streamingUrl = new URL("/runs", this.config.endpoint);
+
+      // Create authenticated fetch for SSE
+      const authenticatedFetch = super.createAuthenticatedFetch();
+
+      // Create the SSE event source
+      const eventSource = await createEventSource({
+        url: streamingUrl,
+        fetch: authenticatedFetch,
+        options: {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "text/event-stream",
+            "Cache-Control": "no-cache",
+          },
+          body: JSON.stringify(runRequest),
+          signal: controller.signal,
         },
       });
 
-      if (response.error) {
-        throw new Error(`ACP Error: ${response.error.message}`);
+      this.logger.debug("SSE connection established", {
+        agent_name: request.agentName,
+        url: streamingUrl.toString(),
+      });
+
+      // Process SSE events
+      for await (const message of eventSource.consume()) {
+        try {
+          // Parse the SSE data as an ACP event
+          const event = parseSSEData<ACPEvent>(message.data);
+
+          this.logger.debug("Received ACP SSE event", {
+            agent_name: request.agentName,
+            event_type: event.type,
+            message_id: message.id,
+          });
+
+          // Convert ACP event to Remote execution event
+          const remoteEvent = this.convertACPEvent(event);
+          yield remoteEvent;
+
+          // Check if this is a terminal event
+          if (this.isTerminalEvent(event)) {
+            this.logger.debug("Terminal event received, ending stream", {
+              agent_name: request.agentName,
+              event_type: event.type,
+            });
+            break;
+          }
+        } catch (parseError) {
+          this.logger.error("Failed to parse SSE event", {
+            agent_name: request.agentName,
+            raw_data: message.data,
+            error: this.formatError(parseError),
+          });
+
+          // Yield error event but continue processing
+          yield {
+            type: "error",
+            error: `Failed to parse SSE event: ${this.formatError(parseError)}`,
+          };
+        }
       }
 
-      // Note: For now, fall back to sync execution and yield the final result
-      // A full streaming implementation would parse SSE events from the response
-      if (response.data) {
-        const run = response.data as ACPRun; // Type assertion since we know this is a run response
-        yield {
-          type: "completion",
-          status: this.convertStatus(run.status),
-          output: this.convertOutput(run.output),
-        };
-      }
-
-      this.logger.debug("ACP streaming execution completed", {
+      this.logger.info("ACP streaming execution completed", {
         agent_name: request.agentName,
       });
     } catch (error) {
@@ -278,10 +323,23 @@ export class ACPAdapter extends BaseRemoteAdapter {
         agent_name: request.agentName,
         error: this.formatError(error),
       });
-      throw this.convertACPError(
-        error,
-        `Streaming execution failed for agent '${request.agentName}'`,
-      );
+
+      // Handle different error types appropriately
+      if (error instanceof SSEError) {
+        throw new Error(`SSE connection failed: ${error.message}`);
+      } else if (error instanceof ACPError) {
+        throw new Error(`ACP protocol error: ${error.message}`);
+      } else {
+        throw this.convertACPError(
+          error,
+          `Streaming execution failed for agent '${request.agentName}'`,
+        );
+      }
+    } finally {
+      // Ensure the abort controller is cleaned up
+      if (!controller.signal.aborted) {
+        controller.abort();
+      }
     }
   }
 
@@ -434,6 +492,26 @@ export class ACPAdapter extends BaseRemoteAdapter {
           content: event.part.content || "",
           contentType: event.part.content_type,
         };
+      case "message.created":
+        return {
+          type: "metadata",
+          metadata: { event_type: "message.created", message: event.message },
+        };
+      case "message.completed":
+        return {
+          type: "metadata",
+          metadata: { event_type: "message.completed", message: event.message },
+        };
+      case "run.created":
+        return {
+          type: "metadata",
+          metadata: { event_type: "run.created", run: event.run },
+        };
+      case "run.in-progress":
+        return {
+          type: "metadata",
+          metadata: { event_type: "run.in-progress", run: event.run },
+        };
       case "run.completed":
         return {
           type: "completion",
@@ -446,6 +524,12 @@ export class ACPAdapter extends BaseRemoteAdapter {
           status: "failed",
           error: event.run.error?.message,
         };
+      case "run.cancelled":
+        return {
+          type: "completion",
+          status: "cancelled",
+          error: "Run was cancelled",
+        };
       case "error":
         return {
           type: "error",
@@ -457,6 +541,13 @@ export class ACPAdapter extends BaseRemoteAdapter {
           metadata: { event },
         };
     }
+  }
+
+  private isTerminalEvent(event: ACPEvent): boolean {
+    return event.type === "run.completed" ||
+      event.type === "run.failed" ||
+      event.type === "run.cancelled" ||
+      event.type === "error";
   }
 
   private async pollForCompletion(runId: string): Promise<ACPRun> {

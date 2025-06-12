@@ -5,61 +5,171 @@
  * supervisor configuration, and platform agents.
  */
 
-import { parse } from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { exists } from "https://deno.land/std@0.208.0/fs/mod.ts";
-import type { AtlasMemoryConfig } from "./memory-config.ts";
+import { exists } from "@std/fs";
+import { parse } from "@std/yaml";
+import { z } from "zod/v4";
 import { logger } from "../utils/logger.ts";
+import type { AtlasMemoryConfig } from "./memory-config.ts";
 
-export interface AtlasPlatformConfig {
-  name: string;
-  version: string;
+// Custom error class for atlas configuration validation
+export class AtlasConfigValidationError extends Error {
+  constructor(
+    message: string,
+    public file: string,
+    public field?: string,
+    public value?: unknown,
+  ) {
+    super(message);
+    this.name = "AtlasConfigValidationError";
+  }
 }
 
-export interface AtlasAgentConfig {
-  type: "llm" | "tempest" | "remote";
-  model?: string;
-  purpose: string;
-  tools?: string[];
-  prompts?: {
-    system?: string;
-    [key: string]: string | undefined;
-  };
-  endpoint?: string;
-  auth?: {
-    type: string;
-    token_env?: string;
-    [key: string]: any;
-  };
-  timeout?: number;
-  schema?: {
-    input?: Record<string, any>;
-    output?: Record<string, any>;
-  };
-  agent?: string;
-  version?: string;
-  config?: Record<string, any>;
-}
+// Zod schemas for validation
+const AtlasPlatformConfigSchema = z.object({
+  name: z.string().min(1, "Platform name cannot be empty"),
+  version: z.string().min(1, "Platform version cannot be empty"),
+});
 
-export interface AtlasSupervisorConfig {
-  model: string;
-  memory?: string;
-  prompts: {
-    system: string;
-    [key: string]: string;
-  };
-}
+const AtlasAgentTypeSchema = z.enum(["llm", "tempest", "remote"]);
 
-export interface AtlasConfiguration {
-  version: string;
-  platform: AtlasPlatformConfig;
-  memory: AtlasMemoryConfig;
-  agents: Record<string, AtlasAgentConfig>;
-  supervisors: {
-    workspace: AtlasSupervisorConfig;
-    session: AtlasSupervisorConfig;
-    agent: AtlasSupervisorConfig;
-  };
-}
+const AtlasAuthConfigSchema = z
+  .object({
+    type: z.enum(["bearer", "api_key", "basic", "none"]),
+    token_env: z.string().optional(),
+    token: z.string().optional(),
+    api_key_env: z.string().optional(),
+    api_key: z.string().optional(),
+    header: z.string().default("Authorization"),
+  })
+  .catchall(z.any());
+
+const AtlasSchemaConfigSchema = z.object({
+  input: z.record(z.string(), z.any()).optional(),
+  output: z.record(z.string(), z.any()).optional(),
+});
+
+const AtlasAgentConfigSchema = z
+  .object({
+    type: AtlasAgentTypeSchema,
+    model: z.string().optional(),
+    purpose: z.string().min(1, "Agent purpose cannot be empty"),
+    tools: z.array(z.string()).optional(),
+    prompts: z
+      .object({
+        system: z.string().optional(),
+      })
+      .catchall(z.string())
+      .optional(),
+    endpoint: z.url().optional(),
+    auth: AtlasAuthConfigSchema.optional(),
+    timeout: z.number().positive().optional(),
+    schema: AtlasSchemaConfigSchema.optional(),
+    agent: z.string().optional(),
+    version: z.string().optional(),
+    config: z.record(z.string(), z.any()).optional(),
+  })
+  .check((ctx) => {
+    // Type-specific validation
+    if (ctx.value.type === "tempest") {
+      if (!ctx.value.agent) {
+        ctx.issues.push({
+          code: "custom",
+          message: "Tempest agents require 'agent' field",
+          path: ["agent"],
+          input: ctx.value,
+        });
+      }
+      if (!ctx.value.version) {
+        ctx.issues.push({
+          code: "custom",
+          message: "Tempest agents require 'version' field",
+          path: ["version"],
+          input: ctx.value,
+        });
+      }
+    } else if (ctx.value.type === "llm") {
+      if (!ctx.value.model) {
+        ctx.issues.push({
+          code: "custom",
+          message: "LLM agents require 'model' field",
+          path: ["model"],
+          input: ctx.value,
+        });
+      }
+    } else if (ctx.value.type === "remote") {
+      if (!ctx.value.endpoint) {
+        ctx.issues.push({
+          code: "custom",
+          message: "Remote agents require 'endpoint' field",
+          path: ["endpoint"],
+          input: ctx.value,
+        });
+      }
+    }
+  });
+
+const AtlasSupervisorConfigSchema = z.object({
+  model: z.string().min(1, "Supervisor model cannot be empty"),
+  memory: z.string().optional(),
+  prompts: z
+    .object({
+      system: z.string().min(1, "System prompt cannot be empty"),
+    })
+    .catchall(z.string()),
+});
+
+// Memory configuration schemas (basic validation)
+const AtlasMemoryRetentionSchema = z.object({
+  max_age_days: z.number().positive(),
+  max_entries: z.number().positive(),
+  cleanup_interval_hours: z.number().positive(),
+});
+
+const AtlasMemoryDefaultSchema = z.object({
+  enabled: z.boolean(),
+  storage: z.string(),
+  cognitive_loop: z.boolean(),
+  retention: AtlasMemoryRetentionSchema,
+});
+
+const AtlasMemoryContextLimitsSchema = z.object({
+  relevant_memories: z.number().min(0),
+  past_successes: z.number().min(0),
+  past_failures: z.number().min(0),
+});
+
+const AtlasMemoryScopeSchema = z.object({
+  enabled: z.boolean(),
+  scope: z.enum(["agent", "session", "workspace"]),
+  include_in_context: z.boolean(),
+  context_limits: AtlasMemoryContextLimitsSchema,
+  memory_types: z.record(z.string(), z.any()),
+});
+
+const AtlasMemoryConfigSchema = z.object({
+  default: AtlasMemoryDefaultSchema,
+  agent: AtlasMemoryScopeSchema,
+  session: AtlasMemoryScopeSchema,
+  workspace: AtlasMemoryScopeSchema,
+});
+
+const AtlasConfigurationSchema = z.object({
+  version: z.string().min(1, "Version cannot be empty"),
+  platform: AtlasPlatformConfigSchema,
+  memory: AtlasMemoryConfigSchema,
+  agents: z.record(z.string(), AtlasAgentConfigSchema),
+  supervisors: z.object({
+    workspace: AtlasSupervisorConfigSchema,
+    session: AtlasSupervisorConfigSchema,
+    agent: AtlasSupervisorConfigSchema,
+  }),
+});
+
+// Inferred types from Zod schemas
+export type AtlasPlatformConfig = z.infer<typeof AtlasPlatformConfigSchema>;
+export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
+export type AtlasSupervisorConfig = z.infer<typeof AtlasSupervisorConfigSchema>;
+export type AtlasConfiguration = z.infer<typeof AtlasConfigurationSchema>;
 
 export class AtlasConfigLoader {
   private static instance?: AtlasConfigLoader;
@@ -92,10 +202,10 @@ export class AtlasConfigLoader {
 
       // Load and parse atlas.yml
       const yamlText = await Deno.readTextFile(this.configPath);
-      const parsedConfig = parse(yamlText) as any;
+      const parsedConfig = parse(yamlText);
 
-      // Validate and transform configuration
-      this.config = this.validateAndTransformConfig(parsedConfig);
+      // Validate with Zod
+      this.config = AtlasConfigurationSchema.parse(parsedConfig);
 
       logger.info("Atlas configuration loaded", {
         version: this.config.version,
@@ -106,6 +216,13 @@ export class AtlasConfigLoader {
 
       return this.config;
     } catch (error) {
+      if (error instanceof z.ZodError) {
+        throw new AtlasConfigValidationError(
+          this.formatZodError(error, "atlas.yml"),
+          "atlas.yml",
+        );
+      }
+
       logger.error("Failed to load atlas.yml configuration", {
         error: error instanceof Error ? error.message : String(error),
         configPath: this.configPath,
@@ -138,46 +255,24 @@ export class AtlasConfigLoader {
     return this.config.agents;
   }
 
-  private validateAndTransformConfig(parsedConfig: any): AtlasConfiguration {
-    // Validate required fields
-    if (!parsedConfig.version) {
-      throw new Error("Missing required field: version");
-    }
+  private formatZodError(error: z.ZodError, filename: string): string {
+    const issues = error.issues.map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "root";
+      let message = `  • ${path}: ${issue.message}`;
 
-    // Set defaults for missing sections
-    const config: AtlasConfiguration = {
-      version: parsedConfig.version,
-      platform: parsedConfig.platform || {
-        name: "Atlas",
-        version: "1.0.0",
-      },
-      memory: parsedConfig.memory || this.getMinimalMemoryConfig(),
-      agents: parsedConfig.agents || {},
-      supervisors: parsedConfig.supervisors || this.getMinimalSupervisorConfig(),
-    };
-
-    // Validate memory configuration
-    this.validateMemoryConfig(config.memory);
-
-    return config;
-  }
-
-  private validateMemoryConfig(memoryConfig: AtlasMemoryConfig): void {
-    const requiredScopes = ["agent", "session", "workspace"];
-
-    for (const scope of requiredScopes) {
-      if (!memoryConfig[scope as keyof AtlasMemoryConfig]) {
-        throw new Error(`Missing memory configuration for scope: ${scope}`);
+      // Add received value for certain issue types
+      if ("received" in issue && issue.received !== undefined) {
+        message += ` (received: ${issue.received})`;
       }
-    }
 
-    // Validate memory type configurations
-    for (const scope of requiredScopes) {
-      const scopeConfig = memoryConfig[scope as keyof AtlasMemoryConfig] as any;
-      if (scopeConfig.enabled && !scopeConfig.memory_types) {
-        throw new Error(`Missing memory_types configuration for scope: ${scope}`);
-      }
-    }
+      return message;
+    });
+
+    return `Atlas configuration validation failed in ${filename}:\n${
+      issues.join(
+        "\n",
+      )
+    }\n\nPlease check your atlas.yml file and ensure all required fields are present and valid.`;
   }
 
   private async getDefaultConfiguration(): Promise<AtlasConfiguration> {
@@ -185,22 +280,26 @@ export class AtlasConfigLoader {
       // Load defaults from YAML file
       const defaultsPath = new URL("../config/defaults.yml", import.meta.url).pathname;
       const defaultsYaml = await Deno.readTextFile(defaultsPath);
-      const defaults = parse(defaultsYaml) as any;
+      const defaults = parse(defaultsYaml);
 
-      return this.validateAndTransformConfig(defaults);
+      // Validate with Zod
+      return AtlasConfigurationSchema.parse(defaults);
     } catch (error) {
       logger.error("Failed to load defaults.yml, using minimal fallback", {
         error: error instanceof Error ? error.message : String(error),
       });
 
       // Minimal fallback if defaults.yml is missing
-      return {
+      const fallbackConfig = {
         version: "1.0",
         platform: { name: "Atlas", version: "1.0.0" },
         memory: this.getMinimalMemoryConfig(),
         agents: {},
         supervisors: this.getMinimalSupervisorConfig(),
       };
+
+      // Validate the fallback config with Zod
+      return AtlasConfigurationSchema.parse(fallbackConfig);
     }
   }
 
@@ -263,6 +362,13 @@ export class AtlasConfigLoader {
   async reloadConfiguration(): Promise<AtlasConfiguration> {
     this.config = undefined;
     return await this.loadConfiguration();
+  }
+
+  /**
+   * Validate a configuration object against the schema
+   */
+  validateConfiguration(config: unknown): AtlasConfiguration {
+    return AtlasConfigurationSchema.parse(config);
   }
 
   /**
