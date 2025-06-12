@@ -1,8 +1,6 @@
-import type { IAtlasScope, IWorkspaceAgent, IWorkspaceSignal } from "../types/core.ts";
-import { BaseAgent } from "./agents/base-agent.ts";
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import type { IWorkspaceSignal } from "../types/core.ts";
 import { AgentSupervisor, type SupervisedAgentResult } from "./agent-supervisor.ts";
+import { BaseAgent } from "./agents/base-agent.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -224,7 +222,7 @@ You have access to a filtered view of the workspace tailored for this specific s
   }
 
   // Initialize session with context from WorkspaceSupervisor
-  async initializeSession(context: SessionContext): Promise<void> {
+  initializeSession(context: SessionContext): Promise<void> | void {
     this.sessionContext = context;
     this.log(
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
@@ -243,7 +241,7 @@ You have access to a filtered view of the workspace tailored for this specific s
   }
 
   // Create execution plan using job specification or LLM reasoning
-  async createExecutionPlan(): Promise<ExecutionPlan> {
+  createExecutionPlan(): Promise<ExecutionPlan> | ExecutionPlan {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
@@ -715,50 +713,6 @@ Provide a brief evaluation.`;
       this.log(`Supervised execution failed for agent ${agentId}: ${error}`);
       throw new Error(`Supervised agent execution failed: ${error}`);
     }
-  }
-
-  // Legacy method kept for backward compatibility - now delegates to supervised execution
-  async executeLegacyAgent(
-    agent: AgentMetadata,
-    task: AgentTask,
-    input: any,
-    context: Record<string, any>,
-  ): Promise<any> {
-    this.log(
-      `Legacy agent execution requested for ${agent.id} - delegating to supervised execution`,
-    );
-    const supervisedResult = await this.executeAgent(
-      agent.id,
-      task,
-      input,
-      context,
-    );
-
-    // Return legacy format for backward compatibility
-    return {
-      agent_type: agent.type,
-      agent_id: supervisedResult.agent_id,
-      result: supervisedResult.output,
-      input: supervisedResult.input,
-      supervised: true,
-      quality_score: supervisedResult.validation.quality_score,
-    };
-  }
-
-  // Replace placeholders in prompt strings
-  private replacePlaceholders(
-    template: string,
-    variables: Record<string, any>,
-  ): string {
-    let result = template;
-
-    for (const [key, value] of Object.entries(variables)) {
-      const placeholder = `{${key}}`;
-      const replacement = typeof value === "string" ? value : JSON.stringify(value);
-      result = result.replaceAll(placeholder, replacement);
-    }
-
-    return result;
   }
 
   // Generate an intelligent summary of the session results

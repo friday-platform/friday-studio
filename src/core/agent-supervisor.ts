@@ -375,7 +375,7 @@ Focus on safety, efficiency, and reliability.`;
   }
 
   // Load agent safely in web worker
-  async loadAgentSafely(
+  loadAgentSafely(
     agent: AgentMetadata,
     environment: AgentEnvironment,
   ): Promise<AgentWorkerInstance> {
