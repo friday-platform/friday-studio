@@ -37,7 +37,8 @@
     "xstate": "npm:xstate@^5.18.0",
     "zod": "npm:zod@^3.25.62",
     "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",
-    "hono": "jsr:@hono/hono@^4.6.9"
+    "hono": "jsr:@hono/hono@^4.6.9",
+    "eventsource-parser": "npm:eventsource-parser@^3.0.1"
   },
   "fmt": {
     "lineWidth": 100
