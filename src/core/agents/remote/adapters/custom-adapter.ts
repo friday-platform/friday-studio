@@ -7,9 +7,9 @@ import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./base-remote-a
 import type {
   HealthStatus,
   RemoteAgentInfo,
+  RemoteExecutionEvent,
   RemoteExecutionRequest,
   RemoteExecutionResult,
-  RemoteExecutionEvent,
 } from "../types.ts";
 
 export interface CustomAdapterConfig extends BaseRemoteAdapterConfig {
@@ -32,27 +32,32 @@ export class CustomAdapter extends BaseRemoteAdapter {
     return "custom";
   }
 
-  async discoverAgents(): Promise<RemoteAgentInfo[]> {
+  discoverAgents(): Promise<RemoteAgentInfo[]> {
     throw new Error("Custom adapter not yet implemented");
   }
 
-  async getAgentDetails(agentName: string): Promise<RemoteAgentInfo> {
+  getAgentDetails(_agentName: string): Promise<RemoteAgentInfo> {
     throw new Error("Custom adapter not yet implemented");
   }
 
-  async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
+  executeAgent(_request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
     throw new Error("Custom adapter not yet implemented");
   }
 
-  async *executeAgentStream(request: RemoteExecutionRequest): AsyncIterableIterator<RemoteExecutionEvent> {
+  async *executeAgentStream(
+    _request: RemoteExecutionRequest,
+  ): AsyncIterableIterator<RemoteExecutionEvent> {
+    // Placeholder generator - throw immediately but include yield for generator requirements
+    throw new Error("Custom adapter not yet implemented");
+    // deno-lint-ignore no-unreachable
+    yield;
+  }
+
+  cancelExecution(_executionId: string): Promise<void> {
     throw new Error("Custom adapter not yet implemented");
   }
 
-  async cancelExecution(executionId: string): Promise<void> {
-    throw new Error("Custom adapter not yet implemented");
-  }
-
-  async healthCheck(): Promise<HealthStatus> {
+  healthCheck(): Promise<HealthStatus> {
     throw new Error("Custom adapter not yet implemented");
   }
 }

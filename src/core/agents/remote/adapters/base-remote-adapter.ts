@@ -4,15 +4,15 @@
  */
 
 import type {
+  CircuitBreakerState,
   HealthStatus,
   RemoteAgentInfo,
+  RemoteAgentMetrics,
   RemoteAuthConfig,
   RemoteConnectionConfig,
+  RemoteExecutionEvent,
   RemoteExecutionRequest,
   RemoteExecutionResult,
-  RemoteExecutionEvent,
-  RemoteAgentMetrics,
-  CircuitBreakerState,
   RetryConfig,
 } from "../types.ts";
 import { logger } from "../../../../utils/logger.ts";
@@ -53,12 +53,14 @@ export abstract class BaseRemoteAdapter {
   abstract discoverAgents(): Promise<RemoteAgentInfo[]>;
   abstract getAgentDetails(agentName: string): Promise<RemoteAgentInfo>;
   abstract executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult>;
-  abstract executeAgentStream(request: RemoteExecutionRequest): AsyncIterableIterator<RemoteExecutionEvent>;
+  abstract executeAgentStream(
+    request: RemoteExecutionRequest,
+  ): AsyncIterableIterator<RemoteExecutionEvent>;
   abstract cancelExecution(executionId: string): Promise<void>;
   abstract healthCheck(): Promise<HealthStatus>;
 
   // Common functionality implemented in base class
-  
+
   /**
    * Get current adapter metrics
    */
@@ -108,7 +110,7 @@ export abstract class BaseRemoteAdapter {
   /**
    * Record failed execution for circuit breaker
    */
-  protected recordFailure(error: Error): void {
+  protected recordFailure(_error: Error): void {
     this.metrics.total_requests++;
     this.metrics.failed_requests++;
 
@@ -128,7 +130,7 @@ export abstract class BaseRemoteAdapter {
     this.circuitBreaker.state = "open";
     const timeoutMs = this.config.circuit_breaker?.timeout_ms || 60000;
     this.circuitBreaker.next_attempt = new Date(Date.now() + timeoutMs);
-    
+
     this.logger.warn("Circuit breaker opened", {
       failure_count: this.circuitBreaker.failure_count,
       next_attempt: this.circuitBreaker.next_attempt,
@@ -141,10 +143,10 @@ export abstract class BaseRemoteAdapter {
   private updateAverageLatency(latencyMs: number): void {
     const totalRequests = this.metrics.total_requests;
     const currentAverage = this.metrics.average_latency_ms;
-    
+
     // Calculate new average using running average formula
-    this.metrics.average_latency_ms = 
-      ((currentAverage * (totalRequests - 1)) + latencyMs) / totalRequests;
+    this.metrics.average_latency_ms = ((currentAverage * (totalRequests - 1)) + latencyMs) /
+      totalRequests;
   }
 
   /**
@@ -176,7 +178,7 @@ export abstract class BaseRemoteAdapter {
   protected createAuthenticatedFetch(): typeof fetch {
     return async (url: RequestInfo | URL, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
-      
+
       // Add authentication based on config
       if (this.config.auth) {
         this.addAuthenticationHeaders(headers);
@@ -197,7 +199,7 @@ export abstract class BaseRemoteAdapter {
           headers,
           signal: controller.signal,
         });
-        
+
         clearTimeout(timeoutId);
         return response;
       } catch (error) {
@@ -212,7 +214,7 @@ export abstract class BaseRemoteAdapter {
    */
   private addAuthenticationHeaders(headers: Headers): void {
     const auth = this.config.auth!;
-    
+
     switch (auth.type) {
       case "bearer": {
         const token = this.getAuthToken(auth.token_env, auth.token);
@@ -288,7 +290,7 @@ export abstract class BaseRemoteAdapter {
         return result;
       } catch (error) {
         lastError = error as Error;
-        
+
         // Don't retry on final attempt
         if (attempt === retryConfig.max_attempts) {
           break;
@@ -312,7 +314,7 @@ export abstract class BaseRemoteAdapter {
           error: lastError.message,
         });
 
-        await new Promise(resolve => setTimeout(resolve, delay));
+        await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
@@ -327,7 +329,7 @@ export abstract class BaseRemoteAdapter {
   private isRetryableError(error: Error, retryConfig: RetryConfig): boolean {
     // If specific retryable errors are configured, check against them
     if (retryConfig.retryable_errors && retryConfig.retryable_errors.length > 0) {
-      return retryConfig.retryable_errors.some(pattern => 
+      return retryConfig.retryable_errors.some((pattern) =>
         error.message.includes(pattern) || error.name.includes(pattern)
       );
     }

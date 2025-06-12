@@ -46,11 +46,11 @@ export type RemoteExecutionMode = "sync" | "async" | "stream";
 export type RemoteExecutionStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
 // Event types for streaming
-export type RemoteEventType = 
-  | "content" 
-  | "completion" 
-  | "error" 
-  | "metadata" 
+export type RemoteEventType =
+  | "content"
+  | "completion"
+  | "error"
+  | "metadata"
   | "progress"
   | "session_start"
   | "session_end";
