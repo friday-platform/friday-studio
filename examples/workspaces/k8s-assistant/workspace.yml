@@ -21,7 +21,7 @@ agents:
 
     # ACP-specific settings
     acp:
-      agent_name: "k8s-main" # Name of agent on k8s server
+      agent_name: "k8s-deployment-manager" # Name of agent on k8s server
       default_mode: "sync" # sync | async | stream
       timeout_ms: 60000 # 60 second timeout for k8s operations
       max_retries: 2 # Retry failed requests 2 times
@@ -40,6 +40,23 @@ agents:
         timeout_ms: 120000 # Stay open for 2 minutes
         half_open_max_calls: 2 # Test with 2 calls when half-open
 
+  # Monitor agent for Kubernetes events
+  k8s-monitor-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "http://localhost:8082"
+    purpose: "Real-time Kubernetes event monitoring and signal generation"
+    acp:
+      agent_name: "k8s-event-monitor"
+      default_mode: "stream"
+      health_check_interval: 15000
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5
+        timeout_ms: 30000
+        half_open_max_calls: 1
+
   # Local LLM agent for fallback and additional processing
   local-assistant:
     type: "llm"
@@ -49,96 +66,26 @@ agents:
     prompts:
       system: "You are a helpful Kubernetes assistant that works alongside the main k8s agent. You can help with documentation, explanations, and provide fallback support when the main agent is unavailable."
 
-# Signal configurations for triggering k8s operations
+# Simplified signal configurations
 signals:
-  # HTTP endpoint for deployment creation
-  http-deploy:
-    description: "HTTP endpoint for creating Kubernetes deployments"
+  # Single HTTP endpoint for all k8s operations
+  http-k8s:
+    description: "Unified HTTP endpoint for all Kubernetes operations"
     provider: "http"
-    path: "/deploy"
+    path: "/k8s"
     method: "POST"
     jobs:
-      - name: "create-deployment"
-        description: "Create a new Kubernetes deployment using AI agent"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
-
-  # HTTP endpoint for scaling operations
-  http-scale:
-    description: "HTTP endpoint for scaling Kubernetes deployments"
-    provider: "http"
-    path: "/scale"
-    method: "POST"
-    jobs:
-      - name: "scale-deployment"
-        description: "Scale existing Kubernetes deployment"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
-
-  # HTTP endpoint for health checks
-  http-health:
-    description: "HTTP endpoint for cluster health checks"
-    provider: "http"
-    path: "/health"
-    method: "GET"
-    jobs:
-      - name: "cluster-health-check"
-        description: "Check Kubernetes cluster health status"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
-
-  # HTTP endpoint for listing resources
-  http-list:
-    description: "HTTP endpoint for listing Kubernetes resources"
-    provider: "http"
-    path: "/list"
-    method: "POST"
-    jobs:
-      - name: "list-resources"
-        description: "List Kubernetes resources (pods, services, deployments)"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
-
-  # HTTP endpoint for troubleshooting
-  http-troubleshoot:
-    description: "HTTP endpoint for troubleshooting Kubernetes issues"
-    provider: "http"
-    path: "/troubleshoot"
-    method: "POST"
-    jobs:
-      - name: "troubleshoot-cluster"
-        description: "Analyze and troubleshoot Kubernetes cluster issues"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
-
-  # HTTP endpoint for general k8s assistance
-  http-assist:
-    description: "HTTP endpoint for general Kubernetes assistance"
-    provider: "http"
-    path: "/assist"
-    method: "POST"
-    jobs:
-      - name: "k8s-assistance"
-        description: "General Kubernetes assistance and guidance"
+      - name: "k8s-operation"
+        description: "Handle any Kubernetes operation via HTTP"
         execution:
           strategy: "sequential"
           agents:
             - id: "k8s-main-agent"
             - id: "local-assistant"
 
-  # CLI signal for direct k8s operations
+  # CLI interface for direct operations
   cli-k8s:
-    description: "CLI signal for direct Kubernetes operations"
+    description: "CLI interface for Kubernetes operations"
     provider: "cli"
     command: "k8s"
     jobs:
@@ -149,18 +96,26 @@ signals:
           agents:
             - id: "k8s-main-agent"
 
-  # CLI signal for deployment management
-  cli-deploy:
-    description: "CLI signal for deployment management"
-    provider: "cli"
-    command: "deploy"
+  # Monitor agent signals
+  k8s-events:
+    description: "Kubernetes event monitoring signals"
+    provider: "stream"
+    source: "k8s-monitor-agent"
     jobs:
-      - name: "deployment-management"
-        description: "Manage Kubernetes deployments via CLI"
+      - name: "handle-k8s-event"
+        description: "Handle Kubernetes events and trigger appropriate actions"
         execution:
           strategy: "sequential"
           agents:
             - id: "k8s-main-agent"
+            - id: "local-assistant"
+        filters:
+          - type: "pod"
+            events: ["Failed", "CrashLoopBackOff", "ImagePullBackOff"]
+          - type: "deployment"
+            events: ["Failed", "ProgressDeadlineExceeded"]
+          - type: "service"
+            events: ["Failed", "LoadBalancerFailed"]
 
 # Runtime configuration
 runtime:
