@@ -4,7 +4,7 @@ import { FullScreenBox } from "fullscreen-ink";
 import { Alert, Badge } from "@inkjs/ui";
 import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import { Tab, TabGroup, useTabNavigation } from "./components/tabs.tsx";
+import { Tab, TabGroup, useTabNavigation } from "./cli/components/tabs.tsx";
 
 // Parse command arguments while preserving JSON structure
 function parseCommandArgs(command: string): string[] {
