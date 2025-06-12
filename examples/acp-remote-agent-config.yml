@@ -1,0 +1,103 @@
+# Example ACP Remote Agent Configuration for Atlas
+# This shows the enhanced configuration schema with ACP support
+
+version: "1.0"
+
+workspace:
+  id: "550e8400-e29b-41d4-a716-446655440000"
+  name: "ACP Remote Agent Demo"
+  description: "Demonstration of ACP remote agent integration"
+
+agents:
+  # Basic ACP remote agent
+  external-chat:
+    type: "remote"
+    protocol: "acp"
+    purpose: "External chat agent for natural language processing"
+    endpoint: "https://api.example.com"
+    
+    # ACP-specific configuration
+    acp:
+      agent_name: "chat"
+      default_mode: "sync"
+      timeout_ms: 30000
+      max_retries: 3
+      health_check_interval: 60000
+    
+    # Authentication
+    auth:
+      type: "bearer"
+      token_env: "EXTERNAL_CHAT_TOKEN"
+    
+    # Optional schema validation
+    schema:
+      validate_input: true
+      validate_output: true
+      input:
+        type: "object"
+        properties:
+          message:
+            type: "string"
+            maxLength: 1000
+        required: ["message"]
+      output:
+        type: "object"
+        properties:
+          response:
+            type: "string"
+        required: ["response"]
+    
+    # Monitoring configuration
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5
+        timeout_ms: 60000
+        half_open_max_calls: 3
+    
+    # Validation settings
+    validation:
+      test_execution: true
+      timeout_ms: 10000
+
+  # Advanced ACP remote agent with streaming
+  streaming-analyzer:
+    type: "remote"
+    protocol: "acp"
+    purpose: "Streaming analysis agent"
+    endpoint: "https://streaming-api.example.com"
+    
+    acp:
+      agent_name: "analyzer"
+      default_mode: "stream"
+      timeout_ms: 60000
+      max_retries: 2
+    
+    auth:
+      type: "api_key"
+      api_key_env: "ANALYZER_API_KEY"
+      header: "X-API-Key"
+    
+    monitoring:
+      enabled: true
+
+signals:
+  http-request:
+    description: "HTTP request signal for processing queries"
+    provider: "http"
+    jobs:
+      - name: "process-with-external-chat"
+        description: "Process user query with external ACP agent"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "external-chat"
+            - id: "streaming-analyzer"
+
+runtime:
+  server:
+    port: 3000
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"

@@ -70,16 +70,46 @@ export interface LLMAgentConfig {
 
 export interface RemoteAgentConfig {
   type: "remote";
+  protocol: "acp" | "a2a" | "custom";
   endpoint: string;
+  purpose?: string;
   auth?: {
-    type: "bearer" | "api_key" | "basic";
+    type: "bearer" | "api_key" | "basic" | "none";
     token_env?: string;
-    [key: string]: any;
+    token?: string;
+    api_key_env?: string;
+    api_key?: string;
+    header?: string;
+    username?: string;
+    password?: string;
   };
   timeout?: number;
   schema?: {
+    validate_input?: boolean;
+    validate_output?: boolean;
     input?: Record<string, any>;
     output?: Record<string, any>;
+  };
+  acp?: {
+    agent_name: string;
+    default_mode?: "sync" | "async" | "stream";
+    timeout_ms?: number;
+    max_retries?: number;
+    health_check_interval?: number;
+  };
+  a2a?: Record<string, any>;
+  custom?: Record<string, any>;
+  validation?: {
+    test_execution?: boolean;
+    timeout_ms?: number;
+  };
+  monitoring?: {
+    enabled?: boolean;
+    circuit_breaker?: {
+      failure_threshold?: number;
+      timeout_ms?: number;
+      half_open_max_calls?: number;
+    };
   };
 }
 

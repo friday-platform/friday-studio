@@ -65,8 +65,12 @@ export interface AgentEnvironment {
     tools: string[];
     endpoint?: string;
     auth?: {
-      type: "bearer" | "api_key" | "basic";
+      type: "bearer" | "api_key" | "basic" | "none";
       token_env?: string;
+      token?: string;
+      api_key_env?: string;
+      api_key?: string;
+      header?: string;
       [key: string]: string | undefined;
     };
   };

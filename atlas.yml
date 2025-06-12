@@ -29,6 +29,7 @@ agents:
   # Security analysis agent
   security-scanner:
     type: "remote"
+    protocol: "custom" # Using custom HTTP protocol for security API
     endpoint: "https://security-api.example.com/analyze"
     purpose: "Analyzes content for security concerns and sensitive information"
     auth:

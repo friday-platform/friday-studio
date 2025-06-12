@@ -31,8 +31,12 @@ const AgentTypeSchema = z.enum(["tempest", "llm", "remote"]);
 
 const AuthConfigSchema = z
   .object({
-    type: z.enum(["bearer", "api_key", "basic"]),
+    type: z.enum(["bearer", "api_key", "basic", "none"]),
     token_env: z.string().optional(),
+    token: z.string().optional(),
+    api_key_env: z.string().optional(),
+    api_key: z.string().optional(),
+    header: z.string().default("Authorization"),
   })
   .catchall(z.any());
 
@@ -49,6 +53,35 @@ const SchemaObjectSchema = z
   })
   .catchall(z.any());
 
+// ACP-specific configuration schema
+const ACPConfigSchema = z.object({
+  agent_name: z.string().min(1).max(63).regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 
+    "Agent name must be lowercase alphanumeric with hyphens"),
+  default_mode: z.enum(["sync", "async", "stream"]).default("sync"),
+  timeout_ms: z.number().positive().default(30000),
+  max_retries: z.number().min(0).default(3),
+  health_check_interval: z.number().positive().default(60000),
+});
+
+// Validation configuration schema
+const ValidationConfigSchema = z.object({
+  test_execution: z.boolean().default(true),
+  timeout_ms: z.number().positive().default(10000),
+});
+
+// Circuit breaker configuration schema
+const CircuitBreakerConfigSchema = z.object({
+  failure_threshold: z.number().positive().default(5),
+  timeout_ms: z.number().positive().default(60000),
+  half_open_max_calls: z.number().positive().default(3),
+});
+
+// Monitoring configuration schema
+const MonitoringConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  circuit_breaker: CircuitBreakerConfigSchema.optional(),
+});
+
 const WorkspaceAgentConfigSchema = z
   .object({
     type: AgentTypeSchema,
@@ -61,15 +94,31 @@ const WorkspaceAgentConfigSchema = z
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
-    endpoint: z.url().optional(),
+    protocol: z.enum(["acp", "a2a", "custom"]).optional(),
+    endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
+    
+    // Protocol-specific configurations
+    acp: ACPConfigSchema.optional(),
+    a2a: z.record(z.string(), z.any()).optional(), // Placeholder for A2A
+    custom: z.record(z.string(), z.any()).optional(), // Placeholder for custom
+    
+    // Schema validation
     schema: z
       .object({
+        validate_input: z.boolean().default(false),
+        validate_output: z.boolean().default(false),
         input: SchemaObjectSchema.optional(),
         output: SchemaObjectSchema.optional(),
       })
       .optional(),
+    
+    // Validation settings
+    validation: ValidationConfigSchema.optional(),
+    
+    // Monitoring configuration
+    monitoring: MonitoringConfigSchema.optional(),
   })
   .superRefine((data, ctx) => {
     // Type-specific validation with detailed error messages
@@ -103,6 +152,44 @@ const WorkspaceAgentConfigSchema = z
           message: "Remote agents require 'endpoint' field",
           path: ["endpoint"],
         });
+      }
+      
+      if (!data.protocol) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Remote agents require 'protocol' field (acp, a2a, or custom)",
+          path: ["protocol"],
+        });
+      }
+      
+      // Protocol-specific validation
+      if (data.protocol === "acp") {
+        if (!data.acp?.agent_name) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "ACP remote agents require 'acp.agent_name' field",
+            path: ["acp", "agent_name"],
+          });
+        }
+      }
+      
+      // Authentication validation
+      if (data.auth) {
+        const authType = data.auth.type;
+        if (authType === "bearer" && !data.auth.token_env && !data.auth.token) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "Bearer auth requires either 'token_env' or 'token' field",
+            path: ["auth"],
+          });
+        }
+        if (authType === "api_key" && !data.auth.api_key_env && !data.auth.token_env) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: "API key auth requires either 'api_key_env' or 'token_env' field",
+            path: ["auth"],
+          });
+        }
       }
     }
   });
@@ -519,10 +606,16 @@ export class ConfigLoader {
       case "remote":
         return {
           type: "remote",
+          protocol: workspaceAgentConfig.protocol!,
           endpoint: workspaceAgentConfig.endpoint!,
           auth: workspaceAgentConfig.auth,
           timeout: workspaceAgentConfig.timeout,
           schema: workspaceAgentConfig.schema,
+          acp: workspaceAgentConfig.acp,
+          a2a: workspaceAgentConfig.a2a,
+          custom: workspaceAgentConfig.custom,
+          validation: workspaceAgentConfig.validation,
+          monitoring: workspaceAgentConfig.monitoring,
         } as RemoteAgentConfig;
 
       default:
