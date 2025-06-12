@@ -47,10 +47,10 @@ export class A2AAdapter extends BaseRemoteAdapter {
   async *executeAgentStream(
     _request: RemoteExecutionRequest,
   ): AsyncIterableIterator<RemoteExecutionEvent> {
-    // Placeholder generator - throw immediately but include yield for generator requirements
+    // Placeholder generator that never yields
     throw new Error("A2A adapter not yet implemented");
     // deno-lint-ignore no-unreachable
-    yield;
+    yield { type: "error", error: "A2A adapter not yet implemented" } as RemoteExecutionEvent;
   }
 
   cancelExecution(_executionId: string): Promise<void> {

@@ -51,6 +51,7 @@ export class RemoteAdapterFactory {
 
       const acpConfig = {
         ...baseConfig,
+        endpoint: config.endpoint,
         acp: {
           agent_name: config.acp?.agent_name || "default",
           default_mode: (config.acp?.default_mode || "sync") as "sync" | "async" | "stream",
