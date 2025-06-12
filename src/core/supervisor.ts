@@ -216,10 +216,67 @@ export class WorkspaceSupervisor extends BaseAgent
   private stateActor: any; // XState actor type
 
   constructor(workspaceId: string, config: any = {}) {
-    if (!config.memoryConfig) {
-      throw new Error("WorkspaceSupervisor requires memoryConfig in config");
-    }
-    super(config.memoryConfig, workspaceId);
+    // Provide default memoryConfig if not provided
+    const defaultMemoryConfig: AtlasMemoryConfig = {
+      default: {
+        enabled: true,
+        storage: "coala-local",
+        cognitive_loop: true,
+        retention: {
+          max_age_days: 30,
+          max_entries: 1000,
+          cleanup_interval_hours: 24,
+        },
+      },
+      agent: {
+        enabled: true,
+        scope: "agent",
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 10,
+          past_successes: 5,
+          past_failures: 5,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 100 },
+          episodic: { enabled: true, max_entries: 50 },
+          semantic: { enabled: true, max_entries: 200 },
+        },
+      },
+      session: {
+        enabled: true,
+        scope: "session",
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 15,
+          past_successes: 10,
+          past_failures: 10,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 200 },
+          episodic: { enabled: true, max_entries: 100 },
+          semantic: { enabled: true, max_entries: 300 },
+        },
+      },
+      workspace: {
+        enabled: true,
+        scope: "workspace",
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 20,
+          past_successes: 15,
+          past_failures: 15,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 500 },
+          episodic: { enabled: true, max_entries: 200 },
+          semantic: { enabled: true, max_entries: 1000 },
+        },
+      },
+    };
+
+    const memoryConfig = config.memoryConfig || defaultMemoryConfig;
+    super(memoryConfig, workspaceId);
     this.config = config;
     // Store merged configuration if provided
     this.mergedConfig = config.workspaceSignals || config.jobs

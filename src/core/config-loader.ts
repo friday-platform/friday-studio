@@ -362,10 +362,21 @@ export class ConfigLoader {
           }
         } else if ("execution" in jobMapping) {
           // This is an inline job definition
+          // Normalize string agents to JobAgentSpec objects
+          const normalizedAgents = jobMapping.execution.agents.map((agent) => {
+            if (typeof agent === "string") {
+              return { id: agent };
+            }
+            return agent;
+          });
+
           const jobSpec: JobSpecification = {
             name: jobMapping.name,
             description: jobMapping.description || `Inline job: ${jobMapping.name}`,
-            execution: jobMapping.execution,
+            execution: {
+              strategy: jobMapping.execution.strategy,
+              agents: normalizedAgents,
+            },
           };
 
           jobs[jobMapping.name] = jobSpec;
