@@ -1178,14 +1178,14 @@ const TUIDemo: React.FC = () => {
         <Badge color={serverStatus.running ? "green" : "red"}>
           {serverStatus.running ? "Online" : "Offline"}
         </Badge>
-        <Text>| Logs: {serverLogs.length} entries</Text>
-        <Text color="magenta">| ▨ OTEL: ON</Text>
-        <Text color="cyan">| ◦ Debug: ON</Text>
+        <Text> | Logs: {serverLogs.length} entries</Text>
+        <Text color="magenta"> | ▨ OTEL: ON</Text>
+        <Text color="cyan"> | ◦ Debug: ON</Text>
         {serverOnlyLogs.filter((log: LogEntry) =>
           log.content.includes("[PERF]")
         ).length > 0 && (
           <Text color="yellow">
-            | ⚡ Perf:{" "}
+            {" "}| ◆ Perf:{" "}
             {
               serverOnlyLogs.filter((log: LogEntry) =>
                 log.content.includes("[PERF]")
