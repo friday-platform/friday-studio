@@ -619,17 +619,25 @@ const TUIDemo: React.FC = () => {
       addLog("command", `Debug: Key=${keyDesc} Panel=${currentPanelName}`);
     }
 
-    // Handle Alt + number keys for tab switching (regardless of input focus)
-    if (key.meta && inputChar && inputChar.match(/[1-2]/)) {
-      const tabIndex = parseInt(inputChar) - 1;
-      if (tabIndex >= 0 && tabIndex < 2) {
-        goToTab(tabIndex);
-        return;
+    // Handle Alt + arrow keys for tab switching (Alt+b = left, Alt+f = right)
+    if (key.meta && (inputChar === 'b' || inputChar === 'f' || key.leftArrow || key.rightArrow)) {
+      const isLeft = inputChar === 'b' || key.leftArrow;
+      const isRight = inputChar === 'f' || key.rightArrow;
+      
+      if (isLeft) {
+        // Go to previous tab
+        const newTab = activeTab > 0 ? activeTab - 1 : 1; // Wrap to last tab
+        goToTab(newTab);
+      } else if (isRight) {
+        // Go to next tab
+        const newTab = activeTab < 1 ? activeTab + 1 : 0; // Wrap to first tab
+        goToTab(newTab);
       }
+      return;
     }
 
-    // Debug: Log key combinations
-    if (key.meta && inputChar) {
+    // Debug: Log key combinations (excluding arrow keys which are handled above)
+    if (key.meta && inputChar && !key.leftArrow && !key.rightArrow && inputChar !== 'b' && inputChar !== 'f') {
       addLog("command", `Debug: Alt+${inputChar}`);
     }
     if (key.ctrl && inputChar) {

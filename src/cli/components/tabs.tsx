@@ -49,10 +49,11 @@ export const TabGroup: React.FC<TabGroupProps> = ({
       <Box flexDirection="row" padding={1}>
         {tabs.map((tab, index) => {
           const isActive = index === currentActiveTab && currentActiveTab >= 0;
+          const shortcutText = isActive ? " (active)" : index < currentActiveTab ? " Alt+←" : " Alt+→";
           const width =
-            `Alt+${index + 1} ${tab.props.icon ? `${tab.props.icon} ` : ""}${
+            `${tab.props.icon ? `${tab.props.icon} ` : ""}${
               tab.props.label
-            }`.length + 3;
+            }${shortcutText}`.length + 3;
           return (
             <Box
               key={index}
@@ -76,7 +77,7 @@ export const TabGroup: React.FC<TabGroupProps> = ({
                   {tab.props.label || ""}
                 </Text>
                 <Text color="gray" dimColor>
-                  {" "}Alt+{index + 1}
+                  {isActive ? " (active)" : index < currentActiveTab ? " Alt+←" : " Alt+→"}
                 </Text>
               </Text>
             </Box>
