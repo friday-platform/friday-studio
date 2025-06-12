@@ -65,8 +65,12 @@ export interface AgentEnvironment {
     tools: string[];
     endpoint?: string;
     auth?: {
-      type: "bearer" | "api_key" | "basic";
+      type: "bearer" | "api_key" | "basic" | "none";
       token_env?: string;
+      token?: string;
+      api_key_env?: string;
+      api_key?: string;
+      header?: string;
       [key: string]: string | undefined;
     };
   };
@@ -409,9 +413,41 @@ Focus on safety, efficiency, and reliability.`;
 
     // Add agent-type specific configuration
     if (agent.type === "remote") {
-      const remoteConfig = agent.config;
+      const remoteConfig = agent.config as RemoteAgentConfig;
       environment.agent_config.endpoint = remoteConfig.endpoint;
       environment.agent_config.auth = remoteConfig.auth;
+
+      // Copy protocol-specific configuration to parameters
+      if (remoteConfig.protocol) {
+        environment.agent_config.parameters.protocol = remoteConfig.protocol;
+      }
+
+      // Copy ACP configuration
+      if (remoteConfig.acp) {
+        if (remoteConfig.acp.agent_name) {
+          environment.agent_config.parameters.agent_name = remoteConfig.acp.agent_name;
+        }
+        if (remoteConfig.acp.default_mode) {
+          environment.agent_config.parameters.default_mode = remoteConfig.acp.default_mode;
+        }
+        if (remoteConfig.acp.max_retries !== undefined) {
+          environment.agent_config.parameters.max_retries = remoteConfig.acp.max_retries;
+        }
+        if (remoteConfig.acp.health_check_interval !== undefined) {
+          environment.agent_config.parameters.health_check_interval =
+            remoteConfig.acp.health_check_interval;
+        }
+      }
+
+      // Copy A2A configuration if present
+      if (remoteConfig.a2a) {
+        environment.agent_config.parameters.a2a_config = JSON.stringify(remoteConfig.a2a);
+      }
+
+      // Copy custom configuration if present
+      if (remoteConfig.custom) {
+        environment.agent_config.parameters.custom_config = JSON.stringify(remoteConfig.custom);
+      }
     } else if (agent.type === "tempest") {
       const tempestConfig = agent.config;
       environment.agent_config.parameters.agent = tempestConfig.agent;
@@ -422,7 +458,7 @@ Focus on safety, efficiency, and reliability.`;
   }
 
   // Load agent safely in web worker
-  async loadAgentSafely(
+  loadAgentSafely(
     agent: AgentMetadata,
     environment: AgentEnvironment,
   ): Promise<AgentWorkerInstance> {

@@ -17,6 +17,63 @@ Deno.test("AgentSupervisor - Web Worker Implementation", {
     prompts: {
       system: "You are an AgentSupervisor responsible for safe agent loading and execution.",
     },
+    memoryConfig: {
+      default: {
+        enabled: true,
+        storage: "coala-local",
+        cognitive_loop: true,
+        retention: {
+          max_age_days: 30,
+          max_entries: 1000,
+          cleanup_interval_hours: 24,
+        },
+      },
+      agent: {
+        enabled: true,
+        scope: "agent" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 10,
+          past_successes: 5,
+          past_failures: 5,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 100 },
+          episodic: { enabled: true, max_entries: 50 },
+          semantic: { enabled: true, max_entries: 200 },
+        },
+      },
+      session: {
+        enabled: true,
+        scope: "session" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 15,
+          past_successes: 10,
+          past_failures: 10,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 200 },
+          episodic: { enabled: true, max_entries: 100 },
+          semantic: { enabled: true, max_entries: 300 },
+        },
+      },
+      workspace: {
+        enabled: true,
+        scope: "workspace" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 20,
+          past_successes: 15,
+          past_failures: 15,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 500 },
+          episodic: { enabled: true, max_entries: 200 },
+          semantic: { enabled: true, max_entries: 1000 },
+        },
+      },
+    },
   };
 
   const agentSupervisor = new AgentSupervisor(supervisorConfig);
@@ -120,6 +177,63 @@ Deno.test("AgentSupervisor - Worker Lifecycle Management", {
   const supervisorConfig = {
     model: "claude-4-sonnet-20250514",
     prompts: { system: "Test supervisor" },
+    memoryConfig: {
+      default: {
+        enabled: true,
+        storage: "coala-local",
+        cognitive_loop: true,
+        retention: {
+          max_age_days: 30,
+          max_entries: 1000,
+          cleanup_interval_hours: 24,
+        },
+      },
+      agent: {
+        enabled: true,
+        scope: "agent" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 10,
+          past_successes: 5,
+          past_failures: 5,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 100 },
+          episodic: { enabled: true, max_entries: 50 },
+          semantic: { enabled: true, max_entries: 200 },
+        },
+      },
+      session: {
+        enabled: true,
+        scope: "session" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 15,
+          past_successes: 10,
+          past_failures: 10,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 200 },
+          episodic: { enabled: true, max_entries: 100 },
+          semantic: { enabled: true, max_entries: 300 },
+        },
+      },
+      workspace: {
+        enabled: true,
+        scope: "workspace" as const,
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 20,
+          past_successes: 15,
+          past_failures: 15,
+        },
+        memory_types: {
+          contextual: { enabled: true, max_entries: 500 },
+          episodic: { enabled: true, max_entries: 200 },
+          semantic: { enabled: true, max_entries: 1000 },
+        },
+      },
+    },
   };
 
   const supervisor = new AgentSupervisor(supervisorConfig);

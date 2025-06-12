@@ -1,8 +1,6 @@
-import type { IAtlasScope, IWorkspaceAgent, IWorkspaceSignal } from "../types/core.ts";
-import { BaseAgent } from "./agents/base-agent.ts";
-import { generateText } from "ai";
-import { anthropic } from "@ai-sdk/anthropic";
+import type { IWorkspaceSignal } from "../types/core.ts";
 import { AgentSupervisor, type SupervisedAgentResult } from "./agent-supervisor.ts";
+import { BaseAgent } from "./agents/base-agent.ts";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "./memory-config.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { logger } from "../utils/logger.ts";
@@ -72,16 +70,46 @@ export interface LLMAgentConfig {
 
 export interface RemoteAgentConfig {
   type: "remote";
+  protocol: "acp" | "a2a" | "custom";
   endpoint: string;
+  purpose?: string;
   auth?: {
-    type: "bearer" | "api_key" | "basic";
+    type: "bearer" | "api_key" | "basic" | "none";
     token_env?: string;
-    [key: string]: any;
+    token?: string;
+    api_key_env?: string;
+    api_key?: string;
+    header?: string;
+    username?: string;
+    password?: string;
   };
   timeout?: number;
   schema?: {
+    validate_input?: boolean;
+    validate_output?: boolean;
     input?: Record<string, any>;
     output?: Record<string, any>;
+  };
+  acp?: {
+    agent_name: string;
+    default_mode?: "sync" | "async" | "stream";
+    timeout_ms?: number;
+    max_retries?: number;
+    health_check_interval?: number;
+  };
+  a2a?: Record<string, any>;
+  custom?: Record<string, any>;
+  validation?: {
+    test_execution?: boolean;
+    timeout_ms?: number;
+  };
+  monitoring?: {
+    enabled?: boolean;
+    circuit_breaker?: {
+      failure_threshold?: number;
+      timeout_ms?: number;
+      half_open_max_calls?: number;
+    };
   };
 }
 
@@ -239,7 +267,7 @@ You have access to a filtered view of the workspace tailored for this specific s
   }
 
   // Initialize session with context from WorkspaceSupervisor
-  async initializeSession(context: SessionContext): Promise<void> {
+  initializeSession(context: SessionContext): Promise<void> | void {
     this.sessionContext = context;
     this.log(
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
@@ -267,7 +295,7 @@ You have access to a filtered view of the workspace tailored for this specific s
   }
 
   // Create execution plan using job specification or LLM reasoning
-  async createExecutionPlan(): Promise<ExecutionPlan> {
+  createExecutionPlan(): Promise<ExecutionPlan> | ExecutionPlan {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
@@ -739,50 +767,6 @@ Provide a brief evaluation.`;
       this.log(`Supervised execution failed for agent ${agentId}: ${error}`);
       throw new Error(`Supervised agent execution failed: ${error}`);
     }
-  }
-
-  // Legacy method kept for backward compatibility - now delegates to supervised execution
-  async executeLegacyAgent(
-    agent: AgentMetadata,
-    task: AgentTask,
-    input: any,
-    context: Record<string, any>,
-  ): Promise<any> {
-    this.log(
-      `Legacy agent execution requested for ${agent.id} - delegating to supervised execution`,
-    );
-    const supervisedResult = await this.executeAgent(
-      agent.id,
-      task,
-      input,
-      context,
-    );
-
-    // Return legacy format for backward compatibility
-    return {
-      agent_type: agent.type,
-      agent_id: supervisedResult.agent_id,
-      result: supervisedResult.output,
-      input: supervisedResult.input,
-      supervised: true,
-      quality_score: supervisedResult.validation.quality_score,
-    };
-  }
-
-  // Replace placeholders in prompt strings
-  private replacePlaceholders(
-    template: string,
-    variables: Record<string, any>,
-  ): string {
-    let result = template;
-
-    for (const [key, value] of Object.entries(variables)) {
-      const placeholder = `{${key}}`;
-      const replacement = typeof value === "string" ? value : JSON.stringify(value);
-      result = result.replaceAll(placeholder, replacement);
-    }
-
-    return result;
   }
 
   // Generate an intelligent summary of the session results

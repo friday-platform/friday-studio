@@ -15,7 +15,8 @@
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --env-file",
     "fmt": "deno fmt",
-    "lint": "deno lint"
+    "lint": "deno lint",
+    "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts"
   },
   "imports": {
     "@std/assert": "jsr:@std/assert@^1.0.13",
@@ -27,13 +28,16 @@
     "@std/yaml": "jsr:@std/yaml@^1.0.7",
     "fullscreen-ink": "npm:fullscreen-ink@^0.0.2",
     "ink": "npm:ink@^5.0.1",
+    "openapi-fetch": "npm:openapi-fetch@^0.14.0",
+    "openapi-typescript": "npm:openapi-typescript@^7.8.0",
     "react": "npm:react@^18.3.1",
     "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
     "xstate": "npm:xstate@^5.18.0",
     "zod": "npm:zod@^3.25.62",
-    "@inkjs/ui": "npm:@inkjs/ui@^2.0.0"
+    "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",
+    "hono": "jsr:@hono/hono@^4.6.9"
   },
   "fmt": {
     "lineWidth": 100

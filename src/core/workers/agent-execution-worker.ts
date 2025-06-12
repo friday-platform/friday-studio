@@ -345,67 +345,147 @@ class AgentExecutionWorker {
   }
 
   private async executeRemoteAgent(request: AgentExecutionRequest): Promise<any> {
-    const { endpoint, auth } = request.agent_config;
-
-    if (!endpoint) {
-      throw new Error("Remote agent requires endpoint specification");
-    }
-
     // Check network permission
     if (!request.environment.worker_config.allowed_permissions.includes("network")) {
       throw new Error("Network access not permitted for this agent");
     }
 
-    // Prepare request headers
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
+    try {
+      // Import the remote agent adapter factory dynamically
+      const { RemoteAdapterFactory } = await import("../agents/remote/adapter-factory.ts");
 
-    if (auth) {
-      switch (auth.type) {
-        case "bearer":
-          headers["Authorization"] = `Bearer ${auth.token}`;
-          break;
-        case "api_key":
-          headers[auth.header || "X-API-Key"] = auth.key;
-          break;
-        case "basic":
-          headers["Authorization"] = `Basic ${btoa(`${auth.username}:${auth.password}`)}`;
-          break;
+      // Extract remote agent configuration from the agent config
+      const agentConfig = request.agent_config;
+      if (!agentConfig.endpoint) {
+        throw new Error("Remote agent requires endpoint specification");
       }
-    }
 
-    // Make HTTP request with timeout
-    const timeoutMs = request.environment.worker_config.timeout;
+      // Validate required remote agent configuration
+      const protocol = (agentConfig.parameters?.protocol || "acp") as "acp" | "a2a" | "custom";
 
-    const fetchCall = fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        task: request.task.task,
+      if (protocol === "acp" && !agentConfig.parameters?.agent_name) {
+        throw new Error("ACP remote agent requires 'agent_name' parameter");
+      }
+
+      // Build remote agent config for the adapter
+      const remoteConfig = {
+        type: "remote" as const,
+        protocol: protocol,
+        endpoint: agentConfig.endpoint,
+        auth: agentConfig.auth,
+        timeout: request.environment.worker_config.timeout,
+        acp: {
+          agent_name: agentConfig.parameters?.agent_name,
+          default_mode: agentConfig.parameters?.default_mode || "sync",
+          timeout_ms: request.environment.worker_config.timeout,
+          max_retries: agentConfig.parameters?.max_retries || 3,
+          health_check_interval: agentConfig.parameters?.health_check_interval || 60000,
+        },
+        monitoring: {
+          enabled: request.environment.monitoring_config.metrics_collection,
+          circuit_breaker: {
+            failure_threshold: 5,
+            timeout_ms: 60000,
+            half_open_max_calls: 3,
+          },
+        },
+      };
+
+      this.log(`Creating ${remoteConfig.protocol} adapter for remote agent`, "debug");
+
+      // Create the appropriate adapter
+      const adapter = await RemoteAdapterFactory.createAdapter(remoteConfig.protocol, remoteConfig);
+
+      // Prepare execution request
+      const executionRequest = {
+        agentName: remoteConfig.acp.agent_name,
+        input: this.formatInputForRemoteAgent(request.input, request.task),
+        mode: (agentConfig.parameters?.execution_mode || "sync") as "sync" | "async" | "stream",
+        sessionId: `worker-${this.workerId}-${Date.now()}`,
+        context: {
+          task: request.task.task,
+          mode: request.task.mode,
+          config: request.task.config,
+        },
+      };
+
+      this.log(`Executing remote agent via ${remoteConfig.protocol} protocol`, "info");
+
+      // Execute the agent
+      const result = await adapter.executeAgent(executionRequest);
+
+      // Clean up adapter resources
+      adapter.dispose();
+
+      return {
+        agent_type: "remote",
+        agent_id: request.agent_id,
+        protocol: remoteConfig.protocol,
+        endpoint: remoteConfig.endpoint,
+        execution_id: result.executionId,
+        result: this.extractOutputFromRemoteResult(result),
         input: request.input,
-        mode: request.task.mode,
-        config: request.task.config,
-      }),
-    });
+        status: result.status,
+        metadata: {
+          ...result.metadata,
+          adapter_metrics: adapter.getMetrics(),
+        },
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      this.log(`Remote agent execution failed: ${errorMessage}`, "error");
+      throw new Error(`Remote agent execution failed: ${errorMessage}`);
+    }
+  }
 
-    const response = await this.withTimeout(fetchCall, timeoutMs);
-
-    if (!response.ok) {
-      throw new Error(`Remote agent request failed: ${response.status} ${response.statusText}`);
+  /**
+   * Format input for remote agent based on task and protocol requirements
+   */
+  private formatInputForRemoteAgent(input: any, task: any): string {
+    // For ACP protocol, we typically send string input
+    if (typeof input === "string") {
+      return input;
     }
 
-    const result = await response.json();
-
-    return {
-      agent_type: "remote",
-      agent_id: request.agent_id,
-      endpoint: endpoint,
-      result: result,
-      input: request.input,
-      response_status: response.status,
-      response_headers: Object.fromEntries(response.headers.entries()),
+    // Build a formatted input including task context
+    const formattedInput = {
+      task: task.task,
+      mode: task.mode,
+      data: input,
+      config: task.config,
     };
+
+    return JSON.stringify(formattedInput, null, 2);
+  }
+
+  /**
+   * Extract the actual output from the remote agent result
+   */
+  private extractOutputFromRemoteResult(result: any): any {
+    if (!result.output || result.output.length === 0) {
+      return { message: "No output received from remote agent" };
+    }
+
+    // Try to extract text content from message parts
+    const textParts = result.output
+      .filter((part: any) => part.content_type === "text/plain" || !part.content_type)
+      .map((part: any) => part.content)
+      .filter(Boolean);
+
+    if (textParts.length === 1) {
+      // Try to parse as JSON if it looks like JSON
+      const content = textParts[0];
+      try {
+        return JSON.parse(content);
+      } catch {
+        return { message: content };
+      }
+    } else if (textParts.length > 1) {
+      return { messages: textParts };
+    }
+
+    // Fallback to raw output
+    return { raw_output: result.output };
   }
 
   private buildUserPrompt(task: any, input: any, prompts: Record<string, string>): string {
