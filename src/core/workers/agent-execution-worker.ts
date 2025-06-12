@@ -360,15 +360,22 @@ class AgentExecutionWorker {
         throw new Error("Remote agent requires endpoint specification");
       }
 
+      // Validate required remote agent configuration
+      const protocol = (agentConfig.parameters?.protocol || "acp") as "acp" | "a2a" | "custom";
+
+      if (protocol === "acp" && !agentConfig.parameters?.agent_name) {
+        throw new Error("ACP remote agent requires 'agent_name' parameter");
+      }
+
       // Build remote agent config for the adapter
       const remoteConfig = {
         type: "remote" as const,
-        protocol: (agentConfig.parameters?.protocol || "acp") as "acp" | "a2a" | "custom",
+        protocol: protocol,
         endpoint: agentConfig.endpoint,
         auth: agentConfig.auth,
         timeout: request.environment.worker_config.timeout,
         acp: {
-          agent_name: agentConfig.parameters?.agent_name || "default",
+          agent_name: agentConfig.parameters?.agent_name,
           default_mode: agentConfig.parameters?.default_mode || "sync",
           timeout_ms: request.environment.worker_config.timeout,
           max_retries: agentConfig.parameters?.max_retries || 3,

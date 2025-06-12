@@ -10,7 +10,7 @@ import {
 } from "../../../../src/core/agents/remote/adapters/acp-adapter.ts";
 import type { RemoteExecutionRequest } from "../../../../src/core/agents/remote/types.ts";
 
-// Mock ACP SDK types and client for testing
+// Mock ACP types and client for testing
 interface MockRun {
   run_id: string;
   status: "completed" | "failed" | "cancelled" | "running";

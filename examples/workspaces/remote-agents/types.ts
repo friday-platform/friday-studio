@@ -1,9 +1,9 @@
 // ACP v0.2.0 Type Definitions
 // Based on the official OpenAPI specification
 
-export type RunStatus = 
+export type RunStatus =
   | "created"
-  | "in-progress" 
+  | "in-progress"
   | "awaiting"
   | "cancelling"
   | "cancelled"
@@ -117,7 +117,7 @@ export interface RunEventsListResponse {
 }
 
 // Event types for streaming
-export type Event = 
+export type Event =
   | MessageCreatedEvent
   | MessagePartEvent
   | MessageCompletedEvent

@@ -68,7 +68,6 @@ agents:
     prompts:
       system: "You are a helpful AI assistant that works alongside remote agents."
 
-
 # Signal configurations for triggering jobs
 signals:
   # HTTP webhook for echo testing

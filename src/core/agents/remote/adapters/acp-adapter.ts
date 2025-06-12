@@ -1,6 +1,6 @@
 /**
  * ACP (Agent Communication Protocol) Adapter
- * Implementation using the official acp-sdk for reliable protocol compliance
+ * Implementation using openapi-fetch with generated types for maximum compatibility
  */
 
 import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./base-remote-adapter.ts";
@@ -12,7 +12,14 @@ import type {
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "../types.ts";
-import { ACPError, type Agent, Client, type Event, FetchError, HTTPError, type Run } from "acp-sdk";
+import {
+  type ACPAgent,
+  type ACPClient,
+  type ACPEvent,
+  type ACPRun,
+  type ACPRunCreateRequest,
+  createACPClient,
+} from "./acp/client.ts";
 
 export interface ACPAdapterConfig extends BaseRemoteAdapterConfig {
   endpoint: string; // Add endpoint to config
@@ -27,11 +34,11 @@ export interface ACPAdapterConfig extends BaseRemoteAdapterConfig {
 
 /**
  * ACP Protocol Adapter
- * Full implementation using official acp-sdk for type safety and reliability
+ * Full implementation using openapi-fetch with generated types for maximum compatibility
  */
 export class ACPAdapter extends BaseRemoteAdapter {
   protected override config: ACPAdapterConfig;
-  private client: Client;
+  private client: ACPClient;
 
   constructor(config: ACPAdapterConfig) {
     // Ensure connection config is set up properly for base class
@@ -49,8 +56,9 @@ export class ACPAdapter extends BaseRemoteAdapter {
     this.config = config;
 
     // Initialize ACP client with Atlas-specific configuration
-    this.client = new Client({
+    this.client = createACPClient({
       baseUrl: config.endpoint,
+      headers: this.buildHeaders(),
       fetch: super.createAuthenticatedFetch(),
     });
 
@@ -59,6 +67,16 @@ export class ACPAdapter extends BaseRemoteAdapter {
       agent_name: config.acp.agent_name,
       default_mode: config.acp.default_mode,
     });
+  }
+
+  private buildHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    };
+
+    // Authentication headers will be added by the authenticated fetch function
+    return headers;
   }
 
   getProtocolName(): string {
@@ -70,8 +88,17 @@ export class ACPAdapter extends BaseRemoteAdapter {
       this.logger.debug("Discovering ACP agents", { endpoint: this.config.endpoint });
       const startTime = performance.now();
 
-      const agents = await this.client.agents();
+      const response = await this.client.GET("/agents");
 
+      if (response.error) {
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
+      if (!response.data) {
+        throw new Error("No data received from agents endpoint");
+      }
+
+      const agents = response.data.agents;
       const duration = performance.now() - startTime;
       this.logger.info("Successfully discovered ACP agents", {
         count: agents.length,
@@ -90,7 +117,24 @@ export class ACPAdapter extends BaseRemoteAdapter {
       this.logger.debug("Getting ACP agent details", { agent_name: agentName });
       const startTime = performance.now();
 
-      const agent = await this.client.agent(agentName);
+      const response = await this.client.GET("/agents/{name}", {
+        params: {
+          path: {
+            name: agentName,
+          },
+        },
+      });
+
+      if (response.error) {
+        if (response.error.code === "not_found") {
+          throw new Error(`Agent '${agentName}' not found`);
+        }
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
+      if (!response.data) {
+        throw new Error("No data received from agent endpoint");
+      }
 
       const duration = performance.now() - startTime;
       this.logger.debug("Retrieved ACP agent details", {
@@ -98,11 +142,8 @@ export class ACPAdapter extends BaseRemoteAdapter {
         duration_ms: Math.round(duration),
       });
 
-      return this.convertACPAgentToRemoteInfo(agent);
+      return this.convertACPAgentToRemoteInfo(response.data);
     } catch (error) {
-      if (error instanceof ACPError && error.code === "not_found") {
-        throw new Error(`Agent '${agentName}' not found`);
-      }
       this.logger.error("Failed to get ACP agent details", {
         agent_name: agentName,
         error: this.formatError(error),
@@ -122,19 +163,35 @@ export class ACPAdapter extends BaseRemoteAdapter {
         has_context: !!request.context,
       });
 
-      let run: Run;
+      // Build the run request
+      const runRequest: ACPRunCreateRequest = {
+        agent_name: request.agentName,
+        input: this.convertInputToMessages(request.input),
+        mode: request.mode === "stream" ? "sync" : request.mode, // Handle streaming separately
+        session_id: request.sessionId,
+      };
 
-      switch (request.mode) {
-        case "sync":
-          run = await this.client.runSync(request.agentName, this.convertInput(request.input));
-          break;
-        case "async":
-          run = await this.client.runAsync(request.agentName, this.convertInput(request.input));
-          // Poll for completion
-          run = await this.pollForCompletion(run.run_id);
-          break;
-        default:
-          throw new Error("Use executeAgentStream for streaming mode");
+      if (request.mode === "stream") {
+        throw new Error("Use executeAgentStream for streaming mode");
+      }
+
+      const response = await this.client.POST("/runs", {
+        body: runRequest,
+      });
+
+      if (response.error) {
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
+      if (!response.data) {
+        throw new Error("No data received from run endpoint");
+      }
+
+      let run = response.data as ACPRun; // Type assertion since we know this is a run response
+
+      // For async mode, poll for completion
+      if (request.mode === "async" && run.status !== "completed" && run.status !== "failed") {
+        run = await this.pollForCompletion(run.run_id);
       }
 
       const executionTime = performance.now() - executionStartTime;
@@ -147,10 +204,6 @@ export class ACPAdapter extends BaseRemoteAdapter {
         metadata: {
           execution_time_ms: Math.round(executionTime),
           session_id: request.sessionId,
-          // Note: ACP SDK may not have these metadata fields yet
-          // agent_version: run.metadata?.agent_version,
-          // tokens_used: run.metadata?.tokens_used,
-          // model_used: run.metadata?.model_used,
         },
       };
 
@@ -184,10 +237,37 @@ export class ACPAdapter extends BaseRemoteAdapter {
         session_id: request.sessionId,
       });
 
-      for await (
-        const event of this.client.runStream(request.agentName, this.convertInput(request.input))
-      ) {
-        yield this.convertACPEvent(event);
+      // Build the run request for streaming
+      const runRequest: ACPRunCreateRequest = {
+        agent_name: request.agentName,
+        input: this.convertInputToMessages(request.input),
+        mode: "stream",
+        session_id: request.sessionId,
+      };
+
+      // For streaming, we need to handle Server-Sent Events
+      // This is a simplified implementation - in practice, you'd want to use
+      // a proper SSE client or implement SSE parsing
+      const response = await this.client.POST("/runs", {
+        body: runRequest,
+        headers: {
+          "Accept": "text/event-stream",
+        },
+      });
+
+      if (response.error) {
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
+      // Note: For now, fall back to sync execution and yield the final result
+      // A full streaming implementation would parse SSE events from the response
+      if (response.data) {
+        const run = response.data as ACPRun; // Type assertion since we know this is a run response
+        yield {
+          type: "completion",
+          status: this.convertStatus(run.status),
+          output: this.convertOutput(run.output),
+        };
       }
 
       this.logger.debug("ACP streaming execution completed", {
@@ -208,7 +288,19 @@ export class ACPAdapter extends BaseRemoteAdapter {
   async cancelExecution(executionId: string): Promise<void> {
     try {
       this.logger.info("Cancelling ACP execution", { execution_id: executionId });
-      await this.client.runCancel(executionId);
+
+      const response = await this.client.POST("/runs/{run_id}/cancel", {
+        params: {
+          path: {
+            run_id: executionId,
+          },
+        },
+      });
+
+      if (response.error) {
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
       this.logger.info("ACP execution cancelled successfully", { execution_id: executionId });
     } catch (error) {
       this.logger.error("Failed to cancel ACP execution", {
@@ -222,7 +314,13 @@ export class ACPAdapter extends BaseRemoteAdapter {
   async healthCheck(): Promise<HealthStatus> {
     try {
       const startTime = performance.now();
-      await this.client.ping();
+
+      const response = await this.client.GET("/ping");
+
+      if (response.error) {
+        throw new Error(`ACP Error: ${response.error.message}`);
+      }
+
       const latency = Math.round(performance.now() - startTime);
 
       return {
@@ -241,24 +339,60 @@ export class ACPAdapter extends BaseRemoteAdapter {
 
   // Private helper methods
 
-  // Use base class authentication by setting up connection config properly
-
-  private convertInput(input: string | unknown[]): string {
+  private convertInputToMessages(input: string | unknown[]): ACPRunCreateRequest["input"] {
     if (typeof input === "string") {
-      return input;
+      return [
+        {
+          parts: [
+            {
+              content_type: "text/plain",
+              content: input,
+              content_encoding: "plain",
+            },
+          ],
+          role: "user",
+        },
+      ];
     }
-    // For now, convert array input to string - ACP SDK expects string input
-    // TODO: Support structured input when ACP SDK supports it
-    return JSON.stringify(input);
+
+    // Convert array of RemoteMessagePart to ACP Messages
+    if (Array.isArray(input)) {
+      return [
+        {
+          parts: input.map((part: unknown) => {
+            const msgPart = part as { content_type?: string; content?: string };
+            return {
+              content_type: msgPart.content_type || "text/plain",
+              content: msgPart.content || String(part),
+              content_encoding: "plain" as const,
+            };
+          }),
+          role: "user",
+        },
+      ];
+    }
+
+    // Fallback: convert to string
+    return [
+      {
+        parts: [
+          {
+            content_type: "application/json",
+            content: JSON.stringify(input),
+            content_encoding: "plain",
+          },
+        ],
+        role: "user",
+      },
+    ];
   }
 
-  private convertOutput(output: unknown[]): RemoteMessagePart[] {
+  private convertOutput(output: ACPRun["output"]): RemoteMessagePart[] {
     // Convert ACP output format to RemoteMessagePart[]
     return output.flatMap((message) => {
-      const msg = message as { parts?: unknown[] };
-      return (msg.parts || []).map((part) => ({
-        content_type: "text/plain",
-        content: String(part),
+      return message.parts.map((part) => ({
+        content_type: part.content_type,
+        content: part.content || "",
       } as RemoteMessagePart));
     });
   }
@@ -278,47 +412,44 @@ export class ACPAdapter extends BaseRemoteAdapter {
     }
   }
 
-  private convertACPAgentToRemoteInfo(agent: Agent): RemoteAgentInfo {
+  private convertACPAgentToRemoteInfo(agent: ACPAgent): RemoteAgentInfo {
     return {
       name: agent.name,
       description: agent.description || undefined,
-      // version: agent.version, // May not exist in ACP SDK yet
       capabilities: Array.isArray(agent.metadata?.capabilities)
-        ? agent.metadata.capabilities.map((cap: any) =>
+        ? agent.metadata.capabilities.map((cap) =>
           typeof cap === "string" ? cap : cap.name || "unknown"
         )
         : [],
       supported_modes: ["sync", "async", "stream"], // ACP supports all modes
-      // input_schema: agent.input_schema, // May not exist yet
-      // output_schema: agent.output_schema, // May not exist yet
       metadata: agent.metadata,
     };
   }
 
-  private convertACPEvent(event: Event): RemoteExecutionEvent {
+  private convertACPEvent(event: ACPEvent): RemoteExecutionEvent {
     switch (event.type) {
       case "message.part":
         return {
           type: "content",
-          content: event.part?.content || "",
-          contentType: event.part?.content_type || "text/plain",
+          content: event.part.content || "",
+          contentType: event.part.content_type,
         };
       case "run.completed":
         return {
           type: "completion",
           status: "completed",
-          output: this.convertOutput(event.run?.output || []),
+          output: this.convertOutput(event.run.output),
         };
       case "run.failed":
         return {
           type: "completion",
           status: "failed",
-          error: event.run?.error?.message,
+          error: event.run.error?.message,
         };
       case "error":
         return {
           type: "error",
-          error: event.error?.message || "Unknown error",
+          error: event.error.message,
         };
       default:
         return {
@@ -328,7 +459,7 @@ export class ACPAdapter extends BaseRemoteAdapter {
     }
   }
 
-  private async pollForCompletion(runId: string): Promise<Run> {
+  private async pollForCompletion(runId: string): Promise<ACPRun> {
     const maxAttempts = 60; // 5 minutes with 5-second intervals
     let attempts = 0;
 
@@ -339,7 +470,23 @@ export class ACPAdapter extends BaseRemoteAdapter {
 
     while (attempts < maxAttempts) {
       try {
-        const run = await this.client.runStatus(runId);
+        const response = await this.client.GET("/runs/{run_id}", {
+          params: {
+            path: {
+              run_id: runId,
+            },
+          },
+        });
+
+        if (response.error) {
+          throw new Error(`ACP Error: ${response.error.message}`);
+        }
+
+        if (!response.data) {
+          throw new Error("No data received from run status endpoint");
+        }
+
+        const run = response.data;
 
         if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
           this.logger.debug("ACP run completed", {
@@ -366,17 +513,6 @@ export class ACPAdapter extends BaseRemoteAdapter {
   }
 
   private convertACPError(error: unknown, context: string): Error {
-    if (error instanceof ACPError) {
-      return new Error(`${context}: ${error.message} (code: ${error.code})`);
-    }
-    if (error instanceof HTTPError) {
-      // Check if error has status property
-      const statusPart = "status" in error ? ` ${(error as { status: number }).status}` : "";
-      return new Error(`${context}: HTTP${statusPart} - ${error.message}`);
-    }
-    if (error instanceof FetchError) {
-      return new Error(`${context}: Network error - ${error.message}`);
-    }
     if (error instanceof Error) {
       return new Error(`${context}: ${error.message}`);
     }
@@ -384,16 +520,6 @@ export class ACPAdapter extends BaseRemoteAdapter {
   }
 
   private formatError(error: unknown): string {
-    if (error instanceof ACPError) {
-      return `ACPError(${error.code}): ${error.message}`;
-    }
-    if (error instanceof HTTPError) {
-      const statusPart = "status" in error ? `(${(error as { status: number }).status})` : "";
-      return `HTTPError${statusPart}: ${error.message}`;
-    }
-    if (error instanceof FetchError) {
-      return `FetchError: ${error.message}`;
-    }
     if (error instanceof Error) {
       return `${error.name}: ${error.message}`;
     }

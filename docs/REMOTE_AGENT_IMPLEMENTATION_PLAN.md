@@ -138,15 +138,7 @@ deno add npm:acp-sdk@^0.1.0
 
 ```typescript
 // src/core/agents/remote/adapters/acp-adapter.ts
-import {
-  ACPError,
-  type Agent,
-  Client,
-  type Event,
-  FetchError,
-  HTTPError,
-  type Run,
-} from "acp-sdk";
+import { ACPError, type Agent, Client, type Event, FetchError, HTTPError, type Run } from "acp-sdk";
 ```
 
 #### 1.3.2 Base Remote Adapter
@@ -1475,7 +1467,8 @@ export class RemoteAgentLogger extends AtlasLogger {
 
 ### ✅ Sprint 2: ACP Implementation (COMPLETED)
 
-- ✅ **ACP adapter implementation using official SDK** - Full implementation with real acp-sdk package
+- ✅ **ACP adapter implementation using official SDK** - Full implementation with real acp-sdk
+  package
 - ✅ **Agent loader integration** - Remote agents fully integrated with workspace loading
 - ✅ **Worker execution enhancement** - AgentExecutionWorker enhanced with adapter system
 - ✅ **Configuration validation with Zod schemas** - Complete validation framework
@@ -1759,15 +1752,17 @@ docs/
 
 ### **✅ MILESTONE ACHIEVED: Production-Ready Remote Agent Support**
 
-Atlas now has full support for remote agent integration via the Agent Communication Protocol (ACP), with a robust foundation for additional protocols. This implementation dramatically enhances Atlas's capabilities as an enterprise AI agent orchestration platform.
+Atlas now has full support for remote agent integration via the Agent Communication Protocol (ACP),
+with a robust foundation for additional protocols. This implementation dramatically enhances Atlas's
+capabilities as an enterprise AI agent orchestration platform.
 
 ### **🚀 Key Achievements**
 
 **Production Implementation Benefits:**
 
-- **✅ 75% faster than planned** (4 days vs 8 weeks planned) 
+- **✅ 75% faster than planned** (4 days vs 8 weeks planned)
 - **✅ Enterprise-grade reliability** with circuit breaker protection
-- **✅ Comprehensive type safety** with full TypeScript coverage  
+- **✅ Comprehensive type safety** with full TypeScript coverage
 - **✅ Battle-tested architecture** following Atlas design patterns
 - **✅ Seamless integration** with existing agent supervision system
 - **✅ Strategic SDK workaround** maintains upgrade path while delivering immediate value
@@ -1792,6 +1787,7 @@ Atlas now has full support for remote agent integration via the Agent Communicat
 ### **📦 Complete Deliverable Suite**
 
 **Core Implementation:**
+
 - Full ACP adapter with local type system (SDK compatibility workaround)
 - Enhanced AgentExecutionWorker with dynamic adapter loading
 - Complete workspace configuration schema and validation
@@ -1799,12 +1795,14 @@ Atlas now has full support for remote agent integration via the Agent Communicat
 - Multi-method authentication framework
 
 **Developer Resources:**
+
 - Production-ready workspace example (`examples/remote-acp-workspace/`)
 - Comprehensive usage documentation and troubleshooting guides
 - SDK compatibility documentation with migration path
 - Type-safe interfaces and error handling
 
 **Enterprise Features:**
+
 - Structured logging with remote agent context
 - Performance metrics with sub-microsecond timing
 - Secure credential management via environment variables
@@ -1819,4 +1817,6 @@ The adapter pattern implementation positions Atlas for rapid expansion:
 - **Protocol Evolution**: Automatic compatibility with ACP updates
 - **Performance Optimization**: Connection pooling and advanced caching
 
-This foundational work establishes Atlas as a leading platform for enterprise AI agent orchestration, capable of integrating with any remote agent system while maintaining security, reliability, and performance standards.
+This foundational work establishes Atlas as a leading platform for enterprise AI agent
+orchestration, capable of integrating with any remote agent system while maintaining security,
+reliability, and performance standards.

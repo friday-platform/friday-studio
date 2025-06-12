@@ -15,7 +15,7 @@ agents:
     protocol: "acp"
     purpose: "External chat agent for natural language processing"
     endpoint: "https://api.example.com"
-    
+
     # ACP-specific configuration
     acp:
       agent_name: "chat"
@@ -23,12 +23,12 @@ agents:
       timeout_ms: 30000
       max_retries: 3
       health_check_interval: 60000
-    
+
     # Authentication
     auth:
       type: "bearer"
       token_env: "EXTERNAL_CHAT_TOKEN"
-    
+
     # Optional schema validation
     schema:
       validate_input: true
@@ -46,7 +46,7 @@ agents:
           response:
             type: "string"
         required: ["response"]
-    
+
     # Monitoring configuration
     monitoring:
       enabled: true
@@ -54,7 +54,7 @@ agents:
         failure_threshold: 5
         timeout_ms: 60000
         half_open_max_calls: 3
-    
+
     # Validation settings
     validation:
       test_execution: true
@@ -66,18 +66,18 @@ agents:
     protocol: "acp"
     purpose: "Streaming analysis agent"
     endpoint: "https://streaming-api.example.com"
-    
+
     acp:
       agent_name: "analyzer"
       default_mode: "stream"
       timeout_ms: 60000
       max_retries: 2
-    
+
     auth:
       type: "api_key"
       api_key_env: "ANALYZER_API_KEY"
       header: "X-API-Key"
-    
+
     monitoring:
       enabled: true
 

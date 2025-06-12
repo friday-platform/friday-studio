@@ -49,11 +49,16 @@ export class RemoteAdapterFactory {
       // Dynamic import to avoid loading ACP dependencies unless needed
       const { ACPAdapter } = await import("./adapters/acp-adapter.ts");
 
+      // Validate required ACP configuration
+      if (!config.acp?.agent_name) {
+        throw new Error("ACP configuration requires 'agent_name' field");
+      }
+
       const acpConfig = {
         ...baseConfig,
         endpoint: config.endpoint,
         acp: {
-          agent_name: config.acp?.agent_name || "default",
+          agent_name: config.acp.agent_name,
           default_mode: (config.acp?.default_mode || "sync") as "sync" | "async" | "stream",
           timeout_ms: config.acp?.timeout_ms || 30000,
           max_retries: config.acp?.max_retries || 3,

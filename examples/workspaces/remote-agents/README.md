@@ -1,6 +1,7 @@
 # Remote ACP Workspace Example
 
-This workspace demonstrates how to configure and use remote agents with Atlas using a local Agent Communication Protocol (ACP) server.
+This workspace demonstrates how to configure and use remote agents with Atlas using a local Agent
+Communication Protocol (ACP) server.
 
 ## Overview
 
@@ -21,6 +22,7 @@ deno task example-acp-server
 ```
 
 The server will start on `http://localhost:8000` with two agents:
+
 - **echo**: Analyzes and echoes user input with statistics
 - **chat**: Provides conversational responses
 
@@ -124,11 +126,13 @@ examples/remote-acp-workspace/
 ### Available Agents
 
 #### Echo Agent (`/agents/echo`)
+
 - Analyzes input text (word count, sentiment)
 - Provides detailed statistics
 - Returns processed echo response
 
 #### Chat Agent (`/agents/chat`)
+
 - Conversational responses
 - Context-aware replies
 - Keyword-based response generation
@@ -179,6 +183,7 @@ agents:
 ### Adding New Agents
 
 1. Create agent class in `agents.ts`:
+
 ```typescript
 export class MyAgent implements BaseAgent {
   getMetadata(): Agent {
@@ -200,6 +205,7 @@ export class MyAgent implements BaseAgent {
 ```
 
 2. Register in agent registry:
+
 ```typescript
 export const agents = new Map<string, BaseAgent>([
   ["echo", new EchoAgent()],
@@ -211,6 +217,7 @@ export const agents = new Map<string, BaseAgent>([
 ### Extending the Server
 
 The server is built with Hono and can be extended with:
+
 - Authentication middleware
 - Rate limiting
 - Request validation
@@ -220,6 +227,7 @@ The server is built with Hono and can be extended with:
 ## Testing Different Modes
 
 ### Synchronous Mode
+
 ```bash
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
@@ -227,6 +235,7 @@ curl -X POST http://localhost:8000/runs \
 ```
 
 ### Asynchronous Mode
+
 ```bash
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
@@ -237,6 +246,7 @@ curl http://localhost:8000/runs/{run_id}
 ```
 
 ### Streaming Mode
+
 ```bash
 curl -X POST http://localhost:8000/runs \
   -H "Content-Type: application/json" \
@@ -256,6 +266,7 @@ The server implements proper ACP error responses:
 ```
 
 Error codes:
+
 - `server_error`: Internal server errors
 - `invalid_input`: Invalid request format
 - `not_found`: Agent or run not found
@@ -283,15 +294,18 @@ Error codes:
 ## Troubleshooting
 
 ### Server Won't Start
+
 - Check if port 8000 is available
 - Verify Deno installation and permissions
 
 ### Atlas Can't Connect
+
 - Ensure ACP server is running on port 8000
 - Check firewall/network settings
 - Verify workspace.yml endpoint configuration
 
 ### Agent Errors
+
 - Check server logs for detailed error messages
 - Verify agent names match exactly (case-sensitive)
 - Test agents directly via curl before using with Atlas
@@ -306,4 +320,5 @@ This example demonstrates the power of Atlas's remote agent architecture:
 4. **Scalable**: Can connect to multiple remote agent providers
 5. **Secure**: Proper authentication and validation patterns
 
-The local ACP server serves as a foundation for understanding how to integrate Atlas with any ACP-compliant agent system, from simple demonstration agents to production AI services.
+The local ACP server serves as a foundation for understanding how to integrate Atlas with any
+ACP-compliant agent system, from simple demonstration agents to production AI services.

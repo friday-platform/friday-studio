@@ -3,7 +3,7 @@
  * Tests business logic without external dependencies
  */
 
-import { assertEquals, assertRejects, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 
 // Test the core adapter logic by mocking the base adapter
 interface MockACPAdapterConfig {
@@ -50,11 +50,11 @@ class MockACPClient {
     // Add default test agents
     this.agentRegistry.set("test-agent", {
       name: "test-agent",
-      description: "Test agent for unit testing"
+      description: "Test agent for unit testing",
     });
     this.agentRegistry.set("chat-agent", {
-      name: "chat-agent", 
-      description: "Chat agent for conversations"
+      name: "chat-agent",
+      description: "Chat agent for conversations",
     });
   }
 
@@ -96,7 +96,7 @@ class MockACPClient {
     error?: { message: string };
   }> {
     await this.delay(this.executionDelay);
-    
+
     if (this.shouldFail) {
       throw new Error("Execution failed - agent unavailable");
     }
@@ -108,14 +108,14 @@ class MockACPClient {
       output: [{
         parts: [{
           content_type: "text/plain",
-          content: `Response from ${agentName}: ${input}`
-        }]
-      }]
+          content: `Response from ${agentName}: ${input}`,
+        }],
+      }],
     };
   }
 
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
 
@@ -180,9 +180,9 @@ class TestACPAdapter {
       const latency = Math.round(performance.now() - startTime);
       return { status: "healthy", latency_ms: latency };
     } catch (error) {
-      return { 
-        status: "unhealthy", 
-        error: error instanceof Error ? error.message : String(error) 
+      return {
+        status: "unhealthy",
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -225,10 +225,14 @@ class TestACPAdapter {
 
   private convertStatus(status: string): "completed" | "failed" | "cancelled" {
     switch (status) {
-      case "completed": return "completed";
-      case "failed": return "failed";
-      case "cancelled": return "cancelled";
-      default: return "completed";
+      case "completed":
+        return "completed";
+      case "failed":
+        return "failed";
+      case "cancelled":
+        return "cancelled";
+      default:
+        return "completed";
     }
   }
 }
@@ -244,13 +248,15 @@ function createTestConfig(overrides: Partial<MockACPAdapterConfig> = {}): MockAC
     },
     auth: {
       type: "bearer",
-      token: "test-token-12345"
+      token: "test-token-12345",
     },
     ...overrides,
   };
 }
 
-function createTestRequest(overrides: Partial<MockRemoteExecutionRequest> = {}): MockRemoteExecutionRequest {
+function createTestRequest(
+  overrides: Partial<MockRemoteExecutionRequest> = {},
+): MockRemoteExecutionRequest {
   return {
     agentName: "test-agent",
     input: "Hello, test agent!",
@@ -266,7 +272,6 @@ function createTestRequest(overrides: Partial<MockRemoteExecutionRequest> = {}):
 }
 
 Deno.test("ACPAdapter Core Functionality", async (t) => {
-
   await t.step("should successfully execute sync request and return correct result", async () => {
     // Arrange
     const mockClient = new MockACPClient();
@@ -300,7 +305,7 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     await assertRejects(
       () => adapter.executeAgent(request),
       Error,
-      "Remote execution failed for agent 'test-agent': Execution failed - agent unavailable"
+      "Remote execution failed for agent 'test-agent': Execution failed - agent unavailable",
     );
   });
 
@@ -339,11 +344,11 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     assertEquals(stringResult.output[0].content, "Response from test-agent: Simple string input");
 
     // Test structured input (should be converted to JSON string)
-    const structuredRequest = createTestRequest({ 
+    const structuredRequest = createTestRequest({
       input: [
         { content_type: "text/plain", content: "Structured input" },
-        { content_type: "application/json", content: '{"key": "value"}' }
-      ]
+        { content_type: "application/json", content: '{"key": "value"}' },
+      ],
     });
     const structuredResult = await adapter.executeAgent(structuredRequest);
     assertEquals(structuredResult.status, "completed");
@@ -361,21 +366,21 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     await assertRejects(
       () => adapter.executeAgent({ ...createTestRequest(), agentName: "" }),
       Error,
-      "Agent name is required"
+      "Agent name is required",
     );
 
     // Test missing input
     await assertRejects(
       () => adapter.executeAgent({ ...createTestRequest(), input: "" }),
       Error,
-      "Input is required"
+      "Input is required",
     );
 
     // Test invalid mode
     await assertRejects(
       () => adapter.executeAgent({ ...createTestRequest(), mode: "invalid" as any }),
       Error,
-      "Invalid execution mode"
+      "Invalid execution mode",
     );
   });
 
@@ -390,7 +395,7 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     await assertRejects(
       () => adapter.executeAgent(streamRequest),
       Error,
-      "Use executeAgentStream for streaming mode"
+      "Use executeAgentStream for streaming mode",
     );
   });
 
@@ -418,7 +423,7 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     const adapter = new TestACPAdapter(config, mockClient);
     const request = createTestRequest({
       sessionId: "metadata-test-session",
-      context: { test_metadata: true }
+      context: { test_metadata: true },
     });
 
     // Act
@@ -430,7 +435,7 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
     assertEquals(typeof result.metadata.execution_time_ms, "number");
     assertEquals(result.metadata.execution_time_ms > 0, true);
     assertEquals(result.metadata.session_id, "metadata-test-session");
-    
+
     // Should have an execution ID that looks like a valid identifier
     assertEquals(result.executionId.startsWith("run_"), true);
     assertEquals(result.executionId.length > 10, true);
@@ -438,7 +443,6 @@ Deno.test("ACPAdapter Core Functionality", async (t) => {
 });
 
 Deno.test("ACPAdapter Agent Discovery", async (t) => {
-
   await t.step("should discover available agents", async () => {
     // Arrange
     const mockClient = new MockACPClient();
@@ -451,8 +455,8 @@ Deno.test("ACPAdapter Agent Discovery", async (t) => {
     // Assert
     assertExists(agents);
     assertEquals(agents.length >= 2, true); // Should have test-agent and chat-agent
-    assertEquals(agents.some(a => a.name === "test-agent"), true);
-    assertEquals(agents.some(a => a.name === "chat-agent"), true);
+    assertEquals(agents.some((a) => a.name === "test-agent"), true);
+    assertEquals(agents.some((a) => a.name === "chat-agent"), true);
   });
 
   await t.step("should get agent details for existing agent", async () => {
@@ -480,13 +484,12 @@ Deno.test("ACPAdapter Agent Discovery", async (t) => {
     await assertRejects(
       () => adapter.getAgentDetails("non-existent-agent"),
       Error,
-      "Agent 'non-existent-agent' not found"
+      "Agent 'non-existent-agent' not found",
     );
   });
 });
 
 Deno.test("ACPAdapter Health Monitoring", async (t) => {
-
   await t.step("should return healthy status when service is available", async () => {
     // Arrange
     const mockClient = new MockACPClient();

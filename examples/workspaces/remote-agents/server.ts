@@ -50,17 +50,17 @@ app.use("*", prettyJSON());
 // Error handler
 app.onError((err, c) => {
   console.error("Server error:", err);
-  
+
   if (err instanceof HTTPException) {
     return c.json(
       createError("server_error", err.message),
-      err.status
+      err.status,
     );
   }
-  
+
   return c.json(
     createError("server_error", "Internal server error"),
-    500
+    500,
   );
 });
 
@@ -73,34 +73,34 @@ app.get("/ping", (c) => {
 app.get("/agents", (c) => {
   const limit = Math.min(parseInt(c.req.query("limit") || "10"), 1000);
   const offset = parseInt(c.req.query("offset") || "0");
-  
+
   const allAgents = listAgents();
   const paginatedAgents = allAgents.slice(offset, offset + limit);
-  
+
   const response: AgentsListResponse = {
-    agents: paginatedAgents
+    agents: paginatedAgents,
   };
-  
+
   return c.json(response);
 });
 
 // Agent details
 app.get("/agents/:name", (c) => {
   const name = c.req.param("name");
-  
+
   if (!validateAgentName(name)) {
-    throw new HTTPException(400, { 
-      message: JSON.stringify(createError("invalid_input", "Invalid agent name format"))
+    throw new HTTPException(400, {
+      message: JSON.stringify(createError("invalid_input", "Invalid agent name format")),
     });
   }
-  
+
   const agent = getAgent(name);
   if (!agent) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Agent '${name}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Agent '${name}' not found`)),
     });
   }
-  
+
   return c.json(agent.getMetadata());
 });
 
@@ -108,42 +108,44 @@ app.get("/agents/:name", (c) => {
 app.post("/runs", async (c) => {
   try {
     const body = await c.req.json() as RunCreateRequest;
-    
+
     // Validate request
     if (!body.agent_name || !body.input || !Array.isArray(body.input) || body.input.length === 0) {
-      throw new HTTPException(400, { 
-        message: JSON.stringify(createError("invalid_input", "Missing or invalid required fields: agent_name, input"))
+      throw new HTTPException(400, {
+        message: JSON.stringify(
+          createError("invalid_input", "Missing or invalid required fields: agent_name, input"),
+        ),
       });
     }
-    
+
     if (!validateAgentName(body.agent_name)) {
-      throw new HTTPException(400, { 
-        message: JSON.stringify(createError("invalid_input", "Invalid agent name format"))
+      throw new HTTPException(400, {
+        message: JSON.stringify(createError("invalid_input", "Invalid agent name format")),
       });
     }
-    
+
     // Check if agent exists
     const agent = getAgent(body.agent_name);
     if (!agent) {
-      throw new HTTPException(404, { 
-        message: JSON.stringify(createError("not_found", `Agent '${body.agent_name}' not found`))
+      throw new HTTPException(404, {
+        message: JSON.stringify(createError("not_found", `Agent '${body.agent_name}' not found`)),
       });
     }
-    
+
     // Create session if needed
     let sessionId = body.session_id;
     if (!sessionId) {
       sessionId = generateUUID();
       sessions.set(sessionId, {
         id: sessionId,
-        history: []
+        history: [],
       });
     }
-    
+
     const runId = generateUUID();
     const now = new Date().toISOString();
     const mode = body.mode || "sync";
-    
+
     // Create initial run
     const run: Run = {
       agent_name: body.agent_name,
@@ -151,93 +153,95 @@ app.post("/runs", async (c) => {
       run_id: runId,
       status: "created",
       output: [],
-      created_at: now
+      created_at: now,
     };
-    
+
     runs.set(runId, run);
     runEvents.set(runId, []);
-    
+
     // Add initial events
     const events = runEvents.get(runId)!;
     events.push({
       type: "run.created",
-      run: { ...run }
+      run: { ...run },
     });
-    
+
     // Handle different modes
     if (mode === "stream") {
       // Return streaming response
       run.status = "in-progress";
       runs.set(runId, run);
-      
+
       events.push({
-        type: "run.in-progress", 
-        run: { ...run }
+        type: "run.in-progress",
+        run: { ...run },
       });
-      
+
       return streamSSE(c, async (stream) => {
         try {
           // Send initial events
           await stream.writeSSE({
             data: JSON.stringify({
               type: "run.created",
-              run: { ...run }
-            })
+              run: { ...run },
+            }),
           });
-          
+
           await stream.writeSSE({
             data: JSON.stringify({
               type: "run.in-progress",
-              run: { ...run }
-            })
+              run: { ...run },
+            }),
           });
-          
+
           // Process with agent streaming
           for await (const part of agent.processMessageStream(body.input)) {
             await stream.writeSSE({
               data: JSON.stringify({
                 type: "message.part",
-                part
-              })
+                part,
+              }),
             });
-            
+
             events.push({
               type: "message.part",
-              part
+              part,
             });
           }
-          
+
           // Complete the run
           const output = await agent.processMessage(body.input);
           run.status = "completed";
           run.output = output;
           run.finished_at = new Date().toISOString();
           runs.set(runId, run);
-          
+
           const completedEvent = {
             type: "run.completed" as const,
-            run: { ...run }
+            run: { ...run },
           };
           events.push(completedEvent);
-          
+
           await stream.writeSSE({
-            data: JSON.stringify(completedEvent)
+            data: JSON.stringify(completedEvent),
           });
-          
         } catch (error) {
           run.status = "failed";
-          run.error = createError("server_error", error instanceof Error ? error.message : "Unknown error");
+          run.error = createError(
+            "server_error",
+            error instanceof Error ? error.message : "Unknown error",
+          );
           run.finished_at = new Date().toISOString();
           runs.set(runId, run);
-          
+
           const failedEvent = {
             type: "run.failed" as const,
-            run: { ...run }
+            run: { ...run },
           };
           events.push(failedEvent);
-          
+
           await stream.writeSSE({
-            data: JSON.stringify(failedEvent)
+            data: JSON.stringify(failedEvent),
           });
         }
       });
@@ -247,12 +251,12 @@ app.post("/runs", async (c) => {
         // Return immediately for async
         run.status = "in-progress";
         runs.set(runId, run);
-        
+
         events.push({
           type: "run.in-progress",
-          run: { ...run }
+          run: { ...run },
         });
-        
+
         // Process in background
         (async () => {
           try {
@@ -261,59 +265,65 @@ app.post("/runs", async (c) => {
             run.output = output;
             run.finished_at = new Date().toISOString();
             runs.set(runId, run);
-            
+
             events.push({
               type: "run.completed",
-              run: { ...run }
+              run: { ...run },
             });
           } catch (error) {
             run.status = "failed";
-            run.error = createError("server_error", error instanceof Error ? error.message : "Unknown error");
+            run.error = createError(
+              "server_error",
+              error instanceof Error ? error.message : "Unknown error",
+            );
             run.finished_at = new Date().toISOString();
             runs.set(runId, run);
-            
+
             events.push({
               type: "run.failed",
-              run: { ...run }
+              run: { ...run },
             });
           }
         })();
-        
+
         return c.json(run, 202);
       } else {
         // Sync mode - process immediately
         try {
           run.status = "in-progress";
           runs.set(runId, run);
-          
+
           events.push({
             type: "run.in-progress",
-            run: { ...run }
+            run: { ...run },
           });
-          
+
           const output = await agent.processMessage(body.input);
           run.status = "completed";
           run.output = output;
           run.finished_at = new Date().toISOString();
           runs.set(runId, run);
-          
+
           events.push({
             type: "run.completed",
-            run: { ...run }
+            run: { ...run },
           });
-          
+
           return c.json(run);
         } catch (error) {
           run.status = "failed";
-          run.error = createError("server_error", error instanceof Error ? error.message : "Unknown error");
+          run.error = createError(
+            "server_error",
+            error instanceof Error ? error.message : "Unknown error",
+          );
           run.finished_at = new Date().toISOString();
           runs.set(runId, run);
-          
+
           events.push({
             type: "run.failed",
-            run: { ...run }
+            run: { ...run },
           });
-          
+
           return c.json(run);
         }
       }
@@ -322,8 +332,8 @@ app.post("/runs", async (c) => {
     if (error instanceof HTTPException) {
       throw error;
     }
-    throw new HTTPException(400, { 
-      message: JSON.stringify(createError("invalid_input", "Invalid request body"))
+    throw new HTTPException(400, {
+      message: JSON.stringify(createError("invalid_input", "Invalid request body")),
     });
   }
 });
@@ -331,93 +341,93 @@ app.post("/runs", async (c) => {
 // Get run status
 app.get("/runs/:run_id", (c) => {
   const runId = c.req.param("run_id");
-  
+
   const run = runs.get(runId);
   if (!run) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`)),
     });
   }
-  
+
   return c.json(run);
 });
 
 // Resume run (placeholder - not implemented)
 app.post("/runs/:run_id", async (c) => {
   const runId = c.req.param("run_id");
-  
+
   const run = runs.get(runId);
   if (!run) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`)),
     });
   }
-  
+
   // For this simple implementation, we don't support resuming
-  throw new HTTPException(400, { 
-    message: JSON.stringify(createError("invalid_input", "Resume functionality not implemented"))
+  throw new HTTPException(400, {
+    message: JSON.stringify(createError("invalid_input", "Resume functionality not implemented")),
   });
 });
 
 // Cancel run
 app.post("/runs/:run_id/cancel", (c) => {
   const runId = c.req.param("run_id");
-  
+
   const run = runs.get(runId);
   if (!run) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`)),
     });
   }
-  
+
   // Only cancel if not already finished
   if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
     return c.json(run, 202);
   }
-  
+
   run.status = "cancelled";
   run.finished_at = new Date().toISOString();
   runs.set(runId, run);
-  
+
   const events = runEvents.get(runId) || [];
   events.push({
     type: "run.cancelled",
-    run: { ...run }
+    run: { ...run },
   });
-  
+
   return c.json(run, 202);
 });
 
 // List run events
 app.get("/runs/:run_id/events", (c) => {
   const runId = c.req.param("run_id");
-  
+
   const run = runs.get(runId);
   if (!run) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Run '${runId}' not found`)),
     });
   }
-  
+
   const events = runEvents.get(runId) || [];
   const response: RunEventsListResponse = {
-    events
+    events,
   };
-  
+
   return c.json(response);
 });
 
 // Session endpoint (placeholder)
 app.get("/session/:session_id", (c) => {
   const sessionId = c.req.param("session_id");
-  
+
   const session = sessions.get(sessionId);
   if (!session) {
-    throw new HTTPException(404, { 
-      message: JSON.stringify(createError("not_found", `Session '${sessionId}' not found`))
+    throw new HTTPException(404, {
+      message: JSON.stringify(createError("not_found", `Session '${sessionId}' not found`)),
     });
   }
-  
+
   return c.json(session);
 });
 
@@ -437,6 +447,8 @@ console.log(`\n🤖 Available agents: echo, chat`);
 console.log(`\n📚 Example usage:`);
 console.log(`   curl -X POST http://localhost:${port}/runs \\`);
 console.log(`     -H "Content-Type: application/json" \\`);
-console.log(`     -d '{"agent_name":"echo","input":[{"role":"user","parts":[{"content_type":"text/plain","content":"Hello!"}]}]}'`);
+console.log(
+  `     -d '{"agent_name":"echo","input":[{"role":"user","parts":[{"content_type":"text/plain","content":"Hello!"}]}]}'`,
+);
 
 Deno.serve({ port }, app.fetch);

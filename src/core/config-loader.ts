@@ -55,8 +55,10 @@ const SchemaObjectSchema = z
 
 // ACP-specific configuration schema
 const ACPConfigSchema = z.object({
-  agent_name: z.string().min(1).max(63).regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/, 
-    "Agent name must be lowercase alphanumeric with hyphens"),
+  agent_name: z.string().min(1).max(63).regex(
+    /^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/,
+    "Agent name must be lowercase alphanumeric with hyphens",
+  ),
   default_mode: z.enum(["sync", "async", "stream"]).default("sync"),
   timeout_ms: z.number().positive().default(30000),
   max_retries: z.number().min(0).default(3),
@@ -98,12 +100,12 @@ const WorkspaceAgentConfigSchema = z
     endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
-    
+
     // Protocol-specific configurations
     acp: ACPConfigSchema.optional(),
     a2a: z.record(z.string(), z.any()).optional(), // Placeholder for A2A
     custom: z.record(z.string(), z.any()).optional(), // Placeholder for custom
-    
+
     // Schema validation
     schema: z
       .object({
@@ -113,10 +115,10 @@ const WorkspaceAgentConfigSchema = z
         output: SchemaObjectSchema.optional(),
       })
       .optional(),
-    
+
     // Validation settings
     validation: ValidationConfigSchema.optional(),
-    
+
     // Monitoring configuration
     monitoring: MonitoringConfigSchema.optional(),
   })
@@ -153,7 +155,7 @@ const WorkspaceAgentConfigSchema = z
           path: ["endpoint"],
         });
       }
-      
+
       if (!data.protocol) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -161,7 +163,7 @@ const WorkspaceAgentConfigSchema = z
           path: ["protocol"],
         });
       }
-      
+
       // Protocol-specific validation
       if (data.protocol === "acp") {
         if (!data.acp?.agent_name) {
@@ -172,7 +174,7 @@ const WorkspaceAgentConfigSchema = z
           });
         }
       }
-      
+
       // Authentication validation
       if (data.auth) {
         const authType = data.auth.type;
