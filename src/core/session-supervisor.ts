@@ -1,6 +1,9 @@
 import type { IWorkspaceSignal } from "../types/core.ts";
 import { AgentSupervisor, type SupervisedAgentResult } from "./agent-supervisor.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
+import { type AtlasMemoryConfig, MemoryConfigManager } from "./memory-config.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
+import { logger } from "../utils/logger.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -158,9 +161,21 @@ export class SessionSupervisor extends BaseAgent {
   private executionPlan: ExecutionPlan | null = null;
   private executionResults: AgentResult[] = [];
   private agentSupervisor!: AgentSupervisor;
+  private sessionMemoryManager: CoALAMemoryManager;
+  private memoryConfig: AtlasMemoryConfig; // Store for AgentSupervisor
 
-  constructor(parentScopeId?: string) {
-    super(parentScopeId);
+  constructor(memoryConfig: AtlasMemoryConfig, parentScopeId?: string) {
+    super(memoryConfig, parentScopeId);
+    this.memoryConfig = memoryConfig; // Store for later use
+
+    // Override logger from BaseAgent with proper supervisor context
+    this.logger = logger.createChildLogger({
+      sessionId: this.id,
+      workerType: "session-supervisor",
+    });
+
+    // Initialize session-scoped memory
+    this.sessionMemoryManager = this.memoryConfigManager.getMemoryManager(this, "session");
 
     // Set supervisor-specific prompts
     this.prompts = {
@@ -231,13 +246,22 @@ You have access to a filtered view of the workspace tailored for this specific s
     // Initialize AgentSupervisor for supervised execution
     this.initializeAgentSupervisor({
       model: "claude-4-sonnet-20250514",
+      memoryConfig: this.memoryConfig, // Pass the proper memory configuration
       prompts: {
         system: "You are an AgentSupervisor responsible for safe agent execution.",
       },
     });
 
-    // Add context to memory
-    this.memory.remember("sessionContext", context);
+    // Store session context in session-scoped memory
+    this.memoryConfigManager.rememberWithScope(
+      this.sessionMemoryManager,
+      "sessionContext",
+      context,
+      CoALAMemoryType.CONTEXTUAL,
+      "session",
+      ["session", "context", "initialization"],
+      0.9,
+    );
   }
 
   // Create execution plan using job specification or LLM reasoning

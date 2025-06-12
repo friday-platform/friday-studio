@@ -107,17 +107,47 @@ const WorkspaceAgentConfigSchema = z
     }
   });
 
+// Job execution strategy schema
+const JobExecutionSchema = z.object({
+  strategy: z.enum(["sequential", "parallel"]),
+  agents: z.array(
+    z.union([
+      z.string(),
+      z.object({
+        id: z.string(),
+        task: z.string().optional(),
+        inputSource: z.string().optional(),
+        dependencies: z.array(z.string()).optional(),
+      }),
+    ]),
+  ),
+});
+
+// Inline job specification schema
+const InlineJobSchema = z.object({
+  name: z.string(),
+  condition: z.string().optional(),
+  description: z.string().optional(),
+  execution: JobExecutionSchema,
+});
+
+// Job reference schema (pointing to external file)
+const JobReferenceSchema = z.object({
+  name: z.string(),
+  condition: z.string().optional(),
+  job: z.string(),
+});
+
 const WorkspaceSignalConfigSchema = z.object({
   description: z.string(),
   provider: z.string(),
   schema: SchemaObjectSchema.optional(),
   jobs: z
     .array(
-      z.object({
-        name: z.string(),
-        condition: z.string().optional(),
-        job: z.string(),
-      }),
+      z.union([
+        InlineJobSchema,
+        JobReferenceSchema,
+      ]),
     )
     .min(1, "Signal must have at least one job mapping"),
 });
@@ -307,32 +337,39 @@ export class ConfigLoader {
   ): Promise<Record<string, JobSpecification>> {
     const jobs: Record<string, JobSpecification> = {};
 
-    // Collect all job file paths from signals
-    const jobPaths = new Set<string>();
+    // Process jobs from all signals
     for (const signal of Object.values(workspaceConfig.signals)) {
       for (const jobMapping of signal.jobs) {
-        jobPaths.add(jobMapping.job);
-      }
-    }
+        // Check if this is an inline job or a job file reference
+        if ("job" in jobMapping) {
+          // This is a job file reference
+          try {
+            const fullPath = join(this.workspaceDir, jobMapping.job);
+            const content = await Deno.readTextFile(fullPath);
+            const jobSpec = parseYaml(content) as { job: JobSpecification };
 
-    // Load each job specification
-    for (const jobPath of jobPaths) {
-      try {
-        const fullPath = join(this.workspaceDir, jobPath);
-        const content = await Deno.readTextFile(fullPath);
-        const jobSpec = parseYaml(content) as { job: JobSpecification };
+            if (!jobSpec.job || !jobSpec.job.name) {
+              throw new Error(`Invalid job specification in ${jobMapping.job}`);
+            }
 
-        if (!jobSpec.job || !jobSpec.job.name) {
-          throw new Error(`Invalid job specification in ${jobPath}`);
+            jobs[jobSpec.job.name] = jobSpec.job;
+          } catch (error) {
+            console.error(
+              `[ConfigLoader] Failed to load job from ${jobMapping.job}:`,
+              error instanceof Error ? error.message : String(error),
+            );
+            // Continue loading other jobs
+          }
+        } else if ("execution" in jobMapping) {
+          // This is an inline job definition
+          const jobSpec: JobSpecification = {
+            name: jobMapping.name,
+            description: jobMapping.description || `Inline job: ${jobMapping.name}`,
+            execution: jobMapping.execution,
+          };
+
+          jobs[jobMapping.name] = jobSpec;
         }
-
-        jobs[jobSpec.job.name] = jobSpec.job;
-      } catch (error) {
-        console.error(
-          `[ConfigLoader] Failed to load job from ${jobPath}:`,
-          error instanceof Error ? error.message : String(error),
-        );
-        // Continue loading other jobs
       }
     }
 
@@ -351,16 +388,17 @@ export class ConfigLoader {
       )
     ) {
       for (const jobMapping of signalConfig.jobs) {
-        const _jobName = jobMapping.job
-          .replace(/^\.\/jobs\//, "")
-          .replace(/\.ya?ml$/, "");
+        // Find the job specification either by name or loaded from file
         const jobSpec = Object.values(jobs).find(
           (job) => job.name === jobMapping.name,
         );
 
         if (!jobSpec) {
+          const jobSource = "job" in jobMapping
+            ? `job file '${jobMapping.job}'`
+            : "inline definition";
           throw new ConfigValidationError(
-            `Signal '${signalId}' references job '${jobMapping.name}' which was not found in job files`,
+            `Signal '${signalId}' references job '${jobMapping.name}' which was not found in ${jobSource}`,
             "workspace.yml",
             `signals.${signalId}.jobs`,
             jobMapping,
@@ -375,9 +413,10 @@ export class ConfigLoader {
               !workspaceConfig.agents[agentId] &&
               !atlasConfig.agents[agentId]
             ) {
+              const jobSource = "job" in jobMapping ? jobMapping.job : "inline job definition";
               throw new ConfigValidationError(
                 `Job '${jobSpec.name}' references agent '${agentId}' which is not defined in workspace or atlas agents`,
-                jobMapping.job,
+                jobSource,
                 "execution.agents",
                 agentRef,
               );

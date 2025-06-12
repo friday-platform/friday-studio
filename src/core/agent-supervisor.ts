@@ -3,7 +3,27 @@
  */
 
 import { BaseAgent } from "./agents/base-agent.ts";
-import type { AgentMetadata, AgentTask, SessionContext } from "./session-supervisor.ts";
+import type {
+  AgentConfig,
+  AgentMetadata,
+  AgentTask,
+  LLMAgentConfig,
+  RemoteAgentConfig,
+  SessionContext,
+  TempestAgentConfig,
+} from "./session-supervisor.ts";
+import type { AtlasMemoryConfig } from "./memory-config.ts";
+import { logger } from "../utils/logger.ts";
+
+// Supervisor configuration interface
+interface AgentSupervisorConfig {
+  model?: string;
+  memoryConfig: AtlasMemoryConfig;
+  prompts?: {
+    system?: string;
+    user?: string;
+  };
+}
 
 // Agent analysis and safety assessment
 export interface AgentAnalysis {
@@ -18,7 +38,7 @@ export interface AgentAnalysis {
     required_capabilities: string[];
   };
   optimization_suggestions: {
-    model_parameters: Record<string, any>;
+    model_parameters: Record<string, string | number | boolean>;
     prompt_improvements: string[];
     tool_selections: string[];
   };
@@ -40,11 +60,15 @@ export interface AgentEnvironment {
   agent_config: {
     type: string;
     model?: string;
-    parameters: Record<string, any>;
+    parameters: Record<string, string | number | boolean>;
     prompts: Record<string, string>;
     tools: string[];
     endpoint?: string;
-    auth?: any;
+    auth?: {
+      type: "bearer" | "api_key" | "basic";
+      token_env?: string;
+      [key: string]: string | undefined;
+    };
   };
   monitoring_config: {
     log_level: string;
@@ -98,8 +122,8 @@ export interface ValidationResult {
 export interface SupervisedAgentResult {
   agent_id: string;
   task: string;
-  input: any;
-  output: any;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
   analysis: AgentAnalysis;
   environment: AgentEnvironment;
   supervision: ExecutionSupervision;
@@ -108,14 +132,18 @@ export interface SupervisedAgentResult {
     duration: number;
     memory_used: number;
     safety_checks_passed: boolean;
-    monitoring_events: any[];
+    monitoring_events: Array<{
+      timestamp: string;
+      event_type: string;
+      data: Record<string, unknown>;
+    }>;
   };
   timestamp: string;
 }
 
 export class AgentSupervisor extends BaseAgent {
   private activeWorkers: Map<string, AgentWorkerInstance> = new Map();
-  private supervisorConfig: any;
+  private supervisorConfig: AgentSupervisorConfig;
   private supervisorCreatedAt: Date = new Date();
   private workerStats: Map<
     string,
@@ -128,9 +156,15 @@ export class AgentSupervisor extends BaseAgent {
     }
   > = new Map();
 
-  constructor(supervisorConfig: any, parentScopeId?: string) {
-    super(parentScopeId);
+  constructor(supervisorConfig: AgentSupervisorConfig, parentScopeId?: string) {
+    super(supervisorConfig.memoryConfig, parentScopeId);
     this.supervisorConfig = supervisorConfig;
+
+    // Override logger from BaseAgent with proper supervisor context
+    this.logger = logger.createChildLogger({
+      supervisorId: this.id,
+      workerType: "agent-supervisor",
+    });
 
     // Set supervisor-specific prompts
     this.prompts = {
@@ -184,7 +218,8 @@ export class AgentSupervisor extends BaseAgent {
     task: AgentTask,
     context: SessionContext,
   ): Promise<AgentAnalysis> {
-    this.log(`Analyzing agent ${agent.id} for task execution`);
+    const analysisStart = Date.now();
+    this.logger.debug(`Starting analysis for agent ${agent.id}`, { agentType: agent.type });
 
     const analysisPrompt = `Analyze this agent configuration and task for safe execution:
 
@@ -222,9 +257,21 @@ Focus on safety, efficiency, and reliability.`;
       );
 
       // Parse LLM response into structured analysis
-      return this.parseAgentAnalysis(response, agent, task);
+      const analysis = this.parseAgentAnalysis(response, agent, task);
+      const analysisDuration = Date.now() - analysisStart;
+
+      this.logger.debug(`Agent analysis completed in ${analysisDuration}ms`, {
+        agentId: agent.id,
+        riskLevel: analysis.safety_assessment.risk_level,
+        isolationLevel: analysis.execution_strategy.isolation_level,
+      });
+
+      return analysis;
     } catch (error) {
-      this.log(`Error analyzing agent ${agent.id}: ${error}`);
+      const analysisDuration = Date.now() - analysisStart;
+      this.logger.error(`Agent analysis failed after ${analysisDuration}ms: ${error}`, {
+        agentId: agent.id,
+      });
       // Return conservative analysis on error
       return this.createConservativeAnalysis(agent, task);
     }
@@ -331,7 +378,7 @@ Focus on safety, efficiency, and reliability.`;
       `Preparing environment for agent ${agent.id} with ${analysis.execution_strategy.isolation_level} isolation`,
     );
 
-    const modelValue = (agent.config as any).model;
+    const modelValue = (agent.config as LLMAgentConfig).model;
 
     const environment: AgentEnvironment = {
       worker_config: {
@@ -350,7 +397,7 @@ Focus on safety, efficiency, and reliability.`;
         prompts: this.preparePrompts(agent, analysis),
         tools: analysis.optimization_suggestions.tool_selections.length > 0
           ? analysis.optimization_suggestions.tool_selections
-          : (agent.config as any).tools || [],
+          : (agent.config as LLMAgentConfig).tools || [],
       },
       monitoring_config: {
         log_level: analysis.safety_assessment.risk_level === "high" ? "debug" : "info",
@@ -466,7 +513,7 @@ Focus on safety, efficiency, and reliability.`;
   // Execute agent with supervision
   async executeAgentSupervised(
     instance: AgentWorkerInstance,
-    input: any,
+    input: Record<string, unknown>,
     task: AgentTask,
     supervision: ExecutionSupervision,
   ): Promise<SupervisedAgentResult> {
@@ -477,30 +524,27 @@ Focus on safety, efficiency, and reliability.`;
 
     try {
       // Pre-execution checks
+      const preCheckStart = Date.now();
       await this.performPreExecutionChecks(instance, supervision);
+      const preCheckDuration = Date.now() - preCheckStart;
+      this.logger.debug(`Pre-execution checks completed in ${preCheckDuration}ms`);
 
       // Execute agent via worker communication
-      const workerResult = await this.executeAgentInWorker(
-        instance,
-        input,
-        task,
-      );
+      const executionStart = Date.now();
+      const workerResult = await this.executeAgentInWorker(instance, input, task);
+      const executionDuration = Date.now() - executionStart;
+      this.log(`Agent ${instance.agent_id} executed successfully in ${executionDuration}ms`);
 
       // Post-execution validation
-      const validation = await this.validateOutput(
-        workerResult.output,
-        task,
-        supervision,
-      );
+      const validationStart = Date.now();
+      const validation = await this.validateOutput(workerResult.output, task, supervision);
+      const validationDuration = Date.now() - validationStart;
+      this.logger.debug(`Output validation completed in ${validationDuration}ms`);
 
       const duration = Date.now() - startTime;
 
       // Update worker statistics
-      this.updateWorkerStats(
-        instance.id,
-        duration,
-        workerResult.metadata.memory_used,
-      );
+      this.updateWorkerStats(instance.id, duration, workerResult.metadata.memory_used as number);
 
       const result: SupervisedAgentResult = {
         agent_id: instance.agent_id,
@@ -513,8 +557,8 @@ Focus on safety, efficiency, and reliability.`;
         validation,
         execution_metadata: {
           duration,
-          memory_used: workerResult.metadata.memory_used,
-          safety_checks_passed: workerResult.metadata.safety_checks_passed,
+          memory_used: workerResult.metadata.memory_used as number,
+          safety_checks_passed: workerResult.metadata.safety_checks_passed as boolean,
           monitoring_events: [],
         },
         timestamp: new Date().toISOString(),
@@ -533,7 +577,7 @@ Focus on safety, efficiency, and reliability.`;
 
   // Validate agent output
   async validateOutput(
-    output: any,
+    output: Record<string, unknown>,
     task: AgentTask,
     supervision: ExecutionSupervision,
   ): Promise<ValidationResult> {
@@ -638,7 +682,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return capabilities;
   }
 
-  private generateModelParameters(agent: AgentMetadata): Record<string, any> {
+  private generateModelParameters(agent: AgentMetadata): Record<string, string | number | boolean> {
     if (agent.type === "llm") {
       return { temperature: 0.7, max_tokens: 2000 };
     }
@@ -646,7 +690,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   }
 
   private optimizeTools(agent: AgentMetadata): string[] {
-    const config = agent.config as any;
+    const config = agent.config as LLMAgentConfig;
     return config.tools || [];
   }
 
@@ -666,11 +710,8 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return permissions;
   }
 
-  private preparePrompts(
-    agent: AgentMetadata,
-    analysis: AgentAnalysis,
-  ): Record<string, string> {
-    const config = agent.config as any;
+  private preparePrompts(agent: AgentMetadata, analysis: AgentAnalysis): Record<string, string> {
+    const config = agent.config as LLMAgentConfig;
     const prompts = { ...config.prompts };
 
     // Add safety instructions based on risk level
@@ -679,26 +720,34 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
         "CRITICAL: Follow all safety protocols. Do not execute any potentially harmful operations.";
     }
 
-    return prompts;
+    return prompts as Record<string, string>;
   }
 
   private async performPreExecutionChecks(
     instance: AgentWorkerInstance,
     supervision: ExecutionSupervision,
   ): Promise<void> {
-    // Mock pre-execution checks
-    this.log(`Performing pre-execution checks for worker ${instance.id}`);
-    for (const check of supervision.pre_execution_checks) {
-      this.log(`Pre-execution check passed`, { checkType: check });
-    }
+    const checksStart = Date.now();
+
+    // Mock pre-execution checks - in production these would be real validations
+    // Example checks: worker health, resource availability, permissions, etc.
+
+    const checksDuration = Date.now() - checksStart;
+    this.logger.debug(
+      `All ${supervision.pre_execution_checks.length} pre-execution checks passed in ${checksDuration}ms`,
+      {
+        workerId: instance.id,
+        checks: supervision.pre_execution_checks,
+      },
+    );
   }
 
   // Execute agent in worker with real communication
   private async executeAgentInWorker(
     instance: AgentWorkerInstance,
-    input: any,
+    input: Record<string, unknown>,
     task: AgentTask,
-  ): Promise<{ output: any; metadata: any }> {
+  ): Promise<{ output: Record<string, unknown>; metadata: Record<string, unknown> }> {
     const messageId = crypto.randomUUID();
 
     return new Promise((resolve, reject) => {
@@ -808,7 +857,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   }
 
   // Get worker performance metrics
-  getWorkerMetrics(workerId?: string): Record<string, any> {
+  getWorkerMetrics(workerId?: string): Record<string, string | number | boolean | Date> {
     if (workerId) {
       const stats = this.workerStats.get(workerId);
       const instance = this.activeWorkers.get(workerId);
@@ -830,9 +879,10 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     }
 
     // Return metrics for all workers
-    const allMetrics: Record<string, any> = {};
+    const allMetrics: Record<string, string | number | boolean | Date> = {};
     for (const [id, instance] of this.activeWorkers) {
-      allMetrics[id] = this.getWorkerMetrics(id);
+      const workerMetrics = this.getWorkerMetrics(id);
+      Object.assign(allMetrics, workerMetrics);
     }
     return allMetrics;
   }

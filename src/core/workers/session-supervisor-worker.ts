@@ -2,30 +2,87 @@
 /// <reference lib="deno.worker" />
 
 import { BaseWorker } from "./base-worker.ts";
-import { AgentResult, SessionContext, SessionSupervisor } from "../session-supervisor.ts";
+import {
+  AgentMetadata,
+  AgentResult,
+  JobSpecification,
+  SessionContext,
+  SessionSupervisor,
+} from "../session-supervisor.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import type { AtlasMemoryConfig } from "../memory-config.ts";
+import type { IWorkspaceSignal } from "../../types/core.ts";
+import { SessionIntent } from "../session.ts";
 
 interface SessionConfig {
   sessionId: string;
   workspaceId?: string;
-  signal?: any;
-  payload?: any;
+  memoryConfig: AtlasMemoryConfig;
+  signal?: IWorkspaceSignal;
+  payload?: Record<string, unknown>;
 }
+
+interface InitializeData {
+  action: "initialize";
+  intent?: SessionIntent;
+  signal: IWorkspaceSignal;
+  payload: Record<string, unknown>;
+  workspaceId: string;
+  agents: AgentMetadata[];
+  traceHeaders?: Record<string, string>;
+  jobSpec?: JobSpecification;
+  additionalPrompts?: {
+    signal?: string;
+    session?: string;
+    evaluation?: string;
+  };
+}
+
+interface ExecuteSessionData {
+  action: "executeSession";
+  traceHeaders?: Record<string, string>;
+}
+
+interface InvokeAgentData {
+  action: "invokeAgent";
+  agentId: string;
+  input: Record<string, unknown>;
+}
+
+interface GetStatusData {
+  action: "getStatus";
+}
+
+type SessionWorkerData = InitializeData | ExecuteSessionData | InvokeAgentData | GetStatusData;
 
 class SessionSupervisorWorker extends BaseWorker {
   private supervisor: SessionSupervisor | null = null;
   private sessionId: string | null = null;
 
   constructor() {
-    super(crypto.randomUUID().slice(0, 8), "session");
+    super(crypto.randomUUID().slice(0, 8), "session-supervisor");
   }
 
   protected async initialize(config: SessionConfig): Promise<void> {
+    this.log("Session worker initializing with config:", {
+      sessionId: config.sessionId,
+      workspaceId: config.workspaceId,
+      hasMemoryConfig: !!config.memoryConfig,
+      configKeys: Object.keys(config),
+    });
+
     this.sessionId = config.sessionId;
-    (this.context as any).sessionId = config.sessionId;
+    // Store sessionId in context for logging
+    Object.assign(this.context, { sessionId: config.sessionId });
+
+    if (!config.memoryConfig) {
+      throw new Error("SessionSupervisorWorker requires memoryConfig in config");
+    }
 
     // Create the SessionSupervisor (intelligent agent) - this is the main bottleneck
-    this.supervisor = new SessionSupervisor(config.workspaceId);
+    this.log("Creating SessionSupervisor...");
+    this.supervisor = new SessionSupervisor(config.memoryConfig, config.workspaceId);
+    this.log("SessionSupervisor created successfully");
 
     // Join session broadcast channel (async, non-blocking)
     this.actor.send({
@@ -34,14 +91,27 @@ class SessionSupervisorWorker extends BaseWorker {
     });
   }
 
-  protected async processTask(taskId: string, data: any): Promise<any> {
+  protected async processTask(
+    taskId: string,
+    data: SessionWorkerData,
+  ): Promise<Record<string, unknown>> {
     if (!this.supervisor) {
       throw new Error("Session supervisor not initialized");
     }
 
     switch (data.action) {
       case "initialize": {
-        const { intent, signal, payload, workspaceId, agents, traceHeaders } = data;
+        const initData = data as InitializeData;
+        const {
+          intent,
+          signal,
+          payload,
+          workspaceId,
+          agents,
+          traceHeaders,
+          jobSpec,
+          additionalPrompts,
+        } = initData;
 
         return await AtlasTelemetry.withWorkerSpan(
           {
@@ -60,9 +130,9 @@ class SessionSupervisorWorker extends BaseWorker {
               payload,
               availableAgents: agents,
               filteredMemory: [], // WorkspaceSupervisor would provide this
-              jobSpec: data.jobSpec, // Job specification from WorkspaceSupervisor
+              jobSpec, // Job specification from WorkspaceSupervisor
               constraints: intent?.constraints,
-              additionalPrompts: data.additionalPrompts,
+              additionalPrompts,
             };
 
             await this.supervisor!.initializeSession(sessionContext);
@@ -77,7 +147,8 @@ class SessionSupervisorWorker extends BaseWorker {
       }
 
       case "executeSession": {
-        const { traceHeaders } = data;
+        const executeData = data as ExecuteSessionData;
+        const { traceHeaders } = executeData;
 
         return await AtlasTelemetry.withWorkerSpan(
           {
@@ -106,8 +177,7 @@ class SessionSupervisorWorker extends BaseWorker {
             const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
 
             // Execute each phase of the plan
-            for (let phaseIndex = 0; phaseIndex < plan.phases.length; phaseIndex++) {
-              const phase = plan.phases[phaseIndex];
+            for (const [phaseIndex, phase] of plan.phases.entries()) {
               await AtlasTelemetry.withSpan(
                 `session.executePhase.${phase.name}`,
                 async (phaseSpan) => {
@@ -126,8 +196,7 @@ class SessionSupervisorWorker extends BaseWorker {
 
                   // Execute agents in the phase based on strategy
                   if (phase.executionStrategy === "sequential") {
-                    for (let agentIndex = 0; agentIndex < phase.agents.length; agentIndex++) {
-                      const agentTask = phase.agents[agentIndex];
+                    for (const [agentIndex, agentTask] of phase.agents.entries()) {
                       const result = await this.executeAgentTask(
                         agentTask,
                         phaseResults,
@@ -228,7 +297,8 @@ class SessionSupervisorWorker extends BaseWorker {
       }
 
       case "invokeAgent": {
-        const { agentId, input } = data;
+        const invokeData = data as InvokeAgentData;
+        const { agentId, input } = invokeData;
         return await this.invokeAgent(agentId, input, taskId);
       }
 
@@ -243,7 +313,7 @@ class SessionSupervisorWorker extends BaseWorker {
       }
 
       default:
-        throw new Error(`Unknown task action: ${data.action}`);
+        throw new Error(`Unknown task action: ${(data as any).action}`);
     }
   }
 
@@ -254,8 +324,13 @@ class SessionSupervisorWorker extends BaseWorker {
   }
 
   private async executeAgentTask(
-    agentTask: any,
-    previousResults: any[],
+    agentTask: {
+      agentId: string;
+      task: string;
+      inputSource?: string;
+      dependencies?: string[];
+    },
+    previousResults: AgentResult[],
     traceHeaders?: Record<string, string>,
   ): Promise<AgentResult> {
     const { agentId, task, inputSource, dependencies } = agentTask;
@@ -270,7 +345,7 @@ class SessionSupervisorWorker extends BaseWorker {
     } else if (inputSource === "combined") {
       // Combine multiple inputs
       input = {
-        original: (this.context as any).payload,
+        original: this.supervisor?.getSessionContext()?.payload,
         previous: previousResults.map((r) => ({
           agentId: r.agentId,
           output: r.output,
@@ -323,10 +398,10 @@ class SessionSupervisorWorker extends BaseWorker {
 
   private async invokeAgent(
     agentId: string,
-    input: any,
+    input: Record<string, unknown>,
     taskId: string,
     traceHeaders?: Record<string, string>,
-  ): Promise<any> {
+  ): Promise<Record<string, unknown>> {
     // Use AgentSupervisor for supervised execution instead of direct agent workers
     if (!this.supervisor) {
       throw new Error("SessionSupervisor not initialized");
@@ -350,7 +425,7 @@ class SessionSupervisorWorker extends BaseWorker {
   }
 
   // Handle broadcast messages in the session
-  protected override handleBroadcast(channel: string, data: any): void {
+  protected override handleBroadcast(channel: string, data: Record<string, unknown>): void {
     switch (data.type) {
       case "agentMessage":
         this.log(`Agent ${data.from} broadcast: ${data.message}`);

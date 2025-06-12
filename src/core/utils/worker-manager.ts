@@ -668,8 +668,8 @@ export class WorkerManager {
       config: {
         id: workspaceId,
         workspace: config.workspace,
-        config: config.supervisor || {},
-        model: options.model || config.supervisor?.model,
+        config: config.config || {},
+        model: options.model || config.config?.model,
       },
     };
 

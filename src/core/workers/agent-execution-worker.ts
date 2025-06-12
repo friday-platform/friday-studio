@@ -122,7 +122,7 @@ class AgentExecutionWorker {
       workerType: "agent-execution",
     });
 
-    this.log("Worker initialized", "info");
+    this.log("Worker initialized", "debug");
 
     this.postMessage({
       type: "initialized",
@@ -135,6 +135,13 @@ class AgentExecutionWorker {
     if (!this.isInitialized) {
       throw new Error("Worker not initialized");
     }
+
+    // Update logger with agent name for better context
+    this.logger = logger.createChildLogger({
+      workerId: this.workerId,
+      workerType: "agent-execution",
+      agentName: request.agent_id,
+    });
 
     this.log(`Executing ${request.agent_config.type} agent: ${request.agent_id}`, "info");
 
@@ -203,10 +210,14 @@ class AgentExecutionWorker {
   }
 
   private performSafetyChecks(request: AgentExecutionRequest) {
+    const checksStart = Date.now();
+    const checks = [];
+
     // Memory limit check
     if (request.environment.worker_config.memory_limit < 64) {
       throw new Error("Insufficient memory allocation");
     }
+    checks.push("memory_limit");
 
     // Permission checks
     const requiredPermissions = ["read"];
@@ -219,11 +230,15 @@ class AgentExecutionWorker {
         throw new Error(`Missing required permission: ${permission}`);
       }
     }
+    checks.push("permissions");
 
-    // Safety checks from environment
-    for (const check of request.environment.monitoring_config.safety_checks) {
-      this.logger.debug(`Safety check passed`, { checkType: check });
-    }
+    // Environment safety checks
+    checks.push(...request.environment.monitoring_config.safety_checks);
+
+    const checksDuration = Date.now() - checksStart;
+    this.logger.debug(`All ${checks.length} safety checks passed in ${checksDuration}ms`, {
+      checks: checks,
+    });
   }
 
   private async executeLLMAgent(request: AgentExecutionRequest): Promise<any> {

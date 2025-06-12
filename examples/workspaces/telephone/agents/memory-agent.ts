@@ -6,8 +6,8 @@ export class MemoryAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";
   host: string = "localhost";
 
-  constructor(id?: string) {
-    super(id);
+  constructor(memoryConfig: any, id?: string) {
+    super(memoryConfig, id);
 
     // Set agent-specific prompts
     this.prompts = {

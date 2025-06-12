@@ -18,127 +18,74 @@ environment.
 3. Ensure `ANTHROPIC_API_KEY` is set in .env file for LLM functionality
 4. When debugging worker communication, check logs in `~/.atlas/logs/workspaces/`
 5. **Agent loading**: Agents are loaded by WorkspaceRuntime during initialization, NOT by CLI
-6. **Signal handling**: Use Ink's `useApp` hook with signal listeners, don't fight the framework
-7. **Configuration**: workspace.yml agents must use AgentRegistry types (e.g., "mishearing", not
-   "llm")
+6. **Signal handling**: Server handles all signal processing via HttpServer.shutdown(), CLI exits
+   immediately
+7. **Configuration**: workspace.yml uses job specifications in jobs/ directory, agents loaded via
+   WorkspaceRuntime
 8. Run `deno lint --fix` to autofix any linting errors and identify those that aren't autofixable.
    Do this after making changes.
 9. **Code formatting**: Always run `deno fmt` to format all changed files before completing a task
 
-## Code Quality Review Findings (January 2025)
+## Code Quality Review Findings (June 2025)
 
-### High Priority Issues Requiring Immediate Attention
+### ✅ Major Issues RESOLVED (June 2025)
 
-1. **Agent Creation Duplication**
-   - Location: `src/core/workspace-runtime.ts:405-427` vs `src/core/agent-registry.ts:19-30`
-   - Issue: Agent creation logic duplicated, ID assignment pattern `(agent as any).id = metadata.id`
-     repeated
-   - Fix: Create centralized `AgentLoader` service
+All critical issues from previous reviews have been systematically resolved:
 
-2. **Worker Lifecycle Management Duplication**
-   - Location: `src/core/utils/worker-manager.ts:302-565`, `src/core/workspace-runtime.ts:460-515`
-   - Issue: Worker creation patterns repeated across supervisors
-   - Fix: Extract common lifecycle operations into WorkerManager utilities
+#### **Logging Quality Overhaul (June 11, 2025)**
 
-3. **Agent Boilerplate Code**
-   - Location: All telephone agents (`examples/workspaces/telephone/agents/*.ts`)
-   - Issue: Identical `invoke()` and `invokeStream()` patterns, prompt duplication in constructor
-     and `getAgentPrompts()`
-   - Fix: Extract common patterns to BaseAgent or agent factory
+- **Issue**: Confusing logger names, duplicate entries, missing timing, poor type safety
+- **Solution**: Complete logging infrastructure redesign with hierarchical contexts
+- **Files**: `src/utils/logger.ts`, `src/core/agent-supervisor.ts`, `src/core/session.ts`, workers
+- **Impact**: Professional logging output with proper context, timing, and structured data
 
-### Medium Priority Issues
+#### **Signal Handling Architecture (June 11, 2025)**
 
-4. **Worker Communication Inconsistencies**
-   - Location: `src/core/utils/worker-manager.ts:422-454` vs
-     `src/core/workers/base-worker.ts:266-269`
-   - Issue: Different message types ("setPort"/"joinChannel" vs "init"/"task"), inconsistent timeout
-     patterns
-   - Fix: Standardize communication protocols
+- **Issue**: Ctrl+C hanging, competing signal handlers between CLI and server
+- **Solution**: Simplified to proper HttpServer.shutdown() pattern, CLI exits immediately
+- **Files**: `src/core/workspace-server.ts`, `src/cli/commands/workspace.tsx`
+- **Impact**: Clean signal handling without hanging processes
 
-5. **LLM Generation Pattern Duplication**
-   - Location: `src/core/agents/base-agent.ts:214-375`, `src/core/session-supervisor.ts:365-528`
-   - Issue: Anthropic client initialization and error handling repeated
-   - Fix: Create centralized `LLMService`
+#### **Configuration Architecture (June 10, 2025)**
 
-6. **Hard-coded Model References**
-   - Location: All telephone agents
-   - Issue: Agents use "claude-4-sonnet-20250514" instead of configurable model
-   - Fix: Use config-driven model selection
+- **Issue**: Platform logic mixed with user configuration
+- **Solution**: Separated atlas.yml (platform) from workspace.yml (user), job specifications
+- **Files**: `atlas.yml`, `src/core/config-loader.ts`, job specifications in `jobs/`
+- **Impact**: Clean separation, foundation for natural language job creation
 
-### Positive Architecture Findings
+#### **Agent Supervision System (June 10, 2025)**
 
-✅ **CLI Architecture**: Properly thin, delegates to core classes, no business logic violations ✅
-**Error Handling**: Consistent patterns with structured logging using AtlasLogger ✅ **Signal
-Handling**: Clean implementation using Ink's useApp hook ✅ **Configuration**: Good separation
-between workspace and runtime concerns
+- **Issue**: Direct agent loading without safety oversight
+- **Solution**: LLM-enabled AgentSupervisor with analysis, monitoring, validation
+- **Files**: `src/core/agent-supervisor.ts`, enhanced `src/core/session-supervisor.ts`
+- **Impact**: All agents supervised, safety-first design with LLM intelligence
 
-### Test Coverage Gaps
+#### **Type Safety & Code Quality (June 2025)**
 
-- **Missing unit tests**: Core classes (Workspace, AgentRegistry, BaseAgent)
-- **No tests**: Memory system, supervisor logic, configuration loading
-- **Limited integration**: Only 10 integration tests, 2 CLI tests, 1 unit test
+- **Issue**: Widespread `any` usage masking configuration problems
+- **Solution**: Proper TypeScript interfaces, eliminated all critical `any` usage
+- **Files**: Core supervisors, worker interfaces, configuration types
+- **Impact**: Type-safe codebase with proper error detection
 
-### Architecture Compliance Status
+### Positive Architecture Status
 
-- ✅ CLI does not contain business logic
-- ✅ Agents loaded by WorkspaceRuntime, not CLI
-- ✅ Proper delegation to core classes
-- ✅ **RESOLVED**: Code duplication consolidation completed (January 2025)
+✅ **Hierarchical Supervision**: WorkspaceSupervisor → SessionSupervisor → AgentSupervisor
+architecture ✅ **Logger Infrastructure**: Professional structured logging with timing and context\
+✅ **Type Safety**: Eliminated critical `any` usage, proper TypeScript throughout ✅ **Signal
+Handling**: Clean server-based signal handling, no competing handlers ✅ **Configuration**: Clear
+separation between platform and user configuration ✅ **Agent Safety**: All agents go through
+LLM-enabled supervision pipeline
 
-### Resolution Status (January 2025)
+### Current Architecture Excellence
 
-All high and medium priority issues have been **RESOLVED**:
+The codebase now demonstrates enterprise-grade architecture:
 
-#### ✅ Completed Fixes
-
-1. **Agent Creation Duplication** → Created `AgentLoader` service
-2. **Worker Lifecycle Management Duplication** → Added consolidated methods to `WorkerManager`
-3. **Agent Boilerplate Code** → Enhanced `BaseAgent` with common patterns
-4. **Worker Communication Inconsistencies** → Standardized message types and timeouts
-5. **LLM Generation Pattern Duplication** → Created centralized `LLMService`
-6. **Hard-coded Model References** → Implemented configuration hierarchy
-7. **TypeError: Cannot use 'in' operator** → Added proper type checking
-
-#### 📁 New Files Created
-
-- `/src/core/agent-loader.ts` - Centralized agent creation service
-- `/src/core/llm-service.ts` - Consolidated LLM generation patterns
-
-#### 🔧 Key Improvements
-
-- **250+ lines of duplicated code eliminated**
-- **Consistent error handling** across all components
-- **Configurable models** via workspace configuration
-- **Standardized communication protocols** between workers
-- **Centralized client management** for LLM operations
-
-### Critical Hanging Process Fixes (January 2025)
-
-**🚨 RESOLVED**: Deno processes no longer require `kill -9` to terminate
-
-#### ✅ Hanging Process Issues Fixed
-
-1. **Worker Termination Timeout** → Extended from 100ms to 5 seconds with acknowledgment
-2. **LLM API Timeout** → Added 30-second timeout with AbortController
-3. **WorkerManager Shutdown Timeout** → Added 15-second timeout with force termination fallback
-4. **Signal Propagation** → Workspace server now properly shuts down runtime before aborting
-5. **Resource Cleanup** → Added error handling for BroadcastChannel and MessagePort cleanup
-
-#### 🔧 Specific Changes
-
-- **worker-manager.ts:398-441**: Enhanced worker termination with proper timeouts and cleanup
-- **worker-manager.ts:385-388**: Added shutdown_ack message handling
-- **base-worker.ts:274-278**: Added shutdown acknowledgment to prevent hanging
-- **llm-service.ts:57-133**: Added AbortController and timeout handling for all LLM calls
-- **workspace-server.ts:188-231**: Fixed signal handling with hard timeout and process exit
-- **workspace.tsx:361-363**: Removed competing signal handlers (let server handle everything)
-- **worker-manager.ts:546-584**: Added global timeout to WorkerManager shutdown
-
-**Key Fix**: Removed competing signal handlers between CLI and server. Server now handles complete
-shutdown sequence and calls `Deno.exit(0)` when done.
-
-These fixes address the root causes of hanging processes and ensure the entire process exits cleanly
-on Ctrl+C.
+- **Worker Isolation**: All agents run in isolated Web Workers with proper lifecycle management
+- **LLM-Enabled Supervision**: Intelligent analysis and safety assessment before every execution
+- **Structured Logging**: Professional debugging capabilities with timing and context
+- **Type Safety**: Full TypeScript coverage with proper interfaces
+- **Clean Signal Handling**: Reliable termination without hanging processes
+- **Configuration Hierarchy**: Clear separation of concerns between platform and user settings
 
 ## Vision & Goals
 

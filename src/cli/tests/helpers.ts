@@ -133,15 +133,20 @@ runtime:
   await Deno.writeTextFile(
     `${workspaceDir}/agents/test-agent.ts`,
     `
-import { BaseAgent } from "https://raw.githubusercontent.com/your-org/atlas/main/src/core/agents/base-agent.ts";
+import { BaseAgent } from "../../../core/agents/base-agent.ts";
 
 export class TestAgent extends BaseAgent {
-  name() { return "TestAgent"; }
-  purpose() { return "Test agent for CLI tests"; }
-  
-  async* invokeStream(message: string) {
-    yield "Test response: " + message;
+  constructor() {
+    // Call super with default memory config since we're just a test agent
+    super();
   }
+
+  name() { return "TestAgent"; }
+  nickname() { return "Test"; }
+  version() { return "1.0.0"; }
+  provider() { return "test"; }
+  purpose() { return "Test agent for CLI tests"; }
+  controls() { return { test: true }; }
 }
 `,
   );

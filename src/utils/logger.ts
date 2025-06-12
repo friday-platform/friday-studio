@@ -7,6 +7,8 @@ export interface LogContext {
   agentId?: string;
   workerId?: string;
   workerType?: string;
+  supervisorId?: string;
+  agentName?: string;
   [key: string]: any;
 }
 
@@ -125,10 +127,12 @@ export class AtlasLogger {
 
     const reset = "\x1b[0m";
     const prefix = context
-      ? `[${context.workerType || "main"}${
+      ? `[${context.workerType || "atlas"}${
         context.workerId ? ":" + context.workerId.slice(0, 8) : ""
-      }]`
-      : "[main]";
+      }${context.sessionId ? ":" + context.sessionId.slice(0, 8) : ""}${
+        context.supervisorId ? ":" + context.supervisorId.slice(0, 8) : ""
+      }${context.agentName ? ":" + context.agentName : ""}]`
+      : "[atlas]";
 
     console.log(
       `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,

@@ -9,7 +9,7 @@ interface WorkerSpanContext {
   /** The worker component type */
   component: "workspace" | "session" | "agent";
   /** Trace headers from parent worker */
-  traceHeaders?: Record<string, any>;
+  traceHeaders?: Record<string, string>;
   /** Worker-specific identifier */
   workerId?: string;
   /** Session identifier (for session and agent workers) */
@@ -25,7 +25,7 @@ interface WorkerSpanContext {
   /** Signal type/provider (for signal processing) */
   signalType?: string;
   /** Any additional custom attributes */
-  attributes?: Record<string, any>;
+  attributes?: Record<string, string | number | boolean>;
 }
 
 // Static mapping for worker context properties to atlas attributes

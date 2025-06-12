@@ -1,84 +1,13 @@
 version: "1.0"
 
-# Atlas Platform Configuration
-# This file contains platform-managed supervisor logic and built-in agents
+# Default Atlas Configuration
+# Used as fallback when atlas.yml is missing or incomplete
 
 platform:
   name: "Atlas"
   version: "1.0.0"
 
-# Platform-managed agents (available to all workspaces)
-agents:
-  # Memory management agent
-  memory-agent:
-    type: "llm"
-    model: "claude-3-5-haiku-20241022"
-    purpose: "Manages memory operations at session start and end"
-    tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
-    prompts:
-      system: |
-        You are a memory management agent for Atlas workspaces.
-        You can operate in two modes: LOAD (retrieve context) and STORE (save learnings).
-
-        LOAD mode: Retrieve relevant patterns and context from past sessions
-        to inform the current execution pipeline.
-
-        STORE mode: Analyze the complete session results and extract learnings about
-        execution patterns, successful strategies, and interesting outcomes.
-
-  # Security analysis agent
-  security-scanner:
-    type: "remote"
-    endpoint: "https://security-api.example.com/analyze"
-    purpose: "Analyzes content for security concerns and sensitive information"
-    auth:
-      type: "bearer"
-      token_env: "SECURITY_API_TOKEN"
-    timeout: 30000
-    schema:
-      input:
-        type: "object"
-        properties:
-          content:
-            type: "string"
-            description: "Content to analyze for security issues"
-          analysis_type:
-            type: "string"
-            enum: ["content_safety", "data_privacy", "malware_detection"]
-        required: ["content"]
-      output:
-        type: "object"
-        properties:
-          risk_score:
-            type: "number"
-            minimum: 0
-            maximum: 10
-          findings:
-            type: "array"
-            items:
-              type: "object"
-              properties:
-                type: { type: "string" }
-                severity: { type: "string" }
-                description: { type: "string" }
-          recommendations:
-            type: "array"
-            items: { type: "string" }
-
-  # Content synthesis agent
-  tempest-synthesizer:
-    type: "tempest"
-    agent: "content-synthesizer"
-    version: "2.1.0"
-    purpose: "Synthesizes multiple inputs into coherent summaries and analyses"
-    config:
-      synthesis_modes: ["comprehensive", "summary", "analytical"]
-      output_formats: ["markdown", "json", "plain_text"]
-      max_input_sources: 10
-
-# Memory configuration
 memory:
-  # Default memory configuration for all components
   default:
     enabled: true
     storage: "coala-local"
@@ -88,10 +17,9 @@ memory:
       max_entries: 1000
       cleanup_interval_hours: 24
 
-  # Agent-level memory configuration
   agent:
     enabled: true
-    scope: "agent" # Memory is scoped to individual agent
+    scope: "agent"
     include_in_context: true
     context_limits:
       relevant_memories: 2
@@ -107,7 +35,7 @@ memory:
         max_age_days: 7
         max_entries: 100
       episodic:
-        enabled: false # Agents shouldn't accumulate episodic memories across sessions
+        enabled: false
         max_age_days: 1
         max_entries: 10
       semantic:
@@ -115,14 +43,13 @@ memory:
         max_age_days: 14
         max_entries: 200
       contextual:
-        enabled: false # Contextual memory handled at session level
+        enabled: false
         max_age_hours: 1
         max_entries: 5
 
-  # Session-level memory configuration
   session:
     enabled: true
-    scope: "session" # Memory is scoped to session task/goal
+    scope: "session"
     include_in_context: true
     context_limits:
       relevant_memories: 5
@@ -134,7 +61,7 @@ memory:
         max_age_hours: 24
         max_entries: 100
       episodic:
-        enabled: true # Sessions accumulate episodic memories for task learning
+        enabled: true
         max_age_days: 7
         max_entries: 50
       procedural:
@@ -150,18 +77,18 @@ memory:
         max_age_hours: 24
         max_entries: 100
 
-  # Workspace-level memory configuration
   workspace:
     enabled: true
-    scope: "workspace" # Memory is scoped to workspace patterns and history
-    include_in_context: false # Workspace memory not directly included in agent context
+    scope: "workspace"
+    include_in_context: false
     context_limits:
       relevant_memories: 10
       past_successes: 5
       past_failures: 3
     memory_types:
       working:
-        enabled: false # Workspace doesn't need working memory
+        enabled: false
+        max_entries: 0
       episodic:
         enabled: true
         max_age_days: 90
@@ -179,11 +106,12 @@ memory:
         max_age_days: 30
         max_entries: 200
 
-# Supervisor configuration
+agents: {}
+
 supervisors:
   workspace:
     model: "claude-3-5-sonnet-20241022"
-    memory: "workspace" # Uses workspace-level memory configuration
+    memory: "workspace"
     prompts:
       system: |
         You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
@@ -198,7 +126,7 @@ supervisors:
 
   session:
     model: "claude-3-5-sonnet-20241022"
-    memory: "session" # Uses session-level memory configuration
+    memory: "session"
     prompts:
       system: |
         You are a SessionSupervisor responsible for coordinating agent execution within a session.
@@ -213,7 +141,7 @@ supervisors:
 
   agent:
     model: "claude-3-5-sonnet-20241022"
-    memory: "agent" # Uses agent-level memory configuration
+    memory: "agent"
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.

@@ -9,6 +9,7 @@ import type {
 import { BaseAgent } from "./agents/base-agent.ts";
 import { Session, SessionIntent, SessionPlan } from "./session.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
+import type { AtlasMemoryConfig } from "./memory-config.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -215,7 +216,10 @@ export class WorkspaceSupervisor extends BaseAgent
   private stateActor: any; // XState actor type
 
   constructor(workspaceId: string, config: any = {}) {
-    super(workspaceId);
+    if (!config.memoryConfig) {
+      throw new Error("WorkspaceSupervisor requires memoryConfig in config");
+    }
+    super(config.memoryConfig, workspaceId);
     this.config = config;
     // Store merged configuration if provided
     this.mergedConfig = config.workspaceSignals || config.jobs
