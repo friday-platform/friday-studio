@@ -1,0 +1,143 @@
+version: "1.0"
+
+workspace:
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
+  name: "remote-acp-demo"
+  description: "Demonstration of Atlas remote agent capabilities using local ACP server"
+
+# Remote agents configuration pointing to local ACP server
+agents:
+  # Echo agent from local ACP server
+  echo-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "http://localhost:8000"
+    purpose: "Simple echo agent for testing remote agent functionality"
+
+    # No authentication needed for local server
+    # auth:
+    #   type: "bearer"
+    #   token_env: "LOCAL_ACP_TOKEN"
+
+    # ACP-specific settings
+    acp:
+      agent_name: "echo" # Name of agent on local ACP server
+      default_mode: "sync" # sync | async | stream
+      timeout_ms: 30000 # 30 second timeout
+      max_retries: 3 # Retry failed requests 3 times
+      health_check_interval: 60000 # Health check every minute
+
+    # Schema validation (optional)
+    schema:
+      validate_input: false
+      validate_output: false
+
+    # Monitoring and reliability
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5 # Open circuit after 5 failures
+        timeout_ms: 60000 # Stay open for 60 seconds
+        half_open_max_calls: 3 # Test with 3 calls when half-open
+
+  # Chat agent from local ACP server
+  chat-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "http://localhost:8000"
+    purpose: "Conversational agent for natural language processing"
+
+    # No authentication needed for local server
+    # auth:
+    #   type: "api_key"
+    #   api_key_env: "LOCAL_API_KEY"
+    #   header: "X-API-Key"
+
+    acp:
+      agent_name: "chat" # Name of agent on local ACP server
+      default_mode: "sync" # Use sync for quick responses
+      timeout_ms: 30000 # 30 second timeout
+      max_retries: 2
+
+  # Local LLM agent for comparison
+  local-llm-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Local AI agent for comparison and fallback"
+    tools: ["computer_use"]
+    prompts:
+      system: "You are a helpful AI assistant that works alongside remote agents."
+
+
+# Signal configurations for triggering jobs
+signals:
+  # HTTP webhook for echo testing
+  http-echo:
+    description: "HTTP endpoint for echo agent testing"
+    provider: "http"
+    path: "/echo"
+    method: "POST"
+    jobs:
+      - name: "echo-test"
+        description: "Test echo agent functionality"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "echo-agent"
+
+  # HTTP endpoint for chat testing
+  http-chat:
+    description: "HTTP endpoint for chat agent testing"
+    provider: "http"
+    path: "/chat"
+    method: "POST"
+    jobs:
+      - name: "chat-test"
+        description: "Test chat agent functionality"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "chat-agent"
+
+  # HTTP endpoint for dual agent processing
+  http-dual:
+    description: "HTTP endpoint for dual agent processing"
+    provider: "http"
+    path: "/dual"
+    method: "POST"
+    jobs:
+      - name: "dual-agent-processing"
+        description: "Process request using both echo and chat agents"
+        execution:
+          strategy: "sequential"
+          agents:
+            - id: "echo-agent"
+            - id: "chat-agent"
+
+  # CLI signal for testing
+  cli-test:
+    description: "CLI signal for testing ACP agents"
+    provider: "cli"
+    command: "test-acp"
+    jobs:
+      - name: "parallel-acp-test"
+        description: "Test both ACP agents in parallel"
+        execution:
+          strategy: "parallel"
+          agents:
+            - id: "echo-agent"
+            - id: "chat-agent"
+
+# Runtime configuration
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"
