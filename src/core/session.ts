@@ -192,7 +192,7 @@ const sessionMachine = createMachine({
             });
             fsmLogger.info(`Processing signal ${input.signal.id}`, {
               signalId: input.signal.id,
-              provider: input.signal.provider?.name
+              provider: input.signal.provider?.name,
             });
             await input.signal.trigger();
 
@@ -267,14 +267,14 @@ const sessionMachine = createMachine({
               workerType: "session-fsm",
             });
             fsmLogger.info(`Executing ${input.agents.length} agents`, {
-              agentCount: input.agents.length
+              agentCount: input.agents.length,
             });
             const results = [];
 
             for (const agent of input.agents) {
               fsmLogger.debug(`Running agent ${agent.name()}`, {
                 agentId: agent.id,
-                agentName: agent.name()
+                agentName: agent.name(),
               });
               // Agent execution would happen here
               results.push({ agentId: agent.id, status: "completed" });
@@ -332,7 +332,7 @@ const sessionMachine = createMachine({
           });
           fsmLogger.debug(`Evaluating results`, {
             iteration: input.currentIteration || 0,
-            artifactCount: input.artifacts.length
+            artifactCount: input.artifacts.length,
           });
 
           // In a real implementation, supervisor would evaluate against success criteria
@@ -434,7 +434,7 @@ const sessionMachine = createMachine({
             workerType: "session-fsm",
           });
           fsmLogger.debug("Refining execution plan based on evaluation", {
-            artifactCount: input.artifacts.length
+            artifactCount: input.artifacts.length,
           });
 
           // In a real implementation, supervisor would refine the plan
@@ -682,7 +682,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
 
   async start(): Promise<void> {
     this.logger.info(`Starting session with ${this.signals.triggers.length} signals`, {
-      signalCount: this.signals.triggers.length
+      signalCount: this.signals.triggers.length,
     });
 
     // Send START event to the state machine
@@ -760,7 +760,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.logger.debug(`State: ${state}, Progress: ${step}`, {
       state,
       step,
-      data
+      data,
     });
 
     // Log detailed state machine information

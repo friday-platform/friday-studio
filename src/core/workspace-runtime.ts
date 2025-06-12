@@ -4,6 +4,7 @@ import { logger } from "../utils/logger.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { Session } from "./session.ts";
 import { WorkerManager } from "./utils/worker-manager.ts";
+import { AtlasConfigLoader } from "./atlas-config-loader.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -419,6 +420,10 @@ const workspaceRuntimeMachine = setup({
       const configLoader = new ConfigLoader();
       const mergedConfig = await configLoader.load();
 
+      // Load Atlas configuration for memory settings
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+
       // Load all agents (platform + user)
       const allAgents: Record<string, RuntimeAgentConfig> = {
         ...mergedConfig.atlas.agents,
@@ -459,6 +464,8 @@ const workspaceRuntimeMachine = setup({
           // Pass only serializable parts of the merged configuration
           workspaceSignals: mergedConfig.workspace.signals,
           jobs: mergedConfig.jobs,
+          // Add memory configuration for proper supervisor initialization
+          memoryConfig: atlasConfig.memory,
         },
       };
 

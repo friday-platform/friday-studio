@@ -3,8 +3,21 @@
 
 import { BaseWorker } from "./base-worker.ts";
 import { WorkspaceSupervisor } from "../supervisor.ts";
-import type { IWorkspace } from "../../types/core.ts";
+import type { IWorkspace, IWorkspaceSignal } from "../../types/core.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import type { AtlasMemoryConfig } from "../memory-config.ts";
+
+interface WorkspaceSupervisorConfig {
+  id: string;
+  workspace?: IWorkspace;
+  config?: {
+    workspaceSignals?: Record<string, unknown>;
+    jobs?: Record<string, unknown>;
+    memoryConfig?: AtlasMemoryConfig;
+  };
+  memoryConfig?: AtlasMemoryConfig;
+  model?: string;
+}
 
 interface SessionWorkerInfo {
   worker: Worker;
@@ -12,21 +25,83 @@ interface SessionWorkerInfo {
   sessionId: string;
 }
 
+interface ProcessSignalData {
+  action: "processSignal";
+  signal: IWorkspaceSignal;
+  payload: Record<string, unknown>;
+  sessionId: string;
+  signalConfig?: Record<string, unknown>;
+  jobs?: Record<string, unknown>;
+  traceHeaders?: Record<string, string>;
+}
+
+interface GetStatusData {
+  action: "getStatus";
+}
+
+interface SetWorkspaceData {
+  type: "setWorkspace";
+  workspace: IWorkspace;
+}
+
+type WorkspaceWorkerData = ProcessSignalData | GetStatusData;
+type WorkspaceWorkerMessage = SetWorkspaceData | Record<string, unknown>;
+
 class WorkspaceSupervisorWorker extends BaseWorker {
   private supervisor: WorkspaceSupervisor | null = null;
   private workspace: IWorkspace | null = null;
   private sessions: Map<string, SessionWorkerInfo> = new Map();
+  private config: WorkspaceSupervisorConfig | null = null;
 
   constructor() {
-    super("supervisor", "supervisor");
+    super(crypto.randomUUID().slice(0, 8), "workspace-supervisor");
   }
 
-  protected async initialize(config: any): Promise<void> {
+  private error(message: string, context?: Record<string, unknown>): void {
+    this.logger.error(message, context);
+  }
+
+  protected async initialize(config: WorkspaceSupervisorConfig): Promise<void> {
+    this.config = config;
     this.log("Initializing with config:", config);
+    this.log("Config structure:", {
+      hasConfig: !!config.config,
+      hasMemoryConfig: !!config.config?.memoryConfig,
+      configKeys: Object.keys(config),
+      configConfigKeys: config.config ? Object.keys(config.config) : "no config.config",
+    });
 
     // Create supervisor
     const workspaceId = config.id || config.workspace?.id || "default";
-    this.supervisor = new WorkspaceSupervisor(workspaceId, config.config || {});
+    const supervisorConfig = config.config || {};
+
+    // Validate memoryConfig is available
+    const memoryConfig = supervisorConfig.memoryConfig || config.memoryConfig;
+    if (!memoryConfig) {
+      const errorMsg = "WorkspaceSupervisor requires memoryConfig";
+      this.error(errorMsg, {
+        workspaceId,
+        configKeys: Object.keys(config),
+        supervisorConfigKeys: Object.keys(supervisorConfig),
+        hasMemoryConfig: !!config.memoryConfig,
+        hasNestedMemoryConfig: !!supervisorConfig.memoryConfig,
+      });
+      throw new Error(errorMsg);
+    }
+
+    this.log("Creating WorkspaceSupervisor with config:", {
+      workspaceId,
+      hasMemoryConfig: !!memoryConfig,
+      configKeys: Object.keys(supervisorConfig),
+    });
+
+    // Create supervisor with proper typed config
+    const typedSupervisorConfig = {
+      ...supervisorConfig,
+      memoryConfig,
+    };
+
+    this.supervisor = new WorkspaceSupervisor(workspaceId, typedSupervisorConfig);
 
     // If workspace info provided, store it
     if (config.workspace) {
@@ -39,14 +114,18 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.log("Supervisor initialized");
   }
 
-  protected async processTask(taskId: string, data: any): Promise<any> {
+  protected async processTask(
+    taskId: string,
+    data: WorkspaceWorkerData,
+  ): Promise<Record<string, unknown>> {
     if (!this.supervisor) {
       throw new Error("Supervisor not initialized");
     }
 
     switch (data.action) {
       case "processSignal": {
-        const { signal, payload, sessionId, signalConfig, jobs, traceHeaders } = data;
+        const processData = data as ProcessSignalData;
+        const { signal, payload, sessionId, signalConfig, jobs, traceHeaders } = processData;
 
         return await AtlasTelemetry.withWorkerSpan(
           {
@@ -56,7 +135,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             workerId: this.context.id,
             sessionId,
             signalId: signal.id,
-            signalType: signal.provider || "unknown",
+            signalType: signal.provider?.name || "unknown",
             workspaceId: this.workspace?.id,
           },
           async (span) => {
@@ -131,7 +210,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             });
 
             // Check if session completed and notify runtime
-            if (result && result.status === "completed") {
+            if (result && (result as any).status === "completed") {
               this.log(`Session ${sessionId} completed, notifying runtime`);
               self.postMessage({
                 type: "sessionComplete",
@@ -158,7 +237,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       }
 
       default:
-        throw new Error(`Unknown task action: ${data.action}`);
+        throw new Error(`Unknown task action: ${(data as any).action}`);
     }
   }
 
@@ -183,15 +262,22 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.log(`Spawning session worker: ${sessionId}`);
 
     // Create session worker with permissions to use BroadcastChannel
-    const sessionWorker = new Worker(
-      new URL("./session-supervisor-worker.ts", import.meta.url).href,
-      {
-        type: "module",
-        deno: {
-          permissions: "inherit",
-        },
-      } as any,
-    );
+    let sessionWorker: Worker;
+    try {
+      sessionWorker = new Worker(
+        new URL("./session-supervisor-worker.ts", import.meta.url).href,
+        {
+          type: "module",
+          deno: {
+            permissions: "inherit",
+          },
+        } as WorkerOptions,
+      );
+      this.log(`Session worker created successfully: ${sessionId}`);
+    } catch (error) {
+      this.log(`Failed to create session worker: ${error}`);
+      throw error;
+    }
 
     // Create message channel for direct communication
     const { port1, port2 } = new MessageChannel();
@@ -206,6 +292,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
     // Setup worker message handling
     sessionWorker.onmessage = (event) => {
+      this.log(`Session worker message: ${event.data.type} from ${sessionId}`);
       this.handleSessionMessage(sessionId, event.data);
     };
 
@@ -218,16 +305,50 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       });
     };
 
-    // Initialize session
-    sessionWorker.postMessage({
-      type: "init",
-      id: sessionId,
-      workerType: "session",
-      config: {
+    this.log(`Setting up session worker initialization for ${sessionId}`);
+
+    // Validate that we have memory config before proceeding
+    if (!this.config) {
+      const errorMsg = `No config available for session worker ${sessionId}`;
+      this.error(errorMsg, { sessionId });
+      throw new Error(errorMsg);
+    }
+
+    const memoryConfig = this.config.memoryConfig || this.config.config?.memoryConfig;
+    if (!memoryConfig) {
+      const errorMsg = `Missing memoryConfig for session worker ${sessionId}`;
+      this.error(errorMsg, {
         sessionId,
-        workspaceId: this.workspace?.id,
-      },
-    });
+        configKeys: Object.keys(this.config),
+        hasConfig: !!this.config.config,
+        hasMemoryConfig: !!this.config.memoryConfig,
+        hasNestedMemoryConfig: !!this.config.config?.memoryConfig,
+      });
+      throw new Error(errorMsg);
+    }
+
+    // Initialize session with memoryConfig
+    try {
+      sessionWorker.postMessage({
+        type: "init",
+        id: sessionId,
+        workerType: "session",
+        config: {
+          sessionId,
+          workspaceId: this.workspace?.id,
+          memoryConfig,
+        },
+      });
+      this.log(`Init message sent to session worker ${sessionId}`);
+    } catch (error) {
+      const errorMsg = `Failed to send init message to session worker: ${error}`;
+      this.error(errorMsg, {
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw new Error(errorMsg);
+    }
 
     // Send port for direct communication
     sessionWorker.postMessage({
@@ -241,10 +362,11 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       this.handleSessionDirectMessage(sessionId, event.data);
     };
 
+    this.log(`Session worker setup complete for ${sessionId}`);
     return sessionInfo;
   }
 
-  private handleSessionMessage(sessionId: string, message: any): void {
+  private handleSessionMessage(sessionId: string, message: Record<string, unknown>): void {
     switch (message.type) {
       case "initialized":
         // Session initialization logged by SessionSupervisorWorker
@@ -264,12 +386,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
           sessionId,
           messageType: message.type,
           taskId: message.taskId,
-          status: message.result?.status,
+          status: (message as Record<string, any>).result?.status,
         });
     }
   }
 
-  private handleSessionDirectMessage(sessionId: string, message: any): void {
+  private handleSessionDirectMessage(sessionId: string, message: Record<string, unknown>): void {
     this.log(`Session direct message received`, {
       sessionId,
       messageType: message.type,
@@ -284,8 +406,8 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   // Helper to send tasks to session worker and wait for response
   private async sendToSessionWorker(
     sessionId: string,
-    message: any,
-  ): Promise<any> {
+    message: Record<string, unknown>,
+  ): Promise<unknown> {
     const sessionInfo = this.sessions.get(sessionId);
     if (!sessionInfo) {
       throw new Error(`Session not found: ${sessionId}`);
@@ -319,11 +441,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
 
   // Override to handle supervisor-specific messages
-  protected override handleCustomMessage(message: any): void {
+  protected override handleCustomMessage(message: Record<string, unknown>): void {
     switch (message.type) {
       case "setWorkspace":
-        if (this.supervisor && message.workspace) {
-          this.workspace = message.workspace;
+        const setWorkspaceMsg = message as unknown as SetWorkspaceData;
+        if (this.supervisor && setWorkspaceMsg.workspace) {
+          this.workspace = setWorkspaceMsg.workspace;
           if (this.workspace) {
             this.supervisor.setWorkspace(this.workspace);
           }
@@ -337,7 +460,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
 
   // Handle broadcast messages from other agents
-  protected override handleBroadcast(channel: string, data: any): void {
+  protected override handleBroadcast(channel: string, data: Record<string, unknown>): void {
     this.log(`Received broadcast on ${channel}:`, data);
 
     // Supervisor could coordinate based on broadcasts

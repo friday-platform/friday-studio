@@ -4,8 +4,8 @@ import type { IWorkspaceAgent } from "../../../../src/types/core.ts";
 export class TBDAgent extends BaseAgent implements IWorkspaceAgent {
   status: string = "idle";
   host: string = "localhost";
-  constructor(id?: string) {
-    super(id);
+  constructor(memoryConfig: any, id?: string) {
+    super(memoryConfig, id);
 
     // Set agent-specific prompts
     this.prompts = {

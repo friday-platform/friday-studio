@@ -11,6 +11,7 @@ import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
 import { LLMService } from "../llm-service.ts";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
 
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
@@ -22,11 +23,11 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   prompts: { system: string; user: string };
   gates: any[] = [];
   protected logger: ChildLogger;
+  protected memoryConfigManager: MemoryConfigManager;
 
-  constructor(id?: string) {
+  constructor(memoryConfig?: AtlasMemoryConfig, id?: string) {
     this.id = id || crypto.randomUUID();
     this.context = new Context();
-    this.memory = new CoALAMemoryManager(this);
     this.messages = new Messages();
     this.prompts = {
       system: "",
@@ -36,8 +37,76 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     // Initialize logger for this agent
     this.logger = logger.createChildLogger({
       agentId: this.id,
+      workerType: "agent",
       agentName: this.name?.() || "BaseAgent",
     });
+
+    // Use provided memoryConfig or create default
+    const config: AtlasMemoryConfig = memoryConfig || {
+      default: {
+        enabled: true,
+        storage: "coala-local",
+        cognitive_loop: true,
+        retention: {
+          max_age_days: 30,
+          max_entries: 1000,
+          cleanup_interval_hours: 24,
+        },
+      },
+      agent: {
+        enabled: true,
+        scope: "agent",
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 2,
+          past_successes: 1,
+          past_failures: 1,
+        },
+        memory_types: {
+          working: { enabled: true, max_age_hours: 2, max_entries: 50 },
+          procedural: { enabled: true, max_age_days: 7, max_entries: 100 },
+          episodic: { enabled: false, max_age_days: 1, max_entries: 10 },
+          semantic: { enabled: true, max_age_days: 14, max_entries: 200 },
+          contextual: { enabled: false, max_age_hours: 1, max_entries: 5 },
+        },
+      },
+      session: {
+        enabled: true,
+        scope: "session",
+        include_in_context: true,
+        context_limits: {
+          relevant_memories: 5,
+          past_successes: 3,
+          past_failures: 2,
+        },
+        memory_types: {
+          working: { enabled: true, max_age_hours: 24, max_entries: 100 },
+          episodic: { enabled: true, max_age_days: 7, max_entries: 50 },
+          procedural: { enabled: true, max_age_days: 30, max_entries: 200 },
+          semantic: { enabled: true, max_age_days: 90, max_entries: 500 },
+          contextual: { enabled: true, max_age_hours: 24, max_entries: 100 },
+        },
+      },
+      workspace: {
+        enabled: true,
+        scope: "workspace",
+        include_in_context: false,
+        context_limits: {
+          relevant_memories: 10,
+          past_successes: 5,
+          past_failures: 3,
+        },
+        memory_types: {
+          working: { enabled: false, max_entries: 0 },
+          episodic: { enabled: true, max_age_days: 90, max_entries: 1000 },
+          procedural: { enabled: true, max_age_days: 365, max_entries: 500 },
+          semantic: { enabled: true, max_age_days: 365, max_entries: 2000 },
+          contextual: { enabled: true, max_age_days: 30, max_entries: 200 },
+        },
+      },
+    };
+    this.memoryConfigManager = new MemoryConfigManager(config);
+    this.memory = this.memoryConfigManager.getMemoryManager(this, "agent");
 
     // Initialize agent memory with startup context
     this.rememberAgentInitialization();
@@ -120,8 +189,9 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   }
 
   protected rememberTask(taskId: string, task: any, result: any, success: boolean): void {
-    const coalaMemory = this.memory as CoALAMemoryManager;
-    coalaMemory.rememberWithMetadata(
+    // Use configuration-driven memory only
+    this.memoryConfigManager.rememberWithScope(
+      this.memory as CoALAMemoryManager,
       `task_${taskId}`,
       {
         taskId,
@@ -132,18 +202,15 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         executedAt: new Date(),
         duration: task.duration || 0,
       },
-      {
-        memoryType: success ? CoALAMemoryType.PROCEDURAL : CoALAMemoryType.EPISODIC,
-        tags: [
-          "task",
-          this.name(),
-          success ? "success" : "failure",
-          task.type || "general",
-        ],
-        relevanceScore: success ? 0.7 : 0.9, // Failures are more relevant for learning
-        confidence: 1.0,
-        decayRate: success ? 0.05 : 0.02, // Keep failures longer for learning
-      },
+      success ? CoALAMemoryType.PROCEDURAL : CoALAMemoryType.EPISODIC,
+      "agent",
+      [
+        "task",
+        this.name(),
+        success ? "success" : "failure",
+        task.type || "general",
+      ],
+      success ? 0.7 : 0.9, // Failures are more relevant for learning
     );
   }
 
@@ -368,46 +435,23 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     systemContext: string;
     userContext: string;
   } {
-    // Get relevant memories for this prompt
-    const relevantMemories = this.getRelevantMemories(userPrompt, 3);
-    const pastSuccesses = this.getPastSuccesses();
-    const pastFailures = this.getPastFailures();
-
-    let systemContext = "";
-    let userContext = "";
-
-    // Add relevant memories to system context
-    if (relevantMemories.length > 0) {
-      systemContext += "\n--- Agent Memory Context ---\n";
-      systemContext += "Relevant past experiences:\n";
-      relevantMemories.forEach((memory, index) => {
-        systemContext += `${index + 1}. ${JSON.stringify(memory.content)}\n`;
-      });
-    }
-
-    // Add success patterns to system context
-    if (pastSuccesses.length > 0) {
-      systemContext += "\nPast successful approaches:\n";
-      pastSuccesses.slice(0, 2).forEach((success, index) => {
-        systemContext += `${index + 1}. ${JSON.stringify(success.content)}\n`;
-      });
-    }
-
-    // Add failure patterns as warnings
-    if (pastFailures.length > 0) {
-      systemContext += "\nPast failures to avoid:\n";
-      pastFailures.slice(0, 2).forEach((failure, index) => {
-        systemContext += `${index + 1}. ${JSON.stringify(failure.content)}\n`;
-      });
-    }
+    // Use configuration-driven memory context building only
+    const memoryContext = this.memoryConfigManager.buildMemoryContext(
+      this.memory as CoALAMemoryManager,
+      userPrompt,
+      "agent",
+    );
 
     // Add agent identity context
-    userContext += `\n--- Agent Context ---\n`;
-    userContext += `Agent: ${this.name()}\n`;
-    userContext += `Purpose: ${this.purpose()}\n`;
-    userContext += `Provider: ${this.provider()}\n`;
+    const userContext = `\n--- Agent Context ---\n` +
+      `Agent: ${this.name()}\n` +
+      `Purpose: ${this.purpose()}\n` +
+      `Provider: ${this.provider()}\n`;
 
-    return { systemContext, userContext };
+    return {
+      systemContext: memoryContext.systemContext,
+      userContext: userContext,
+    };
   }
 
   /**

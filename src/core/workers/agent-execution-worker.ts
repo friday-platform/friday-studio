@@ -236,8 +236,8 @@ class AgentExecutionWorker {
     checks.push(...request.environment.monitoring_config.safety_checks);
 
     const checksDuration = Date.now() - checksStart;
-    this.logger.debug(`All ${checks.length} safety checks passed in ${checksDuration}ms`, { 
-      checks: checks
+    this.logger.debug(`All ${checks.length} safety checks passed in ${checksDuration}ms`, {
+      checks: checks,
     });
   }
 

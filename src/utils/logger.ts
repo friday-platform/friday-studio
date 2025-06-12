@@ -7,6 +7,8 @@ export interface LogContext {
   agentId?: string;
   workerId?: string;
   workerType?: string;
+  supervisorId?: string;
+  agentName?: string;
   [key: string]: any;
 }
 
@@ -127,6 +129,8 @@ export class AtlasLogger {
     const prefix = context
       ? `[${context.workerType || "atlas"}${
         context.workerId ? ":" + context.workerId.slice(0, 8) : ""
+      }${context.sessionId ? ":" + context.sessionId.slice(0, 8) : ""}${
+        context.supervisorId ? ":" + context.supervisorId.slice(0, 8) : ""
       }${context.agentName ? ":" + context.agentName : ""}]`
       : "[atlas]";
 

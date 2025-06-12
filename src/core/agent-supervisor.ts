@@ -259,17 +259,19 @@ Focus on safety, efficiency, and reliability.`;
       // Parse LLM response into structured analysis
       const analysis = this.parseAgentAnalysis(response, agent, task);
       const analysisDuration = Date.now() - analysisStart;
-      
-      this.logger.debug(`Agent analysis completed in ${analysisDuration}ms`, { 
+
+      this.logger.debug(`Agent analysis completed in ${analysisDuration}ms`, {
         agentId: agent.id,
         riskLevel: analysis.safety_assessment.risk_level,
-        isolationLevel: analysis.execution_strategy.isolation_level
+        isolationLevel: analysis.execution_strategy.isolation_level,
       });
-      
+
       return analysis;
     } catch (error) {
       const analysisDuration = Date.now() - analysisStart;
-      this.logger.error(`Agent analysis failed after ${analysisDuration}ms: ${error}`, { agentId: agent.id });
+      this.logger.error(`Agent analysis failed after ${analysisDuration}ms: ${error}`, {
+        agentId: agent.id,
+      });
       // Return conservative analysis on error
       return this.createConservativeAnalysis(agent, task);
     }
@@ -726,15 +728,18 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     supervision: ExecutionSupervision,
   ): Promise<void> {
     const checksStart = Date.now();
-    
+
     // Mock pre-execution checks - in production these would be real validations
     // Example checks: worker health, resource availability, permissions, etc.
-    
+
     const checksDuration = Date.now() - checksStart;
-    this.logger.debug(`All ${supervision.pre_execution_checks.length} pre-execution checks passed in ${checksDuration}ms`, { 
-      workerId: instance.id,
-      checks: supervision.pre_execution_checks 
-    });
+    this.logger.debug(
+      `All ${supervision.pre_execution_checks.length} pre-execution checks passed in ${checksDuration}ms`,
+      {
+        workerId: instance.id,
+        checks: supervision.pre_execution_checks,
+      },
+    );
   }
 
   // Execute agent in worker with real communication
@@ -873,7 +878,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       };
     }
 
-    // Return metrics for all workers 
+    // Return metrics for all workers
     const allMetrics: Record<string, string | number | boolean | Date> = {};
     for (const [id, instance] of this.activeWorkers) {
       const workerMetrics = this.getWorkerMetrics(id);

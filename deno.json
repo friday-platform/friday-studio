@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "compilerOptions": {
-    "lib": ["deno.window", "deno.worker", "deno.unstable"]
+    "lib": ["deno.window", "deno.worker", "deno.unstable"],
+    "noImplicitAny": true,
+    "strict": true
   },
   "unstable": ["broadcast-channel", "worker-options", "otel"],
   "tasks": {
