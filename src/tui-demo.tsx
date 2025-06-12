@@ -204,10 +204,10 @@ const TUIDemo: React.FC = () => {
         stdout: "piped",
         stderr: "piped",
         env: {
-          OTEL_DENO: "false",
-          OTEL_SERVICE_NAME: "atlas",
+          OTEL_DENO: "true",
+          OTEL_SERVICE_NAME: "atlas-tui",
           OTEL_SERVICE_VERSION: "1.0.0",
-          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas,service.version=1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui,service.version=1.0.0",
         },
       }).spawn();
 
@@ -323,11 +323,23 @@ const TUIDemo: React.FC = () => {
       "/logs <session-id>",
     ];
 
+    const debugCommands = [
+      "Performance Analysis: Look for [PERF] entries in server logs",
+      "Debug Mode: Server includes extensive WorkspaceSupervisor debug logging",
+      "OpenTelemetry: Enabled by default for performance monitoring",
+      "Configuration: Supports both inline jobs and job file references",
+    ];
+
     addLog("command", "=== Available Commands (all require / prefix) ===");
     helpCommands.forEach((cmd) => {
       addLog("command", cmd);
     });
+    addLog("command", "=== Debug & Performance Features ===");
+    debugCommands.forEach((feature) => {
+      addLog("command", feature);
+    });
     addLog("command", "=== Navigation: j/k to select, Enter to copy to prompt ===");
+    addLog("command", "=== Performance: Filter server logs by [PERF] or [DEBUG] ===");
   };
 
   const executeCliCommand = async (command: string, args: string[]) => {
@@ -399,6 +411,7 @@ const TUIDemo: React.FC = () => {
           "--allow-all",
           "--unstable-broadcast-channel",
           "--unstable-worker-options",
+          "--unstable-otel",
           "--env-file",
           cliPath,
           command,
@@ -408,6 +421,12 @@ const TUIDemo: React.FC = () => {
         stdout: "piped",
         stderr: "piped",
         signal: controller.signal,
+        env: {
+          OTEL_DENO: "true",
+          OTEL_SERVICE_NAME: "atlas-tui-cli",
+          OTEL_SERVICE_VERSION: "1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui-cli,service.version=1.0.0",
+        },
       }).spawn();
 
       try {
@@ -931,13 +950,32 @@ const TUIDemo: React.FC = () => {
                 const isSelected = currentPanel === "commands" &&
                   selectedServerLogIndex === globalLogIndex;
 
+                // Determine log color based on content
+                const isPerformanceLog = log.content.includes("[PERF]");
+                const isDebugLog = log.content.includes("[DEBUG]");
+                const isOtelLog = log.content.includes("OpenTelemetry");
+
+                const logColor = isSelected
+                  ? "black"
+                  : isPerformanceLog
+                  ? "yellow"
+                  : isDebugLog
+                  ? "cyan"
+                  : isOtelLog
+                  ? "magenta"
+                  : "green";
+
                 return (
                   <Box key={globalLogIndex} flexDirection="column">
                     <Text
-                      color={isSelected ? "black" : "green"}
+                      color={logColor}
                       backgroundColor={isSelected ? "white" : undefined}
+                      bold={isPerformanceLog || isOtelLog}
                     >
                       {isSelected ? "▶ " : ""}
+                      {isPerformanceLog && !isSelected ? "⚡ " : ""}
+                      {isDebugLog && !isSelected ? "🔍 " : ""}
+                      {isOtelLog && !isSelected ? "📊 " : ""}
                       <Text color="gray">{log.timestamp}</Text> {log.content}
                       {log.fullContent && (
                         <Text
@@ -1026,6 +1064,13 @@ const TUIDemo: React.FC = () => {
           {serverStatus.running ? "Online" : "Offline"}
         </Badge>
         <Text>| Logs: {serverLogs.length} entries</Text>
+        <Text color="magenta">| 📊 OTEL: ON</Text>
+        <Text color="cyan">| 🔍 Debug: ON</Text>
+        {serverOnlyLogs.filter((log) => log.content.includes("[PERF]")).length > 0 && (
+          <Text color="yellow">
+            | ⚡ Perf: {serverOnlyLogs.filter((log) => log.content.includes("[PERF]")).length}
+          </Text>
+        )}
       </Box>
     </FullScreenBox>
   );

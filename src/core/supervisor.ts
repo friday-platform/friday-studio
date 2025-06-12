@@ -465,6 +465,14 @@ You have access to the full workspace context and configuration. Create structur
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<SessionIntent> {
+    const startTime = Date.now();
+    this.logger.debug(`[PERF] Starting analyzeSignal for signal: ${signal.id}`, {
+      signalId: signal.id,
+      payloadSize: JSON.stringify(payload).length,
+      activeSessions: this.getStateMachineContext().activeSessions.size,
+    });
+
+    const promptStart = Date.now();
     const analysisPrompt = `Analyze this incoming signal and determine the session intent:
 
 Signal: ${signal.id}
@@ -485,7 +493,19 @@ Determine:
 
 Provide a structured analysis.`;
 
+    const promptTime = Date.now() - promptStart;
+    this.logger.debug(`[PERF] Prompt construction took ${promptTime}ms`, {
+      promptLength: analysisPrompt.length,
+    });
+
     try {
+      const llmStart = Date.now();
+      this.logger.debug(`[PERF] Starting LLM call for signal analysis`, {
+        model: this.config.model || "claude-4-sonnet-20250514",
+        promptTokensEstimate: Math.round(analysisPrompt.length / 4),
+        systemPromptLength: this.prompts.system.length,
+      });
+
       const response = await this.generateLLM(
         this.config.model || "claude-4-sonnet-20250514",
         this.prompts.system,
@@ -499,12 +519,36 @@ Provide a structured analysis.`;
         },
       );
 
+      const llmTime = Date.now() - llmStart;
+      this.logger.debug(`[PERF] LLM call completed`, {
+        duration: llmTime,
+        responseLength: response.length,
+        responseTokensEstimate: Math.round(response.length / 4),
+        model: this.config.model || "claude-4-sonnet-20250514",
+        requestSize: analysisPrompt.length + this.prompts.system.length,
+      });
+
       // Parse the response into SessionIntent
+      const parseStart = Date.now();
+      this.logger.debug(`[DEBUG] Raw LLM response`, {
+        response: response.substring(0, 500) + (response.length > 500 ? "..." : ""),
+        fullLength: response.length,
+      });
+
       const goals = this.extractGoalsFromResponse(response);
       const suggestedAgents = this.extractSuggestedAgentsFromResponse(response);
       const strategy = this.extractStrategyFromResponse(response);
+      const parseTime = Date.now() - parseStart;
+      this.logger.debug(`[PERF] Response parsing took ${parseTime}ms`, {
+        goalsFound: goals.length,
+        agentsFound: suggestedAgents.length,
+        strategy,
+        extractedGoals: goals,
+        extractedAgents: suggestedAgents,
+      });
 
-      return {
+      const intentStart = Date.now();
+      const intent = {
         id: crypto.randomUUID(),
         signal: {
           type: signal.id,
@@ -529,8 +573,32 @@ Provide a structured analysis.`;
         },
         userPrompt: this.config.intentPrompt || "",
       };
+      const intentTime = Date.now() - intentStart;
+
+      const totalTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] analyzeSignal completed successfully`, {
+        totalTime,
+        llmTime,
+        llmPercentage: Math.round((llmTime / totalTime) * 100),
+        parseTime,
+        intentConstructionTime: intentTime,
+        signalId: signal.id,
+        finalIntent: {
+          id: intent.id,
+          goals: intent.goals,
+          strategy: intent.executionHints?.strategy,
+          agentCount: intent.suggestedAgents?.length || 0,
+        },
+      });
+
+      return intent;
     } catch (error) {
-      this.log(`Error analyzing signal with LLM: ${error}`);
+      const errorTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] analyzeSignal failed after ${errorTime}ms: ${error}`, {
+        signalId: signal.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       // Fallback to synchronous method
       return this.createSessionIntent(signal, payload);
     }
@@ -543,10 +611,38 @@ Provide a structured analysis.`;
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
   ): Promise<any> {
+    const startTime = Date.now();
+    this.logger.debug(`[PERF] Starting createSessionContext`, {
+      intentId: intent.id,
+      signalId: signal.id,
+      hasSignalData: !!signalData,
+      signalDataKeys: signalData ? Object.keys(signalData) : [],
+      intentGoals: intent.goals?.length || 0,
+      intentAgents: intent.suggestedAgents?.length || 0,
+    });
+
     try {
       // Step 1: Select appropriate job based on signal configuration and payload
+      const jobStart = Date.now();
+      this.logger.debug(`[DEBUG] About to select job`, {
+        signalId: signal.id,
+        payloadKeys: Object.keys(payload),
+        signalConfigAvailable: !!(signalData?.signalConfig),
+        jobsAvailable: !!(signalData?.jobs),
+        mergedConfigAvailable: !!this.mergedConfig,
+      });
+
       const selectedJob = this.selectJobForSignal(signal, payload, signalData);
+      const jobTime = Date.now() - jobStart;
+      this.logger.debug(`[PERF] Job selection took ${jobTime}ms`, {
+        selectedJob: selectedJob?.name || "none",
+        hasSignalData: !!signalData,
+        jobExecutionStrategy: selectedJob?.execution?.strategy,
+        jobAgentCount: selectedJob?.execution?.agents?.length || 0,
+      });
+
       // Step 2: Determine available agents based on job specification or fallback
+      const agentStart = Date.now();
       let availableAgents;
       if (selectedJob) {
         // Get agents specified in the job
@@ -560,8 +656,25 @@ Provide a structured analysis.`;
           ? this.getAllAgentMetadata().filter((agent) => intent.suggestedAgents?.includes(agent.id))
           : this.getAllAgentMetadata();
       }
+      const agentTime = Date.now() - agentStart;
+      this.logger.debug(`[PERF] Agent selection took ${agentTime}ms`, {
+        totalAgents: this.getAllAgentMetadata().length,
+        selectedAgents: availableAgents.length,
+        selectionMethod: selectedJob ? "job-based" : "intent-based",
+        selectedAgentIds: availableAgents.map((a) => a.id),
+        allAvailableAgentIds: this.getAllAgentMetadata().map((a) => a.id),
+      });
 
-      return {
+      const contextStart = Date.now();
+      this.logger.debug(`[DEBUG] Building session context`, {
+        hasWorkspace: !!this.workspace,
+        workspaceId: this.workspace?.id,
+        hasSignalPrompts: !!(this.config.signalPrompts?.[signal.id]),
+        hasSessionPrompts: !!(this.config.prompts?.session),
+        hasEvaluationPrompts: !!(this.config.prompts?.evaluation),
+      });
+
+      const context = {
         availableAgents,
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,
@@ -576,8 +689,29 @@ Provide a structured analysis.`;
           evaluation: this.config.prompts?.evaluation || "",
         },
       };
+      const contextTime = Date.now() - contextStart;
+
+      const totalTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] createSessionContext completed successfully`, {
+        totalTime,
+        jobSelectionTime: jobTime,
+        agentSelectionTime: agentTime,
+        contextBuildTime: contextTime,
+        agentsSelected: availableAgents.length,
+        hasJobSpec: !!selectedJob,
+        contextSize: JSON.stringify(context).length,
+        memoryFilteringTodo: true,
+      });
+
+      return context;
     } catch (error) {
-      this.log(`Error creating session context: ${error}`);
+      const errorTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] createSessionContext failed after ${errorTime}ms: ${error}`, {
+        intentId: intent.id,
+        signalId: signal.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       // Fallback to all agents without job specification
       return {
         availableAgents: this.getAllAgentMetadata(),
@@ -600,29 +734,82 @@ Provide a structured analysis.`;
         this.mergedConfig?.workspace?.signals?.[signal.id];
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
-      this.log(`[selectJobForSignal] Signal: ${signal.id}`);
-      this.log(`[selectJobForSignal] SignalData provided: ${!!signalData}`);
-      this.log(`[selectJobForSignal] SignalConfig: ${JSON.stringify(signalConfig)}`);
-      this.log(`[selectJobForSignal] AvailableJobs: ${Object.keys(availableJobs)}`);
+      this.logger.debug(`[DEBUG] selectJobForSignal started`, {
+        signalId: signal.id,
+        signalDataProvided: !!signalData,
+        hasSignalConfig: !!signalConfig,
+        signalConfigJobs: signalConfig?.jobs?.length || 0,
+        availableJobNames: Object.keys(availableJobs),
+        payloadKeys: Object.keys(payload),
+        mergedConfigAvailable: !!this.mergedConfig,
+      });
 
       if (!signalConfig?.jobs) {
-        this.log(`[selectJobForSignal] No jobs found in signal config`);
+        this.logger.debug(`[DEBUG] No jobs found in signal config`, {
+          signalId: signal.id,
+          signalConfigExists: !!signalConfig,
+          signalConfigKeys: signalConfig ? Object.keys(signalConfig) : [],
+        });
         return null;
       }
 
       // Evaluate job conditions to find the first matching job
-      for (const jobMapping of signalConfig.jobs) {
-        if (this.evaluateJobCondition(jobMapping.condition, payload)) {
+      this.logger.debug(`[DEBUG] Evaluating job conditions`, {
+        jobCount: signalConfig.jobs.length,
+        jobs: signalConfig.jobs.map((j) => ({ name: j.name, hasCondition: !!j.condition })),
+      });
+
+      for (const [index, jobMapping] of signalConfig.jobs.entries()) {
+        this.logger.debug(`[DEBUG] Evaluating job ${index + 1}/${signalConfig.jobs.length}`, {
+          jobName: jobMapping.name,
+          condition: jobMapping.condition,
+          payload,
+        });
+
+        const conditionResult = this.evaluateJobCondition(jobMapping.condition, payload);
+        this.logger.debug(`[DEBUG] Job condition evaluation result`, {
+          jobName: jobMapping.name,
+          condition: jobMapping.condition,
+          result: conditionResult,
+        });
+
+        if (conditionResult) {
           // Get the job specification from loaded jobs
           const jobSpec = availableJobs[jobMapping.name];
+          this.logger.debug(`[DEBUG] Job matched, checking specification`, {
+            jobName: jobMapping.name,
+            jobSpecExists: !!jobSpec,
+            jobSpecKeys: jobSpec ? Object.keys(jobSpec) : [],
+          });
+
           if (jobSpec) {
+            this.logger.debug(`[DEBUG] Job selected successfully`, {
+              selectedJob: jobMapping.name,
+              jobSpec: {
+                name: jobSpec.name,
+                strategy: jobSpec.execution?.strategy,
+                agentCount: jobSpec.execution?.agents?.length || 0,
+                agents: jobSpec.execution?.agents?.map((a) => typeof a === "string" ? a : a.id) ||
+                  [],
+              },
+            });
             return jobSpec;
           }
         }
       }
 
+      this.logger.debug(`[DEBUG] No matching job found`, {
+        signalId: signal.id,
+        totalJobsEvaluated: signalConfig.jobs.length,
+        availableJobs: Object.keys(availableJobs),
+      });
       return null;
     } catch (error) {
+      this.logger.debug(`[DEBUG] selectJobForSignal error`, {
+        signalId: signal.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return null;
     }
   }
