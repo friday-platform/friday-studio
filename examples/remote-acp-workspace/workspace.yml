@@ -1,0 +1,159 @@
+# Example Workspace Configuration with Remote ACP Agents
+name: "remote-acp-demo"
+description: "Demonstration of Atlas remote agent capabilities using ACP protocol"
+
+# Remote agents configuration
+agents:
+  # ACP remote agent with bearer token authentication
+  external-chat-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "https://api.example.com"
+    purpose: "External AI agent for natural language processing and conversation"
+
+    # Authentication configuration
+    auth:
+      type: "bearer"
+      token_env: "EXTERNAL_CHAT_TOKEN" # Token from environment variable
+    # Alternatively: token: "${EXTERNAL_CHAT_TOKEN}"
+
+    # ACP-specific settings
+    acp:
+      agent_name: "chat" # Name of agent on remote ACP server
+      default_mode: "sync" # sync | async | stream
+      timeout_ms: 30000 # 30 second timeout
+      max_retries: 3 # Retry failed requests 3 times
+      health_check_interval: 60000 # Health check every minute
+
+    # Schema validation (optional)
+    schema:
+      validate_input: true
+      validate_output: true
+      # input_schema: { ... }            # JSON Schema for input validation
+      # output_schema: { ... }           # JSON Schema for output validation
+
+    # Monitoring and reliability
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5 # Open circuit after 5 failures
+        timeout_ms: 60000 # Stay open for 60 seconds
+        half_open_max_calls: 3 # Test with 3 calls when half-open
+
+  # ACP remote agent with API key authentication
+  analytics-agent:
+    type: "remote"
+    protocol: "acp"
+    endpoint: "https://analytics.example.com"
+    purpose: "Data analysis and insights generation"
+
+    auth:
+      type: "api_key"
+      api_key_env: "ANALYTICS_API_KEY"
+      header: "X-API-Key" # Custom header name
+
+    acp:
+      agent_name: "analyzer"
+      default_mode: "async" # Use async for long-running analytics
+      timeout_ms: 120000 # 2 minute timeout for complex analysis
+      max_retries: 2
+
+  # Local LLM agent for comparison
+  local-llm-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Local AI agent for comparison and fallback"
+    tools: ["computer_use"]
+    prompts:
+      system: "You are a helpful AI assistant that works alongside remote agents."
+
+# Job definitions that use the remote agents
+jobs:
+  # Simple remote agent job
+  process-user-query:
+    description: "Process user query using external chat agent"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "external-chat-agent"
+          prompt: "Please provide a helpful and accurate response to the user's query."
+
+  # Multi-agent job combining remote and local agents
+  comprehensive-analysis:
+    description: "Comprehensive analysis using both remote analytics and local LLM"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "analytics-agent"
+          prompt: "Analyze the provided data and generate insights."
+          mode: "analyze"
+        - id: "local-llm-agent"
+          prompt: "Summarize the analytics results in plain language."
+          config:
+            temperature: 0.7
+
+  # Parallel execution with multiple remote agents
+  multi-agent-processing:
+    description: "Process request with multiple agents in parallel"
+    execution:
+      strategy: "parallel"
+      agents:
+        - id: "external-chat-agent"
+          prompt: "Process the conversational aspects of this request."
+        - id: "analytics-agent"
+          prompt: "Extract and analyze any data patterns."
+          mode: "pattern_detection"
+
+  # Staged execution with fallback
+  robust-processing:
+    description: "Multi-stage processing with local fallback"
+    execution:
+      strategy: "staged"
+      stages:
+        - name: "primary"
+          strategy: "sequential"
+          agents:
+            - id: "external-chat-agent"
+        - name: "fallback" # Only runs if primary fails
+          strategy: "sequential"
+          agents:
+            - id: "local-llm-agent"
+              prompt: "Process this request as a fallback when remote agents are unavailable."
+
+# Signal configurations for triggering jobs
+signals:
+  # HTTP webhook for processing queries
+  http-query:
+    provider: "http"
+    path: "/process"
+    method: "POST"
+    jobs: ["process-user-query"]
+
+  # HTTP endpoint for comprehensive analysis
+  http-analysis:
+    provider: "http"
+    path: "/analyze"
+    method: "POST"
+    jobs: ["comprehensive-analysis"]
+
+  # CLI signal for testing
+  cli-test:
+    provider: "cli"
+    command: "test-remote"
+    jobs: ["multi-agent-processing"]
+
+# Workspace-level configuration
+config:
+  # Global timeout for all operations
+  default_timeout_seconds: 300
+
+  # Memory management
+  memory:
+    retention_policy: "session" # Keep memory for session duration
+    max_size_mb: 100
+
+  # Logging configuration
+  logging:
+    level: "info"
+    include_metrics: true
+    remote_agent_events: true

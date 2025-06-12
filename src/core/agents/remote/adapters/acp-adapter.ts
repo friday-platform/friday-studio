@@ -12,7 +12,7 @@ import type {
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "../types.ts";
-import { ACPError, Agent, Client, Event, HTTPError, Run } from "acp-sdk";
+import { ACPError, type Agent, Client, type Event, FetchError, HTTPError, type Run } from "acp-sdk";
 
 export interface ACPAdapterConfig extends BaseRemoteAdapterConfig {
   endpoint: string; // Add endpoint to config
@@ -283,10 +283,11 @@ export class ACPAdapter extends BaseRemoteAdapter {
       name: agent.name,
       description: agent.description || undefined,
       // version: agent.version, // May not exist in ACP SDK yet
-      capabilities:
-        agent.metadata?.capabilities?.map((cap) =>
+      capabilities: Array.isArray(agent.metadata?.capabilities)
+        ? agent.metadata.capabilities.map((cap: any) =>
           typeof cap === "string" ? cap : cap.name || "unknown"
-        ) || [],
+        )
+        : [],
       supported_modes: ["sync", "async", "stream"], // ACP supports all modes
       // input_schema: agent.input_schema, // May not exist yet
       // output_schema: agent.output_schema, // May not exist yet
@@ -306,13 +307,13 @@ export class ACPAdapter extends BaseRemoteAdapter {
         return {
           type: "completion",
           status: "completed",
-          output: this.convertOutput(event.run.output || []),
+          output: this.convertOutput(event.run?.output || []),
         };
       case "run.failed":
         return {
           type: "completion",
           status: "failed",
-          error: event.run.error?.message,
+          error: event.run?.error?.message,
         };
       case "error":
         return {
@@ -373,6 +374,9 @@ export class ACPAdapter extends BaseRemoteAdapter {
       const statusPart = "status" in error ? ` ${(error as { status: number }).status}` : "";
       return new Error(`${context}: HTTP${statusPart} - ${error.message}`);
     }
+    if (error instanceof FetchError) {
+      return new Error(`${context}: Network error - ${error.message}`);
+    }
     if (error instanceof Error) {
       return new Error(`${context}: ${error.message}`);
     }
@@ -386,6 +390,9 @@ export class ACPAdapter extends BaseRemoteAdapter {
     if (error instanceof HTTPError) {
       const statusPart = "status" in error ? `(${(error as { status: number }).status})` : "";
       return `HTTPError${statusPart}: ${error.message}`;
+    }
+    if (error instanceof FetchError) {
+      return `FetchError: ${error.message}`;
     }
     if (error instanceof Error) {
       return `${error.name}: ${error.message}`;
