@@ -25,6 +25,7 @@
     "@std/async": "jsr:@std/async@^1.0.0",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.0",
     "@std/yaml": "jsr:@std/yaml@^1.0.7",
+    "acp-sdk": "npm:acp-sdk@^0.1.0",
     "fullscreen-ink": "npm:fullscreen-ink@^0.0.2",
     "ink": "npm:ink@^5.0.1",
     "react": "npm:react@^18.3.1",
