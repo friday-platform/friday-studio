@@ -1,0 +1,53 @@
+version: "1.0"
+
+job:
+  name: "simple-tbd"
+  description: "Simple TBD processing without memory enhancement for quick responses"
+
+  session_prompts:
+    planning: |
+      This job provides direct TBD assistance without memory operations:
+      - Process user request directly with tbd-agent
+      - Optimized for speed and simplicity
+      - No context loading or learning storage overhead
+
+    evaluation: |
+      Job is complete when the TBD agent has successfully processed the user request
+      and provided a helpful response. Focus on response quality and completeness.
+
+  execution:
+    strategy: "single"
+    agents:
+      - id: "tbd-agent"
+        prompt: |
+          Process this user request and provide helpful assistance:
+
+          User message: "{signal.message}"
+
+          Provide a comprehensive, helpful response that:
+          - Addresses the user's question or request directly
+          - Offers practical guidance and actionable advice
+          - Demonstrates clear understanding of the user's needs
+          - Maintains a helpful and professional tone
+
+  # Success criteria
+  success_criteria:
+    response_provided: true
+    user_request_addressed: true
+    response_quality: "good"
+
+  # Error handling
+  error_handling:
+    max_retries: 1
+    retry_delay_seconds: 3
+    timeout_seconds: 60
+    agent_failure_strategy: "fail" # Fail job if agent fails
+
+  # Resource requirements
+  resources:
+    estimated_duration_seconds: 30
+    max_memory_mb: 256
+    required_capabilities: [
+      "general-assistance",
+    ]
+    concurrent_agent_limit: 1
