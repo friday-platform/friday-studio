@@ -257,6 +257,22 @@ class SessionSupervisorWorker extends BaseWorker {
               results,
             );
 
+            // Extract semantic facts from signal and store in knowledge graph
+            try {
+              await this.supervisor!.extractAndStoreSemanticFacts();
+              this.log("Semantic facts extracted and stored in knowledge graph");
+            } catch (error) {
+              this.log(`Warning: Failed to extract semantic facts: ${error}`);
+            }
+
+            // Generate and store working memory summary in episodic memory
+            try {
+              await this.supervisor!.generateWorkingMemorySummary();
+              this.log("Working memory summary generated and stored in episodic memory");
+            } catch (error) {
+              this.log(`Warning: Failed to generate working memory summary: ${error}`);
+            }
+
             // Log structured session results
             const sessionContext = this.supervisor!.getSessionContext();
             const timing = {
