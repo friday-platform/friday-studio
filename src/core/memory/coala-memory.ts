@@ -16,6 +16,13 @@ import type {
 } from "../../types/core.ts";
 import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
 import { LocalFileStorageAdapter } from "../../storage/local.ts";
+import {
+  ExtractedFact,
+  type IKnowledgeGraphStorageAdapter,
+  KnowledgeGraphManager,
+  KnowledgeGraphQuery,
+} from "./knowledge-graph.ts";
+import { KnowledgeGraphLocalStorageAdapter } from "../../storage/knowledge-graph-local.ts";
 
 export interface CoALAMemoryEntry {
   id: string;
@@ -64,6 +71,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private scope: IAtlasScope;
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
+  private knowledgeGraph?: KnowledgeGraphManager;
 
   constructor(
     scope: IAtlasScope,
@@ -86,6 +94,9 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     Object.values(CoALAMemoryType).forEach((type) => {
       this.memoriesByType.set(type, new Map());
     });
+
+    // Initialize knowledge graph for semantic memory enhancement
+    this.initializeKnowledgeGraph();
 
     this.loadFromStorage();
 
@@ -564,6 +575,147 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       lastUpdated: new Date().toISOString(),
       memoryTypes: this.getMemoryTypeStatistics(),
     };
+  }
+
+  // Initialize knowledge graph for semantic memory enhancement
+  private initializeKnowledgeGraph(): void {
+    try {
+      // Get base path for storage - assume we can get this from the scope or store
+      const basePath = this.getKnowledgeGraphBasePath();
+      const kgStorageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
+      this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
+    } catch (error) {
+      console.warn("Failed to initialize knowledge graph for semantic memory:", error);
+    }
+  }
+
+  private getKnowledgeGraphBasePath(): string {
+    // Try to extract base path from existing storage adapter
+    if (this.store instanceof CoALALocalFileStorageAdapter) {
+      // Access the basePath if available
+      return `${(this.store as any).basePath || "./.atlas/memory"}/knowledge-graph`;
+    }
+    // Fallback path
+    return `./.atlas/memory/knowledge-graph`;
+  }
+
+  // Store facts in knowledge graph (called from semantic memory operations)
+  async storeFactsInKnowledgeGraph(facts: ExtractedFact[]): Promise<string[]> {
+    if (!this.knowledgeGraph) {
+      console.warn("Knowledge graph not available for fact storage");
+      return [];
+    }
+
+    try {
+      return await this.knowledgeGraph.storeFacts(facts);
+    } catch (error) {
+      console.error("Error storing facts in knowledge graph:", error);
+      return [];
+    }
+  }
+
+  // Query knowledge graph for semantic memory enhancement
+  async queryKnowledgeGraph(query: KnowledgeGraphQuery): Promise<{
+    entities: any[];
+    relationships: any[];
+    facts: any[];
+  }> {
+    if (!this.knowledgeGraph) {
+      return { entities: [], relationships: [], facts: [] };
+    }
+
+    try {
+      return await this.knowledgeGraph.queryKnowledge(query);
+    } catch (error) {
+      console.error("Error querying knowledge graph:", error);
+      return { entities: [], relationships: [], facts: [] };
+    }
+  }
+
+  // Get semantic facts related to a query
+  async getSemanticFacts(searchTerm: string, limit: number = 10): Promise<any[]> {
+    if (!this.knowledgeGraph) {
+      return [];
+    }
+
+    try {
+      const results = await this.knowledgeGraph.queryKnowledge({
+        search: searchTerm,
+        limit,
+      });
+      return results.facts;
+    } catch (error) {
+      console.error("Error getting semantic facts:", error);
+      return [];
+    }
+  }
+
+  // Get workspace knowledge summary
+  async getWorkspaceKnowledgeSummary(): Promise<any> {
+    if (!this.knowledgeGraph) {
+      return null;
+    }
+
+    try {
+      return await this.knowledgeGraph.getWorkspaceKnowledgeSummary();
+    } catch (error) {
+      console.error("Error getting workspace knowledge summary:", error);
+      return null;
+    }
+  }
+
+  // Enhanced semantic memory storage that also updates knowledge graph
+  async rememberSemanticFact(key: string, fact: any, metadata?: {
+    memoryType: CoALAMemoryType;
+    tags: string[];
+    relevanceScore: number;
+    associations?: string[];
+    confidence?: number;
+    decayRate?: number;
+  }): Promise<void> {
+    // Store in regular semantic memory
+    if (metadata) {
+      await this.rememberWithMetadata(key, fact, metadata);
+    } else {
+      this.remember(key, fact);
+    }
+
+    // If this is a structured fact, also store in knowledge graph
+    if (this.knowledgeGraph && this.isStructuredFact(fact)) {
+      try {
+        const extractedFacts = this.convertToExtractedFacts(fact, key);
+        await this.knowledgeGraph.storeFacts(extractedFacts);
+      } catch (error) {
+        console.warn("Failed to store fact in knowledge graph:", error);
+      }
+    }
+  }
+
+  // Check if a fact is structured enough for knowledge graph
+  private isStructuredFact(fact: any): boolean {
+    return (
+      fact &&
+      (fact.statement || fact.entities || fact.relationships) &&
+      typeof fact === "object"
+    );
+  }
+
+  // Convert a fact to ExtractedFact format
+  private convertToExtractedFacts(fact: any, key: string): ExtractedFact[] {
+    if (fact.statement && fact.entities && fact.relationships) {
+      // Already in ExtractedFact format
+      return [fact as ExtractedFact];
+    }
+
+    // Convert simple fact to ExtractedFact format
+    return [{
+      type: "general_fact",
+      statement: fact.statement || JSON.stringify(fact),
+      entities: fact.entities || [],
+      relationships: fact.relationships || [],
+      confidence: fact.confidence || 0.7,
+      context: `Stored as semantic memory: ${key}`,
+    }];
   }
 
   // Cleanup

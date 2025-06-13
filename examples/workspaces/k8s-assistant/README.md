@@ -47,14 +47,14 @@ The workspace will start on `http://localhost:3001`
 ### 3. Test the Setup
 
 ```bash
-# Run quick start script to verify setup
-./scripts/quick-start.sh
-
-# Deploy a test application
+# Deploy a test application (nginx)
 ./scripts/deploy-nginx.sh
 
-# Check deployment status
-./scripts/troubleshoot.sh deployments
+# Check for failed pods
+./scripts/list-failed-pods.sh
+
+# Run troubleshooting
+./scripts/troubleshoot.sh
 ```
 
 ### 4. Monitor Progress
@@ -89,6 +89,21 @@ The `workspace.yml` file defines:
 - **Memory Settings** - Operation history and patterns
 - **Server Settings** - Port, logging, etc.
 
+### Available Signals
+
+1. **`http-k8s`** - Unified HTTP endpoint for all Kubernetes operations
+   - Path: `/signal/http-k8s` 
+   - Method: POST
+   - Agents: k8s-main-agent → local-assistant (sequential)
+
+2. **`cli-k8s`** - CLI interface for direct operations
+   - Command: `k8s`
+   - Agents: k8s-main-agent only
+
+3. **`k8s-events`** - Kubernetes event monitoring (streaming)
+   - Source: k8s-monitor-agent
+   - Agents: k8s-main-agent → local-assistant (sequential)
+
 ## How It Works
 
 1. **Signal Triggered** - User sends request via HTTP or CLI
@@ -100,53 +115,54 @@ The `workspace.yml` file defines:
 
 ## Available Endpoints
 
-### Deployment Management
+### K8s Operations (Direct API endpoint)
 
 ```bash
 # Create deployment
-curl -X POST http://localhost:3001/deploy \
+curl -X POST http://localhost:3001/k8s \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Deploy nginx with 3 replicas"
   }'
 
 # Scale deployment
-curl -X POST http://localhost:3001/scale \
+curl -X POST http://localhost:3001/k8s \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Scale nginx to 5 replicas"
   }'
 ```
 
-### Cluster Operations
-
-```bash
-# Health check
-curl http://localhost:3001/health
-
 # List resources
-curl -X POST http://localhost:3001/list \
+curl -X POST http://localhost:3001/k8s \
   -H "Content-Type: application/json" \
   -d '{
     "message": "List all pods in default namespace"
   }'
 
 # Troubleshoot issues
-curl -X POST http://localhost:3001/troubleshoot \
+curl -X POST http://localhost:3001/k8s \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Check why my deployment is not ready"
   }'
 ```
 
+### Health Check
+
+```bash
+# Check workspace health
+curl http://localhost:3001/health
+```
+
 ## CLI Usage
 
 ```bash
-# Direct k8s operations
-atlas signal trigger cli-k8s --message "Create a namespace called production"
+# Direct k8s operations via HTTP signal
+deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ../../../src/cli.tsx signal trigger http-k8s --port 3001 --data '{"message": "Create a namespace called production"}'
 
-# Deployment management
-atlas signal trigger cli-deploy --message "Deploy Redis with persistent storage"
+# Alternative using CLI signal
+deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ../../../src/cli.tsx signal trigger cli-k8s --port 3001 --data '{"message": "Deploy Redis with persistent storage"}'
 ```
 
 ## Customization

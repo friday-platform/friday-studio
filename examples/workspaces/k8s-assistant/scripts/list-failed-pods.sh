@@ -13,7 +13,7 @@ OTEL_DENO=true \
 OTEL_SERVICE_NAME=atlas \
 OTEL_SERVICE_VERSION=1.0.0 \
 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 \
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file ../../../src/cli.tsx signal trigger http-list --port 3001 --data '{
+deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file ../../../mod.ts signal trigger http-k8s --port 3001 --data '{
   "message": "List all pods that are in Failed, CrashLoopBackOff, or Error state. Show their names, namespaces, status, and recent events or logs to help with troubleshooting."
 }'
 
