@@ -813,7 +813,7 @@ Provide a structured analysis.`;
       // Evaluate job conditions to find the first matching job
       this.logger.debug(`[DEBUG] Evaluating job conditions`, {
         jobCount: signalConfig.jobs.length,
-        jobs: signalConfig.jobs.map((j) => ({ name: j.name, hasCondition: !!j.condition })),
+        jobs: signalConfig.jobs.map((j: any) => ({ name: j.name, hasCondition: !!j.condition })),
       });
 
       for (const [index, jobMapping] of signalConfig.jobs.entries()) {
@@ -846,7 +846,7 @@ Provide a structured analysis.`;
                 name: jobSpec.name,
                 strategy: jobSpec.execution?.strategy,
                 agentCount: jobSpec.execution?.agents?.length || 0,
-                agents: jobSpec.execution?.agents?.map((a) => typeof a === "string" ? a : a.id) ||
+                agents: jobSpec.execution?.agents?.map((a: any) => typeof a === "string" ? a : a.id) ||
                   [],
               },
             });

@@ -182,6 +182,62 @@ export class WorkspaceServer {
         config: workspace.toConfig(),
       });
     });
+
+    // Register dynamic HTTP signal routes
+    this.setupDynamicSignalRoutes();
+  }
+
+  private setupDynamicSignalRoutes() {
+    const workspace = (this.runtime as any).workspace;
+    if (!workspace || !workspace.signals) return;
+
+    // Register custom HTTP paths for signals with path configuration
+    Object.entries(workspace.signals).forEach(([signalId, signal]: [string, any]) => {
+      if (signal.provider === "http" && signal.path) {
+        const method = (signal.method || "POST").toLowerCase();
+        const path = signal.path;
+
+        logger.info(
+          `Registering HTTP signal route: ${method.toUpperCase()} ${path} -> ${signalId}`,
+        );
+
+        // Register the dynamic route
+        (this.app as any)[method](path, async (c: any) => {
+          const payload = method === "get" ? c.req.query() : await c.req.json();
+
+          // Create root span for HTTP request
+          return await AtlasTelemetry.withServerSpan(
+            `${method.toUpperCase()} ${path}`,
+            async (span) => {
+              AtlasTelemetry.addSignalAttributes(span, signalId, signal.provider || "http");
+
+              try {
+                // Process signal through runtime
+                const session = await this.runtime.processSignal(signal, payload);
+
+                return c.json({
+                  message: "Signal processed",
+                  sessionId: session.id,
+                  status: session.status,
+                });
+              } catch (error) {
+                return c.json({
+                  error: `Failed to process signal: ${
+                    error instanceof Error ? error.message : String(error)
+                  }`,
+                }, 500);
+              }
+            },
+            {
+              "http.method": method.toUpperCase(),
+              "http.url": path,
+              "signal.id": signalId,
+              "payload.size": JSON.stringify(payload).length,
+            },
+          );
+        });
+      }
+    });
   }
 
   private server: any = null;

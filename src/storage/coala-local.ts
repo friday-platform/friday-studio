@@ -70,11 +70,26 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
     try {
       const content = await Deno.readTextFile(filePath);
+
+      // Handle empty or whitespace-only files
+      if (!content.trim()) {
+        return {};
+      }
+
       return JSON.parse(content);
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
         return {};
       }
+
+      // Handle JSON parsing errors gracefully
+      if (error instanceof SyntaxError) {
+        console.warn(
+          `Failed to parse JSON in ${filePath}: ${error.message}. Returning empty object.`,
+        );
+        return {};
+      }
+
       throw error;
     }
   }
