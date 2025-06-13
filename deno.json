@@ -16,7 +16,8 @@
     "test": "OTEL_DENO=true deno test --allow-all --env-file",
     "fmt": "deno fmt",
     "lint": "deno lint",
-    "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts"
+    "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
+    "example-playwright-mcp-server": "deno run --allow-all --unstable-broadcast-channel --unstable-worker-options examples/workspaces/playwright-mcp/server.ts"
   },
   "imports": {
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
@@ -39,6 +40,11 @@
     "zod": "npm:zod@^3.25.62",
     "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",
     "hono": "jsr:@hono/hono@^4.6.9",
+    "hono/cors": "jsr:@hono/hono@^4.6.9/cors",
+    "hono/logger": "jsr:@hono/hono@^4.6.9/logger",
+    "hono/pretty-json": "jsr:@hono/hono@^4.6.9/pretty-json",
+    "hono/http-exception": "jsr:@hono/hono@^4.6.9/http-exception",
+    "hono/streaming": "jsr:@hono/hono@^4.6.9/streaming",
     "eventsource-parser": "npm:eventsource-parser@^3.0.1"
   },
   "fmt": {
