@@ -12,12 +12,14 @@ const cli = meow(
 
   Commands
     work [init|serve|status|list]             Workspace management (defaults to serve)
+    workspaces                                List all available workspaces
+    define --workspace <name>                 Show workspace definition and agents
     sig [<name>|list|history]                 Signal operations (defaults to trigger if name provided)
     sesh [list|get|cancel]                    Session management (defaults to list)
     agent [list|describe|test]                Agent management (defaults to list)
     logs <session-id>                         Stream session logs
     ps                                        List active sessions
-    tui                                       Terminal User Interface
+    tui [--workspace <name>]                  Terminal User Interface
     help                                      Show this help
     
   Full Commands
@@ -41,6 +43,7 @@ const cli = meow(
   Examples
     $ atlas workspace init my-project
     $ atlas workspace serve
+    $ atlas define --workspace k8s-assistant
     $ atlas signal trigger telephone-message --data '{"message": "Hello"}'
     $ atlas ps
     $ atlas logs sess_abc123
@@ -96,7 +99,7 @@ const naturalShorthands: Record<string, string> = {
   // Workspace variants
   "work": "workspace",
   "workspace": "workspace",
-  "workspaces": "workspace",
+  "workspaces": "workspaces",
 
   // Signal variants
   "sig": "signal",

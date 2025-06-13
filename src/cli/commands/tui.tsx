@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { FullScreenBox } from "fullscreen-ink";
-import { Alert, Badge } from "@inkjs/ui";
+import { Badge } from "@inkjs/ui";
 import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import { Tab, TabGroup, useTabNavigation } from "./cli/components/tabs.tsx";
+import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
+import { type AvailableWorkspace, SplashScreen } from "../components/splash-screen.tsx";
 
 // Parse command arguments while preserving JSON structure
 function parseCommandArgs(command: string): string[] {
@@ -73,14 +74,25 @@ const INITIAL_MESSAGES: LogEntry[] = [
   },
 ];
 
-const TUIDemo: React.FC = () => {
+interface TUICommandProps {
+  flags?: Record<string, unknown> & {
+    workspace?: string;
+  };
+}
+
+const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const [input, setInput] = useState("");
   const [serverLogs, setServerLogs] = useState<LogEntry[]>(INITIAL_MESSAGES);
   const [serverStatus, setServerStatus] = useState<ServerStatus>({
     running: false,
   });
-  const { activeTab, nextTab, previousTab, goToTab } = useTabNavigation({
-    tabCount: 2, // Only 2 content tabs: 0=Conversation, 1=Server
+  const {
+    activeTab,
+    nextTab: _nextTab,
+    previousTab: _previousTab,
+    goToTab,
+  } = useTabNavigation({
+    tabCount: 2,
     initialTab: 0,
   });
   const [inputFocused, setInputFocused] = useState(true);
@@ -89,11 +101,17 @@ const TUIDemo: React.FC = () => {
   const [showPopover, setShowPopover] = useState(false);
   const [popoverContent, setPopoverContent] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
-  const [debugMode, setDebugMode] = useState(false);
+  const [debugMode, _setDebugMode] = useState(false);
+  const [showSplashScreen, setShowSplashScreen] = useState(false);
+  const [availableWorkspaces, setAvailableWorkspaces] = useState<
+    AvailableWorkspace[]
+  >([]);
+  const [workspacesLoading, setWorkspacesLoading] = useState(false);
+  const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const serverProcessRef = useRef<Deno.ChildProcess | null>(null);
-  const inputBufferRef = useRef("");
+  const _inputBufferRef = useRef("");
   const inputTimeoutRef = useRef<number | null>(null);
   const pasteDetectionRef = useRef<number>(0);
   const keySequenceRef = useRef<string>("");
@@ -104,10 +122,14 @@ const TUIDemo: React.FC = () => {
 
   // Initialize server on startup
   useEffect(() => {
-    startServer();
+    initializeWorkspace();
     return () => {
-      if (serverProcessRef.current) {
-        serverProcessRef.current.kill();
+      if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
+        try {
+          serverProcessRef.current.kill();
+        } catch (error) {
+          // Process already terminated, ignore error
+        }
       }
       // Clean up input timeout
       if (inputTimeoutRef.current) {
@@ -123,21 +145,18 @@ const TUIDemo: React.FC = () => {
   const addLog = (
     type: LogEntry["type"],
     content: string,
-    isPasted = false
+    isPasted = false,
   ) => {
     const timestamp = new Date().toTimeString().slice(0, 8);
     // Use reasonable truncation for all logs to prevent wrapping issues
     const maxDisplayLength = type === "server" ? 100 : 120;
     const truncated = content.length > maxDisplayLength;
-    const displayContent = truncated
-      ? content.slice(0, maxDisplayLength) + "..."
-      : content;
+    const displayContent = truncated ? content.slice(0, maxDisplayLength) + "..." : content;
 
     setServerLogs((prev: LogEntry[]) => {
       // For conversation logs (user, command, error), keep all history
       // For server logs, limit to last 150 to prevent memory issues
-      const isConversationLog =
-        type === "user" || type === "command" || type === "error";
+      const isConversationLog = type === "user" || type === "command" || type === "error";
 
       if (isConversationLog) {
         // Keep all conversation logs - no limit
@@ -155,10 +174,10 @@ const TUIDemo: React.FC = () => {
         // For server logs, apply the 150 limit
         const nonInitialLogs = prev.slice(INITIAL_MESSAGES.length);
         const serverLogs = nonInitialLogs.filter(
-          (log) => log.type === "server"
+          (log) => log.type === "server",
         );
         const conversationLogs = nonInitialLogs.filter(
-          (log) => log.type !== "server"
+          (log) => log.type !== "server",
         );
         const recentServerLogs = serverLogs.slice(-150); // Keep last 150 server logs
 
@@ -181,20 +200,186 @@ const TUIDemo: React.FC = () => {
   const [selectedLogIndex, setSelectedLogIndex] = useState(0); // Start with first log selected
   const [selectedServerLogIndex, setSelectedServerLogIndex] = useState(-1); // Will be set to last log
 
+  // Function to scan for available workspaces
+  const scanAvailableWorkspaces = async (): Promise<AvailableWorkspace[]> => {
+    try {
+      const gitRoot = new Deno.Command("git", {
+        args: ["rev-parse", "--show-toplevel"],
+      }).outputSync();
+
+      if (!gitRoot.success) {
+        return [];
+      }
+
+      const rootPath = new TextDecoder().decode(gitRoot.stdout).trim();
+      const workspacesPath = `${rootPath}/examples/workspaces`;
+
+      // Check if workspaces directory exists
+      if (!(await exists(workspacesPath))) {
+        return [];
+      }
+
+      const workspaces: AvailableWorkspace[] = [];
+
+      // Read workspaces directory
+      for await (const dirEntry of Deno.readDir(workspacesPath)) {
+        if (dirEntry.isDirectory) {
+          const workspacePath = `${workspacesPath}/${dirEntry.name}`;
+          const workspaceYmlPath = `${workspacePath}/workspace.yml`;
+
+          if (await exists(workspaceYmlPath)) {
+            try {
+              const workspaceYaml = await Deno.readTextFile(workspaceYmlPath);
+              const config = yaml.parse(workspaceYaml) as {
+                workspace?: { name?: string; description?: string };
+              };
+
+              if (config.workspace?.name) {
+                workspaces.push({
+                  name: config.workspace.name,
+                  path: workspacePath,
+                  description: config.workspace.description,
+                });
+              }
+            } catch (error) {
+              // Skip workspaces with invalid YAML
+              console.warn(
+                `Failed to parse workspace.yml in ${dirEntry.name}:`,
+                error,
+              );
+            }
+          }
+        }
+      }
+
+      return workspaces.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (error) {
+      console.warn("Failed to scan available workspaces:", error);
+      return [];
+    }
+  };
+
+  // Function to handle workspace selection and loading
+  const loadSelectedWorkspace = async (workspace: AvailableWorkspace) => {
+    try {
+      addLog("command", `Loading workspace: ${workspace.name}`);
+      addLog("command", `Changing directory to: ${workspace.path}`);
+
+      // Change to the workspace directory
+      Deno.chdir(workspace.path);
+
+      // Verify workspace.yml exists in the target directory
+      if (await exists("workspace.yml")) {
+        setShowSplashScreen(false);
+        addLog("command", `Workspace ${workspace.name} loaded successfully`);
+        // Start server in the new workspace directory
+        await startServer();
+      } else {
+        addLog("error", `No workspace.yml found in ${workspace.path}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to load workspace: ${error}`);
+    }
+  };
+
+  // Initialize workspace based on flags or current directory
+  const initializeWorkspace = async () => {
+    const workspaceFlag = (flags as any)?.workspace as string | undefined;
+    
+    if (workspaceFlag) {
+      // Load specific workspace from examples directory
+      await loadWorkspaceFromFlag(workspaceFlag);
+    } else {
+      // Use existing logic for current directory
+      await startServer();
+    }
+  };
+
+  // Load workspace from --workspace flag
+  const loadWorkspaceFromFlag = async (workspaceName: string) => {
+    try {
+      addLog("command", `Loading workspace from flag: ${workspaceName}`);
+      
+      // Find git repository root
+      const gitRoot = new Deno.Command("git", {
+        args: ["rev-parse", "--show-toplevel"],
+      }).outputSync();
+
+      if (!gitRoot.success) {
+        throw new Error("Not in a git repository");
+      }
+
+      const rootPath = new TextDecoder().decode(gitRoot.stdout).trim();
+      const workspacePath = `${rootPath}/examples/workspaces/${workspaceName}`;
+      const workspaceYmlPath = `${workspacePath}/workspace.yml`;
+
+      // Check if workspace exists
+      if (!(await exists(workspaceYmlPath))) {
+        throw new Error(`Workspace '${workspaceName}' not found in examples/workspaces/`);
+      }
+
+      // Change to workspace directory and load
+      addLog("command", `Changing directory to: ${workspacePath}`);
+      Deno.chdir(workspacePath);
+      
+      // Verify workspace.yml exists in the target directory
+      if (await exists("workspace.yml")) {
+        addLog("command", `Workspace ${workspaceName} loaded successfully`);
+        await startServer();
+      } else {
+        throw new Error(`No workspace.yml found in ${workspacePath}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to load workspace '${workspaceName}': ${error}`);
+      // Fall back to normal startup behavior
+      await startServer();
+    }
+  };
+
   const startServer = async () => {
     try {
       // Check if workspace.yml exists
       if (!(await exists("workspace.yml"))) {
+        setShowSplashScreen(true);
+        setInputFocused(false); // Ensure input is not focused in splash screen
         addLog("error", "No workspace.yml found in current directory");
+        addLog("command", "Scanning for available workspaces...");
+
+        // Scan for available workspaces
+        setWorkspacesLoading(true);
+        const workspaces = await scanAvailableWorkspaces();
+        console.log("Setting workspaces in state:", workspaces);
+        setAvailableWorkspaces(workspaces);
+        setSelectedWorkspaceIndex(0); // Reset selection when workspaces change
+        setWorkspacesLoading(false);
+
+        if (workspaces.length > 0) {
+          addLog(
+            "command",
+            `Found ${workspaces.length} available workspace(s)`,
+          );
+          workspaces.forEach((ws) => {
+            addLog("command", `- ${ws.name}`);
+          });
+        } else {
+          addLog("command", "No example workspaces found");
+        }
+
+        addLog(
+          "command",
+          "Showing splash screen - create a workspace to continue",
+        );
         return;
       }
 
       const workspaceYaml = await Deno.readTextFile("workspace.yml");
-      const config = yaml.parse(workspaceYaml) as any;
+      const config = yaml.parse(workspaceYaml) as {
+        workspace?: { name?: string };
+      };
 
       addLog(
         "server",
-        `Starting ${config.workspace?.name || "workspace"} server...`
+        `Starting ${config.workspace?.name || "workspace"} server...`,
       );
 
       // Start server process
@@ -228,8 +413,7 @@ const TUIDemo: React.FC = () => {
           OTEL_DENO: "true",
           OTEL_SERVICE_NAME: "atlas-tui",
           OTEL_SERVICE_VERSION: "1.0.0",
-          OTEL_RESOURCE_ATTRIBUTES:
-            "service.name=atlas-tui,service.version=1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui,service.version=1.0.0",
         },
       }).spawn();
 
@@ -238,7 +422,7 @@ const TUIDemo: React.FC = () => {
       // Read server output
       const readOutput = async (
         stream: ReadableStream<Uint8Array>,
-        type: "server" | "error"
+        type: "server" | "error",
       ) => {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
@@ -253,13 +437,17 @@ const TUIDemo: React.FC = () => {
 
             for (const line of lines) {
               // More aggressive ANSI escape sequence cleaning
-              let cleanLine = line
+              const cleanLine = line
                 // Remove all ANSI escape sequences
+                // deno-lint-ignore no-control-regex
                 .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
                 // Remove cursor movement sequences
+                // deno-lint-ignore no-control-regex
                 .replace(/\x1b\[[0-9]*[ABCDEFGJKST]/g, "")
                 // Remove other control sequences
+                // deno-lint-ignore no-control-regex
                 .replace(/\x1b\([AB]/g, "")
+                // deno-lint-ignore no-control-regex
                 .replace(/\x1b[=>]/g, "")
                 // Remove carriage returns and extra whitespace
                 .replace(/\r/g, "")
@@ -276,8 +464,7 @@ const TUIDemo: React.FC = () => {
                   cleanLine.includes("Workspace server running") ||
                   cleanLine.includes("Port:")
                 ) {
-                  const portMatch =
-                    cleanLine.match(/port (\d+)/i) || cleanLine.match(/:(\d+)/);
+                  const portMatch = cleanLine.match(/port (\d+)/i) || cleanLine.match(/:(\d+)/);
                   setServerStatus({
                     running: true,
                     port: portMatch ? parseInt(portMatch[1]) : 8080,
@@ -306,10 +493,33 @@ const TUIDemo: React.FC = () => {
   const executeCommand = async (commandText: string, isPasted = false) => {
     addLog("user", commandText, isPasted);
 
-    // Always switch back to Conversation tab when command is executed
-    goToTab(0);
+    // Always switch back to Conversation tab when command is executed (if not in splash screen)
+    if (!showSplashScreen) {
+      goToTab(0);
+    }
 
     try {
+      // Handle special splash screen commands
+      if (showSplashScreen) {
+        if (
+          commandText.trim() === "reload" ||
+          commandText.trim() === "/reload"
+        ) {
+          addLog("command", "Checking for workspace.yml...");
+          if (await exists("workspace.yml")) {
+            setShowSplashScreen(false);
+            addLog("command", "Workspace found! Reloading TUI...");
+            await startServer();
+          } else {
+            addLog(
+              "error",
+              "No workspace.yml found. Use 'atlas init' to create one.",
+            );
+          }
+          return;
+        }
+      }
+
       // Handle help command
       if (commandText.trim() === "help" || commandText.trim() === "/help") {
         showHelpCommands();
@@ -321,11 +531,25 @@ const TUIDemo: React.FC = () => {
         const command = commandText.slice(1); // Remove the '/'
         const args = parseCommandArgs(command);
 
+        // Special handling for init command in splash screen
+        if (showSplashScreen && args[0] === "init") {
+          await executeCliCommand("init", args.slice(1));
+          // After init, check if workspace was created
+          setTimeout(async () => {
+            if (await exists("workspace.yml")) {
+              addLog("command", "Workspace created! Reloading TUI...");
+              setShowSplashScreen(false);
+              await startServer();
+            }
+          }, 1000);
+          return;
+        }
+
         // Prevent workspace serve since TUI already has server running
         if (args[0] === "workspace" && args[1] === "serve") {
           addLog(
             "error",
-            "Cannot run /workspace serve - server is already running in TUI"
+            "Cannot run /workspace serve - server is already running in TUI",
           );
           return;
         }
@@ -335,10 +559,17 @@ const TUIDemo: React.FC = () => {
       }
 
       // Non-slash commands are not supported
-      addLog(
-        "error",
-        'Commands must start with / (e.g., /workspace serve). Type "help" for available commands.'
-      );
+      if (showSplashScreen) {
+        addLog(
+          "command",
+          'Available commands: help, reload, /init. Type "reload" after creating workspace.yml',
+        );
+      } else {
+        addLog(
+          "error",
+          'Commands must start with / (e.g., /workspace serve). Type "help" for available commands.',
+        );
+      }
     } catch (error) {
       addLog("error", `Command failed: ${error}`);
     }
@@ -375,11 +606,11 @@ const TUIDemo: React.FC = () => {
     });
     addLog(
       "command",
-      "=== Navigation: j/k to select, Enter to copy to prompt ==="
+      "=== Navigation: j/k to select, Enter to copy to prompt ===",
     );
     addLog(
       "command",
-      "=== Performance: Filter server logs by [PERF] or [DEBUG] ==="
+      "=== Performance: Filter server logs by [PERF] or [DEBUG] ===",
     );
   };
 
@@ -405,16 +636,14 @@ const TUIDemo: React.FC = () => {
 
             // Send HTTP request to the running server
             const response = await fetch(
-              `http://localhost:${
-                serverStatus.port || 8080
-              }/signals/${signalName}`,
+              `http://localhost:${serverStatus.port || 8080}/signals/${signalName}`,
               {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: jsonData,
-              }
+              },
             );
 
             if (response.ok) {
@@ -448,7 +677,7 @@ const TUIDemo: React.FC = () => {
 
       addLog(
         "command",
-        `Running: deno run ... ${cliPath} ${command} ${args.join(" ")}`
+        `Running: deno run ... ${cliPath} ${command} ${args.join(" ")}`,
       );
 
       // Use spawn with timeout instead of outputSync
@@ -475,8 +704,7 @@ const TUIDemo: React.FC = () => {
           OTEL_DENO: "true",
           OTEL_SERVICE_NAME: "atlas-tui-cli",
           OTEL_SERVICE_VERSION: "1.0.0",
-          OTEL_RESOURCE_ATTRIBUTES:
-            "service.name=atlas-tui-cli,service.version=1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui-cli,service.version=1.0.0",
         },
       }).spawn();
 
@@ -490,6 +718,7 @@ const TUIDemo: React.FC = () => {
         if (output) {
           output.split("\n").forEach((line) => {
             const cleanLine = line
+              // deno-lint-ignore no-control-regex
               .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
               .replace(/\[2K\[1A\[2K\[G/g, "")
               .trim();
@@ -611,19 +840,21 @@ const TUIDemo: React.FC = () => {
         ? "Escape"
         : "";
       const keyDesc = special || `${modStr}${inputChar}`;
-      const currentPanelName = inputFocused
-        ? "input"
-        : activeTab === 0
-        ? "logs"
-        : "commands";
+      const currentPanelName = inputFocused ? "input" : activeTab === 0 ? "logs" : "commands";
       addLog("command", `Debug: Key=${keyDesc} Panel=${currentPanelName}`);
     }
 
     // Handle Alt + arrow keys for tab switching (Alt+b = left, Alt+f = right)
-    if (key.meta && (inputChar === 'b' || inputChar === 'f' || key.leftArrow || key.rightArrow)) {
-      const isLeft = inputChar === 'b' || key.leftArrow;
-      const isRight = inputChar === 'f' || key.rightArrow;
-      
+    if (
+      key.meta &&
+      (inputChar === "b" ||
+        inputChar === "f" ||
+        key.leftArrow ||
+        key.rightArrow)
+    ) {
+      const isLeft = inputChar === "b" || key.leftArrow;
+      const isRight = inputChar === "f" || key.rightArrow;
+
       if (isLeft) {
         // Go to previous tab
         const newTab = activeTab > 0 ? activeTab - 1 : 1; // Wrap to last tab
@@ -637,7 +868,15 @@ const TUIDemo: React.FC = () => {
     }
 
     // Debug: Log key combinations (excluding arrow keys and numbers which are handled above)
-    if (key.meta && inputChar && !key.leftArrow && !key.rightArrow && inputChar !== 'b' && inputChar !== 'f' && !inputChar.match(/[1-9]/)) {
+    if (
+      key.meta &&
+      inputChar &&
+      !key.leftArrow &&
+      !key.rightArrow &&
+      inputChar !== "b" &&
+      inputChar !== "f" &&
+      !inputChar.match(/[1-9]/)
+    ) {
       addLog("command", `Debug: Alt+${inputChar}`);
     }
     if (key.ctrl && inputChar) {
@@ -709,8 +948,12 @@ const TUIDemo: React.FC = () => {
     }
 
     if (key.ctrl && inputChar === "c") {
-      if (serverProcessRef.current) {
-        serverProcessRef.current.kill();
+      if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
+        try {
+          serverProcessRef.current.kill();
+        } catch (error) {
+          // Process already terminated, ignore error
+        }
       }
       exit();
     } else if (key.ctrl && inputChar === "v") {
@@ -732,6 +975,12 @@ const TUIDemo: React.FC = () => {
       key.upArrow ||
       (inputChar === "k" && !inputFocused && !key.ctrl && !key.meta)
     ) {
+      // Handle workspace navigation in splash screen
+      if (showSplashScreen && availableWorkspaces.length > 0) {
+        setSelectedWorkspaceIndex((prev: number) => Math.max(0, prev - 1));
+        return;
+      }
+
       // Navigate up in logs (older entries) and blur input to enable log interaction
       setInputFocused(false);
       if (activeTab === 0) {
@@ -757,6 +1006,14 @@ const TUIDemo: React.FC = () => {
       key.downArrow ||
       (inputChar === "j" && !inputFocused && !key.ctrl && !key.meta)
     ) {
+      // Handle workspace navigation in splash screen
+      if (showSplashScreen && availableWorkspaces.length > 0) {
+        setSelectedWorkspaceIndex((prev: number) =>
+          Math.min(availableWorkspaces.length - 1, prev + 1)
+        );
+        return;
+      }
+
       // Navigate down in logs (newer entries) and blur input to enable log interaction
       setInputFocused(false);
       if (activeTab === 0) {
@@ -786,6 +1043,15 @@ const TUIDemo: React.FC = () => {
       setInputFocused(true);
       return;
     } else if (key.return) {
+      // Handle workspace selection in splash screen
+      if (showSplashScreen && availableWorkspaces.length > 0) {
+        const selectedWorkspace = availableWorkspaces[selectedWorkspaceIndex];
+        if (selectedWorkspace) {
+          loadSelectedWorkspace(selectedWorkspace);
+        }
+        return;
+      }
+
       if (inputFocused) {
         // Execute command
         if (input.trim()) {
@@ -864,7 +1130,7 @@ const TUIDemo: React.FC = () => {
 
               addLog(
                 "command",
-                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`
+                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`,
               );
             } catch (error) {
               addLog("error", `Failed to copy to clipboard: ${error}`);
@@ -889,7 +1155,7 @@ const TUIDemo: React.FC = () => {
 
               addLog(
                 "command",
-                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`
+                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`,
               );
             } catch (error) {
               addLog("error", `Failed to copy to clipboard: ${error}`);
@@ -898,7 +1164,7 @@ const TUIDemo: React.FC = () => {
           copyToClipboard();
         }
       }
-    } else if (inputChar === "/" && !inputFocused) {
+    } else if (inputChar === "/" && !inputFocused && !showSplashScreen) {
       // Typing '/' should focus the command prompt and add the '/'
       setInputFocused(true);
       setInput("/");
@@ -908,6 +1174,7 @@ const TUIDemo: React.FC = () => {
       !key.ctrl &&
       !key.meta &&
       !key.escape &&
+      !showSplashScreen && // Don't auto-focus input in splash screen
       // Allow input from any tab - automatically focus input when typing
       inputChar.match(/[a-zA-Z0-9\/\-_\s.,!@#$%^&*()\=+\[\]{}|;:'",<>?`~]/)
     ) {
@@ -933,11 +1200,10 @@ const TUIDemo: React.FC = () => {
 
   // Separate conversation logs from server logs
   const conversationLogs = serverLogs.filter(
-    (log: LogEntry) =>
-      log.type === "user" || log.type === "command" || log.type === "error"
+    (log: LogEntry) => log.type === "user" || log.type === "command" || log.type === "error",
   );
   const serverOnlyLogs = serverLogs.filter(
-    (log: LogEntry) => log.type === "server"
+    (log: LogEntry) => log.type === "server",
   );
 
   // Auto-scroll conversation to bottom when new logs are added (only if auto-scroll is enabled)
@@ -971,30 +1237,28 @@ const TUIDemo: React.FC = () => {
         .slice(conversationScroll, conversationScroll + availableHeight)
         .map((log: LogEntry, i: number) => {
           const globalLogIndex = i + conversationScroll;
-          const displayText =
-            log.isPasted && log.content.length > 30
-              ? `[Pasted Text #${globalLogIndex + 1}] ${log.content.slice(
-                  0,
-                  25
-                )}...`
-              : log.content;
+          const displayText = log.isPasted && log.content.length > 30
+            ? `[Pasted Text #${globalLogIndex + 1}] ${
+              log.content.slice(
+                0,
+                25,
+              )
+            }...`
+            : log.content;
 
           // Check if this log is selected and we're in the logs panel
-          const isSelected =
-            activeTab === 0 && selectedLogIndex === globalLogIndex;
+          const isSelected = activeTab === 0 && selectedLogIndex === globalLogIndex;
 
           return (
             <Box key={globalLogIndex} flexDirection="column">
               <Text
-                color={
-                  isSelected
-                    ? "black"
-                    : log.type === "user"
-                    ? "cyan"
-                    : log.type === "command"
-                    ? "magenta"
-                    : "red"
-                }
+                color={isSelected
+                  ? "black"
+                  : log.type === "user"
+                  ? "cyan"
+                  : log.type === "command"
+                  ? "magenta"
+                  : "red"}
                 backgroundColor={isSelected ? "white" : undefined}
               >
                 {isSelected ? "▶ " : ""}
@@ -1005,9 +1269,7 @@ const TUIDemo: React.FC = () => {
                     backgroundColor={isSelected ? "white" : undefined}
                     dimColor={!isSelected}
                   >
-                    {isSelected
-                      ? " [ENTER to expand]"
-                      : " [j/k to select, Enter to expand]"}
+                    {isSelected ? " [ENTER to expand]" : " [j/k to select, Enter to expand]"}
                   </Text>
                 )}
               </Text>
@@ -1037,8 +1299,7 @@ const TUIDemo: React.FC = () => {
         .slice(serverScroll, serverScroll + availableHeight)
         .map((log: LogEntry, i: number) => {
           const globalLogIndex = i + serverScroll;
-          const isSelected =
-            activeTab === 1 && selectedServerLogIndex === globalLogIndex;
+          const isSelected = activeTab === 1 && selectedServerLogIndex === globalLogIndex;
 
           // Determine log color based on content
           const isPerformanceLog = log.content.includes("[PERF]");
@@ -1073,9 +1334,7 @@ const TUIDemo: React.FC = () => {
                     backgroundColor={isSelected ? "white" : undefined}
                     dimColor={!isSelected}
                   >
-                    {isSelected
-                      ? " [ENTER to expand]"
-                      : " [j/k to select, Enter to expand]"}
+                    {isSelected ? " [ENTER to expand]" : " [j/k to select, Enter to expand]"}
                   </Text>
                 )}
               </Text>
@@ -1092,22 +1351,22 @@ const TUIDemo: React.FC = () => {
     </Box>
   );
 
+  const [cursorVisible, setCursorVisible] = useState(true);
+
+  useEffect(() => {
+    if (inputFocused) {
+      const interval = setInterval(() => {
+        setCursorVisible((prev: boolean) => !prev);
+      }, 500); // Blink every 500ms when focused
+
+      return () => clearInterval(interval);
+    } else {
+      // Static cursor when not focused
+      setCursorVisible(true);
+    }
+  }, [inputFocused]);
+
   const renderInputPanel = () => {
-    const [cursorVisible, setCursorVisible] = useState(true);
-
-    useEffect(() => {
-      if (inputFocused) {
-        const interval = setInterval(() => {
-          setCursorVisible((prev) => !prev);
-        }, 500); // Blink every 500ms when focused
-
-        return () => clearInterval(interval);
-      } else {
-        // Static cursor when not focused
-        setCursorVisible(true);
-      }
-    }, [inputFocused]);
-
     const getCursor = () => {
       if (inputFocused) {
         return cursorVisible ? "█" : " ";
@@ -1122,9 +1381,7 @@ const TUIDemo: React.FC = () => {
         <Box borderStyle="round" borderColor="green" paddingX={1} width="100%">
           <Text>
             {">"} {input}
-            <Text color={inputFocused ? "white" : "gray"}>
-              {getCursor()}
-            </Text>
+            <Text color={inputFocused ? "white" : "gray"}>{getCursor()}</Text>
           </Text>
         </Box>
       </Box>
@@ -1133,22 +1390,39 @@ const TUIDemo: React.FC = () => {
 
   return (
     <FullScreenBox flexDirection="column">
-      <Box flexGrow={1}>
-        <TabGroup
-          activeTab={activeTab}
-          onTabChange={(index: number) => goToTab(index)}
-        >
-          <Tab label="Conversation" icon="◈">
-            {renderConversationTab()}
-          </Tab>
-          <Tab label="Server Output" icon="▦">
-            {renderServerTab()}
-          </Tab>
-        </TabGroup>
-      </Box>
+      {showSplashScreen
+        ? (
+          // Splash screen mode
+          <Box flexGrow={1}>
+            <SplashScreen
+              availableWorkspaces={availableWorkspaces}
+              workspacesLoading={workspacesLoading}
+              selectedWorkspaceIndex={selectedWorkspaceIndex}
+              onWorkspaceSelect={loadSelectedWorkspace}
+            />
+          </Box>
+        )
+        : (
+          // Normal TUI mode
+          <>
+            <Box flexGrow={1}>
+              <TabGroup
+                activeTab={activeTab}
+                onTabChange={(index: number) => goToTab(index)}
+              >
+                <Tab label="Conversation" icon="◈">
+                  {renderConversationTab()}
+                </Tab>
+                <Tab label="Server Output" icon="▦">
+                  {renderServerTab()}
+                </Tab>
+              </TabGroup>
+            </Box>
 
-      {/* Always visible input panel at bottom */}
-      {renderInputPanel()}
+            {/* Always visible input panel at bottom */}
+            {renderInputPanel()}
+          </>
+        )}
 
       {/* Full-screen content preview */}
       {showPopover && (
@@ -1195,29 +1469,31 @@ const TUIDemo: React.FC = () => {
       {/* Status Bar */}
       <Box paddingX={1} borderTop borderColor="gray">
         <Text bold color="yellow">
-          ▣ {serverStatus.workspace || "Atlas"}
+          ▣ {showSplashScreen ? "Atlas (No Workspace)" : serverStatus.workspace || "Atlas"}
         </Text>
-        <Badge color={serverStatus.running ? "green" : "red"}>
-          {serverStatus.running ? "Online" : "Offline"}
-        </Badge>
-        <Text> | Logs: {serverLogs.length} entries</Text>
-        <Text color="magenta"> | ▨ OTEL: ON</Text>
-        <Text color="cyan"> | ◦ Debug: ON</Text>
-        {serverOnlyLogs.filter((log: LogEntry) =>
-          log.content.includes("[PERF]")
-        ).length > 0 && (
-          <Text color="yellow">
-            {" "}| ◆ Perf:{" "}
-            {
-              serverOnlyLogs.filter((log: LogEntry) =>
-                log.content.includes("[PERF]")
-              ).length
-            }
-          </Text>
+        <Badge
+          color={showSplashScreen ? "yellow" : serverStatus.running ? "green" : "red"}
+          children={showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
+        />
+        <Text>| Logs: {serverLogs.length} entries</Text>
+        {!showSplashScreen && (
+          <>
+            <Text color="magenta">| ▨ OTEL: ON</Text>
+            <Text color="cyan">| ◦ Debug: ON</Text>
+            {serverOnlyLogs.filter((log: LogEntry) => log.content.includes("[PERF]")).length > 0 &&
+              (
+                <Text color="yellow">
+                  {" "}
+                  | ◆ Perf:{" "}
+                  {serverOnlyLogs.filter((log: LogEntry) => log.content.includes("[PERF]")).length}
+                </Text>
+              )}
+          </>
         )}
+        {showSplashScreen && <Text color="cyan">| Type "/init" or "reload"</Text>}
       </Box>
     </FullScreenBox>
   );
 };
 
-export default TUIDemo;
+export default TUICommand;

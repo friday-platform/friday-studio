@@ -26,6 +26,14 @@ environment.
    Do this after making changes.
 9. **Code formatting**: Always run `deno fmt` to format all changed files before completing a task
 
+## TUI Development Guidelines
+
+When working with Ink-based TUI components (src/cli/commands/tui.tsx and related files):
+
+1. **Text Component Wrapping**: Always wrap `<Text>` components in a `<Box>` component for proper layout and rendering
+2. **No Unnecessary Emojis**: Do not add emojis to text content unless explicitly requested by the user
+3. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the interface works correctly
+
 ## Code Quality Review Findings (June 2025)
 
 ### ✅ Major Issues RESOLVED (June 2025)
