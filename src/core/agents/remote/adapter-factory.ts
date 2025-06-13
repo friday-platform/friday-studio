@@ -7,7 +7,7 @@ import type { RemoteAgentConfig } from "../../session-supervisor.ts";
 import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./adapters/base-remote-adapter.ts";
 import { logger } from "../../../utils/logger.ts";
 
-export type RemoteProtocol = "acp" | "a2a" | "custom";
+export type RemoteProtocol = "acp" | "a2a" | "custom" | "mcp";
 
 /**
  * Factory class for creating remote agent adapters
@@ -33,6 +33,8 @@ export class RemoteAdapterFactory {
         return this.createA2AAdapter(baseConfig, config);
       case "custom":
         return this.createCustomAdapter(baseConfig, config);
+      case "mcp":
+        return this.createMCPAdapter(baseConfig, config);
       default:
         throw new Error(`Unsupported remote protocol: ${protocol}`);
     }
@@ -122,6 +124,34 @@ export class RemoteAdapterFactory {
   }
 
   /**
+   * Create MCP (Model Context Protocol) adapter
+   */
+  private static async createMCPAdapter(
+    baseConfig: BaseRemoteAdapterConfig,
+    config: RemoteAgentConfig,
+  ): Promise<BaseRemoteAdapter> {
+    try {
+      const { MCPAdapter } = await import("./adapters/mcp-adapter.ts");
+
+      const mcpConfig = {
+        ...baseConfig,
+        timeout_ms: config.mcp?.timeout_ms || 30000,
+        allowed_tools: config.mcp?.allowed_tools,
+        denied_tools: config.mcp?.denied_tools,
+      };
+
+      return new MCPAdapter(mcpConfig);
+    } catch (error) {
+      this.logger.error("Failed to create MCP adapter", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw new Error(
+        `Failed to create MCP adapter: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
    * Build base configuration from remote agent config
    */
   private static buildBaseConfig(config: RemoteAgentConfig): BaseRemoteAdapterConfig {
@@ -171,7 +201,7 @@ export class RemoteAdapterFactory {
       throw new Error("Remote agent protocol is required");
     }
 
-    if (!["acp", "a2a", "custom"].includes(config.protocol)) {
+    if (!["acp", "a2a", "custom", "mcp"].includes(config.protocol)) {
       throw new Error(`Unsupported protocol: ${config.protocol}`);
     }
 
@@ -187,6 +217,10 @@ export class RemoteAdapterFactory {
         break;
       case "custom":
         // Custom protocol validation would go here
+        break;
+      case "mcp":
+        // MCP doesn't require specific fields beyond endpoint
+        // Optional tools filtering can be configured
         break;
     }
 
@@ -230,7 +264,7 @@ export class RemoteAdapterFactory {
    * Get supported protocols
    */
   static getSupportedProtocols(): RemoteProtocol[] {
-    return ["acp", "a2a", "custom"];
+    return ["acp", "a2a", "custom", "mcp"];
   }
 
   /**

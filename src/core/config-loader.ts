@@ -65,6 +65,13 @@ const ACPConfigSchema = z.object({
   health_check_interval: z.number().positive().default(60000),
 });
 
+// MCP-specific configuration schema
+const MCPConfigSchema = z.object({
+  timeout_ms: z.number().positive().default(30000),
+  allowed_tools: z.array(z.string()).optional(),
+  denied_tools: z.array(z.string()).optional(),
+});
+
 // Validation configuration schema
 const ValidationConfigSchema = z.object({
   test_execution: z.boolean().default(true),
@@ -96,7 +103,7 @@ const WorkspaceAgentConfigSchema = z
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
-    protocol: z.enum(["acp", "a2a", "custom"]).optional(),
+    protocol: z.enum(["acp", "a2a", "custom", "mcp"]).optional(),
     endpoint: z.url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
@@ -105,6 +112,7 @@ const WorkspaceAgentConfigSchema = z
     acp: ACPConfigSchema.optional(),
     a2a: z.record(z.string(), z.any()).optional(), // Placeholder for A2A
     custom: z.record(z.string(), z.any()).optional(), // Placeholder for custom
+    mcp: MCPConfigSchema.optional(),
 
     // Schema validation
     schema: z
@@ -163,7 +171,7 @@ const WorkspaceAgentConfigSchema = z
       if (!ctx.value.protocol) {
         ctx.issues.push({
           code: "custom",
-          message: "Remote agents require 'protocol' field (acp, a2a, or custom)",
+          message: "Remote agents require 'protocol' field (acp, a2a, custom, or mcp)",
           path: ["protocol"],
           input: ctx.value,
         });
@@ -179,6 +187,9 @@ const WorkspaceAgentConfigSchema = z
             input: ctx.value,
           });
         }
+      } else if (ctx.value.protocol === "mcp") {
+        // MCP doesn't require specific fields beyond endpoint
+        // Optional tools filtering can be configured via mcp.allowed_tools/denied_tools
       }
 
       // Authentication validation
@@ -624,6 +635,7 @@ export class ConfigLoader {
           acp: workspaceAgentConfig.acp,
           a2a: workspaceAgentConfig.a2a,
           custom: workspaceAgentConfig.custom,
+          mcp: workspaceAgentConfig.mcp,
           validation: workspaceAgentConfig.validation,
           monitoring: workspaceAgentConfig.monitoring,
         } as RemoteAgentConfig;
