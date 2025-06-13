@@ -81,7 +81,6 @@ signals:
           strategy: "sequential"
           agents:
             - id: "k8s-main-agent"
-            - id: "local-assistant"
 
   # CLI interface for direct operations
   cli-k8s:
