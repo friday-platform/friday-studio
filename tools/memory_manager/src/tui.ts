@@ -1,0 +1,814 @@
+/**
+ * Terminal User Interface for Memory Manager
+ *
+ * Provides an ncurses-like interface for navigating workspace memory
+ */
+
+import {
+  type KeyBinding,
+  type MemoryEntry,
+  MemoryType,
+  type TabInfo,
+  type TUIState,
+} from "../types/memory-types.ts";
+import { AtlasMemoryOperations } from "../utils/memory-operations.ts";
+
+export class MemoryManagerTUI {
+  private operations: AtlasMemoryOperations;
+  private state: TUIState = {
+    currentTab: MemoryType.WORKING,
+    selectedIndex: 0,
+    scrollOffset: 0,
+    searchQuery: "",
+    showHelp: false,
+    mode: "list",
+  };
+  private running = true;
+  private terminalSize = { width: 80, height: 24 };
+
+  constructor(operations: AtlasMemoryOperations) {
+    this.operations = operations;
+    this.updateTerminalSize();
+  }
+
+  async start(): Promise<void> {
+    // Hide cursor and setup raw mode
+    await this.setupTerminal();
+
+    try {
+      await this.renderLoop();
+    } finally {
+      await this.restoreTerminal();
+    }
+  }
+
+  private async renderLoop(): Promise<void> {
+    while (this.running) {
+      await this.render();
+      await this.handleInput();
+    }
+  }
+
+  private async render(): Promise<void> {
+    // Clear screen
+    await this.clearScreen();
+
+    // Update terminal size
+    this.updateTerminalSize();
+
+    if (this.state.showHelp) {
+      await this.renderHelp();
+    } else {
+      await this.renderMain();
+    }
+  }
+
+  private async renderMain(): Promise<void> {
+    const { width, height } = this.terminalSize;
+
+    // Render header
+    await this.renderHeader();
+
+    // Render tabs
+    await this.renderTabs();
+
+    // Render current content based on mode
+    switch (this.state.mode) {
+      case "list":
+        await this.renderMemoryList();
+        break;
+      case "view":
+        await this.renderMemoryView();
+        break;
+      case "edit":
+        await this.renderMemoryEdit();
+        break;
+      case "create":
+        await this.renderMemoryCreate();
+        break;
+      case "delete":
+        await this.renderMemoryDelete();
+        break;
+      case "search":
+        await this.renderSearch();
+        break;
+    }
+
+    // Render footer with key bindings
+    await this.renderFooter();
+  }
+
+  private async renderHeader(): Promise<void> {
+    const title = "Atlas Memory Manager";
+    const stats = this.operations.getStats();
+    const currentStats = stats[this.state.currentTab];
+
+    const headerText =
+      `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+
+    console.log(this.colorize(headerText, "bold", "blue"));
+    console.log("─".repeat(this.terminalSize.width));
+  }
+
+  private async renderTabs(): Promise<void> {
+    const tabs: TabInfo[] = [
+      { type: MemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
+      {
+        type: MemoryType.EPISODIC,
+        title: "Episodic",
+        count: 0,
+        color: "green",
+      },
+      { type: MemoryType.SEMANTIC, title: "Semantic", count: 0, color: "blue" },
+      {
+        type: MemoryType.PROCEDURAL,
+        title: "Procedural",
+        count: 0,
+        color: "magenta",
+      },
+    ];
+
+    const stats = this.operations.getStats();
+    tabs.forEach((tab) => {
+      tab.count = stats[tab.type].count;
+    });
+
+    let tabsLine = "";
+    tabs.forEach((tab, index) => {
+      const isActive = tab.type === this.state.currentTab;
+      const tabText = ` ${tab.title} (${tab.count}) `;
+
+      if (isActive) {
+        tabsLine += this.colorize(tabText, "bold", "white", tab.color);
+      } else {
+        tabsLine += this.colorize(tabText, "dim", tab.color);
+      }
+
+      if (index < tabs.length - 1) {
+        tabsLine += " │ ";
+      }
+    });
+
+    console.log(tabsLine);
+    console.log("─".repeat(this.terminalSize.width));
+  }
+
+  private async renderMemoryList(): Promise<void> {
+    const entries = await this.operations.list(this.state.currentTab);
+    const visibleHeight = this.terminalSize.height - 8; // Account for header, tabs, footer
+
+    if (entries.length === 0) {
+      console.log(this.colorize("No memories found in this category", "dim"));
+      return;
+    }
+
+    // Adjust scroll offset if needed
+    this.state.scrollOffset = Math.max(
+      0,
+      Math.min(
+        this.state.scrollOffset,
+        entries.length - visibleHeight,
+      ),
+    );
+
+    const visibleEntries = entries.slice(
+      this.state.scrollOffset,
+      this.state.scrollOffset + visibleHeight,
+    );
+
+    visibleEntries.forEach((entry, index) => {
+      const absoluteIndex = this.state.scrollOffset + index;
+      const isSelected = absoluteIndex === this.state.selectedIndex;
+
+      const relevanceBar = "█".repeat(Math.ceil(entry.relevanceScore * 10));
+      const ageInHours = Math.floor(
+        (Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60),
+      );
+      const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
+
+      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${
+        ageText.padEnd(6)
+      } │ ${entry.tags.slice(0, 3).join(", ")}`;
+
+      if (line.length > this.terminalSize.width - 2) {
+        line = line.substring(0, this.terminalSize.width - 5) + "...";
+      }
+
+      if (isSelected) {
+        console.log(this.colorize(`> ${line}`, "bold", "white", "blue"));
+      } else {
+        console.log(`  ${line}`);
+      }
+    });
+
+    // Show scroll indicator
+    if (entries.length > visibleHeight) {
+      const scrollPos = Math.floor(
+        (this.state.scrollOffset / entries.length) * visibleHeight,
+      );
+      console.log(
+        `\nShowing ${this.state.scrollOffset + 1}-${
+          Math.min(this.state.scrollOffset + visibleHeight, entries.length)
+        } of ${entries.length}`,
+      );
+    }
+  }
+
+  private async renderMemoryView(): Promise<void> {
+    const entries = await this.operations.list(this.state.currentTab);
+    const entry = entries[this.state.selectedIndex];
+
+    if (!entry) {
+      console.log(this.colorize("No entry selected", "red"));
+      return;
+    }
+
+    const width = Math.max(Math.min(this.terminalSize.width - 4, 100), 50);
+    const titleWidth = width;
+
+    // Header
+    const headerText = `┌─ Memory Entry: ${entry.id} `;
+    const headerPadding = Math.max(0, titleWidth - headerText.length - 1);
+    console.log(this.colorize(
+      headerText + "─".repeat(headerPadding) + "┐",
+      "bold",
+      "cyan",
+    ));
+
+    // Metadata table
+    this.renderTable([
+      ["Property", "Value"],
+      ["─".repeat(Math.max(1, 20)), "─".repeat(Math.max(1, 30))],
+      [
+        "Type",
+        this.colorize(
+          entry.memoryType.toUpperCase(),
+          "bold",
+          this.getMemoryTypeColor(entry.memoryType),
+        ),
+      ],
+      [
+        "Relevance",
+        this.renderProgressBar(entry.relevanceScore, 20) +
+        ` ${(entry.relevanceScore * 100).toFixed(1)}%`,
+      ],
+      [
+        "Confidence",
+        this.renderProgressBar(entry.confidence, 20) +
+        ` ${(entry.confidence * 100).toFixed(1)}%`,
+      ],
+      ["Access Count", entry.accessCount.toString()],
+      ["Created", this.formatDate(entry.timestamp)],
+      ["Last Accessed", this.formatDate(entry.lastAccessed)],
+      ["Source Scope", this.truncateString(entry.sourceScope, 30)],
+      ["Decay Rate", entry.decayRate.toFixed(3)],
+    ], width);
+
+    // Tags section
+    if (entry.tags.length > 0) {
+      console.log(
+        this.colorize(
+          "\n├─ Tags " + "─".repeat(Math.max(0, width - 8)),
+          "bold",
+          "yellow",
+        ),
+      );
+      const tagLine = entry.tags.map((tag) =>
+        this.colorize(`#${tag}`, "dim", "yellow")
+      ).join("  ");
+      console.log(`│ ${tagLine}`);
+    }
+
+    // Associations section
+    if (entry.associations.length > 0) {
+      console.log(
+        this.colorize(
+          "\n├─ Associations " + "─".repeat(Math.max(0, width - 15)),
+          "bold",
+          "magenta",
+        ),
+      );
+      entry.associations.forEach((assoc) => {
+        console.log(
+          `│ → ${this.truncateString(assoc, Math.max(5, width - 5))}`,
+        );
+      });
+    }
+
+    // Content section
+    console.log(
+      this.colorize(
+        "\n├─ Content " + "─".repeat(Math.max(0, width - 11)),
+        "bold",
+        "green",
+      ),
+    );
+    this.renderContent(entry.content, width);
+
+    // Footer
+    console.log(
+      this.colorize(
+        "└" + "─".repeat(Math.max(0, width - 1)) + "┘",
+        "bold",
+        "cyan",
+      ),
+    );
+  }
+
+  private renderTable(rows: string[][], maxWidth: number): void {
+    if (rows.length === 0) return;
+
+    // Calculate column widths
+    const colCount = Math.max(...rows.map((row) => row.length));
+    const colWidths: number[] = new Array(colCount).fill(0);
+
+    rows.forEach((row) => {
+      row.forEach((cell, i) => {
+        // Remove ANSI codes for length calculation
+        const cleanCell = cell.replace(/\x1b\[[0-9;]*m/g, "");
+        colWidths[i] = Math.max(colWidths[i], cleanCell.length);
+      });
+    });
+
+    // Adjust widths to fit terminal
+    const totalPadding = colCount * 3 + 4; // spaces and borders
+    const availableWidth = maxWidth - totalPadding;
+    let totalDesiredWidth = colWidths.reduce((sum, w) => sum + w, 0);
+
+    if (totalDesiredWidth > availableWidth) {
+      const ratio = availableWidth / totalDesiredWidth;
+      colWidths.forEach((width, i) => {
+        colWidths[i] = Math.max(10, Math.floor(width * ratio));
+      });
+    }
+
+    // Render rows
+    rows.forEach((row, rowIndex) => {
+      let line = "│ ";
+      row.forEach((cell, colIndex) => {
+        const cleanCell = cell.replace(/\x1b\[[0-9;]*m/g, "");
+        const padding = Math.max(0, colWidths[colIndex] - cleanCell.length);
+
+        if (rowIndex === 1) { // Separator row
+          line += cell.substring(0, colWidths[colIndex]);
+        } else {
+          line += cell + " ".repeat(padding);
+        }
+
+        if (colIndex < row.length - 1) {
+          line += " │ ";
+        }
+      });
+      line += " │";
+      console.log(line);
+    });
+  }
+
+  private renderContent(content: any, maxWidth: number): void {
+    const safeMaxWidth = Math.max(10, maxWidth);
+
+    if (typeof content === "string") {
+      // Handle string content
+      this.renderStringContent(content, safeMaxWidth);
+    } else if (typeof content === "object" && content !== null) {
+      // Handle object content
+      this.renderObjectContent(content, safeMaxWidth);
+    } else {
+      // Handle primitive content
+      console.log(`│ ${String(content)}`);
+    }
+  }
+
+  private renderStringContent(content: string, maxWidth: number): void {
+    const lines = content.split("\n");
+    lines.forEach((line) => {
+      if (line.length <= maxWidth - 4) {
+        console.log(`│ ${line}`);
+      } else {
+        // Wrap long lines
+        const words = line.split(" ");
+        let currentLine = "";
+
+        words.forEach((word) => {
+          if ((currentLine + " " + word).length <= maxWidth - 4) {
+            currentLine += (currentLine ? " " : "") + word;
+          } else {
+            if (currentLine) console.log(`│ ${currentLine}`);
+            currentLine = word;
+          }
+        });
+
+        if (currentLine) console.log(`│ ${currentLine}`);
+      }
+    });
+  }
+
+  private renderObjectContent(content: any, maxWidth: number): void {
+    if (Array.isArray(content)) {
+      // Handle arrays
+      console.log(
+        `│ ${this.colorize(`Array (${content.length} items):`, "bold")}`,
+      );
+      content.slice(0, 10).forEach((item, index) => {
+        const itemStr = typeof item === "object"
+          ? JSON.stringify(item)
+          : String(item);
+        const truncated = this.truncateString(itemStr, maxWidth - 8);
+        console.log(`│   [${index}] ${truncated}`);
+      });
+
+      if (content.length > 10) {
+        console.log(`│   ... and ${content.length - 10} more items`);
+      }
+    } else {
+      // Handle objects
+      const entries = Object.entries(content);
+      console.log(
+        `│ ${this.colorize(`Object (${entries.length} properties):`, "bold")}`,
+      );
+
+      entries.slice(0, 15).forEach(([key, value]) => {
+        const valueStr = typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
+        const truncatedValue = this.truncateString(
+          valueStr,
+          maxWidth - key.length - 8,
+        );
+        console.log(
+          `│   ${this.colorize(key, "bold", "cyan")}: ${truncatedValue}`,
+        );
+      });
+
+      if (entries.length > 15) {
+        console.log(`│   ... and ${entries.length - 15} more properties`);
+      }
+    }
+  }
+
+  private renderProgressBar(value: number, width: number): string {
+    const safeWidth = Math.max(1, width);
+    const clampedValue = Math.max(0, Math.min(1, value));
+    const filled = Math.round(clampedValue * safeWidth);
+    const empty = Math.max(0, safeWidth - filled);
+    const bar = "█".repeat(filled) + "░".repeat(empty);
+
+    if (clampedValue > 0.8) return this.colorize(bar, "", "green");
+    if (clampedValue > 0.5) return this.colorize(bar, "", "yellow");
+    return this.colorize(bar, "", "red");
+  }
+
+  private formatDate(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    let relative = "";
+    if (diffMinutes < 1) relative = "just now";
+    else if (diffMinutes < 60) relative = `${diffMinutes}m ago`;
+    else if (diffHours < 24) relative = `${diffHours}h ago`;
+    else if (diffDays < 7) relative = `${diffDays}d ago`;
+    else relative = "over a week ago";
+
+    return `${date.toLocaleString()} (${relative})`;
+  }
+
+  private getMemoryTypeColor(type: string): string {
+    switch (type) {
+      case "working":
+        return "yellow";
+      case "episodic":
+        return "green";
+      case "semantic":
+        return "blue";
+      case "procedural":
+        return "magenta";
+      default:
+        return "white";
+    }
+  }
+
+  private truncateString(str: string, maxLength: number): string {
+    if (str.length <= maxLength) return str;
+    return str.substring(0, maxLength - 3) + "...";
+  }
+
+  private async renderMemoryEdit(): Promise<void> {
+    console.log(this.colorize("Edit Memory Entry", "bold", "yellow"));
+    console.log("Use arrow keys to navigate, Enter to confirm, Esc to cancel");
+    // Implementation would depend on having a proper input system
+    console.log("Edit mode not yet implemented in this simple version");
+  }
+
+  private async renderMemoryCreate(): Promise<void> {
+    console.log(this.colorize("Create New Memory Entry", "bold", "green"));
+    console.log("Create mode not yet implemented in this simple version");
+  }
+
+  private async renderMemoryDelete(): Promise<void> {
+    console.log(this.colorize("Delete Memory Entry", "bold", "red"));
+    console.log("Delete mode not yet implemented in this simple version");
+  }
+
+  private async renderSearch(): Promise<void> {
+    console.log(this.colorize("Search Memory", "bold", "cyan"));
+    console.log(`Query: ${this.state.searchQuery}_`);
+
+    if (this.state.searchQuery.length > 0) {
+      const results = await this.operations.search(
+        this.state.currentTab,
+        this.state.searchQuery,
+      );
+      console.log(`Found ${results.length} results:`);
+
+      results.slice(0, 10).forEach((entry, index) => {
+        const isSelected = index === this.state.selectedIndex;
+        const line = `${entry.id} - ${entry.relevanceScore.toFixed(2)}`;
+
+        if (isSelected) {
+          console.log(this.colorize(`> ${line}`, "bold", "white", "blue"));
+        } else {
+          console.log(`  ${line}`);
+        }
+      });
+    }
+  }
+
+  private async renderHelp(): Promise<void> {
+    console.log(this.colorize("Atlas Memory Manager - Help", "bold", "white"));
+    console.log("─".repeat(this.terminalSize.width));
+
+    const keyBindings: KeyBinding[] = [
+      {
+        key: "Tab / Shift+Tab",
+        description: "Switch between memory types",
+        action: () => {},
+      },
+      { key: "↑/↓ or j/k", description: "Navigate up/down", action: () => {} },
+      {
+        key: "Enter",
+        description: "View selected entry (formatted)",
+        action: () => {},
+      },
+      { key: "e", description: "Edit selected entry", action: () => {} },
+      { key: "n", description: "Create new entry", action: () => {} },
+      { key: "d", description: "Delete selected entry", action: () => {} },
+      {
+        key: "/",
+        description: "Search in current memory type",
+        action: () => {},
+      },
+      { key: "r", description: "Reload memory from disk", action: () => {} },
+      { key: "s", description: "Save changes to disk", action: () => {} },
+      { key: "h or ?", description: "Show/hide this help", action: () => {} },
+      { key: "q", description: "Quit", action: () => {} },
+    ];
+
+    keyBindings.forEach((binding) => {
+      console.log(`  ${binding.key.padEnd(15)} - ${binding.description}`);
+    });
+
+    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log("Press any key to return to memory view");
+  }
+
+  private async renderFooter(): Promise<void> {
+    const modeText = this.state.mode.toUpperCase();
+    const footer =
+      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view e:edit n:new d:delete /:search r:reload s:save`;
+
+    console.log("\n" + "─".repeat(this.terminalSize.width));
+    console.log(this.colorize(footer, "dim"));
+  }
+
+  private async handleInput(): Promise<void> {
+    const key = await this.readKey();
+
+    switch (key) {
+      case "q":
+        this.running = false;
+        break;
+      case "h":
+      case "?":
+        this.state.showHelp = !this.state.showHelp;
+        break;
+      case "\t": // Tab
+        this.switchTab(1);
+        break;
+      case "SHIFT_TAB":
+        this.switchTab(-1);
+        break;
+      case "j":
+      case "J":
+      case "ARROW_DOWN":
+        this.navigateDown();
+        break;
+      case "k":
+      case "K":
+      case "ARROW_UP":
+        this.navigateUp();
+        break;
+      case "\r": // Enter
+        if (this.state.mode === "list") {
+          this.state.mode = "view";
+        } else {
+          this.state.mode = "list";
+        }
+        break;
+      case "e":
+        this.state.mode = this.state.mode === "edit" ? "list" : "edit";
+        break;
+      case "n":
+        this.state.mode = this.state.mode === "create" ? "list" : "create";
+        break;
+      case "d":
+        this.state.mode = this.state.mode === "delete" ? "list" : "delete";
+        break;
+      case "/":
+        this.state.mode = this.state.mode === "search" ? "list" : "search";
+        break;
+      case "r":
+        await this.operations.reload();
+        break;
+      case "s":
+        await this.operations.save();
+        break;
+      case "ESCAPE":
+        this.state.mode = "list";
+        this.state.showHelp = false;
+        break;
+    }
+  }
+
+  private async readKey(): Promise<string> {
+    const buffer = new Uint8Array(1);
+    const bytesRead = await Deno.stdin.read(buffer);
+
+    if (bytesRead === null) return "";
+
+    const firstByte = buffer[0];
+
+    // Handle escape sequences (arrow keys, etc.)
+    if (firstByte === 0x1b) { // ESC
+      // Try to read the next character(s) for escape sequences
+      const seqBuffer = new Uint8Array(3);
+      let seqLength = 0;
+
+      // Read up to 3 more bytes with a short timeout
+      const timeoutPromise = new Promise<void>((resolve) =>
+        setTimeout(resolve, 10)
+      );
+
+      try {
+        while (seqLength < 3) {
+          const readPromise = Deno.stdin.read(
+            seqBuffer.subarray(seqLength, seqLength + 1),
+          );
+          const result = await Promise.race([readPromise, timeoutPromise]);
+
+          if (result === undefined) break; // timeout
+          if (result === null) break; // EOF
+
+          seqLength++;
+
+          // Check for complete sequences
+          const sequence = new TextDecoder().decode(
+            seqBuffer.subarray(0, seqLength),
+          );
+
+          // Arrow keys: ESC[A, ESC[B, ESC[C, ESC[D
+          if (sequence === "[A") return "ARROW_UP";
+          if (sequence === "[B") return "ARROW_DOWN";
+          if (sequence === "[C") return "ARROW_RIGHT";
+          if (sequence === "[D") return "ARROW_LEFT";
+
+          // Shift+Tab: ESC[Z
+          if (sequence === "[Z") return "SHIFT_TAB";
+
+          // Other common escape sequences
+          if (sequence === "OP") return "F1";
+          if (sequence === "OQ") return "F2";
+          if (sequence === "OR") return "F3";
+          if (sequence === "OS") return "F4";
+        }
+      } catch {
+        // If reading additional bytes fails, treat as plain escape
+      }
+
+      return "ESCAPE";
+    }
+
+    // Handle regular characters
+    return String.fromCharCode(firstByte);
+  }
+
+  private switchTab(direction: 1 | -1): void {
+    const types = Object.values(MemoryType);
+    const currentIndex = types.indexOf(this.state.currentTab);
+    const newIndex = (currentIndex + direction + types.length) % types.length;
+
+    this.state.currentTab = types[newIndex];
+    this.state.selectedIndex = 0;
+    this.state.scrollOffset = 0;
+  }
+
+  private navigateUp(): void {
+    if (this.state.selectedIndex > 0) {
+      this.state.selectedIndex--;
+
+      // Adjust scroll if needed
+      if (this.state.selectedIndex < this.state.scrollOffset) {
+        this.state.scrollOffset = this.state.selectedIndex;
+      }
+    }
+  }
+
+  private navigateDown(): void {
+    const entries = this.operations.getAllByType(this.state.currentTab);
+    const maxIndex = Object.keys(entries).length - 1;
+
+    if (this.state.selectedIndex < maxIndex) {
+      this.state.selectedIndex++;
+
+      // Adjust scroll if needed
+      const visibleHeight = this.terminalSize.height - 8;
+      if (this.state.selectedIndex >= this.state.scrollOffset + visibleHeight) {
+        this.state.scrollOffset = this.state.selectedIndex - visibleHeight + 1;
+      }
+    }
+  }
+
+  private colorize(
+    text: string,
+    style?: string,
+    color?: string,
+    bgColor?: string,
+  ): string {
+    // Simple ANSI color implementation
+    let result = text;
+
+    // Styles
+    if (style === "bold") result = `\x1b[1m${result}`;
+    if (style === "dim") result = `\x1b[2m${result}`;
+
+    // Colors
+    const colors: Record<string, string> = {
+      black: "30",
+      red: "31",
+      green: "32",
+      yellow: "33",
+      blue: "34",
+      magenta: "35",
+      cyan: "36",
+      white: "37",
+    };
+
+    if (color && colors[color]) {
+      result = `\x1b[${colors[color]}m${result}`;
+    }
+
+    if (bgColor && colors[bgColor]) {
+      result = `\x1b[${parseInt(colors[bgColor]) + 10}m${result}`;
+    }
+
+    return `${result}\x1b[0m`; // Reset at end
+  }
+
+  private async setupTerminal(): Promise<void> {
+    // Hide cursor
+    console.log("\x1b[?25l");
+
+    // Enable raw mode (simplified)
+    Deno.stdin.setRaw(true);
+  }
+
+  private async restoreTerminal(): Promise<void> {
+    // Show cursor
+    console.log("\x1b[?25h");
+
+    // Disable raw mode
+    Deno.stdin.setRaw(false);
+
+    // Clear screen and reset
+    console.log("\x1b[2J\x1b[H");
+  }
+
+  private async clearScreen(): Promise<void> {
+    console.log("\x1b[2J\x1b[H");
+  }
+
+  private updateTerminalSize(): void {
+    try {
+      const size = Deno.consoleSize();
+      this.terminalSize = {
+        width: Math.max(50, size.columns),
+        height: Math.max(10, size.rows),
+      };
+    } catch {
+      // Fallback if consoleSize fails
+      this.terminalSize = { width: 80, height: 24 };
+    }
+  }
+}
