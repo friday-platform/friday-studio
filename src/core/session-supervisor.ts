@@ -773,7 +773,7 @@ Provide a brief evaluation.`;
         supervision,
       );
 
-      // Step 6: Record execution in working memory and extract facts
+      // Step 6: Record execution in working memory
       await this.recordExecutionInWorkingMemory(agentId, task, input, result, context);
 
       // Step 7: Clean up worker
@@ -864,42 +864,39 @@ Provide a brief evaluation.`;
     this.log(
       `Recorded execution of ${agentId} in working memory (sequence: ${executionRecord.sequence_number})`,
     );
-
-    // Extract semantic facts from agent execution
-    await this.extractFactsFromAgentExecution(agentId, task, input, result, context);
   }
 
-  // Extract facts from individual agent execution
-  private async extractFactsFromAgentExecution(
-    agentId: string,
-    task: AgentTask,
-    input: any,
-    result: SupervisedAgentResult,
-    context: Record<string, any>,
+  // Extract semantic facts from the entire session at completion
+  private async extractSessionSemanticFacts(
+    workingMemoryEntries: any[],
+    sessionSummary: string,
   ): Promise<void> {
-    if (!this.factExtractor) {
-      return; // Skip if fact extractor not available
+    if (!this.factExtractor || !this.sessionContext) {
+      this.log("Warning: Cannot extract session facts - missing fact extractor or session context");
+      return;
     }
 
     try {
-      // Extract facts from this agent execution
-      const extractionResult = await this.factExtractor.extractFactsFromAgentExecution(
-        agentId,
-        task,
-        input,
-        result.output,
-        {
-          ...context,
-          execution_metadata: result.execution_metadata,
-          validation: result.validation,
-          analysis: result.analysis,
-          supervision: result.supervision,
-        },
+      this.log(
+        `Starting comprehensive fact extraction from session ${this.sessionContext.sessionId}`,
+      );
+
+      // Build comprehensive session context for fact extraction
+      const sessionContent = this.buildSessionAnalysisContent(workingMemoryEntries, sessionSummary);
+
+      // Extract facts from the comprehensive session using specialized method
+      const extractionResult = await this.factExtractor.extractFactsFromSessionExecution(
+        this.sessionContext.sessionId,
+        this.sessionContext.signal,
+        this.sessionContext.payload,
+        workingMemoryEntries,
+        sessionSummary,
+        sessionContent,
       );
 
       if (extractionResult.extractedFacts.length > 0) {
         this.log(
-          `Extracted ${extractionResult.extractedFacts.length} facts from agent ${agentId} execution`,
+          `Extracted ${extractionResult.extractedFacts.length} facts from complete session`,
           {
             factsFound: extractionResult.analysisMetadata.factsFound,
             confidence: extractionResult.analysisMetadata.confidence,
@@ -909,11 +906,57 @@ Provide a brief evaluation.`;
 
         // Store extracted facts in session memory for immediate access
         await this.storeExtractedFactsInMemory(extractionResult.extractedFacts);
+      } else {
+        this.log("No significant facts extracted from session analysis");
       }
     } catch (error) {
-      this.log(`Warning: Failed to extract facts from agent ${agentId} execution: ${error}`);
-      // Don't throw - fact extraction failure shouldn't break agent execution
+      this.log(`Warning: Failed to extract facts from session: ${error}`);
+      // Don't throw - fact extraction failure shouldn't break session completion
     }
+  }
+
+  // Build comprehensive session content for fact extraction analysis
+  private buildSessionAnalysisContent(
+    workingMemoryEntries: any[],
+    sessionSummary: string,
+  ): string {
+    if (!this.sessionContext) {
+      return "";
+    }
+
+    const executionChain = workingMemoryEntries
+      .sort((a, b) => (a.sequence_number || 0) - (b.sequence_number || 0))
+      .map((entry) => {
+        return `${entry.sequence_number}. Agent: ${entry.agentId}
+   Task: ${entry.task?.description || entry.task || "Unknown task"}
+   Input: ${this.summarizeData(entry.input, 300)}
+   Output: ${this.summarizeData(entry.output, 300)}
+   Success: ${entry.metadata?.success}
+   Tools Used: ${entry.tools?.join(", ") || "none"}
+   Duration: ${entry.metadata?.execution_time}ms`;
+      }).join("\n\n");
+
+    return `Session Comprehensive Analysis Context:
+Session ID: ${this.sessionContext.sessionId}
+Workspace ID: ${this.sessionContext.workspaceId}
+Triggering Signal: ${this.sessionContext.signal.id}
+Signal Provider: ${this.sessionContext.signal.provider?.name || "unknown"}
+Original Signal Payload: ${this.summarizeData(this.sessionContext.payload, 500)}
+
+Complete Agent Execution Chain (${workingMemoryEntries.length} executions):
+${executionChain}
+
+LLM-Generated Session Summary:
+${sessionSummary}
+
+Session Goals: ${
+      this.executionPlan?.successCriteria.join(", ") || "Process signal through available agents"
+    }
+Overall Success: ${
+      workingMemoryEntries.length > 0 && workingMemoryEntries.filter((e) =>
+              e.metadata?.success
+            ).length / workingMemoryEntries.length >= 0.7
+    }`;
   }
 
   // Build input enriched with working memory context from current session
@@ -1278,6 +1321,9 @@ Focus on creating a rich episodic memory that captures both the factual sequence
 
       // Store in workspace episodic memory (this would need access to workspace memory manager)
       await this.storeSessionEpisodicMemory(episodicEntry);
+
+      // Extract semantic facts from the entire session
+      await this.extractSessionSemanticFacts(workingMemoryEntries, workingMemorySummary);
 
       this.log(
         `Generated and stored working memory summary for session ${this.sessionContext.sessionId}`,

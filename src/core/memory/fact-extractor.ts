@@ -79,7 +79,58 @@ export class FactExtractor extends BaseAgent {
     };
   }
 
-  // Extract facts from agent execution results
+  // Extract facts from complete session execution (runs once at session end)
+  async extractFactsFromSessionExecution(
+    sessionId: string,
+    signal: IWorkspaceSignal,
+    payload: any,
+    workingMemoryEntries: any[],
+    sessionSummary: string,
+    sessionContent: string,
+  ): Promise<SignalFactExtractionResult> {
+    const startTime = Date.now();
+
+    try {
+      this.log(`Starting comprehensive fact extraction from session: ${sessionId}`);
+
+      // Extract facts using LLM with session-wide context
+      const extractedFacts = await this.performSessionFactExtraction(
+        sessionContent,
+        sessionId,
+        signal,
+        workingMemoryEntries.length,
+      );
+
+      // Store facts in knowledge graph
+      const storedFactIds = await this.knowledgeGraph.storeFacts(extractedFacts);
+
+      const processingTime = Date.now() - startTime;
+      const averageConfidence = extractedFacts.length > 0
+        ? extractedFacts.reduce((sum, fact) => sum + fact.confidence, 0) / extractedFacts.length
+        : 0;
+
+      this.log(
+        `Extracted ${extractedFacts.length} facts from session ${sessionId} in ${processingTime}ms`,
+      );
+
+      return {
+        extractedFacts,
+        storedFactIds,
+        analysisMetadata: {
+          signalId: sessionId,
+          signalProvider: "session-execution",
+          processingTime,
+          factsFound: extractedFacts.length,
+          confidence: averageConfidence,
+        },
+      };
+    } catch (error) {
+      this.log(`Error extracting facts from session ${sessionId}: ${error}`);
+      throw new Error(`Session fact extraction failed: ${error}`);
+    }
+  }
+
+  // Extract facts from agent execution results (legacy method - kept for compatibility)
   async extractFactsFromAgentExecution(
     agentId: string,
     task: any,
@@ -433,6 +484,110 @@ Return empty array [] if no significant new facts are discovered.`;
       return this.validateAndEnhanceFacts(extractedFacts, agentId);
     } catch (error) {
       this.log(`Error in LLM agent fact extraction: ${error}`);
+      this.log(`LLM Response that failed parsing: ${error}`);
+      return []; // Return empty array on parsing failure
+    }
+  }
+
+  // Perform LLM-based fact extraction from complete session
+  private async performSessionFactExtraction(
+    sessionContent: string,
+    sessionId: string,
+    signal: IWorkspaceSignal,
+    executionCount: number,
+  ): Promise<ExtractedFact[]> {
+    const extractionPrompt =
+      `Analyze the following complete session execution and extract structured facts that represent valuable workspace knowledge discovered during the entire session.
+
+${sessionContent}
+
+**COMPREHENSIVE SESSION FACT EXTRACTION**
+
+Focus on extracting facts that represent the complete picture of what was discovered, learned, or produced during this session. Consider the entire agent execution chain and their collective outputs:
+
+**SESSION-LEVEL DISCOVERIES:**
+- New workspace capabilities: "Workspace can process large datasets", "System supports automated deployments"
+- User behavior patterns: "User prefers iterative refinement", "User works in Pacific timezone"
+- Process insights: "Multi-agent collaboration improves accuracy", "Sequential processing works best for this workflow"
+
+**KNOWLEDGE CONSOLIDATION:**
+- Confirmed relationships: "Service X integrates with Service Y", "Team Alpha owns Project Beta"
+- Technical discoveries: "API supports webhooks", "Database schema includes user preferences table"
+- Workflow patterns: "Standard deployment involves 3 agents", "Error handling requires human approval"
+
+**ACCUMULATED PREFERENCES:**
+- User preferences revealed through choices: "Prefers detailed explanations", "Values efficiency over completeness"
+- System configurations discovered: "Default timeout is 30 seconds", "Maximum file size is 100MB"
+- Tool and technology usage: "Primary development environment is VS Code", "Deployment target is AWS"
+
+**BUSINESS INSIGHTS:**
+- Project status and progress: "Migration project is 75% complete", "Testing phase identified 3 critical issues"
+- Team dynamics: "Frontend team collaborates with Backend team", "DevOps team handles all deployments"
+- Resource constraints: "Limited to 5 concurrent executions", "Budget constraint requires cost optimization"
+
+**IMPORTANT CHARACTERISTICS:**
+- Only extract facts that provide VALUE across future sessions
+- Focus on PERSISTENT knowledge rather than session-specific details
+- Prioritize facts that reveal USER PREFERENCES, SYSTEM CAPABILITIES, and WORKFLOW PATTERNS
+- Ignore temporary execution details like specific timestamps or ephemeral IDs
+- Extract RELATIONSHIPS between entities that were discovered or confirmed
+
+**CONFIDENCE GUIDELINES:**
+- 0.9+ for explicitly stated facts confirmed by multiple agents
+- 0.8+ for facts strongly implied by consistent patterns across agents
+- 0.7+ for reasonable inferences from agent outputs and behaviors
+- 0.6+ for tentative discoveries that may need further confirmation
+
+Return ONLY a valid JSON array of facts with this structure:
+[
+  {
+    "type": "person_info|preference|identifier|service_info|team_info|project_info|general_fact",
+    "statement": "Clear, valuable statement of discovered knowledge",
+    "entities": [
+      {
+        "type": "person|project|service|concept|preference|identifier|team|technology|location|fact",
+        "name": "entity_name",
+        "attributes": {"key": "value", "discovered_in_session": "${sessionId}", "execution_count": ${executionCount}}
+      }
+    ],
+    "relationships": [
+      {
+        "type": "is_a|part_of|works_on|uses|prefers|owns|member_of|located_at|related_to|has_attribute|knows",
+        "source": "source_entity_name",
+        "target": "target_entity_name", 
+        "attributes": {"discovered_in_session": "${sessionId}", "signal_type": "${signal.id}", "confidence_basis": "multi_agent_confirmation|pattern_analysis|explicit_statement"}
+      }
+    ],
+    "confidence": 0.0-1.0,
+    "context": "Extracted from session ${sessionId} with ${executionCount} agent executions"
+  }
+]
+
+**CRITICAL**: Return empty array [] if no significant, valuable facts were discovered that would benefit future sessions.`;
+
+    try {
+      const llmResponse = await this.generateLLM(
+        "claude-4-sonnet-20250514",
+        "You are a knowledge extraction specialist analyzing complete session executions. Focus on extracting VALUABLE, PERSISTENT facts that represent knowledge accumulated across all agent executions in the session. Prioritize discoveries that will benefit future workspace sessions.",
+        extractionPrompt,
+        false, // Don't include memory context to avoid recursion
+        {
+          operation: "extract_facts_from_session_execution",
+          sessionId: sessionId,
+          signalId: signal.id,
+          executionCount: executionCount,
+          workspaceId: this.workspaceId,
+        },
+      );
+
+      // Parse LLM response as JSON
+      const cleanedResponse = this.cleanLLMResponse(llmResponse);
+      const extractedFacts: ExtractedFact[] = JSON.parse(cleanedResponse);
+
+      // Validate and enhance extracted facts
+      return this.validateAndEnhanceFacts(extractedFacts, sessionId);
+    } catch (error) {
+      this.log(`Error in LLM session fact extraction: ${error}`);
       this.log(`LLM Response that failed parsing: ${error}`);
       return []; // Return empty array on parsing failure
     }
