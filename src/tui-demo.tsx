@@ -636,8 +636,8 @@ const TUIDemo: React.FC = () => {
       return;
     }
 
-    // Debug: Log key combinations (excluding arrow keys which are handled above)
-    if (key.meta && inputChar && !key.leftArrow && !key.rightArrow && inputChar !== 'b' && inputChar !== 'f') {
+    // Debug: Log key combinations (excluding arrow keys and numbers which are handled above)
+    if (key.meta && inputChar && !key.leftArrow && !key.rightArrow && inputChar !== 'b' && inputChar !== 'f' && !inputChar.match(/[1-9]/)) {
       addLog("command", `Debug: Alt+${inputChar}`);
     }
     if (key.ctrl && inputChar) {
@@ -732,7 +732,8 @@ const TUIDemo: React.FC = () => {
       key.upArrow ||
       (inputChar === "k" && !inputFocused && !key.ctrl && !key.meta)
     ) {
-      // Navigate up in logs (older entries)
+      // Navigate up in logs (older entries) and blur input to enable log interaction
+      setInputFocused(false);
       if (activeTab === 0) {
         setSelectedLogIndex((prev: number) => {
           const newIndex = Math.max(0, prev - 1);
@@ -756,7 +757,8 @@ const TUIDemo: React.FC = () => {
       key.downArrow ||
       (inputChar === "j" && !inputFocused && !key.ctrl && !key.meta)
     ) {
-      // Navigate down in logs (newer entries)
+      // Navigate down in logs (newer entries) and blur input to enable log interaction
+      setInputFocused(false);
       if (activeTab === 0) {
         const maxIndex = Math.max(0, conversationLogs.length - 1);
         setSelectedLogIndex((prev: number) => {
@@ -779,6 +781,10 @@ const TUIDemo: React.FC = () => {
           return newIndex;
         });
       }
+    } else if (key.tab && !inputFocused) {
+      // Tab key refocuses input when not focused
+      setInputFocused(true);
+      return;
     } else if (key.return) {
       if (inputFocused) {
         // Execute command
@@ -1090,19 +1096,35 @@ const TUIDemo: React.FC = () => {
     const [cursorVisible, setCursorVisible] = useState(true);
 
     useEffect(() => {
-      const interval = setInterval(() => {
-        setCursorVisible((prev) => !prev);
-      }, 500); // Blink every 500ms
+      if (inputFocused) {
+        const interval = setInterval(() => {
+          setCursorVisible((prev) => !prev);
+        }, 500); // Blink every 500ms when focused
 
-      return () => clearInterval(interval);
-    }, []);
+        return () => clearInterval(interval);
+      } else {
+        // Static cursor when not focused
+        setCursorVisible(true);
+      }
+    }, [inputFocused]);
+
+    const getCursor = () => {
+      if (inputFocused) {
+        return cursorVisible ? "█" : " ";
+      } else {
+        // Static solid cursor when not focused
+        return "█";
+      }
+    };
 
     return (
       <Box flexDirection="column" paddingY={1} flexGrow={1} height={6}>
         <Box borderStyle="round" borderColor="green" paddingX={1} width="100%">
           <Text>
             {">"} {input}
-            {cursorVisible ? "█" : " "}
+            <Text color={inputFocused ? "white" : "gray"}>
+              {getCursor()}
+            </Text>
           </Text>
         </Box>
       </Box>
