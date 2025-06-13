@@ -43,7 +43,13 @@ export interface RemoteMessagePart {
 export type RemoteExecutionMode = "sync" | "async" | "stream";
 
 // Execution statuses
-export type RemoteExecutionStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type RemoteExecutionStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | "awaiting";
 
 // Event types for streaming
 export type RemoteEventType =
@@ -53,7 +59,8 @@ export type RemoteEventType =
   | "metadata"
   | "progress"
   | "session_start"
-  | "session_end";
+  | "session_end"
+  | "awaiting";
 
 // Execution metadata
 export interface RemoteExecutionMetadata {

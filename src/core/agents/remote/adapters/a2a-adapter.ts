@@ -57,6 +57,10 @@ export class A2AAdapter extends BaseRemoteAdapter {
     throw new Error("A2A adapter not yet implemented");
   }
 
+  resumeExecution(_executionId: string, _response: string | import("../types.ts").RemoteMessagePart[]): Promise<RemoteExecutionResult> {
+    throw new Error("A2A adapter does not support resumeExecution");
+  }
+
   healthCheck(): Promise<HealthStatus> {
     throw new Error("A2A adapter not yet implemented");
   }

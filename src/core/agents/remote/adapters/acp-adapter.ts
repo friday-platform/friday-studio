@@ -395,6 +395,93 @@ export class ACPAdapter extends BaseRemoteAdapter {
     }
   }
 
+  async resumeExecution(
+    executionId: string,
+    resumeResponse: string | RemoteMessagePart[],
+  ): Promise<RemoteExecutionResult> {
+    try {
+      this.logger.info("Resuming ACP execution", {
+        execution_id: executionId,
+        response_type: typeof resumeResponse === "string" ? "string" : "message_parts",
+      });
+
+      // Convert response to ACP format
+      const awaitResume = {}; // AwaitResume is Record<string, never> according to schema
+
+      const startTime = performance.now();
+
+      // Use the generic POST method since resumeRun doesn't map to a specific path with params
+      const resumeUrl = `${this.config.endpoint}/runs/${executionId}`;
+      const authenticatedFetch = super.createAuthenticatedFetch();
+
+      const response = await authenticatedFetch(resumeUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          run_id: executionId,
+          await_resume: awaitResume,
+          mode: "sync",
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`ACP Resume Error: ${response.status} ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+
+      const run = responseData;
+      if (!run || typeof run !== "object") {
+        throw new Error("Invalid run data received from ACP response");
+      }
+
+      // For resumed runs, we need to wait for completion
+      let finalRun = run as ACPRun;
+      if (
+        finalRun.status !== "completed" && finalRun.status !== "failed" &&
+        finalRun.status !== "cancelled"
+      ) {
+        // Poll for completion
+        finalRun = await this.pollForCompletion(executionId);
+      }
+
+      const executionTime = Math.round(performance.now() - startTime);
+
+      const result: RemoteExecutionResult = {
+        executionId,
+        output: this.convertOutput(finalRun.output),
+        status: this.convertStatus(finalRun.status),
+        metadata: {
+          execution_time_ms: executionTime,
+          session_id: this.extractSessionId(finalRun),
+          agent_version: this.extractAgentVersion(finalRun),
+        },
+      };
+
+      if (finalRun.error) {
+        result.error = finalRun.error.message;
+      }
+
+      this.recordSuccess(executionTime);
+      this.logger.info("ACP execution resumed successfully", {
+        execution_id: executionId,
+        status: result.status,
+        execution_time_ms: executionTime,
+      });
+
+      return result;
+    } catch (error) {
+      this.recordFailure(error instanceof Error ? error : new Error(String(error)));
+      this.logger.error("Failed to resume ACP execution", {
+        execution_id: executionId,
+        error: this.formatError(error),
+      });
+      throw this.convertACPError(error, `Failed to resume execution '${executionId}'`);
+    }
+  }
+
   // Private helper methods
 
   private convertInputToMessages(input: string | unknown[]): ACPRunCreateRequest["input"] {
@@ -465,6 +552,8 @@ export class ACPAdapter extends BaseRemoteAdapter {
         return "cancelled";
       case "running":
         return "running";
+      case "awaiting":
+        return "awaiting";
       default:
         return "pending";
     }
@@ -529,6 +618,16 @@ export class ACPAdapter extends BaseRemoteAdapter {
           type: "completion",
           status: "cancelled",
           error: "Run was cancelled",
+        };
+      case "run.awaiting":
+        return {
+          type: "awaiting",
+          status: "awaiting",
+          metadata: {
+            event_type: "run.awaiting",
+            run: event.run,
+            await_request: event.run.await_request,
+          },
         };
       case "error":
         return {
@@ -615,5 +714,41 @@ export class ACPAdapter extends BaseRemoteAdapter {
       return `${error.name}: ${error.message}`;
     }
     return String(error);
+  }
+
+  private convertInputToACPMessage(
+    response: string | RemoteMessagePart[],
+  ): ACPRunCreateRequest["input"][0] {
+    if (typeof response === "string") {
+      return {
+        parts: [
+          {
+            content_type: "text/plain",
+            content: response,
+            content_encoding: "plain",
+          },
+        ],
+        role: "user",
+      };
+    }
+
+    // Convert RemoteMessagePart[] to ACP message
+    return {
+      parts: response.map((part) => ({
+        content_type: part.content_type,
+        content: typeof part.content === "string" ? part.content : JSON.stringify(part.content),
+        content_encoding: "plain" as const,
+      })),
+      role: "user",
+    };
+  }
+
+  private extractSessionId(run: ACPRun): string | undefined {
+    return run.session_id;
+  }
+
+  private extractAgentVersion(_run: ACPRun): string | undefined {
+    // ACPRun doesn't have metadata.agent_version in the schema
+    return undefined;
   }
 }
