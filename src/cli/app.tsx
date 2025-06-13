@@ -9,6 +9,7 @@ import TUICommand from "./commands/tui.tsx";
 import HelpCommand from "./commands/help.tsx";
 import WorkspacesCommand from "./commands/workspaces.tsx";
 import DefineCommand from "./commands/define.tsx";
+import InteractiveCommand from "./commands/interactive.tsx";
 
 interface AppProps {
   command: string;
@@ -18,8 +19,13 @@ interface AppProps {
 }
 
 export default function App({ command, subcommand, args, flags }: AppProps) {
+  // Handle no command - show interactive mode
+  if (!command) {
+    return <InteractiveCommand />;
+  }
+
   // Handle help
-  if (!command || command === "help") {
+  if (command === "help") {
     return <HelpCommand />;
   }
 
