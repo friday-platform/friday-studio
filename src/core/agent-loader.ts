@@ -1,7 +1,6 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
-import type { AgentMetadata } from "../types/agent.ts";
-import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
 import { logger } from "../utils/logger.ts";
+import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
 
 export interface AgentLoadResult {
   loaded: IWorkspaceAgent[];

@@ -4,6 +4,7 @@ import { FullScreenBox } from "fullscreen-ink";
 import { Alert, Badge } from "@inkjs/ui";
 import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import { Tab, TabGroup, useTabNavigation } from "./cli/components/tabs.tsx";
 
 // Parse command arguments while preserving JSON structure
 function parseCommandArgs(command: string): string[] {
@@ -75,8 +76,14 @@ const INITIAL_MESSAGES: LogEntry[] = [
 const TUIDemo: React.FC = () => {
   const [input, setInput] = useState("");
   const [serverLogs, setServerLogs] = useState<LogEntry[]>(INITIAL_MESSAGES);
-  const [serverStatus, setServerStatus] = useState<ServerStatus>({ running: false });
-  const [currentPanel, setCurrentPanel] = useState<"logs" | "commands" | "input">("logs");
+  const [serverStatus, setServerStatus] = useState<ServerStatus>({
+    running: false,
+  });
+  const { activeTab, nextTab, previousTab, goToTab } = useTabNavigation({
+    tabCount: 2, // Only 2 content tabs: 0=Conversation, 1=Server
+    initialTab: 0,
+  });
+  const [inputFocused, setInputFocused] = useState(true);
   const [conversationScroll, setConversationScroll] = useState(0);
   const [serverScroll, setServerScroll] = useState(0);
   const [showPopover, setShowPopover] = useState(false);
@@ -113,17 +120,24 @@ const TUIDemo: React.FC = () => {
     };
   }, []);
 
-  const addLog = (type: LogEntry["type"], content: string, isPasted = false) => {
+  const addLog = (
+    type: LogEntry["type"],
+    content: string,
+    isPasted = false
+  ) => {
     const timestamp = new Date().toTimeString().slice(0, 8);
     // Use reasonable truncation for all logs to prevent wrapping issues
     const maxDisplayLength = type === "server" ? 100 : 120;
     const truncated = content.length > maxDisplayLength;
-    const displayContent = truncated ? content.slice(0, maxDisplayLength) + "..." : content;
+    const displayContent = truncated
+      ? content.slice(0, maxDisplayLength) + "..."
+      : content;
 
     setServerLogs((prev: LogEntry[]) => {
       // For conversation logs (user, command, error), keep all history
       // For server logs, limit to last 150 to prevent memory issues
-      const isConversationLog = type === "user" || type === "command" || type === "error";
+      const isConversationLog =
+        type === "user" || type === "command" || type === "error";
 
       if (isConversationLog) {
         // Keep all conversation logs - no limit
@@ -140,8 +154,12 @@ const TUIDemo: React.FC = () => {
       } else {
         // For server logs, apply the 150 limit
         const nonInitialLogs = prev.slice(INITIAL_MESSAGES.length);
-        const serverLogs = nonInitialLogs.filter((log) => log.type === "server");
-        const conversationLogs = nonInitialLogs.filter((log) => log.type !== "server");
+        const serverLogs = nonInitialLogs.filter(
+          (log) => log.type === "server"
+        );
+        const conversationLogs = nonInitialLogs.filter(
+          (log) => log.type !== "server"
+        );
         const recentServerLogs = serverLogs.slice(-150); // Keep last 150 server logs
 
         return [
@@ -166,7 +184,7 @@ const TUIDemo: React.FC = () => {
   const startServer = async () => {
     try {
       // Check if workspace.yml exists
-      if (!await exists("workspace.yml")) {
+      if (!(await exists("workspace.yml"))) {
         addLog("error", "No workspace.yml found in current directory");
         return;
       }
@@ -174,7 +192,10 @@ const TUIDemo: React.FC = () => {
       const workspaceYaml = await Deno.readTextFile("workspace.yml");
       const config = yaml.parse(workspaceYaml) as any;
 
-      addLog("server", `Starting ${config.workspace?.name || "workspace"} server...`);
+      addLog(
+        "server",
+        `Starting ${config.workspace?.name || "workspace"} server...`
+      );
 
       // Start server process
       const gitRoot = new Deno.Command("git", {
@@ -207,14 +228,18 @@ const TUIDemo: React.FC = () => {
           OTEL_DENO: "true",
           OTEL_SERVICE_NAME: "atlas-tui",
           OTEL_SERVICE_VERSION: "1.0.0",
-          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui,service.version=1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES:
+            "service.name=atlas-tui,service.version=1.0.0",
         },
       }).spawn();
 
       serverProcessRef.current = serverProcess;
 
       // Read server output
-      const readOutput = async (stream: ReadableStream<Uint8Array>, type: "server" | "error") => {
+      const readOutput = async (
+        stream: ReadableStream<Uint8Array>,
+        type: "server" | "error"
+      ) => {
         const reader = stream.getReader();
         const decoder = new TextDecoder();
 
@@ -247,8 +272,12 @@ const TUIDemo: React.FC = () => {
                 addLog(type, cleanLine);
 
                 // Update server status based on output
-                if (cleanLine.includes("Workspace server running") || cleanLine.includes("Port:")) {
-                  const portMatch = cleanLine.match(/port (\d+)/i) || cleanLine.match(/:(\d+)/);
+                if (
+                  cleanLine.includes("Workspace server running") ||
+                  cleanLine.includes("Port:")
+                ) {
+                  const portMatch =
+                    cleanLine.match(/port (\d+)/i) || cleanLine.match(/:(\d+)/);
                   setServerStatus({
                     running: true,
                     port: portMatch ? parseInt(portMatch[1]) : 8080,
@@ -277,6 +306,9 @@ const TUIDemo: React.FC = () => {
   const executeCommand = async (commandText: string, isPasted = false) => {
     addLog("user", commandText, isPasted);
 
+    // Always switch back to Conversation tab when command is executed
+    goToTab(0);
+
     try {
       // Handle help command
       if (commandText.trim() === "help" || commandText.trim() === "/help") {
@@ -291,7 +323,10 @@ const TUIDemo: React.FC = () => {
 
         // Prevent workspace serve since TUI already has server running
         if (args[0] === "workspace" && args[1] === "serve") {
-          addLog("error", "Cannot run /workspace serve - server is already running in TUI");
+          addLog(
+            "error",
+            "Cannot run /workspace serve - server is already running in TUI"
+          );
           return;
         }
 
@@ -302,7 +337,7 @@ const TUIDemo: React.FC = () => {
       // Non-slash commands are not supported
       addLog(
         "error",
-        'Commands must start with / (e.g., /workspace serve). Type "help" for available commands.',
+        'Commands must start with / (e.g., /workspace serve). Type "help" for available commands.'
       );
     } catch (error) {
       addLog("error", `Command failed: ${error}`);
@@ -338,8 +373,14 @@ const TUIDemo: React.FC = () => {
     debugCommands.forEach((feature) => {
       addLog("command", feature);
     });
-    addLog("command", "=== Navigation: j/k to select, Enter to copy to prompt ===");
-    addLog("command", "=== Performance: Filter server logs by [PERF] or [DEBUG] ===");
+    addLog(
+      "command",
+      "=== Navigation: j/k to select, Enter to copy to prompt ==="
+    );
+    addLog(
+      "command",
+      "=== Performance: Filter server logs by [PERF] or [DEBUG] ==="
+    );
   };
 
   const executeCliCommand = async (command: string, args: string[]) => {
@@ -347,7 +388,11 @@ const TUIDemo: React.FC = () => {
       addLog("command", `Executing: ${command} ${args.join(" ")}`);
 
       // For signal triggers, use HTTP API instead of spawning another CLI process
-      if (command === "signal" && args[0] === "trigger" && serverStatus.running) {
+      if (
+        command === "signal" &&
+        args[0] === "trigger" &&
+        serverStatus.running
+      ) {
         const signalName = args[1];
         const dataIndex = args.indexOf("--data");
         if (dataIndex !== -1 && dataIndex + 1 < args.length) {
@@ -360,14 +405,16 @@ const TUIDemo: React.FC = () => {
 
             // Send HTTP request to the running server
             const response = await fetch(
-              `http://localhost:${serverStatus.port || 8080}/signals/${signalName}`,
+              `http://localhost:${
+                serverStatus.port || 8080
+              }/signals/${signalName}`,
               {
                 method: "POST",
                 headers: {
                   "Content-Type": "application/json",
                 },
                 body: jsonData,
-              },
+              }
             );
 
             if (response.ok) {
@@ -399,7 +446,10 @@ const TUIDemo: React.FC = () => {
       const rootPath = new TextDecoder().decode(gitRoot.stdout).trim();
       const cliPath = `${rootPath}/src/cli.tsx`;
 
-      addLog("command", `Running: deno run ... ${cliPath} ${command} ${args.join(" ")}`);
+      addLog(
+        "command",
+        `Running: deno run ... ${cliPath} ${command} ${args.join(" ")}`
+      );
 
       // Use spawn with timeout instead of outputSync
       const controller = new AbortController();
@@ -425,7 +475,8 @@ const TUIDemo: React.FC = () => {
           OTEL_DENO: "true",
           OTEL_SERVICE_NAME: "atlas-tui-cli",
           OTEL_SERVICE_VERSION: "1.0.0",
-          OTEL_RESOURCE_ATTRIBUTES: "service.name=atlas-tui-cli,service.version=1.0.0",
+          OTEL_RESOURCE_ATTRIBUTES:
+            "service.name=atlas-tui-cli,service.version=1.0.0",
         },
       }).spawn();
 
@@ -468,7 +519,7 @@ const TUIDemo: React.FC = () => {
   const handleViNavigation = (sequence: string) => {
     const pageSize = Math.floor(availableHeight * 0.8); // 80% of visible area for page jumps
 
-    if (currentPanel === "logs") {
+    if (activeTab === 0) {
       const maxIndex = Math.max(0, conversationLogs.length - 1);
 
       if (sequence === "gg") {
@@ -502,7 +553,7 @@ const TUIDemo: React.FC = () => {
           return newIndex;
         });
       }
-    } else if (currentPanel === "commands") {
+    } else if (activeTab === 1) {
       const maxIndex = Math.max(0, serverOnlyLogs.length - 1);
       const visibleHeight = availableHeight - 8;
 
@@ -560,12 +611,47 @@ const TUIDemo: React.FC = () => {
         ? "Escape"
         : "";
       const keyDesc = special || `${modStr}${inputChar}`;
-      addLog("command", `Debug: Key=${keyDesc} Panel=${currentPanel}`);
+      const currentPanelName = inputFocused
+        ? "input"
+        : activeTab === 0
+        ? "logs"
+        : "commands";
+      addLog("command", `Debug: Key=${keyDesc} Panel=${currentPanelName}`);
+    }
+
+    // Handle Alt + arrow keys for tab switching (Alt+b = left, Alt+f = right)
+    if (key.meta && (inputChar === 'b' || inputChar === 'f' || key.leftArrow || key.rightArrow)) {
+      const isLeft = inputChar === 'b' || key.leftArrow;
+      const isRight = inputChar === 'f' || key.rightArrow;
+      
+      if (isLeft) {
+        // Go to previous tab
+        const newTab = activeTab > 0 ? activeTab - 1 : 1; // Wrap to last tab
+        goToTab(newTab);
+      } else if (isRight) {
+        // Go to next tab
+        const newTab = activeTab < 1 ? activeTab + 1 : 0; // Wrap to first tab
+        goToTab(newTab);
+      }
+      return;
+    }
+
+    // Debug: Log key combinations (excluding arrow keys and numbers which are handled above)
+    if (key.meta && inputChar && !key.leftArrow && !key.rightArrow && inputChar !== 'b' && inputChar !== 'f' && !inputChar.match(/[1-9]/)) {
+      addLog("command", `Debug: Alt+${inputChar}`);
+    }
+    if (key.ctrl && inputChar) {
+      addLog("command", `Debug: Ctrl+${inputChar}`);
     }
 
     // Handle vi navigation sequences
     if (
-      currentPanel !== "input" && inputChar && !key.ctrl && !key.meta && !key.escape && !key.tab &&
+      !inputFocused &&
+      inputChar &&
+      !key.ctrl &&
+      !key.meta &&
+      !key.escape &&
+      !key.tab &&
       !key.return
     ) {
       // Clear any existing timeout
@@ -597,7 +683,10 @@ const TUIDemo: React.FC = () => {
       }
 
       // If sequence is getting too long or doesn't match any pattern, reset
-      if (newSequence.length > 2 || (newSequence.length === 2 && newSequence !== "gg")) {
+      if (
+        newSequence.length > 2 ||
+        (newSequence.length === 2 && newSequence !== "gg")
+      ) {
         keySequenceRef.current = inputChar; // Start fresh with this character
       }
 
@@ -628,53 +717,24 @@ const TUIDemo: React.FC = () => {
       // Handle paste (Ctrl+V) - note: this may not work in all terminals
       // Most terminals handle paste at OS level, sending rapid char sequences
       return;
-    } else if (key.tab) {
-      setCurrentPanel((prev: "logs" | "commands" | "input") => {
-        let newPanel: "logs" | "commands" | "input";
-
-        if (key.shift) {
-          // Shift+Tab goes backwards
-          if (prev === "logs") newPanel = "input";
-          else if (prev === "commands") newPanel = "logs";
-          else newPanel = "commands";
-        } else {
-          // Regular Tab goes forwards
-          if (prev === "logs") newPanel = "commands";
-          else if (prev === "commands") newPanel = "input";
-          else newPanel = "logs";
-        }
-
-        // Ensure selection is within bounds when switching panels
-        if (newPanel === "logs") {
-          const maxIndex = Math.max(0, conversationLogs.length - 1);
-          setSelectedLogIndex((prev: number) => Math.min(prev, maxIndex));
-        } else if (newPanel === "commands") {
-          const maxIndex = Math.max(0, serverOnlyLogs.length - 1);
-          setSelectedServerLogIndex((prev: number) => {
-            // Always start with the most recent log (bottom) for server logs
-            const newIndex = maxIndex;
-            // Auto-scroll to show the selected item (should be at bottom)
-            const visibleHeight = availableHeight - 8;
-            if (serverOnlyLogs.length > visibleHeight) {
-              setServerScroll(serverOnlyLogs.length - visibleHeight);
-            }
-            return newIndex;
-          });
-        }
-        return newPanel;
-      });
     } else if (key.ctrl && inputChar === "a") {
       // Toggle auto-scroll
       setAutoScroll((prev: boolean) => !prev);
-    } else if (key.ctrl && (inputChar === "d" || inputChar === "u") && currentPanel !== "input") {
+    } else if (
+      key.ctrl &&
+      (inputChar === "d" || inputChar === "u") &&
+      !inputFocused
+    ) {
       // Page navigation with Ctrl+D (down) and Ctrl+U (up)
       handleViNavigation(inputChar === "d" ? "J" : "K");
       return;
     } else if (
-      key.upArrow || (inputChar === "k" && currentPanel !== "input" && !key.ctrl && !key.meta)
+      key.upArrow ||
+      (inputChar === "k" && !inputFocused && !key.ctrl && !key.meta)
     ) {
-      // Navigate up in logs (older entries)
-      if (currentPanel === "logs") {
+      // Navigate up in logs (older entries) and blur input to enable log interaction
+      setInputFocused(false);
+      if (activeTab === 0) {
         setSelectedLogIndex((prev: number) => {
           const newIndex = Math.max(0, prev - 1);
           // Auto-scroll to keep selection visible
@@ -683,7 +743,7 @@ const TUIDemo: React.FC = () => {
           }
           return newIndex;
         });
-      } else if (currentPanel === "commands") {
+      } else if (activeTab === 1) {
         setSelectedServerLogIndex((prev: number) => {
           const newIndex = Math.max(0, prev - 1);
           // Auto-scroll to keep selection visible
@@ -694,10 +754,12 @@ const TUIDemo: React.FC = () => {
         });
       }
     } else if (
-      key.downArrow || (inputChar === "j" && currentPanel !== "input" && !key.ctrl && !key.meta)
+      key.downArrow ||
+      (inputChar === "j" && !inputFocused && !key.ctrl && !key.meta)
     ) {
-      // Navigate down in logs (newer entries)
-      if (currentPanel === "logs") {
+      // Navigate down in logs (newer entries) and blur input to enable log interaction
+      setInputFocused(false);
+      if (activeTab === 0) {
         const maxIndex = Math.max(0, conversationLogs.length - 1);
         setSelectedLogIndex((prev: number) => {
           const newIndex = Math.min(maxIndex, prev + 1);
@@ -707,7 +769,7 @@ const TUIDemo: React.FC = () => {
           }
           return newIndex;
         });
-      } else if (currentPanel === "commands") {
+      } else if (activeTab === 1) {
         const maxIndex = Math.max(0, serverOnlyLogs.length - 1);
         setSelectedServerLogIndex((prev: number) => {
           const newIndex = Math.min(maxIndex, prev + 1);
@@ -719,8 +781,12 @@ const TUIDemo: React.FC = () => {
           return newIndex;
         });
       }
+    } else if (key.tab && !inputFocused) {
+      // Tab key refocuses input when not focused
+      setInputFocused(true);
+      return;
     } else if (key.return) {
-      if (currentPanel === "input") {
+      if (inputFocused) {
         // Execute command
         if (input.trim()) {
           // Check if this was likely a pasted command based on rapid input detection
@@ -731,23 +797,28 @@ const TUIDemo: React.FC = () => {
         }
       } else {
         // Handle log selection and command population
-        if (currentPanel === "logs") {
+        if (activeTab === 0) {
           const log = conversationLogs[selectedLogIndex];
 
           // If it's a command log that looks like a help command, populate input
           if (
-            log && log.type === "command" && log.content && !log.content.includes("===") &&
+            log &&
+            log.type === "command" &&
+            log.content &&
+            !log.content.includes("===") &&
             !log.content.includes("Navigation:")
           ) {
             // Use the raw content directly since timestamps are separate now
             const command = log.content.trim();
             // Only populate if it looks like a real command (starts with /)
             if (
-              command.startsWith("/") && !command.includes("Executing:") &&
-              !command.includes("started") && !command.includes("...")
+              command.startsWith("/") &&
+              !command.includes("Executing:") &&
+              !command.includes("started") &&
+              !command.includes("...")
             ) {
               addLog("command", `Copying command to input: ${command}`);
-              setCurrentPanel("input");
+              setInputFocused(true);
               setInput(() => command);
               return;
             }
@@ -759,7 +830,7 @@ const TUIDemo: React.FC = () => {
             setShowPopover(true);
             return;
           }
-        } else if (currentPanel === "commands") {
+        } else if (activeTab === 1) {
           const log = serverOnlyLogs[selectedServerLogIndex];
           if (log && log.fullContent) {
             setPopoverContent(log.fullContent);
@@ -768,11 +839,15 @@ const TUIDemo: React.FC = () => {
           }
         }
       }
-    } else if ((key.backspace || key.delete) && currentPanel === "input") {
+    } else if (key.backspace || key.delete) {
+      // Always handle delete/backspace for input, auto-focus if needed
+      if (!inputFocused) {
+        setInputFocused(true);
+      }
       setInput((prev: string) => prev.slice(0, -1));
-    } else if (inputChar === "y" && currentPanel !== "input") {
+    } else if (inputChar === "y" && !inputFocused) {
       // Copy selected line to clipboard using pbcopy (macOS) or equivalent
-      if (currentPanel === "logs") {
+      if (activeTab === 0) {
         const log = conversationLogs[selectedLogIndex];
         if (log) {
           const textToCopy = log.fullContent || log.content;
@@ -787,14 +862,17 @@ const TUIDemo: React.FC = () => {
               await writer.close();
               await process.status;
 
-              addLog("command", `Copied to clipboard: ${textToCopy.slice(0, 50)}...`);
+              addLog(
+                "command",
+                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`
+              );
             } catch (error) {
               addLog("error", `Failed to copy to clipboard: ${error}`);
             }
           };
           copyToClipboard();
         }
-      } else if (currentPanel === "commands") {
+      } else if (activeTab === 1) {
         const log = serverOnlyLogs[selectedServerLogIndex];
         if (log) {
           const textToCopy = log.fullContent || log.content;
@@ -809,7 +887,10 @@ const TUIDemo: React.FC = () => {
               await writer.close();
               await process.status;
 
-              addLog("command", `Copied to clipboard: ${textToCopy.slice(0, 50)}...`);
+              addLog(
+                "command",
+                `Copied to clipboard: ${textToCopy.slice(0, 50)}...`
+              );
             } catch (error) {
               addLog("error", `Failed to copy to clipboard: ${error}`);
             }
@@ -817,13 +898,24 @@ const TUIDemo: React.FC = () => {
           copyToClipboard();
         }
       }
-    } else if (inputChar === "/" && currentPanel !== "input") {
+    } else if (inputChar === "/" && !inputFocused) {
       // Typing '/' should focus the command prompt and add the '/'
-      setCurrentPanel("input");
+      setInputFocused(true);
       setInput("/");
       pasteDetectionRef.current += 1;
-    } else if (inputChar && !key.ctrl && !key.meta && !key.escape && currentPanel === "input") {
-      // Only handle character input when in input panel
+    } else if (
+      inputChar &&
+      !key.ctrl &&
+      !key.meta &&
+      !key.escape &&
+      // Allow input from any tab - automatically focus input when typing
+      inputChar.match(/[a-zA-Z0-9\/\-_\s.,!@#$%^&*()\=+\[\]{}|;:'",<>?`~]/)
+    ) {
+      // Auto-focus input when typing
+      if (!inputFocused) {
+        setInputFocused(true);
+      }
+
       pasteDetectionRef.current += 1;
 
       // Add character immediately for responsive typing
@@ -840,10 +932,13 @@ const TUIDemo: React.FC = () => {
   });
 
   // Separate conversation logs from server logs
-  const conversationLogs = serverLogs.filter((log: LogEntry) =>
-    log.type === "user" || log.type === "command" || log.type === "error"
+  const conversationLogs = serverLogs.filter(
+    (log: LogEntry) =>
+      log.type === "user" || log.type === "command" || log.type === "error"
   );
-  const serverOnlyLogs = serverLogs.filter((log: LogEntry) => log.type === "server");
+  const serverOnlyLogs = serverLogs.filter(
+    (log: LogEntry) => log.type === "server"
+  );
 
   // Auto-scroll conversation to bottom when new logs are added (only if auto-scroll is enabled)
   useEffect(() => {
@@ -870,154 +965,190 @@ const TUIDemo: React.FC = () => {
     }
   }, [serverOnlyLogs.length, availableHeight, autoScroll]);
 
+  const renderConversationTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      {conversationLogs
+        .slice(conversationScroll, conversationScroll + availableHeight)
+        .map((log: LogEntry, i: number) => {
+          const globalLogIndex = i + conversationScroll;
+          const displayText =
+            log.isPasted && log.content.length > 30
+              ? `[Pasted Text #${globalLogIndex + 1}] ${log.content.slice(
+                  0,
+                  25
+                )}...`
+              : log.content;
+
+          // Check if this log is selected and we're in the logs panel
+          const isSelected =
+            activeTab === 0 && selectedLogIndex === globalLogIndex;
+
+          return (
+            <Box key={globalLogIndex} flexDirection="column">
+              <Text
+                color={
+                  isSelected
+                    ? "black"
+                    : log.type === "user"
+                    ? "cyan"
+                    : log.type === "command"
+                    ? "magenta"
+                    : "red"
+                }
+                backgroundColor={isSelected ? "white" : undefined}
+              >
+                {isSelected ? "▶ " : ""}
+                <Text color="gray">{log.timestamp}</Text> {displayText}
+                {(log.fullContent || log.isPasted) && (
+                  <Text
+                    color={isSelected ? "black" : "yellow"}
+                    backgroundColor={isSelected ? "white" : undefined}
+                    dimColor={!isSelected}
+                  >
+                    {isSelected
+                      ? " [ENTER to expand]"
+                      : " [j/k to select, Enter to expand]"}
+                  </Text>
+                )}
+              </Text>
+            </Box>
+          );
+        })}
+      {activeTab === 0 && conversationLogs.length > 0 && (
+        <Box marginTop={1}>
+          <Text color="gray" dimColor>
+            Selected: {selectedLogIndex + 1}/{conversationLogs.length}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+
+  const renderServerTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      <Box marginBottom={1}>
+        <Text color="gray">
+          {serverStatus.running ? "🟢 Running" : "🔴 Stopped"}
+          {serverStatus.port && `:${serverStatus.port}`}
+          {serverStatus.workspace && ` 🏢 ${serverStatus.workspace}`}
+        </Text>
+      </Box>
+      {serverOnlyLogs
+        .slice(serverScroll, serverScroll + availableHeight)
+        .map((log: LogEntry, i: number) => {
+          const globalLogIndex = i + serverScroll;
+          const isSelected =
+            activeTab === 1 && selectedServerLogIndex === globalLogIndex;
+
+          // Determine log color based on content
+          const isPerformanceLog = log.content.includes("[PERF]");
+          const isDebugLog = log.content.includes("[DEBUG]");
+          const isOtelLog = log.content.includes("OpenTelemetry");
+
+          const logColor = isSelected
+            ? "black"
+            : isPerformanceLog
+            ? "yellow"
+            : isDebugLog
+            ? "cyan"
+            : isOtelLog
+            ? "magenta"
+            : "green";
+
+          return (
+            <Box key={globalLogIndex} flexDirection="column">
+              <Text
+                color={logColor}
+                backgroundColor={isSelected ? "white" : undefined}
+                bold={isPerformanceLog || isOtelLog}
+              >
+                {isSelected ? "▶ " : ""}
+                {isPerformanceLog && !isSelected ? "⚡ " : ""}
+                {isDebugLog && !isSelected ? "🔍 " : ""}
+                {isOtelLog && !isSelected ? "📊 " : ""}
+                <Text color="gray">{log.timestamp}</Text> {log.content}
+                {log.fullContent && (
+                  <Text
+                    color={isSelected ? "black" : "gray"}
+                    backgroundColor={isSelected ? "white" : undefined}
+                    dimColor={!isSelected}
+                  >
+                    {isSelected
+                      ? " [ENTER to expand]"
+                      : " [j/k to select, Enter to expand]"}
+                  </Text>
+                )}
+              </Text>
+            </Box>
+          );
+        })}
+      {activeTab === 1 && serverOnlyLogs.length > 0 && (
+        <Box marginTop={1}>
+          <Text color="gray" dimColor>
+            Selected: {selectedServerLogIndex + 1}/{serverOnlyLogs.length}
+          </Text>
+        </Box>
+      )}
+    </Box>
+  );
+
+  const renderInputPanel = () => {
+    const [cursorVisible, setCursorVisible] = useState(true);
+
+    useEffect(() => {
+      if (inputFocused) {
+        const interval = setInterval(() => {
+          setCursorVisible((prev) => !prev);
+        }, 500); // Blink every 500ms when focused
+
+        return () => clearInterval(interval);
+      } else {
+        // Static cursor when not focused
+        setCursorVisible(true);
+      }
+    }, [inputFocused]);
+
+    const getCursor = () => {
+      if (inputFocused) {
+        return cursorVisible ? "█" : " ";
+      } else {
+        // Static solid cursor when not focused
+        return "█";
+      }
+    };
+
+    return (
+      <Box flexDirection="column" paddingY={1} flexGrow={1} height={6}>
+        <Box borderStyle="round" borderColor="green" paddingX={1} width="100%">
+          <Text>
+            {">"} {input}
+            <Text color={inputFocused ? "white" : "gray"}>
+              {getCursor()}
+            </Text>
+          </Text>
+        </Box>
+      </Box>
+    );
+  };
+
   return (
     <FullScreenBox flexDirection="column">
-      <Box flexDirection="row" flexGrow={1}>
-        {/* Left Panel - Conversation */}
-        <Box
-          flexDirection="column"
-          width="50%"
-          paddingX={2}
+      <Box flexGrow={1}>
+        <TabGroup
+          activeTab={activeTab}
+          onTabChange={(index: number) => goToTab(index)}
         >
-          <Text bold color={currentPanel === "logs" ? "cyan" : "gray"}>
-            💬 Conversation
-          </Text>
-          <Box flexDirection="column" marginTop={1} height={availableHeight} overflow="hidden">
-            {conversationLogs.slice(conversationScroll, conversationScroll + availableHeight).map(
-              (log: LogEntry, i: number) => {
-                const globalLogIndex = i + conversationScroll;
-                const displayText = log.isPasted && log.content.length > 30
-                  ? `[Pasted Text #${globalLogIndex + 1}] ${log.content.slice(0, 25)}...`
-                  : log.content;
-
-                // Check if this log is selected and we're in the logs panel
-                const isSelected = currentPanel === "logs" && selectedLogIndex === globalLogIndex;
-
-                return (
-                  <Box key={globalLogIndex} flexDirection="column">
-                    <Text
-                      color={isSelected
-                        ? "black"
-                        : (log.type === "user"
-                          ? "cyan"
-                          : log.type === "command"
-                          ? "magenta"
-                          : "red")}
-                      backgroundColor={isSelected ? "white" : undefined}
-                    >
-                      {isSelected ? "▶ " : ""}
-                      <Text color="gray">{log.timestamp}</Text> {displayText}
-                      {(log.fullContent || log.isPasted) && (
-                        <Text
-                          color={isSelected ? "black" : "yellow"}
-                          backgroundColor={isSelected ? "white" : undefined}
-                          dimColor={!isSelected}
-                        >
-                          {isSelected ? " [ENTER to expand]" : " [j/k to select, Enter to expand]"}
-                        </Text>
-                      )}
-                    </Text>
-                  </Box>
-                );
-              },
-            )}
-          </Box>
-          {currentPanel === "logs" && conversationLogs.length > 0 && (
-            <Box marginTop={1}>
-              <Text color="gray" dimColor>
-                Selected: {selectedLogIndex + 1}/{conversationLogs.length}
-              </Text>
-            </Box>
-          )}
-        </Box>
-
-        {/* Right Panel - Server Output */}
-        <Box
-          flexDirection="column"
-          width="50%"
-          paddingX={2}
-        >
-          <Text bold color={currentPanel === "commands" ? "green" : "gray"}>
-            🖥️ Server Output {serverStatus.running ? "🟢 " : "🔴 "}
-            {serverStatus.running ? "Running" : "Stopped"}
-            {serverStatus.port && `:${serverStatus.port}`}
-            {serverStatus.workspace && ` 🏢 ${serverStatus.workspace}`}
-          </Text>
-          <Box flexDirection="column" marginTop={1} height={availableHeight} overflow="hidden">
-            {serverOnlyLogs.slice(serverScroll, serverScroll + availableHeight).map(
-              (log: LogEntry, i: number) => {
-                const globalLogIndex = i + serverScroll;
-                const isSelected = currentPanel === "commands" &&
-                  selectedServerLogIndex === globalLogIndex;
-
-                // Determine log color based on content
-                const isPerformanceLog = log.content.includes("[PERF]");
-                const isDebugLog = log.content.includes("[DEBUG]");
-                const isOtelLog = log.content.includes("OpenTelemetry");
-
-                const logColor = isSelected
-                  ? "black"
-                  : isPerformanceLog
-                  ? "yellow"
-                  : isDebugLog
-                  ? "cyan"
-                  : isOtelLog
-                  ? "magenta"
-                  : "green";
-
-                return (
-                  <Box key={globalLogIndex} flexDirection="column">
-                    <Text
-                      color={logColor}
-                      backgroundColor={isSelected ? "white" : undefined}
-                      bold={isPerformanceLog || isOtelLog}
-                    >
-                      {isSelected ? "▶ " : ""}
-                      {isPerformanceLog && !isSelected ? "⚡ " : ""}
-                      {isDebugLog && !isSelected ? "🔍 " : ""}
-                      {isOtelLog && !isSelected ? "📊 " : ""}
-                      <Text color="gray">{log.timestamp}</Text> {log.content}
-                      {log.fullContent && (
-                        <Text
-                          color={isSelected ? "black" : "gray"}
-                          backgroundColor={isSelected ? "white" : undefined}
-                          dimColor={!isSelected}
-                        >
-                          {isSelected ? " [ENTER to expand]" : " [j/k to select, Enter to expand]"}
-                        </Text>
-                      )}
-                    </Text>
-                  </Box>
-                );
-              },
-            )}
-          </Box>
-          {currentPanel === "commands" && serverOnlyLogs.length > 0 && (
-            <Box marginTop={1}>
-              <Text color="gray" dimColor>
-                Selected: {selectedServerLogIndex + 1}/{serverOnlyLogs.length}
-              </Text>
-            </Box>
-          )}
-        </Box>
+          <Tab label="Conversation" icon="◈">
+            {renderConversationTab()}
+          </Tab>
+          <Tab label="Server Output" icon="▦">
+            {renderServerTab()}
+          </Tab>
+        </TabGroup>
       </Box>
 
-      {/* Input Area */}
-      <Box
-        borderStyle="single"
-        borderColor={currentPanel === "input" ? "green" : "gray"}
-        paddingX={1}
-        flexDirection="column"
-      >
-        <Text bold color={currentPanel === "input" ? "green" : "gray"}>
-          Command Prompt {currentPanel === "input" ? "(active)" : ""}
-        </Text>
-        <Box width="100%" overflow="hidden">
-          <Text>❯ {input.length > 120 ? `...${input.slice(-115)}` : input}</Text>
-          <Text backgroundColor="white" color="black"></Text>
-          {pasteDetectionRef.current > 3 && <Text color="yellow" dimColor>[PASTE DETECTED]</Text>}
-        </Box>
-      </Box>
+      {/* Always visible input panel at bottom */}
+      {renderInputPanel()}
 
       {/* Full-screen content preview */}
       {showPopover && (
@@ -1040,7 +1171,9 @@ const TUIDemo: React.FC = () => {
             height="100%"
           >
             <Box borderStyle="single" borderColor="cyan" paddingX={1}>
-              <Text bold color="cyan">📄 Full Content Preview</Text>
+              <Text bold color="cyan">
+                📄 Full Content Preview
+              </Text>
               <Text color="gray">- Press Esc to close</Text>
             </Box>
             <Box
@@ -1051,24 +1184,35 @@ const TUIDemo: React.FC = () => {
               marginTop={1}
               backgroundColor="black"
             >
-              <Text color="white" wrap="wrap">{popoverContent}</Text>
+              <Text color="white" wrap="wrap">
+                {popoverContent}
+              </Text>
             </Box>
           </Box>
         </Box>
       )}
 
       {/* Status Bar */}
-      <Box paddingX={1}>
-        <Text bold color="yellow">🏢 {serverStatus.workspace || "Atlas"}</Text>
+      <Box paddingX={1} borderTop borderColor="gray">
+        <Text bold color="yellow">
+          ▣ {serverStatus.workspace || "Atlas"}
+        </Text>
         <Badge color={serverStatus.running ? "green" : "red"}>
           {serverStatus.running ? "Online" : "Offline"}
         </Badge>
-        <Text>| Logs: {serverLogs.length} entries</Text>
-        <Text color="magenta">| 📊 OTEL: ON</Text>
-        <Text color="cyan">| 🔍 Debug: ON</Text>
-        {serverOnlyLogs.filter((log) => log.content.includes("[PERF]")).length > 0 && (
+        <Text> | Logs: {serverLogs.length} entries</Text>
+        <Text color="magenta"> | ▨ OTEL: ON</Text>
+        <Text color="cyan"> | ◦ Debug: ON</Text>
+        {serverOnlyLogs.filter((log: LogEntry) =>
+          log.content.includes("[PERF]")
+        ).length > 0 && (
           <Text color="yellow">
-            | ⚡ Perf: {serverOnlyLogs.filter((log) => log.content.includes("[PERF]")).length}
+            {" "}| ◆ Perf:{" "}
+            {
+              serverOnlyLogs.filter((log: LogEntry) =>
+                log.content.includes("[PERF]")
+              ).length
+            }
           </Text>
         )}
       </Box>

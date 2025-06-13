@@ -2,18 +2,16 @@
  * AgentSupervisor - Manages safe agent loading and execution with LLM intelligence
  */
 
+import { logger } from "../utils/logger.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
+import type { AtlasMemoryConfig } from "./memory-config.ts";
 import type {
-  AgentConfig,
   AgentMetadata,
   AgentTask,
   LLMAgentConfig,
   RemoteAgentConfig,
   SessionContext,
-  TempestAgentConfig,
 } from "./session-supervisor.ts";
-import type { AtlasMemoryConfig } from "./memory-config.ts";
-import { logger } from "../utils/logger.ts";
 
 // Supervisor configuration interface
 interface AgentSupervisorConfig {

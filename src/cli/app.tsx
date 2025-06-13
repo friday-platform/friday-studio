@@ -24,12 +24,16 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   switch (command) {
     case "workspace":
     case "work": // Support both
-      return <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "session":
     case "sesh": // Support both
     case "sess": // Support both
-      return <SessionCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <SessionCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "ps": // Alias for session list
       return <SessionCommand subcommand="list" args={args} flags={flags} />;
@@ -37,11 +41,7 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "signal":
     case "sig": // Support both
       return (
-        <SignalCommand
-          subcommand={subcommand}
-          args={args}
-          flags={flags}
-        />
+        <SignalCommand subcommand={subcommand} args={args} flags={flags} />
       );
 
     case "agent":
@@ -66,7 +66,9 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
 function HelpComponent() {
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">Atlas - AI Agent Orchestration Platform</Text>
+      <Text bold color="cyan">
+        Atlas - AI Agent Orchestration Platform
+      </Text>
       <Newline />
       <Text bold>Usage:</Text>
       <Text>atlas &lt;command&gt; [subcommand] [options]</Text>

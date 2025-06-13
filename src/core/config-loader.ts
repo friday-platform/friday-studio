@@ -97,7 +97,7 @@ const WorkspaceAgentConfigSchema = z
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
     protocol: z.enum(["acp", "a2a", "custom"]).optional(),
-    endpoint: z.string().url().optional(),
+    endpoint: z.url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
 
@@ -122,74 +122,82 @@ const WorkspaceAgentConfigSchema = z
     // Monitoring configuration
     monitoring: MonitoringConfigSchema.optional(),
   })
-  .superRefine((data, ctx) => {
+  .check((ctx) => {
     // Type-specific validation with detailed error messages
-    if (data.type === "tempest") {
-      if (!data.agent) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+    if (ctx.value.type === "tempest") {
+      if (!ctx.value.agent) {
+        ctx.issues.push({
+          code: "custom",
           message: "Tempest agents require 'agent' field",
           path: ["agent"],
+          input: ctx.value,
         });
       }
-      if (!data.version) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+      if (!ctx.value.version) {
+        ctx.issues.push({
+          code: "custom",
           message: "Tempest agents require 'version' field",
           path: ["version"],
+          input: ctx.value,
         });
       }
-    } else if (data.type === "llm") {
-      if (!data.model) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+    } else if (ctx.value.type === "llm") {
+      if (!ctx.value.model) {
+        ctx.issues.push({
+          code: "custom",
           message: "LLM agents require 'model' field",
           path: ["model"],
+          input: ctx.value,
         });
       }
-    } else if (data.type === "remote") {
-      if (!data.endpoint) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+    } else if (ctx.value.type === "remote") {
+      if (!ctx.value.endpoint) {
+        ctx.issues.push({
+          code: "custom",
           message: "Remote agents require 'endpoint' field",
           path: ["endpoint"],
+          input: ctx.value,
         });
       }
 
-      if (!data.protocol) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
+      if (!ctx.value.protocol) {
+        ctx.issues.push({
+          code: "custom",
           message: "Remote agents require 'protocol' field (acp, a2a, or custom)",
           path: ["protocol"],
+          input: ctx.value,
         });
       }
 
       // Protocol-specific validation
-      if (data.protocol === "acp") {
-        if (!data.acp?.agent_name) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+      if (ctx.value.protocol === "acp") {
+        if (!ctx.value.acp?.agent_name) {
+          ctx.issues.push({
+            code: "custom",
             message: "ACP remote agents require 'acp.agent_name' field",
             path: ["acp", "agent_name"],
+            input: ctx.value,
           });
         }
       }
 
       // Authentication validation
-      if (data.auth) {
-        const authType = data.auth.type;
-        if (authType === "bearer" && !data.auth.token_env && !data.auth.token) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+      if (ctx.value.auth) {
+        const authType = ctx.value.auth.type;
+        if (authType === "bearer" && !ctx.value.auth.token_env && !ctx.value.auth.token) {
+          ctx.issues.push({
+            code: "custom",
             message: "Bearer auth requires either 'token_env' or 'token' field",
             path: ["auth"],
+            input: ctx.value,
           });
         }
-        if (authType === "api_key" && !data.auth.api_key_env && !data.auth.token_env) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
+        if (authType === "api_key" && !ctx.value.auth.api_key_env && !ctx.value.auth.token_env) {
+          ctx.issues.push({
+            code: "custom",
             message: "API key auth requires either 'api_key_env' or 'token_env' field",
             path: ["auth"],
+            input: ctx.value,
           });
         }
       }

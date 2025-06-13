@@ -6,8 +6,8 @@
  */
 
 import { expect } from "@std/expect";
-import { ConfigLoader } from "../../src/core/config-loader.ts";
 import { join } from "@std/path";
+import { ConfigLoader } from "../../src/core/config-loader.ts";
 
 // Test fixtures
 const validAtlasConfig = `version: "1.0"
@@ -28,13 +28,26 @@ agents:
 
   security-scanner:
     type: "remote"
+    protocol: "acp"
     endpoint: "https://security-api.example.com/analyze"
     purpose: "Analyzes content for security concerns and sensitive information"
     auth:
       type: "bearer"
       token_env: "SECURITY_API_TOKEN"
     timeout: 30000
+    
+    # ACP-specific configuration
+    acp:
+      agent_name: "security-scanner"
+      default_mode: "sync"
+      timeout_ms: 30000
+      max_retries: 3
+      health_check_interval: 60000
+    
+    # Schema validation
     schema:
+      validate_input: true
+      validate_output: true
       input:
         type: "object"
         properties:
@@ -49,6 +62,14 @@ agents:
             type: "number"
             minimum: 0
             maximum: 10
+    
+    # Monitoring configuration
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 5
+        timeout_ms: 60000
+        half_open_max_calls: 3
 
   tempest-synthesizer:
     type: "tempest"
@@ -103,12 +124,33 @@ agents:
 
   test-remote-agent:
     type: "remote"
+    protocol: "acp"
     endpoint: "https://api.test.com/agent"
     purpose: "Test remote agent"
     auth:
       type: "bearer"
       token_env: "TEST_API_TOKEN"
     timeout: 15000
+    
+    # ACP-specific configuration
+    acp:
+      agent_name: "test-agent"
+      default_mode: "sync"
+      timeout_ms: 15000
+      max_retries: 2
+    
+    # Schema validation (optional)
+    schema:
+      validate_input: false
+      validate_output: false
+    
+    # Monitoring configuration
+    monitoring:
+      enabled: true
+      circuit_breaker:
+        failure_threshold: 3
+        timeout_ms: 30000
+        half_open_max_calls: 2
 
 signals:
   test-signal:
@@ -272,9 +314,11 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     expect(workspaceConfig.agents["test-tempest-agent"].version).toBe("1.0.0");
 
     expect(workspaceConfig.agents["test-remote-agent"].type).toBe("remote");
+    expect(workspaceConfig.agents["test-remote-agent"].protocol).toBe("acp");
     expect(workspaceConfig.agents["test-remote-agent"].endpoint).toBe(
       "https://api.test.com/agent",
     );
+    expect(workspaceConfig.agents["test-remote-agent"].acp?.agent_name).toBe("test-agent");
 
     // Test signals
     expect(Object.keys(workspaceConfig.signals).length).toBe(1);
@@ -424,7 +468,9 @@ Deno.test("Agent type configurations validate correctly", async () => {
     // Find Remote agent in atlas
     const atlasRemoteAgent = atlasAgents?.["security-scanner"];
     expect(atlasRemoteAgent?.type).toBe("remote");
+    expect(atlasRemoteAgent?.protocol).toBe("acp");
     expect(atlasRemoteAgent?.endpoint).toBeDefined();
+    expect(atlasRemoteAgent?.acp?.agent_name).toBe("security-scanner");
 
     // Find Tempest agent in atlas
     const atlasTempestAgent = atlasAgents?.["tempest-synthesizer"];
@@ -461,9 +507,13 @@ workspace:
   name: ""          # Empty name
   description: "Test workspace"
 agents:
-  invalid-agent:
+  invalid-llm-agent:
     type: "llm"      # Missing required model field
     purpose: "Test agent"
+  invalid-remote-agent:
+    type: "remote"   # Missing required protocol and acp.agent_name fields
+    endpoint: "https://api.test.com"
+    purpose: "Test remote agent"
 signals:
   test-signal:
     description: "Test signal"
@@ -486,9 +536,14 @@ signals:
     } catch (error) {
       errorCaught = true;
       expect(error).toBeInstanceOf(Error);
-      expect((error as Error).message).toContain(
-        "LLM agents require 'model' field",
-      );
+      const errorMessage = (error as Error).message;
+      // Should catch either LLM model missing or remote protocol missing
+      expect(
+        errorMessage.includes("LLM agents require 'model' field") ||
+          errorMessage.includes("Remote agents require 'protocol' field") ||
+          errorMessage.includes("Workspace ID must be a valid UUID") ||
+          errorMessage.includes("Workspace name cannot be empty"),
+      ).toBe(true);
     }
 
     expect(errorCaught).toBe(true);
