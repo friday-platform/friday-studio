@@ -12,6 +12,7 @@ environment.
 
 ## Claude Code execution guidelines
 
+0. **MANDATORY SESSION START**: At the beginning of EVERY session, read and update `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in SFW/work-appropriate language.
 1. Use `deno check` to statically verify code validity before running
 2. Run with required Deno flags:
    `--unstable-broadcast-channel --unstable-worker-options --allow-all --env-file`
