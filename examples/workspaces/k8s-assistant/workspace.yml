@@ -22,8 +22,8 @@ agents:
     # ACP-specific settings
     acp:
       agent_name: "k8s-deployment-manager" # Name of agent on k8s server
-      default_mode: "sync" # sync | async | stream
-      timeout_ms: 60000 # 60 second timeout for k8s operations
+      default_mode: "sync" # sync mode for reliable k8s operations
+      timeout_ms: 120000 # 120 second timeout for k8s operations
       max_retries: 2 # Retry failed requests 2 times
       health_check_interval: 30000 # Health check every 30 seconds
 

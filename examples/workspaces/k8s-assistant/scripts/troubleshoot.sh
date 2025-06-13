@@ -8,14 +8,20 @@ cd "$(dirname "$0")/.."
 
 echo "🔧 Troubleshooting Kubernetes cluster using Atlas K8s Assistant..."
 
-# Using Atlas CLI to trigger the troubleshoot signal
-OTEL_DENO=true \
-OTEL_SERVICE_NAME=atlas \
-OTEL_SERVICE_VERSION=1.0.0 \
-OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 \
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel ../../../src/cli.tsx signal trigger http-k8s --port 3001 --data '{
-  "message": "Analyze the cluster for common issues: failed pods, resource constraints, networking problems, and deployment issues. Provide specific recommendations for resolution."
-}'
+# Using direct HTTP call to the k8s endpoint (faster than CLI signal trigger)
+echo "📡 Sending troubleshooting request to Atlas workspace..."
+response=$(curl -X POST http://localhost:3001/k8s \
+  -H "Content-Type: application/json" \
+  -d '{
+    "message": "Analyze the cluster for common issues: failed pods, resource constraints, networking problems, and deployment issues. Provide specific recommendations for resolution."
+  }' \
+  --max-time 300 \
+  --fail \
+  --silent \
+  --show-error)
+
+echo "📄 Response:"
+echo "$response" | jq . 2>/dev/null || echo "$response"
 
 echo ""
 echo "✅ Troubleshooting analysis request sent!"
