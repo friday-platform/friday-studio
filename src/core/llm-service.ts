@@ -1,210 +1,35 @@
-import { createAnthropic } from "npm:@ai-sdk/anthropic";
-import { type CoreMessage, generateText, streamText } from "npm:ai";
+import {
+  type LLMConfig,
+  type LLMGenerationOptions,
+  LLMProviderManager,
+} from "./agents/llm-provider-manager.ts";
 import { logger } from "../utils/logger.ts";
-
-export interface LLMConfig {
-  model?: string;
-  apiKey?: string;
-  maxTokens?: number;
-  temperature?: number;
-  timeout?: number;
-}
-
-export interface LLMGenerationOptions {
-  includeMemoryContext?: boolean;
-  systemPrompt?: string;
-  memoryContext?: string;
-}
 
 /**
  * Centralized service for LLM generation across Atlas
- * Consolidates Anthropic client initialization and common generation patterns
+ * Now delegates to LLMProviderManager for multi-provider support
  */
 export class LLMService {
-  private static anthropicClient?: any;
-  private static defaultConfig: LLMConfig = {
-    model: Deno.env.get("ATLAS_DEFAULT_MODEL") || "claude-4-sonnet-20250514",
-    maxTokens: 4000,
-    temperature: 0.7,
-  };
-
   /**
-   * Get or create Anthropic client with consistent configuration
-   */
-  private static getAnthropicClient(config?: LLMConfig): any {
-    if (!this.anthropicClient) {
-      const apiKey = config?.apiKey || Deno.env.get("ANTHROPIC_API_KEY");
-      if (!apiKey) {
-        throw new Error("ANTHROPIC_API_KEY environment variable is required");
-      }
-
-      this.anthropicClient = createAnthropic({
-        apiKey,
-      });
-    }
-    return this.anthropicClient;
-  }
-
-  /**
-   * Generate text with standardized error handling and logging
+   * Generate text with multi-provider support
    */
   static async generateText(
     userPrompt: string,
-    options: LLMGenerationOptions & LLMConfig & {
+    options: LLMGenerationOptions & Partial<LLMConfig> & {
       operationContext?: { operation: string; [key: string]: any };
     } = {},
   ): Promise<string> {
-    const startTime = Date.now();
-    const config = { ...this.defaultConfig, ...options };
-
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutMs = options.timeout || 30000; // 30 second default timeout
-    const timeout = setTimeout(() => {
-      controller.abort();
-    }, timeoutMs);
-
-    try {
-      const anthropic = this.getAnthropicClient(config);
-
-      // Build messages array
-      const messages: CoreMessage[] = [];
-
-      // Add system context if provided
-      if (options.systemPrompt) {
-        messages.push({
-          role: "system",
-          content: options.systemPrompt,
-        });
-      }
-
-      // Add memory context if provided
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
-      }
-
-      messages.push({
-        role: "user",
-        content: contextualPrompt,
-      });
-
-      const { text } = await generateText({
-        model: anthropic(config.model!),
-        messages,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        abortSignal: controller.signal,
-      });
-
-      clearTimeout(timeout);
-      const duration = Date.now() - startTime;
-
-      logger.debug("LLM generation completed", {
-        operation: options.operationContext?.operation || "unknown",
-        model: config.model,
-        duration,
-        promptLength: userPrompt.length,
-        responseLength: text.length,
-        ...options.operationContext,
-      });
-
-      return text;
-    } catch (error) {
-      clearTimeout(timeout);
-      const duration = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Check if it was a timeout
-      if (error instanceof Error && error.name === "AbortError") {
-        logger.error("LLM generation timed out", {
-          model: config.model,
-          duration,
-          timeoutMs,
-          promptLength: userPrompt.length,
-        });
-        throw new Error(`LLM generation timed out after ${timeoutMs}ms`);
-      }
-
-      logger.error("LLM generation failed", {
-        model: config.model,
-        duration,
-        error: errorMessage,
-        promptLength: userPrompt.length,
-      });
-
-      throw new Error(`LLM generation failed: ${errorMessage}`);
-    }
+    return await LLMProviderManager.generateText(userPrompt, options);
   }
 
   /**
-   * Generate streaming text with standardized patterns
+   * Generate streaming text with multi-provider support
    */
   static async *generateTextStream(
     userPrompt: string,
-    options: LLMGenerationOptions & LLMConfig = {},
+    options: LLMGenerationOptions & Partial<LLMConfig> = {},
   ): AsyncGenerator<string> {
-    const startTime = Date.now();
-    const config = { ...this.defaultConfig, ...options };
-
-    try {
-      const anthropic = this.getAnthropicClient(config);
-
-      // Build messages array
-      const messages: CoreMessage[] = [];
-
-      // Add system context if provided
-      if (options.systemPrompt) {
-        messages.push({
-          role: "system",
-          content: options.systemPrompt,
-        });
-      }
-
-      // Add memory context if provided
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
-      }
-
-      messages.push({
-        role: "user",
-        content: contextualPrompt,
-      });
-
-      const { textStream } = await streamText({
-        model: anthropic(config.model!),
-        messages,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-      });
-
-      let totalLength = 0;
-      for await (const chunk of textStream) {
-        totalLength += chunk.length;
-        yield chunk;
-      }
-
-      const duration = Date.now() - startTime;
-      logger.debug("LLM streaming completed", {
-        model: config.model,
-        duration,
-        promptLength: userPrompt.length,
-        responseLength: totalLength,
-      });
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      logger.error("LLM streaming failed", {
-        model: config.model,
-        duration,
-        error: errorMessage,
-        promptLength: userPrompt.length,
-      });
-
-      throw new Error(`LLM streaming failed: ${errorMessage}`);
-    }
+    yield* LLMProviderManager.generateTextStream(userPrompt, options);
   }
 
   /**
@@ -213,7 +38,7 @@ export class LLMService {
   static async analyzeIntent(
     signal: any,
     payload: any,
-    config?: LLMConfig,
+    config?: Partial<LLMConfig>,
   ): Promise<{ intent: string; goals: string[]; strategy: string }> {
     const systemPrompt =
       `You are a WorkspaceSupervisor analyzing incoming signals to understand user intent.
@@ -258,13 +83,13 @@ Please analyze this signal and provide your assessment.`;
    * Update default configuration
    */
   static updateDefaultConfig(config: Partial<LLMConfig>): void {
-    this.defaultConfig = { ...this.defaultConfig, ...config };
+    LLMProviderManager.updateDefaultConfig(config);
   }
 
   /**
    * Clear client cache (useful for config changes)
    */
   static clearClient(): void {
-    this.anthropicClient = undefined;
+    LLMProviderManager.clearClients();
   }
 }

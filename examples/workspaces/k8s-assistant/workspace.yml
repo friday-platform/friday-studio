@@ -129,16 +129,16 @@ runtime:
     path: "./.atlas"
   security:
     cors: "*"
-    
+
 # Memory configuration for k8s operations
 memory:
   enabled: true
   scope: "workspace"
   retention:
-    max_age_days: 7  # Keep k8s operation history for 7 days
+    max_age_days: 7 # Keep k8s operation history for 7 days
     max_entries: 500
   include_types:
     - "deployment_history"
     - "troubleshooting_patterns"
     - "successful_configurations"
-    - "error_resolutions" 
+    - "error_resolutions"

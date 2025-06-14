@@ -58,7 +58,10 @@ export abstract class BaseRemoteAdapter {
     request: RemoteExecutionRequest,
   ): AsyncIterableIterator<RemoteExecutionEvent>;
   abstract cancelExecution(executionId: string): Promise<void>;
-  abstract resumeExecution(executionId: string, response: string | RemoteMessagePart[]): Promise<RemoteExecutionResult>;
+  abstract resumeExecution(
+    executionId: string,
+    response: string | RemoteMessagePart[],
+  ): Promise<RemoteExecutionResult>;
   abstract healthCheck(): Promise<HealthStatus>;
 
   // Common functionality implemented in base class

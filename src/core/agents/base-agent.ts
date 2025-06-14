@@ -270,16 +270,20 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   }
 
   // Utility methods for logging
-  protected log(message: string, context?: any): void {
-    this.logger.info(message, {
+  protected log(
+    message: string,
+    level: "debug" | "info" | "warn" | "error" = "info",
+    context?: any,
+  ): void {
+    this.logger[level](message, {
       agentName: this.name(),
       agentId: this.id,
       ...context,
     });
 
     // Remember significant log events
-    if (message.includes("error") || message.includes("failed")) {
-      this.rememberInteraction("log_error", { message, context });
+    if (level === "error" || message.includes("error") || message.includes("failed")) {
+      this.rememberInteraction("log_error", { message, context, level });
     }
   }
 

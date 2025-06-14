@@ -395,6 +395,10 @@ Focus on safety, efficiency, and reliability.`;
         parameters: {
           ...analysis.optimization_suggestions.model_parameters,
           safety_level: analysis.safety_assessment.risk_level,
+          // Include provider for LLM agents
+          ...(agent.type === "llm" && (agent.config as LLMAgentConfig).provider && {
+            provider: (agent.config as LLMAgentConfig).provider,
+          }),
         },
         prompts: this.preparePrompts(agent, analysis),
         tools: analysis.optimization_suggestions.tool_selections.length > 0
@@ -604,7 +608,11 @@ Focus on safety, efficiency, and reliability.`;
       return result;
     } catch (error) {
       instance.status = "error";
-      this.log(`Agent ${instance.agent_id} execution failed: ${error}`);
+      this.log(`Agent ${instance.agent_id} execution failed: ${error}`, "error", {
+        agentId: instance.agent_id,
+        duration: Date.now() - startTime, // Use startTime instead of undefined executionStart
+        errorType: error instanceof Error ? error.name : "UnknownError",
+      });
       throw error;
     }
   }

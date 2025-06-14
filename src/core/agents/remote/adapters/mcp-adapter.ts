@@ -239,6 +239,17 @@ export class MCPAdapter extends BaseRemoteAdapter {
     return Promise.reject(new Error("Execution cancellation not supported by MCP protocol"));
   }
 
+  resumeExecution(
+    executionId: string,
+    response: string | RemoteMessagePart[],
+  ): Promise<RemoteExecutionResult> {
+    // MCP doesn't support resuming executions
+    this.mcpLogger.warn("MCP execution resumption not supported", {
+      executionId,
+    });
+    return Promise.reject(new Error("Execution resumption not supported by MCP protocol"));
+  }
+
   async healthCheck(): Promise<HealthStatus> {
     try {
       const startTime = performance.now();

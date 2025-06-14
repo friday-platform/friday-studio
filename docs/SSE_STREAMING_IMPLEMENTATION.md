@@ -2,7 +2,10 @@
 
 ## Overview
 
-Atlas now supports true Server-Sent Events (SSE) streaming for ACP remote agents, providing real-time communication with external AI agents via the Agent Communication Protocol. This implementation replaces the previous placeholder with a production-ready SSE client based on the acp-sdk patterns.
+Atlas now supports true Server-Sent Events (SSE) streaming for ACP remote agents, providing
+real-time communication with external AI agents via the Agent Communication Protocol. This
+implementation replaces the previous placeholder with a production-ready SSE client based on the
+acp-sdk patterns.
 
 ## Architecture
 
@@ -10,7 +13,7 @@ Atlas now supports true Server-Sent Events (SSE) streaming for ACP remote agents
 
 1. **SSE Utilities** (`src/core/agents/remote/adapters/sse-utils.ts`)
    - `createEventSource()` - Creates SSE connection with proper validation
-   - `parseSSEData()` - Type-safe JSON parsing of SSE events  
+   - `parseSSEData()` - Type-safe JSON parsing of SSE events
    - `createSSEAbortController()` - Timeout and cancellation management
    - `createRetryableSSEStream()` - Automatic retry logic for resilient connections
 
@@ -28,12 +31,14 @@ Atlas now supports true Server-Sent Events (SSE) streaming for ACP remote agents
 ## Features
 
 ### Real-Time Streaming
+
 - **True SSE Protocol**: Uses `eventsource-parser` for proper SSE parsing
 - **Event-Driven**: Real-time processing of ACP events as they arrive
 - **Low Latency**: Direct streaming without polling overhead
 - **Type Safety**: Full TypeScript support with proper error handling
 
 ### Comprehensive Event Support
+
 The implementation handles all ACP event types:
 
 ```typescript
@@ -50,12 +55,14 @@ The implementation handles all ACP event types:
 ```
 
 ### Robust Error Handling
+
 - **Connection Validation**: Verifies content-type, status codes, and headers
 - **Parse Error Recovery**: Continues processing after individual event parse failures
 - **Network Error Handling**: Proper handling of timeouts, disconnections, and retries
 - **Resource Cleanup**: Automatic cleanup of AbortControllers and streams
 
 ### Stream Lifecycle Management
+
 - **Timeout Control**: Configurable timeouts via `createSSEAbortController()`
 - **Graceful Termination**: Automatic stream ending on terminal events
 - **Resource Cleanup**: Proper cleanup in finally blocks
@@ -84,12 +91,14 @@ const adapter = new ACPAdapter({
 });
 
 // Stream execution with real-time events
-for await (const event of adapter.executeAgentStream({
-  agentName: "chat",
-  input: "Hello, how are you?",
-  mode: "stream",
-  sessionId: "session-123",
-})) {
+for await (
+  const event of adapter.executeAgentStream({
+    agentName: "chat",
+    input: "Hello, how are you?",
+    mode: "stream",
+    sessionId: "session-123",
+  })
+) {
   switch (event.type) {
     case "content":
       console.log("Received content:", event.content);
@@ -112,8 +121,8 @@ const adapter = new ACPAdapter({
   acp: {
     agent_name: "chat",
     default_mode: "stream",
-    timeout_ms: 60000,        // 60 second timeout
-    max_retries: 5,           // 5 retry attempts
+    timeout_ms: 60000, // 60 second timeout
+    max_retries: 5, // 5 retry attempts
     health_check_interval: 30000, // Health check every 30 seconds
   },
   auth: {
@@ -133,17 +142,17 @@ const adapter = new ACPAdapter({
 
 ACP events are automatically converted to Atlas `RemoteExecutionEvent` format:
 
-| ACP Event Type | Atlas Event Type | Description |
-|---|---|---|
-| `message.part` | `content` | Streaming content from agent |
-| `message.created` | `metadata` | Message creation notification |
-| `message.completed` | `metadata` | Message completion notification |
-| `run.created` | `metadata` | Run initialization |
-| `run.in-progress` | `metadata` | Run execution started |
-| `run.completed` | `completion` | Successful completion with output |
-| `run.failed` | `completion` | Failed execution with error |
-| `run.cancelled` | `completion` | Cancelled execution |
-| `error` | `error` | Protocol or execution errors |
+| ACP Event Type      | Atlas Event Type | Description                       |
+| ------------------- | ---------------- | --------------------------------- |
+| `message.part`      | `content`        | Streaming content from agent      |
+| `message.created`   | `metadata`       | Message creation notification     |
+| `message.completed` | `metadata`       | Message completion notification   |
+| `run.created`       | `metadata`       | Run initialization                |
+| `run.in-progress`   | `metadata`       | Run execution started             |
+| `run.completed`     | `completion`     | Successful completion with output |
+| `run.failed`        | `completion`     | Failed execution with error       |
+| `run.cancelled`     | `completion`     | Cancelled execution               |
+| `error`             | `error`          | Protocol or execution errors      |
 
 ## Error Handling
 
@@ -199,10 +208,10 @@ agents:
       token_env: "EXTERNAL_CHAT_TOKEN"
     acp:
       agent_name: "chat"
-      default_mode: "stream"  # Enable streaming by default
-      timeout_ms: 30000       # 30 second timeout
-      max_retries: 3         # Retry failed connections
-      health_check_interval: 60000  # Health check every minute
+      default_mode: "stream" # Enable streaming by default
+      timeout_ms: 30000 # 30 second timeout
+      max_retries: 3 # Retry failed connections
+      health_check_interval: 60000 # Health check every minute
 
 jobs:
   chat-interaction:
@@ -211,7 +220,7 @@ jobs:
       - id: "external-chat"
         role: "responder"
         execution:
-          mode: "stream"  # Force streaming mode for this job
+          mode: "stream" # Force streaming mode for this job
 ```
 
 ### Environment Variables
@@ -228,16 +237,19 @@ ACP_MAX_RETRIES="5"
 ## Performance Characteristics
 
 ### Latency
+
 - **Connection Establishment**: ~100-200ms for SSE handshake
 - **Event Processing**: ~1-5ms per event (depending on payload size)
 - **Stream Overhead**: ~5-10ms additional overhead vs direct HTTP
 
 ### Memory Usage
+
 - **Stream Buffer**: ~1-2KB per active connection
 - **Event Queue**: Minimal - events processed immediately
 - **Cleanup**: Automatic resource cleanup prevents memory leaks
 
 ### Network Efficiency
+
 - **Single Connection**: One persistent connection vs polling
 - **Compression**: Automatic gzip/deflate support
 - **Keep-Alive**: Reduces connection overhead
@@ -330,7 +342,7 @@ curl -N -H "Accept: text/event-stream" \
 This implementation follows the proven patterns from the official acp-sdk:
 
 - **EventSourceParserStream**: Uses `eventsource-parser/stream` for robust SSE parsing
-- **Error Hierarchy**: Consistent error types matching acp-sdk conventions  
+- **Error Hierarchy**: Consistent error types matching acp-sdk conventions
 - **Event Processing**: Same event-to-async-generator pattern as acp-sdk client
 - **Resource Management**: Proper cleanup and timeout handling
 
@@ -363,4 +375,6 @@ This implementation follows the proven patterns from the official acp-sdk:
 - **eventsource-parser**: Uses v3.0.1 for robust SSE parsing
 - **TypeScript**: Full type safety with TypeScript 5.0+
 
-This SSE implementation provides a production-ready foundation for real-time communication with ACP remote agents, enabling Atlas to serve as a comprehensive AI agent orchestration platform with seamless external agent integration.
+This SSE implementation provides a production-ready foundation for real-time communication with ACP
+remote agents, enabling Atlas to serve as a comprehensive AI agent orchestration platform with
+seamless external agent integration.

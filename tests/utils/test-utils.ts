@@ -215,7 +215,7 @@ export abstract class BaseTestServer implements TestServer {
   async stop(): Promise<void> {
     if (this.server) {
       console.log("🔄 Shutting down HTTP server...");
-      
+
       // Use Promise.race to timeout the shutdown
       const shutdownPromise = this.server.shutdown();
       const timeoutPromise = new Promise<void>((resolve) => {
@@ -224,7 +224,7 @@ export abstract class BaseTestServer implements TestServer {
           resolve();
         }, 5000);
       });
-      
+
       await Promise.race([shutdownPromise, timeoutPromise]);
       this.server = undefined;
       console.log("✅ HTTP server shutdown complete");

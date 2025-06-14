@@ -846,7 +846,9 @@ Provide a structured analysis.`;
                 name: jobSpec.name,
                 strategy: jobSpec.execution?.strategy,
                 agentCount: jobSpec.execution?.agents?.length || 0,
-                agents: jobSpec.execution?.agents?.map((a: any) => typeof a === "string" ? a : a.id) ||
+                agents: jobSpec.execution?.agents?.map((a: any) =>
+                  typeof a === "string" ? a : a.id
+                ) ||
                   [],
               },
             });

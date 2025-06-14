@@ -1,6 +1,7 @@
 # Kubernetes Assistant Workspace
 
-A demonstration of Atlas AI agent orchestration for Kubernetes management, combining multiple specialized agents to provide intelligent cluster operations and autonomous monitoring.
+A demonstration of Atlas AI agent orchestration for Kubernetes management, combining multiple
+specialized agents to provide intelligent cluster operations and autonomous monitoring.
 
 ## Overview
 
@@ -92,7 +93,7 @@ The `workspace.yml` file defines:
 ### Available Signals
 
 1. **`http-k8s`** - Unified HTTP endpoint for all Kubernetes operations
-   - Path: `/signal/http-k8s` 
+   - Path: `/signal/http-k8s`
    - Method: POST
    - Agents: k8s-main-agent → local-assistant (sequential)
 
@@ -134,26 +135,24 @@ curl -X POST http://localhost:3001/k8s \
 ```
 
 # List resources
-curl -X POST http://localhost:3001/k8s \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "List all pods in default namespace"
-  }'
+
+curl -X POST http://localhost:3001/k8s\
+-H "Content-Type: application/json"\
+-d '{ "message": "List all pods in default namespace" }'
 
 # Troubleshoot issues
-curl -X POST http://localhost:3001/k8s \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Check why my deployment is not ready"
-  }'
-```
 
+curl -X POST http://localhost:3001/k8s\
+-H "Content-Type: application/json"\
+-d '{ "message": "Check why my deployment is not ready" }'
+
+````
 ### Health Check
 
 ```bash
 # Check workspace health
 curl http://localhost:3001/health
-```
+````
 
 ## CLI Usage
 
@@ -202,4 +201,5 @@ To modify the workspace:
 - [Debug Guide](DEBUG_GUIDE.md)
 - [Agent Architecture Analysis](AGENT_ARCHITECTURE_ANALYSIS.md)
 
-This workspace demonstrates how Atlas can orchestrate multiple AI agents to provide intelligent Kubernetes management, combining the power of AI with the flexibility of the Atlas platform. 
+This workspace demonstrates how Atlas can orchestrate multiple AI agents to provide intelligent
+Kubernetes management, combining the power of AI with the flexibility of the Atlas platform.

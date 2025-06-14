@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document outlines the implementation plan for Model Context Protocol (MCP) adapter support in Atlas, building on the successful ACP adapter pattern. MCP enables standardized integration with remote AI tools, resources, and prompts using the official TypeScript SDK.
+This document outlines the implementation plan for Model Context Protocol (MCP) adapter support in
+Atlas, building on the successful ACP adapter pattern. MCP enables standardized integration with
+remote AI tools, resources, and prompts using the official TypeScript SDK.
 
 ## Background
 
@@ -57,17 +59,17 @@ agents:
     protocol: "mcp"
     purpose: "Weather data and analysis tools"
     endpoint: "https://weather-api.example.com/mcp"
-    
+
     # Authentication (optional)
     auth:
       type: "bearer"
       token_env: "WEATHER_API_TOKEN"
-    
+
     # MCP-specific options (optional)
     mcp:
-      timeout_ms: 30000               # Request timeout (default: 30s)
-      allowed_tools: ["get_weather"]  # Tool allowlist (optional)
-      denied_tools: ["delete_data"]   # Tool denylist (optional)
+      timeout_ms: 30000 # Request timeout (default: 30s)
+      allowed_tools: ["get_weather"] # Tool allowlist (optional)
+      denied_tools: ["delete_data"] # Tool denylist (optional)
 ```
 
 ### 1.3 Core Implementation
@@ -87,15 +89,12 @@ deno add npm:@modelcontextprotocol/sdk@^1.0.0
 // src/core/agents/remote/adapters/mcp-adapter.ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { 
-  CallToolResultSchema,
-  ListToolsResultSchema 
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { BaseRemoteAdapter } from "./base-remote-adapter.ts";
 import type {
+  HealthStatus,
   RemoteExecutionRequest,
   RemoteExecutionResult,
-  HealthStatus,
 } from "./base-remote-adapter.ts";
 import { AtlasLogger } from "../../../utils/logger.ts";
 
@@ -132,13 +131,13 @@ export class MCPAdapter extends BaseRemoteAdapter {
     // Create transport with auth if provided
     this.transport = new StreamableHTTPClientTransport(
       new URL(config.endpoint),
-      { authProvider: this.createAuthProvider() }
+      { authProvider: this.createAuthProvider() },
     );
   }
 
   async connect(): Promise<void> {
     if (this.connected) return;
-    
+
     try {
       await this.client.connect(this.transport);
       this.connected = true;
@@ -151,18 +150,18 @@ export class MCPAdapter extends BaseRemoteAdapter {
 
   async discoverAgents(): Promise<Agent[]> {
     await this.connect();
-    
+
     try {
       const toolsResult = await this.client.request({
-        method: 'tools/list',
-        params: {}
+        method: "tools/list",
+        params: {},
       }, ListToolsResultSchema);
 
       return [{
         name: "mcp-server",
         description: `MCP Server with ${toolsResult.tools.length} tools`,
         metadata: {
-          tools: toolsResult.tools.map(t => t.name),
+          tools: toolsResult.tools.map((t) => t.name),
           endpoint: this.config.endpoint,
         },
       }];
@@ -174,36 +173,36 @@ export class MCPAdapter extends BaseRemoteAdapter {
 
   async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
     await this.connect();
-    
+
     const startTime = performance.now();
-    
+
     try {
       const toolCall = this.parseToolCall(request.input);
-      
+
       // Check tool filtering
       if (this.config.allowed_tools && !this.config.allowed_tools.includes(toolCall.name)) {
         throw new Error(`Tool '${toolCall.name}' not in allowed tools list`);
       }
-      
+
       if (this.config.denied_tools && this.config.denied_tools.includes(toolCall.name)) {
         throw new Error(`Tool '${toolCall.name}' is denied by configuration`);
       }
 
       const result = await this.client.request({
-        method: 'tools/call',
+        method: "tools/call",
         params: {
           name: toolCall.name,
-          arguments: toolCall.arguments
-        }
+          arguments: toolCall.arguments,
+        },
       }, CallToolResultSchema);
 
       const executionTime = performance.now() - startTime;
 
       return {
         executionId: crypto.randomUUID(),
-        output: result.content.map(c => ({
-          content_type: c.type === 'text' ? 'text/plain' : 'application/json',
-          content: c.type === 'text' ? c.text : JSON.stringify(c),
+        output: result.content.map((c) => ({
+          content_type: c.type === "text" ? "text/plain" : "application/json",
+          content: c.type === "text" ? c.text : JSON.stringify(c),
         })),
         status: result.isError ? "failed" : "completed",
         error: result.isError ? "Tool execution failed" : undefined,
@@ -214,7 +213,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
       };
     } catch (error) {
       const executionTime = performance.now() - startTime;
-      
+
       return {
         executionId: crypto.randomUUID(),
         output: [],
@@ -230,37 +229,39 @@ export class MCPAdapter extends BaseRemoteAdapter {
   async healthCheck(): Promise<HealthStatus> {
     try {
       await this.connect();
-      
+
       // Simple health check by listing tools
       await this.client.request({
-        method: 'tools/list',
-        params: {}
+        method: "tools/list",
+        params: {},
       }, ListToolsResultSchema);
 
       return { status: "healthy" };
     } catch (error) {
-      return { 
-        status: "unhealthy", 
-        error: error.message 
+      return {
+        status: "unhealthy",
+        error: error.message,
       };
     }
   }
 
-  private parseToolCall(input: string | MessagePart[]): { name: string; arguments: Record<string, unknown> } {
+  private parseToolCall(
+    input: string | MessagePart[],
+  ): { name: string; arguments: Record<string, unknown> } {
     const inputStr = typeof input === "string" ? input : input[0]?.content || "";
-    
+
     try {
       // Try to parse as JSON
       const parsed = JSON.parse(inputStr);
       return {
         name: parsed.name || parsed.tool || "unknown",
-        arguments: parsed.arguments || parsed.args || {}
+        arguments: parsed.arguments || parsed.args || {},
       };
     } catch {
       // Fallback: treat entire input as tool name
-      return { 
-        name: inputStr.trim(), 
-        arguments: {} 
+      return {
+        name: inputStr.trim(),
+        arguments: {},
       };
     }
   }
@@ -272,23 +273,23 @@ export class MCPAdapter extends BaseRemoteAdapter {
     return {
       getAuthHeaders: () => {
         const headers: Record<string, string> = {};
-        
+
         if (this.config.auth?.type === "bearer" && this.config.auth.token_env) {
           const token = Deno.env.get(this.config.auth.token_env);
           if (token) {
             headers["Authorization"] = `Bearer ${token}`;
           }
         }
-        
+
         if (this.config.auth?.type === "api_key" && this.config.auth.token_env) {
           const apiKey = Deno.env.get(this.config.auth.token_env);
           if (apiKey) {
             headers[this.config.auth.header || "X-API-Key"] = apiKey;
           }
         }
-        
+
         return headers;
-      }
+      },
     };
   }
 
@@ -327,7 +328,7 @@ const WorkspaceAgentConfigSchema = z
     protocol: z.enum(["acp", "a2a", "mcp", "custom"]).optional(),
     endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
-    
+
     // Protocol-specific configurations
     mcp: MCPConfigSchema.optional(),
     // ... existing schemas for acp, a2a, custom
@@ -474,7 +475,7 @@ Deno.test("MCPAdapter - Basic Construction", () => {
   const adapter = new MCPAdapter({
     endpoint: "https://test.example.com/mcp",
   });
-  
+
   assertEquals(adapter instanceof MCPAdapter, true);
 });
 
@@ -482,7 +483,7 @@ Deno.test("MCPAdapter - Invalid Endpoint", async () => {
   const adapter = new MCPAdapter({
     endpoint: "invalid-url",
   });
-  
+
   await assertRejects(() => adapter.connect());
 });
 ```
@@ -531,7 +532,7 @@ jobs:
 signals:
   daily-report:
     provider: "cron"
-    schedule: "0 8 * * *"  # Daily at 8 AM
+    schedule: "0 8 * * *" # Daily at 8 AM
     jobs: ["weather-report"]
 ```
 
@@ -572,18 +573,21 @@ private async executeWithRetry<T>(
 ## Implementation Timeline
 
 ### 🚀 Phase 1: Minimal Viable Integration (Week 1)
+
 - ✅ MCP SDK integration and dependency management
 - ✅ Simple MCPAdapter with tool execution
 - ✅ Configuration schema enhancement for MCP protocol
 - ✅ Agent loader integration
 
-### 📋 Phase 2: Enhanced Features (Week 2)  
+### 📋 Phase 2: Enhanced Features (Week 2)
+
 - ✅ Resource and prompt support
 - ✅ Enhanced error handling and retry logic
 - ✅ Tool filtering and security
 - ✅ Basic testing framework
 
 ### 🎯 Phase 3: Production Features (Week 3)
+
 - ✅ Complete workspace examples
 - ✅ Error recovery and resilience
 - ✅ Documentation and usage guides
@@ -592,6 +596,7 @@ private async executeWithRetry<T>(
 ## Success Criteria
 
 ### Functional Requirements
+
 - ✅ **MCP protocol compliance** - Full support for tools, resources, and prompts
 - ✅ **Transport flexibility** - HTTP transport with fallback support
 - ✅ **Atlas integration** - Seamless BaseRemoteAdapter integration
@@ -599,12 +604,14 @@ private async executeWithRetry<T>(
 - ✅ **Error handling** - Robust error handling and retry logic
 
 ### Security Requirements
+
 - ✅ **Tool filtering** - Optional allowlist for tool execution
 - ✅ **Input validation** - JSON parsing with fallback handling
 - ✅ **Credential management** - Secure environment variable-based auth
 - ✅ **Connection security** - HTTPS transport with authentication
 
 ### Performance Requirements
+
 - ✅ **Low latency** - Direct SDK usage minimizes overhead
 - ✅ **Resource efficiency** - Simple connection management
 - ✅ **Scalability** - Stateless adapter design
@@ -613,37 +620,47 @@ private async executeWithRetry<T>(
 ## Strategic Impact
 
 ### Immediate Benefits
+
 - **Tool Ecosystem Integration**: Access to the growing MCP tool ecosystem
 - **Remote Service Integration**: Connect to cloud-based MCP servers
 - **Hybrid Agent Workflows**: Combine MCP tools with LLM reasoning
 
-### Long-term Advantages  
+### Long-term Advantages
+
 - **Protocol Standardization**: Align with industry-standard tool communication
 - **Community Ecosystem**: Leverage community-built MCP servers and tools
 - **Development Velocity**: Rapid integration of new tools and capabilities
 
-This simplified MCP adapter implementation positions Atlas as a comprehensive AI agent orchestration platform capable of integrating with any MCP-compatible tool or service while maintaining enterprise-grade security, reliability, and performance standards.
+This simplified MCP adapter implementation positions Atlas as a comprehensive AI agent orchestration
+platform capable of integrating with any MCP-compatible tool or service while maintaining
+enterprise-grade security, reliability, and performance standards.
 
 ## Implementation Todo List
 
 ### Phase 1: Core Implementation (High Priority)
-- [x] **Task 1**: Add MCP SDK dependency to project (`deno add npm:@modelcontextprotocol/sdk@^1.0.0`)
-- [x] **Task 2**: Create MCPAdapter class extending BaseRemoteAdapter with tool execution capabilities
+
+- [x] **Task 1**: Add MCP SDK dependency to project
+      (`deno add npm:@modelcontextprotocol/sdk@^1.0.0`)
+- [x] **Task 2**: Create MCPAdapter class extending BaseRemoteAdapter with tool execution
+      capabilities
 - [x] **Task 3**: Enhance configuration schema to support MCP protocol in workspace.yml
 - [x] **Task 4**: Integrate MCP adapter into agent loader factory pattern
 
 ### Phase 2: Enhanced Features (Medium Priority)
+
 - [ ] **Task 5**: Add resource and prompt support to MCPAdapter for full MCP capability
 - [ ] **Task 6**: Implement error handling and retry logic with exponential backoff
 - [ ] **Task 7**: Add tool filtering and security features (allowlist/denylist)
 - [x] **Task 8**: Create basic testing framework for MCPAdapter functionality
 
 ### Phase 3: Production Features (Low Priority)
+
 - [ ] **Task 9**: Create complete workspace example configuration demonstrating MCP usage
 - [ ] **Task 10**: Add documentation and usage guides for MCP adapter deployment
 
 ### Completion Status
-**Phase 1**: 4/4 tasks completed ✅  
-**Phase 2**: 1/4 tasks completed  
-**Phase 3**: 0/2 tasks completed  
+
+**Phase 1**: 4/4 tasks completed ✅\
+**Phase 2**: 1/4 tasks completed\
+**Phase 3**: 0/2 tasks completed\
 **Overall**: 5/10 tasks completed

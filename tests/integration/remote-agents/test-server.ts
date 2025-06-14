@@ -30,7 +30,7 @@ export class ACPTestServer extends BaseTestServer {
   private runs = new Map<string, Run>();
   private sessions = new Map<string, Session>();
   private runEvents = new Map<string, Event[]>();
-  
+
   // Track background operations for proper cleanup
   private backgroundOperations = new Set<Promise<void>>();
 
@@ -385,9 +385,9 @@ export class ACPTestServer extends BaseTestServer {
         });
       }
     })();
-    
+
     this.backgroundOperations.add(backgroundOperation);
-    
+
     // Clean up when operation completes
     backgroundOperation.finally(() => {
       this.backgroundOperations.delete(backgroundOperation);
@@ -477,11 +477,13 @@ export class ACPTestServer extends BaseTestServer {
 
   override async stop(): Promise<void> {
     console.log("🛑 Stopping ACP Test Server...");
-    
+
     // Wait for all background operations to complete with timeout
     if (this.backgroundOperations.size > 0) {
-      console.log(`⏳ Waiting for ${this.backgroundOperations.size} background operations to complete...`);
-      
+      console.log(
+        `⏳ Waiting for ${this.backgroundOperations.size} background operations to complete...`,
+      );
+
       // Race against a 2-second timeout
       const timeoutPromise = new Promise<void>((resolve) => {
         setTimeout(() => {
@@ -489,20 +491,20 @@ export class ACPTestServer extends BaseTestServer {
           resolve();
         }, 2000);
       });
-      
+
       await Promise.race([
         Promise.allSettled(this.backgroundOperations),
         timeoutPromise,
       ]);
-      
+
       this.backgroundOperations.clear();
     }
-    
+
     // Clear all storage
     this.runs.clear();
     this.sessions.clear();
     this.runEvents.clear();
-    
+
     await super.stop();
     console.log("🛑 ACP Test Server stopped");
   }

@@ -255,48 +255,48 @@ app.post("/execute", async (c) => {
 app.post("/", async (c) => {
   try {
     const body = await c.req.json();
-    
+
     // Validate JSON-RPC 2.0 structure
     if (!body.jsonrpc || body.jsonrpc !== "2.0" || !body.method) {
       return c.json({
         jsonrpc: "2.0",
         error: {
           code: -32600,
-          message: "Invalid Request"
+          message: "Invalid Request",
         },
-        id: body.id || null
+        id: body.id || null,
       }, 400);
     }
 
     try {
       let result;
-      
+
       switch (body.method) {
         case "initialize":
           // MCP initialization handshake
           result = {
             protocolVersion: "2024-11-05",
             capabilities: {
-              tools: {}
+              tools: {},
             },
             serverInfo: {
               name: "playwright-mcp-wrapper",
-              version: "1.0.0"
-            }
+              version: "1.0.0",
+            },
           };
           break;
 
         case "tools/list":
           const tools = await mcpWrapper.getTools();
           result = {
-            tools: tools.map(tool => ({
+            tools: tools.map((tool) => ({
               name: tool.name,
               description: tool.description || `Playwright tool: ${tool.name}`,
-              inputSchema: tool.inputSchema
-            }))
+              inputSchema: tool.inputSchema,
+            })),
           };
           break;
-          
+
         case "notifications/initialized":
           // MCP client notification that initialization is complete
           // This is a notification, so no JSON-RPC response should be sent
@@ -308,26 +308,26 @@ app.post("/", async (c) => {
               jsonrpc: "2.0",
               error: {
                 code: -32602,
-                message: "Invalid params: missing tool name"
+                message: "Invalid params: missing tool name",
               },
-              id: body.id
+              id: body.id,
             }, 400);
           }
-          
+
           const toolResult = await mcpWrapper.executeTool({
             tool: body.params.name,
-            arguments: body.params.arguments || {}
+            arguments: body.params.arguments || {},
           });
-          
+
           if (!toolResult.success) {
             result = {
               content: [{ type: "text", text: toolResult.error || "Tool execution failed" }],
-              isError: true
+              isError: true,
             };
           } else {
             // Convert tool result to MCP format - handle different content types
             let contentText: string;
-            
+
             if (typeof toolResult.content === "string") {
               contentText = toolResult.content;
             } else if (toolResult.content === null || toolResult.content === undefined) {
@@ -342,31 +342,30 @@ app.post("/", async (c) => {
             } else {
               contentText = String(toolResult.content);
             }
-            
+
             result = {
               content: [{ type: "text", text: contentText }],
-              isError: false
+              isError: false,
             };
           }
           break;
-          
+
         default:
           return c.json({
             jsonrpc: "2.0",
             error: {
               code: -32601,
-              message: `Method not found: ${body.method}`
+              message: `Method not found: ${body.method}`,
             },
-            id: body.id
+            id: body.id,
           }, 404);
       }
-      
+
       return c.json({
         jsonrpc: "2.0",
         result,
-        id: body.id
+        id: body.id,
       });
-      
     } catch (error) {
       console.error("MCP method execution error:", error);
       return c.json({
@@ -374,21 +373,20 @@ app.post("/", async (c) => {
         error: {
           code: -32603,
           message: "Internal error",
-          data: error instanceof Error ? error.message : String(error)
+          data: error instanceof Error ? error.message : String(error),
         },
-        id: body.id
+        id: body.id,
       }, 500);
     }
-    
   } catch (error) {
     console.error("MCP request parsing error:", error);
     return c.json({
       jsonrpc: "2.0",
       error: {
         code: -32700,
-        message: "Parse error"
+        message: "Parse error",
       },
-      id: null
+      id: null,
     }, 400);
   }
 });

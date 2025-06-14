@@ -285,7 +285,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   // Initialize workspace based on flags or current directory
   const initializeWorkspace = async () => {
     const workspaceFlag = (flags as any)?.workspace as string | undefined;
-    
+
     if (workspaceFlag) {
       // Load specific workspace from examples directory
       await loadWorkspaceFromFlag(workspaceFlag);
@@ -299,7 +299,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const loadWorkspaceFromFlag = async (workspaceName: string) => {
     try {
       addLog("command", `Loading workspace from flag: ${workspaceName}`);
-      
+
       // Find git repository root
       const gitRoot = new Deno.Command("git", {
         args: ["rev-parse", "--show-toplevel"],
@@ -321,7 +321,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       // Change to workspace directory and load
       addLog("command", `Changing directory to: ${workspacePath}`);
       Deno.chdir(workspacePath);
-      
+
       // Verify workspace.yml exists in the target directory
       if (await exists("workspace.yml")) {
         addLog("command", `Workspace ${workspaceName} loaded successfully`);

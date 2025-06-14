@@ -94,10 +94,13 @@ const MonitoringConfigSchema = z.object({
 const WorkspaceAgentConfigSchema = z
   .object({
     type: AgentTypeSchema,
+    provider: z.enum(["anthropic", "openai", "google"]).optional(),
     model: z.string().optional(),
     purpose: z.string(),
     tools: z.array(z.string()).optional(),
     prompts: z.record(z.string(), z.string()).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    max_tokens: z.number().positive().optional(),
     // Tempest agent specific
     agent: z.string().optional(),
     version: z.string().optional(),
@@ -154,6 +157,42 @@ const WorkspaceAgentConfigSchema = z
         ctx.issues.push({
           code: "custom",
           message: "LLM agents require 'model' field",
+          path: ["model"],
+          input: ctx.value,
+        });
+      }
+
+      // Validate provider and model combination
+      const provider = ctx.value.provider || "anthropic";
+      const model = ctx.value.model;
+
+      const supportedModels = {
+        anthropic: [
+          "claude-3-5-sonnet-20241022",
+          "claude-3-5-haiku-20241022",
+          "claude-3-opus-20240229",
+          "claude-4-sonnet-20250514",
+        ],
+        openai: [
+          "gpt-4",
+          "gpt-4-turbo",
+          "gpt-4o",
+          "gpt-3.5-turbo",
+        ],
+        google: [
+          "gemini-1.5-pro",
+          "gemini-1.5-flash",
+          "gemini-pro",
+        ],
+      };
+
+      if (model && !supportedModels[provider as keyof typeof supportedModels]?.includes(model)) {
+        ctx.issues.push({
+          code: "custom",
+          message:
+            `Model '${model}' is not supported by provider '${provider}'. Supported models: ${
+              supportedModels[provider as keyof typeof supportedModels]?.join(", ") || "none"
+            }`,
           path: ["model"],
           input: ctx.value,
         });

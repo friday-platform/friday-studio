@@ -40,7 +40,7 @@ export const TabGroup: React.FC<TabGroupProps> = ({
   };
 
   const tabs = React.Children.toArray(children).filter(
-    React.isValidElement
+    React.isValidElement,
   ) as React.ReactElement<TabProps>[];
 
   const renderTabHeaders = () => {
@@ -49,11 +49,14 @@ export const TabGroup: React.FC<TabGroupProps> = ({
       <Box flexDirection="row" padding={1}>
         {tabs.map((tab, index) => {
           const isActive = index === currentActiveTab && currentActiveTab >= 0;
-          const shortcutText = isActive ? " (active)" : index < currentActiveTab ? " Alt+←" : " Alt+→";
+          const shortcutText = isActive
+            ? " (active)"
+            : index < currentActiveTab
+            ? " Alt+←"
+            : " Alt+→";
           const width =
-            `${tab.props.icon ? `${tab.props.icon} ` : ""}${
-              tab.props.label
-            }${shortcutText}`.length + 3;
+            `${tab.props.icon ? `${tab.props.icon} ` : ""}${tab.props.label}${shortcutText}`
+              .length + 3;
           return (
             <Box
               key={index}

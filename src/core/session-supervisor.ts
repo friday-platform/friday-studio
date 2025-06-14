@@ -62,6 +62,7 @@ export interface TempestAgentConfig {
 
 export interface LLMAgentConfig {
   type: "llm";
+  provider?: "anthropic" | "openai" | "google"; // Optional, defaults to "anthropic"
   model: string;
   purpose: string;
   tools?: string[];
@@ -787,7 +788,12 @@ Provide a brief evaluation.`;
       this.log(`Agent ${agentId} executed successfully with supervision`);
       return result;
     } catch (error) {
-      this.log(`Supervised execution failed for agent ${agentId}: ${error}`);
+      this.log(`Supervised execution failed for agent ${agentId}: ${error}`, "error", {
+        agentId,
+        sessionId: this.sessionId,
+        errorType: error instanceof Error ? error.name : "UnknownError",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       throw new Error(`Supervised agent execution failed: ${error}`);
     }
   }

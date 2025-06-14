@@ -30,13 +30,15 @@ export default function HelpCommand() {
         <Text>workspace status Show workspace status</Text>
       </Box>
       <Newline />
-      {/* <Box>
+      {
+        /* <Box>
         <Text>sig &lt;name&gt; -d '{`{}`}' Trigger a signal</Text>
       </Box>
       <Box>
         <Text>sig list List all signals</Text>
       </Box>
-      <Newline /> */}
+      <Newline /> */
+      }
       <Box>
         <Text>session List active sessions</Text>
       </Box>

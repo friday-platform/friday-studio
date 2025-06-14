@@ -2,15 +2,16 @@ version: "1.0"
 
 workspace:
   id: "7821d138-71a6-434c-bc64-10addcf33532"
-  name: "Telephone Game"
-  description: "A game where messages transform through multiple agents"
+  name: "Multi-Provider Telephone Game"
+  description: "A game where messages transform through multiple agents using different LLM providers (OpenAI, Google)"
 
 # User-defined agents for telephone game
 agents:
-  # LLM-based agent with specialized prompts
+  # OpenAI-based agent with specialized prompts for mishearing
   mishearing-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-3.5-turbo"
     purpose: "Specializes in phonetic errors and mishearing transformations"
     tools: ["text-analysis", "phonetic-processing"]
     prompts:
@@ -24,10 +25,11 @@ agents:
         - Plausible but incorrect interpretations
         - Maintaining some connection to the original meaning
 
-  # LLM-based agent for creative embellishment
+  # Google Gemini agent for creative embellishment
   embellishment-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    provider: "google"
+    model: "gemini-1.5-flash"
     purpose: "Adds creative context and embellishments to messages"
     tools: ["creative-writing", "context-generation"]
     prompts:
@@ -41,10 +43,11 @@ agents:
         - Introducing creative context and backstory
         - Maintaining logical coherence while being imaginative
 
-  # LLM-based agent for dramatic reinterpretation
+  # OpenAI agent for dramatic reinterpretation
   reinterpretation-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    provider: "openai"
+    model: "gpt-4o"
     purpose: "Dramatically transforms and reinterprets messages"
     tools: ["semantic-analysis", "creative-reinterpretation"]
     prompts:

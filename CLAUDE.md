@@ -12,7 +12,10 @@ environment.
 
 ## Claude Code execution guidelines
 
-0. **MANDATORY SESSION START**: At the beginning of EVERY session, read and update `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in SFW/work-appropriate language.
+0. **MANDATORY SESSION START**: At the beginning of EVERY session, read and update
+   `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks
+   behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in
+   SFW/work-appropriate language.
 1. Use `deno check` to statically verify code validity before running
 2. Run with required Deno flags:
    `--unstable-broadcast-channel --unstable-worker-options --allow-all --env-file`
@@ -31,9 +34,12 @@ environment.
 
 When working with Ink-based TUI components (src/cli/commands/tui.tsx and related files):
 
-1. **Text Component Wrapping**: Always wrap `<Text>` components in a `<Box>` component for proper layout and rendering
-2. **No Unnecessary Emojis**: Do not add emojis to text content unless explicitly requested by the user
-3. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the interface works correctly
+1. **Text Component Wrapping**: Always wrap `<Text>` components in a `<Box>` component for proper
+   layout and rendering
+2. **No Unnecessary Emojis**: Do not add emojis to text content unless explicitly requested by the
+   user
+3. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
+   interface works correctly
 
 ## Code Quality Review Findings (June 2025)
 

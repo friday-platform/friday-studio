@@ -2,9 +2,8 @@
  * Agent Execution Worker - Runs in Web Worker for isolated agent execution
  */
 
-// Using direct fetch instead of AI SDK to avoid Tokio runtime conflicts in workers
-
 import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
 
 interface WorkerMessage {
   type: "initialize" | "execute" | "terminate";
@@ -249,76 +248,57 @@ class AgentExecutionWorker {
       throw new Error("LLM agent requires model specification");
     }
 
+    // Extract provider from parameters or default to anthropic
+    const provider = parameters.provider || "anthropic";
+
+    // Log configuration details for debugging
+    this.log(`LLM Agent Configuration - Provider: ${provider}, Model: ${model}`, "debug");
+    this.log(`Agent Config Parameters: ${JSON.stringify(parameters)}`, "debug");
+    this.log(`Environment Config: ${JSON.stringify(request.environment.worker_config)}`, "debug");
+
     // Prepare prompt
     const systemPrompt = prompts.system || "You are a helpful AI assistant.";
     const userPrompt = this.buildUserPrompt(task, input, prompts);
 
-    // Execute LLM call with timeout - use direct fetch to avoid SDK issues in worker
-    const timeoutMs = request.environment.worker_config.timeout;
-
     try {
-      const llmCall = this.callAnthropicAPI(model, systemPrompt, userPrompt, parameters);
-      const result = await this.withTimeout(llmCall, timeoutMs);
+      this.log(`Calling LLMProviderManager with provider: ${provider}, model: ${model}`, "debug");
+
+      const result = await LLMProviderManager.generateText(userPrompt, {
+        provider,
+        model,
+        systemPrompt,
+        temperature: parameters.temperature,
+        maxTokens: parameters.max_tokens,
+        timeout: request.environment.worker_config.timeout,
+        operationContext: {
+          operation: "agent_execution",
+          agentId: request.agent_id,
+          workerId: this.workerId,
+        },
+      });
+
+      this.log(`LLM execution successful for ${request.agent_id}`, "debug");
 
       return {
         agent_type: "llm",
         agent_id: request.agent_id,
-        model: model,
-        result: result.text,
-        input: input,
-        tokens_used: result.tokens_used || 0,
-        finish_reason: result.finish_reason || "stop",
+        provider,
+        model,
+        result,
+        input,
+        tokens_used: 0, // LLMProviderManager doesn't expose token count yet
+        finish_reason: "stop",
       };
     } catch (error) {
-      this.log(`LLM execution error: ${error}`, "error");
+      this.log(`LLM execution error for ${request.agent_id}: ${error}`, "error");
+      this.log(
+        `Error details - Provider: ${provider}, Model: ${model}, Type: ${
+          error instanceof Error ? error.name : "Unknown"
+        }`,
+        "error",
+      );
       throw error;
     }
-  }
-
-  private async callAnthropicAPI(
-    model: string,
-    system: string,
-    prompt: string,
-    parameters: any,
-  ): Promise<any> {
-    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
-    if (!apiKey) {
-      throw new Error("ANTHROPIC_API_KEY environment variable not set");
-    }
-
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: model,
-        max_tokens: parameters.max_tokens || 2000,
-        temperature: parameters.temperature || 0.7,
-        system: system,
-        messages: [
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Anthropic API error: ${response.status} ${errorText}`);
-    }
-
-    const data = await response.json();
-
-    return {
-      text: data.content[0]?.text || "",
-      tokens_used: data.usage?.total_tokens || 0,
-      finish_reason: data.stop_reason || "stop",
-    };
   }
 
   private async executeTempestAgent(request: AgentExecutionRequest): Promise<any> {

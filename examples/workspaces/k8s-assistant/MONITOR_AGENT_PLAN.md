@@ -1,11 +1,15 @@
 # Kubernetes Monitor Agent Integration Plan
 
 ## Overview
-This document outlines the plan for integrating the Kubernetes Monitor Agent into the Atlas workspace system, enabling real-time event monitoring and automated responses through the workspace signal system.
+
+This document outlines the plan for integrating the Kubernetes Monitor Agent into the Atlas
+workspace system, enabling real-time event monitoring and automated responses through the workspace
+signal system.
 
 ## Architecture Changes
 
 ### 1. Monitor Agent Modifications
+
 ```go
 // Required changes in the monitor agent project
 type K8sEvent struct {
@@ -27,6 +31,7 @@ type WorkspaceSignal struct {
 ```
 
 ### 2. Workspace Configuration
+
 ```yaml
 # Add to workspace.yml
 agents:
@@ -64,6 +69,7 @@ signals:
 ## Implementation Steps
 
 ### 1. Monitor Agent Updates
+
 1. **Event Collection**
    - Implement Kubernetes Watch API integration
    - Add event filtering and enrichment
@@ -80,6 +86,7 @@ signals:
    - Add retry and error handling
 
 ### 2. Workspace Integration
+
 1. **Signal Configuration**
    - Add monitor agent configuration
    - Set up event filters
@@ -91,6 +98,7 @@ signals:
    - Implement action execution flow
 
 ### 3. Testing and Validation
+
 1. **Unit Tests**
    - Event collection tests
    - Signal generation tests
@@ -109,6 +117,7 @@ signals:
 ## Usage Examples
 
 ### 1. Basic Event Monitoring
+
 ```bash
 # Start monitor agent
 ./scripts/start-monitor.sh
@@ -122,6 +131,7 @@ signals:
 ```
 
 ### 2. Event Types and Actions
+
 ```yaml
 # Example event flow
 event:
@@ -138,7 +148,7 @@ signal:
   signal_type: "k8s_event"
   priority: "high"
   action: "auto_fix"
-  event: {...}
+  event: { ... }
 ```
 
 ## Security Considerations
@@ -247,4 +257,4 @@ signal:
 3. **Support Resources**
    - Documentation
    - Issue tracker
-   - Community forums 
+   - Community forums

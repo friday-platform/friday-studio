@@ -36,6 +36,8 @@
     "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
+    "@ai-sdk/openai": "npm:@ai-sdk/openai@^1.0.8",
+    "@ai-sdk/google": "npm:@ai-sdk/google@^1.0.14",
     "xstate": "npm:xstate@^5.18.0",
     "zod": "npm:zod@^3.25.62",
     "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",
