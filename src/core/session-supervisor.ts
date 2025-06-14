@@ -790,7 +790,7 @@ Provide a brief evaluation.`;
     } catch (error) {
       this.log(`Supervised execution failed for agent ${agentId}: ${error}`, "error", {
         agentId,
-        sessionId: this.sessionId,
+        sessionId: this.id,
         errorType: error instanceof Error ? error.name : "UnknownError",
         errorMessage: error instanceof Error ? error.message : String(error),
       });
@@ -908,6 +908,7 @@ Provide a brief evaluation.`;
       if (extractionResult.extractedFacts.length > 0) {
         this.log(
           `Extracted ${extractionResult.extractedFacts.length} facts from complete session`,
+          "info",
           {
             factsFound: extractionResult.analysisMetadata.factsFound,
             confidence: extractionResult.analysisMetadata.confidence,
@@ -1147,12 +1148,16 @@ Keep the summary focused and relevant to the specific use case.`;
       );
 
       // Log extraction results
-      this.log(`Extracted ${extractionResult.extractedFacts.length} semantic facts from signal`, {
-        signalId: extractionResult.analysisMetadata.signalId,
-        factsFound: extractionResult.analysisMetadata.factsFound,
-        confidence: extractionResult.analysisMetadata.confidence,
-        processingTime: extractionResult.analysisMetadata.processingTime,
-      });
+      this.log(
+        `Extracted ${extractionResult.extractedFacts.length} semantic facts from signal`,
+        "info",
+        {
+          signalId: extractionResult.analysisMetadata.signalId,
+          factsFound: extractionResult.analysisMetadata.factsFound,
+          confidence: extractionResult.analysisMetadata.confidence,
+          processingTime: extractionResult.analysisMetadata.processingTime,
+        },
+      );
 
       // Store facts in session memory as well for immediate access
       if (extractionResult.extractedFacts.length > 0) {

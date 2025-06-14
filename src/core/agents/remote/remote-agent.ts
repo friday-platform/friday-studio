@@ -44,7 +44,7 @@ export class RemoteAgent extends BaseAgent {
     // Validate configuration
     RemoteAdapterFactory.validateConfig(this.config);
 
-    this.log("Remote agent created", {
+    this.log("Remote agent created", "info", {
       protocol: this.config.protocol,
       endpoint: this.config.endpoint,
     });
@@ -101,14 +101,14 @@ export class RemoteAgent extends BaseAgent {
       await this.verifyConnection();
 
       this.isInitialized = true;
-      this.log("Remote agent initialized successfully", {
+      this.log("Remote agent initialized successfully", "info", {
         agent_name: this.name(),
         version: this.version(),
         capabilities: this.agentInfo?.capabilities?.length || 0,
       });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.log("Failed to initialize remote agent", { error: errorMessage });
+      this.log("Failed to initialize remote agent", "error", { error: errorMessage });
       throw new RemoteConnectionError(`Failed to initialize remote agent: ${errorMessage}`);
     }
   }
@@ -343,7 +343,7 @@ export class RemoteAgent extends BaseAgent {
   private handleInvokeError(error: unknown, message: string): void {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    this.log("Remote agent invoke error", {
+    this.log("Remote agent invoke error", "error", {
       error: errorMessage,
       message: message.substring(0, 100),
     });

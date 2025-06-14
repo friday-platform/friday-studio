@@ -995,7 +995,7 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
     intent: SessionIntent,
   ): SessionPlan {
     // Create a generic plan based on available agents
-    this.log(`Workspace agents:`, this.workspace?.agents);
+    this.log(`Workspace agents:`, "debug", { agents: this.workspace?.agents });
 
     // Handle both full workspace objects and serialized metadata
     let availableAgents: string[] = [];
