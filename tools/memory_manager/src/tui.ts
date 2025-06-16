@@ -5,9 +5,12 @@
  */
 
 import {
+  EditableField,
+  type EditState,
   type KeyBinding,
   type MemoryEntry,
   MemoryType,
+  type OverlayContent,
   type TabInfo,
   type TUIState,
 } from "../types/memory-types.ts";
@@ -22,6 +25,7 @@ export class MemoryManagerTUI {
     searchQuery: "",
     showHelp: false,
     mode: "list",
+    showOverlay: false,
   };
   private running = true;
   private terminalSize = { width: 80, height: 24 };
@@ -56,7 +60,9 @@ export class MemoryManagerTUI {
     // Update terminal size
     this.updateTerminalSize();
 
-    if (this.state.showHelp) {
+    if (this.state.showOverlay) {
+      await this.renderOverlay();
+    } else if (this.state.showHelp) {
       await this.renderHelp();
     } else {
       await this.renderMain();
@@ -186,9 +192,9 @@ export class MemoryManagerTUI {
       );
       const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
 
-      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${ageText.padEnd(6)} │ ${
-        entry.tags.slice(0, 3).join(", ")
-      }`;
+      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${
+        ageText.padEnd(6)
+      } │ ${entry.tags.slice(0, 3).join(", ")}`;
 
       if (line.length > this.terminalSize.width - 2) {
         line = line.substring(0, this.terminalSize.width - 5) + "...";
@@ -273,7 +279,9 @@ export class MemoryManagerTUI {
           "yellow",
         ),
       );
-      const tagLine = entry.tags.map((tag) => this.colorize(`#${tag}`, "dim", "yellow")).join("  ");
+      const tagLine = entry.tags.map((tag) =>
+        this.colorize(`#${tag}`, "dim", "yellow")
+      ).join("  ");
       console.log(`│ ${tagLine}`);
     }
 
@@ -408,7 +416,9 @@ export class MemoryManagerTUI {
         `│ ${this.colorize(`Array (${content.length} items):`, "bold")}`,
       );
       content.slice(0, 10).forEach((item, index) => {
-        const itemStr = typeof item === "object" ? JSON.stringify(item) : String(item);
+        const itemStr = typeof item === "object"
+          ? JSON.stringify(item)
+          : String(item);
         const truncated = this.truncateString(itemStr, maxWidth - 8);
         console.log(`│   [${index}] ${truncated}`);
       });
@@ -424,7 +434,9 @@ export class MemoryManagerTUI {
       );
 
       entries.slice(0, 15).forEach(([key, value]) => {
-        const valueStr = typeof value === "object" ? JSON.stringify(value) : String(value);
+        const valueStr = typeof value === "object"
+          ? JSON.stringify(value)
+          : String(value);
         const truncatedValue = this.truncateString(
           valueStr,
           maxWidth - key.length - 8,
@@ -556,6 +568,11 @@ export class MemoryManagerTUI {
       },
       { key: "r", description: "Reload memory from disk", action: () => {} },
       { key: "s", description: "Save changes to disk", action: () => {} },
+      {
+        key: "f",
+        description: "View full content in overlay",
+        action: () => {},
+      },
       { key: "h or ?", description: "Show/hide this help", action: () => {} },
       { key: "q", description: "Quit", action: () => {} },
     ];
@@ -571,7 +588,7 @@ export class MemoryManagerTUI {
   private async renderFooter(): Promise<void> {
     const modeText = this.state.mode.toUpperCase();
     const footer =
-      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view e:edit n:new d:delete /:search r:reload s:save`;
+      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search r:reload s:save`;
 
     console.log("\n" + "─".repeat(this.terminalSize.width));
     console.log(this.colorize(footer, "dim"));
@@ -580,6 +597,31 @@ export class MemoryManagerTUI {
   private async handleInput(): Promise<void> {
     const key = await this.readKey();
 
+    // Handle overlay-specific keys first
+    if (this.state.showOverlay) {
+      switch (key) {
+        case "ESCAPE":
+          this.closeOverlay();
+          break;
+        case "ARROW_UP":
+        case "k":
+        case "K":
+          this.scrollOverlay(-1);
+          break;
+        case "ARROW_DOWN":
+        case "j":
+        case "J":
+          this.scrollOverlay(1);
+          break;
+        case "q":
+          this.running = false;
+          break;
+          // Ignore other keys in overlay mode
+      }
+      return;
+    }
+
+    // Normal mode key handling
     switch (key) {
       case "q":
         this.running = false;
@@ -610,6 +652,11 @@ export class MemoryManagerTUI {
         } else {
           this.state.mode = "list";
         }
+        break;
+      case "f":
+      case "F":
+        // Show full content overlay for current entry
+        await this.showCurrentEntryOverlay();
         break;
       case "e":
         this.state.mode = this.state.mode === "edit" ? "list" : "edit";
@@ -651,7 +698,9 @@ export class MemoryManagerTUI {
       let seqLength = 0;
 
       // Read up to 3 more bytes with a short timeout
-      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 10));
+      const timeoutPromise = new Promise<void>((resolve) =>
+        setTimeout(resolve, 10)
+      );
 
       try {
         while (seqLength < 3) {
@@ -802,5 +851,308 @@ export class MemoryManagerTUI {
       // Fallback if consoleSize fails
       this.terminalSize = { width: 80, height: 24 };
     }
+  }
+
+  // Overlay rendering methods
+
+  private async renderOverlay(): Promise<void> {
+    if (!this.state.overlayContent) {
+      console.log(
+        this.colorize("Error: No overlay content to display", "bold", "red"),
+      );
+      return;
+    }
+
+    const { width, height } = this.terminalSize;
+    const overlay = this.state.overlayContent;
+
+    // Calculate overlay dimensions (80% of terminal, minimum 60x20)
+    const overlayWidth = Math.max(60, Math.floor(width * 0.8));
+    const overlayHeight = Math.max(20, Math.floor(height * 0.8));
+    const startX = Math.floor((width - overlayWidth) / 2);
+    const startY = Math.floor((height - overlayHeight) / 2);
+
+    // Draw overlay background
+    await this.drawOverlayBackground(
+      overlayWidth,
+      overlayHeight,
+      startX,
+      startY,
+    );
+
+    // Render overlay header
+    await this.drawOverlayHeader(overlay.title, overlayWidth, startX, startY);
+
+    // Render scrollable content
+    await this.drawOverlayContent(
+      overlay.content,
+      overlayWidth,
+      overlayHeight,
+      startX,
+      startY,
+      overlay.scrollOffset,
+    );
+
+    // Render overlay footer with scroll info and controls
+    await this.drawOverlayFooter(
+      overlayWidth,
+      startX,
+      startY + overlayHeight - 1,
+      overlay.scrollOffset,
+      overlay.maxScroll,
+    );
+  }
+
+  private async drawOverlayBackground(
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+  ): Promise<void> {
+    // Draw border
+    const topBorder = "┌" + "─".repeat(width - 2) + "┐";
+    const bottomBorder = "└" + "─".repeat(width - 2) + "┘";
+    const sideBorder = "│" + " ".repeat(width - 2) + "│";
+
+    // Position cursor and draw top border
+    await Deno.stdout.write(
+      new TextEncoder().encode(`\x1b[${startY + 1};${startX + 1}H`),
+    );
+    console.log(this.colorize(topBorder, "bold", "cyan"));
+
+    // Draw side borders
+    for (let i = 1; i < height - 1; i++) {
+      await Deno.stdout.write(
+        new TextEncoder().encode(`\x1b[${startY + i + 1};${startX + 1}H`),
+      );
+      console.log(this.colorize(sideBorder, "bold", "cyan"));
+    }
+
+    // Draw bottom border
+    await Deno.stdout.write(
+      new TextEncoder().encode(`\x1b[${startY + height};${startX + 1}H`),
+    );
+    console.log(this.colorize(bottomBorder, "bold", "cyan"));
+  }
+
+  private async drawOverlayHeader(
+    title: string,
+    width: number,
+    startX: number,
+    startY: number,
+  ): Promise<void> {
+    const headerText = ` ${title} `;
+    const padding = Math.max(0, width - headerText.length - 4);
+    const leftPadding = Math.floor(padding / 2);
+    const rightPadding = padding - leftPadding;
+
+    const header = "├" + "─".repeat(leftPadding) + headerText +
+      "─".repeat(rightPadding) + "┤";
+
+    await Deno.stdout.write(
+      new TextEncoder().encode(`\x1b[${startY + 2};${startX + 1}H`),
+    );
+    console.log(this.colorize(header, "bold", "yellow"));
+  }
+
+  private async drawOverlayContent(
+    content: unknown,
+    width: number,
+    height: number,
+    startX: number,
+    startY: number,
+    scrollOffset: number,
+  ): Promise<void> {
+    const contentHeight = height - 4; // Account for header, footer, borders
+    const contentWidth = width - 4; // Account for borders and padding
+
+    // Convert content to lines with proper wrapping for overlay
+    const lines = this.contentToLines(content, contentWidth);
+
+    // Calculate visible lines
+    const visibleLines = lines.slice(
+      scrollOffset,
+      scrollOffset + contentHeight,
+    );
+
+    // Update max scroll in state
+    if (this.state.overlayContent) {
+      this.state.overlayContent.maxScroll = Math.max(
+        0,
+        lines.length - contentHeight,
+      );
+    }
+
+    // Render visible lines without truncation (they're already wrapped)
+    for (let index = 0; index < visibleLines.length; index++) {
+      const line = visibleLines[index];
+      const y = startY + 3 + index;
+      await Deno.stdout.write(
+        new TextEncoder().encode(`\x1b[${y};${startX + 3}H`),
+      );
+      // Lines are already properly wrapped, just display them
+      console.log(line.substring(0, contentWidth));
+    }
+
+    // Clear any remaining lines in the content area
+    for (let i = visibleLines.length; i < contentHeight; i++) {
+      const y = startY + 3 + i;
+      await Deno.stdout.write(
+        new TextEncoder().encode(`\x1b[${y};${startX + 3}H`),
+      );
+      console.log(" ".repeat(contentWidth));
+    }
+  }
+
+  private async drawOverlayFooter(
+    width: number,
+    startX: number,
+    y: number,
+    scrollOffset: number,
+    maxScroll: number,
+  ): Promise<void> {
+    const scrollInfo = maxScroll > 0
+      ? ` ${scrollOffset + 1}/${Math.max(1, maxScroll + 1)} `
+      : " ";
+    const instructions = " ↑/↓:scroll ESC:close ";
+    const footerContent = scrollInfo + instructions;
+    const padding = Math.max(0, width - footerContent.length - 4);
+
+    const footer = "├" + "─".repeat(Math.floor(padding / 2)) + footerContent +
+      "─".repeat(Math.ceil(padding / 2)) + "┤";
+
+    await Deno.stdout.write(
+      new TextEncoder().encode(`\x1b[${y};${startX + 1}H`),
+    );
+    console.log(this.colorize(footer, "dim", "white"));
+  }
+
+  private contentToLines(content: unknown, maxWidth: number): string[] {
+    const lines: string[] = [];
+
+    if (typeof content === "string") {
+      // Split by newlines and handle word wrapping
+      const rawLines = content.split("\n");
+      rawLines.forEach((line) => {
+        if (line.length <= maxWidth) {
+          lines.push(line);
+        } else {
+          // Word wrap long lines
+          const words = line.split(" ");
+          let currentLine = "";
+
+          words.forEach((word) => {
+            if ((currentLine + " " + word).length <= maxWidth) {
+              currentLine += (currentLine ? " " : "") + word;
+            } else {
+              if (currentLine) lines.push(currentLine);
+              currentLine = word.length > maxWidth
+                ? word.substring(0, maxWidth - 3) + "..."
+                : word;
+            }
+          });
+
+          if (currentLine) lines.push(currentLine);
+        }
+      });
+    } else if (typeof content === "object" && content !== null) {
+      // Pretty print JSON with proper formatting
+      const jsonString = JSON.stringify(content, null, 2);
+      const rawLines = jsonString.split("\n");
+
+      rawLines.forEach((line) => {
+        if (line.length <= maxWidth) {
+          lines.push(line);
+        } else {
+          // For JSON, we want to preserve structure but wrap long values
+          const indent = line.match(/^(\s*)/)?.[1] || "";
+          const contentPart = line.substring(indent.length);
+
+          if (contentPart.length <= maxWidth - indent.length) {
+            lines.push(line);
+          } else {
+            // Wrap long JSON lines while preserving indentation
+            let currentIndent = indent;
+            const baseAvailableWidth = maxWidth - indent.length;
+            let remainingContent = contentPart;
+
+            while (remainingContent.length > 0) {
+              const availableWidth = maxWidth - currentIndent.length;
+
+              if (remainingContent.length <= availableWidth) {
+                lines.push(currentIndent + remainingContent);
+                break;
+              }
+
+              // Find a good break point (prefer after comma, space, or quote)
+              let breakPoint = availableWidth;
+              for (let i = availableWidth - 1; i > availableWidth * 0.7; i--) {
+                const char = remainingContent[i];
+                if (
+                  char === "," || char === " " || char === '"' || char === ":"
+                ) {
+                  breakPoint = i + 1;
+                  break;
+                }
+              }
+
+              lines.push(
+                currentIndent + remainingContent.substring(0, breakPoint),
+              );
+              remainingContent = remainingContent.substring(breakPoint);
+
+              // Add extra indentation for continuation lines
+              currentIndent = indent + "  ";
+            }
+          }
+        }
+      });
+    } else {
+      // Handle primitives
+      lines.push(String(content));
+    }
+
+    return lines;
+  }
+
+  // Method to show overlay with content
+  private showOverlay(title: string, content: unknown): void {
+    this.state.overlayContent = {
+      title,
+      content,
+      scrollOffset: 0,
+      maxScroll: 0,
+    };
+    this.state.showOverlay = true;
+  }
+
+  // Show overlay for currently selected memory entry
+  private async showCurrentEntryOverlay(): Promise<void> {
+    const entries = await this.operations.list(this.state.currentTab);
+    const entry = entries[this.state.selectedIndex];
+
+    if (!entry) {
+      return;
+    }
+
+    const title = `Full Content: ${entry.id}`;
+    this.showOverlay(title, entry.content);
+  }
+
+  // Method to close overlay
+  private closeOverlay(): void {
+    this.state.showOverlay = false;
+    this.state.overlayContent = undefined;
+  }
+
+  // Scroll overlay content
+  private scrollOverlay(direction: 1 | -1): void {
+    if (!this.state.overlayContent) return;
+
+    const newOffset = this.state.overlayContent.scrollOffset + direction;
+    this.state.overlayContent.scrollOffset = Math.max(
+      0,
+      Math.min(newOffset, this.state.overlayContent.maxScroll),
+    );
   }
 }

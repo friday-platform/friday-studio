@@ -244,7 +244,9 @@ export class AtlasMemoryOperations implements MemoryOperations {
       this.data = importedData;
     } catch (error) {
       throw new Error(
-        `Failed to import JSON data: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to import JSON data: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }
