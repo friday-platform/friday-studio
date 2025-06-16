@@ -469,7 +469,25 @@ class AgentExecutionWorker {
   }
 
   private buildUserPrompt(task: any, input: any, prompts: Record<string, string>): string {
-    let userPrompt = `Task: ${task.task}\n\nInput: ${JSON.stringify(input, null, 2)}`;
+    // Check if this is a memory-enhanced task (contains memory sections)
+    const hasMemoryContent = task.task && (
+      task.task.includes("## RELEVANT WORKSPACE KNOWLEDGE") ||
+      task.task.includes("## WORKSPACE RULES AND PROCEDURES") ||
+      task.task.includes("## CURRENT SESSION CONTEXT") ||
+      task.task.includes("## PREVIOUS EXECUTION CONTEXT")
+    );
+
+    let userPrompt: string;
+
+    if (hasMemoryContent) {
+      // For memory-enhanced tasks, use the enhanced prompt directly
+      // and add input as a structured section
+      userPrompt = task.task;
+      userPrompt += `\n\n## INPUT DATA\n${JSON.stringify(input, null, 2)}`;
+    } else {
+      // For simple tasks, use the traditional format
+      userPrompt = `Task: ${task.task}\n\nInput: ${JSON.stringify(input, null, 2)}`;
+    }
 
     // Add any task-specific prompts
     if (task.mode && prompts[task.mode]) {

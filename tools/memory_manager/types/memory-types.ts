@@ -68,6 +68,16 @@ export interface TUIState {
   searchQuery: string;
   showHelp: boolean;
   mode: "list" | "view" | "edit" | "create" | "delete" | "search";
+  editState?: EditState;
+  showOverlay: boolean;
+  overlayContent?: OverlayContent;
+}
+
+export interface OverlayContent {
+  title: string;
+  content: unknown;
+  scrollOffset: number;
+  maxScroll: number;
 }
 
 export interface KeyBinding {
@@ -81,4 +91,19 @@ export interface TabInfo {
   title: string;
   count: number;
   color: string;
+}
+
+export interface EditState {
+  entryId: string;
+  currentField: EditableField;
+  fieldValues: Record<string, unknown>;
+  originalEntry: MemoryEntry;
+}
+
+export enum EditableField {
+  CONTENT = "content",
+  TAGS = "tags",
+  RELEVANCE_SCORE = "relevanceScore",
+  CONFIDENCE = "confidence",
+  ASSOCIATIONS = "associations",
 }
