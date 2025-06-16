@@ -103,30 +103,35 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
         super("test-worker", "test");
       }
       
-      protected async initialize(config) {
+      protected async initialize(config: any): Promise<void> {
         this.log("Test worker initialized with:", config);
       }
       
-      protected async processTask(taskId, data) {
+      protected async processTask(taskId: string, data: any): Promise<any> {
         this.log("Processing task:", taskId, data);
         
-        if (data.action === 'echo') {
-          return { echo: data.message };
+        // Handle envelope format
+        const action = data.type === 'task.execute' ? data.payload?.action : data.action;
+        const message = data.payload?.message || data.message;
+        const channel = data.payload?.channel || data.channel;
+        
+        if (action === 'echo') {
+          return { echo: message };
         }
         
-        if (data.action === 'broadcast') {
-          this.broadcast(data.channel, data.message);
+        if (action === 'broadcast') {
+          this.broadcast(channel, message);
           return { status: 'broadcast sent' };
         }
         
-        throw new Error(\`Unknown action: \${data.action}\`);
+        throw new Error(\`Unknown action: \${action}\`);
       }
       
-      protected async cleanup() {
+      protected async cleanup(): Promise<void> {
         this.log("Cleaning up test worker");
       }
       
-      protected handleBroadcast(channel, data) {
+      protected override handleBroadcast(channel: string, data: any): void {
         this.log(\`Received broadcast on \${channel}:\`, data);
         self.postMessage({
           type: 'broadcastReceived',

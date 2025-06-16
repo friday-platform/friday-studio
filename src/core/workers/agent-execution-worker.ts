@@ -22,78 +22,15 @@ import {
   validateAgentExecutePayload,
 } from "../utils/message-envelope.ts";
 
-// Legacy interface for backward compatibility during transition
-interface LegacyWorkerMessage {
-  type: "initialize" | "execute" | "terminate";
-  id: string;
-  data?: Record<string, unknown>;
-}
-
-interface AgentExecutionRequest {
-  agent_id: string;
-  agent_config: {
-    type: string;
-    model?: string;
-    parameters: Record<string, unknown>;
-    prompts: Record<string, string>;
-    tools: string[];
-    endpoint?: string;
-    auth?: {
-      type: "bearer" | "api_key" | "basic" | "none";
-      token_env?: string;
-      token?: string;
-      api_key_env?: string;
-      api_key?: string;
-      header?: string;
-      username?: string;
-      password?: string;
-    };
-  };
-  task: {
-    task: string;
-    inputSource: string;
-    mode?: string;
-    config?: Record<string, unknown>;
-  };
-  input: unknown;
-  environment: {
-    worker_config: {
-      memory_limit: number;
-      timeout: number;
-      allowed_permissions: string[];
-      isolation_level: string;
-    };
-    monitoring_config: {
-      log_level: string;
-      metrics_collection: boolean;
-      safety_checks: string[];
-      output_validation: boolean;
-    };
-  };
-}
-
-interface AgentExecutionResponse {
-  success: boolean;
-  output?: unknown;
-  error?: string;
-  metadata: {
-    duration: number;
-    memory_used: number;
-    safety_checks_passed: boolean;
-  };
-}
-
 class AgentExecutionWorker {
-  private workerId: string = "";
-  private isInitialized: boolean = false;
-  private startTime: number = 0;
+  private workerId: string = crypto.randomUUID();
+  private isInitialized = false;
+  private startTime = 0;
   private logger: ChildLogger;
   private sessionId?: string;
   private workspaceId?: string;
 
   constructor() {
-    this.workerId = crypto.randomUUID();
-
     // Initialize logger first
     this.logger = logger.createChildLogger({
       workerId: this.workerId,
@@ -447,9 +384,15 @@ class AgentExecutionWorker {
     const provider = params.provider || "anthropic";
 
     // Log configuration details for debugging
-    this.log(`LLM Agent Configuration - Provider: ${provider}, Model: ${model}`, "debug");
-    this.log(`Agent Config Parameters: ${JSON.stringify(parameters)}`, "debug");
-    this.log(`Environment Config: ${JSON.stringify(request.environment.worker_config)}`, "debug");
+    this.sendLogMessage(
+      "debug",
+      `LLM Agent Configuration - Provider: ${provider}, Model: ${model}`,
+    );
+    this.sendLogMessage("debug", `Agent Config Parameters: ${JSON.stringify(parameters)}`);
+    this.sendLogMessage(
+      "debug",
+      `Environment Config: ${JSON.stringify(request.environment.worker_config)}`,
+    );
 
     // Prepare prompt
     const promptsObj = prompts as Record<string, string> || {};
@@ -457,7 +400,10 @@ class AgentExecutionWorker {
     const userPrompt = this.buildUserPrompt(task, input, promptsObj);
 
     try {
-      this.log(`Calling LLMProviderManager with provider: ${provider}, model: ${model}`, "debug");
+      this.sendLogMessage(
+        "debug",
+        `Calling LLMProviderManager with provider: ${provider}, model: ${model}`,
+      );
 
       const result = await LLMProviderManager.generateText(userPrompt, {
         provider: provider as "anthropic" | "openai" | "google",
@@ -475,7 +421,7 @@ class AgentExecutionWorker {
         },
       });
 
-      this.log(`LLM execution successful for ${request.agent_id}`, "debug");
+      this.sendLogMessage("debug", `LLM execution successful for ${request.agent_id}`);
 
       return {
         agent_type: "llm",
@@ -488,12 +434,12 @@ class AgentExecutionWorker {
         finish_reason: "stop",
       };
     } catch (error) {
-      this.log(`LLM execution error for ${request.agent_id}: ${error}`, "error");
-      this.log(
+      this.sendLogMessage("error", `LLM execution error for ${request.agent_id}: ${error}`);
+      this.sendLogMessage(
+        "error",
         `Error details - Provider: ${provider}, Model: ${model}, Type: ${
           error instanceof Error ? error.name : "Unknown"
         }`,
-        "error",
       );
       throw error;
     }
@@ -509,7 +455,7 @@ class AgentExecutionWorker {
     const agentName = params.agent;
     const version = params.version;
 
-    this.log(`Loading Tempest agent: ${agentName}@${version}`, "info");
+    this.sendLogMessage("info", `Loading Tempest agent: ${agentName}@${version}`);
 
     // Simulate Tempest agent execution
     await this.simulateWork(200);
@@ -592,7 +538,7 @@ class AgentExecutionWorker {
         },
       };
 
-      this.log(`Creating ${remoteConfig.protocol} adapter for remote agent`, "debug");
+      this.sendLogMessage("debug", `Creating ${remoteConfig.protocol} adapter for remote agent`);
 
       // Create the appropriate adapter
       const adapter = await RemoteAdapterFactory.createAdapter(remoteConfig.protocol, remoteConfig);
@@ -610,7 +556,7 @@ class AgentExecutionWorker {
         },
       };
 
-      this.log(`Executing remote agent via ${remoteConfig.protocol} protocol`, "info");
+      this.sendLogMessage("info", `Executing remote agent via ${remoteConfig.protocol} protocol`);
 
       // Execute the agent
       const result = await adapter.executeAgent(executionRequest);
@@ -634,7 +580,7 @@ class AgentExecutionWorker {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      this.log(`Remote agent execution failed: ${errorMessage}`, "error");
+      this.sendLogMessage("error", `Remote agent execution failed: ${errorMessage}`);
       throw new Error(`Remote agent execution failed: ${errorMessage}`);
     }
   }
@@ -808,11 +754,6 @@ class AgentExecutionWorker {
     );
 
     this.postMessage(logMessage);
-  }
-
-  // Legacy method for backward compatibility during transition
-  private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
-    this.sendLogMessage(level, message);
   }
 }
 

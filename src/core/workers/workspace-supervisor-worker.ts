@@ -6,6 +6,23 @@ import { WorkspaceSupervisor } from "../supervisor.ts";
 import type { IWorkspace, IWorkspaceSignal } from "../../types/core.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
 import type { AtlasMemoryConfig } from "../memory-config.ts";
+import {
+  ATLAS_MESSAGE_TYPES,
+  AtlasMessageEnvelope,
+  createErrorResponse,
+  createWorkspaceSessionCompleteMessage,
+  createWorkspaceSessionErrorMessage,
+  createWorkspaceStatusMessage,
+  isWorkspaceGetStatusMessage,
+  isWorkspaceProcessSignalMessage,
+  isWorkspaceSetWorkspaceMessage,
+  type MessageSource,
+  validateEnvelope,
+  WorkspaceGetStatusPayload,
+  WorkspaceProcessSignalPayload,
+  WorkspaceSetWorkspacePayload,
+  WorkspaceStatusPayload,
+} from "../utils/message-envelope.ts";
 
 interface WorkspaceSupervisorConfig {
   id: string;
@@ -25,27 +42,12 @@ interface SessionWorkerInfo {
   sessionId: string;
 }
 
-interface ProcessSignalData {
-  action: "processSignal";
-  signal: IWorkspaceSignal;
-  payload: Record<string, unknown>;
-  sessionId: string;
-  signalConfig?: Record<string, unknown>;
-  jobs?: Record<string, unknown>;
-  traceHeaders?: Record<string, string>;
-}
-
-interface GetStatusData {
-  action: "getStatus";
-}
-
-interface SetWorkspaceData {
-  type: "setWorkspace";
-  workspace: IWorkspace;
-}
-
-type WorkspaceWorkerData = ProcessSignalData | GetStatusData;
-type WorkspaceWorkerMessage = SetWorkspaceData | Record<string, unknown>;
+// Envelope-based message handling
+type WorkspaceWorkerMessage =
+  | AtlasMessageEnvelope<WorkspaceProcessSignalPayload>
+  | AtlasMessageEnvelope<WorkspaceGetStatusPayload>
+  | AtlasMessageEnvelope<WorkspaceSetWorkspacePayload>
+  | AtlasMessageEnvelope<Record<string, unknown>>; // For custom workspace operations
 
 class WorkspaceSupervisorWorker extends BaseWorker {
   private supervisor: WorkspaceSupervisor | null = null;
@@ -61,7 +63,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.logger.error(message, context);
   }
 
-  protected async initialize(config: WorkspaceSupervisorConfig): Promise<void> {
+  protected initialize(config: WorkspaceSupervisorConfig): Promise<void> {
     this.config = config;
     this.log("Initializing with config:", config);
     this.log("Config structure:", {
@@ -112,140 +114,290 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     }
 
     this.log("Supervisor initialized");
+    return Promise.resolve();
   }
 
   protected async processTask(
     taskId: string,
-    data: WorkspaceWorkerData,
+    data: unknown,
   ): Promise<Record<string, unknown>> {
-    if (!this.supervisor) {
-      throw new Error("Supervisor not initialized");
-    }
+    try {
+      // Validate incoming message as envelope
+      const envelopeValidation = validateEnvelope(data);
+      if (!envelopeValidation.success) {
+        throw new Error(`Invalid message envelope: ${envelopeValidation.error.message}`);
+      }
 
-    switch (data.action) {
-      case "processSignal": {
-        const processData = data as ProcessSignalData;
-        const { signal, payload, sessionId, signalConfig, jobs, traceHeaders } = processData;
+      const envelope = envelopeValidation.data as WorkspaceWorkerMessage;
+      if (!this.supervisor) {
+        throw new Error("Workspace supervisor not initialized");
+      }
 
-        return await AtlasTelemetry.withWorkerSpan(
-          {
-            operation: "processSignal",
-            component: "workspace",
-            traceHeaders,
-            workerId: this.context.id,
-            sessionId,
-            signalId: signal.id,
-            signalType: signal.provider?.name || "unknown",
-            workspaceId: this.workspace?.id,
-          },
-          async (span) => {
-            // Spawn session worker
-            const sessionWorker = await this.spawnSessionWorker(sessionId);
-
-            // Join the session's broadcast channel
-            this.actor.send({
-              type: "JOIN_CHANNEL",
-              channel: `session-${sessionId}`,
-            });
-
-            // Use WorkspaceSupervisor's intelligence to analyze the signal
-            this.log("Analyzing signal with WorkspaceSupervisor...");
-            const intent = await AtlasTelemetry.withSpan(
-              "supervisor.analyzeSignal",
-              async () => {
-                return await this.supervisor!.analyzeSignal(signal, payload);
-              },
-              { "signal.id": signal.id },
-            );
-            this.log(`Signal analysis complete`);
-
-            // Create filtered context for this specific session
-            this.log("Creating session context...");
-            const sessionContext = await AtlasTelemetry.withSpan(
-              "supervisor.createSessionContext",
-              async () => {
-                return await this.supervisor!.createSessionContext(intent, signal, payload, {
-                  signalConfig,
-                  jobs,
-                });
-              },
-              { "session.id": sessionId },
-            );
-            this.log(`Session context created`);
-
-            // Create trace headers for session worker communication
-            const sessionTraceHeaders = await AtlasTelemetry.createTraceHeaders();
-
-            // Send filtered initialization data to session worker
-            this.log(`Sending initialization to session worker ${sessionId}...`);
-            const initTaskId = crypto.randomUUID();
-            await this.sendToSessionWorker(sessionId, {
-              type: "task",
-              taskId: initTaskId,
-              data: {
-                action: "initialize",
-                intent,
-                signal,
-                payload,
-                workspaceId: this.workspace?.id,
-                agents: sessionContext.availableAgents || [],
-                filteredMemory: sessionContext.filteredMemory || [],
-                jobSpec: sessionContext.jobSpec, // Pass job specification to session
-                constraints: sessionContext.constraints,
-                additionalPrompts: sessionContext.additionalPrompts,
-                traceHeaders: sessionTraceHeaders, // Pass trace context to session
-              },
-            });
-            this.log(`Initialization sent to session worker`);
-
-            // Start session execution in worker (SessionSupervisor will create the plan)
-            const executionTaskId = crypto.randomUUID();
-            const result = await this.sendToSessionWorker(sessionId, {
-              type: "task",
-              taskId: executionTaskId,
-              data: {
-                action: "executeSession",
-                traceHeaders: sessionTraceHeaders, // Pass trace context
-              },
-            });
-
-            // Check if session completed and notify runtime
-            if (result && (result as any).status === "completed") {
-              this.log(`Session ${sessionId} completed, notifying runtime`);
-              self.postMessage({
-                type: "sessionComplete",
-                sessionId,
-                result,
-              });
-            }
-
-            return {
-              sessionId,
-              status: "started",
-              result,
-            };
-          },
+      // Domain validation for workspace messages
+      if (envelope.domain !== "workspace") {
+        throw new Error(
+          `Invalid domain "${envelope.domain}" for workspace worker. Expected "workspace"`,
         );
       }
 
-      case "getStatus": {
-        return {
-          ready: true,
+      switch (envelope.type) {
+        case ATLAS_MESSAGE_TYPES.WORKSPACE.PROCESS_SIGNAL: {
+          if (!isWorkspaceProcessSignalMessage(envelope)) {
+            throw new Error("Invalid workspace process signal message format");
+          }
+
+          const { signal, payload, sessionId, signalConfig, jobs } = envelope.payload;
+
+          return await AtlasTelemetry.withWorkerSpan(
+            {
+              operation: "processSignal",
+              component: "workspace",
+              traceHeaders: envelope.traceHeaders,
+              workerId: this.context.id,
+              sessionId,
+              signalId: signal.id,
+              signalType: signal.provider?.name || "unknown",
+              workspaceId: this.workspace?.id,
+            },
+            async (_span) => {
+              // Spawn session worker
+              const _sessionWorker = await this.spawnSessionWorker(sessionId);
+
+              // Join the session's broadcast channel
+              this.actor.send({
+                type: "JOIN_CHANNEL",
+                channel: `session-${sessionId}`,
+              });
+
+              // Use WorkspaceSupervisor's intelligence to analyze the signal
+              this.log("Analyzing signal with WorkspaceSupervisor...");
+              const intent = await AtlasTelemetry.withSpan(
+                "supervisor.analyzeSignal",
+                async () => {
+                  return await this.supervisor!.analyzeSignal(
+                    signal as unknown as IWorkspaceSignal,
+                    payload,
+                  );
+                },
+                { "signal.id": signal.id },
+              );
+              this.log(`Signal analysis complete`);
+
+              // Create filtered context for this specific session
+              this.log("Creating session context...");
+              const sessionContext = await AtlasTelemetry.withSpan(
+                "supervisor.createSessionContext",
+                async () => {
+                  return await this.supervisor!.createSessionContext(
+                    intent,
+                    signal as unknown as IWorkspaceSignal,
+                    payload,
+                    {
+                      signalConfig,
+                      jobs,
+                    },
+                  );
+                },
+                { "session.id": sessionId },
+              );
+              this.log(`Session context created`);
+
+              // Create trace headers for session worker communication
+              const sessionTraceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+              // Send filtered initialization data to session worker using envelope format
+              this.log(`Sending initialization to session worker ${sessionId}...`);
+              const initTaskId = crypto.randomUUID();
+
+              // Create session initialize envelope message
+              const initPayload = {
+                intent,
+                signal: signal as unknown as Record<string, unknown>,
+                payload,
+                workspaceId: this.workspace?.id || "unknown",
+                agents: sessionContext.availableAgents || [],
+                jobSpec: sessionContext.jobSpec,
+                additionalPrompts: sessionContext.additionalPrompts,
+              };
+
+              await this.sendToSessionWorker(sessionId, {
+                type: "task",
+                taskId: initTaskId,
+                data: {
+                  id: crypto.randomUUID(),
+                  type: ATLAS_MESSAGE_TYPES.SESSION.INITIALIZE,
+                  domain: "session",
+                  source: {
+                    workerId: this.context.id,
+                    workerType: "workspace-supervisor",
+                    sessionId,
+                    workspaceId: this.workspace?.id,
+                  },
+                  timestamp: Date.now(),
+                  correlationId: envelope.correlationId,
+                  channel: "direct",
+                  traceHeaders: sessionTraceHeaders,
+                  payload: initPayload,
+                  priority: "normal",
+                },
+              });
+              this.log(`Initialization sent to session worker`);
+
+              // Start session execution in worker using envelope format
+              const executionTaskId = crypto.randomUUID();
+              const executePayload = {
+                sessionId,
+                executionOptions: {
+                  timeout: 180000, // 3 minutes
+                  strategy: "adaptive" as const,
+                },
+              };
+
+              const result = await this.sendToSessionWorker(sessionId, {
+                type: "task",
+                taskId: executionTaskId,
+                data: {
+                  id: crypto.randomUUID(),
+                  type: ATLAS_MESSAGE_TYPES.SESSION.EXECUTE,
+                  domain: "session",
+                  source: {
+                    workerId: this.context.id,
+                    workerType: "workspace-supervisor",
+                    sessionId,
+                    workspaceId: this.workspace?.id,
+                  },
+                  timestamp: Date.now(),
+                  correlationId: envelope.correlationId,
+                  channel: "direct",
+                  traceHeaders: sessionTraceHeaders,
+                  payload: executePayload,
+                  priority: "normal",
+                },
+              });
+
+              // Check if session completed and notify runtime using envelope format
+              if (result && (result as Record<string, unknown>).status === "completed") {
+                this.log(`Session ${sessionId} completed, notifying runtime`);
+
+                // Create session complete envelope message
+                const source: MessageSource = {
+                  workerId: this.context.id,
+                  workerType: "workspace-supervisor",
+                  sessionId,
+                  workspaceId: this.workspace?.id,
+                };
+
+                const sessionCompletePayload = {
+                  sessionId,
+                  workspaceId: this.workspace?.id,
+                  status: ((result as Record<string, unknown>).status as "completed" | "failed" | "cancelled" | "timeout") || "completed",
+                  result: result as Record<string, unknown>,
+                  startTime: Date.now() - 180000, // Approximate start time
+                  endTime: Date.now(),
+                  duration: 180000, // Will be calculated properly later
+                  signalId: signal.id,
+                  summary: (result as Record<string, unknown>).summary as string,
+                };
+
+                const completeMessage = createWorkspaceSessionCompleteMessage(
+                  envelope,
+                  sessionCompletePayload,
+                  source,
+                );
+
+                self.postMessage({
+                  type: "sessionComplete",
+                  sessionId,
+                  data: completeMessage,
+                });
+              }
+
+              return {
+                sessionId,
+                status: "started",
+                result,
+              };
+            },
+          );
+        }
+
+        case ATLAS_MESSAGE_TYPES.WORKSPACE.GET_STATUS: {
+          if (!isWorkspaceGetStatusMessage(envelope)) {
+            throw new Error("Invalid workspace get status message format");
+          }
+
+          const statusPayload: WorkspaceStatusPayload = {
+            ready: true,
+            workspaceId: this.workspace?.id,
+            sessions: this.sessions.size,
+            activeSessions: Array.from(this.sessions.values()).map((session) => ({
+              sessionId: session.sessionId,
+              status: "executing" as const,
+              startTime: Date.now() - 60000, // Approximate
+              duration: 60000,
+            })),
+            lastSignalProcessed: Date.now(),
+          };
+
+          // Create proper envelope response
+          const source: MessageSource = {
+            workerId: this.context.id,
+            workerType: "workspace-supervisor",
+            workspaceId: this.workspace?.id,
+          };
+
+          const statusMessage = createWorkspaceStatusMessage(statusPayload, source, {
+            correlationId: envelope.correlationId,
+            traceHeaders: envelope.traceHeaders,
+          });
+
+          return statusMessage.payload;
+        }
+
+        default:
+          throw new Error(`Unknown message type: ${envelope.type}`);
+      }
+    } catch (error) {
+      // Create error response using envelope format
+      if (data && typeof data === "object" && "id" in data && "source" in data) {
+        const envelope = data as AtlasMessageEnvelope;
+        const source: MessageSource = {
+          workerId: this.context.id,
+          workerType: "workspace-supervisor",
           workspaceId: this.workspace?.id,
-          sessions: this.sessions.size,
         };
+
+        const errorResponse = createErrorResponse(
+          envelope,
+          {
+            code: "WORKSPACE_ERROR",
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            retryable: false,
+          },
+          source,
+        );
+
+        // Send error response back
+        self.postMessage({
+          type: "result",
+          taskId,
+          result: errorResponse.payload,
+          error: errorResponse.error,
+        });
+
+        throw error;
       }
 
-      default:
-        throw new Error(`Unknown task action: ${(data as any).action}`);
+      throw error;
     }
   }
 
-  protected async cleanup(): Promise<void> {
+  protected cleanup(): Promise<void> {
     this.log("Cleaning up supervisor...");
 
     // Terminate all session workers
-    for (const [sessionId, info] of this.sessions) {
+    for (const [_sessionId, info] of this.sessions) {
       info.worker.postMessage({ type: "shutdown" });
       info.worker.terminate();
       info.port.close();
@@ -254,9 +406,10 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.sessions.clear();
     this.supervisor = null;
     this.workspace = null;
+    return Promise.resolve();
   }
 
-  private async spawnSessionWorker(
+  private spawnSessionWorker(
     sessionId: string,
   ): Promise<SessionWorkerInfo> {
     this.log(`Spawning session worker: ${sessionId}`);
@@ -298,10 +451,51 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
     sessionWorker.onerror = (error) => {
       this.log(`Session ${sessionId} error:`, error);
+
+      // Create envelope-based error message
+      const source: MessageSource = {
+        workerId: this.context.id,
+        workerType: "workspace-supervisor",
+        sessionId,
+        workspaceId: this.workspace?.id,
+      };
+
+      const errorPayload = {
+        sessionId,
+        workspaceId: this.workspace?.id,
+        error: {
+          code: "SESSION_WORKER_ERROR",
+          message: error.toString(),
+          retryable: true,
+        },
+        context: {
+          workerType: "session-supervisor",
+          timestamp: Date.now(),
+        },
+      };
+
+      // Create a dummy envelope for the error response
+      const dummyEnvelope = {
+        id: crypto.randomUUID(),
+        type: "unknown",
+        domain: "workspace" as const,
+        source: { workerId: "unknown", workerType: "workspace-supervisor" as const },
+        timestamp: Date.now(),
+        channel: "direct" as const,
+        payload: {},
+        priority: "normal" as const,
+      };
+
+      const errorMessage = createWorkspaceSessionErrorMessage(
+        dummyEnvelope,
+        errorPayload,
+        source,
+      );
+
       self.postMessage({
         type: "sessionError",
         sessionId,
-        error: error.toString(),
+        data: errorMessage,
       });
     };
 
@@ -363,7 +557,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     };
 
     this.log(`Session worker setup complete for ${sessionId}`);
-    return sessionInfo;
+    return Promise.resolve(sessionInfo);
   }
 
   private handleSessionMessage(sessionId: string, message: Record<string, unknown>): void {
@@ -386,7 +580,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
           sessionId,
           messageType: message.type,
           taskId: message.taskId,
-          status: (message as Record<string, any>).result?.status,
+          status: (message as Record<string, Record<string, unknown>>).result?.status,
         });
     }
   }
@@ -404,7 +598,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
 
   // Helper to send tasks to session worker and wait for response
-  private async sendToSessionWorker(
+  private sendToSessionWorker(
     sessionId: string,
     message: Record<string, unknown>,
   ): Promise<unknown> {
@@ -442,11 +636,38 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
   // Override to handle supervisor-specific messages
   protected override handleCustomMessage(message: Record<string, unknown>): void {
+    // Try to handle as envelope message first
+    const envelopeValidation = validateEnvelope(message);
+    if (envelopeValidation.success) {
+      const envelope = envelopeValidation.data;
+
+      if (
+        envelope.domain === "workspace" &&
+        envelope.type === ATLAS_MESSAGE_TYPES.WORKSPACE.SET_WORKSPACE
+      ) {
+        if (isWorkspaceSetWorkspaceMessage(envelope)) {
+          if (this.supervisor && envelope.payload.workspace) {
+            this.workspace = envelope.payload.workspace as unknown as IWorkspace;
+            if (this.workspace) {
+              this.supervisor.setWorkspace(this.workspace);
+            }
+
+            // Send envelope-based acknowledgment
+            self.postMessage({
+              type: "workspaceSet",
+              correlationId: envelope.correlationId,
+            });
+          }
+          return;
+        }
+      }
+    }
+
+    // Handle legacy messages
     switch (message.type) {
       case "setWorkspace":
-        const setWorkspaceMsg = message as unknown as SetWorkspaceData;
-        if (this.supervisor && setWorkspaceMsg.workspace) {
-          this.workspace = setWorkspaceMsg.workspace;
+        if (this.supervisor && "workspace" in message) {
+          this.workspace = message.workspace as IWorkspace;
           if (this.workspace) {
             this.supervisor.setWorkspace(this.workspace);
           }
@@ -463,9 +684,120 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   protected override handleBroadcast(channel: string, data: Record<string, unknown>): void {
     this.log(`Received broadcast on ${channel}:`, data);
 
-    // Supervisor could coordinate based on broadcasts
-    if (data.type === "agentMessage" && this.supervisor) {
-      // Could track agent communications, etc.
+    // Check if this is an envelope message
+    const envelopeValidation = validateEnvelope(data);
+    if (envelopeValidation.success) {
+      const envelope = envelopeValidation.data;
+
+      // Handle envelope-based messages
+      switch (envelope.type) {
+        case ATLAS_MESSAGE_TYPES.SESSION.COMPLETE:
+          this.logger.info("Session completion received via broadcast", {
+            workspaceId: this.workspace?.id,
+            sessionId: envelope.source.sessionId,
+            messageType: envelope.type,
+            domain: envelope.domain,
+          });
+
+          // Forward session completion to parent/runtime with envelope format
+          self.postMessage({
+            type: "sessionBroadcast",
+            data: envelope,
+          });
+          break;
+
+        case ATLAS_MESSAGE_TYPES.TASK.PROGRESS:
+          if (envelope.domain === "session") {
+            this.logger.debug("Session progress received via broadcast", {
+              workspaceId: this.workspace?.id,
+              sessionId: envelope.source.sessionId,
+              correlationId: envelope.correlationId,
+            });
+
+            // Forward session progress to parent/runtime
+            self.postMessage({
+              type: "sessionBroadcast",
+              data: envelope,
+            });
+          } else if (envelope.domain === "agent") {
+            this.logger.debug("Agent progress received via broadcast", {
+              workspaceId: this.workspace?.id,
+              agentId: envelope.source.workerId,
+              sessionId: envelope.source.sessionId,
+              correlationId: envelope.correlationId,
+            });
+
+            // Could aggregate agent progress for workspace-level monitoring
+            self.postMessage({
+              type: "agentBroadcast",
+              data: envelope,
+            });
+          }
+          break;
+
+        case ATLAS_MESSAGE_TYPES.AGENT.LOG:
+          this.logger.debug("Agent log received via broadcast", {
+            workspaceId: this.workspace?.id,
+            agentId: envelope.source.workerId,
+            sessionId: envelope.source.sessionId,
+            messageType: envelope.type,
+          });
+
+          // Forward agent logs to parent with envelope format
+          self.postMessage({
+            type: "agentBroadcast",
+            data: envelope,
+          });
+          break;
+
+        case ATLAS_MESSAGE_TYPES.WORKSPACE.SESSION_ERROR:
+          this.logger.warn("Workspace session error received via broadcast", {
+            workspaceId: this.workspace?.id,
+            sessionId: envelope.source.sessionId,
+            correlationId: envelope.correlationId,
+          });
+
+          // Handle workspace-level session errors
+          self.postMessage({
+            type: "workspaceError",
+            data: envelope,
+          });
+          break;
+
+        default:
+          this.logger.warn("Unknown envelope message type in broadcast", {
+            workspaceId: this.workspace?.id,
+            messageType: envelope.type,
+            domain: envelope.domain,
+          });
+      }
+    } else {
+      // Handle legacy message format
+      switch (data.type) {
+        case "agentMessage":
+          if (this.supervisor) {
+            this.log(`Agent broadcast: ${data.message} from ${data.from}`);
+            // Could track agent communications for workspace coordination
+          }
+          break;
+
+        case "sessionComplete":
+          this.log("Session completion received:", data);
+          // Forward to parent (legacy format)
+          self.postMessage({
+            type: "sessionBroadcast",
+            data,
+          });
+          break;
+
+        case "supervisorCommand":
+          this.log("Supervisor command:", data);
+          // Handle supervisor coordination commands
+          break;
+
+        default:
+          this.log(`Unknown broadcast type: ${data.type}`);
+      }
     }
   }
 }
