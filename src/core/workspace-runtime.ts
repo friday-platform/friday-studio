@@ -39,6 +39,7 @@ interface WorkspaceRuntimeContext {
   runtime?: WorkspaceRuntime; // Reference to runtime instance for signal processing
   error?: Error;
   activeStreamSignals?: Map<string, any>; // Track active stream signal connections
+  isShuttingDown?: boolean; // Flag to prevent new signal processing during shutdown
   mergedConfig?: {
     atlas: {
       agents: Record<string, RuntimeAgentConfig>;
@@ -110,7 +111,7 @@ export class WorkspaceRuntime {
 
     // Subscribe to state changes for debugging
     this.stateMachine.subscribe((state) => {
-      logger.info(`Runtime FSM state change: ${state.value}`, {
+      logger.info(`Runtime FSM [${fsmId}] state change: ${state.value}`, {
         workspaceId: workspace.id,
         fsmId,
         state: state.value,
@@ -155,6 +156,11 @@ export class WorkspaceRuntime {
         );
 
         const state = this.stateMachine.getSnapshot();
+
+        // Check if shutting down - reject immediately
+        if (state.context.isShuttingDown) {
+          throw new Error("Cannot process signal: workspace is shutting down");
+        }
 
         // Check if we're in a valid state to process signals
         if (state.value !== "ready" && state.value !== "processing" && state.value !== "initializingStreams") {
@@ -620,6 +626,7 @@ const workspaceRuntimeMachine = setup({
     supervisorId: undefined,
     error: undefined,
     activeStreamSignals: new Map(),
+    isShuttingDown: false,
     mergedConfig: undefined,
   }),
   states: {
@@ -657,6 +664,16 @@ const workspaceRuntimeMachine = setup({
           ],
         },
       },
+      on: {
+        SHUTDOWN: {
+          target: "terminated",
+          actions: [
+            assign({
+              isShuttingDown: () => true,
+            }),
+          ],
+        },
+      },
     },
     initializingStreams: {
       invoke: {
@@ -688,6 +705,16 @@ const workspaceRuntimeMachine = setup({
           ],
         },
       },
+      on: {
+        SHUTDOWN: {
+          target: "draining",
+          actions: [
+            assign({
+              isShuttingDown: () => true,
+            }),
+          ],
+        },
+      },
     },
     ready: {
       on: {
@@ -696,6 +723,11 @@ const workspaceRuntimeMachine = setup({
         },
         SHUTDOWN: {
           target: "draining",
+          actions: [
+            assign({
+              isShuttingDown: () => true,
+            }),
+          ],
         },
       },
     },
@@ -757,6 +789,11 @@ const workspaceRuntimeMachine = setup({
         ],
         SHUTDOWN: {
           target: "draining",
+          actions: [
+            assign({
+              isShuttingDown: () => true,
+            }),
+          ],
         },
         ERROR: {
           target: "ready",
