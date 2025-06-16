@@ -5,6 +5,8 @@ import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { Session } from "./session.ts";
 import { WorkerManager } from "./utils/worker-manager.ts";
 import { AtlasConfigLoader } from "./atlas-config-loader.ts";
+import { ProviderRegistry } from "./providers/registry.ts";
+import { type ISignalProvider, ProviderType } from "./providers/types.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -34,7 +36,9 @@ interface WorkspaceRuntimeContext {
   supervisorId?: string;
   sessions: Map<string, IWorkspaceSession>;
   workerManager: WorkerManager;
+  runtime?: WorkspaceRuntime; // Reference to runtime instance for signal processing
   error?: Error;
+  activeStreamSignals?: Map<string, any>; // Track active stream signal connections
   mergedConfig?: {
     atlas: {
       agents: Record<string, RuntimeAgentConfig>;
@@ -62,6 +66,7 @@ interface WorkspaceRuntimeMachineInput {
   options: WorkspaceRuntimeOptions;
   sessions: Map<string, IWorkspaceSession>;
   workerManager: WorkerManager;
+  runtime?: WorkspaceRuntime;
 }
 
 /**
@@ -96,6 +101,7 @@ export class WorkspaceRuntime {
         options,
         sessions: new Map(),
         workerManager: this.workerManager,
+        runtime: this, // Pass runtime instance for signal processing
       },
     });
 
@@ -151,7 +157,7 @@ export class WorkspaceRuntime {
         const state = this.stateMachine.getSnapshot();
 
         // Check if we're in a valid state to process signals
-        if (state.value !== "ready" && state.value !== "processing") {
+        if (state.value !== "ready" && state.value !== "processing" && state.value !== "initializingStreams") {
           // If uninitialized, initialize first
           if (state.value === "uninitialized") {
             this.stateMachine.send({ type: "INITIALIZE" });
@@ -406,6 +412,110 @@ const workspaceRuntimeMachine = setup({
     input: {} as WorkspaceRuntimeMachineInput,
   },
   actors: {
+    initializeStreamSignals: fromPromise<
+      { activeStreamSignals: Map<string, any> },
+      { context: WorkspaceRuntimeContext }
+    >(async ({ input }) => {
+      const { context } = input;
+      const activeStreamSignals = new Map<string, any>();
+
+      // Register built-in providers to ensure stream provider is available
+      ProviderRegistry.registerBuiltinProviders();
+      const registry = ProviderRegistry.getInstance();
+
+      logger.info("Initializing stream signals", {
+        workspaceId: context.workspace.id,
+        signalCount: Object.keys(context.mergedConfig?.workspace.signals || {}).length,
+      });
+
+      // Initialize stream signals
+      if (context.mergedConfig?.workspace.signals) {
+        for (
+          const [signalId, signalConfig] of Object.entries(context.mergedConfig.workspace.signals)
+        ) {
+          if (signalConfig.provider === "stream") {
+            try {
+              logger.info(`Initializing stream signal: ${signalId}`, {
+                provider: signalConfig.provider,
+                endpoint: signalConfig.endpoint,
+                source: signalConfig.source,
+              });
+
+              // Create provider config
+              const providerConfig = {
+                id: signalId,
+                type: ProviderType.SIGNAL,
+                provider: "stream",
+                config: {
+                  source: signalConfig.source,
+                  endpoint: signalConfig.endpoint,
+                  timeout_ms: signalConfig.timeout_ms,
+                  retry_config: signalConfig.retry_config,
+                },
+              };
+
+              // Load the stream signal provider
+              const provider = await registry.loadFromConfig(providerConfig);
+              const signalProvider = provider as ISignalProvider;
+              const signal = signalProvider.createSignal(providerConfig.config);
+
+              // Convert to runtime signal
+              const runtimeSignal = signal.toRuntimeSignal();
+
+              // Initialize the stream connection
+              await runtimeSignal.initialize({
+                id: signalId, // Pass the actual signal ID (k8s-events), not workspace ID
+                processSignal: async (signalId: string, payload: any) => {
+                  // Process the signal through the runtime
+                  const signalConfig = context.mergedConfig?.workspace.signals?.[signalId];
+                  if (signalConfig && context.runtime) {
+                    logger.info(`Stream signal triggered: ${signalId}`, {
+                      source: payload.source,
+                      eventType: payload.event?.reason,
+                    });
+
+                    try {
+                      // Create a signal object that matches IWorkspaceSignal interface
+                      const signal = {
+                        id: signalId,
+                        provider: { id: "stream", name: "stream" },
+                        config: signalConfig,
+                      };
+
+                      // Process the signal through the runtime
+                      await context.runtime.processSignal(signal as any, payload);
+
+                      logger.info(`Stream signal processed successfully: ${signalId}`);
+                    } catch (error) {
+                      logger.error(`Failed to process stream signal: ${signalId}`, {
+                        error: error instanceof Error ? error.message : String(error),
+                        stack: error instanceof Error ? error.stack : undefined,
+                      });
+                    }
+                  }
+                },
+              });
+
+              activeStreamSignals.set(signalId, runtimeSignal);
+
+              logger.info(`Stream signal initialized successfully: ${signalId}`);
+            } catch (error) {
+              logger.error(`Failed to initialize stream signal: ${signalId}`, {
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        }
+      }
+
+      logger.info("Stream signal initialization complete", {
+        workspaceId: context.workspace.id,
+        activeSignals: activeStreamSignals.size,
+      });
+
+      return { activeStreamSignals };
+    }),
+
     initializeSupervisor: fromPromise<
       { supervisorId: string; mergedConfig: any },
       { context: WorkspaceRuntimeContext }
@@ -506,8 +616,10 @@ const workspaceRuntimeMachine = setup({
     options: input.options,
     sessions: input.sessions,
     workerManager: input.workerManager,
+    runtime: input.runtime,
     supervisorId: undefined,
     error: undefined,
+    activeStreamSignals: new Map(),
     mergedConfig: undefined,
   }),
   states: {
@@ -527,13 +639,12 @@ const workspaceRuntimeMachine = setup({
         src: "initializeSupervisor",
         input: ({ context }) => ({ context }),
         onDone: {
-          target: "ready",
+          target: "initializingStreams",
           actions: [
             assign({
               supervisorId: ({ event }) => event.output.supervisorId,
               mergedConfig: ({ event }) => event.output.mergedConfig,
             }),
-            ({ context }) => logger.info("Workspace ready", { workspaceId: context.workspace.id }),
           ],
         },
         onError: {
@@ -542,6 +653,37 @@ const workspaceRuntimeMachine = setup({
             ({ event }) => console.error("[Runtime FSM] Initialization error:", event.error),
             assign({
               error: ({ event }) => event.error as Error,
+            }),
+          ],
+        },
+      },
+    },
+    initializingStreams: {
+      invoke: {
+        id: "initializeStreamSignals",
+        src: "initializeStreamSignals",
+        input: ({ context }) => ({ context }),
+        onDone: {
+          target: "ready",
+          actions: [
+            assign({
+              activeStreamSignals: ({ event }) => event.output.activeStreamSignals,
+            }),
+            ({ context }) =>
+              logger.info("Workspace ready with stream signals", {
+                workspaceId: context.workspace.id,
+                activeStreams: context.activeStreamSignals?.size || 0,
+              }),
+          ],
+        },
+        onError: {
+          target: "ready",
+          actions: [
+            ({ event }) =>
+              logger.error("Stream signal initialization failed", { error: event.error }),
+            assign({
+              error: ({ event }) => event.error as Error,
+              activeStreamSignals: () => new Map(),
             }),
           ],
         },
@@ -626,12 +768,27 @@ const workspaceRuntimeMachine = setup({
     },
     draining: {
       entry: async ({ context }) => {
-        logger.info("Draining workspace - cancelling all sessions", {
+        logger.info("Draining workspace - cleaning up streams and sessions", {
           workspaceId: context.workspace.id,
           sessionCount: context.sessions.size,
+          streamCount: context.activeStreamSignals?.size || 0,
         });
 
-        // Cancel all active sessions
+        // First, cleanup stream signals to stop new events
+        if (context.activeStreamSignals) {
+          for (const [signalId, runtimeSignal] of context.activeStreamSignals) {
+            try {
+              logger.info(`Cleaning up stream signal: ${signalId}`);
+              await runtimeSignal.teardown();
+              logger.info(`Stream signal cleaned up: ${signalId}`);
+            } catch (error) {
+              logger.error(`Failed to cleanup stream signal: ${signalId}`, { error });
+            }
+          }
+          context.activeStreamSignals.clear();
+        }
+
+        // Then cancel all active sessions
         for (const [sessionId, session] of context.sessions) {
           logger.debug("Cancelling session", {
             workspaceId: context.workspace.id,
@@ -692,7 +849,7 @@ const workspaceRuntimeMachine = setup({
           workspaceId: context.workspace.id,
         });
 
-        // Shutdown worker manager
+        // Shutdown worker manager (streams already cleaned up in draining)
         await context.workerManager.shutdown();
 
         logger.info("Workspace shutdown complete", {
