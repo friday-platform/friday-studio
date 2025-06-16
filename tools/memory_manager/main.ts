@@ -147,10 +147,14 @@ async function showStats(
     console.log(`  Entries: ${typeStats.count}`);
     console.log(`  Avg Relevance: ${typeStats.avgRelevance.toFixed(2)}`);
     console.log(
-      `  File Size: ${storageInfo?.size ? Math.round(storageInfo.size / 1024) + " KB" : "N/A"}`,
+      `  File Size: ${
+        storageInfo?.size ? Math.round(storageInfo.size / 1024) + " KB" : "N/A"
+      }`,
     );
     console.log(
-      `  Last Modified: ${storageInfo?.lastModified?.toLocaleString() || "Never"}`,
+      `  Last Modified: ${
+        storageInfo?.lastModified?.toLocaleString() || "Never"
+      }`,
     );
 
     if (typeStats.mostRecent) {
@@ -205,7 +209,9 @@ async function validateMemory(operations: AtlasMemoryOperations) {
   }
 
   console.log(
-    `\n${totalErrors === 0 ? "✅" : "❌"} Validation complete: ${totalErrors} total errors`,
+    `\n${
+      totalErrors === 0 ? "✅" : "❌"
+    } Validation complete: ${totalErrors} total errors`,
   );
 
   if (totalErrors > 0) {
