@@ -21,6 +21,7 @@
   },
   "imports": {
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
+    "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",
     "@std/expect": "jsr:@std/expect@^1.0.16",
     "@std/fs": "jsr:@std/fs@^1.0.0",

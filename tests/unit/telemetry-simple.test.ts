@@ -126,10 +126,14 @@ Deno.test({
 
       // These should not throw when span is null
       AtlasTelemetry.addAtlasAttributes(null, "workspace", { id: "test" });
-      AtlasTelemetry.addWorkspaceAttributes(null, "ws-123");
-      AtlasTelemetry.addSupervisorAttributes(null, "session", "sess-456");
-      AtlasTelemetry.addAgentAttributes(null, "agent-789", "llm");
-      AtlasTelemetry.addSignalAttributes(null, "signal-101", "webhook");
+      AtlasTelemetry.addComponentAttributes(null, "workspace", { id: "ws-123" });
+      AtlasTelemetry.addComponentAttributes(null, "supervisor", {
+        type: "session",
+        sessionId: "sess-456",
+        "atlas.session.id": "sess-456",
+      });
+      AtlasTelemetry.addComponentAttributes(null, "agent", { id: "agent-789", type: "llm" });
+      AtlasTelemetry.addComponentAttributes(null, "signal", { id: "signal-101", type: "webhook" });
 
       // No exceptions should be thrown
       assertEquals(true, true);

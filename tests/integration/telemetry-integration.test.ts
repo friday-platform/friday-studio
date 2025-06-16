@@ -47,7 +47,7 @@ async function simulateWorkerCommunication() {
 // Mock complex workflow simulation
 async function simulateWorkspaceFlow() {
   return await AtlasTelemetry.withSpan("workspace.process_signal", async (workspaceSpan) => {
-    AtlasTelemetry.addWorkspaceAttributes(workspaceSpan, "ws-123", {
+    AtlasTelemetry.addComponentAttributes(workspaceSpan, "workspace", { id: "ws-123" }, {
       signal_type: "http_webhook",
     });
 
@@ -55,14 +55,21 @@ async function simulateWorkspaceFlow() {
     const sessionResult = await AtlasTelemetry.withSpan(
       "session.create_plan",
       async (sessionSpan) => {
-        AtlasTelemetry.addSupervisorAttributes(sessionSpan, "session", "sess-456", {
+        AtlasTelemetry.addComponentAttributes(sessionSpan, "supervisor", {
+          type: "session",
+          sessionId: "sess-456",
+          "atlas.session.id": "sess-456",
+        }, {
           plan_type: "sequential",
         });
 
         // Simulate multiple agents
         const agentResults = await Promise.all([
           AtlasTelemetry.withSpan("agent.llm_analyze", async (agentSpan) => {
-            AtlasTelemetry.addAgentAttributes(agentSpan, "agent-1", "llm", {
+            AtlasTelemetry.addComponentAttributes(agentSpan, "agent", {
+              id: "agent-1",
+              type: "llm",
+            }, {
               model: "claude-3-5-sonnet",
             });
             await delay(20);
@@ -70,7 +77,10 @@ async function simulateWorkspaceFlow() {
           }),
 
           AtlasTelemetry.withSpan("agent.remote_execute", async (agentSpan) => {
-            AtlasTelemetry.addAgentAttributes(agentSpan, "agent-2", "remote", {
+            AtlasTelemetry.addComponentAttributes(agentSpan, "agent", {
+              id: "agent-2",
+              type: "remote",
+            }, {
               endpoint: "http://agent-service/api",
             });
             await delay(15);

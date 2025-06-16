@@ -77,7 +77,10 @@ export class WorkspaceServer {
         "POST /signals/:signalId",
         async (span) => {
           // Add HTTP and signal attributes to root span
-          AtlasTelemetry.addSignalAttributes(span, signalId, signal.provider || "http");
+          AtlasTelemetry.addComponentAttributes(span, "signal", {
+            id: signalId,
+            type: signal.provider || "http",
+          });
 
           try {
             // Process signal through runtime with proper trace context
@@ -209,7 +212,10 @@ export class WorkspaceServer {
           return await AtlasTelemetry.withServerSpan(
             `${method.toUpperCase()} ${path}`,
             async (span) => {
-              AtlasTelemetry.addSignalAttributes(span, signalId, signal.provider || "http");
+              AtlasTelemetry.addComponentAttributes(span, "signal", {
+                id: signalId,
+                type: signal.provider || "http",
+              });
 
               try {
                 // Process signal through runtime

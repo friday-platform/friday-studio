@@ -1,4 +1,151 @@
+import type {
+  Attributes,
+  Context,
+  ContextAPI,
+  Span,
+  SpanKind,
+  TraceAPI,
+  Tracer,
+} from "@opentelemetry/api";
+import { z } from "zod/v4";
 import { logger } from "./logger.ts";
+import { objectEntries } from "./index.ts";
+
+// Zod schemas for runtime validation
+
+/**
+ * Schema for OpenTelemetry attribute values
+ * Attribute values may be any non-nullish primitive value except an object.
+ */
+const AttributeValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.array(z.string()),
+  z.array(z.number()),
+  z.array(z.boolean()),
+]);
+
+/**
+ * Schema for OpenTelemetry attributes object
+ */
+const AttributesSchema = z.record(z.string(), AttributeValueSchema).optional();
+
+/**
+ * Schema for component types in the Atlas architecture
+ */
+const ComponentSchema = z.enum(["workspace", "session", "agent", "supervisor", "signal"]);
+
+/**
+ * Schema for W3C traceparent header format: 00-{traceId}-{spanId}-{flags}
+ */
+const TraceParentSchema = z.string().regex(
+  /^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$/,
+  "Invalid W3C traceparent format. Expected: 00-{32-char-trace-id}-{16-char-span-id}-{2-char-flags}",
+);
+
+/**
+ * Schema for trace headers from worker communication
+ */
+const TraceHeadersSchema = z.record(z.string(), z.string()).optional();
+
+/**
+ * Schema for worker span context used in cross-worker communication
+ */
+const WorkerSpanContextSchema = z.object({
+  operation: z.string().min(1, "Operation name cannot be empty"),
+  component: z.enum(["workspace", "session", "agent"]),
+  traceHeaders: TraceHeadersSchema,
+  workerId: z.string().optional(),
+  sessionId: z.string().optional(),
+  agentId: z.string().optional(),
+  agentType: z.string().optional(),
+  workspaceId: z.string().optional(),
+  signalId: z.string().optional(),
+  signalType: z.string().optional(),
+  attributes: AttributesSchema,
+});
+
+/**
+ * Validation utility functions
+ */
+export class TelemetryValidation {
+  /**
+   * Validate attributes for OpenTelemetry compatibility
+   */
+  static validateAttributes(attributes: unknown): Attributes | undefined {
+    if (attributes === undefined || attributes === null) {
+      return undefined;
+    }
+
+    const result = AttributesSchema.safeParse(attributes);
+    if (result.success) {
+      return result.data;
+    }
+
+    logger.warn("Invalid telemetry attributes", {
+      error: result.error.issues,
+      providedAttributes: attributes,
+    });
+    return undefined;
+  }
+
+  /**
+   * Validate trace parent header format
+   */
+  static validateTraceParent(traceParent: unknown): string | null {
+    if (traceParent === null || traceParent === undefined) {
+      return null;
+    }
+
+    const result = TraceParentSchema.safeParse(traceParent);
+    if (result.success) {
+      return result.data;
+    }
+
+    logger.warn("Invalid traceparent header format", {
+      traceParent,
+      error: result.error.issues,
+    });
+    return null;
+  }
+
+  /**
+   * Validate worker span context
+   */
+  static validateWorkerContext(context: unknown): WorkerSpanContext {
+    const result = WorkerSpanContextSchema.safeParse(context);
+    if (result.success) {
+      return result.data;
+    }
+
+    logger.error("Invalid worker span context", {
+      context,
+      error: result.error.issues,
+    });
+    throw new Error(
+      `Invalid worker span context: ${result.error.issues.map((e) => e.message).join(", ")}`,
+    );
+  }
+
+  /**
+   * Validate component type
+   */
+  static validateComponent(
+    component: unknown,
+  ): "workspace" | "supervisor" | "agent" | "signal" | "session" {
+    const result = ComponentSchema.safeParse(component);
+    if (result.success) {
+      return result.data;
+    }
+
+    logger.warn("Invalid component type, defaulting to 'agent'", {
+      component,
+      error: result.error.issues,
+    });
+    return "agent";
+  }
+}
 
 /**
  * Context object for worker span operations
@@ -25,7 +172,7 @@ interface WorkerSpanContext {
   /** Signal type/provider (for signal processing) */
   signalType?: string;
   /** Any additional custom attributes */
-  attributes?: Record<string, string | number | boolean>;
+  attributes?: Attributes;
 }
 
 // Static mapping for worker context properties to atlas attributes
@@ -40,10 +187,10 @@ const WORKER_ATTRIBUTE_MAPPING = {
 } as const;
 
 // Dynamic imports for OpenTelemetry to avoid worker import issues
-let trace: any = null;
-let context: any = null;
-let SpanStatusCode: any = null;
-let SpanKind: any = null;
+let trace: TraceAPI | null = null;
+let context: ContextAPI | null = null;
+let statusCodes: typeof import("@opentelemetry/api").SpanStatusCode | null = null;
+let spanKinds: typeof import("@opentelemetry/api").SpanKind | null = null;
 
 /**
  * Atlas Telemetry utilities for OpenTelemetry instrumentation
@@ -52,14 +199,14 @@ let SpanKind: any = null;
  * across the Atlas architecture: workspace → supervisor → session → agent
  */
 export class AtlasTelemetry {
-  private static tracer: any = null;
+  private static tracer: Tracer | null = null;
   private static isEnabled = false;
   private static initPromise: Promise<void> | null = null;
 
   /**
    * Initialize OpenTelemetry (async to handle dynamic imports)
    */
-  private static async initialize(): Promise<void> {
+  private static initialize(): Promise<void> {
     if (this.initPromise) {
       return this.initPromise;
     }
@@ -73,11 +220,11 @@ export class AtlasTelemetry {
         }
 
         // Dynamic import to avoid worker issues
-        const otelApi = await import("npm:@opentelemetry/api@1");
-        trace = otelApi.trace;
-        context = otelApi.context;
-        SpanStatusCode = otelApi.SpanStatusCode;
-        SpanKind = otelApi.SpanKind;
+        const otel = await import("@opentelemetry/api");
+        trace = otel.trace;
+        context = otel.context;
+        statusCodes = otel.SpanStatusCode;
+        spanKinds = otel.SpanKind;
 
         this.tracer = trace.getTracer("atlas", "1.0.0");
         this.isEnabled = true;
@@ -123,51 +270,104 @@ export class AtlasTelemetry {
   }
 
   /**
-   * Execute a function within an active span context
-   * This creates proper parent-child relationships automatically
+   * Internal unified span creation method
    */
-  static async withSpan<T>(
+  private static async createSpan<T>(
     name: string,
-    fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>,
-    spanKind?: any,
+    fn: (span: Span | null) => Promise<T> | T,
+    options: {
+      attributes?: Attributes;
+      spanKind?: SpanKind;
+      parentContext?: Context | null;
+      parentTraceContext?: string | null;
+    } = {},
   ): Promise<T> {
     const enabled = await this.ensureInitialized();
     if (!enabled || !this.tracer) {
       return await fn(null);
     }
 
-    const kind = spanKind || SpanKind?.INTERNAL;
-    return await this.tracer.startActiveSpan(name, { kind }, async (span: any) => {
-      try {
-        // Add custom attributes
-        if (attributes) {
-          for (const [key, value] of Object.entries(attributes)) {
-            span.setAttribute(key, value);
-          }
-        }
+    const { attributes: rawAttributes, spanKind, parentContext, parentTraceContext } = options;
 
-        // Execute the function
-        const result = await fn(span);
+    // Validate and sanitize attributes
+    const attributes = TelemetryValidation.validateAttributes(rawAttributes);
 
-        // Mark span as successful
-        span.setStatus({ code: SpanStatusCode?.OK || 1 });
+    const kind = spanKind || spanKinds?.INTERNAL;
 
-        return result;
-      } catch (error) {
-        // Record error in span
-        if (span.recordException) {
-          span.recordException(error as Error);
-        }
-        span.setStatus({
-          code: SpanStatusCode?.ERROR || 2,
-          message: String(error),
-        });
-        throw error;
-      } finally {
-        span.end();
-      }
+    // Determine the context to use
+    let contextToUse: Context | undefined;
+    if (parentContext) {
+      contextToUse = parentContext;
+    } else if (parentTraceContext && context && trace) {
+      // Parse W3C traceparent header and create context manually
+      contextToUse = this.parseTraceContext(parentTraceContext);
+    }
+
+    // Create span with appropriate context
+    const spanCreator = contextToUse
+      ? (callback: (span: Span) => Promise<T>) =>
+        this.tracer!.startActiveSpan(name, { kind }, contextToUse!, callback)
+      : (callback: (span: Span) => Promise<T>) =>
+        this.tracer!.startActiveSpan(name, { kind }, callback);
+
+    return await spanCreator(async (span: Span) => {
+      return await this.executeSpanLogic(span, attributes, parentTraceContext || null, fn);
     });
+  }
+
+  /**
+   * Parse W3C trace context and create OpenTelemetry context
+   */
+  private static parseTraceContext(parentTraceContext: string): Context | undefined {
+    if (!context || !trace) return undefined;
+
+    // Validate the traceparent format first
+    const validatedTraceContext = TelemetryValidation.validateTraceParent(parentTraceContext);
+    if (!validatedTraceContext) {
+      return undefined;
+    }
+
+    try {
+      const parts = validatedTraceContext.split("-");
+      const traceId = parts[1];
+      const spanId = parts[2];
+      const traceFlags = parseInt(parts[3], 16);
+
+      logger.debug("Manually extracting parent trace context", {
+        parentTraceContext: validatedTraceContext,
+        traceId,
+        spanId,
+      });
+
+      const parentSpanContext = {
+        traceId,
+        spanId,
+        traceFlags,
+        isRemote: true,
+      };
+
+      return trace.setSpanContext(context.active(), parentSpanContext);
+    } catch (error) {
+      logger.warn("Failed to extract parent trace context manually", {
+        parentTraceContext: validatedTraceContext,
+        error: String(error),
+      });
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Execute a function within an active span context
+   * This creates proper parent-child relationships automatically
+   */
+  static withSpan<T>(
+    name: string,
+    fn: (span: Span | null) => Promise<T> | T,
+    attributes?: Attributes,
+    spanKind?: SpanKind,
+  ): Promise<T> {
+    return this.createSpan(name, fn, { attributes, spanKind });
   }
 
   /**
@@ -175,11 +375,11 @@ export class AtlasTelemetry {
    */
   static async withServerSpan<T>(
     operationName: string,
-    fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>,
+    fn: (span: Span | null) => Promise<T> | T,
+    attributes?: Attributes,
   ): Promise<T> {
     await this.ensureInitialized();
-    const kind = SpanKind?.SERVER;
+    const kind = spanKinds?.SERVER;
     return this.withSpan(operationName, fn, attributes, kind);
   }
 
@@ -188,11 +388,11 @@ export class AtlasTelemetry {
    */
   static async withClientSpan<T>(
     operationName: string,
-    fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>,
+    fn: (span: Span | null) => Promise<T> | T,
+    attributes?: Attributes,
   ): Promise<T> {
     await this.ensureInitialized();
-    const kind = SpanKind?.CLIENT;
+    const kind = spanKinds?.CLIENT;
     return this.withSpan(operationName, fn, attributes, kind);
   }
 
@@ -200,20 +400,29 @@ export class AtlasTelemetry {
    * Add Atlas-specific attributes to a span based on component type
    */
   static addAtlasAttributes(
-    span: any,
-    component: "workspace" | "supervisor" | "agent" | "signal" | "session",
-    attributes: Record<string, any>,
+    span: Span | null,
+    component: unknown,
+    attributes: unknown,
   ) {
     if (!span) return;
 
     try {
-      // Set the component type
-      span.setAttribute("atlas.component", component);
+      // Validate component type
+      const validatedComponent = TelemetryValidation.validateComponent(component);
+      span.setAttribute("atlas.component", validatedComponent);
+
+      // Validate and sanitize attributes
+      const validatedAttributes = TelemetryValidation.validateAttributes(attributes);
+      if (!validatedAttributes) return;
 
       // Add component-specific attributes with proper namespacing
-      for (const [key, value] of Object.entries(attributes)) {
-        const attributeKey = key.startsWith("atlas.") ? key : `atlas.${component}.${key}`;
-        span.setAttribute(attributeKey, value);
+      for (const [key, value] of Object.entries(validatedAttributes)) {
+        if (value !== undefined) {
+          const attributeKey = key.startsWith("atlas.")
+            ? key
+            : `atlas.${validatedComponent}.${key}`;
+          span.setAttribute(attributeKey, value);
+        }
       }
     } catch (error) {
       logger.warn(`Failed to add ${component} attributes`, { error: String(error) });
@@ -221,57 +430,29 @@ export class AtlasTelemetry {
   }
 
   /**
-   * Convenience method for workspace attributes
+   * Add component-specific attributes with Atlas namespacing
+   * Consolidates all the convenience methods into a single parameterized approach
    */
-  static addWorkspaceAttributes(
-    span: any,
-    workspaceId: string,
-    additionalAttributes?: Record<string, any>,
+  static addComponentAttributes(
+    span: Span | null,
+    component: unknown,
+    componentAttributes: {
+      id?: string;
+      type?: string;
+      sessionId?: string;
+      [key: string]: unknown;
+    },
+    additionalAttributes?: unknown,
   ) {
-    const attributes = { id: workspaceId, ...additionalAttributes };
-    this.addAtlasAttributes(span, "workspace", attributes);
-  }
+    // Build the final attributes object
+    const baseAttributes: Record<string, unknown> = { ...componentAttributes };
 
-  /**
-   * Convenience method for supervisor attributes
-   */
-  static addSupervisorAttributes(
-    span: any,
-    supervisorType: string,
-    sessionId?: string,
-    additionalAttributes?: Record<string, any>,
-  ) {
-    const attributes: Record<string, any> = { type: supervisorType, ...additionalAttributes };
-    if (sessionId) {
-      attributes["atlas.session.id"] = sessionId;
+    // Merge additional attributes if provided
+    if (additionalAttributes && typeof additionalAttributes === "object") {
+      Object.assign(baseAttributes, additionalAttributes);
     }
-    this.addAtlasAttributes(span, "supervisor", attributes);
-  }
 
-  /**
-   * Convenience method for agent attributes
-   */
-  static addAgentAttributes(
-    span: any,
-    agentId: string,
-    agentType: string,
-    additionalAttributes?: Record<string, any>,
-  ) {
-    const attributes = { id: agentId, type: agentType, ...additionalAttributes };
-    this.addAtlasAttributes(span, "agent", attributes);
-  }
-
-  /**
-   * Convenience method for signal attributes
-   */
-  static addSignalAttributes(
-    span: any,
-    signalId: string,
-    signalType: string,
-    additionalAttributes?: Record<string, any>,
-  ) {
-    const attributes = { id: signalId, type: signalType, ...additionalAttributes };
-    this.addAtlasAttributes(span, "signal", attributes);
+    this.addAtlasAttributes(span, component, baseAttributes);
   }
 
   /**
@@ -303,96 +484,51 @@ export class AtlasTelemetry {
   /**
    * Start a span with explicit parent context (for worker communication)
    */
-  static async withSpanFromContext<T>(
+  static withSpanFromContext<T>(
     name: string,
     parentTraceContext: string | null,
-    fn: (span: any) => Promise<T> | T,
-    attributes?: Record<string, any>,
+    fn: (span: Span | null) => Promise<T> | T,
+    attributes?: Attributes,
   ): Promise<T> {
-    const enabled = await this.ensureInitialized();
-    if (!enabled || !this.tracer) {
-      return await fn(null);
-    }
+    return this.createSpan(name, fn, { attributes, parentTraceContext });
+  }
 
-    // If we have parent trace context from another worker, extract it manually
-    // The OpenTelemetry propagation API doesn't work correctly across Deno workers
-    let parentContext = context?.active();
-
-    if (parentTraceContext && context && trace) {
-      try {
-        // Parse W3C traceparent header: 00-{traceId}-{spanId}-{flags}
-        const parts = parentTraceContext.split("-");
-        if (parts.length === 4 && parts[0] === "00") {
-          const traceId = parts[1];
-          const spanId = parts[2];
-          const traceFlags = parseInt(parts[3], 16);
-
-          logger.debug("Manually extracting parent trace context", {
-            parentTraceContext,
-            traceId,
-            spanId,
-            spanName: name,
-          });
-
-          // Create span context manually - this ensures we use the EXACT trace ID from parent
-          const parentSpanContext = {
-            traceId,
-            spanId,
-            traceFlags,
-            isRemote: true,
-          };
-
-          // Set the span context in the parent context to force inheritance
-          parentContext = trace.setSpanContext(context.active(), parentSpanContext);
-
-          logger.debug("Successfully set parent span context manually", {
-            parentTraceContext,
-            traceId,
-            spanId,
-            spanName: name,
-          });
-        } else {
-          logger.warn("Invalid traceparent format", { parentTraceContext });
-        }
-      } catch (error) {
-        logger.warn("Failed to extract parent trace context manually", {
-          parentTraceContext,
-          error: String(error),
-        });
-        // Fall back to current context
-      }
-    }
-
-    return await this.tracer.startActiveSpan(name, {}, parentContext, async (span: any) => {
-      try {
-        // Add custom attributes
-        if (attributes) {
-          for (const [key, value] of Object.entries(attributes)) {
+  private static async executeSpanLogic<T>(
+    span: Span,
+    attributes: Attributes | undefined,
+    parentTraceContext: string | null,
+    fn: (span: Span | null) => Promise<T> | T,
+  ): Promise<T> {
+    try {
+      // Add custom attributes
+      if (attributes) {
+        for (const [key, value] of Object.entries(attributes)) {
+          if (value !== undefined) {
             span.setAttribute(key, value);
           }
         }
-
-        // If we have parent trace context, add it as an attribute for debugging
-        if (parentTraceContext) {
-          span.setAttribute("atlas.parent.trace_context", parentTraceContext);
-        }
-
-        const result = await fn(span);
-        span.setStatus({ code: SpanStatusCode?.OK || 1 });
-        return result;
-      } catch (error) {
-        if (span.recordException) {
-          span.recordException(error as Error);
-        }
-        span.setStatus({
-          code: SpanStatusCode?.ERROR || 2,
-          message: String(error),
-        });
-        throw error;
-      } finally {
-        span.end();
       }
-    });
+
+      // If we have parent trace context, add it as an attribute for debugging
+      if (parentTraceContext) {
+        span.setAttribute("atlas.parent.trace_context", parentTraceContext);
+      }
+
+      const result = await fn(span);
+      span.setStatus({ code: statusCodes?.OK || 1 });
+      return result;
+    } catch (error) {
+      if (span.recordException) {
+        span.recordException(error as Error);
+      }
+      span.setStatus({
+        code: statusCodes?.ERROR || 2,
+        message: String(error),
+      });
+      throw error;
+    } finally {
+      span.end();
+    }
   }
 
   /**
@@ -429,7 +565,7 @@ export class AtlasTelemetry {
       }
 
       // Try propagation API as fallback
-      const propagation = await import("npm:@opentelemetry/api@1").then((m) => m.propagation);
+      const propagation = await import("@opentelemetry/api").then((m) => m.propagation);
       if (propagation) {
         const carrier: Record<string, string> = {};
         propagation.inject(activeContext, carrier);
@@ -452,8 +588,9 @@ export class AtlasTelemetry {
   /**
    * Extract trace context from headers
    */
-  static extractTraceContext(headers: Record<string, any>): string | null {
-    return headers?.["traceparent"] || null;
+  static extractTraceContext(headers: Record<string, unknown>): string | null {
+    const traceparent = headers?.["traceparent"];
+    return typeof traceparent === "string" ? traceparent : null;
   }
 
   /**
@@ -461,36 +598,45 @@ export class AtlasTelemetry {
    * Extract trace context -> Create child span -> Add attributes -> Execute logic
    */
   static async withWorkerSpan<T>(
-    context: WorkerSpanContext,
-    fn: (span: any) => Promise<T> | T,
+    context: unknown,
+    fn: (span: Span | null) => Promise<T> | T,
   ): Promise<T> {
+    // Validate worker context
+    const validatedContext = TelemetryValidation.validateWorkerContext(context);
+
     // Generate span name from context using array join
-    const spanName = [context.component, context.operation, context.agentType].filter(Boolean).join(
+    const spanName = [
+      validatedContext.component,
+      validatedContext.operation,
+      validatedContext.agentType,
+    ].filter(Boolean).join(
       ".",
     );
 
     // Extract trace context from headers
-    const parentTraceContext = this.extractTraceContext(context.traceHeaders || {});
+    const parentTraceContext = this.extractTraceContext(validatedContext.traceHeaders || {});
 
     return await this.withSpanFromContext(
       spanName,
       parentTraceContext,
       async (span) => {
         // Set component type
-        span?.setAttribute("atlas.component", context.component);
+        span?.setAttribute("atlas.component", validatedContext.component);
 
         // Set all context attributes directly using static mapping (single loop)
-        Object.entries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
-          const value = (context as any)[contextKey];
-          if (value) {
+        objectEntries(WORKER_ATTRIBUTE_MAPPING).forEach(([contextKey, attributeKey]) => {
+          const value = validatedContext[contextKey as keyof WorkerSpanContext];
+          if (value !== undefined && typeof value === "string") {
             span?.setAttribute(attributeKey, value);
           }
         });
 
-        // Set any additional custom attributes
-        if (context.attributes) {
-          Object.entries(context.attributes).forEach(([key, value]) => {
-            span?.setAttribute(key, value);
+        // Set any additional custom attributes (already validated by context validation)
+        if (validatedContext.attributes) {
+          Object.entries(validatedContext.attributes).forEach(([key, value]) => {
+            if (value !== undefined) {
+              span?.setAttribute(key, value);
+            }
           });
         }
 
