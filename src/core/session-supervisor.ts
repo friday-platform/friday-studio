@@ -1595,12 +1595,59 @@ Focus on creating a rich episodic memory that captures both the factual sequence
           .filter((record) => record && record.memoryType === CoALAMemoryType.PROCEDURAL);
       }
 
-      return proceduralMemories.map((memory) => ({
-        rule: memory.content?.rule || memory.content || memory,
-        description: memory.content?.description || "",
-        priority: memory.content?.priority || "normal",
-        scope: memory.content?.scope || "general",
-      }));
+      // Extract rules from procedural memory content
+      const rules: Array<{
+        rule: string;
+        description: string;
+        priority: string;
+        scope: string;
+      }> = [];
+
+      for (const memory of proceduralMemories) {
+        const content = memory.content;
+
+        if (content && typeof content === "object") {
+          // Handle the structure used by memory-agent: { insights: [...], type: "...", ... }
+          if ("insights" in content && Array.isArray(content.insights)) {
+            content.insights.forEach((insight: unknown) => {
+              if (typeof insight === "string") {
+                rules.push({
+                  rule: insight,
+                  description: content.description || `${content.type || "Procedural"} insight`,
+                  priority: content.priority || "normal",
+                  scope: content.scope || "general",
+                });
+              }
+            });
+          } // Handle direct rule objects: { rule: "...", description: "...", ... }
+          else if ("rule" in content && typeof content.rule === "string") {
+            rules.push({
+              rule: content.rule,
+              description: content.description || "",
+              priority: content.priority || "normal",
+              scope: content.scope || "general",
+            });
+          } // Handle string content directly
+          else if (typeof content === "string") {
+            rules.push({
+              rule: content,
+              description: "",
+              priority: "normal",
+              scope: "general",
+            });
+          }
+        } // Fallback: if content is a string, use it directly
+        else if (typeof content === "string") {
+          rules.push({
+            rule: content,
+            description: "",
+            priority: "normal",
+            scope: "general",
+          });
+        }
+      }
+
+      return rules;
     } catch (error) {
       this.log(`Warning: Failed to retrieve procedural rules: ${error}`);
       return [];
