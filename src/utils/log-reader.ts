@@ -1,7 +1,15 @@
-#!/usr/bin/env -S deno run --allow-read --allow-write --allow-env
-
 import { logger } from "./logger.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { z } from "zod";
+
+const LogEntrySchema = z.object({
+  timestamp: z.string().optional(),
+  level: z.string().optional(),
+  message: z.string().optional(),
+  context: z.object({
+    workerType: z.string().optional(),
+    workerId: z.string().optional(),
+  }).optional().nullable(),
+}).passthrough();
 
 async function readLogs(
   target: string = "global",
@@ -14,8 +22,16 @@ async function readLogs(
     // Just print the logs and exit
     for (const log of logs) {
       try {
-        const entry = JSON.parse(log);
-        const level: string = entry.level || "info";
+        const parsed = JSON.parse(log);
+        const result = LogEntrySchema.safeParse(parsed);
+
+        if (!result.success) {
+          console.log(log);
+          continue;
+        }
+
+        const entry = result.data;
+        const level = entry.level || "info";
         const colorMap: Record<string, string> = {
           error: "\x1b[31m",
           warn: "\x1b[33m",
@@ -33,7 +49,9 @@ async function readLogs(
           : "[main]";
 
         console.log(
-          `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${entry.message}`,
+          `${color}${entry.timestamp || ""} ${level.toUpperCase()} ${prefix}${reset} ${
+            entry.message || ""
+          }`,
         );
 
         if (entry.context && Object.keys(entry.context).length > 2) {
