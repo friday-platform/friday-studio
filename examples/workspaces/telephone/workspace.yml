@@ -25,11 +25,11 @@ agents:
         - Plausible but incorrect interpretations
         - Maintaining some connection to the original meaning
 
-  # Google Gemini agent for creative embellishment
+  # OpenAI agent for creative embellishment (changed for timing test)
   embellishment-agent:
     type: "llm"
-    provider: "google"
-    model: "gemini-1.5-flash"
+    provider: "openai"
+    model: "gpt-3.5-turbo"
     purpose: "Adds creative context and embellishments to messages"
     tools: ["creative-writing", "context-generation"]
     prompts:
@@ -43,11 +43,11 @@ agents:
         - Introducing creative context and backstory
         - Maintaining logical coherence while being imaginative
 
-  # OpenAI agent for dramatic reinterpretation
+  # OpenAI agent for dramatic reinterpretation (changed for timing test)
   reinterpretation-agent:
     type: "llm"
     provider: "openai"
-    model: "gpt-4o"
+    model: "gpt-3.5-turbo"
     purpose: "Dramatically transforms and reinterprets messages"
     tools: ["semantic-analysis", "creative-reinterpretation"]
     prompts:
