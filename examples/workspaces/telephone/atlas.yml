@@ -1,6 +1,6 @@
 version: "1.0"
 
-# Telephone Game Workspace Configuration Overrides  
+# Telephone Game Workspace Configuration Overrides
 # This file overrides platform atlas.yml settings specifically for the telephone workspace
 
 platform:
@@ -44,30 +44,30 @@ memory:
   session:
     enabled: true
     scope: "session"
-    include_in_context: false  # Don't include session memory in agent context for clean telephone game
+    include_in_context: false # Don't include session memory in agent context for clean telephone game
     context_limits:
-      relevant_memories: 0     # No relevant memories in context
-      past_successes: 0        # No past successes in context  
-      past_failures: 0         # No past failures in context
+      relevant_memories: 0 # No relevant memories in context
+      past_successes: 0 # No past successes in context
+      past_failures: 0 # No past failures in context
     memory_types:
       working:
-        enabled: true          # Still track working memory for supervisors
+        enabled: true # Still track working memory for supervisors
         max_age_hours: 24
         max_entries: 100
       episodic:
-        enabled: false         # Disable episodic memory for telephone game
+        enabled: false # Disable episodic memory for telephone game
         max_age_days: 1
         max_entries: 10
       procedural:
-        enabled: false         # Disable procedural memory for telephone game
+        enabled: false # Disable procedural memory for telephone game
         max_age_days: 1
         max_entries: 10
       semantic:
-        enabled: false         # Disable semantic memory for telephone game
+        enabled: false # Disable semantic memory for telephone game
         max_age_days: 1
         max_entries: 10
       contextual:
-        enabled: false         # Disable contextual memory for telephone game
+        enabled: false # Disable contextual memory for telephone game
         max_age_hours: 1
         max_entries: 5
 
@@ -75,22 +75,22 @@ memory:
   agent:
     enabled: true
     scope: "agent"
-    include_in_context: false  # Agents get no memory context for clean telephone game
+    include_in_context: false # Agents get no memory context for clean telephone game
     context_limits:
       relevant_memories: 0
       past_successes: 0
       past_failures: 0
     memory_types:
       working:
-        enabled: false         # No agent working memory
+        enabled: false # No agent working memory
       procedural:
-        enabled: false         # No agent procedural memory
+        enabled: false # No agent procedural memory
       episodic:
-        enabled: false         # No agent episodic memory
+        enabled: false # No agent episodic memory
       semantic:
-        enabled: false         # No agent semantic memory
+        enabled: false # No agent semantic memory
       contextual:
-        enabled: false         # No agent contextual memory
+        enabled: false # No agent contextual memory
 
   # Workspace-level memory configuration (minimal, inherited from platform)
   workspace:

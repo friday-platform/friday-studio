@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
+import { exists } from "@std/fs";
+import * as yaml from "@std/yaml";
 import { Column, Table } from "../components/Table.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 

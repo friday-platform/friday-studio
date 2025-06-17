@@ -6,11 +6,7 @@
 
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
-import {
-  type MemoryEntry,
-  type MemoryStorage,
-  MemoryType,
-} from "../types/memory-types.ts";
+import { type MemoryEntry, type MemoryStorage, MemoryType } from "../types/memory-types.ts";
 
 export class AtlasMemoryLoader implements MemoryStorage {
   private storagePath: string;

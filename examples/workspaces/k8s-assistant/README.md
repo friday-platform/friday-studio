@@ -1,20 +1,23 @@
 # Kubernetes Assistant Workspace
 
 A demonstration of Atlas AI agent orchestration for Kubernetes management, combining multiple
-specialized agents with **real-time event streaming** to provide intelligent cluster operations and autonomous monitoring.
+specialized agents with **real-time event streaming** to provide intelligent cluster operations and
+autonomous monitoring.
 
 ## Overview
 
 This workspace demonstrates Atlas's advanced capabilities including:
 
 - **Multi-Agent Coordination** - Orchestrates specialized AI agents
-- **Stream Signal Providers** - Real-time event streaming from external monitor agents  
-- **Smart Event Routing** - Critical events trigger immediate responses, all events enable comprehensive monitoring
+- **Stream Signal Providers** - Real-time event streaming from external monitor agents
+- **Smart Event Routing** - Critical events trigger immediate responses, all events enable
+  comprehensive monitoring
 - **Production-Ready Architecture** - Circuit breakers, retry logic, and health monitoring
 
 ### Agent Architecture
 
-1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes operations
+1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes
+   operations
 2. **k8s-monitor-agent (Port 8082)** - Real-time event monitoring **configured as signal provider**
 3. **local-assistant** - LLM-based fallback agent for documentation and support
 
@@ -127,12 +130,14 @@ The `workspace.yml` file defines:
 ## How It Works
 
 ### User-Initiated Operations (HTTP/CLI Signals)
+
 1. **Signal Triggered** - User sends request via HTTP or CLI
-2. **Main Agent Processes** - Analyzes request using ReAct framework  
+2. **Main Agent Processes** - Analyzes request using ReAct framework
 3. **Local Assistant Supports** - Provides documentation and fallback
 4. **Memory Updates** - Stores successful patterns and resolutions
 
 ### Real-Time Event Monitoring (Stream Signals)
+
 1. **Monitor Agent Watches** - k8s-monitor-agent observes cluster events in real-time
 2. **Smart Event Routing**:
    - **Critical Events** → Sent directly to main agent for immediate response
@@ -171,8 +176,8 @@ curl -X POST http://localhost:3001/k8s\
 curl -X POST http://localhost:3001/k8s\
 -H "Content-Type: application/json"\
 -d '{ "message": "Check why my deployment is not ready" }'
-```
 
+````
 ### Stream Signal Testing (Real-time Events)
 
 The k8s-events stream signal automatically processes Kubernetes events. To test:
@@ -186,7 +191,7 @@ atlas logs --follow
 
 # Check SSE endpoint directly (optional)
 curl -H "Accept: text/event-stream" http://localhost:8082/events/stream
-```
+````
 
 ### Health Check
 

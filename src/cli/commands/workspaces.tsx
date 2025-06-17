@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import * as yaml from "@std/yaml";
+import { exists } from "@std/fs";
 
 interface AvailableWorkspace {
   name: string;

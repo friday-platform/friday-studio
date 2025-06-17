@@ -1,5 +1,5 @@
-import { Hono } from "https://deno.land/x/hono@v4.3.11/mod.ts";
-import { cors } from "https://deno.land/x/hono@v4.3.11/middleware.ts";
+import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { logger } from "../utils/logger.ts";

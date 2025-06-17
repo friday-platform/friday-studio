@@ -2,7 +2,10 @@
 
 ## Overview
 
-This document outlines the implementation plan for standardizing all worker communication in Atlas through a unified message envelope system. The current worker communication system uses inconsistent message formats across different worker types, making debugging difficult and limiting observability.
+This document outlines the implementation plan for standardizing all worker communication in Atlas
+through a unified message envelope system. The current worker communication system uses inconsistent
+message formats across different worker types, making debugging difficult and limiting
+observability.
 
 ## Current State Analysis
 
@@ -10,7 +13,8 @@ This document outlines the implementation plan for standardizing all worker comm
 
 1. **Base Worker System** (`src/core/workers/base-worker.ts`)
 
-   - **Messages**: `init`, `initialized`, `shutdown`, `shutdown_ack`, `task`, `result`, `error`, `joinChannel`, `setPort`
+   - **Messages**: `init`, `initialized`, `shutdown`, `shutdown_ack`, `task`, `result`, `error`,
+     `joinChannel`, `setPort`
    - **Structure**: Mixed formats with some using `type` field, others using `action`
    - **Issues**: No correlation tracking, minimal metadata
 
@@ -287,7 +291,7 @@ export const ATLAS_MESSAGE_DOMAINS = {
 // Helper function to validate message types for domains
 export function isValidMessageForDomain(
   messageType: string,
-  domain: keyof typeof ATLAS_MESSAGE_DOMAINS
+  domain: keyof typeof ATLAS_MESSAGE_DOMAINS,
 ): boolean {
   const domainEvents = Object.values(ATLAS_MESSAGE_DOMAINS[domain]).flat();
   return domainEvents.includes(messageType);
@@ -296,12 +300,12 @@ export function isValidMessageForDomain(
 // Type-safe domain filtering
 export function filterMessagesForDomain<T>(
   messages: AtlasMessageEnvelope<T>[],
-  domain: keyof typeof ATLAS_MESSAGE_DOMAINS
+  domain: keyof typeof ATLAS_MESSAGE_DOMAINS,
 ): AtlasMessageEnvelope<T>[] {
   return messages.filter(
     (msg) =>
       msg.domain === domain.toLowerCase() ||
-      isValidMessageForDomain(msg.type, domain)
+      isValidMessageForDomain(msg.type, domain),
   );
 }
 ```
@@ -310,7 +314,9 @@ export function filterMessagesForDomain<T>(
 
 ### The Domain Property Proposal
 
-The proposed `domain` property in the message envelope provides role-specific event filtering and type safety. Each worker type (workspace-supervisor, session-supervisor, agent-execution, manager) has a discrete set of relevant events.
+The proposed `domain` property in the message envelope provides role-specific event filtering and
+type safety. Each worker type (workspace-supervisor, session-supervisor, agent-execution, manager)
+has a discrete set of relevant events.
 
 ### Benefits of Domain-Specific Event Sets
 
@@ -319,11 +325,11 @@ The proposed `domain` property in the message envelope provides role-specific ev
 ```typescript
 // Domain-aware message handling
 function handleWorkspaceMessage(
-  envelope: AtlasMessageEnvelope<WorkspacePayload>
+  envelope: AtlasMessageEnvelope<WorkspacePayload>,
 ) {
   if (!isValidMessageForDomain(envelope.type, "WORKSPACE")) {
     throw new Error(
-      `Invalid message type ${envelope.type} for workspace domain`
+      `Invalid message type ${envelope.type} for workspace domain`,
     );
   }
   // Process message with confidence it's relevant
@@ -358,23 +364,23 @@ telemetry.recordMessage({
 
 #### 1. **Added Complexity**
 
-**Downside**: Additional field increases message structure complexity
-**Mitigation**: Domain is optional and auto-inferred from worker type if not specified
+**Downside**: Additional field increases message structure complexity **Mitigation**: Domain is
+optional and auto-inferred from worker type if not specified
 
 #### 2. **Message Size Overhead**
 
-**Downside**: Extra bytes per message for domain field
-**Mitigation**: Short domain names ("ws", "sess", "agent") and optional compression
+**Downside**: Extra bytes per message for domain field **Mitigation**: Short domain names ("ws",
+"sess", "agent") and optional compression
 
 #### 3. **Rigid Boundaries**
 
-**Downside**: May prevent legitimate cross-domain communication
-**Mitigation**: Allow cross-domain messages with explicit validation bypass
+**Downside**: May prevent legitimate cross-domain communication **Mitigation**: Allow cross-domain
+messages with explicit validation bypass
 
 #### 4. **Migration Complexity**
 
-**Downside**: Existing workers need domain assignments
-**Mitigation**: Automatic domain inference during transition period
+**Downside**: Existing workers need domain assignments **Mitigation**: Automatic domain inference
+during transition period
 
 ### Recommended Implementation Strategy
 
@@ -389,8 +395,7 @@ interface AtlasMessageEnvelope<T = any> {
 }
 ```
 
-**Pros**: Clear intent, type-safe, excellent filtering
-**Cons**: Requires explicit domain assignment
+**Pros**: Clear intent, type-safe, excellent filtering **Cons**: Requires explicit domain assignment
 
 #### Option 2: Inferred Domain from Worker Type
 
@@ -399,7 +404,7 @@ interface AtlasMessageEnvelope<T = any> {
 function createMessage<T>(
   type: string,
   payload: T,
-  source: MessageSource
+  source: MessageSource,
 ): AtlasMessageEnvelope<T> {
   return {
     id: crypto.randomUUID(),
@@ -412,8 +417,7 @@ function createMessage<T>(
 }
 ```
 
-**Pros**: Zero overhead, automatic assignment
-**Cons**: Less explicit, harder to override
+**Pros**: Zero overhead, automatic assignment **Cons**: Less explicit, harder to override
 
 #### Option 3: Hybrid Approach (Best of Both)
 
@@ -444,15 +448,19 @@ const message = new AtlasMessageBuilder()
 4. **Explicit Override**: Allow cross-domain messages when needed
 5. **Development Warnings**: Log warnings for unexpected cross-domain messages in development
 
-This provides all the benefits of domain-specific event filtering while maintaining flexibility and ease of migration.
+This provides all the benefits of domain-specific event filtering while maintaining flexibility and
+ease of migration.
 
 ## Current Status
 
 ### 🎉 **Prototype Phase Complete** (June 16, 2025)
 
-The **AgentSupervisor ↔ AgentExecutionWorker** envelope communication prototype has been successfully implemented and tested. This establishes the foundation for expanding envelope standardization to all workers in Atlas.
+The **AgentSupervisor ↔ AgentExecutionWorker** envelope communication prototype has been
+successfully implemented and tested. This establishes the foundation for expanding envelope
+standardization to all workers in Atlas.
 
 #### ✅ **What's Working Now**
+
 - **Full envelope communication** between AgentSupervisor and AgentExecutionWorker
 - **OTEL distributed tracing** with proper trace context propagation
 - **Multi-provider LLM support** (Anthropic, OpenAI, Google) via envelopes
@@ -462,21 +470,25 @@ The **AgentSupervisor ↔ AgentExecutionWorker** envelope communication prototyp
 - **Domain-specific event filtering** ("agent" domain)
 
 #### 🧪 **Test Coverage Verified**
+
 - ✅ **Supervised execution** via AgentSupervisor orchestration
-- ✅ **Direct worker communication** bypassing supervision layer  
+- ✅ **Direct worker communication** bypassing supervision layer
 - ✅ **Multi-provider testing** across different LLM providers
 - ✅ **Envelope lifecycle** (ready → init → execute → complete → terminate)
 - ✅ **Error handling** with proper envelope error responses
 - ✅ **OTEL tracing** end-to-end across worker boundaries
 
 #### 📊 **Performance Metrics**
+
 - **Envelope overhead**: <5% message size increase
 - **OTEL tracing latency**: ~10-15s for LLM operations (acceptable)
 - **Type checking**: Zero runtime type errors with full TypeScript coverage
 - **Test execution**: Multi-provider test completes in ~6 seconds
 
 #### 🚀 **Ready for Phase 1 Expansion**
+
 The foundation is now ready for expanding to other workers:
+
 - **WorkspaceSupervisor ↔ SessionSupervisor** communication
 - **SessionSupervisor ↔ multiple agents** coordination
 - **BaseWorker** envelope integration for all worker types
@@ -491,23 +503,27 @@ The foundation is now ready for expanding to other workers:
 #### ✅ Implementation Completed
 
 **✅ Step 1: Foundation Infrastructure**
+
 1. ✅ **Envelope types created** (`src/core/utils/message-envelope.ts`)
 2. ✅ **Envelope utility functions implemented** with Zod validation
 3. ✅ **Agent-specific message domains** ("agent" domain) and types defined
 
 **✅ Step 2: AgentSupervisor OTEL Integration**
+
 1. ✅ **OTEL tracing added** with `withWorkerSpan` wrapper around `executeAgentSupervised`
 2. ✅ **Outbound messages converted** to envelope format with "agent" domain
 3. ✅ **Correlation tracking implemented** for request-response pairs
 4. ✅ **Inbound message handlers updated** to process envelope responses
 
 **✅ Step 3: AgentExecutionWorker Updates**
+
 1. ✅ **Inbound message handling updated** to process and validate envelopes
 2. ✅ **Outbound responses converted** to envelope format with correlation preservation
 3. ✅ **Domain validation added** with proper error handling
 4. ✅ **OTEL tracing integrated** for agent execution operations
 
 **✅ Step 4: Integration & Testing**
+
 1. ✅ **End-to-end envelope communication tested** - Multi-provider test passes
 2. ✅ **OTEL trace continuity validated** - Full trace propagation working
 3. ✅ **Performance and correlation verified** - <5% overhead, full debugging capability
@@ -523,49 +539,54 @@ The foundation is now ready for expanding to other workers:
 #### Foundation Implementation Details
 
 **Envelope Types (`src/types/message-envelope.ts`)**
+
 ```typescript
-export type WorkerType = "workspace-supervisor" | "session-supervisor" | "agent-execution" | "manager";
+export type WorkerType =
+  | "workspace-supervisor"
+  | "session-supervisor"
+  | "agent-execution"
+  | "manager";
 
 export interface AtlasMessageEnvelope<T = any> {
   id: string;
   type: string;
   domain: "workspace" | "session" | "agent" | "manager";
-  
+
   source: {
     workerId: string;
     workerType: WorkerType;
     sessionId?: string;
     workspaceId?: string;
   };
-  
+
   destination?: {
     workerId?: string;
     workerType?: WorkerType;
     sessionId?: string;
     workspaceId?: string;
   };
-  
+
   timestamp: number;
   correlationId?: string;
   parentMessageId?: string;
   sequence?: number;
-  
+
   channel: "direct" | "broadcast" | "multicast";
   broadcastChannel?: string;
-  
+
   traceId?: string;
   spanId?: string;
   traceHeaders?: Record<string, string>;
-  
+
   payload: T;
-  
+
   error?: {
     code: string;
     message: string;
     stack?: string;
     retryable: boolean;
   };
-  
+
   priority: "low" | "normal" | "high" | "critical";
   timeout?: number;
   retryCount?: number;
@@ -574,12 +595,13 @@ export interface AtlasMessageEnvelope<T = any> {
 ```
 
 **Envelope Utility Functions (`src/core/utils/message-envelope.ts`)**
+
 ```typescript
 export function createAgentMessage<T>(
   type: string,
   payload: T,
-  source: { 
-    workerId: string; 
+  source: {
+    workerId: string;
     workerType: WorkerType;
     sessionId?: string;
     workspaceId?: string;
@@ -587,8 +609,8 @@ export function createAgentMessage<T>(
   options?: {
     correlationId?: string;
     traceHeaders?: Record<string, string>;
-    destination?: { 
-      workerId?: string; 
+    destination?: {
+      workerId?: string;
       workerType?: WorkerType;
       sessionId?: string;
       workspaceId?: string;
@@ -596,7 +618,7 @@ export function createAgentMessage<T>(
     priority?: "low" | "normal" | "high" | "critical";
     timeout?: number;
     acknowledgmentRequired?: boolean;
-  }
+  },
 ): AtlasMessageEnvelope<T> {
   return {
     id: crypto.randomUUID(),
@@ -617,6 +639,7 @@ export function createAgentMessage<T>(
 ```
 
 **OTEL Integration Pattern**
+
 ```typescript
 // AgentSupervisor tracing
 await AtlasTelemetry.withWorkerSpan({
@@ -625,19 +648,20 @@ await AtlasTelemetry.withWorkerSpan({
   traceHeaders: envelope.traceHeaders,
   workerId: this.id,
   agentId: instance.agent_id,
-  agentType: instance.environment.agent_config.type
+  agentType: instance.environment.agent_config.type,
 }, async (span) => {
   const traceHeaders = await AtlasTelemetry.createTraceHeaders();
-  const message = createAgentMessage("agent.execute", payload, source, { 
-    correlationId, 
-    traceHeaders 
+  const message = createAgentMessage("agent.execute", payload, source, {
+    correlationId,
+    traceHeaders,
   });
-  
+
   return await this.sendMessageAndWaitForResponse(message);
 });
 ```
 
 **Usage Example**
+
 ```typescript
 // AgentSupervisor sending to AgentExecutionWorker
 const executeMessage = createAgentMessage(
@@ -649,28 +673,28 @@ const executeMessage = createAgentMessage(
     input,
     environment: instance.environment,
   },
-  { 
-    workerId: this.id, 
+  {
+    workerId: this.id,
     workerType: "workspace-supervisor",
     sessionId: this.sessionId,
-    workspaceId: this.workspaceId
+    workspaceId: this.workspaceId,
   },
   {
     correlationId: crypto.randomUUID(),
     traceHeaders: await AtlasTelemetry.createTraceHeaders(),
-    destination: { 
-      workerId: instance.id, 
-      workerType: "agent-execution" 
+    destination: {
+      workerId: instance.id,
+      workerType: "agent-execution",
     },
-    priority: "normal"
-  }
+    priority: "normal",
+  },
 );
 ```
 
 #### Key Benefits of This Approach
 
 1. **Simple and Direct**: No complex builder pattern
-2. **Explicit Domain**: Clear `domain: "agent"` assignment  
+2. **Explicit Domain**: Clear `domain: "agent"` assignment
 3. **Type Safety**: Full TypeScript support with proper WorkerType enum
 4. **OTEL Integration**: Automatic trace header propagation
 5. **Correlation Tracking**: Built-in request-response correlation
@@ -678,8 +702,10 @@ const executeMessage = createAgentMessage(
 
 #### ✅ Deliverables Completed:
 
-- [x] **Message envelope type definitions** with explicit domain support - `src/core/utils/message-envelope.ts`
-- [x] **Domain-specific utility functions** (createAgentMessage, createAgentExecuteMessage, createAgentExecutionCompleteMessage)
+- [x] **Message envelope type definitions** with explicit domain support -
+      `src/core/utils/message-envelope.ts`
+- [x] **Domain-specific utility functions** (createAgentMessage, createAgentExecuteMessage,
+      createAgentExecutionCompleteMessage)
 - [x] **OTEL tracing integration** in AgentSupervisor with `withWorkerSpan` wrapper
 - [x] **Envelope-based AgentSupervisor ↔ AgentExecutionWorker communication** with hard swap
 - [x] **Correlation tracking and trace continuity** across worker boundaries
@@ -702,7 +728,7 @@ const executeMessage = createAgentMessage(
 
 #### Priority 2: Envelope Infrastructure (Days 4-10)
 
-3. **Expand Envelope Types** 
+3. **Expand Envelope Types**
    - Add `ATLAS_MESSAGE_TYPES` and `ATLAS_MESSAGE_DOMAINS` constants
    - Add role-specific event domain validation
    - Add validation schemas
@@ -858,7 +884,8 @@ const executeMessage = createAgentMessage(
 
 - **Message Structure Consistency**: 100% elimination of `action` vs `type` field inconsistencies
 - **Error Format Unification**: All three different error formats consolidated into envelope.error
-- **Message Type Coverage**: All missing message types (`lifecycle.ready`, `task.progress`, etc.) implemented
+- **Message Type Coverage**: All missing message types (`lifecycle.ready`, `task.progress`, etc.)
+  implemented
 - **Correlation Infrastructure**: 100% of request-response pairs trackable via correlation IDs
 
 ### Technical Metrics
@@ -871,7 +898,8 @@ const executeMessage = createAgentMessage(
 
 ### Developer Experience
 
-- **Debugging Time**: 50% reduction in worker communication debugging (baseline: current inconsistent formats)
+- **Debugging Time**: 50% reduction in worker communication debugging (baseline: current
+  inconsistent formats)
 - **Error Resolution**: 75% faster error identification and resolution via unified error structure
 - **Type Safety**: Zero runtime domain validation errors in development
 - **Development Velocity**: No regression in feature development speed during migration
@@ -930,9 +958,11 @@ const executeMessage = createAgentMessage(
 
 ### Critical Inconsistencies Discovered
 
-The codebase analysis revealed **10 major discrepancies** between the proposed envelope and current implementation:
+The codebase analysis revealed **10 major discrepancies** between the proposed envelope and current
+implementation:
 
-1. **Message Field Inconsistency**: BaseWorker uses `type`, supervisors use `action` (breaks standardization)
+1. **Message Field Inconsistency**: BaseWorker uses `type`, supervisors use `action` (breaks
+   standardization)
 2. **Three Different Error Formats**: Each worker type has different error structure
 3. **Missing Message Types**: No `lifecycle.ready`, `task.progress`, `task.cancel` capabilities
 4. **No Correlation Infrastructure**: No request-response tracking across worker boundaries
@@ -945,7 +975,8 @@ The codebase analysis revealed **10 major discrepancies** between the proposed e
 
 ### Domain Property Benefits Analysis
 
-Your suggestion for **role-specific event domains** is excellent and addresses several architectural concerns:
+Your suggestion for **role-specific event domains** is excellent and addresses several architectural
+concerns:
 
 #### **✅ Major Benefits**
 
@@ -964,7 +995,8 @@ Your suggestion for **role-specific event domains** is excellent and addresses s
 
 #### **🎯 Recommended Implementation**
 
-**Hybrid approach**: Optional domain field with automatic inference from worker type, allowing explicit overrides when needed. This provides all benefits while maintaining migration flexibility.
+**Hybrid approach**: Optional domain field with automatic inference from worker type, allowing
+explicit overrides when needed. This provides all benefits while maintaining migration flexibility.
 
 ### Implementation Priority Adjustments
 
@@ -974,12 +1006,20 @@ Based on actual codebase analysis, **Phase 1** priorities updated to:
 2. **Week 1-2**: Add missing message types and correlation infrastructure
 3. **Week 2**: Implement envelope with domain support and unified error handling
 
-This ensures immediate resolution of debugging pain points while building foundation for advanced features.
+This ensures immediate resolution of debugging pain points while building foundation for advanced
+features.
 
 ## Conclusion
 
-The standardized message envelope system will significantly improve Atlas's worker communication reliability, observability, and developer experience. The **domain property addition** enhances the original proposal by providing role-specific event filtering and type safety.
+The standardized message envelope system will significantly improve Atlas's worker communication
+reliability, observability, and developer experience. The **domain property addition** enhances the
+original proposal by providing role-specific event filtering and type safety.
 
-The analysis revealed more critical inconsistencies than initially expected, making this standardization effort even more valuable. The phased implementation approach minimizes risk while providing immediate benefits from enhanced tracing, error handling, and domain-aware message filtering.
+The analysis revealed more critical inconsistencies than initially expected, making this
+standardization effort even more valuable. The phased implementation approach minimizes risk while
+providing immediate benefits from enhanced tracing, error handling, and domain-aware message
+filtering.
 
-The envelope system provides a robust foundation for future enhancements while maintaining backward compatibility during the transition period. This standardization aligns with Atlas's engineering principles of reliability, observability, and maintainability.
+The envelope system provides a robust foundation for future enhancements while maintaining backward
+compatibility during the transition period. This standardization aligns with Atlas's engineering
+principles of reliability, observability, and maintainability.

@@ -144,7 +144,6 @@ signals:
       retry_delay_ms: 2000
     # Note: filters removed - jobs now define their own trigger conditions
 
-
 # Memory configuration for k8s operations
 memory:
   enabled: true

@@ -9,7 +9,7 @@ configuration:
     access_key_env: "AWS_ACCESS_KEY_ID"
     secret_key_env: "AWS_SECRET_ACCESS_KEY"
     region_env: "AWS_DEFAULT_REGION"
-  
+
   permissions:
     allowed_services:
       - ec2
@@ -31,7 +31,7 @@ capabilities:
       - update_resource
       - describe_resource
       - get_resource_status
-  
+
   - name: "deployment_operations"
     description: "Deploy and manage applications"
     tools:
@@ -39,7 +39,7 @@ capabilities:
       - update_cloudformation
       - manage_ecs_service
       - configure_load_balancer
-  
+
   - name: "monitoring_analysis"
     description: "Monitor and analyze cloud infrastructure"
     tools:
@@ -54,7 +54,7 @@ prompts:
     You are a cloud operations agent specialized in AWS infrastructure management.
     You can deploy resources, monitor performance, and maintain cloud environments.
     Always follow AWS best practices and security guidelines.
-  
+
   user: |
     Manage AWS resources as requested. Ensure secure configurations and cost optimization.
     Provide clear status updates and handle infrastructure changes carefully.

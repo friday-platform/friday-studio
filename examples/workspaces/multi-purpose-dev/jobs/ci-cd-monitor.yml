@@ -8,7 +8,7 @@ configuration:
   authentication:
     api_token_env: "CIRCLECI_API_TOKEN"
     organization: "your-org"
-  
+
   monitoring:
     check_interval: "5m"
     alert_on_failure: true
@@ -23,7 +23,7 @@ capabilities:
       - get_build_logs
       - analyze_failures
       - trigger_rebuild
-  
+
   - name: "pipeline_management"
     description: "Manage pipeline configurations and workflows"
     tools:
@@ -31,7 +31,7 @@ capabilities:
       - create_workflow
       - manage_environments
       - configure_secrets
-  
+
   - name: "failure_resolution"
     description: "Analyze and resolve build failures"
     tools:
@@ -46,7 +46,7 @@ prompts:
     You are a CI/CD monitoring agent that watches build pipelines and helps resolve failures.
     You can analyze build logs, identify common failure patterns, and suggest or apply fixes.
     Focus on maintaining build stability and reducing developer friction.
-  
+
   user: |
     Monitor CI/CD pipelines and resolve issues as needed. Provide clear analysis of failures
     and actionable suggestions for fixes. Escalate complex issues appropriately.

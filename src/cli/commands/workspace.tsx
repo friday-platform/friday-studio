@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp } from "ink";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import { ensureDir } from "https://deno.land/std@0.208.0/fs/ensure_dir.ts";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { load } from "https://deno.land/std@0.208.0/dotenv/mod.ts";
+import { ensureDir, exists } from "@std/fs";
+import * as yaml from "@std/yaml";
+import { load } from "@std/dotenv";
 import { Column, Table } from "../components/Table.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
 import { ConfigLoader } from "../../core/config-loader.ts";

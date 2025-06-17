@@ -45,7 +45,7 @@ jobs:
       - signal: "database-analysis-request"
       - signal: "performance-issue"
     execution:
-      strategy: "sequential" 
+      strategy: "sequential"
       agents:
         - id: "database-analyst"
         - id: "memory-keeper"

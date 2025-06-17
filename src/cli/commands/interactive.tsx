@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Box, Newline, Text, useInput, useApp } from "ink";
+import React, { useEffect, useState } from "react";
+import { Box, Newline, Text, useApp, useInput } from "ink";
 
 export default function InteractiveCommand() {
   const [input, setInput] = useState("");
@@ -133,27 +133,27 @@ export default function InteractiveCommand() {
       <Box flexDirection="column" marginLeft={2}>
         <Box>
           <Text color="cyan">workspaces</Text>
-          <Text color="gray"> List all available workspaces</Text>
+          <Text color="gray">List all available workspaces</Text>
         </Box>
         <Box>
           <Text color="cyan">define --workspace &lt;name&gt;</Text>
-          <Text color="gray"> Show workspace definition and agents</Text>
+          <Text color="gray">Show workspace definition and agents</Text>
         </Box>
         <Box>
           <Text color="cyan">tui</Text>
-          <Text color="gray"> Launch Terminal User Interface</Text>
+          <Text color="gray">Launch Terminal User Interface</Text>
         </Box>
         <Box>
           <Text color="cyan">help</Text>
-          <Text color="gray"> Show detailed help</Text>
+          <Text color="gray">Show detailed help</Text>
         </Box>
         <Box>
           <Text color="cyan">clear</Text>
-          <Text color="gray"> Clear output</Text>
+          <Text color="gray">Clear output</Text>
         </Box>
         <Box>
           <Text color="cyan">exit</Text>
-          <Text color="gray"> Exit interactive mode</Text>
+          <Text color="gray">Exit interactive mode</Text>
         </Box>
       </Box>
 
@@ -165,13 +165,11 @@ export default function InteractiveCommand() {
           {output.map((line, index) => (
             <Box key={index}>
               <Text
-                color={
-                  line.startsWith("atlas>")
-                    ? "cyan"
-                    : line.startsWith("Error:")
-                    ? "red"
-                    : "white"
-                }
+                color={line.startsWith("atlas>")
+                  ? "cyan"
+                  : line.startsWith("Error:")
+                  ? "red"
+                  : "white"}
               >
                 {line}
               </Text>

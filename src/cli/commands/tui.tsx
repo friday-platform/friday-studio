@@ -2,8 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { FullScreenBox } from "fullscreen-ink";
 import { Badge } from "@inkjs/ui";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import * as yaml from "@std/yaml";
+import { exists } from "@std/fs";
 import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/splash-screen.tsx";
 

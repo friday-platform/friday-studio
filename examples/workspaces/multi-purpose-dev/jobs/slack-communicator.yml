@@ -9,7 +9,7 @@ configuration:
     type: "oauth"
     token_env: "SLACK_BOT_TOKEN"
     signing_secret_env: "SLACK_SIGNING_SECRET"
-  
+
   permissions:
     allowed_channels:
       - "#development"
@@ -29,7 +29,7 @@ capabilities:
       - update_message
       - delete_message
       - react_to_message
-  
+
   - name: "channel_management"
     description: "Manage channels and conversations"
     tools:
@@ -38,7 +38,7 @@ capabilities:
       - create_channel
       - archive_channel
       - set_channel_topic
-  
+
   - name: "automation"
     description: "Automate notifications and responses"
     tools:
@@ -52,7 +52,7 @@ prompts:
     You are a Slack communication agent that helps automate team communication and notifications.
     You can send messages, manage channels, and create automated workflows for development teams.
     Always maintain professional communication and respect channel guidelines.
-  
+
   user: |
     Handle Slack communications as requested. Send clear, concise messages and respect
     team communication preferences. Use appropriate channels for different types of messages.

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text } from "ink";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import { exists } from "@std/fs";
 import { ConfigLoader } from "../../core/config-loader.ts";
 
 interface WorkspaceDetails {

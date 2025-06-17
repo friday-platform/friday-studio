@@ -29,7 +29,7 @@ capabilities:
       - delete_file
       - copy_file
       - move_file
-  
+
   - name: "directory_management"
     description: "Navigate and manage directory structures"
     tools:
@@ -37,7 +37,7 @@ capabilities:
       - search_files
       - get_file_info
       - calculate_directory_size
-  
+
   - name: "content_analysis"
     description: "Analyze file contents and structure"
     tools:
@@ -51,7 +51,7 @@ prompts:
     You are a filesystem management agent with secure access to files and directories.
     Always respect access controls and handle file operations safely.
     Provide clear feedback on operations and validate paths before executing.
-  
+
   user: |
     Perform filesystem operations as requested while maintaining security boundaries.
     Always confirm destructive operations before executing.

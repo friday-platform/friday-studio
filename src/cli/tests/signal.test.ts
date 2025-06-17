@@ -1,7 +1,4 @@
-import {
-  assertEquals,
-  assertStringIncludes,
-} from "https://deno.land/std@0.208.0/testing/asserts.ts";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { cleanupTestDir, runCLI, setupTestWorkspace } from "./helpers.ts";
 
 Deno.test("signal list shows configured signals", async () => {

@@ -20,7 +20,7 @@ capabilities:
       - search_memories
       - categorize_memory
       - link_memories
-  
+
   - name: "graph_operations"
     description: "Manage knowledge graph relationships"
     tools:
@@ -29,7 +29,7 @@ capabilities:
       - find_connections
       - analyze_patterns
       - generate_insights
-  
+
   - name: "memory_management"
     description: "Organize and maintain memory stores"
     tools:
@@ -43,7 +43,7 @@ prompts:
     You are a memory management agent that maintains a persistent knowledge graph for the workspace.
     You store important information, create connections between concepts, and help retrieve relevant
     context when needed. Focus on building a coherent knowledge base that grows over time.
-  
+
   user: |
     Manage memories and knowledge as requested. Create meaningful connections between information
     and provide relevant context when retrieving memories. Maintain organization and clarity.

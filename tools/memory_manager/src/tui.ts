@@ -192,9 +192,9 @@ export class MemoryManagerTUI {
       );
       const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
 
-      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${
-        ageText.padEnd(6)
-      } │ ${entry.tags.slice(0, 3).join(", ")}`;
+      let line = `${entry.id.padEnd(25)} │ ${relevanceBar.padEnd(10)} │ ${ageText.padEnd(6)} │ ${
+        entry.tags.slice(0, 3).join(", ")
+      }`;
 
       if (line.length > this.terminalSize.width - 2) {
         line = line.substring(0, this.terminalSize.width - 5) + "...";
@@ -279,9 +279,7 @@ export class MemoryManagerTUI {
           "yellow",
         ),
       );
-      const tagLine = entry.tags.map((tag) =>
-        this.colorize(`#${tag}`, "dim", "yellow")
-      ).join("  ");
+      const tagLine = entry.tags.map((tag) => this.colorize(`#${tag}`, "dim", "yellow")).join("  ");
       console.log(`│ ${tagLine}`);
     }
 
@@ -416,9 +414,7 @@ export class MemoryManagerTUI {
         `│ ${this.colorize(`Array (${content.length} items):`, "bold")}`,
       );
       content.slice(0, 10).forEach((item, index) => {
-        const itemStr = typeof item === "object"
-          ? JSON.stringify(item)
-          : String(item);
+        const itemStr = typeof item === "object" ? JSON.stringify(item) : String(item);
         const truncated = this.truncateString(itemStr, maxWidth - 8);
         console.log(`│   [${index}] ${truncated}`);
       });
@@ -434,9 +430,7 @@ export class MemoryManagerTUI {
       );
 
       entries.slice(0, 15).forEach(([key, value]) => {
-        const valueStr = typeof value === "object"
-          ? JSON.stringify(value)
-          : String(value);
+        const valueStr = typeof value === "object" ? JSON.stringify(value) : String(value);
         const truncatedValue = this.truncateString(
           valueStr,
           maxWidth - key.length - 8,
@@ -698,9 +692,7 @@ export class MemoryManagerTUI {
       let seqLength = 0;
 
       // Read up to 3 more bytes with a short timeout
-      const timeoutPromise = new Promise<void>((resolve) =>
-        setTimeout(resolve, 10)
-      );
+      const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 10));
 
       try {
         while (seqLength < 3) {
@@ -1011,9 +1003,7 @@ export class MemoryManagerTUI {
     scrollOffset: number,
     maxScroll: number,
   ): Promise<void> {
-    const scrollInfo = maxScroll > 0
-      ? ` ${scrollOffset + 1}/${Math.max(1, maxScroll + 1)} `
-      : " ";
+    const scrollInfo = maxScroll > 0 ? ` ${scrollOffset + 1}/${Math.max(1, maxScroll + 1)} ` : " ";
     const instructions = " ↑/↓:scroll ESC:close ";
     const footerContent = scrollInfo + instructions;
     const padding = Math.max(0, width - footerContent.length - 4);
@@ -1046,9 +1036,7 @@ export class MemoryManagerTUI {
               currentLine += (currentLine ? " " : "") + word;
             } else {
               if (currentLine) lines.push(currentLine);
-              currentLine = word.length > maxWidth
-                ? word.substring(0, maxWidth - 3) + "..."
-                : word;
+              currentLine = word.length > maxWidth ? word.substring(0, maxWidth - 3) + "..." : word;
             }
           });
 

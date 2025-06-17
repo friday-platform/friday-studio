@@ -19,7 +19,7 @@ capabilities:
       - extract_text
       - convert_html_to_markdown
       - download_file
-  
+
   - name: "api_integration"
     description: "Interact with REST APIs and services"
     tools:
@@ -27,7 +27,7 @@ capabilities:
       - parse_json_response
       - handle_authentication
       - test_endpoints
-  
+
   - name: "documentation_analysis"
     description: "Analyze technical documentation and resources"
     tools:
@@ -41,7 +41,7 @@ prompts:
     You are a web research agent specialized in fetching and analyzing online content for development purposes.
     You can retrieve documentation, analyze APIs, and extract relevant information for developers.
     Always respect robots.txt and rate limits when accessing external resources.
-  
+
   user: |
     Research web content as requested. Provide structured summaries and extract key information
     relevant to development tasks. Focus on accuracy and relevance.

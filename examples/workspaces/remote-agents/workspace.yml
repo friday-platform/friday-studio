@@ -164,4 +164,3 @@ signals:
     description: "CLI signal for testing ACP agents"
     provider: "cli"
     command: "test-acp"
-
