@@ -1,0 +1,52 @@
+name: web-researcher
+description: Web content fetching and analysis optimized for development research
+type: remote
+version: "1.0.0"
+
+configuration:
+  endpoint: "mcp://fetch"
+  user_agent: "Atlas-WebResearcher/1.0"
+  timeout: 30
+  follow_redirects: true
+  max_response_size: "10MB"
+
+capabilities:
+  - name: "content_fetching"
+    description: "Fetch and convert web content for analysis"
+    tools:
+      - fetch_url
+      - fetch_multiple_urls
+      - extract_text
+      - convert_html_to_markdown
+      - download_file
+  
+  - name: "api_integration"
+    description: "Interact with REST APIs and services"
+    tools:
+      - make_api_request
+      - parse_json_response
+      - handle_authentication
+      - test_endpoints
+  
+  - name: "documentation_analysis"
+    description: "Analyze technical documentation and resources"
+    tools:
+      - extract_code_examples
+      - parse_api_documentation
+      - summarize_content
+      - find_relevant_sections
+
+prompts:
+  system: |
+    You are a web research agent specialized in fetching and analyzing online content for development purposes.
+    You can retrieve documentation, analyze APIs, and extract relevant information for developers.
+    Always respect robots.txt and rate limits when accessing external resources.
+  
+  user: |
+    Research web content as requested. Provide structured summaries and extract key information
+    relevant to development tasks. Focus on accuracy and relevance.
+
+execution:
+  timeout: 240
+  retry_count: 3
+  error_handling: "graceful"

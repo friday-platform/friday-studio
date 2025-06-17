@@ -1,0 +1,65 @@
+name: cloud-operator
+description: AWS cloud operations and infrastructure management
+type: remote
+version: "1.0.0"
+
+configuration:
+  endpoint: "mcp://aws"
+  authentication:
+    access_key_env: "AWS_ACCESS_KEY_ID"
+    secret_key_env: "AWS_SECRET_ACCESS_KEY"
+    region_env: "AWS_DEFAULT_REGION"
+  
+  permissions:
+    allowed_services:
+      - ec2
+      - s3
+      - lambda
+      - cloudformation
+      - ecs
+    restricted_operations:
+      - terminate_instance
+      - delete_bucket
+      - delete_stack
+
+capabilities:
+  - name: "resource_management"
+    description: "Manage AWS resources and infrastructure"
+    tools:
+      - list_resources
+      - create_resource
+      - update_resource
+      - describe_resource
+      - get_resource_status
+  
+  - name: "deployment_operations"
+    description: "Deploy and manage applications"
+    tools:
+      - deploy_lambda
+      - update_cloudformation
+      - manage_ecs_service
+      - configure_load_balancer
+  
+  - name: "monitoring_analysis"
+    description: "Monitor and analyze cloud infrastructure"
+    tools:
+      - get_metrics
+      - analyze_costs
+      - check_security_groups
+      - audit_permissions
+      - generate_reports
+
+prompts:
+  system: |
+    You are a cloud operations agent specialized in AWS infrastructure management.
+    You can deploy resources, monitor performance, and maintain cloud environments.
+    Always follow AWS best practices and security guidelines.
+  
+  user: |
+    Manage AWS resources as requested. Ensure secure configurations and cost optimization.
+    Provide clear status updates and handle infrastructure changes carefully.
+
+execution:
+  timeout: 300
+  retry_count: 2
+  error_handling: "strict"

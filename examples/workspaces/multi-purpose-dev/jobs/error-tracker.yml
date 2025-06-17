@@ -1,0 +1,59 @@
+name: error-tracker
+description: Sentry integration for error tracking and performance monitoring
+type: remote
+version: "1.0.0"
+
+configuration:
+  endpoint: "mcp://sentry"
+  authentication:
+    auth_token_env: "SENTRY_AUTH_TOKEN"
+    organization: "your-org"
+    project: "your-project"
+  
+  alert_rules:
+    error_threshold: 10
+    performance_threshold: "2s"
+    notification_channels:
+      - slack
+      - email
+
+capabilities:
+  - name: "error_monitoring"
+    description: "Monitor and analyze application errors"
+    tools:
+      - get_recent_errors
+      - analyze_error_trends
+      - group_similar_errors
+      - resolve_error
+      - assign_error
+  
+  - name: "performance_tracking"
+    description: "Track application performance metrics"
+    tools:
+      - get_performance_data
+      - analyze_slow_transactions
+      - identify_bottlenecks
+      - generate_performance_report
+  
+  - name: "alerting_automation"
+    description: "Automate error alerts and notifications"
+    tools:
+      - create_alert_rule
+      - configure_notifications
+      - escalate_critical_errors
+      - send_status_updates
+
+prompts:
+  system: |
+    You are an error tracking agent that monitors application health through Sentry.
+    You can analyze error patterns, track performance issues, and coordinate resolution efforts.
+    Focus on identifying critical issues and facilitating quick resolution.
+  
+  user: |
+    Monitor application errors and performance as requested. Provide insights into error trends
+    and performance bottlenecks. Coordinate with development teams for issue resolution.
+
+execution:
+  timeout: 120
+  retry_count: 2
+  error_handling: "graceful"
