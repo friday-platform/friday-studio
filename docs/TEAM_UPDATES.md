@@ -5,6 +5,99 @@ date and purpose._
 
 ---
 
+## June 17, 2025
+
+### **Job-Owns-Relationship Architecture & Runtime Config Migration (MAJOR)**
+
+**Purpose**: Implement cleaner configuration architecture where jobs define their triggers and separate platform concerns from user configuration
+
+#### **Problem Identified**
+
+- **Backwards relationship**: Signals defined which jobs they triggered instead of jobs defining what triggered them
+- **Mixed concerns**: Runtime configuration (server port, logging) was in workspace.yml alongside business logic
+- **Poor job reusability**: Jobs couldn't easily be triggered by multiple signals
+- **Configuration confusion**: Platform settings mixed with user workflow definitions
+
+#### **Solution Implemented**
+
+**Job-Owns-Relationship Architecture:**
+- Jobs now define their `triggers` field specifying which signals activate them
+- Enables jobs to be triggered by multiple signals naturally
+- Makes jobs self-contained entities with clear trigger conditions
+- Better foundation for natural language job creation
+
+**Runtime Config Migration:**
+- Moved all runtime configuration from workspace.yml to atlas.yml
+- Runtime settings (server, logging, persistence, security) are now platform-managed
+- Workspaces focus purely on business logic (jobs, agents, signals)
+- Clean separation: Atlas manages how workspaces run, workspaces define what work gets done
+
+#### **Changes Made**
+
+```
+Schema Updates:
+- src/core/config-loader.ts (added triggers to jobs, removed jobs from signals)
+- src/core/supervisor.ts (updated job selection to use trigger specifications)
+
+Configuration Migration:
+- atlas.yml (added runtime section)
+- examples/workspaces/*/workspace.yml (removed runtime, updated job triggers)
+- All 4 workspaces migrated to new format
+
+CLI Updates:
+- src/cli/commands/workspace.tsx (read runtime from atlas config)
+- src/cli/commands/define.tsx (use ConfigLoader for proper config access)
+- tests/integration/configuration-architecture.test.ts (updated for new format)
+```
+
+#### **Architecture Change**
+
+**Before (signals own jobs):**
+```yaml
+signals:
+  my-signal:
+    jobs:
+      - job: "my-job"
+        condition: "payload.size > 100"
+```
+
+**After (jobs own signals):**
+```yaml
+jobs:
+  my-job:
+    triggers:
+      - signal: "my-signal"
+        condition: "payload.size > 100"
+    execution:
+      strategy: "sequential"
+      agents: [...]
+
+signals:
+  my-signal:
+    description: "Trigger for my workflow"
+    provider: "http"
+    # No jobs field
+```
+
+#### **Impact**
+
+- ✅ **Self-contained jobs**: Each job explicitly defines what triggers it
+- ✅ **Multiple signal support**: Jobs can easily be triggered by multiple signals
+- ✅ **Cleaner separation**: Platform config separated from user workflow config
+- ✅ **Better maintainability**: Job configuration centralized in one place
+- ✅ **Foundation ready**: Structure supports upcoming natural language job creation
+- ✅ **All tests passing**: Full backward compatibility maintained through config loader
+
+#### **Key Learning**
+
+**Configuration architecture should mirror domain logic:**
+- Jobs should own their trigger relationships, not be owned by signals
+- Platform concerns (runtime) should be separated from user concerns (workflows)
+- Configuration structure directly impacts feature development ease
+- Clean architectural boundaries make future features easier to implement
+
+---
+
 ## June 11, 2025
 
 ### **Logging Quality & Debugging Infrastructure Overhaul (CRITICAL)**
@@ -363,5 +456,5 @@ _This section will be updated with team feedback, discussions, and decisions as 
 
 ---
 
-_Last Updated: June 11, 2025_\
+_Last Updated: June 17, 2025_\
 _Next Update: [To be scheduled based on development progress]_
