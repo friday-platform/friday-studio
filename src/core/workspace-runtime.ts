@@ -476,7 +476,7 @@ const workspaceRuntimeMachine = setup({
 
               // Initialize the stream connection
               await runtimeSignal.initialize({
-                id: signalId, // Pass the actual signal ID (k8s-events), not workspace ID
+                id: signalId, // Pass the actual signal ID from configuration, not workspace ID
                 processSignal: async (signalId: string, payload: any) => {
                   // Process the signal through the runtime
                   const signalConfig = context.mergedConfig?.workspace.signals?.[signalId];

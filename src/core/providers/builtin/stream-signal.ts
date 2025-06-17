@@ -104,7 +104,7 @@ class StreamRuntimeSignal extends AtlasScope {
   async initialize(
     context: { id: string; processSignal: (signalId: string, payload: any) => Promise<void> },
   ): Promise<void> {
-    this.signalId = context.id; // This should be 'k8s-events', not 'stream'
+    this.signalId = context.id; // Signal ID provided by the workspace configuration
     this.signalProcessor = context.processSignal;
     await this.startEventStream();
   }

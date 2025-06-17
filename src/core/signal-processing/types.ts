@@ -3,12 +3,12 @@
  */
 
 export interface SignalAnalysis {
-  domain: string;           // "kubernetes", "web", "ci-cd", "security"
-  category: string;         // "error", "warning", "deployment", "performance"
+  domain: string; // "web", "ci-cd", "security", "infrastructure"
+  category: string; // "error", "warning", "deployment", "performance"
   severity: "critical" | "high" | "medium" | "low";
   actionType: "fix" | "investigate" | "monitor" | "optimize";
-  urgency: number;          // 1-10 priority score
-  extractedEntities: {     // Key information from signal
+  urgency: number; // 1-10 priority score
+  extractedEntities: { // Key information from signal
     // deno-lint-ignore no-explicit-any
     [key: string]: any;
   };
@@ -43,7 +43,7 @@ export interface EntityExtraction {
 
 export interface TaskTemplate {
   name: string;
-  descriptionTemplate: string;  // "Fix {resource_type} {resource_name} in {namespace}"
+  descriptionTemplate: string; // "Fix {resource_type} {resource_name} in {namespace}"
   actionType: string;
   complexity: "simple" | "moderate" | "complex";
   requiredCapabilities: string[];
@@ -57,17 +57,17 @@ export interface TaskTemplate {
 export interface EnhancedTask {
   // Human-readable description
   description: string;
-  
+
   // Machine-readable action
   action: {
-    type: string;              // "diagnose", "fix", "scale", "investigate"
-    target: {                  // What to act on
+    type: string; // "diagnose", "fix", "scale", "investigate"
+    target: { // What to act on
       type: string;
       identifier: string;
       metadata: Record<string, any>;
     };
   };
-  
+
   // Clean, structured data
   data: {
     issue: {
@@ -81,7 +81,7 @@ export interface EnhancedTask {
       source: string;
     };
   };
-  
+
   // Execution metadata
   priority: number;
   estimatedComplexity: "simple" | "moderate" | "complex";
@@ -89,10 +89,10 @@ export interface EnhancedTask {
 }
 
 export interface AgentCapabilities {
-  domains: string[];           // ["kubernetes", "aws", "monitoring"]
-  actions: string[];           // ["diagnose", "fix", "scale"]
-  complexityLevels: string[];  // ["simple", "moderate", "complex"]
-  resourceTypes: string[];     // ["pods", "deployments", "services"]
+  domains: string[]; // ["infrastructure", "web", "monitoring"]
+  actions: string[]; // ["diagnose", "fix", "scale"]
+  complexityLevels: string[]; // ["simple", "moderate", "complex"]
+  resourceTypes: string[]; // ["services", "components", "resources"]
 }
 
 export interface SignalProcessingConfig {

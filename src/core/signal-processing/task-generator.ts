@@ -36,7 +36,7 @@ export class TaskGenerator {
 
     // Find matching template
     const template = this.findMatchingTemplate(analysis);
-    
+
     if (!template) {
       return this.createDefaultTask(signal, analysis);
     }
@@ -60,7 +60,7 @@ export class TaskGenerator {
    */
   private findMatchingTemplate(analysis: SignalAnalysis): TaskTemplate | null {
     // Find template that matches action type and domain
-    const candidates = this.templates.filter(template => {
+    const candidates = this.templates.filter((template) => {
       return template.actionType === analysis.actionType;
     });
 
@@ -76,14 +76,14 @@ export class TaskGenerator {
    * Generate task from template
    */
   private async generateFromTemplate(
-    signal: any, 
-    analysis: SignalAnalysis, 
-    template: TaskTemplate
+    signal: any,
+    analysis: SignalAnalysis,
+    template: TaskTemplate,
   ): Promise<EnhancedTask> {
     // Generate description from template
     const description = this.interpolateTemplate(
-      template.descriptionTemplate, 
-      analysis.extractedEntities
+      template.descriptionTemplate,
+      analysis.extractedEntities,
     );
 
     // Extract target information
@@ -119,14 +119,14 @@ export class TaskGenerator {
    */
   private interpolateTemplate(template: string, entities: Record<string, any>): string {
     let result = template;
-    
+
     for (const [key, value] of Object.entries(entities)) {
       const placeholder = `{${key}}`;
-      result = result.replace(new RegExp(placeholder, 'g'), String(value));
+      result = result.replace(new RegExp(placeholder, "g"), String(value));
     }
 
     // Remove any remaining placeholders
-    result = result.replace(/{[^}]+}/g, '[unknown]');
+    result = result.replace(/{[^}]+}/g, "[unknown]");
 
     return result;
   }
@@ -140,9 +140,9 @@ export class TaskGenerator {
     metadata: Record<string, any>;
   } {
     const entities = analysis.extractedEntities;
-    
-    // Try to identify target type and identifier
-    let targetType = entities.resource_type || entities.kind || entities.type || "unknown";
+
+    // Try to identify target type and identifier - platform-agnostic
+    let targetType = entities.resource_type || entities.type || entities.category || "unknown";
     let identifier = entities.resource_name || entities.name || entities.id || "unknown";
 
     // If no specific target info, use general info
@@ -175,11 +175,11 @@ export class TaskGenerator {
     details: Record<string, any>;
   } {
     const entities = analysis.extractedEntities;
-    
+
     return {
       type: analysis.category,
-      description: entities.error_message || entities.message || entities.description || 
-                  `${analysis.category} in ${analysis.domain}`,
+      description: entities.error_message || entities.message || entities.description ||
+        `${analysis.category} in ${analysis.domain}`,
       details: {
         severity: analysis.severity,
         domain: analysis.domain,
@@ -198,9 +198,10 @@ export class TaskGenerator {
     source: string;
   } {
     return {
-      environment: signal.environment || signal.cluster || signal.namespace || "unknown",
+      environment: signal.environment || signal.scope || signal.region || signal.location ||
+        "unknown",
       timestamp: signal.timestamp || signal.event?.timestamp || new Date().toISOString(),
-      source: signal.source || "unknown",
+      source: signal.source || signal.provider || "unknown",
     };
   }
 

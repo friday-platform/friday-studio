@@ -10,11 +10,11 @@ import { BaseAgent } from "./agents/base-agent.ts";
 import { Session, SessionIntent, SessionPlan } from "./session.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
-import { 
-  SignalProcessor, 
-  type AgentInfo, 
-  type SignalProcessingConfig,
+import {
+  type AgentInfo,
   type EnhancedTask,
+  type SignalProcessingConfig,
+  SignalProcessor,
 } from "./signal-processing/index.ts";
 
 // XState types for WorkspaceSupervisor FSM
@@ -806,7 +806,9 @@ Provide a structured analysis.`;
         availableJobNames: Object.keys(availableJobs),
         payloadKeys: Object.keys(payload),
         mergedConfigAvailable: !!this.mergedConfig,
-        jobsSourceUsed: signalData?.jobs ? 'signalData' : (this.mergedConfig?.jobs ? 'mergedConfig' : 'none'),
+        jobsSourceUsed: signalData?.jobs
+          ? "signalData"
+          : (this.mergedConfig?.jobs ? "mergedConfig" : "none"),
       });
 
       // Find jobs that have triggers for this signal
@@ -967,10 +969,15 @@ Provide a structured analysis.`;
     // Use enhanced signal analysis first
     try {
       const enhancedResult = await this.analyzeSignalEnhanced(signal, payload);
-      
+
       if (enhancedResult.enhancedTask) {
         // Create plan based on enhanced task
-        return this.createEnhancedPlan(signal, payload, enhancedResult.intent, enhancedResult.enhancedTask);
+        return this.createEnhancedPlan(
+          signal,
+          payload,
+          enhancedResult.intent,
+          enhancedResult.enhancedTask,
+        );
       }
     } catch (error) {
       this.logger.warn("Enhanced plan generation failed, falling back to legacy", {
@@ -1246,7 +1253,7 @@ Provide a structured analysis.`;
   ): SessionPlan {
     // Determine agent to use from intent
     const selectedAgent = intent.suggestedAgents?.[0] || "local-assistant";
-    
+
     return {
       intentId: intent.id,
       phases: [
@@ -1256,7 +1263,8 @@ Provide a structured analysis.`;
           agents: [
             {
               agentId: selectedAgent,
-              task: `${task.action.type} ${task.action.target.type} ${task.action.target.identifier}: ${task.data.issue.description}`,
+              task:
+                `${task.action.type} ${task.action.target.type} ${task.action.target.identifier}: ${task.data.issue.description}`,
               expectedOutputs: ["task_result"],
             },
           ],
@@ -1264,7 +1272,8 @@ Provide a structured analysis.`;
         },
       ],
       estimatedDuration: this.estimateExecutionTime(task.estimatedComplexity),
-      reasoning: `Enhanced processing identified ${task.data.issue.type} requiring ${task.action.type} action by ${selectedAgent}`,
+      reasoning:
+        `Enhanced processing identified ${task.data.issue.type} requiring ${task.action.type} action by ${selectedAgent}`,
     };
   }
 
@@ -1284,32 +1293,15 @@ Provide a structured analysis.`;
 
   // Create signal processing configuration from workspace settings
   private createSignalProcessingConfig(): SignalProcessingConfig {
-    // Default patterns for common signal types
+    // Default patterns for generic signal types - platform-agnostic
     const defaultPatterns = [
-      {
-        name: "kubernetes_pod_failure",
-        domain: "kubernetes",
-        triggers: [
-          { field: "event.reason", value: "Failed" },
-          { field: "event.message", operator: "contains" as const, value: "pull image" },
-        ],
-        category: "deployment_error",
-        severity: "high" as const,
-        actionType: "fix" as const,
-        urgency: 8,
-        entityExtraction: [
-          { name: "pod_name", field: "object.name", required: true },
-          { name: "namespace", field: "namespace", required: true },
-          { name: "image_name", field: "event.message", transform: "extract_image" },
-          { name: "error_reason", field: "event.reason", required: true },
-        ],
-      },
       {
         name: "high_severity_warning",
         domain: "general",
         triggers: [
           { field: "severity", value: "Warning" },
           { field: "event.type", value: "Warning" },
+          { field: "level", value: "warning" },
         ],
         category: "warning",
         severity: "medium" as const,
@@ -1317,23 +1309,42 @@ Provide a structured analysis.`;
         urgency: 6,
         entityExtraction: [
           { name: "resource_name", field: "object.name" },
-          { name: "resource_type", field: "object.kind" },
+          { name: "resource_type", field: "object.type" },
           { name: "message", field: "event.message" },
+        ],
+      },
+      {
+        name: "critical_failure",
+        domain: "infrastructure",
+        triggers: [
+          { field: "event.reason", value: "Failed" },
+          { field: "status", value: "error" },
+          { field: "severity", value: "Critical" },
+        ],
+        category: "critical_error",
+        severity: "high" as const,
+        actionType: "fix" as const,
+        urgency: 9,
+        entityExtraction: [
+          { name: "resource_name", field: "object.name", required: true },
+          { name: "scope", field: "scope", required: false },
+          { name: "error_reason", field: "event.reason", required: true },
+          { name: "resource_type", field: "object.type" },
         ],
       },
     ];
 
-    // Default task templates
+    // Default task templates - platform-agnostic
     const defaultTemplates = [
       {
-        name: "fix_deployment_issue",
-        descriptionTemplate: "Fix {error_reason} for {resource_type} {resource_name} in {namespace}",
+        name: "fix_infrastructure_issue",
+        descriptionTemplate: "Fix {error_reason} for {resource_type} {resource_name} in {scope}",
         actionType: "fix",
         complexity: "moderate" as const,
-        requiredCapabilities: ["kubernetes", "fix"],
+        requiredCapabilities: ["infrastructure", "fix"],
         dataExtraction: {
           requiredFields: ["resource_name", "error_reason"],
-          optionalFields: ["namespace", "image_name"],
+          optionalFields: ["scope", "resource_type"],
           transformations: {},
         },
       },
@@ -1345,27 +1356,32 @@ Provide a structured analysis.`;
         requiredCapabilities: ["general", "investigate"],
         dataExtraction: {
           requiredFields: ["resource_name", "message"],
-          optionalFields: ["resource_type"],
+          optionalFields: ["resource_type", "scope"],
           transformations: {},
         },
       },
     ];
 
-    // Default agent routing rules
+    // Default agent routing rules - platform-agnostic
     const defaultRouting = [
       {
-        capability: "kubernetes",
-        preferredAgents: ["k8s-main-agent"],
-        fallbackAgents: ["local-assistant"],
+        capability: "infrastructure",
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
       },
       {
         capability: "fix",
-        preferredAgents: ["k8s-main-agent"],
-        fallbackAgents: ["local-assistant"],
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
       },
       {
         capability: "investigate",
-        preferredAgents: ["local-assistant", "k8s-main-agent"],
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
+      },
+      {
+        capability: "general",
+        preferredAgents: ["local-assistant"],
         fallbackAgents: [],
       },
     ];
@@ -1383,10 +1399,10 @@ Provide a structured analysis.`;
     payload: any,
   ): Promise<{ intent: SessionIntent; enhancedTask?: EnhancedTask }> {
     const startTime = Date.now();
-    
+
     try {
       // Get available agents
-      const availableAgents: AgentInfo[] = this.getAllAgentMetadata().map(agent => ({
+      const availableAgents: AgentInfo[] = this.getAllAgentMetadata().map((agent) => ({
         id: agent.id,
         name: agent.name,
         type: agent.type,
@@ -1412,9 +1428,9 @@ Provide a structured analysis.`;
         constraints: {
           timeLimit: 300000, // 5 minutes default
         },
-        suggestedAgents: processingResult.selectedAgent 
+        suggestedAgents: processingResult.selectedAgent
           ? [processingResult.selectedAgent.id]
-          : availableAgents.map(a => a.id),
+          : availableAgents.map((a) => a.id),
         executionHints: {
           strategy: "deterministic",
           parallelism: false,
@@ -1436,7 +1452,7 @@ Provide a structured analysis.`;
       this.logger.warn("Enhanced signal processing failed, falling back to legacy", {
         error: error instanceof Error ? error.message : String(error),
       });
-      
+
       // Fallback to legacy analysis
       const intent = await this.analyzeSignal(signal, payload);
       return { intent };
