@@ -9,7 +9,7 @@
   },
   "unstable": ["broadcast-channel", "worker-options", "otel"],
   "tasks": {
-    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
@@ -21,6 +21,7 @@
   },
   "imports": {
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
+    "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",
     "@std/expect": "jsr:@std/expect@^1.0.16",
     "@std/fs": "jsr:@std/fs@^1.0.0",

@@ -148,11 +148,14 @@ export class WorkspaceRuntime {
       "workspace.processSignal",
       async (span) => {
         // Add workspace and signal attributes
-        AtlasTelemetry.addWorkspaceAttributes(span, this.workspace.id);
-        AtlasTelemetry.addSignalAttributes(
+        AtlasTelemetry.addComponentAttributes(span, "workspace", { id: this.workspace.id });
+        AtlasTelemetry.addComponentAttributes(
           span,
-          signal.id,
-          signal.provider?.name || signal.provider?.id || "unknown",
+          "signal",
+          {
+            id: signal.id,
+            type: signal.provider?.name || signal.provider?.id || "unknown",
+          },
         );
 
         const state = this.stateMachine.getSnapshot();

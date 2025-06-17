@@ -285,18 +285,31 @@ const JobReferenceSchema = z.object({
   job: z.string(),
 });
 
+// Top-level job reference schema (pointing to job in top-level jobs section)
+const TopLevelJobReferenceSchema = z.object({
+  job: z.string(), // Reference to job name in top-level jobs section
+  condition: z.string().optional(),
+});
+
+// Trigger specification schema for job-owns-relationship
+const TriggerSpecificationSchema = z.object({
+  signal: z.string(), // Signal name this job listens to
+  condition: z.string().optional(), // Optional condition for triggering
+});
+
+// Job specification schema for top-level jobs section
+const JobSpecificationSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  triggers: z.array(TriggerSpecificationSchema).optional(), // NEW: Jobs define their signal triggers
+  execution: JobExecutionSchema,
+});
+
 const WorkspaceSignalConfigSchema = z.object({
   description: z.string(),
   provider: z.string(),
   schema: SchemaObjectSchema.optional(),
-  jobs: z
-    .array(
-      z.union([
-        InlineJobSchema,
-        JobReferenceSchema,
-      ]),
-    )
-    .min(1, "Signal must have at least one job mapping"),
+  // REMOVED: jobs field - jobs now define their own triggers
   // Provider-specific configuration fields
   source: z.string().optional(),
   endpoint: z.string().optional(),
@@ -320,7 +333,31 @@ const NewWorkspaceConfigSchema = z.object({
     description: z.string(),
   }),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema),
+  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // NEW: Top-level jobs section
   signals: z.record(z.string(), WorkspaceSignalConfigSchema),
+});
+
+const SupervisorConfigSchema = z.object({
+  model: z.string(),
+  prompts: z
+    .object({
+      system: z.string(),
+    })
+    .catchall(z.string()),
+});
+
+const AtlasConfigSchema = z.object({
+  version: z.string(),
+  platform: z.object({
+    name: z.string(),
+    version: z.string(),
+  }),
+  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
+  supervisors: z.object({
+    workspace: SupervisorConfigSchema,
+    session: SupervisorConfigSchema,
+    agent: SupervisorConfigSchema,
+  }),
   runtime: z
     .object({
       server: z
@@ -348,29 +385,6 @@ const NewWorkspaceConfigSchema = z.object({
         .optional(),
     })
     .optional(),
-});
-
-const SupervisorConfigSchema = z.object({
-  model: z.string(),
-  prompts: z
-    .object({
-      system: z.string(),
-    })
-    .catchall(z.string()),
-});
-
-const AtlasConfigSchema = z.object({
-  version: z.string(),
-  platform: z.object({
-    name: z.string(),
-    version: z.string(),
-  }),
-  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
-  supervisors: z.object({
-    workspace: SupervisorConfigSchema,
-    session: SupervisorConfigSchema,
-    agent: SupervisorConfigSchema,
-  }),
 });
 
 // Inferred types from Zod schemas
@@ -497,50 +511,28 @@ export class ConfigLoader {
   ): Promise<Record<string, JobSpecification>> {
     const jobs: Record<string, JobSpecification> = {};
 
-    // Process jobs from all signals
-    for (const signal of Object.values(workspaceConfig.signals)) {
-      for (const jobMapping of signal.jobs) {
-        // Check if this is an inline job or a job file reference
-        if ("job" in jobMapping) {
-          // This is a job file reference
-          try {
-            const fullPath = join(this.workspaceDir, jobMapping.job);
-            const content = await Deno.readTextFile(fullPath);
-            const jobSpec = parseYaml(content) as { job: JobSpecification };
-
-            if (!jobSpec.job || !jobSpec.job.name) {
-              throw new Error(`Invalid job specification in ${jobMapping.job}`);
-            }
-
-            jobs[jobSpec.job.name] = jobSpec.job;
-          } catch (error) {
-            console.error(
-              `[ConfigLoader] Failed to load job from ${jobMapping.job}:`,
-              error instanceof Error ? error.message : String(error),
-            );
-            // Continue loading other jobs
+    // Load jobs from top-level jobs section
+    if (workspaceConfig.jobs) {
+      for (const [jobName, jobSpec] of Object.entries(workspaceConfig.jobs)) {
+        // Normalize string agents to JobAgentSpec objects
+        const normalizedAgents = jobSpec.execution.agents.map((agent) => {
+          if (typeof agent === "string") {
+            return { id: agent };
           }
-        } else if ("execution" in jobMapping) {
-          // This is an inline job definition
-          // Normalize string agents to JobAgentSpec objects
-          const normalizedAgents = jobMapping.execution.agents.map((agent) => {
-            if (typeof agent === "string") {
-              return { id: agent };
-            }
-            return agent;
-          });
+          return agent;
+        });
 
-          const jobSpec: JobSpecification = {
-            name: jobMapping.name,
-            description: jobMapping.description || `Inline job: ${jobMapping.name}`,
-            execution: {
-              strategy: jobMapping.execution.strategy,
-              agents: normalizedAgents,
-            },
-          };
+        const normalizedJobSpec: JobSpecification = {
+          name: jobName, // Use the key as the name
+          description: jobSpec.description || `Top-level job: ${jobName}`,
+          triggers: jobSpec.triggers, // Include triggers for signal-to-job mapping
+          execution: {
+            strategy: jobSpec.execution.strategy,
+            agents: normalizedAgents,
+          },
+        };
 
-          jobs[jobMapping.name] = jobSpec;
-        }
+        jobs[jobName] = normalizedJobSpec;
       }
     }
 
@@ -552,46 +544,58 @@ export class ConfigLoader {
     workspaceConfig: NewWorkspaceConfig,
     jobs: Record<string, JobSpecification>,
   ): void {
-    // Cross-validate job references in signals
+    // Cross-validate job trigger references and agent availability
+    for (const [jobName, jobSpec] of Object.entries(jobs)) {
+      // Validate that agents referenced in job exist in workspace or atlas
+      if (jobSpec.execution?.agents) {
+        for (const agentRef of jobSpec.execution.agents) {
+          const agentId = typeof agentRef === "string" ? agentRef : agentRef.id;
+          if (
+            !workspaceConfig.agents[agentId] &&
+            !atlasConfig.agents[agentId]
+          ) {
+            throw new ConfigValidationError(
+              `Job '${jobName}' references agent '${agentId}' which is not defined in workspace or atlas agents`,
+              "workspace.yml",
+              `jobs.${jobName}.execution.agents`,
+              agentRef,
+            );
+          }
+        }
+      }
+
+      // Validate that signals referenced in job triggers exist
+      if ((jobSpec as any).triggers) {
+        for (const trigger of (jobSpec as any).triggers) {
+          const signalId = trigger.signal;
+          if (!workspaceConfig.signals[signalId]) {
+            throw new ConfigValidationError(
+              `Job '${jobName}' references signal '${signalId}' which is not defined in workspace signals`,
+              "workspace.yml",
+              `jobs.${jobName}.triggers`,
+              trigger,
+            );
+          }
+        }
+      }
+    }
+
+    // Validate signal-job mappings that were injected for compatibility
     for (
       const [signalId, signalConfig] of Object.entries(
         workspaceConfig.signals,
       )
     ) {
-      for (const jobMapping of signalConfig.jobs) {
-        // Find the job specification either by name or loaded from file
-        const jobSpec = Object.values(jobs).find(
-          (job) => job.name === jobMapping.name,
-        );
-
-        if (!jobSpec) {
-          const jobSource = "job" in jobMapping
-            ? `job file '${jobMapping.job}'`
-            : "inline definition";
-          throw new ConfigValidationError(
-            `Signal '${signalId}' references job '${jobMapping.name}' which was not found in ${jobSource}`,
-            "workspace.yml",
-            `signals.${signalId}.jobs`,
-            jobMapping,
-          );
-        }
-
-        // Validate that agents referenced in job exist in workspace
-        if (jobSpec.execution?.agents) {
-          for (const agentRef of jobSpec.execution.agents) {
-            const agentId = typeof agentRef === "string" ? agentRef : agentRef.id;
-            if (
-              !workspaceConfig.agents[agentId] &&
-              !atlasConfig.agents[agentId]
-            ) {
-              const jobSource = "job" in jobMapping ? jobMapping.job : "inline job definition";
-              throw new ConfigValidationError(
-                `Job '${jobSpec.name}' references agent '${agentId}' which is not defined in workspace or atlas agents`,
-                jobSource,
-                "execution.agents",
-                agentRef,
-              );
-            }
+      if ((signalConfig as any).jobs) {
+        for (const jobMapping of (signalConfig as any).jobs) {
+          const jobName = jobMapping.job;
+          if (!jobs[jobName]) {
+            throw new ConfigValidationError(
+              `Signal '${signalId}' references job '${jobName}' which was not found`,
+              "workspace.yml",
+              `signals.${signalId}.jobs`,
+              jobMapping,
+            );
           }
         }
       }

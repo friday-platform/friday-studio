@@ -95,6 +95,19 @@ supervisors:
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.
+
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"
 `;
 
 const validWorkspaceConfig = `version: "1.0"
@@ -103,6 +116,20 @@ workspace:
   id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Test Workspace"
   description: "A test workspace for configuration validation"
+
+# Top-level job definitions
+jobs:
+  test-job:
+    name: "test-job"
+    description: "Test job specification"
+    triggers:
+      - signal: "test-signal"
+        condition: "message && message.length > 0"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "test-llm-agent"
+        - id: "test-tempest-agent"
 
 agents:
   test-llm-agent:
@@ -163,35 +190,9 @@ signals:
           type: "string"
           description: "Test message"
       required: ["message"]
-    jobs:
-      - name: "test-job"
-        condition: "message && message.length > 0"
-        job: "./jobs/test-job.yml"
-
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"
 `;
 
-const validJobSpec = `job:
-  name: "test-job"
-  description: "Test job specification"
-
-  execution:
-    strategy: "sequential"
-    agents:
-      - id: "test-llm-agent"
-      - id: "test-tempest-agent"
-`;
+// Job specifications are now defined in workspace.yml top-level jobs section
 
 // Helper function to create test environment
 async function createTestEnvironment() {
@@ -206,10 +207,7 @@ async function createTestEnvironment() {
     validWorkspaceConfig,
   );
 
-  // Create jobs directory and write job spec
-  const jobsDir = join(tempDir, "jobs");
-  await Deno.mkdir(jobsDir);
-  await Deno.writeTextFile(join(jobsDir, "test-job.yml"), validJobSpec);
+  // No need to create separate job files - jobs are now in workspace.yml
 
   return tempDir;
 }
@@ -265,6 +263,15 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     expect(agentKeys.includes("memory-agent")).toBe(true);
     expect(agentKeys.includes("security-scanner")).toBe(true);
     expect(agentKeys.includes("tempest-synthesizer")).toBe(true);
+
+    // Test runtime configuration is in atlas config
+    expect(mergedConfig.atlas.runtime?.server?.port).toBe(8080);
+    expect(mergedConfig.atlas.runtime?.server?.host).toBe("localhost");
+    expect(mergedConfig.atlas.runtime?.logging?.level).toBe("info");
+    expect(mergedConfig.atlas.runtime?.logging?.format).toBe("pretty");
+    expect(mergedConfig.atlas.runtime?.persistence?.type).toBe("local");
+    expect(mergedConfig.atlas.runtime?.persistence?.path).toBe("./.atlas");
+    expect(mergedConfig.atlas.runtime?.security?.cors).toBe("*");
   } finally {
     Deno.chdir(originalCwd);
     if (tempDir) {
@@ -320,16 +327,14 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     );
     expect(workspaceConfig.agents["test-remote-agent"].acp?.agent_name).toBe("test-agent");
 
-    // Test signals
+    // Test signals (no longer have jobs field in job-owns-relationship)
     expect(Object.keys(workspaceConfig.signals).length).toBe(1);
     expect(workspaceConfig.signals["test-signal"]).toBeDefined();
     expect(workspaceConfig.signals["test-signal"].provider).toBe("cli");
-    expect(workspaceConfig.signals["test-signal"].jobs.length).toBe(1);
+    expect(workspaceConfig.signals["test-signal"].jobs).toBeUndefined();
 
-    // Test runtime configuration
-    expect(workspaceConfig.runtime?.server?.port).toBe(8080);
-    expect(workspaceConfig.runtime?.logging?.level).toBe("info");
-    expect(workspaceConfig.runtime?.persistence?.type).toBe("local");
+    // Test runtime configuration is NOT in workspace config (moved to atlas)
+    expect((workspaceConfig as any).runtime).toBeUndefined();
   } finally {
     Deno.chdir(originalCwd);
     if (tempDir) {

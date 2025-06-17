@@ -6,6 +6,7 @@ import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { load } from "https://deno.land/std@0.208.0/dotenv/mod.ts";
 import { Column, Table } from "../components/Table.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
+import { ConfigLoader } from "../../core/config-loader.ts";
 
 export interface WorkspaceCommandProps {
   subcommand?: string;
@@ -242,7 +243,9 @@ OPENAI_API_KEY=your_api_key_here
       );
     }
 
-    const config = yaml.parse(await Deno.readTextFile("workspace.yml")) as any;
+    const configLoader = new ConfigLoader();
+    const mergedConfig = await configLoader.load();
+    const config = mergedConfig.workspace;
     const metadata = await exists(".atlas/workspace.json")
       ? JSON.parse(await Deno.readTextFile(".atlas/workspace.json"))
       : {};
@@ -251,7 +254,7 @@ OPENAI_API_KEY=your_api_key_here
     let serverRunning = false;
     try {
       const response = await fetch(
-        `http://localhost:${config.runtime?.server?.port || 8080}/health`,
+        `http://localhost:${mergedConfig.atlas.runtime?.server?.port || 8080}/health`,
       );
       serverRunning = response.ok;
     } catch {
@@ -268,7 +271,7 @@ OPENAI_API_KEY=your_api_key_here
       agents: Object.keys(config.agents || {}),
       signals: Object.keys(config.signals || {}),
       serverRunning,
-      port: config.runtime?.server?.port || 8080,
+      port: mergedConfig.atlas.runtime?.server?.port || 8080,
     });
     setStatus("ready");
   }
@@ -394,27 +397,27 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         await new Promise((resolve) => setTimeout(resolve, 100));
         await load({ export: true });
 
-        const workspaceYaml = await Deno.readTextFile("workspace.yml");
-        const config = yaml.parse(workspaceYaml) as any;
+        const configLoader = new ConfigLoader();
+        const mergedConfig = await configLoader.load();
 
         const { Workspace } = await import("../../core/workspace.ts");
         const { WorkspaceRuntime } = await import("../../core/workspace-runtime.ts");
         const { WorkspaceServer } = await import("../../core/workspace-server.ts");
         const { WorkspaceMemberRole } = await import("../../types/core.ts");
 
-        const workspace = Workspace.fromConfig(config, {
-          id: config.workspace.id,
-          name: config.workspace.name,
+        const workspace = Workspace.fromConfig(mergedConfig.workspace, {
+          id: mergedConfig.workspace.workspace.id,
+          name: mergedConfig.workspace.workspace.name,
           role: WorkspaceMemberRole.OWNER,
         });
 
-        const runtime = new WorkspaceRuntime(workspace, config, {
+        const runtime = new WorkspaceRuntime(workspace, mergedConfig, {
           lazy: flags.lazy || false,
         });
 
         const server = new WorkspaceServer(runtime, {
-          port: port || config.runtime?.server?.port || 8080,
-          hostname: config.runtime?.server?.host || "localhost",
+          port: port || mergedConfig.atlas.runtime?.server?.port || 8080,
+          hostname: mergedConfig.atlas.runtime?.server?.host || "localhost",
         });
 
         await server.start();

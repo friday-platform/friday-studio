@@ -4,6 +4,7 @@
 
 import { logger } from "../utils/logger.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
+import { AtlasTelemetry } from "../utils/telemetry.ts";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
 import type {
   AgentMetadata,
@@ -12,11 +13,26 @@ import type {
   RemoteAgentConfig,
   SessionContext,
 } from "./session-supervisor.ts";
+import {
+  type AgentExecutePayload,
+  type AgentExecutionCompletePayload,
+  ATLAS_MESSAGE_TYPES,
+  type AtlasMessageEnvelope,
+  createAgentExecuteMessage,
+  createAgentMessage,
+  deserializeEnvelope,
+  generateCorrelationId,
+  isAgentExecutionCompleteMessage,
+  isAgentLogMessage,
+  type MessageSource,
+} from "./utils/message-envelope.ts";
 
 // Supervisor configuration interface
 interface AgentSupervisorConfig {
   model?: string;
   memoryConfig: AtlasMemoryConfig;
+  sessionId?: string;
+  workspaceId?: string;
   prompts?: {
     system?: string;
     user?: string;
@@ -147,6 +163,8 @@ export class AgentSupervisor extends BaseAgent {
   private activeWorkers: Map<string, AgentWorkerInstance> = new Map();
   private supervisorConfig: AgentSupervisorConfig;
   private supervisorCreatedAt: Date = new Date();
+  private sessionId?: string;
+  private workspaceId?: string;
   private workerStats: Map<
     string,
     {
@@ -161,6 +179,8 @@ export class AgentSupervisor extends BaseAgent {
   constructor(supervisorConfig: AgentSupervisorConfig, parentScopeId?: string) {
     super(supervisorConfig.memoryConfig, parentScopeId);
     this.supervisorConfig = supervisorConfig;
+    this.sessionId = supervisorConfig.sessionId;
+    this.workspaceId = supervisorConfig.workspaceId;
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -340,8 +360,8 @@ Focus on safety, efficiency, and reliability.`;
 
   // Create conservative analysis when LLM analysis fails
   private createConservativeAnalysis(
-    agent: AgentMetadata,
-    task: AgentTask,
+    _agent: AgentMetadata,
+    _task: AgentTask,
   ): AgentAnalysis {
     return {
       safety_assessment: {
@@ -372,10 +392,10 @@ Focus on safety, efficiency, and reliability.`;
   }
 
   // Prepare secure execution environment based on analysis
-  async prepareEnvironment(
+  prepareEnvironment(
     agent: AgentMetadata,
     analysis: AgentAnalysis,
-  ): Promise<AgentEnvironment> {
+  ): AgentEnvironment {
     this.log(
       `Preparing environment for agent ${agent.id} with ${analysis.execution_strategy.isolation_level} isolation`,
     );
@@ -459,10 +479,11 @@ Focus on safety, efficiency, and reliability.`;
     return environment;
   }
 
-  // Load agent safely in web worker
+  // Load agent safely in web worker with envelope communication
   loadAgentSafely(
     agent: AgentMetadata,
     environment: AgentEnvironment,
+    traceHeaders?: Record<string, string>,
   ): Promise<AgentWorkerInstance> {
     this.log(`Loading agent ${agent.id} in secure worker`);
 
@@ -488,7 +509,7 @@ Focus on safety, efficiency, and reliability.`;
       status: "initializing",
     };
 
-    // Set up worker communication
+    // Set up worker communication with envelope support
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         worker.terminate();
@@ -497,46 +518,96 @@ Focus on safety, efficiency, and reliability.`;
         );
       }, 10000); // 10 second timeout
 
+      const messageSource = this.createMessageSource();
+      let initializeMessageId: string | null = null;
+
       worker.addEventListener("message", (event) => {
-        const { type, data } = event.data;
+        // Parse envelope message
+        let envelope: AtlasMessageEnvelope | undefined;
 
-        switch (type) {
-          case "ready":
-            // Worker is ready, now initialize it
-            worker.postMessage({
-              type: "initialize",
-              id: crypto.randomUUID(),
-              data: {
-                worker_id: workerId,
-                environment,
-                agent_config: agent.config,
-              },
-            });
-            break;
+        if (typeof event.data === "string") {
+          const result = deserializeEnvelope(event.data);
+          if (result.envelope) {
+            envelope = result.envelope;
+          } else {
+            this.log(`Failed to deserialize envelope: ${result.error}`);
+            return;
+          }
+        } else if (
+          event.data && typeof event.data === "object" && event.data.type && event.data.domain
+        ) {
+          envelope = event.data as AtlasMessageEnvelope;
+        } else {
+          this.log(`Received non-envelope message, ignoring: ${JSON.stringify(event.data)}`);
+          return;
+        }
 
-          case "initialized":
-            clearTimeout(timeout);
-            workerInstance.status = "ready";
-            this.activeWorkers.set(workerId, workerInstance);
-            this.log(
-              `Agent ${agent.id} loaded successfully as worker ${workerId}`,
-            );
-            resolve(workerInstance);
-            break;
+        if (envelope) {
+          switch (envelope.type) {
+            case ATLAS_MESSAGE_TYPES.LIFECYCLE.READY:
+              // Worker is ready, now initialize it with envelope
+              (async () => {
+                const currentTraceHeaders = traceHeaders ||
+                  await AtlasTelemetry.createTraceHeaders();
+                const initMessage = createAgentMessage(
+                  ATLAS_MESSAGE_TYPES.LIFECYCLE.INIT,
+                  {
+                    worker_id: workerId,
+                    environment,
+                    agent_config: agent.config,
+                  },
+                  messageSource,
+                  {
+                    traceHeaders: currentTraceHeaders,
+                    destination: {
+                      workerId,
+                      workerType: "agent-execution",
+                    },
+                    priority: "high",
+                  },
+                );
+                initializeMessageId = initMessage.id;
+                worker.postMessage(initMessage);
+              })();
+              break;
 
-          case "error":
-            clearTimeout(timeout);
-            worker.terminate();
-            this.log(
-              `Worker initialization failed for agent ${agent.id}: ${data.error}`,
-            );
-            reject(new Error(`Worker initialization failed: ${data.error}`));
-            break;
+            case ATLAS_MESSAGE_TYPES.LIFECYCLE.INITIALIZED:
+              if (
+                envelope.correlationId === initializeMessageId ||
+                envelope.parentMessageId === initializeMessageId
+              ) {
+                clearTimeout(timeout);
+                workerInstance.status = "ready";
+                this.activeWorkers.set(workerId, workerInstance);
+                this.log(
+                  `Agent ${agent.id} loaded successfully as worker ${workerId}`,
+                );
+                resolve(workerInstance);
+              }
+              break;
 
-          case "log":
-            // Forward worker logs to supervisor
-            this.log(`[Worker:${data.worker_id}] ${data.message}`, data.level);
-            break;
+            case ATLAS_MESSAGE_TYPES.TASK.ERROR:
+            case ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATED: {
+              clearTimeout(timeout);
+              worker.terminate();
+              const errorMsg = envelope.error?.message || "Worker initialization failed";
+              this.log(
+                `Worker initialization failed for agent ${agent.id}: ${errorMsg}`,
+              );
+              reject(new Error(`Worker initialization failed: ${errorMsg}`));
+              break;
+            }
+
+            default:
+              if (isAgentLogMessage(envelope)) {
+                const logPayload = envelope.payload;
+                this.logger[logPayload.level](
+                  `[Worker:${logPayload.agent_id}] ${logPayload.message}`,
+                  logPayload.metadata,
+                );
+              }
+              break;
+          }
         }
       });
 
@@ -548,73 +619,118 @@ Focus on safety, efficiency, and reliability.`;
     });
   }
 
+  // Create MessageSource for envelope communication
+  private createMessageSource(): MessageSource {
+    return {
+      workerId: this.id,
+      workerType: "workspace-supervisor", // AgentSupervisor is part of workspace supervision
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+    };
+  }
+
   // Execute agent with supervision
   async executeAgentSupervised(
     instance: AgentWorkerInstance,
     input: Record<string, unknown>,
     task: AgentTask,
     supervision: ExecutionSupervision,
+    traceHeaders?: Record<string, string>,
   ): Promise<SupervisedAgentResult> {
-    this.log(`Executing agent ${instance.agent_id} with supervision`);
-
-    const startTime = Date.now();
-    instance.status = "busy";
-
-    try {
-      // Pre-execution checks
-      const preCheckStart = Date.now();
-      await this.performPreExecutionChecks(instance, supervision);
-      const preCheckDuration = Date.now() - preCheckStart;
-      this.logger.debug(`Pre-execution checks completed in ${preCheckDuration}ms`);
-
-      // Execute agent via worker communication
-      const executionStart = Date.now();
-      const workerResult = await this.executeAgentInWorker(instance, input, task);
-      const executionDuration = Date.now() - executionStart;
-      this.log(`Agent ${instance.agent_id} executed successfully in ${executionDuration}ms`);
-
-      // Post-execution validation
-      const validationStart = Date.now();
-      const validation = await this.validateOutput(workerResult.output, task, supervision);
-      const validationDuration = Date.now() - validationStart;
-      this.logger.debug(`Output validation completed in ${validationDuration}ms`);
-
-      const duration = Date.now() - startTime;
-
-      // Update worker statistics
-      this.updateWorkerStats(instance.id, duration, workerResult.metadata.memory_used as number);
-
-      const result: SupervisedAgentResult = {
-        agent_id: instance.agent_id,
-        task: task.task,
-        input,
-        output: workerResult.output,
-        analysis: {} as AgentAnalysis, // Would be stored from analysis phase
-        environment: instance.environment,
-        supervision,
-        validation,
-        execution_metadata: {
-          duration,
-          memory_used: workerResult.metadata.memory_used as number,
-          safety_checks_passed: workerResult.metadata.safety_checks_passed as boolean,
-          monitoring_events: [],
-        },
-        timestamp: new Date().toISOString(),
-      };
-
-      instance.status = "ready";
-      this.log(`Agent ${instance.agent_id} execution completed successfully`);
-
-      return result;
-    } catch (error) {
-      instance.status = "error";
-      this.log(`Agent ${instance.agent_id} execution failed: ${error}`, "error", {
+    return await AtlasTelemetry.withWorkerSpan(
+      {
+        operation: "executeAgentSupervised",
+        component: "agent",
+        traceHeaders,
+        workerId: this.id,
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
         agentId: instance.agent_id,
-        duration: Date.now() - startTime, // Use startTime instead of undefined executionStart
-        errorType: error instanceof Error ? error.name : "UnknownError",
-      });
-      throw error;
-    }
+        agentType: instance.environment.agent_config.type,
+      },
+      async (span) => {
+        this.log(`Executing agent ${instance.agent_id} with supervision`);
+
+        const startTime = Date.now();
+        instance.status = "busy";
+
+        try {
+          // Pre-execution checks
+          const preCheckStart = Date.now();
+          this.performPreExecutionChecks(instance, supervision);
+          const preCheckDuration = Date.now() - preCheckStart;
+          this.logger.debug(`Pre-execution checks completed in ${preCheckDuration}ms`);
+
+          // Execute agent via worker communication with envelope format
+          const executionStart = Date.now();
+          const workerResult = await this.executeAgentInWorker(instance, input, task, traceHeaders);
+          const executionDuration = Date.now() - executionStart;
+          this.log(`Agent ${instance.agent_id} executed successfully in ${executionDuration}ms`);
+
+          // Post-execution validation
+          const validationStart = Date.now();
+          const validation = await this.validateOutput(workerResult.output, task, supervision);
+          const validationDuration = Date.now() - validationStart;
+          this.logger.debug(`Output validation completed in ${validationDuration}ms`);
+
+          const duration = Date.now() - startTime;
+
+          // Update worker statistics
+          this.updateWorkerStats(
+            instance.id,
+            duration,
+            workerResult.metadata.memory_used as number,
+          );
+
+          const result: SupervisedAgentResult = {
+            agent_id: instance.agent_id,
+            task: task.task,
+            input,
+            output: workerResult.output,
+            analysis: {} as AgentAnalysis, // Would be stored from analysis phase
+            environment: instance.environment,
+            supervision,
+            validation,
+            execution_metadata: {
+              duration,
+              memory_used: workerResult.metadata.memory_used as number,
+              safety_checks_passed: workerResult.metadata.safety_checks_passed as boolean,
+              monitoring_events: [],
+            },
+            timestamp: new Date().toISOString(),
+          };
+
+          instance.status = "ready";
+          this.log(`Agent ${instance.agent_id} execution completed successfully`);
+
+          // Add span attributes for telemetry
+          span?.setAttribute("agent.execution.duration", duration);
+          span?.setAttribute(
+            "agent.execution.memory_used",
+            workerResult.metadata.memory_used as number,
+          );
+          span?.setAttribute("agent.execution.status", "success");
+
+          return result;
+        } catch (error) {
+          instance.status = "error";
+          this.log(`Agent ${instance.agent_id} execution failed: ${error}`, "error", {
+            agentId: instance.agent_id,
+            duration: Date.now() - startTime,
+            errorType: error instanceof Error ? error.name : "UnknownError",
+          });
+
+          // Add error attributes to span
+          span?.setAttribute("agent.execution.status", "error");
+          span?.setAttribute(
+            "agent.execution.error",
+            error instanceof Error ? error.message : String(error),
+          );
+
+          throw error;
+        }
+      },
+    );
   }
 
   // Validate agent output
@@ -670,17 +786,30 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     }
   }
 
-  // Clean up worker instance
+  // Clean up worker instance with envelope communication
   async terminateWorker(workerId: string): Promise<void> {
     const instance = this.activeWorkers.get(workerId);
     if (instance) {
       try {
-        // Send graceful termination message to worker
-        instance.worker.postMessage({
-          type: "terminate",
-          id: crypto.randomUUID(),
-          data: { reason: "supervisor_cleanup" },
-        });
+        // Send graceful termination message using envelope format
+        const messageSource = this.createMessageSource();
+        const traceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+        const terminateMessage = createAgentMessage(
+          ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATE,
+          { reason: "supervisor_cleanup" },
+          messageSource,
+          {
+            traceHeaders,
+            destination: {
+              workerId: instance.id,
+              workerType: "agent-execution",
+            },
+            priority: "high",
+          },
+        );
+
+        instance.worker.postMessage(terminateMessage);
 
         // Wait a short time for graceful shutdown
         await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -736,7 +865,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return config.tools || [];
   }
 
-  private generateValidationCriteria(task: AgentTask): string[] {
+  private generateValidationCriteria(_task: AgentTask): string[] {
     return ["output_exists", "task_completed", "format_valid"];
   }
 
@@ -765,10 +894,10 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return prompts as Record<string, string>;
   }
 
-  private async performPreExecutionChecks(
+  private performPreExecutionChecks(
     instance: AgentWorkerInstance,
     supervision: ExecutionSupervision,
-  ): Promise<void> {
+  ): void {
     const checksStart = Date.now();
 
     // Mock pre-execution checks - in production these would be real validations
@@ -784,13 +913,54 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     );
   }
 
-  // Execute agent in worker with real communication
+  // Execute agent in worker with envelope communication
   private async executeAgentInWorker(
     instance: AgentWorkerInstance,
     input: Record<string, unknown>,
     task: AgentTask,
+    traceHeaders?: Record<string, string>,
   ): Promise<{ output: Record<string, unknown>; metadata: Record<string, unknown> }> {
-    const messageId = crypto.randomUUID();
+    const correlationId = generateCorrelationId();
+    const messageSource = this.createMessageSource();
+
+    // Create the envelope message payload
+    const payload: AgentExecutePayload = {
+      agent_id: instance.agent_id,
+      agent_config: instance.environment.agent_config,
+      task: task.task,
+      input,
+      environment: instance.environment as unknown as Record<string, unknown>,
+    };
+
+    // Create trace headers for this worker operation
+    const currentTraceHeaders = traceHeaders || await AtlasTelemetry.createTraceHeaders();
+
+    // Create envelope message using the standardized format
+    const executeMessage = createAgentExecuteMessage(
+      payload,
+      messageSource,
+      {
+        correlationId,
+        traceHeaders: currentTraceHeaders,
+        destination: {
+          workerId: instance.id,
+          workerType: "agent-execution",
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+        },
+        priority: "normal",
+        timeout: instance.environment.worker_config.timeout,
+        acknowledgmentRequired: true,
+      },
+    );
+
+    this.logger.debug("Sending envelope message to agent worker", {
+      agentId: instance.agent_id,
+      messageId: executeMessage.id,
+      correlationId,
+      messageType: executeMessage.type,
+      domain: executeMessage.domain,
+    });
 
     return new Promise((resolve, reject) => {
       // Set up timeout
@@ -802,51 +972,78 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
         );
       }, instance.environment.worker_config.timeout);
 
-      // Listen for worker response
+      // Listen for worker response using envelope format
       const messageHandler = (event: MessageEvent) => {
-        const { type, id, data } = event.data;
+        // Parse envelope message
+        let envelope: AtlasMessageEnvelope | undefined;
 
-        if (id === messageId) {
-          clearTimeout(timeout);
-          instance.worker.removeEventListener("message", messageHandler);
+        if (typeof event.data === "string") {
+          const result = deserializeEnvelope(event.data);
+          if (result.envelope) {
+            envelope = result.envelope;
+          } else {
+            this.logger.debug(`Failed to deserialize envelope response: ${result.error}`);
+            return;
+          }
+        } else if (
+          event.data && typeof event.data === "object" && event.data.type && event.data.domain
+        ) {
+          envelope = event.data as AtlasMessageEnvelope;
+        } else {
+          this.logger.debug(
+            `Received non-envelope response, ignoring: ${JSON.stringify(event.data)}`,
+          );
+          return;
+        }
 
-          switch (type) {
-            case "execution_complete":
-              if (data.success) {
-                resolve({
-                  output: data.output,
-                  metadata: data.metadata,
-                });
-              } else {
-                reject(new Error(`Worker execution failed: ${data.error}`));
-              }
-              break;
+        if (envelope) {
+          // Check if this is our correlated response
+          if (envelope.correlationId === correlationId) {
+            clearTimeout(timeout);
+            instance.worker.removeEventListener("message", messageHandler);
 
-            case "error":
-              reject(new Error(`Worker error: ${data.error}`));
-              break;
+            this.logger.debug("Received envelope response from agent worker", {
+              agentId: instance.agent_id,
+              messageId: envelope.id,
+              correlationId: envelope.correlationId,
+              messageType: envelope.type,
+              domain: envelope.domain,
+            });
 
-            default:
-              // Ignore other message types
-              break;
+            if (isAgentExecutionCompleteMessage(envelope)) {
+              const completionPayload = envelope.payload as AgentExecutionCompletePayload;
+              resolve({
+                output: completionPayload.result as Record<string, unknown>,
+                metadata: {
+                  duration: completionPayload.execution_time_ms,
+                  memory_used: completionPayload.metadata?.tokens_used || 0,
+                  safety_checks_passed: true,
+                  ...completionPayload.metadata,
+                },
+              });
+            } else if (envelope.type === ATLAS_MESSAGE_TYPES.TASK.ERROR || envelope.error) {
+              const errorMessage = envelope.error?.message || "Unknown error";
+              reject(new Error(`Worker error: ${errorMessage}`));
+            }
+            return;
+          }
+
+          // Handle log messages (broadcast, no correlation needed)
+          if (isAgentLogMessage(envelope)) {
+            const logPayload = envelope.payload;
+            this.logger[logPayload.level](
+              `[Agent:${logPayload.agent_id}] ${logPayload.message}`,
+              logPayload.metadata,
+            );
+            return;
           }
         }
       };
 
       instance.worker.addEventListener("message", messageHandler);
 
-      // Send execution request to worker
-      instance.worker.postMessage({
-        type: "execute",
-        id: messageId,
-        data: {
-          agent_id: instance.agent_id,
-          agent_config: instance.environment.agent_config,
-          task,
-          input,
-          environment: instance.environment,
-        },
-      });
+      // Send envelope message to worker
+      instance.worker.postMessage(executeMessage);
     });
   }
 
@@ -922,7 +1119,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
     // Return metrics for all workers
     const allMetrics: Record<string, string | number | boolean | Date> = {};
-    for (const [id, instance] of this.activeWorkers) {
+    for (const [id, _instance] of this.activeWorkers) {
       const workerMetrics = this.getWorkerMetrics(id);
       Object.assign(allMetrics, workerMetrics);
     }
@@ -930,13 +1127,13 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
   }
 
   // Monitor worker health and performance
-  async monitorWorkers(): Promise<{
+  monitorWorkers(): {
     healthy: number;
     unhealthy: number;
     idle: number;
     busy: number;
     total_memory: number;
-  }> {
+  } {
     let healthy = 0;
     let unhealthy = 0;
     let idle = 0;

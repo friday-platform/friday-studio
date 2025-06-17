@@ -999,6 +999,29 @@ Overall Success: ${
     }
 
     try {
+      // Check memory configuration: if session memory should not be included in context, pass clean input
+      if (!this.memoryConfig.session.include_in_context) {
+        this.log(
+          `Passing clean input to ${agentId} due to memory config (session.include_in_context: false)`,
+        );
+        return originalInput;
+      }
+
+      // For sequential execution with "previous" input source,
+      // DON'T add execution history context - pass clean input for telephone game behavior
+      const currentAgentTask = this.executionPlan?.phases
+        .find((phase) => phase.executionStrategy === "sequential")
+        ?.agents.find((agent) => agent.agentId === agentId);
+
+      const shouldPassCleanInput = currentAgentTask?.inputSource === "previous";
+
+      if (shouldPassCleanInput) {
+        this.log(
+          `Passing clean input to ${agentId} for sequential execution (inputSource: ${currentAgentTask?.inputSource})`,
+        );
+        return originalInput;
+      }
+
       // Query working memory for current session executions
       let workingMemoryContext: any[] = [];
 

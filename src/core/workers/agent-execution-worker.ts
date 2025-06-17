@@ -4,11 +4,29 @@
 
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
+import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import {
+  type AgentExecutePayload,
+  type AgentExecutionCompletePayload,
+  type AgentLogPayload,
+  ATLAS_MESSAGE_TYPES,
+  type AtlasMessageEnvelope,
+  createAgentExecutionCompleteMessage,
+  createAgentLogMessage,
+  createAgentMessage,
+  createErrorResponse,
+  createResponseMessage,
+  deserializeEnvelope,
+  isAgentExecuteMessage,
+  type MessageSource,
+  validateAgentExecutePayload,
+} from "../utils/message-envelope.ts";
 
-interface WorkerMessage {
+// Legacy interface for backward compatibility during transition
+interface LegacyWorkerMessage {
   type: "initialize" | "execute" | "terminate";
   id: string;
-  data?: any;
+  data?: Record<string, unknown>;
 }
 
 interface AgentExecutionRequest {
@@ -16,19 +34,28 @@ interface AgentExecutionRequest {
   agent_config: {
     type: string;
     model?: string;
-    parameters: Record<string, any>;
+    parameters: Record<string, unknown>;
     prompts: Record<string, string>;
     tools: string[];
     endpoint?: string;
-    auth?: any;
+    auth?: {
+      type: "bearer" | "api_key" | "basic" | "none";
+      token_env?: string;
+      token?: string;
+      api_key_env?: string;
+      api_key?: string;
+      header?: string;
+      username?: string;
+      password?: string;
+    };
   };
   task: {
     task: string;
     inputSource: string;
     mode?: string;
-    config?: Record<string, any>;
+    config?: Record<string, unknown>;
   };
-  input: any;
+  input: unknown;
   environment: {
     worker_config: {
       memory_limit: number;
@@ -47,7 +74,7 @@ interface AgentExecutionRequest {
 
 interface AgentExecutionResponse {
   success: boolean;
-  output?: any;
+  output?: unknown;
   error?: string;
   metadata: {
     duration: number;
@@ -61,159 +88,324 @@ class AgentExecutionWorker {
   private isInitialized: boolean = false;
   private startTime: number = 0;
   private logger: ChildLogger;
+  private sessionId?: string;
+  private workspaceId?: string;
 
   constructor() {
+    this.workerId = crypto.randomUUID();
+
     // Initialize logger first
     this.logger = logger.createChildLogger({
-      workerId: crypto.randomUUID(),
+      workerId: this.workerId,
       workerType: "agent-execution",
     });
 
     // Listen for messages from main thread
     self.addEventListener("message", this.handleMessage.bind(this));
 
-    // Send ready signal
-    this.postMessage({
-      type: "ready",
-      id: "worker-ready",
-      data: { worker_id: crypto.randomUUID() },
-    });
+    // Send ready signal using envelope format
+    this.sendReadyMessage();
   }
 
-  private postMessage(message: any) {
-    (self as any).postMessage(message);
-  }
-
-  private async handleMessage(event: MessageEvent<WorkerMessage>) {
-    const { type, id, data } = event.data;
-
-    try {
-      switch (type) {
-        case "initialize":
-          await this.initialize(id, data);
-          break;
-        case "execute":
-          await this.executeAgent(id, data);
-          break;
-        case "terminate":
-          await this.terminate(id);
-          break;
-        default:
-          throw new Error(`Unknown message type: ${type}`);
-      }
-    } catch (error) {
-      this.postMessage({
-        type: "error",
-        id,
-        data: { error: error instanceof Error ? error.message : String(error) },
-      });
-    }
-  }
-
-  private async initialize(messageId: string, data: any) {
-    this.workerId = data.worker_id || crypto.randomUUID();
-    this.isInitialized = true;
-    this.startTime = Date.now();
-
-    // Update logger with actual worker ID
-    this.logger = logger.createChildLogger({
+  private createMessageSource(): MessageSource {
+    return {
       workerId: this.workerId,
       workerType: "agent-execution",
-    });
-
-    this.log("Worker initialized", "debug");
-
-    this.postMessage({
-      type: "initialized",
-      id: messageId,
-      data: { worker_id: this.workerId, status: "ready" },
-    });
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+    };
   }
 
-  private async executeAgent(messageId: string, request: AgentExecutionRequest) {
-    if (!this.isInitialized) {
-      throw new Error("Worker not initialized");
+  private sendReadyMessage(): void {
+    const readyMessage = createAgentMessage(
+      ATLAS_MESSAGE_TYPES.LIFECYCLE.READY,
+      { worker_id: this.workerId },
+      this.createMessageSource(),
+      {
+        priority: "high",
+      },
+    );
+
+    this.postMessage(readyMessage);
+  }
+
+  private postMessage(message: AtlasMessageEnvelope | unknown) {
+    self.postMessage(message);
+  }
+
+  private async handleMessage(event: MessageEvent) {
+    // Parse envelope message
+    let envelope: AtlasMessageEnvelope | undefined;
+
+    if (typeof event.data === "string") {
+      const result = deserializeEnvelope(event.data);
+      if (result.envelope) {
+        envelope = result.envelope;
+      } else {
+        this.logger.debug(`Failed to deserialize envelope: ${result.error}`);
+        return;
+      }
+    } else if (
+      event.data && typeof event.data === "object" && event.data.type && event.data.domain
+    ) {
+      envelope = event.data as AtlasMessageEnvelope;
+    } else {
+      this.logger.debug(`Received non-envelope message, ignoring: ${JSON.stringify(event.data)}`);
+      return;
     }
 
-    // Update logger with agent name for better context
-    this.logger = logger.createChildLogger({
-      workerId: this.workerId,
-      workerType: "agent-execution",
-      agentName: request.agent_id,
-    });
-
-    this.log(`Executing ${request.agent_config.type} agent: ${request.agent_id}`, "info");
-
-    const executionStart = Date.now();
+    if (!envelope) {
+      return;
+    }
 
     try {
-      // Perform safety checks
-      this.performSafetyChecks(request);
-
-      // Execute based on agent type
-      let output: any;
-      switch (request.agent_config.type) {
-        case "llm":
-          output = await this.executeLLMAgent(request);
+      switch (envelope.type) {
+        case ATLAS_MESSAGE_TYPES.LIFECYCLE.INIT:
+          await this.handleInitialize(envelope);
           break;
-        case "tempest":
-          output = await this.executeTempestAgent(request);
+        case ATLAS_MESSAGE_TYPES.AGENT.EXECUTE:
+          await this.handleExecuteAgent(envelope);
           break;
-        case "remote":
-          output = await this.executeRemoteAgent(request);
+        case ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATE:
+          await this.handleTerminate(envelope);
           break;
         default:
-          throw new Error(`Unsupported agent type: ${request.agent_config.type}`);
+          this.logger.debug(`Unknown message type: ${envelope.type}`);
+          break;
       }
-
-      const duration = Date.now() - executionStart;
-      const memoryUsed = this.estimateMemoryUsage();
-
-      const response: AgentExecutionResponse = {
-        success: true,
-        output,
-        metadata: {
-          duration,
-          memory_used: memoryUsed,
-          safety_checks_passed: true,
-        },
-      };
-
-      this.log(`Agent ${request.agent_id} executed successfully in ${duration}ms`, "info");
-
-      this.postMessage({
-        type: "execution_complete",
-        id: messageId,
-        data: response,
-      });
     } catch (error) {
-      const duration = Date.now() - executionStart;
-      const response: AgentExecutionResponse = {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-        metadata: {
-          duration,
-          memory_used: this.estimateMemoryUsage(),
-          safety_checks_passed: false,
+      // Send error response using envelope format
+      const errorResponse = createErrorResponse(
+        envelope,
+        {
+          code: "EXECUTION_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          retryable: false,
         },
-      };
+        this.createMessageSource(),
+      );
 
-      this.log(`Agent ${request.agent_id} execution failed: ${response.error}`, "error");
-
-      this.postMessage({
-        type: "execution_complete",
-        id: messageId,
-        data: response,
-      });
+      this.postMessage(errorResponse);
     }
   }
 
-  private performSafetyChecks(request: AgentExecutionRequest) {
+  private async handleInitialize(envelope: AtlasMessageEnvelope): Promise<void> {
+    return await AtlasTelemetry.withWorkerSpan(
+      {
+        operation: "initialize",
+        component: "agent",
+        traceHeaders: envelope.traceHeaders,
+        workerId: this.workerId,
+        sessionId: envelope.source.sessionId,
+        workspaceId: envelope.source.workspaceId,
+      },
+      (span) => {
+        const payload = envelope.payload as Record<string, unknown>;
+
+        // Extract context from envelope
+        this.workerId = (payload.worker_id as string) || this.workerId;
+        this.sessionId = envelope.source.sessionId;
+        this.workspaceId = envelope.source.workspaceId;
+        this.isInitialized = true;
+        this.startTime = Date.now();
+
+        // Update logger with session/workspace context
+        this.logger = logger.createChildLogger({
+          workerId: this.workerId,
+          workerType: "agent-execution",
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+        });
+
+        this.logger.debug("Worker initialized with envelope", {
+          workerId: this.workerId,
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+        });
+
+        // Send initialized response
+        const response = createResponseMessage(
+          envelope,
+          ATLAS_MESSAGE_TYPES.LIFECYCLE.INITIALIZED,
+          {
+            worker_id: this.workerId,
+            status: "ready",
+            session_id: this.sessionId,
+            workspace_id: this.workspaceId,
+          },
+          this.createMessageSource(),
+        );
+
+        span?.setAttribute("worker.id", this.workerId);
+        span?.setAttribute("worker.status", "initialized");
+
+        this.postMessage(response);
+      },
+    );
+  }
+
+  private async handleExecuteAgent(envelope: AtlasMessageEnvelope): Promise<void> {
+    return await AtlasTelemetry.withWorkerSpan(
+      {
+        operation: "executeAgent",
+        component: "agent",
+        traceHeaders: envelope.traceHeaders,
+        workerId: this.workerId,
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+      },
+      async (span) => {
+        if (!this.isInitialized) {
+          throw new Error("Worker not initialized");
+        }
+
+        // Validate and extract agent execution payload
+        if (!isAgentExecuteMessage(envelope)) {
+          throw new Error("Invalid agent execute message");
+        }
+
+        const validation = validateAgentExecutePayload(envelope.payload);
+        if (!validation.success) {
+          throw new Error(`Invalid agent execute payload: ${validation.error.message}`);
+        }
+
+        const request = validation.data;
+        const executionStart = Date.now();
+
+        // Update logger with agent name for better context
+        this.logger = logger.createChildLogger({
+          workerId: this.workerId,
+          workerType: "agent-execution",
+          agentName: request.agent_id,
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId,
+        });
+
+        // Add span attributes
+        span?.setAttribute("agent.id", request.agent_id);
+        span?.setAttribute("agent.type", request.agent_config.type);
+        span?.setAttribute("agent.task", request.task);
+
+        this.sendLogMessage(
+          "info",
+          `Executing ${request.agent_config.type} agent: ${request.agent_id}`,
+        );
+
+        try {
+          // Perform safety checks
+          this.performSafetyChecks(request);
+
+          // Execute based on agent type
+          let output: unknown;
+          switch (request.agent_config.type) {
+            case "llm":
+              output = await this.executeLLMAgent(request);
+              break;
+            case "tempest":
+              output = await this.executeTempestAgent(request);
+              break;
+            case "remote":
+              output = await this.executeRemoteAgent(request);
+              break;
+            default:
+              throw new Error(`Unsupported agent type: ${request.agent_config.type}`);
+          }
+
+          const duration = Date.now() - executionStart;
+          const memoryUsed = this.estimateMemoryUsage();
+
+          // Create completion payload
+          const completionPayload: AgentExecutionCompletePayload = {
+            agent_id: request.agent_id,
+            result: output,
+            execution_time_ms: duration,
+            metadata: {
+              tokens_used: (output as { tokens_used?: number })?.tokens_used || 0,
+              cost: 0, // TODO: Calculate actual cost
+              memory_used: memoryUsed,
+              safety_checks_passed: true,
+            },
+          };
+
+          // Add span attributes for successful execution
+          span?.setAttribute("agent.execution.duration", duration);
+          span?.setAttribute("agent.execution.memory_used", memoryUsed);
+          span?.setAttribute("agent.execution.status", "success");
+
+          this.sendLogMessage(
+            "info",
+            `Agent ${request.agent_id} executed successfully in ${duration}ms`,
+          );
+
+          // Send completion response using envelope
+          const response = createAgentExecutionCompleteMessage(
+            envelope,
+            completionPayload,
+            this.createMessageSource(),
+          );
+
+          this.postMessage(response);
+        } catch (error) {
+          const duration = Date.now() - executionStart;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+
+          // Add span attributes for failed execution
+          span?.setAttribute("agent.execution.duration", duration);
+          span?.setAttribute("agent.execution.status", "error");
+          span?.setAttribute("agent.execution.error", errorMessage);
+
+          this.sendLogMessage(
+            "error",
+            `Agent ${request.agent_id} execution failed: ${errorMessage}`,
+          );
+
+          // Send error response using envelope
+          const errorResponse = createErrorResponse(
+            envelope,
+            {
+              code: "AGENT_EXECUTION_ERROR",
+              message: errorMessage,
+              retryable: true, // Agent execution errors may be retryable
+            },
+            this.createMessageSource(),
+            {
+              agent_id: request.agent_id,
+              execution_time_ms: duration,
+              metadata: {
+                memory_used: this.estimateMemoryUsage(),
+                safety_checks_passed: false,
+              },
+            },
+          );
+
+          this.postMessage(errorResponse);
+        }
+      },
+    );
+  }
+
+  private performSafetyChecks(request: AgentExecutePayload) {
     const checksStart = Date.now();
     const checks = [];
 
+    // Get environment from the request
+    const environment = request.environment as {
+      worker_config: {
+        memory_limit: number;
+        timeout: number;
+        allowed_permissions: string[];
+        isolation_level: string;
+      };
+      monitoring_config: {
+        log_level: string;
+        metrics_collection: boolean;
+        safety_checks: string[];
+        output_validation: boolean;
+      };
+    };
+
     // Memory limit check
-    if (request.environment.worker_config.memory_limit < 64) {
+    if (environment.worker_config?.memory_limit < 64) {
       throw new Error("Insufficient memory allocation");
     }
     checks.push("memory_limit");
@@ -225,14 +417,16 @@ class AgentExecutionWorker {
     }
 
     for (const permission of requiredPermissions) {
-      if (!request.environment.worker_config.allowed_permissions.includes(permission)) {
+      if (!environment.worker_config?.allowed_permissions?.includes(permission)) {
         throw new Error(`Missing required permission: ${permission}`);
       }
     }
     checks.push("permissions");
 
     // Environment safety checks
-    checks.push(...request.environment.monitoring_config.safety_checks);
+    if (environment.monitoring_config?.safety_checks) {
+      checks.push(...environment.monitoring_config.safety_checks);
+    }
 
     const checksDuration = Date.now() - checksStart;
     this.logger.debug(`All ${checks.length} safety checks passed in ${checksDuration}ms`, {
@@ -240,7 +434,7 @@ class AgentExecutionWorker {
     });
   }
 
-  private async executeLLMAgent(request: AgentExecutionRequest): Promise<any> {
+  private async executeLLMAgent(request: AgentExecutePayload): Promise<Record<string, unknown>> {
     const { model, prompts, parameters } = request.agent_config;
     const { task, input } = request;
 
@@ -249,7 +443,8 @@ class AgentExecutionWorker {
     }
 
     // Extract provider from parameters or default to anthropic
-    const provider = parameters.provider || "anthropic";
+    const params = parameters as Record<string, unknown> || {};
+    const provider = params.provider || "anthropic";
 
     // Log configuration details for debugging
     this.log(`LLM Agent Configuration - Provider: ${provider}, Model: ${model}`, "debug");
@@ -257,19 +452,22 @@ class AgentExecutionWorker {
     this.log(`Environment Config: ${JSON.stringify(request.environment.worker_config)}`, "debug");
 
     // Prepare prompt
-    const systemPrompt = prompts.system || "You are a helpful AI assistant.";
-    const userPrompt = this.buildUserPrompt(task, input, prompts);
+    const promptsObj = prompts as Record<string, string> || {};
+    const systemPrompt = promptsObj.system || "You are a helpful AI assistant.";
+    const userPrompt = this.buildUserPrompt(task, input, promptsObj);
 
     try {
       this.log(`Calling LLMProviderManager with provider: ${provider}, model: ${model}`, "debug");
 
       const result = await LLMProviderManager.generateText(userPrompt, {
-        provider,
-        model,
+        provider: provider as "anthropic" | "openai" | "google",
+        model: model as string,
         systemPrompt,
-        temperature: parameters.temperature,
-        maxTokens: parameters.max_tokens,
-        timeout: request.environment.worker_config.timeout,
+        temperature: params.temperature as number,
+        maxTokens: params.max_tokens as number,
+        timeout: (request.environment as {
+          worker_config: { timeout?: number };
+        }).worker_config?.timeout || 30000,
         operationContext: {
           operation: "agent_execution",
           agentId: request.agent_id,
@@ -301,12 +499,15 @@ class AgentExecutionWorker {
     }
   }
 
-  private async executeTempestAgent(request: AgentExecutionRequest): Promise<any> {
+  private async executeTempestAgent(
+    request: AgentExecutePayload,
+  ): Promise<Record<string, unknown>> {
     // For Tempest agents, we would load the specific agent from the catalog
     // For now, simulate the execution
     const { parameters } = request.agent_config;
-    const agentName = parameters.agent;
-    const version = parameters.version;
+    const params = parameters as Record<string, unknown> || {};
+    const agentName = params.agent;
+    const version = params.version;
 
     this.log(`Loading Tempest agent: ${agentName}@${version}`, "info");
 
@@ -324,9 +525,18 @@ class AgentExecutionWorker {
     };
   }
 
-  private async executeRemoteAgent(request: AgentExecutionRequest): Promise<any> {
+  private async executeRemoteAgent(request: AgentExecutePayload): Promise<Record<string, unknown>> {
     // Check network permission
-    if (!request.environment.worker_config.allowed_permissions.includes("network")) {
+    const environment = request.environment as {
+      worker_config: {
+        timeout?: number;
+        allowed_permissions?: string[];
+      };
+      monitoring_config: {
+        metrics_collection?: boolean;
+      };
+    };
+    if (!environment.worker_config?.allowed_permissions?.includes("network")) {
       throw new Error("Network access not permitted for this agent");
     }
 
@@ -336,14 +546,16 @@ class AgentExecutionWorker {
 
       // Extract remote agent configuration from the agent config
       const agentConfig = request.agent_config;
-      if (!agentConfig.endpoint) {
+      const endpoint = agentConfig.endpoint as string;
+      if (!endpoint) {
         throw new Error("Remote agent requires endpoint specification");
       }
 
       // Validate required remote agent configuration
-      const protocol = (agentConfig.parameters?.protocol || "acp") as "acp" | "a2a" | "custom";
+      const params = agentConfig.parameters as Record<string, unknown> || {};
+      const protocol = (params.protocol || "acp") as "acp" | "a2a" | "custom";
 
-      if (protocol === "acp" && !agentConfig.parameters?.agent_name) {
+      if (protocol === "acp" && !params.agent_name) {
         throw new Error("ACP remote agent requires 'agent_name' parameter");
       }
 
@@ -351,18 +563,27 @@ class AgentExecutionWorker {
       const remoteConfig = {
         type: "remote" as const,
         protocol: protocol,
-        endpoint: agentConfig.endpoint,
-        auth: agentConfig.auth,
-        timeout: request.environment.worker_config.timeout,
+        endpoint: endpoint,
+        auth: agentConfig.auth as {
+          type: "bearer" | "api_key" | "basic" | "none";
+          token_env?: string;
+          token?: string;
+          api_key_env?: string;
+          api_key?: string;
+          header?: string;
+          username?: string;
+          password?: string;
+        } | undefined,
+        timeout: environment.worker_config?.timeout || 30000,
         acp: {
-          agent_name: agentConfig.parameters?.agent_name,
-          default_mode: agentConfig.parameters?.default_mode || "sync",
-          timeout_ms: request.environment.worker_config.timeout,
-          max_retries: agentConfig.parameters?.max_retries || 3,
-          health_check_interval: agentConfig.parameters?.health_check_interval || 60000,
+          agent_name: params.agent_name as string,
+          default_mode: (params.default_mode as "sync" | "async" | "stream" | undefined) || "sync",
+          timeout_ms: environment.worker_config?.timeout || 30000,
+          max_retries: (params.max_retries as number) || 3,
+          health_check_interval: (params.health_check_interval as number) || 60000,
         },
         monitoring: {
-          enabled: request.environment.monitoring_config.metrics_collection,
+          enabled: environment.monitoring_config?.metrics_collection || false,
           circuit_breaker: {
             failure_threshold: 5,
             timeout_ms: 60000,
@@ -378,14 +599,14 @@ class AgentExecutionWorker {
 
       // Prepare execution request
       const executionRequest = {
-        agentName: remoteConfig.acp.agent_name,
+        agentName: remoteConfig.acp.agent_name as string,
         input: this.formatInputForRemoteAgent(request.input, request.task),
-        mode: (agentConfig.parameters?.execution_mode || "sync") as "sync" | "async" | "stream",
+        mode: (params.execution_mode || "sync") as "sync" | "async" | "stream",
         sessionId: `worker-${this.workerId}-${Date.now()}`,
         context: {
-          task: request.task.task,
-          mode: request.task.mode,
-          config: request.task.config,
+          task: request.task,
+          mode: "sync", // Default mode
+          config: {},
         },
       };
 
@@ -421,7 +642,7 @@ class AgentExecutionWorker {
   /**
    * Format input for remote agent based on task and protocol requirements
    */
-  private formatInputForRemoteAgent(input: any, task: any): string {
+  private formatInputForRemoteAgent(input: unknown, task: string): string {
     // For ACP protocol, we typically send string input
     if (typeof input === "string") {
       return input;
@@ -429,10 +650,8 @@ class AgentExecutionWorker {
 
     // Build a formatted input including task context
     const formattedInput = {
-      task: task.task,
-      mode: task.mode,
+      task: task,
       data: input,
-      config: task.config,
     };
 
     return JSON.stringify(formattedInput, null, 2);
@@ -441,20 +660,24 @@ class AgentExecutionWorker {
   /**
    * Extract the actual output from the remote agent result
    */
-  private extractOutputFromRemoteResult(result: any): any {
-    if (!result.output || result.output.length === 0) {
+  private extractOutputFromRemoteResult(result: unknown): unknown {
+    const resultObj = result as Record<string, unknown>;
+    if (!resultObj.output || (resultObj.output as unknown[]).length === 0) {
       return { message: "No output received from remote agent" };
     }
 
     // Try to extract text content from message parts
-    const textParts = result.output
-      .filter((part: any) => part.content_type === "text/plain" || !part.content_type)
-      .map((part: any) => part.content)
+    const textParts = (resultObj.output as unknown[])
+      .filter((part: unknown) => {
+        const partObj = part as Record<string, unknown>;
+        return partObj.content_type === "text/plain" || !partObj.content_type;
+      })
+      .map((part: unknown) => (part as Record<string, unknown>).content)
       .filter(Boolean);
 
     if (textParts.length === 1) {
       // Try to parse as JSON if it looks like JSON
-      const content = textParts[0];
+      const content = textParts[0] as string;
       try {
         return JSON.parse(content);
       } catch {
@@ -465,16 +688,16 @@ class AgentExecutionWorker {
     }
 
     // Fallback to raw output
-    return { raw_output: result.output };
+    return { raw_output: resultObj.output };
   }
 
-  private buildUserPrompt(task: any, input: any, prompts: Record<string, string>): string {
+  private buildUserPrompt(task: string, input: unknown, prompts: Record<string, string>): string {
     // Check if this is a memory-enhanced task (contains memory sections)
-    const hasMemoryContent = task.task && (
-      task.task.includes("## RELEVANT WORKSPACE KNOWLEDGE") ||
-      task.task.includes("## WORKSPACE RULES AND PROCEDURES") ||
-      task.task.includes("## CURRENT SESSION CONTEXT") ||
-      task.task.includes("## PREVIOUS EXECUTION CONTEXT")
+    const hasMemoryContent = task && (
+      task.includes("## RELEVANT WORKSPACE KNOWLEDGE") ||
+      task.includes("## WORKSPACE RULES AND PROCEDURES") ||
+      task.includes("## CURRENT SESSION CONTEXT") ||
+      task.includes("## PREVIOUS EXECUTION CONTEXT")
     );
 
     let userPrompt: string;
@@ -482,16 +705,11 @@ class AgentExecutionWorker {
     if (hasMemoryContent) {
       // For memory-enhanced tasks, use the enhanced prompt directly
       // and add input as a structured section
-      userPrompt = task.task;
+      userPrompt = task;
       userPrompt += `\n\n## INPUT DATA\n${JSON.stringify(input, null, 2)}`;
     } else {
       // For simple tasks, use the traditional format
-      userPrompt = `Task: ${task.task}\n\nInput: ${JSON.stringify(input, null, 2)}`;
-    }
-
-    // Add any task-specific prompts
-    if (task.mode && prompts[task.mode]) {
-      userPrompt += `\n\nMode-specific instructions (${task.mode}):\n${prompts[task.mode]}`;
+      userPrompt = `Task: ${task}\n\nInput: ${JSON.stringify(input, null, 2)}`;
     }
 
     // Add user prompt if provided
@@ -502,15 +720,7 @@ class AgentExecutionWorker {
     return userPrompt;
   }
 
-  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-    const timeout = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error(`Operation timed out after ${timeoutMs}ms`)), timeoutMs);
-    });
-
-    return Promise.race([promise, timeout]);
-  }
-
-  private async simulateWork(ms: number): Promise<void> {
+  private simulateWork(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -520,31 +730,89 @@ class AgentExecutionWorker {
     return Math.floor(Math.random() * 128) + 64; // 64-192 MB
   }
 
-  private async terminate(messageId: string) {
-    this.log("Worker terminating", "info");
+  private async handleTerminate(envelope: AtlasMessageEnvelope): Promise<void> {
+    return await AtlasTelemetry.withWorkerSpan(
+      {
+        operation: "terminate",
+        component: "agent",
+        traceHeaders: envelope.traceHeaders,
+        workerId: this.workerId,
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+      },
+      (span) => {
+        this.sendLogMessage("info", "Worker terminating");
 
-    this.postMessage({
-      type: "terminated",
-      id: messageId,
-      data: { worker_id: this.workerId, uptime: Date.now() - this.startTime },
-    });
+        // Send terminated response
+        const response = createResponseMessage(
+          envelope,
+          ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATED,
+          {
+            worker_id: this.workerId,
+            uptime: Date.now() - this.startTime,
+            session_id: this.sessionId,
+            workspace_id: this.workspaceId,
+          },
+          this.createMessageSource(),
+        );
 
-    // Close the worker
-    self.close();
+        span?.setAttribute("worker.uptime", Date.now() - this.startTime);
+        span?.setAttribute("worker.status", "terminated");
+
+        this.postMessage(response);
+
+        // Close the worker after a short delay to ensure message is sent
+        setTimeout(() => {
+          self.close();
+        }, 100);
+      },
+    );
   }
 
-  private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
+  private sendLogMessage(
+    level: "debug" | "info" | "warn" | "error",
+    message: string,
+    metadata?: Record<string, unknown>,
+  ) {
+    // Log locally first
     this.logger[level](message, {
       workerId: this.workerId,
       workerType: "agent-execution",
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+      ...metadata,
     });
 
-    // Send log to main thread for centralized logging
-    this.postMessage({
-      type: "log",
-      id: crypto.randomUUID(),
-      data: { level, message, timestamp: new Date().toISOString(), worker_id: this.workerId },
-    });
+    // Send log to main thread using envelope format
+    const logPayload: AgentLogPayload = {
+      agent_id: this.workerId, // Use workerId as agent identifier for logs
+      level,
+      message,
+      timestamp: Date.now(),
+      metadata: {
+        workerId: this.workerId,
+        workerType: "agent-execution",
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+        ...metadata,
+      },
+    };
+
+    const logMessage = createAgentLogMessage(
+      logPayload,
+      this.createMessageSource(),
+      {
+        channel: "broadcast", // Log messages are broadcast to all listeners
+        priority: level === "error" ? "high" : "low",
+      },
+    );
+
+    this.postMessage(logMessage);
+  }
+
+  // Legacy method for backward compatibility during transition
+  private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
+    this.sendLogMessage(level, message);
   }
 }
 

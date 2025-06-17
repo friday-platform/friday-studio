@@ -1,5 +1,15 @@
-import { ensureDir } from "https://deno.land/std@0.208.0/fs/mod.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
+
+export interface LogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  pid: number;
+  context?: LogContext;
+  traceId?: string;
+  spanId?: string;
+}
 
 export interface LogContext {
   workspaceId?: string;
@@ -9,7 +19,7 @@ export interface LogContext {
   workerType?: string;
   supervisorId?: string;
   agentName?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class AtlasLogger {
@@ -55,7 +65,7 @@ export class AtlasLogger {
     });
   }
 
-  private async writeLog(target: string, entry: any): Promise<void> {
+  private async writeLog(target: string, entry: LogEntry): Promise<void> {
     const line = JSON.stringify(entry) + "\n";
     const encoder = new TextEncoder();
     const data = encoder.encode(line);
@@ -88,8 +98,8 @@ export class AtlasLogger {
     level: string,
     message: string,
     context?: LogContext,
-  ): any {
-    const entry: any = {
+  ): LogEntry {
+    const entry: LogEntry = {
       timestamp: new Date().toISOString(),
       level,
       message,
@@ -101,10 +111,11 @@ export class AtlasLogger {
     }
 
     // Add OpenTelemetry trace context if available
-    const traceId = (globalThis as any).otelTraceId;
-    const spanId = (globalThis as any).otelSpanId;
-    if (traceId) entry.traceId = traceId;
-    if (spanId) entry.spanId = spanId;
+    const global = globalThis as Record<string, unknown>;
+    const traceId = global.otelTraceId;
+    const spanId = global.otelSpanId;
+    if (typeof traceId === "string") entry.traceId = traceId;
+    if (typeof spanId === "string") entry.spanId = spanId;
 
     return entry;
   }
@@ -186,7 +197,7 @@ export class AtlasLogger {
     }
   }
 
-  async close(): Promise<void> {
+  close(): void {
     if (this.fileWriter) {
       this.fileWriter.close();
     }

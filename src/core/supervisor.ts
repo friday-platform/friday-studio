@@ -796,80 +796,83 @@ Provide a structured analysis.`;
     signalData?: { signalConfig?: any; jobs?: any },
   ): any | null {
     try {
-      // Use passed signal data if available, fallback to stored config
-      const signalConfig = signalData?.signalConfig ||
-        this.mergedConfig?.workspace?.signals?.[signal.id];
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
       this.logger.debug(`[DEBUG] selectJobForSignal started`, {
         signalId: signal.id,
         signalDataProvided: !!signalData,
-        hasSignalConfig: !!signalConfig,
-        signalConfigJobs: signalConfig?.jobs?.length || 0,
+        signalDataJobs: signalData?.jobs ? Object.keys(signalData.jobs) : [],
+        mergedConfigJobs: this.mergedConfig?.jobs ? Object.keys(this.mergedConfig.jobs) : [],
         availableJobNames: Object.keys(availableJobs),
         payloadKeys: Object.keys(payload),
         mergedConfigAvailable: !!this.mergedConfig,
+        jobsSourceUsed: signalData?.jobs ? 'signalData' : (this.mergedConfig?.jobs ? 'mergedConfig' : 'none'),
       });
 
-      if (!signalConfig?.jobs) {
-        this.logger.debug(`[DEBUG] No jobs found in signal config`, {
+      // Find jobs that have triggers for this signal
+      const matchingJobs: Array<{ job: any; trigger: any }> = [];
+
+      for (const [jobName, jobSpec] of Object.entries(availableJobs)) {
+        const triggers = (jobSpec as any).triggers;
+        if (triggers) {
+          for (const trigger of triggers) {
+            if (trigger.signal === signal.id) {
+              matchingJobs.push({ job: jobSpec, trigger });
+            }
+          }
+        }
+      }
+
+      this.logger.debug(`[DEBUG] Found jobs with triggers for signal`, {
+        signalId: signal.id,
+        matchingJobsCount: matchingJobs.length,
+        matchingJobs: matchingJobs.map(({ job, trigger }) => ({
+          jobName: job.name,
+          hasCondition: !!trigger.condition,
+          condition: trigger.condition,
+        })),
+      });
+
+      if (matchingJobs.length === 0) {
+        this.logger.debug(`[DEBUG] No jobs found with triggers for signal`, {
           signalId: signal.id,
-          signalConfigExists: !!signalConfig,
-          signalConfigKeys: signalConfig ? Object.keys(signalConfig) : [],
         });
         return null;
       }
 
-      // Evaluate job conditions to find the first matching job
-      this.logger.debug(`[DEBUG] Evaluating job conditions`, {
-        jobCount: signalConfig.jobs.length,
-        jobs: signalConfig.jobs.map((j: any) => ({ name: j.name, hasCondition: !!j.condition })),
-      });
-
-      for (const [index, jobMapping] of signalConfig.jobs.entries()) {
-        this.logger.debug(`[DEBUG] Evaluating job ${index + 1}/${signalConfig.jobs.length}`, {
-          jobName: jobMapping.name,
-          condition: jobMapping.condition,
+      // Evaluate job trigger conditions to find the first matching job
+      for (const [index, { job, trigger }] of matchingJobs.entries()) {
+        this.logger.debug(`[DEBUG] Evaluating job trigger ${index + 1}/${matchingJobs.length}`, {
+          jobName: job.name,
+          condition: trigger.condition,
           payload,
         });
 
-        const conditionResult = this.evaluateJobCondition(jobMapping.condition, payload);
-        this.logger.debug(`[DEBUG] Job condition evaluation result`, {
-          jobName: jobMapping.name,
-          condition: jobMapping.condition,
+        const conditionResult = this.evaluateJobCondition(trigger.condition, payload);
+        this.logger.debug(`[DEBUG] Job trigger condition evaluation result`, {
+          jobName: job.name,
+          condition: trigger.condition,
           result: conditionResult,
         });
 
         if (conditionResult) {
-          // Get the job specification from loaded jobs
-          const jobSpec = availableJobs[jobMapping.name];
-          this.logger.debug(`[DEBUG] Job matched, checking specification`, {
-            jobName: jobMapping.name,
-            jobSpecExists: !!jobSpec,
-            jobSpecKeys: jobSpec ? Object.keys(jobSpec) : [],
+          this.logger.debug(`[DEBUG] Job selected successfully`, {
+            selectedJob: job.name,
+            jobSpec: {
+              name: job.name,
+              strategy: job.execution?.strategy,
+              agentCount: job.execution?.agents?.length || 0,
+              agents: job.execution?.agents?.map((a: any) => typeof a === "string" ? a : a.id) ||
+                [],
+            },
           });
-
-          if (jobSpec) {
-            this.logger.debug(`[DEBUG] Job selected successfully`, {
-              selectedJob: jobMapping.name,
-              jobSpec: {
-                name: jobSpec.name,
-                strategy: jobSpec.execution?.strategy,
-                agentCount: jobSpec.execution?.agents?.length || 0,
-                agents: jobSpec.execution?.agents?.map((a: any) =>
-                  typeof a === "string" ? a : a.id
-                ) ||
-                  [],
-              },
-            });
-            return jobSpec;
-          }
+          return job;
         }
       }
 
       this.logger.debug(`[DEBUG] No matching job found`, {
         signalId: signal.id,
-        totalJobsEvaluated: signalConfig.jobs.length,
+        totalJobsEvaluated: matchingJobs.length,
         availableJobs: Object.keys(availableJobs),
       });
       return null;
