@@ -248,10 +248,20 @@ export class WorkspaceServer {
 
   private server: any = null;
 
+  private isShuttingDown = false;
+
   private setupSignalHandlers() {
+    const serverId = crypto.randomUUID().slice(0, 8);
     const handleShutdown = async () => {
-      logger.info("Shutting down server gracefully", {
+      // Prevent duplicate shutdown execution
+      if (this.isShuttingDown) {
+        return;
+      }
+      this.isShuttingDown = true;
+
+      logger.info(`Server [${serverId}] shutting down gracefully`, {
         workspaceId: (this.runtime as any).workspace?.id,
+        serverId,
       });
 
       if (this.server && this.server.shutdown) {

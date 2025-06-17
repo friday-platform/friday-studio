@@ -297,7 +297,20 @@ const WorkspaceSignalConfigSchema = z.object({
       ]),
     )
     .min(1, "Signal must have at least one job mapping"),
-});
+  // Provider-specific configuration fields
+  source: z.string().optional(),
+  endpoint: z.string().optional(),
+  timeout_ms: z.number().positive().optional(),
+  retry_config: z.object({
+    max_retries: z.number().min(0).optional(),
+    retry_delay_ms: z.number().positive().optional(),
+  }).optional(),
+  // HTTP provider specific
+  path: z.string().optional(),
+  method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
+  // CLI provider specific
+  command: z.string().optional(),
+}).catchall(z.any()); // Allow additional provider-specific fields
 
 const NewWorkspaceConfigSchema = z.object({
   version: z.string(),

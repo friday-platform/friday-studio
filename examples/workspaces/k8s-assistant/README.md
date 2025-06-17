@@ -1,16 +1,28 @@
 # Kubernetes Assistant Workspace
 
 A demonstration of Atlas AI agent orchestration for Kubernetes management, combining multiple
-specialized agents to provide intelligent cluster operations and autonomous monitoring.
+specialized agents with **real-time event streaming** to provide intelligent cluster operations and autonomous monitoring.
 
 ## Overview
 
-This workspace shows how Atlas coordinates multiple AI agents for Kubernetes management:
+This workspace demonstrates Atlas's advanced capabilities including:
 
-1. **Main Agent** - Handles user requests and generates Kubernetes deployments
-2. **Evaluator Agent** - Validates and evaluates deployments
-3. **Monitor Agent** - Provides real-time event monitoring
-4. **Local Assistant** - Provides documentation and fallback support
+- **Multi-Agent Coordination** - Orchestrates specialized AI agents
+- **Stream Signal Providers** - Real-time event streaming from external monitor agents  
+- **Smart Event Routing** - Critical events trigger immediate responses, all events enable comprehensive monitoring
+- **Production-Ready Architecture** - Circuit breakers, retry logic, and health monitoring
+
+### Agent Architecture
+
+1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes operations
+2. **k8s-monitor-agent (Port 8082)** - Real-time event monitoring **configured as signal provider**
+3. **local-assistant** - LLM-based fallback agent for documentation and support
+
+### Signal Types
+
+1. **HTTP Signals** - Direct API endpoints for user requests
+2. **CLI Signals** - Command-line driven operations
+3. **🆕 Stream Signals** - Real-time event streaming from monitor agent via SSE
 
 ## Quick Start
 
@@ -93,26 +105,40 @@ The `workspace.yml` file defines:
 ### Available Signals
 
 1. **`http-k8s`** - Unified HTTP endpoint for all Kubernetes operations
-   - Path: `/signal/http-k8s`
-   - Method: POST
-   - Agents: k8s-main-agent → local-assistant (sequential)
+   - **Type**: HTTP Signal Provider
+   - **Path**: `/signal/http-k8s`
+   - **Method**: POST
+   - **Agents**: k8s-main-agent → local-assistant (sequential)
 
 2. **`cli-k8s`** - CLI interface for direct operations
-   - Command: `k8s`
-   - Agents: k8s-main-agent only
+   - **Type**: CLI Signal Provider
+   - **Command**: `k8s`
+   - **Agents**: k8s-main-agent only
 
-3. **`k8s-events`** - Kubernetes event monitoring (streaming)
-   - Source: k8s-monitor-agent
-   - Agents: k8s-main-agent → local-assistant (sequential)
+3. **🆕 `k8s-events`** - Real-time Kubernetes event streaming
+   - **Type**: Stream Signal Provider
+   - **Source**: k8s-monitor-agent via SSE endpoint (`/events/stream`)
+   - **Endpoint**: `http://localhost:8082`
+   - **Event Types**: Pod failures, deployment issues, node problems
+   - **Routing**: Critical events → main agent, all events → Atlas monitoring
+   - **Agents**: k8s-main-agent → local-assistant (sequential)
+   - **Filters**: Configurable by resource type and event severity
 
 ## How It Works
 
+### User-Initiated Operations (HTTP/CLI Signals)
 1. **Signal Triggered** - User sends request via HTTP or CLI
-2. **Main Agent Processes** - Analyzes request using ReAct framework
-3. **Evaluator Validates** - Checks deployment configuration
-4. **Monitor Watches** - Observes cluster events in real-time
-5. **Local Assistant Supports** - Provides documentation and fallback
-6. **Memory Updates** - Stores successful patterns and resolutions
+2. **Main Agent Processes** - Analyzes request using ReAct framework  
+3. **Local Assistant Supports** - Provides documentation and fallback
+4. **Memory Updates** - Stores successful patterns and resolutions
+
+### Real-Time Event Monitoring (Stream Signals)
+1. **Monitor Agent Watches** - k8s-monitor-agent observes cluster events in real-time
+2. **Smart Event Routing**:
+   - **Critical Events** → Sent directly to main agent for immediate response
+   - **All Events** → Streamed to Atlas via SSE for comprehensive monitoring
+3. **Atlas Processing** - Stream signal triggers k8s-main-agent → local-assistant workflow
+4. **Unified Response** - Coordinated handling prevents duplicate actions
 
 ## Available Endpoints
 
@@ -145,14 +171,32 @@ curl -X POST http://localhost:3001/k8s\
 curl -X POST http://localhost:3001/k8s\
 -H "Content-Type: application/json"\
 -d '{ "message": "Check why my deployment is not ready" }'
+```
 
-````
+### Stream Signal Testing (Real-time Events)
+
+The k8s-events stream signal automatically processes Kubernetes events. To test:
+
+```bash
+# Create a failing deployment to trigger events
+kubectl create deployment test-fail --image=invalid:latest
+
+# Monitor Atlas logs to see stream signal processing
+atlas logs --follow
+
+# Check SSE endpoint directly (optional)
+curl -H "Accept: text/event-stream" http://localhost:8082/events/stream
+```
+
 ### Health Check
 
 ```bash
 # Check workspace health
 curl http://localhost:3001/health
-````
+
+# Check monitor agent health
+curl http://localhost:8082/health
+```
 
 ## CLI Usage
 

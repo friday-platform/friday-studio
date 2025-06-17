@@ -3,49 +3,45 @@ version: "1.0"
 workspace:
   id: "a8c4d759-2e5b-4f3c-9a1d-8c7b3e6f2a9d"
   name: "k8s-assistant"
-  description: "Atlas workspace for Kubernetes management using AI-powered agents via ACP protocol"
+  description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
 
-# Remote agents configuration pointing to k8s main agent
+# Agent Configuration
+# This workspace uses a multi-agent architecture:
+# - k8s-main-agent: Primary AI agent for K8s operations (port 8080)
+# - k8s-monitor-agent: Event monitoring agent (port 8082) - configured as signal provider
+# - local-assistant: Fallback LLM agent for documentation and support
 agents:
-  # Main k8s agent with ReAct framework
+  # Primary Kubernetes management agent with ReAct framework
   k8s-main-agent:
     type: "remote"
     protocol: "acp"
     endpoint: "http://localhost:8080"
     purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, and cluster operations"
 
-    # No authentication needed for local development
-    # auth:
-    #   type: "bearer"
-    #   token_env: "K8S_AGENT_TOKEN"
-
-    # ACP-specific settings
+    # ACP-specific settings for reliable K8s operations
     acp:
-      agent_name: "k8s-deployment-manager" # Name of agent on k8s server
-      default_mode: "sync" # sync mode for reliable k8s operations
-      timeout_ms: 120000 # 120 second timeout for k8s operations
-      max_retries: 2 # Retry failed requests 2 times
-      health_check_interval: 30000 # Health check every 30 seconds
+      agent_name: "k8s-deployment-manager"
+      default_mode: "sync"               # Synchronous mode for reliable operations
+      timeout_ms: 120000                 # 2-minute timeout for complex operations
+      max_retries: 2                     # Retry failed requests
+      health_check_interval: 30000       # Health check every 30 seconds
 
-    # Schema validation (optional)
-    schema:
-      validate_input: false
-      validate_output: false
-
-    # Monitoring and reliability
+    # Production monitoring and reliability
     monitoring:
       enabled: true
       circuit_breaker:
-        failure_threshold: 3 # Open circuit after 3 failures
-        timeout_ms: 120000 # Stay open for 2 minutes
-        half_open_max_calls: 2 # Test with 2 calls when half-open
+        failure_threshold: 3             # Open circuit after 3 failures
+        timeout_ms: 120000               # Stay open for 2 minutes
+        half_open_max_calls: 2           # Test with 2 calls when half-open
 
-  # Monitor agent for Kubernetes events
+  # Monitor agent configured as both agent and signal provider
+  # NOTE: This agent is primarily used as a signal provider via the k8s-events stream signal
+  # Agent configuration here is for fallback and manual operations only
   k8s-monitor-agent:
     type: "remote"
     protocol: "acp"
     endpoint: "http://localhost:8082"
-    purpose: "Real-time Kubernetes event monitoring and signal generation"
+    purpose: "Real-time Kubernetes event monitoring and signal generation (primarily used as signal provider)"
     acp:
       agent_name: "k8s-event-monitor"
       default_mode: "stream"
@@ -53,7 +49,7 @@ agents:
     monitoring:
       enabled: true
       circuit_breaker:
-        failure_threshold: 5
+        failure_threshold: 5             # More tolerant for monitoring agent
         timeout_ms: 30000
         half_open_max_calls: 1
 
@@ -66,7 +62,11 @@ agents:
     prompts:
       system: "You are a helpful Kubernetes assistant that works alongside the main k8s agent. You can help with documentation, explanations, and provide fallback support when the main agent is unavailable."
 
-# Simplified signal configurations
+# Signal Configuration
+# Atlas supports multiple signal types for different interaction patterns:
+# - HTTP signals: For direct API calls and webhook integrations
+# - CLI signals: For command-line driven operations  
+# - Stream signals: For real-time event streaming (NEW: monitor agent integration)
 signals:
   # Single HTTP endpoint for all k8s operations
   http-k8s:
@@ -95,26 +95,33 @@ signals:
           agents:
             - id: "k8s-main-agent"
 
-  # Monitor agent signals
+  # Monitor agent signals - Real-time K8s event streaming
   k8s-events:
-    description: "Kubernetes event monitoring signals"
+    description: "Real-time Kubernetes event monitoring from external monitor agent"
     provider: "stream"
     source: "k8s-monitor-agent"
+    endpoint: "http://localhost:8082"
+    timeout_ms: 120000  # 2 minutes - much longer than keepalive interval
+    retry_config:
+      max_retries: 3
+      retry_delay_ms: 2000
     jobs:
       - name: "handle-k8s-event"
-        description: "Handle Kubernetes events and trigger appropriate actions"
+        description: "Process Kubernetes events from monitor agent"
         execution:
-          strategy: "sequential"
+          strategy: "sequential"  # Process events one at a time for reliability
           agents:
-            - id: "k8s-main-agent"
-            - id: "local-assistant"
-        filters:
-          - type: "pod"
-            events: ["Failed", "CrashLoopBackOff", "ImagePullBackOff"]
-          - type: "deployment"
-            events: ["Failed", "ProgressDeadlineExceeded"]
-          - type: "service"
-            events: ["Failed", "LoadBalancerFailed"]
+            - id: "k8s-main-agent"      # Primary handler for K8s operations
+            - id: "local-assistant"     # Fallback and documentation support
+        # filters: # Removed - Accept ALL events from monitor agent
+        #   - type: "pod"
+        #     events: ["Failed", "BackOff", "Unhealthy", "Killing", "FailedScheduling", "FailedMount"]
+        #   - type: "deployment"
+        #     events: ["Failed", "ProgressDeadlineExceeded"]
+        #   - type: "service"
+        #     events: ["Failed", "LoadBalancerFailed"]
+        #   - type: "node"
+        #     events: ["NodeNotReady", "NodePressure", "Rebooted"]
 
 # Runtime configuration
 runtime:
