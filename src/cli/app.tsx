@@ -7,7 +7,6 @@ import { AgentCommand } from "./commands/agent.tsx";
 import { LogsCommand } from "./commands/logs.tsx";
 import TUICommand from "./commands/tui.tsx";
 import HelpCommand from "./commands/help.tsx";
-import WorkspacesCommand from "./commands/workspaces.tsx";
 import DefineCommand from "./commands/define.tsx";
 import InteractiveCommand from "./commands/interactive.tsx";
 
@@ -52,11 +51,8 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "tui":
       return <TUICommand flags={flags} />;
 
-    case "workspaces":
-      return <WorkspacesCommand />;
-
     case "define":
-      return <DefineCommand flags={flags} />;
+      return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
 
     default:
       return (
