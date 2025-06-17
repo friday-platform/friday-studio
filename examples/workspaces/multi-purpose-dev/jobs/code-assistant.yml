@@ -1,0 +1,59 @@
+name: code-assistant
+description: Advanced code analysis and development assistance using LLM capabilities
+type: llm
+version: "1.0.0"
+
+configuration:
+  model: "claude-3-5-sonnet-20241022"
+  max_tokens: 4000
+  temperature: 0.1
+  
+  tools:
+    - name: "code_analyzer"
+      description: "Analyze code structure and quality"
+    - name: "documentation_generator"
+      description: "Generate code documentation"
+    - name: "refactoring_assistant"
+      description: "Suggest code improvements"
+    - name: "test_generator"
+      description: "Generate unit tests"
+
+capabilities:
+  - name: "code_analysis"
+    description: "Analyze code structure, patterns, and quality"
+    tools:
+      - analyze_code_structure
+      - detect_code_smells
+      - suggest_improvements
+      - check_best_practices
+  
+  - name: "documentation_generation"
+    description: "Generate comprehensive code documentation"
+    tools:
+      - generate_api_docs
+      - create_readme
+      - write_inline_comments
+      - create_diagrams
+  
+  - name: "development_assistance"
+    description: "Assist with development tasks and problem-solving"
+    tools:
+      - suggest_solutions
+      - debug_issues
+      - generate_boilerplate
+      - explain_code_concepts
+
+prompts:
+  system: |
+    You are an advanced code assistant that helps developers with analysis, documentation, and development tasks.
+    You can analyze code structure, generate documentation, suggest improvements, and assist with debugging.
+    Always provide clear explanations and follow programming best practices.
+  
+  user: |
+    Assist with code-related tasks as requested. Provide detailed analysis, clear explanations,
+    and actionable suggestions. Focus on code quality, maintainability, and best practices.
+
+execution:
+  timeout: 180
+  retry_count: 2
+  error_handling: "graceful"
