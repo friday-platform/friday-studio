@@ -477,7 +477,7 @@ const workspaceRuntimeMachine = setup({
 
               // Initialize the stream connection
               await runtimeSignal.initialize({
-                id: signalId, // Pass the actual signal ID (k8s-events), not workspace ID
+                id: signalId, // Pass the actual signal ID from configuration, not workspace ID
                 processSignal: async (signalId: string, payload: any) => {
                   // Process the signal through the runtime
                   const signalConfig = context.mergedConfig?.workspace.signals?.[signalId];
@@ -513,9 +513,18 @@ const workspaceRuntimeMachine = setup({
 
               logger.info(`Stream signal initialized successfully: ${signalId}`);
             } catch (error) {
-              logger.error(`Failed to initialize stream signal: ${signalId}`, {
-                error: error instanceof Error ? error.message : String(error),
-              });
+              // Extract friendly error message if available
+              const errorMessage = error instanceof Error ? error.message : String(error);
+
+              // If it's a friendly error message (starts with ❌), just log the failure without duplicating the message
+              if (errorMessage.startsWith("❌")) {
+                logger.error(`Failed to initialize stream signal: ${signalId}`);
+                // Friendly message is already logged by the stream signal provider
+              } else {
+                logger.error(`Failed to initialize stream signal: ${signalId}`, {
+                  error: errorMessage,
+                });
+              }
             }
           }
         }

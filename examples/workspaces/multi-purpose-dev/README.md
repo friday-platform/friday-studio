@@ -162,30 +162,38 @@ SENTRY_AUTH_TOKEN=your_sentry_token
 
 ### Quick Start
 
-1. **Initialize the workspace:**
+1. **Setup the workspace:**
 
 ```bash
 cd examples/workspaces/multi-purpose-dev
-atlas init
+./setup.sh
 ```
 
-2. **Start the workspace server:**
+2. **Setup MCP servers (required for agents):**
 
 ```bash
-atlas workspace serve
+./setup-mcp-servers.sh
 ```
 
-3. **Test with a simple signal:**
+3. **Start MCP servers:**
 
 ```bash
-# Request a code review
-atlas signal trigger code-review-request '{"files": ["src/main.ts", "src/utils.ts"]}'
+cd mcp-servers
+./start-all-mcp.sh
+```
 
-# Create a new repository
-atlas signal trigger create-repository '{"repository_name": "my-new-project", "description": "A test project"}'
+4. **Start the workspace server:**
 
-# Analyze database performance
-atlas signal trigger database-analysis-request '{"query": "SELECT * FROM users WHERE active = true", "analysis_type": "performance"}'
+```bash
+cd ..
+./start-workspace.sh
+```
+
+5. **Test with signals:**
+
+```bash
+# In another terminal
+./test-signals.sh
 ```
 
 ## Usage Examples
@@ -343,36 +351,98 @@ Each agent includes robust error handling:
 3. Configure execution strategies (sequential/parallel)
 4. Add error handling and notifications
 
+## MCP Servers Management
+
+### Installed MCP Servers
+
+The setup script installs these MCP servers:
+
+1. **GitHub MCP Server** - Official GitHub integration
+2. **Filesystem MCP Server** - File system operations
+3. **PostgreSQL MCP Server** - Database interactions
+4. **Fetch MCP Server** - Web content fetching
+5. **Slack MCP Server** - Team communication
+6. **Memory MCP Server** - Persistent knowledge storage
+7. **AWS MCP Server** - Cloud infrastructure (community/placeholder)
+8. **CircleCI MCP Server** - CI/CD monitoring (placeholder)
+9. **Sentry MCP Server** - Error tracking (placeholder)
+
+### MCP Server Commands
+
+```bash
+# Setup all MCP servers
+./setup-mcp-servers.sh
+
+# Start all MCP servers
+cd mcp-servers && ./start-all-mcp.sh
+
+# Stop all MCP servers
+cd mcp-servers && ./stop-all-mcp.sh
+
+# Check MCP server status
+ps aux | grep mcp
+
+# View MCP server logs
+tail -f mcp-servers/logs/*.log
+```
+
+### MCP Server Configuration
+
+Some servers require additional configuration:
+
+- **AWS MCP**: Replace placeholder with actual AWS MCP implementation
+- **CircleCI MCP**: Replace with real CircleCI MCP server
+- **Sentry MCP**: Replace with actual Sentry MCP implementation
+
 ## Troubleshooting
 
 ### Common Issues
 
 1. **Agent Connection Failures**
-   - Verify MCP server endpoints
-   - Check authentication credentials
-   - Review network connectivity
+
+   - Ensure MCP servers are running: `ps aux | grep mcp`
+   - Check MCP server logs: `tail -f mcp-servers/logs/*.log`
+   - Verify credentials in `.env` file
+   - Check network connectivity to MCP endpoints
 
 2. **Signal Processing Errors**
+
    - Validate signal schemas
-   - Check trigger conditions
+   - Check trigger conditions (removed problematic conditions)
    - Review agent configurations
+   - Ensure all referenced agents are defined
 
 3. **Performance Issues**
+
    - Monitor agent execution times
    - Check resource usage
    - Review parallel execution limits
+   - Monitor MCP server response times
+
+4. **MCP Server Issues**
+   - Check if Node.js is installed
+   - Verify environment variables are loaded
+   - Review individual MCP server logs
+   - Restart failed MCP servers individually
 
 ### Debugging Commands
 
 ```bash
 # Check workspace status
-atlas ps
+./test-signals.sh
 
 # Validate configuration
-atlas config validate
+./setup.sh
 
-# View recent logs
+# View workspace logs
 tail -f ~/.atlas/logs/workspaces/multi-purpose-dev.log
+
+# Check MCP servers
+ps aux | grep mcp
+cd mcp-servers && ls -la logs/
+
+# Restart MCP servers
+cd mcp-servers && ./stop-all-mcp.sh && ./start-all-mcp.sh
 ```
 
 ## Support and Resources

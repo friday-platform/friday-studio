@@ -10,6 +10,12 @@ import { BaseAgent } from "./agents/base-agent.ts";
 import { Session, SessionIntent, SessionPlan } from "./session.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
+import {
+  type AgentInfo,
+  type EnhancedTask,
+  type SignalProcessingConfig,
+  SignalProcessor,
+} from "./signal-processing/index.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -214,6 +220,7 @@ export class WorkspaceSupervisor extends BaseAgent
   private sessions: Map<string, IWorkspaceSession> = new Map();
   private stateMachine: ReturnType<typeof createSupervisorMachine>;
   private stateActor: any; // XState actor type
+  private signalProcessor: SignalProcessor;
 
   constructor(workspaceId: string, config: any = {}) {
     // Provide default memoryConfig if not provided
@@ -302,6 +309,9 @@ export class WorkspaceSupervisor extends BaseAgent
 You have access to the full workspace context and configuration. Create structured plans using Agentic Behavior Trees (ABT) to coordinate agent activities.`,
       user: config.prompts?.user || "",
     };
+
+    // Initialize signal processor with configuration
+    this.signalProcessor = new SignalProcessor(this.createSignalProcessingConfig());
 
     // Initialize the state machine
     this.stateMachine = createSupervisorMachine(this);
@@ -949,15 +959,31 @@ Provide a structured analysis.`;
     ];
   }
 
-  generateExecutionPlan(
+  async generateExecutionPlan(
     signal: IWorkspaceSignal,
     payload: any,
-  ): SessionPlan {
-    const intent = this.createSessionIntent(signal, payload);
+  ): Promise<SessionPlan> {
+    // Use enhanced signal analysis first
+    try {
+      const enhancedResult = await this.analyzeSignalEnhanced(signal, payload);
 
-    // For now, skip LLM call and use default plan
-    // TODO: Implement proper LLM integration
-    this.log("Using default plan (LLM integration pending)");
+      if (enhancedResult.enhancedTask) {
+        // Create plan based on enhanced task
+        return this.createEnhancedPlan(
+          signal,
+          payload,
+          enhancedResult.intent,
+          enhancedResult.enhancedTask,
+        );
+      }
+    } catch (error) {
+      this.logger.warn("Enhanced plan generation failed, falling back to legacy", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Fallback to legacy plan generation
+    const intent = this.createSessionIntent(signal, payload);
     return this.getDefaultPlan(signal, payload, intent);
   }
 
@@ -1213,6 +1239,244 @@ Provide a structured analysis.`;
   processSignalInterrupts(): void {
     // TODO: Implement signal interrupt processing
     this.log("Processing signal interrupts");
+  }
+
+  // Create enhanced execution plan from task
+  private createEnhancedPlan(
+    signal: IWorkspaceSignal,
+    payload: any,
+    intent: SessionIntent,
+    task: EnhancedTask,
+  ): SessionPlan {
+    // Determine agent to use from intent
+    const selectedAgent = intent.suggestedAgents?.[0] || "local-assistant";
+
+    return {
+      intentId: intent.id,
+      phases: [
+        {
+          id: "enhanced-execution",
+          name: task.description,
+          agents: [
+            {
+              agentId: selectedAgent,
+              task:
+                `${task.action.type} ${task.action.target.type} ${task.action.target.identifier}: ${task.data.issue.description}`,
+              expectedOutputs: ["task_result"],
+            },
+          ],
+          executionStrategy: "sequential",
+        },
+      ],
+      estimatedDuration: this.estimateExecutionTime(task.estimatedComplexity),
+      reasoning:
+        `Enhanced processing identified ${task.data.issue.type} requiring ${task.action.type} action by ${selectedAgent}`,
+    };
+  }
+
+  // Estimate execution time based on complexity
+  private estimateExecutionTime(complexity: string): number {
+    switch (complexity) {
+      case "simple":
+        return 60000; // 1 minute
+      case "moderate":
+        return 180000; // 3 minutes
+      case "complex":
+        return 300000; // 5 minutes
+      default:
+        return 120000; // 2 minutes
+    }
+  }
+
+  // Create signal processing configuration from workspace settings
+  private createSignalProcessingConfig(): SignalProcessingConfig {
+    // Default patterns for generic signal types - platform-agnostic
+    const defaultPatterns = [
+      {
+        name: "high_severity_warning",
+        domain: "general",
+        triggers: [
+          { field: "severity", value: "Warning" },
+          { field: "event.type", value: "Warning" },
+          { field: "level", value: "warning" },
+        ],
+        category: "warning",
+        severity: "medium" as const,
+        actionType: "investigate" as const,
+        urgency: 6,
+        entityExtraction: [
+          { name: "resource_name", field: "object.name" },
+          { name: "resource_type", field: "object.type" },
+          { name: "message", field: "event.message" },
+        ],
+      },
+      {
+        name: "critical_failure",
+        domain: "infrastructure",
+        triggers: [
+          { field: "event.reason", value: "Failed" },
+          { field: "status", value: "error" },
+          { field: "severity", value: "Critical" },
+        ],
+        category: "critical_error",
+        severity: "high" as const,
+        actionType: "fix" as const,
+        urgency: 9,
+        entityExtraction: [
+          { name: "resource_name", field: "object.name", required: true },
+          { name: "scope", field: "scope", required: false },
+          { name: "error_reason", field: "event.reason", required: true },
+          { name: "resource_type", field: "object.type" },
+        ],
+      },
+    ];
+
+    // Default task templates - platform-agnostic
+    const defaultTemplates = [
+      {
+        name: "fix_infrastructure_issue",
+        descriptionTemplate: "Fix {error_reason} for {resource_type} {resource_name} in {scope}",
+        actionType: "fix",
+        complexity: "moderate" as const,
+        requiredCapabilities: ["infrastructure", "fix"],
+        dataExtraction: {
+          requiredFields: ["resource_name", "error_reason"],
+          optionalFields: ["scope", "resource_type"],
+          transformations: {},
+        },
+      },
+      {
+        name: "investigate_warning",
+        descriptionTemplate: "Investigate {resource_type} {resource_name} warning",
+        actionType: "investigate",
+        complexity: "simple" as const,
+        requiredCapabilities: ["general", "investigate"],
+        dataExtraction: {
+          requiredFields: ["resource_name", "message"],
+          optionalFields: ["resource_type", "scope"],
+          transformations: {},
+        },
+      },
+    ];
+
+    // Default agent routing rules - platform-agnostic
+    const defaultRouting = [
+      {
+        capability: "infrastructure",
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
+      },
+      {
+        capability: "fix",
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
+      },
+      {
+        capability: "investigate",
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
+      },
+      {
+        capability: "general",
+        preferredAgents: ["local-assistant"],
+        fallbackAgents: [],
+      },
+    ];
+
+    return {
+      patterns: defaultPatterns,
+      taskTemplates: defaultTemplates,
+      agentRouting: defaultRouting,
+    };
+  }
+
+  // Enhanced analyzeSignal method using signal processor
+  async analyzeSignalEnhanced(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<{ intent: SessionIntent; enhancedTask?: EnhancedTask }> {
+    const startTime = Date.now();
+
+    try {
+      // Get available agents
+      const availableAgents: AgentInfo[] = this.getAllAgentMetadata().map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        type: agent.type,
+        metadata: agent,
+      }));
+
+      // Process signal through enhanced pipeline
+      const processingResult = await this.signalProcessor.processSignal(payload, availableAgents);
+
+      // Create session intent from enhanced task
+      const intent: SessionIntent = {
+        id: crypto.randomUUID(),
+        signal: {
+          type: signal.id,
+          data: payload,
+          metadata: {
+            provider: signal.provider.name,
+            timestamp: new Date().toISOString(),
+            enhancedTask: processingResult.task,
+          },
+        },
+        goals: [processingResult.task.description],
+        constraints: {
+          timeLimit: 300000, // 5 minutes default
+        },
+        suggestedAgents: processingResult.selectedAgent
+          ? [processingResult.selectedAgent.id]
+          : availableAgents.map((a) => a.id),
+        executionHints: {
+          strategy: "deterministic",
+          parallelism: false,
+          maxIterations: 3,
+        },
+        userPrompt: this.createEnhancedUserPrompt(processingResult.task),
+      };
+
+      const processingTime = Date.now() - startTime;
+      this.logger.info("Enhanced signal analysis completed", {
+        processingTime,
+        taskDescription: processingResult.task.description,
+        selectedAgent: processingResult.selectedAgent?.id,
+        priority: processingResult.task.priority,
+      });
+
+      return { intent, enhancedTask: processingResult.task };
+    } catch (error) {
+      this.logger.warn("Enhanced signal processing failed, falling back to legacy", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      // Fallback to legacy analysis
+      const intent = await this.analyzeSignal(signal, payload);
+      return { intent };
+    }
+  }
+
+  // Create enhanced user prompt from task
+  private createEnhancedUserPrompt(task: EnhancedTask): string {
+    return `Task: ${task.description}
+
+Action Required: ${task.action.type}
+Target: ${task.action.target.type} "${task.action.target.identifier}"
+
+Issue Details:
+- Type: ${task.data.issue.type}
+- Description: ${task.data.issue.description}
+- Priority: ${task.priority}/10
+- Complexity: ${task.estimatedComplexity}
+
+Context:
+- Environment: ${task.data.context.environment}
+- Source: ${task.data.context.source}
+- Timestamp: ${task.data.context.timestamp}
+
+Required Capabilities: ${task.requiredCapabilities.join(", ")}
+
+Please ${task.action.type} the ${task.action.target.type} based on the provided information.`;
   }
 
   // Cleanup method
