@@ -20,8 +20,8 @@ export interface MemoryConsolidationStrategy {
 }
 
 export interface CrossScopeMemorySync {
-  syncUp(childScope: IAtlasScope, memories: CoALAMemoryEntry[]): Promise<void>;
-  syncDown(parentScope: IAtlasScope, query: CoALAMemoryQuery): Promise<CoALAMemoryEntry[]>;
+  syncUp(childScope: IAtlasScope, memories: CoALAMemoryEntry[]): void;
+  syncDown(parentScope: IAtlasScope, query: CoALAMemoryQuery): CoALAMemoryEntry[];
   filterForScope(memories: CoALAMemoryEntry[], targetScope: IAtlasScope): CoALAMemoryEntry[];
 }
 
@@ -68,7 +68,7 @@ export class WorkspaceMemoryConsolidator
   }
 
   // Cross-Scope Memory Sync
-  async syncUp(childScope: IAtlasScope, memories: CoALAMemoryEntry[]): Promise<void> {
+  syncUp(childScope: IAtlasScope, memories: CoALAMemoryEntry[]): void {
     // Consolidate session memories up to workspace level
     const consolidationCandidates = memories.filter((memory) => this.shouldConsolidate(memory));
 
@@ -97,7 +97,7 @@ export class WorkspaceMemoryConsolidator
     }
   }
 
-  async syncDown(parentScope: IAtlasScope, query: CoALAMemoryQuery): Promise<CoALAMemoryEntry[]> {
+  syncDown(parentScope: IAtlasScope, query: CoALAMemoryQuery): CoALAMemoryEntry[] {
     // Provide relevant workspace memories to session
     const workspaceMemories = this.workspaceMemory.queryMemories({
       ...query,
@@ -203,7 +203,7 @@ export class WorkspaceMemoryConsolidator
   }
 
   // Cleanup and maintenance
-  async performMaintenance(): Promise<void> {
+  performMaintenance(): void {
     // Detect and store new patterns
     const patterns = this.detectPatterns();
     for (const pattern of patterns) {
@@ -224,8 +224,8 @@ export class WorkspaceMemoryConsolidator
     }
 
     // Trigger memory consolidation and pruning
-    await this.workspaceMemory.reflect();
-    await this.workspaceMemory.consolidate();
-    await this.workspaceMemory.prune();
+    this.workspaceMemory.reflect();
+    this.workspaceMemory.consolidate();
+    this.workspaceMemory.prune();
   }
 }

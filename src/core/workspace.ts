@@ -5,7 +5,6 @@ import type {
   IWorkspaceMember,
   IWorkspaceSignal,
   IWorkspaceSource,
-  IWorkspaceSupervisor,
   IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";

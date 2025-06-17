@@ -270,27 +270,6 @@ const JobExecutionSchema = z.object({
   ),
 });
 
-// Inline job specification schema
-const InlineJobSchema = z.object({
-  name: z.string(),
-  condition: z.string().optional(),
-  description: z.string().optional(),
-  execution: JobExecutionSchema,
-});
-
-// Job reference schema (pointing to external file)
-const JobReferenceSchema = z.object({
-  name: z.string(),
-  condition: z.string().optional(),
-  job: z.string(),
-});
-
-// Top-level job reference schema (pointing to job in top-level jobs section)
-const TopLevelJobReferenceSchema = z.object({
-  job: z.string(), // Reference to job name in top-level jobs section
-  condition: z.string().optional(),
-});
-
 // Trigger specification schema for job-owns-relationship
 const TriggerSpecificationSchema = z.object({
   signal: z.string(), // Signal name this job listens to
@@ -437,7 +416,7 @@ export class ConfigLoader {
     const workspaceConfig = await this.loadWorkspaceConfig();
 
     // Load all job specifications
-    const jobs = await this.loadJobSpecs(workspaceConfig);
+    const jobs = this.loadJobSpecs(workspaceConfig);
 
     // Validate merged configuration
     this.validateConfig(atlasConfig, workspaceConfig, jobs);
@@ -506,9 +485,9 @@ export class ConfigLoader {
     }
   }
 
-  private async loadJobSpecs(
+  private loadJobSpecs(
     workspaceConfig: NewWorkspaceConfig,
-  ): Promise<Record<string, JobSpecification>> {
+  ): Record<string, JobSpecification> {
     const jobs: Record<string, JobSpecification> = {};
 
     // Load jobs from top-level jobs section
@@ -525,7 +504,6 @@ export class ConfigLoader {
         const normalizedJobSpec: JobSpecification = {
           name: jobName, // Use the key as the name
           description: jobSpec.description || `Top-level job: ${jobName}`,
-          triggers: jobSpec.triggers, // Include triggers for signal-to-job mapping
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,

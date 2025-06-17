@@ -166,7 +166,10 @@ export class WorkspaceRuntime {
         }
 
         // Check if we're in a valid state to process signals
-        if (state.value !== "ready" && state.value !== "processing" && state.value !== "initializingStreams") {
+        if (
+          state.value !== "ready" && state.value !== "processing" &&
+          state.value !== "initializingStreams"
+        ) {
           // If uninitialized, initialize first
           if (state.value === "uninitialized") {
             this.stateMachine.send({ type: "INITIALIZE" });
@@ -203,6 +206,7 @@ export class WorkspaceRuntime {
         // Create session
         const session = new Session(this.workspace.id, {
           triggers: [signal],
+          // deno-lint-ignore require-await
           callback: async (result) => {
             logger.info(`Session completed`, {
               workspaceId: this.workspace.id,
@@ -225,7 +229,7 @@ export class WorkspaceRuntime {
         const traceHeaders = await AtlasTelemetry.createTraceHeaders();
 
         // Send task to supervisor for processing
-        const taskResult = await this.workerManager.sendTask(
+        await this.workerManager.sendTask(
           supervisorId,
           taskId,
           {
@@ -256,7 +260,7 @@ export class WorkspaceRuntime {
   /**
    * Wait for specific states
    */
-  private async waitForState(
+  private waitForState(
     targetStates: string[],
     timeout = 30000,
   ): Promise<void> {
@@ -370,7 +374,7 @@ export class WorkspaceRuntime {
   /**
    * Save state checkpoint
    */
-  async saveStateCheckpoint(): Promise<void> {
+  saveStateCheckpoint(): void {
     logger.info("Saving state checkpoint", { workspaceId: this.workspace.id });
 
     const state = {

@@ -82,11 +82,11 @@ export class AgentLoader {
   /**
    * Load a single agent with proper error handling and ID assignment
    */
-  private static async loadSingleAgent(
-    workspace: IWorkspace,
+  private static loadSingleAgent(
+    _workspace: IWorkspace,
     agentId: string,
     agentConfig: RuntimeAgentConfig,
-  ): Promise<IWorkspaceAgent> {
+  ): IWorkspaceAgent {
     // Create a metadata-only agent object that the AgentSupervisor can use
     const metadataAgent = {
       id: agentId,
@@ -108,14 +108,16 @@ export class AgentLoader {
         user: "",
       }),
       // These will not be called for metadata-only agents, but required by interface
-      invoke: async (message: string) => {
+      invoke: (_message: string) => {
         throw new Error(
           `Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`,
         );
       },
-      invokeStream: async function* (message: string) {
-        throw new Error(
-          `Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`,
+      invokeStream: async function* (_message: string) {
+        yield Promise.reject(
+          new Error(
+            `Metadata-only agent ${agentId} cannot be invoked directly. Use AgentSupervisor.`,
+          ),
         );
       },
       // Base agent interface methods

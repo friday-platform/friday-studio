@@ -58,13 +58,13 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
         invoke: {
           id: "generatePlan",
           src: fromPromise(
-            async (
+            (
               { input }: { input: { signal: IWorkspaceSignal; payload: any } },
             ) => {
-              return supervisor.generateExecutionPlan(
+              return Promise.resolve(supervisor.generateExecutionPlan(
                 input.signal,
                 input.payload,
-              );
+              ));
             },
           ),
           input: ({ context }) => ({
@@ -105,7 +105,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 supervisor.id,
                 {
                   triggers: [input.signal],
-                  callback: (result: any) => Promise.resolve(),
+                  callback: (_result: any) => Promise.resolve(),
                 },
                 supervisor.getWorkspaceAgents(),
                 undefined, // workflows
@@ -437,7 +437,7 @@ You have access to the full workspace context and configuration. Create structur
   }
 
   // IWorkspaceSupervisor specific methods
-  async spawnSession(
+  spawnSession(
     signal: IWorkspaceSignal,
     payload?: any,
   ): Promise<IWorkspaceSession> {
@@ -662,12 +662,12 @@ Provide a structured analysis.`;
   }
 
   // Create filtered session context based on intent
-  async createSessionContext(
+  createSessionContext(
     intent: SessionIntent,
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): Promise<any> {
+  ): any {
     const startTime = Date.now();
     this.logger.debug(`[PERF] Starting createSessionContext`, {
       intentId: intent.id,
@@ -796,13 +796,15 @@ Provide a structured analysis.`;
         availableJobNames: Object.keys(availableJobs),
         payloadKeys: Object.keys(payload),
         mergedConfigAvailable: !!this.mergedConfig,
-        jobsSourceUsed: signalData?.jobs ? 'signalData' : (this.mergedConfig?.jobs ? 'mergedConfig' : 'none'),
+        jobsSourceUsed: signalData?.jobs
+          ? "signalData"
+          : (this.mergedConfig?.jobs ? "mergedConfig" : "none"),
       });
 
       // Find jobs that have triggers for this signal
       const matchingJobs: Array<{ job: any; trigger: any }> = [];
 
-      for (const [jobName, jobSpec] of Object.entries(availableJobs)) {
+      for (const [_jobName, jobSpec] of Object.entries(availableJobs)) {
         const triggers = (jobSpec as any).triggers;
         if (triggers) {
           for (const trigger of triggers) {
@@ -881,9 +883,6 @@ Provide a structured analysis.`;
     if (!condition) return true; // No condition means always match
 
     try {
-      // Create evaluation context with payload properties
-      const context = { ...payload };
-
       // Simple condition evaluation - in production would use safer evaluation
       // For now, handle the specific telephone game condition
       if (condition.includes("message && message.length")) {
@@ -950,23 +949,11 @@ Provide a structured analysis.`;
     ];
   }
 
-  async generateExecutionPlan(
+  generateExecutionPlan(
     signal: IWorkspaceSignal,
     payload: any,
-  ): Promise<SessionPlan> {
+  ): SessionPlan {
     const intent = this.createSessionIntent(signal, payload);
-
-    const planPrompt = `Given the following session intent, create an execution plan:
-
-Intent: ${JSON.stringify(intent, null, 2)}
-Available Agents: ${this.getAvailableAgents()}
-
-Create a structured plan that:
-1. Identifies which agents to use for each goal
-2. Determines the execution phases and order
-3. Specifies dependencies between agent tasks
-
-Respond with a JSON object matching the SessionPlan interface with phases array.`;
 
     // For now, skip LLM call and use default plan
     // TODO: Implement proper LLM integration
@@ -993,8 +980,8 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
   }
 
   private getDefaultPlan(
-    signal: IWorkspaceSignal,
-    payload: any,
+    _signal: IWorkspaceSignal,
+    _payload: any,
     intent: SessionIntent,
   ): SessionPlan {
     // Create a generic plan based on available agents
@@ -1034,7 +1021,7 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
   async executeSessionPlan(
     session: IWorkspaceSession,
     plan: SessionPlan,
-    initialPayload: any,
+    _initialPayload: any,
   ): Promise<void> {
     this.log(`Executing plan: ${plan.reasoning}`);
 
@@ -1081,7 +1068,7 @@ Respond with a JSON object matching the SessionPlan interface with phases array.
   }
 
   private processCommand(command: string): string {
-    const [cmd, ...args] = command.slice(1).split(" ");
+    const [cmd] = command.slice(1).split(" ");
 
     switch (cmd) {
       case "status":

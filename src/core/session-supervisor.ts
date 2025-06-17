@@ -504,7 +504,7 @@ Respond with a structured plan.`;
   }
 
   // Parse LLM response into structured ExecutionPlan
-  private parseExecutionPlan(llmResponse: string): ExecutionPlan {
+  private parseExecutionPlan(_llmResponse: string): ExecutionPlan {
     // For now, create a simple plan based on the response
     // In production, this would parse the structured output
     const plan: ExecutionPlan = {
@@ -1415,7 +1415,7 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     agentId: string,
     task: AgentTask,
     input: any,
-    context: Record<string, any>,
+    _context: Record<string, any>,
   ): Promise<AgentTask> {
     if (!this.sessionContext || !this.sessionMemoryManager) {
       this.log("Warning: Cannot enrich task with memory - missing context or memory manager");
@@ -1429,13 +1429,13 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       const relevantFacts = await this.getRelevantSemanticFacts(agentId, task, input);
 
       // 2. Get working memory from current session
-      const workingMemoryContext = await this.getCurrentSessionWorkingMemory();
+      const workingMemoryContext = this.getCurrentSessionWorkingMemory();
 
       // 3. Get all procedural memory rules from workspace
-      const proceduralRules = await this.getProceduralMemoryRules();
+      const proceduralRules = this.getProceduralMemoryRules();
 
       // 4. Get episodic summary of previous same-agent executions
-      const episodicSummary = await this.getPreviousAgentExecutionSummary(agentId);
+      const episodicSummary = this.getPreviousAgentExecutionSummary(agentId);
 
       // 5. Build enhanced prompt
       const memoryEnhancedPrompt = this.buildMemoryEnhancedPrompt(
@@ -1464,7 +1464,7 @@ Focus on creating a rich episodic memory that captures both the factual sequence
 
   // Get relevant semantic facts from workspace knowledge graph
   private async getRelevantSemanticFacts(
-    agentId: string,
+    _agentId: string,
     task: AgentTask,
     input: any,
   ): Promise<any[]> {
@@ -1555,7 +1555,7 @@ Focus on creating a rich episodic memory that captures both the factual sequence
   }
 
   // Get working memory from current session
-  private async getCurrentSessionWorkingMemory(): Promise<any[]> {
+  private getCurrentSessionWorkingMemory(): any[] {
     if (!this.sessionMemoryManager || !this.sessionContext) {
       return [];
     }
@@ -1596,7 +1596,7 @@ Focus on creating a rich episodic memory that captures both the factual sequence
   }
 
   // Get all procedural memory rules from workspace
-  private async getProceduralMemoryRules(): Promise<any[]> {
+  private getProceduralMemoryRules(): any[] {
     if (!this.sessionMemoryManager) {
       return [];
     }
@@ -1678,7 +1678,7 @@ Focus on creating a rich episodic memory that captures both the factual sequence
   }
 
   // Get episodic summary of previous same-agent executions for same signal
-  private async getPreviousAgentExecutionSummary(agentId: string): Promise<string | null> {
+  private getPreviousAgentExecutionSummary(agentId: string): string | null {
     if (!this.sessionMemoryManager || !this.sessionContext) {
       return null;
     }

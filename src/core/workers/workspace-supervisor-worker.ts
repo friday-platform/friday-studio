@@ -112,10 +112,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     }
 
     this.log("Supervisor initialized");
+
+    await Promise.resolve();
   }
 
   protected async processTask(
-    taskId: string,
+    _taskId: string,
     data: WorkspaceWorkerData,
   ): Promise<Record<string, unknown>> {
     if (!this.supervisor) {
@@ -138,9 +140,9 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             signalType: signal.provider?.name || "unknown",
             workspaceId: this.workspace?.id,
           },
-          async (span) => {
+          async (_span) => {
             // Spawn session worker
-            const sessionWorker = await this.spawnSessionWorker(sessionId);
+            this.spawnSessionWorker(sessionId);
 
             // Join the session's broadcast channel
             this.actor.send({
@@ -163,8 +165,8 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             this.log("Creating session context...");
             const sessionContext = await AtlasTelemetry.withSpan(
               "supervisor.createSessionContext",
-              async () => {
-                return await this.supervisor!.createSessionContext(intent, signal, payload, {
+              () => {
+                return this.supervisor!.createSessionContext(intent, signal, payload, {
                   signalConfig,
                   jobs,
                 });
@@ -245,7 +247,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.log("Cleaning up supervisor...");
 
     // Terminate all session workers
-    for (const [sessionId, info] of this.sessions) {
+    for (const [_sessionId, info] of this.sessions) {
       info.worker.postMessage({ type: "shutdown" });
       info.worker.terminate();
       info.port.close();
@@ -254,11 +256,13 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     this.sessions.clear();
     this.supervisor = null;
     this.workspace = null;
+
+    await Promise.resolve();
   }
 
-  private async spawnSessionWorker(
+  private spawnSessionWorker(
     sessionId: string,
-  ): Promise<SessionWorkerInfo> {
+  ): SessionWorkerInfo {
     this.log(`Spawning session worker: ${sessionId}`);
 
     // Create session worker with permissions to use BroadcastChannel
@@ -404,7 +408,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
   }
 
   // Helper to send tasks to session worker and wait for response
-  private async sendToSessionWorker(
+  private sendToSessionWorker(
     sessionId: string,
     message: Record<string, unknown>,
   ): Promise<unknown> {

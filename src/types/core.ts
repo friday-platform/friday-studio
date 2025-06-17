@@ -31,7 +31,7 @@ export interface IAtlasAgent extends IAtlasScope {
 
 export interface IAtlasDecisionGraph {
   // Agentic Behavior Trees implementation
-  execute(): Promise<void>;
+  execute(): void;
   validate(): boolean;
 }
 
@@ -106,7 +106,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   sources?: IWorkspaceSource[];
   status: string; // 'pending' | 'running' | 'completed' | 'cancelled'
   start(): Promise<void>;
-  cancel(): Promise<void>;
+  cancel(): void;
   progress(): number;
   summarize(): string;
   getArtifacts(): IWorkspaceArtifact[];
@@ -215,10 +215,10 @@ export interface ITempestMemoryManager {
   }): any[];
 
   // Cognitive loop methods
-  reflect?(): Promise<any[]>;
-  consolidate?(): Promise<void>;
-  prune?(): Promise<void>;
-  adapt?(feedback: any): Promise<void>;
+  reflect?(): any[];
+  consolidate?(): void;
+  prune?(): void;
+  adapt?(feedback: any): void;
 }
 
 export interface ITempestMemoryStorageAdapter {

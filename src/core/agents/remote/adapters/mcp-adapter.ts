@@ -241,7 +241,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
 
   resumeExecution(
     executionId: string,
-    response: string | RemoteMessagePart[],
+    _response: string | RemoteMessagePart[],
   ): Promise<RemoteExecutionResult> {
     // MCP doesn't support resuming executions
     this.mcpLogger.warn("MCP execution resumption not supported", {

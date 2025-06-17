@@ -302,7 +302,7 @@ export abstract class BaseWorker<
   }
 
   // Utility methods for workers
-  protected broadcast(channel: string, message: any): void {
+  protected broadcast(_channel: string, _message: any): void {
     // BroadcastChannel disabled in workers due to Tokio runtime conflicts
     // Note: Broadcast functionality disabled in worker context
   }

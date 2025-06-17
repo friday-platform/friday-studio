@@ -70,7 +70,7 @@ export class AtlasWorkspaceManager {
     }
   }
 
-  async getWorkspacePath(id: string): Promise<string> {
+  getWorkspacePath(id: string): string {
     return join(this.workspacesPath, id);
   }
 
@@ -162,14 +162,9 @@ export class AtlasWorkspaceManager {
 
   private async loadWorkspace(id: string): Promise<IWorkspace | null> {
     const workspacePath = join(this.workspacesPath, id);
-    const metaPath = join(workspacePath, "workspace.json");
     const statePath = join(workspacePath, "state.json");
 
     try {
-      // Load metadata
-      const metaContent = await Deno.readTextFile(metaPath);
-      const meta = JSON.parse(metaContent);
-
       // Load state
       const stateContent = await Deno.readTextFile(statePath);
       const state = JSON.parse(stateContent);
