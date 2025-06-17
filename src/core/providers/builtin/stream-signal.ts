@@ -136,7 +136,7 @@ class StreamRuntimeSignal extends AtlasScope {
       );
 
       this.isConnected = true;
-      console.log(`Stream signal connected to ${sseEndpoint}`);
+      console.log(`✅ Stream signal '${this.signalId}' connected to ${sseEndpoint}`);
 
       // Process SSE events from monitor agent
       for await (const message of stream) {
@@ -160,11 +160,72 @@ class StreamRuntimeSignal extends AtlasScope {
       }
     } catch (error) {
       if (!this.abortController.signal.aborted) {
-        console.error("SSE stream error:", error);
         this.isConnected = false;
-        throw error;
+
+        // Create user-friendly error message based on error type
+        const friendlyMessage = this.createFriendlyErrorMessage(error, sseEndpoint);
+        console.error(friendlyMessage);
+
+        // Create a new error with the friendly message but preserve the original error
+        const enhancedError = new Error(friendlyMessage);
+        enhancedError.cause = error;
+        throw enhancedError;
       }
     }
+  }
+
+  private createFriendlyErrorMessage(error: unknown, endpoint: string): string {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const url = new URL(endpoint);
+
+    // Connection refused errors
+    if (errorMessage.includes("Connection refused") || errorMessage.includes("ECONNREFUSED")) {
+      return `❌ Stream signal connection failed: Unable to connect to ${url.host}
+   └── The server at ${endpoint} appears to be offline or unreachable
+   └── Please verify the server is running and the endpoint is correct`;
+    }
+
+    // Network timeout errors
+    if (errorMessage.includes("timeout") || errorMessage.includes("ETIMEDOUT")) {
+      return `❌ Stream signal connection failed: Connection timeout to ${url.host}
+   └── The server at ${endpoint} is not responding within the timeout period
+   └── Check your network connection and server status`;
+    }
+
+    // DNS resolution errors
+    if (errorMessage.includes("ENOTFOUND") || errorMessage.includes("getaddrinfo")) {
+      return `❌ Stream signal connection failed: Cannot resolve hostname ${url.host}
+   └── DNS lookup failed for ${endpoint}
+   └── Verify the hostname is correct and accessible`;
+    }
+
+    // HTTP response errors
+    if (errorMessage.includes("Non-200 status code")) {
+      const statusMatch = errorMessage.match(/\((\d+)\)/);
+      const statusCode = statusMatch ? statusMatch[1] : "unknown";
+      return `❌ Stream signal connection failed: Server returned HTTP ${statusCode}
+   └── The server at ${endpoint} rejected the connection
+   └── Check if the endpoint path is correct and the server is configured properly`;
+    }
+
+    // Invalid content type
+    if (errorMessage.includes("Invalid content type")) {
+      return `❌ Stream signal connection failed: Invalid response from ${url.host}
+   └── Expected Server-Sent Events stream but got different content type
+   └── Verify the endpoint ${endpoint} serves SSE streams`;
+    }
+
+    // Generic connection errors
+    if (errorMessage.includes("error sending request")) {
+      return `❌ Stream signal connection failed: Network error connecting to ${url.host}
+   └── Failed to establish connection to ${endpoint}
+   └── Check if the server is running and network connectivity is available`;
+    }
+
+    // Fallback for unknown errors
+    return `❌ Stream signal connection failed: ${errorMessage}
+   └── Endpoint: ${endpoint}
+   └── Check server status and configuration`;
   }
 
   private async processStreamEvent(event: StreamEvent): Promise<void> {
@@ -174,8 +235,8 @@ class StreamRuntimeSignal extends AtlasScope {
     }
 
     // Extract event identifier for logging (generic approach)
-    const eventId = event.event?.reason || event.type || event.kind || 'unknown';
-    const eventSource = event.source || 'unknown';
+    const eventId = event.event?.reason || event.type || event.kind || "unknown";
+    const eventSource = event.source || "unknown";
 
     console.log(`Processing stream event: ${eventId} from source: ${eventSource}`);
 

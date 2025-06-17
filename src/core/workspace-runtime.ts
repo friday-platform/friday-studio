@@ -166,7 +166,10 @@ export class WorkspaceRuntime {
         }
 
         // Check if we're in a valid state to process signals
-        if (state.value !== "ready" && state.value !== "processing" && state.value !== "initializingStreams") {
+        if (
+          state.value !== "ready" && state.value !== "processing" &&
+          state.value !== "initializingStreams"
+        ) {
           // If uninitialized, initialize first
           if (state.value === "uninitialized") {
             this.stateMachine.send({ type: "INITIALIZE" });
@@ -509,9 +512,19 @@ const workspaceRuntimeMachine = setup({
 
               logger.info(`Stream signal initialized successfully: ${signalId}`);
             } catch (error) {
-              logger.error(`Failed to initialize stream signal: ${signalId}`, {
-                error: error instanceof Error ? error.message : String(error),
-              });
+              // Extract friendly error message if available
+              const errorMessage = error instanceof Error ? error.message : String(error);
+
+              // If it's a friendly error message (starts with ❌), log it directly
+              if (errorMessage.startsWith("❌")) {
+                logger.error(`Failed to initialize stream signal: ${signalId}`);
+                // Log the friendly message without JSON formatting for better readability
+                console.error(errorMessage);
+              } else {
+                logger.error(`Failed to initialize stream signal: ${signalId}`, {
+                  error: errorMessage,
+                });
+              }
             }
           }
         }
