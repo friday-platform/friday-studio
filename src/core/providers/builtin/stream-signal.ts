@@ -135,11 +135,17 @@ class StreamRuntimeSignal extends AtlasScope {
         },
       );
 
-      this.isConnected = true;
-      console.log(`✅ Stream signal '${this.signalId}' connected to ${sseEndpoint}`);
+      // Only log success after we successfully start consuming the stream
+      let connectionLogged = false;
 
       // Process SSE events from monitor agent
       for await (const message of stream) {
+        // Log success on first successful message
+        if (!connectionLogged) {
+          this.isConnected = true;
+          console.log(`✅ Stream signal '${this.signalId}' connected to ${sseEndpoint}`);
+          connectionLogged = true;
+        }
         if (message.data && this.signalProcessor) {
           try {
             const data = parseSSEData<any>(message.data);

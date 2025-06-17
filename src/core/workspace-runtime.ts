@@ -515,11 +515,10 @@ const workspaceRuntimeMachine = setup({
               // Extract friendly error message if available
               const errorMessage = error instanceof Error ? error.message : String(error);
 
-              // If it's a friendly error message (starts with ❌), log it directly
+              // If it's a friendly error message (starts with ❌), just log the failure without duplicating the message
               if (errorMessage.startsWith("❌")) {
                 logger.error(`Failed to initialize stream signal: ${signalId}`);
-                // Log the friendly message without JSON formatting for better readability
-                console.error(errorMessage);
+                // Friendly message is already logged by the stream signal provider
               } else {
                 logger.error(`Failed to initialize stream signal: ${signalId}`, {
                   error: errorMessage,
