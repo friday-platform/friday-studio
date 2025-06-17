@@ -165,63 +165,63 @@ agents:
   github-manager:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://github"
+    endpoint: "http://localhost:3020/mcp"
     purpose: "GitHub repository management and automation"
     tools: ["repository_operations", "issue_management", "code_analysis"]
 
   filesystem-manager:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://filesystem"
+    endpoint: "http://localhost:3021/mcp"
     purpose: "Secure filesystem operations with configurable access controls"
     tools: ["file_operations", "directory_management", "content_analysis"]
 
   database-analyst:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://postgresql"
+    endpoint: "http://localhost:3022/mcp"
     purpose: "PostgreSQL and database analysis with schema inspection"
     tools: ["schema_analysis", "query_execution", "data_insights"]
 
   web-researcher:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://fetch"
+    endpoint: "http://localhost:3023/mcp"
     purpose: "Web content fetching and analysis for development research"
     tools: ["content_fetching", "api_integration", "documentation_analysis"]
 
   slack-communicator:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://slack"
+    endpoint: "http://localhost:3024/mcp"
     purpose: "Slack integration for team communication and workflow automation"
     tools: ["messaging", "channel_management", "automation"]
 
   memory-keeper:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://memory"
+    endpoint: "http://localhost:3025/mcp"
     purpose: "Persistent memory system with knowledge graph capabilities"
     tools: ["knowledge_storage", "graph_operations", "memory_management"]
 
   cloud-operator:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://aws"
+    endpoint: "http://localhost:3026/mcp"
     purpose: "AWS cloud operations and infrastructure management"
     tools: ["resource_management", "deployment_operations", "monitoring_analysis"]
 
   ci-cd-monitor:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://circleci"
+    endpoint: "http://localhost:3027/mcp"
     purpose: "CI/CD pipeline monitoring and build failure resolution"
     tools: ["build_monitoring", "pipeline_management", "failure_resolution"]
 
   error-tracker:
     type: "remote"
     protocol: "mcp"
-    endpoint: "mcp://sentry"
+    endpoint: "http://localhost:3028/mcp"
     purpose: "Sentry integration for error tracking and performance monitoring"
     tools: ["error_monitoring", "performance_tracking", "alerting_automation"]
 
