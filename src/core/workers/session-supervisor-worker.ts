@@ -329,6 +329,7 @@ class SessionSupervisorWorker extends BaseWorker {
       }
 
       default:
+        // deno-lint-ignore no-explicit-any
         throw new Error(`Unknown task action: ${(data as any).action}`);
     }
   }
@@ -412,20 +413,50 @@ class SessionSupervisorWorker extends BaseWorker {
     return "echo"; // default
   }
 
+  private summarizeInput(input: Record<string, unknown>): string {
+    // Create a clean summary instead of dumping raw JSON
+    if (typeof input === "object" && input !== null) {
+      // Extract key information for a cleaner task description
+      const keys = Object.keys(input);
+      if (keys.length === 0) {
+        return "empty input";
+      }
+
+      // Try to find meaningful fields
+      const meaningfulFields = [];
+      if ("message" in input) meaningfulFields.push(`message: ${input.message}`);
+      if ("type" in input) meaningfulFields.push(`type: ${input.type}`);
+      if ("action" in input) meaningfulFields.push(`action: ${input.action}`);
+      if ("error" in input) meaningfulFields.push(`error: ${input.error}`);
+
+      if (meaningfulFields.length > 0) {
+        return meaningfulFields.join(", ");
+      }
+
+      // Fallback to key count
+      return `process data with ${keys.length} fields`;
+    }
+
+    return `process: ${String(input).substring(0, 100)}`;
+  }
+
   private async invokeAgent(
     agentId: string,
     input: Record<string, unknown>,
-    taskId: string,
-    traceHeaders?: Record<string, string>,
+    _taskId: string,
+    _traceHeaders?: Record<string, string>,
   ): Promise<Record<string, unknown>> {
     // Use AgentSupervisor for supervised execution instead of direct agent workers
     if (!this.supervisor) {
       throw new Error("SessionSupervisor not initialized");
     }
 
+    // Try to get enhanced task description from execution plan
+    const enhancedTaskDescription = this.supervisor.getEnhancedTaskDescription(agentId);
+
     const task = {
       agentId,
-      task: `Process input: ${JSON.stringify(input)}`,
+      task: enhancedTaskDescription || `Process input: ${this.summarizeInput(input)}`,
       inputSource: "signal" as const,
       dependencies: [],
     };

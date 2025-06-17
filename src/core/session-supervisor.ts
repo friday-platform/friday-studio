@@ -676,6 +676,23 @@ Provide a brief evaluation.`;
   }
 
   // Get execution summary for WorkspaceSupervisor
+  // Get enhanced task description for an agent from the execution plan
+  getEnhancedTaskDescription(agentId: string): string | null {
+    if (!this.executionPlan) {
+      return null;
+    }
+
+    // Search through phases to find the task for this agent
+    for (const phase of this.executionPlan.phases) {
+      const agentTask = phase.agents.find((agent) => agent.agentId === agentId);
+      if (agentTask) {
+        return agentTask.task;
+      }
+    }
+
+    return null;
+  }
+
   getExecutionSummary(): {
     plan: ExecutionPlan | null;
     results: AgentResult[];
@@ -1003,28 +1020,21 @@ Overall Success: ${
           .slice(0, 10);
       }
 
-      // Build execution history for context
-      const executionHistory = workingMemoryContext.map((record) => ({
+      // Build execution history for context (simplified to reduce noise)
+      const executionHistory = workingMemoryContext.slice(0, 3).map((record) => ({
         agent: record.agentId,
-        task_description: record.task?.description,
-        input_summary: this.summarizeData(record.input),
-        output_summary: this.summarizeData(record.output),
+        task: record.task?.description || "unknown task",
         success: record.metadata?.success,
-        timestamp: record.metadata?.timestamp,
         sequence: record.sequence_number,
-        tools_used: record.tools || [],
       }));
 
-      // Enrich the input with working memory context
+      // Enrich the input with working memory context (simplified)
       const enrichedInput = {
         ...originalInput,
         _atlas_context: {
           session_id: this.sessionContext.sessionId,
-          current_agent: agentId,
-          task_description: task.task,
-          execution_history: executionHistory,
-          previous_executions_count: executionHistory.length,
-          last_execution: executionHistory.length > 0 ? executionHistory[0] : null,
+          task: task.task,
+          previous_executions: executionHistory,
         },
       };
 
