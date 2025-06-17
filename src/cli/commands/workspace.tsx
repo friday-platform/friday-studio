@@ -70,7 +70,7 @@ export async function scanAvailableWorkspaces() {
             // Skip workspaces with invalid YAML
             console.warn(
               `Failed to parse workspace.yml in ${dirEntry.name}:`,
-              error,
+              error
             );
           }
         }
@@ -89,11 +89,13 @@ export interface WorkspaceCommandProps {
   flags: any;
 }
 
-export function WorkspaceCommand(
-  { subcommand, args, flags }: WorkspaceCommandProps,
-) {
+export function WorkspaceCommand({
+  subcommand,
+  args,
+  flags,
+}: WorkspaceCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading",
+    "loading"
   );
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -106,10 +108,7 @@ export function WorkspaceCommand(
             await handleInit(args[0] || flags.name);
             break;
           case "serve":
-            await handleServe(flags);
-            break;
-          case "stop":
-            await handleStop(flags);
+            handleServe(flags);
             break;
           case "list":
             await handleList();
@@ -134,7 +133,7 @@ export function WorkspaceCommand(
     // Check if workspace.yml already exists
     if (await exists("workspace.yml")) {
       const config = yaml.parse(
-        await Deno.readTextFile("workspace.yml"),
+        await Deno.readTextFile("workspace.yml")
       ) as any;
       setData({
         type: "exists",
@@ -207,12 +206,12 @@ export function WorkspaceCommand(
           version: "1.0.0",
         },
         null,
-        2,
-      ),
+        2
+      )
     );
 
     // Create .env if it doesn't exist
-    if (!await exists(".env")) {
+    if (!(await exists(".env"))) {
       await Deno.writeTextFile(
         ".env",
         `# Atlas Environment Variables
@@ -224,7 +223,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 # OpenAI API Key (optional)
 # Get from: https://platform.openai.com/api-keys
 OPENAI_API_KEY=your_api_key_here
-`,
+`
       );
     }
 
@@ -234,7 +233,7 @@ OPENAI_API_KEY=your_api_key_here
       if (!gitignore.includes(".env")) {
         await Deno.writeTextFile(
           ".gitignore",
-          gitignore + "\n.env\n.atlas/\n*.log\n",
+          gitignore + "\n.env\n.atlas/\n*.log\n"
         );
       }
     } else {
@@ -254,34 +253,6 @@ OPENAI_API_KEY=your_api_key_here
     setStatus("ready");
 
     // The actual server starting will be handled by the ServingComponent
-  }
-
-  async function handleStop(flags: any) {
-    if (!await exists("workspace.yml")) {
-      throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first.',
-      );
-    }
-
-    const metadata = await exists(".atlas/workspace.json")
-      ? JSON.parse(await Deno.readTextFile(".atlas/workspace.json"))
-      : {};
-
-    const port = flags.port || metadata.port || 3000;
-
-    // Try to stop the server
-    try {
-      const response = await fetch(`http://localhost:${port}/health`);
-      if (response.ok) {
-        // Server is running, try to stop it
-        await fetch(`http://localhost:${port}/shutdown`, { method: "POST" });
-        console.log(`✓ Workspace server stopped on port ${port}`);
-      } else {
-        console.log("⚠ Workspace server is not running");
-      }
-    } catch (error) {
-      console.log("⚠ Workspace server is not running");
-    }
   }
 
   async function handleList() {
@@ -371,8 +342,12 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         const mergedConfig = await configLoader.load();
 
         const { Workspace } = await import("../../core/workspace.ts");
-        const { WorkspaceRuntime } = await import("../../core/workspace-runtime.ts");
-        const { WorkspaceServer } = await import("../../core/workspace-server.ts");
+        const { WorkspaceRuntime } = await import(
+          "../../core/workspace-runtime.ts"
+        );
+        const { WorkspaceServer } = await import(
+          "../../core/workspace-server.ts"
+        );
         const { WorkspaceMemberRole } = await import("../../types/core.ts");
 
         const workspace = Workspace.fromConfig(mergedConfig.workspace, {
@@ -392,7 +367,10 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
 
         await server.start();
       } catch (err) {
-        console.error("Failed to start server:", err instanceof Error ? err.message : String(err));
+        console.error(
+          "Failed to start server:",
+          err instanceof Error ? err.message : String(err)
+        );
         Deno.exit(1);
       }
     };
@@ -411,22 +389,22 @@ export async function getWorkspaceStatus(workspaceId?: string) {
   if (workspaceId) {
     // Find workspace by ID
     const availableWorkspaces = await scanAvailableWorkspaces();
-    const targetWorkspace = availableWorkspaces.find((w) =>
-      w.id === workspaceId || w.slug === workspaceId
+    const targetWorkspace = availableWorkspaces.find(
+      (w) => w.id === workspaceId || w.slug === workspaceId
     );
 
     if (!targetWorkspace) {
       throw new Error(
-        `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`,
+        `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`
       );
     }
 
     workspacePath = targetWorkspace.path;
   } else {
     // Check current directory for workspace.yml
-    if (!await exists("workspace.yml")) {
+    if (!(await exists("workspace.yml"))) {
       throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first or specify a workspace-id.',
+        'No workspace.yml found. Run "atlas workspace init" first or specify a workspace-id.'
       );
     }
   }
@@ -439,7 +417,7 @@ export async function getWorkspaceStatus(workspaceId?: string) {
     const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
     const config = mergedConfig.workspace;
-    const metadata = await exists(".atlas/workspace.json")
+    const metadata = (await exists(".atlas/workspace.json"))
       ? JSON.parse(await Deno.readTextFile(".atlas/workspace.json"))
       : {};
 
@@ -447,7 +425,9 @@ export async function getWorkspaceStatus(workspaceId?: string) {
     let serverRunning = false;
     try {
       const response = await fetch(
-        `http://localhost:${mergedConfig.atlas.runtime?.server?.port || 8080}/health`,
+        `http://localhost:${
+          mergedConfig.atlas.runtime?.server?.port || 8080
+        }/health`
       );
       if (response.ok) {
         const healthData = await response.json();
@@ -480,7 +460,9 @@ export async function getWorkspaceStatus(workspaceId?: string) {
 export function WorkspaceStatus({ statusData }: { statusData: any }) {
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">Workspace Status</Text>
+      <Text bold color="cyan">
+        Workspace Status
+      </Text>
       <Text>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
       <Text>
         Name: <Text color="white">{statusData.workspace.name}</Text>
@@ -512,9 +494,12 @@ export function WorkspaceStatus({ statusData }: { statusData: any }) {
         Signals: <Text color="white">{statusData.signals.length}</Text>
       </Text>
       <Text>
-        Server: {statusData.serverRunning
-          ? <Text color="green">Running on port {statusData.port}</Text>
-          : <Text color="gray">Not running</Text>}
+        Server:{" "}
+        {statusData.serverRunning ? (
+          <Text color="green">Running on port {statusData.port}</Text>
+        ) : (
+          <Text color="gray">Not running</Text>
+        )}
       </Text>
     </Box>
   );
@@ -539,8 +524,10 @@ export function WorkspaceList({ workspaces }: { workspaces: any[] }) {
 
   // Calculate column widths
   const idWidth = Math.max(2, ...workspaces.map((w: any) => w.id.length)) + 2;
-  const nameWidth = Math.max(4, ...workspaces.map((w: any) => w.name.length)) + 2;
-  const slugWidth = Math.max(4, ...workspaces.map((w: any) => w.slug.length)) + 2;
+  const nameWidth =
+    Math.max(4, ...workspaces.map((w: any) => w.name.length)) + 2;
+  const slugWidth =
+    Math.max(4, ...workspaces.map((w: any) => w.slug.length)) + 2;
   const portWidth = 8; // Fixed width for port (e.g., "8080")
   const statusWidth = 10; // Fixed width for status (e.g., "Running")
 
@@ -587,7 +574,9 @@ export function WorkspaceList({ workspaces }: { workspaces: any[] }) {
             <Text color="blue">{padRight(workspace.id, idWidth)}</Text>
             <Text color="yellow">{padRight(workspace.name, nameWidth)}</Text>
             <Text color="cyan">{padRight(workspace.slug, slugWidth)}</Text>
-            <Text color="white">{padRight(workspace.port.toString(), portWidth)}</Text>
+            <Text color="white">
+              {padRight(workspace.port.toString(), portWidth)}
+            </Text>
             <Text color={workspace.isRunning ? "green" : "gray"}>
               {workspace.isRunning ? "Running" : "Stopped"}
             </Text>

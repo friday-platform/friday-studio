@@ -31,16 +31,19 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   // Route to appropriate command
   switch (command) {
     case "workspace":
-      return <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "session":
-      return <SessionCommand subcommand={subcommand} args={args} flags={flags} />;
-
-    case "ps": // Alias for session list
-      return <SessionCommand subcommand="list" args={args} flags={flags} />;
+      return (
+        <SessionCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "signal":
-      return <SignalCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <SignalCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "agent":
       return <AgentCommand subcommand={subcommand} args={args} flags={flags} />;
@@ -52,7 +55,9 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
       return <TUICommand flags={flags} />;
 
     case "define":
-      return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
+      return (
+        <DefineCommand args={args} subcommand={subcommand} flags={flags} />
+      );
 
     default:
       return (

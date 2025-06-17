@@ -3,6 +3,8 @@ import { Box, Text } from "ink";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
 import { Column, Table } from "../components/Table.tsx";
+import { scanAvailableWorkspaces } from "./workspace.tsx";
+import { ConfigLoader } from "../../core/config-loader.ts";
 
 export interface SignalCommandProps {
   subcommand?: string;
@@ -22,7 +24,7 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
       try {
         switch (subcommand) {
           case "list":
-            await handleList();
+            await handleList(args[0]);
             break;
           case "trigger":
             await handleTrigger(args[0], flags);
@@ -45,26 +47,61 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
     execute();
   }, []);
 
-  async function handleList() {
-    if (!await exists("workspace.yml")) {
-      throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first.',
+  async function handleList(workspaceId?: string) {
+    let workspacePath = Deno.cwd();
+
+    if (workspaceId) {
+      // Find workspace by ID
+      const availableWorkspaces = await scanAvailableWorkspaces();
+      const targetWorkspace = availableWorkspaces.find((w) =>
+        w.id === workspaceId || w.slug === workspaceId
       );
+
+      if (!targetWorkspace) {
+        throw new Error(
+          `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`,
+        );
+      }
+
+      workspacePath = targetWorkspace.path;
+    } else {
+      // Check current directory for workspace.yml
+      if (!await exists("workspace.yml")) {
+        throw new Error(
+          "Provide a workspace id or run this command inside of a workspace",
+        );
+      }
     }
 
-    const config = yaml.parse(await Deno.readTextFile("workspace.yml")) as any;
-    const signals = Object.entries(config.signals || {}).map((
-      [id, signal]: [string, any],
-    ) => ({
-      id,
-      provider: signal.provider || "cli",
-      agents: signal.mappings?.[0]?.agents?.join(", ") || "",
-      strategy: signal.mappings?.[0]?.strategy || "sequential",
-      description: signal.description || "",
-    }));
+    // Load configuration from the determined workspace path
+    const originalCwd = Deno.cwd();
+    try {
+      Deno.chdir(workspacePath);
 
-    setData({ type: "list", signals });
-    setStatus("ready");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+      const config = mergedConfig.workspace;
+
+      const signals = Object.entries(config.signals || {}).map((
+        [id, signal]: [string, any],
+      ) => ({
+        id,
+        provider: signal.provider || "cli",
+        agents: signal.mappings?.[0]?.agents?.join(", ") || "",
+        strategy: signal.mappings?.[0]?.strategy || "sequential",
+        description: signal.description || "",
+      }));
+
+      setData({ 
+        type: "list", 
+        signals,
+        workspaceName: config.workspace?.name,
+        workspaceId: workspaceId || "current"
+      });
+      setStatus("ready");
+    } finally {
+      Deno.chdir(originalCwd);
+    }
   }
 
   async function handleTrigger(signalName: string | undefined, flags: any) {
@@ -149,18 +186,31 @@ function SignalOutput({ data }: { data: any }) {
 
   switch (data.type) {
     case "list":
-      if (data.signals.length === 0) {
-        return <Text color="gray">No signals configured</Text>;
-      }
-
-      const columns: Column[] = [
-        { key: "id", label: "SIGNAL", width: 20 },
-        { key: "provider", label: "PROVIDER", width: 10 },
-        { key: "agents", label: "AGENTS", width: 40 },
-        { key: "strategy", label: "STRATEGY", width: 12 },
-      ];
-
-      return <Table columns={columns} data={data.signals} />;
+      return (
+        <Box flexDirection="column">
+          {data.workspaceName && (
+            <>
+              <Text bold color="cyan">
+                Signals in workspace: {data.workspaceName}
+              </Text>
+              <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
+            </>
+          )}
+          {data.signals.length === 0 ? (
+            <Text color="gray">No signals configured</Text>
+          ) : (
+            (() => {
+              const columns: Column[] = [
+                { key: "id", label: "SIGNAL", width: 20 },
+                { key: "provider", label: "PROVIDER", width: 10 },
+                { key: "agents", label: "AGENTS", width: 40 },
+                { key: "strategy", label: "STRATEGY", width: 12 },
+              ];
+              return <Table columns={columns} data={data.signals} />;
+            })()
+          )}
+        </Box>
+      );
 
     case "triggered":
       return (
