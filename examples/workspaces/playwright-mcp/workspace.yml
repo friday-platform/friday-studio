@@ -5,6 +5,41 @@ workspace:
   name: "playwright-mcp-example"
   description: "Example workspace demonstrating Playwright MCP integration with Atlas"
 
+# Top-level job definitions
+jobs:
+  webpage-analysis:
+    name: "webpage-analysis"
+    description: |
+      Comprehensive webpage analysis and content evaluation:
+      1. Playwright browser navigates to target URL and captures full-page screenshot
+      2. Browser extracts page structure, accessibility tree, and performance metrics
+      3. Web analyst examines visual layout, content quality, and user experience factors
+      Result: Detailed webpage assessment covering visual design, content structure,
+      accessibility compliance, and recommendations for improvement
+    triggers:
+      - signal: "manual-analysis"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "playwright-browser"
+        - id: "web-analyst"
+
+  ui-interaction-test:
+    name: "ui-interaction-test"
+    description: |
+      Automated UI interaction testing and validation:
+      1. Playwright browser performs specified user interactions (clicks, form fills, navigation)
+      2. Captures screenshots at each step and validates expected UI state changes
+      3. Tests responsiveness, error handling, and workflow completion
+      Result: Comprehensive UI test execution with visual proof of functionality
+      and detailed validation of user interaction flows
+    triggers:
+      - signal: "ui-test"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "playwright-browser"
+
 agents:
   playwright-browser:
     type: "remote"
@@ -39,26 +74,11 @@ signals:
     description: "Manually trigger webpage analysis"
     provider: "cli"
     command: "manual-analysis"
-    jobs:
-      - name: "webpage-analysis"
-        description: "Navigate to a webpage, take screenshot, and analyze content"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "playwright-browser"
-            - id: "web-analyst"
 
   ui-test:
     description: "Manually trigger UI interaction testing"
     provider: "cli"
     command: "ui-test"
-    jobs:
-      - name: "ui-interaction-test"
-        description: "Perform UI interactions and validate results"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "playwright-browser"
 
 # Example payloads for testing:
 #
@@ -68,16 +88,3 @@ signals:
 # For ui-interaction-test:
 # atlas signal trigger ui-test --payload '{"url": "https://example.com", "actions": [{"type": "click", "selector": "button#submit"}]}'
 
-# Runtime configuration
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"

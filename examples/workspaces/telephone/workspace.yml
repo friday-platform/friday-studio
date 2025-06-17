@@ -6,6 +6,27 @@ workspace:
   description: "A game where messages transform through multiple agents using different LLM providers (OpenAI, Google)"
 
 # User-defined agents for telephone game
+# Top-level job definitions
+jobs:
+  telephone:
+    name: "telephone"
+    description: |
+      Telephone game message transformation workflow:
+      1. Mishearing agent introduces phonetic distortions and sound-alike substitutions
+      2. Embellishment agent adds creative details, vivid imagery, and narrative context
+      3. Reinterpretation agent dramatically transforms meaning while maintaining plausibility
+      Result: Original message transformed through realistic telephone game effects demonstrating
+      how information degrades and mutates through sequential processing
+    triggers:
+      - signal: "telephone-message"
+        condition: "message && message.length > 0 && message.length < 100"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+        - id: "embellishment-agent"
+        - id: "reinterpretation-agent"
+
 agents:
   # OpenAI-based agent with specialized prompts for mishearing
   mishearing-agent:
@@ -61,7 +82,7 @@ agents:
         - Creative reframing of the core elements
         - Surprising but plausible reinterpretations
 
-# Signal definitions with job references
+# Signal definitions
 signals:
   telephone-message:
     description: "Trigger a telephone game with a message"
@@ -74,28 +95,3 @@ signals:
           description: "The message to transform through the telephone game"
       required: ["message"]
 
-    # Jobs triggered by this signal
-    jobs:
-      - name: "telephone"
-        condition: "message && message.length > 0 && message.length < 100"
-        description: "Telephone game with sequential agent processing"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "mishearing-agent"
-            - id: "embellishment-agent"
-            - id: "reinterpretation-agent"
-
-# Runtime configuration
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"

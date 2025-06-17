@@ -5,6 +5,74 @@ workspace:
   name: "remote-acp-demo"
   description: "Demonstration of Atlas remote agent capabilities using local ACP server"
 
+# Top-level job definitions
+jobs:
+  echo-test:
+    name: "echo-test"
+    description: |
+      Remote agent connectivity and response validation test:
+      1. Echo agent receives input message and processes through ACP protocol
+      2. Validates remote agent communication, authentication, and response formatting
+      3. Confirms round-trip message integrity and protocol compliance
+      Result: Verification that remote ACP agent is properly connected and responsive
+      with accurate message processing and protocol adherence
+    triggers:
+      - signal: "http-echo"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "echo-agent"
+
+  chat-test:
+    name: "chat-test"
+    description: |
+      Conversational AI remote agent functionality test:
+      1. Chat agent processes natural language input through ACP protocol
+      2. Generates contextually appropriate conversational responses
+      3. Validates advanced language understanding and response quality
+      Result: Confirmation that remote conversational agent can handle complex
+      natural language processing tasks with high-quality outputs
+    triggers:
+      - signal: "http-chat"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "chat-agent"
+
+  dual-agent-processing:
+    name: "dual-agent-processing"
+    description: |
+      Sequential remote agent processing workflow:
+      1. Echo agent processes initial input and validates message structure
+      2. Chat agent receives echo output and provides intelligent analysis/response
+      3. Demonstrates inter-agent communication and output chaining
+      Result: End-to-end validation of multi-agent workflow coordination
+      with proper data flow between different remote agent capabilities
+    triggers:
+      - signal: "http-dual"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "echo-agent"
+        - id: "chat-agent"
+
+  parallel-acp-test:
+    name: "parallel-acp-test"
+    description: |
+      Concurrent remote agent execution stress test:
+      1. Echo and chat agents process the same input simultaneously via ACP
+      2. Tests concurrent connection handling and resource management
+      3. Validates parallel processing capabilities and response consistency
+      Result: Proof that multiple remote agents can operate concurrently
+      without interference, with proper load balancing and error isolation
+    triggers:
+      - signal: "cli-test"
+    execution:
+      strategy: "parallel"
+      agents:
+        - id: "echo-agent"
+        - id: "chat-agent"
+
 # Remote agents configuration pointing to local ACP server
 agents:
   # Echo agent from local ACP server
@@ -68,7 +136,7 @@ agents:
     prompts:
       system: "You are a helpful AI assistant that works alongside remote agents."
 
-# Signal configurations for triggering jobs
+# Signal configurations
 signals:
   # HTTP webhook for echo testing
   http-echo:
@@ -76,13 +144,6 @@ signals:
     provider: "http"
     path: "/echo"
     method: "POST"
-    jobs:
-      - name: "echo-test"
-        description: "Test echo agent functionality"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "echo-agent"
 
   # HTTP endpoint for chat testing
   http-chat:
@@ -90,13 +151,6 @@ signals:
     provider: "http"
     path: "/chat"
     method: "POST"
-    jobs:
-      - name: "chat-test"
-        description: "Test chat agent functionality"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "chat-agent"
 
   # HTTP endpoint for dual agent processing
   http-dual:
@@ -104,39 +158,10 @@ signals:
     provider: "http"
     path: "/dual"
     method: "POST"
-    jobs:
-      - name: "dual-agent-processing"
-        description: "Process request using both echo and chat agents"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "echo-agent"
-            - id: "chat-agent"
 
   # CLI signal for testing
   cli-test:
     description: "CLI signal for testing ACP agents"
     provider: "cli"
     command: "test-acp"
-    jobs:
-      - name: "parallel-acp-test"
-        description: "Test both ACP agents in parallel"
-        execution:
-          strategy: "parallel"
-          agents:
-            - id: "echo-agent"
-            - id: "chat-agent"
 
-# Runtime configuration
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"

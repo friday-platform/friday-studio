@@ -226,3 +226,17 @@ supervisors:
         - Monitor agent execution in real-time
         - Validate outputs for quality and safety
         - Handle failures and recovery scenarios
+
+# Runtime configuration for Atlas platform
+runtime:
+  server:
+    port: 8080
+    host: "localhost"
+  logging:
+    level: "info"
+    format: "pretty"
+  persistence:
+    type: "local"
+    path: "./.atlas"
+  security:
+    cors: "*"

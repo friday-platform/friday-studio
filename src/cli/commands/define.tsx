@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text } from "ink";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import { ConfigLoader } from "../../core/config-loader.ts";
 
 interface WorkspaceDetails {
   name: string;
@@ -81,49 +81,10 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
           );
         }
 
-        // Read and parse workspace.yml
-        const workspaceYaml = await Deno.readTextFile(workspaceYmlPath);
-        const config = yaml.parse(workspaceYaml) as {
-          version?: string;
-          workspace?: {
-            id?: string;
-            name?: string;
-            description?: string;
-          };
-          agents?: Record<
-            string,
-            {
-              type?: string;
-              purpose?: string;
-              model?: string;
-              endpoint?: string;
-              protocol?: string;
-            }
-          >;
-          signals?: Record<
-            string,
-            {
-              provider?: string;
-              description?: string;
-              path?: string;
-              method?: string;
-              command?: string;
-            }
-          >;
-          runtime?: {
-            server?: {
-              port?: number;
-              host?: string;
-            };
-            logging?: {
-              level?: string;
-            };
-            persistence?: {
-              type?: string;
-              path?: string;
-            };
-          };
-        };
+        // Load configuration using ConfigLoader
+        const configLoader = new ConfigLoader(workspacePath);
+        const mergedConfig = await configLoader.load();
+        const config = mergedConfig.workspace;
 
         if (!config.workspace) {
           throw new Error("Invalid workspace.yml: missing workspace section");
@@ -169,14 +130,14 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
         }
         setSignals(signalSummaries);
 
-        // Extract runtime summary
-        if (config.runtime) {
+        // Extract runtime summary from atlas config
+        if (mergedConfig.atlas.runtime) {
           setRuntime({
-            serverPort: config.runtime.server?.port,
-            serverHost: config.runtime.server?.host,
-            loggingLevel: config.runtime.logging?.level,
-            persistenceType: config.runtime.persistence?.type,
-            persistencePath: config.runtime.persistence?.path,
+            serverPort: mergedConfig.atlas.runtime.server?.port,
+            serverHost: mergedConfig.atlas.runtime.server?.host,
+            loggingLevel: mergedConfig.atlas.runtime.logging?.level,
+            persistenceType: mergedConfig.atlas.runtime.persistence?.type,
+            persistencePath: mergedConfig.atlas.runtime.persistence?.path,
           });
         }
       } catch (err) {

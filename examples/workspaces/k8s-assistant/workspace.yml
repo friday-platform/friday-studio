@@ -5,6 +5,57 @@ workspace:
   name: "k8s-assistant"
   description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
 
+# Top-level job definitions
+jobs:
+  unified-k8s-operation:
+    name: "unified-k8s-operation"
+    description: |
+      Comprehensive Kubernetes operation handler via HTTP API:
+      1. K8s main agent analyzes the request and determines required kubectl operations
+      2. Executes deployments, scaling, configuration updates, or troubleshooting commands
+      3. Validates operation success and provides detailed status report with resource states
+      Result: Reliable execution of any Kubernetes management task with full audit trail
+      and error recovery for production cluster operations
+    triggers:
+      - signal: "http-k8s"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "k8s-main-agent"
+
+  direct-k8s-operation:
+    name: "direct-k8s-operation"
+    description: |
+      Direct Kubernetes operation execution via CLI interface:
+      1. K8s main agent processes CLI command input and validates request syntax
+      2. Executes kubectl operations with appropriate context and namespace handling
+      3. Returns formatted output with success/failure status and next steps
+      Result: Direct CLI-style interaction with Kubernetes cluster through intelligent
+      agent that understands context and provides enhanced error handling
+    triggers:
+      - signal: "cli-k8s"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "k8s-main-agent"
+
+  handle-k8s-event:
+    name: "handle-k8s-event"
+    description: |
+      Real-time Kubernetes event processing and incident response:
+      1. K8s main agent analyzes incoming cluster events and determines severity level
+      2. Performs automated diagnostics and immediate remediation if possible
+      3. Local assistant generates detailed incident report with troubleshooting guidance
+      Result: Automated incident response with intelligent triage, immediate fixes
+      where possible, and comprehensive documentation for manual intervention
+    triggers:
+      - signal: "k8s-events"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "k8s-main-agent"
+        - id: "local-assistant"
+
 # Agent Configuration
 # This workspace uses a multi-agent architecture:
 # - k8s-main-agent: Primary AI agent for K8s operations (port 8080)
@@ -21,18 +72,18 @@ agents:
     # ACP-specific settings for reliable K8s operations
     acp:
       agent_name: "k8s-deployment-manager"
-      default_mode: "sync"               # Synchronous mode for reliable operations
-      timeout_ms: 120000                 # 2-minute timeout for complex operations
-      max_retries: 2                     # Retry failed requests
-      health_check_interval: 30000       # Health check every 30 seconds
+      default_mode: "sync" # Synchronous mode for reliable operations
+      timeout_ms: 120000 # 2-minute timeout for complex operations
+      max_retries: 2 # Retry failed requests
+      health_check_interval: 30000 # Health check every 30 seconds
 
     # Production monitoring and reliability
     monitoring:
       enabled: true
       circuit_breaker:
-        failure_threshold: 3             # Open circuit after 3 failures
-        timeout_ms: 120000               # Stay open for 2 minutes
-        half_open_max_calls: 2           # Test with 2 calls when half-open
+        failure_threshold: 3 # Open circuit after 3 failures
+        timeout_ms: 120000 # Stay open for 2 minutes
+        half_open_max_calls: 2 # Test with 2 calls when half-open
 
   # Monitor agent configured as both agent and signal provider
   # NOTE: This agent is primarily used as a signal provider via the k8s-events stream signal
@@ -49,7 +100,7 @@ agents:
     monitoring:
       enabled: true
       circuit_breaker:
-        failure_threshold: 5             # More tolerant for monitoring agent
+        failure_threshold: 5 # More tolerant for monitoring agent
         timeout_ms: 30000
         half_open_max_calls: 1
 
@@ -65,7 +116,7 @@ agents:
 # Signal Configuration
 # Atlas supports multiple signal types for different interaction patterns:
 # - HTTP signals: For direct API calls and webhook integrations
-# - CLI signals: For command-line driven operations  
+# - CLI signals: For command-line driven operations
 # - Stream signals: For real-time event streaming (NEW: monitor agent integration)
 signals:
   # Single HTTP endpoint for all k8s operations
@@ -74,26 +125,12 @@ signals:
     provider: "http"
     path: "/k8s"
     method: "POST"
-    jobs:
-      - name: "k8s-operation"
-        description: "Handle any Kubernetes operation via HTTP"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
 
   # CLI interface for direct operations
   cli-k8s:
     description: "CLI interface for Kubernetes operations"
     provider: "cli"
     command: "k8s"
-    jobs:
-      - name: "direct-k8s-operation"
-        description: "Direct Kubernetes operation via CLI"
-        execution:
-          strategy: "sequential"
-          agents:
-            - id: "k8s-main-agent"
 
   # Monitor agent signals - Real-time K8s event streaming
   k8s-events:
@@ -101,41 +138,12 @@ signals:
     provider: "stream"
     source: "k8s-monitor-agent"
     endpoint: "http://localhost:8082"
-    timeout_ms: 120000  # 2 minutes - much longer than keepalive interval
+    timeout_ms: 120000 # 2 minutes - much longer than keepalive interval
     retry_config:
       max_retries: 3
       retry_delay_ms: 2000
-    jobs:
-      - name: "handle-k8s-event"
-        description: "Process Kubernetes events from monitor agent"
-        execution:
-          strategy: "sequential"  # Process events one at a time for reliability
-          agents:
-            - id: "k8s-main-agent"      # Primary handler for K8s operations
-            - id: "local-assistant"     # Fallback and documentation support
-        # filters: # Removed - Accept ALL events from monitor agent
-        #   - type: "pod"
-        #     events: ["Failed", "BackOff", "Unhealthy", "Killing", "FailedScheduling", "FailedMount"]
-        #   - type: "deployment"
-        #     events: ["Failed", "ProgressDeadlineExceeded"]
-        #   - type: "service"
-        #     events: ["Failed", "LoadBalancerFailed"]
-        #   - type: "node"
-        #     events: ["NodeNotReady", "NodePressure", "Rebooted"]
+    # Note: filters removed - jobs now define their own trigger conditions
 
-# Runtime configuration
-runtime:
-  server:
-    port: 3001
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"
 
 # Memory configuration for k8s operations
 memory:
