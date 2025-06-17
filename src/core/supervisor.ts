@@ -791,9 +791,12 @@ Provide a structured analysis.`;
       this.logger.debug(`[DEBUG] selectJobForSignal started`, {
         signalId: signal.id,
         signalDataProvided: !!signalData,
+        signalDataJobs: signalData?.jobs ? Object.keys(signalData.jobs) : [],
+        mergedConfigJobs: this.mergedConfig?.jobs ? Object.keys(this.mergedConfig.jobs) : [],
         availableJobNames: Object.keys(availableJobs),
         payloadKeys: Object.keys(payload),
         mergedConfigAvailable: !!this.mergedConfig,
+        jobsSourceUsed: signalData?.jobs ? 'signalData' : (this.mergedConfig?.jobs ? 'mergedConfig' : 'none'),
       });
 
       // Find jobs that have triggers for this signal
