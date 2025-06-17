@@ -15,42 +15,33 @@ echo "✅ Workspace server is running"
 
 # Test code review request
 echo "📝 Testing code review request..."
-curl -X POST http://localhost:3001/signals/trigger \
+curl -X POST http://localhost:3001/signals/code-review-request \
   -H "Content-Type: application/json" \
   -d '{
-    "signal": "code-review-request",
-    "payload": {
-      "files": ["README.md", "workspace.yml"],
-      "focus_areas": ["documentation", "configuration"]
-    }
+    "files": ["README.md", "workspace.yml"],
+    "focus_areas": ["documentation", "configuration"]
   }' | jq '.' 2>/dev/null || echo "Response received"
 
 echo ""
 
 # Test file operation
 echo "📁 Testing file operation..."
-curl -X POST http://localhost:3001/signals/trigger \
+curl -X POST http://localhost:3001/signals/file-operation-request \
   -H "Content-Type: application/json" \
   -d '{
-    "signal": "file-operation-request",
-    "payload": {
-      "operation": "read",
-      "path": "./README.md"
-    }
+    "operation": "read",
+    "path": "./README.md"
   }' | jq '.' 2>/dev/null || echo "Response received"
 
 echo ""
 
 # Test research request
 echo "🔍 Testing research request..."
-curl -X POST http://localhost:3001/signals/trigger \
+curl -X POST http://localhost:3001/signals/research-request \
   -H "Content-Type: application/json" \
   -d '{
-    "signal": "research-request",
-    "payload": {
-      "topic": "Atlas workspace configuration",
-      "focus_areas": ["best-practices", "examples"]
-    }
+    "topic": "Atlas workspace configuration",
+    "focus_areas": ["best-practices", "examples"]
   }' | jq '.' 2>/dev/null || echo "Response received"
 
 echo ""
