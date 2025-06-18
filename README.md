@@ -279,18 +279,37 @@ Demonstrates agent chaining where messages transform through multiple agents:
 
 ```bash
 cd examples/workspaces/telephone
-# Add your API key to .env file first
-./start-server.sh          # Terminal 1
-./trigger-signal.sh        # Terminal 2
+# Add your ANTHROPIC_API_KEY to .env file first
+deno task atlas workspace serve          # Terminal 1
+curl -X POST http://localhost:8080/telephone -d '{"message": "The cat sat on the mat"}' # Terminal 2
 ```
 
 **What happens:**
 
 1. **Mishearing Agent** - Introduces phonetic errors and mishearing
-2. **Embellishment Agent** - Adds dramatic context and details
-3. **Reinterpretation Agent** - Transforms the meaning entirely
+2. **Embellishment Agent** - Adds creative details and context  
+3. **Reinterpretation Agent** - Dramatically transforms the meaning
 
 Your message gets hilariously transformed through this chain!
+
+**Sample Configuration:**
+```yaml
+# workspace.yml
+jobs:
+  telephone:
+    triggers:
+      - signal: "telephone-message"
+        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+          input_source: "signal"
+        - id: "embellishment-agent"
+          input_source: "previous"
+        - id: "reinterpretation-agent"
+          input_source: "previous"
+```
 
 ### More Examples Coming Soon
 

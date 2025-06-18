@@ -1,10 +1,16 @@
-job:
-  name: "telephone"
-  description: "Telephone game"
+name: "telephone"
+description: "Telephone game message transformation through sequential agent processing"
 
-  execution:
-    strategy: "sequential"
-    agents:
-      - id: "mishearing-agent"
-      - id: "embellishment-agent"
-      - id: "reinterpretation-agent"
+triggers:
+  - signal: "telephone-message"
+    condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+
+execution:
+  strategy: "sequential"
+  agents:
+    - id: "mishearing-agent"
+      input_source: "signal"
+    - id: "embellishment-agent"
+      input_source: "previous"
+    - id: "reinterpretation-agent"
+      input_source: "previous"

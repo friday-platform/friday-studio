@@ -3,10 +3,17 @@ version: "1.0"
 workspace:
   id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Multi-Provider Telephone Game"
-  description: "A game where messages transform through multiple agents using different LLM providers (OpenAI, Google)"
+  description: "A game where messages transform through multiple agents using different LLM providers"
 
-# User-defined agents for telephone game
-# Top-level job definitions
+# Signal definitions
+signals:
+  telephone-message:
+    description: "Trigger a telephone game with a message"
+    provider: "http"
+    path: "/telephone"
+    method: "POST"
+
+# Job definitions
 jobs:
   telephone:
     name: "telephone"
@@ -19,71 +26,30 @@ jobs:
       how information degrades and mutates through sequential processing
     triggers:
       - signal: "telephone-message"
-        condition: "message && message.length > 0 && message.length < 100"
+        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}, {"<": [{"length": {"var": "message"}}, 100]}]}
     execution:
       strategy: "sequential"
       agents:
         - id: "mishearing-agent"
+          input_source: "signal"
         - id: "embellishment-agent"
+          input_source: "previous"
         - id: "reinterpretation-agent"
+          input_source: "previous"
 
+# Agent definitions  
 agents:
-  # OpenAI-based agent with specialized prompts for mishearing
   mishearing-agent:
     type: "llm"
-    provider: "openai"
-    model: "gpt-3.5-turbo"
+    model: "claude-3-5-haiku-20241022"  # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
-    tools: ["text-analysis", "phonetic-processing"]
-    prompts:
-      system: |
-        You are a mishearing specialist agent. Your role is to transform messages
-        as if they were misheard in a noisy environment.
 
-        Focus on:
-        - Phonetic similarities and sound-alike words
-        - Common mishearing patterns
-        - Plausible but incorrect interpretations
-        - Maintaining some connection to the original meaning
-
-  # OpenAI agent for creative embellishment (changed for timing test)
   embellishment-agent:
     type: "llm"
-    provider: "openai"
-    model: "gpt-3.5-turbo"
-    purpose: "Adds simple details to messages"
-    tools: ["text-analysis"]
-    prompts:
-      system: |
-        Add one simple detail to the message. Keep it short.
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Adds creative details and context to messages"
 
-  # OpenAI agent for dramatic reinterpretation (changed for timing test)
   reinterpretation-agent:
     type: "llm"
-    provider: "openai"
-    model: "gpt-3.5-turbo"
+    model: "claude-3-5-haiku-20241022"
     purpose: "Dramatically transforms and reinterprets messages"
-    tools: ["semantic-analysis", "creative-reinterpretation"]
-    prompts:
-      system: |
-        You are a reinterpretation specialist agent. Your role is to dramatically
-        transform messages by finding alternative meanings and creative interpretations.
-
-        Focus on:
-        - Finding unexpected connections and alternative meanings
-        - Dramatic shifts in context or perspective
-        - Creative reframing of the core elements
-        - Surprising but plausible reinterpretations
-
-# Signal definitions
-signals:
-  telephone-message:
-    description: "Trigger a telephone game with a message"
-    provider: "cli"
-    schema:
-      type: "object"
-      properties:
-        message:
-          type: "string"
-          description: "The message to transform through the telephone game"
-      required: ["message"]
