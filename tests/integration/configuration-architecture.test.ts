@@ -490,6 +490,159 @@ Deno.test("Agent type configurations validate correctly", async () => {
   }
 });
 
+Deno.test("Job-owns-relationship architecture: triggers field is preserved", async () => {
+  // REGRESSION TEST: Ensure job triggers are loaded and preserved
+  // Guards against silent loss of triggers field from JobSpecification normalization
+  const originalCwd = Deno.cwd();
+  let tempDir: string | null = null;
+
+  try {
+    tempDir = await createTestEnvironment();
+    Deno.chdir(tempDir);
+
+    const configLoader = new ConfigLoader();
+    const mergedConfig = await configLoader.load();
+
+    // Test that job triggers are loaded from workspace.yml
+    expect(mergedConfig.jobs["test-job"]).toBeDefined();
+    const testJob = mergedConfig.jobs["test-job"];
+
+    // CRITICAL: triggers field must be present and populated
+    expect(testJob.triggers).toBeDefined();
+    expect(Array.isArray(testJob.triggers)).toBe(true);
+    expect(testJob.triggers!.length).toBe(1);
+    
+    // Verify trigger structure
+    const trigger = testJob.triggers![0];
+    expect(trigger.signal).toBe("test-signal");
+    expect(trigger.condition).toBe("message && message.length > 0");
+
+    // Verify signal-to-job mapping works via triggers
+    const signalId = "test-signal";
+    const jobsForSignal = Object.values(mergedConfig.jobs).filter(job => 
+      job.triggers?.some(t => t.signal === signalId)
+    );
+    expect(jobsForSignal.length).toBe(1);
+    expect(jobsForSignal[0].name).toBe("test-job");
+  } finally {
+    Deno.chdir(originalCwd);
+    if (tempDir) {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  }
+});
+
+Deno.test("Remote agent protocol validation", async () => {
+  // Test remote agent protocol field validation
+  // Ensures protocol is required at top-level for remote agents
+  const originalCwd = Deno.cwd();
+  let tempDir: string | null = null;
+
+  try {
+    tempDir = await createTestEnvironment();
+    Deno.chdir(tempDir);
+
+    const configLoader = new ConfigLoader();
+    const mergedConfig = await configLoader.load();
+
+    // Test workspace remote agent
+    const remoteAgent = mergedConfig.workspace.agents["test-remote-agent"];
+    expect(remoteAgent.type).toBe("remote");
+    expect(remoteAgent.protocol).toBe("acp");
+    expect(remoteAgent.endpoint).toBeDefined();
+    expect(remoteAgent.acp?.agent_name).toBe("test-agent");
+
+    // Test atlas remote agent  
+    const atlasRemoteAgent = mergedConfig.atlas.agents?.["security-scanner"];
+    expect(atlasRemoteAgent?.type).toBe("remote");
+    expect(atlasRemoteAgent?.protocol).toBe("acp");
+    expect(atlasRemoteAgent?.endpoint).toBeDefined();
+    expect(atlasRemoteAgent?.acp?.agent_name).toBe("security-scanner");
+  } finally {
+    Deno.chdir(originalCwd);
+    if (tempDir) {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  }
+});
+
+Deno.test("Remote agent validation catches missing protocol", async () => {
+  // Test that missing protocol field is caught during validation
+  const originalCwd = Deno.cwd();
+  let tempDir: string | null = null;
+
+  try {
+    tempDir = await Deno.makeTempDir({ prefix: "atlas-config-protocol-test-" });
+
+    // Create atlas.yml (valid)
+    await Deno.writeTextFile(join(tempDir, "atlas.yml"), validAtlasConfig);
+
+    // Create workspace.yml with remote agent missing protocol
+    const invalidWorkspaceContent = `version: "1.0"
+workspace:
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
+  name: "Test Workspace"
+  description: "Test workspace for protocol validation"
+
+jobs:
+  test-job:
+    name: "test-job"
+    description: "Test job"
+    triggers:
+      - signal: "test-signal"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "invalid-remote-agent"
+
+agents:
+  invalid-remote-agent:
+    type: "remote"
+    # MISSING: protocol field
+    endpoint: "https://api.test.com/agent"
+    purpose: "Test remote agent without protocol"
+    acp:
+      agent_name: "test-agent"
+
+signals:
+  test-signal:
+    description: "Test signal"
+    provider: "cli"
+`;
+
+    await Deno.writeTextFile(
+      join(tempDir, "workspace.yml"),
+      invalidWorkspaceContent,
+    );
+    Deno.chdir(tempDir);
+
+    const configLoader = new ConfigLoader();
+
+    // Test that validation catches missing protocol
+    let errorCaught = false;
+    try {
+      await configLoader.load();
+    } catch (error) {
+      errorCaught = true;
+      expect(error).toBeInstanceOf(Error);
+      const errorMessage = (error as Error).message;
+      // Should catch missing protocol field
+      expect(
+        errorMessage.includes("Remote agents require 'protocol' field") ||
+        errorMessage.includes("protocol") ||
+        errorMessage.includes("remote agent")
+      ).toBe(true);
+    }
+
+    expect(errorCaught).toBe(true);
+  } finally {
+    Deno.chdir(originalCwd);
+    if (tempDir) {
+      await Deno.remove(tempDir, { recursive: true });
+    }
+  }
+});
+
 Deno.test("Configuration validation catches errors", async () => {
   // Test comprehensive configuration validation
   // - Missing required fields

@@ -12,6 +12,7 @@ import { logger } from "../utils/logger.ts";
 export interface JobSpecification {
   name: string;
   description: string;
+  triggers?: JobTrigger[]; // Signal triggers that activate this job
   session_prompts?: {
     planning?: string;
     evaluation?: string;
@@ -28,6 +29,11 @@ export interface JobSpecification {
     max_memory_mb?: number;
     required_capabilities?: string[];
   };
+}
+
+export interface JobTrigger {
+  signal: string;
+  condition?: string;
 }
 
 export interface JobExecution {
