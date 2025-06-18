@@ -2,9 +2,14 @@
  * Configuration loader for Atlas that merges atlas.yml and workspace.yml
  */
 
-import { parse as parseYaml } from "@std/yaml";
 import { join } from "@std/path";
+import { parse as parseYaml } from "@std/yaml";
 import { z } from "zod/v4";
+import {
+  MCPAuthConfigSchema,
+  MCPToolsConfigSchema,
+  MCPTransportConfigSchema,
+} from "./agents/mcp/mcp-manager.ts";
 import type {
   AgentConfig,
   JobSpecification,
@@ -65,11 +70,19 @@ const ACPConfigSchema = z.object({
   health_check_interval: z.number().positive().default(60000),
 });
 
-// MCP-specific configuration schema
+// MCP-specific configuration schema (for remote agents)
 const MCPConfigSchema = z.object({
   timeout_ms: z.number().positive().default(30000),
   allowed_tools: z.array(z.string()).optional(),
   denied_tools: z.array(z.string()).optional(),
+});
+
+// Comprehensive MCP server configuration schema for workspace-level MCP servers
+const WorkspaceMCPServerConfigSchema = z.object({
+  transport: MCPTransportConfigSchema,
+  auth: MCPAuthConfigSchema.optional(),
+  tools: MCPToolsConfigSchema.optional(),
+  timeout_ms: z.number().positive().default(30000),
 });
 
 // Validation configuration schema
@@ -101,6 +114,20 @@ const WorkspaceAgentConfigSchema = z
     prompts: z.record(z.string(), z.string()).optional(),
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().positive().optional(),
+    // MCP integration for LLM agents
+    mcp_servers: z.array(z.string()).optional(), // References to MCP servers
+    max_steps: z.number().positive().optional(), // For multi-step tool calling
+    tool_choice: z
+      .union([
+        z.literal("auto"),
+        z.literal("required"),
+        z.literal("none"),
+        z.object({
+          type: z.literal("tool"),
+          toolName: z.string(),
+        }),
+      ])
+      .optional(), // Tool choice control
     // Tempest agent specific
     agent: z.string().optional(),
     version: z.string().optional(),
@@ -311,8 +338,9 @@ const NewWorkspaceConfigSchema = z.object({
     name: z.string().min(1, "Workspace name cannot be empty"),
     description: z.string(),
   }),
+  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(), // MCP servers configuration
   agents: z.record(z.string(), WorkspaceAgentConfigSchema),
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // NEW: Top-level jobs section
+  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // Top-level jobs section
   signals: z.record(z.string(), WorkspaceSignalConfigSchema),
 });
 
@@ -371,6 +399,7 @@ export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;
 export type NewWorkspaceConfig = z.infer<typeof NewWorkspaceConfigSchema>;
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
+export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
 
 // Merged configuration that combines both
 export interface MergedConfig {
@@ -522,6 +551,33 @@ export class ConfigLoader {
     workspaceConfig: NewWorkspaceConfig,
     jobs: Record<string, JobSpecification>,
   ): void {
+    // Validate MCP server references in agents
+    for (const [agentId, agentConfig] of Object.entries(workspaceConfig.agents)) {
+      if (agentConfig.mcp_servers && agentConfig.mcp_servers.length > 0) {
+        // Ensure agent is LLM type if using MCP servers
+        if (agentConfig.type !== "llm") {
+          throw new ConfigValidationError(
+            `Agent '${agentId}' has mcp_servers configured but is not an LLM agent. Only LLM agents support MCP servers.`,
+            "workspace.yml",
+            `agents.${agentId}.mcp_servers`,
+            agentConfig.mcp_servers,
+          );
+        }
+
+        // Validate each MCP server reference exists
+        for (const mcpServerId of agentConfig.mcp_servers) {
+          if (!workspaceConfig.mcp_servers?.[mcpServerId]) {
+            throw new ConfigValidationError(
+              `Agent '${agentId}' references MCP server '${mcpServerId}' which is not defined in mcp_servers section`,
+              "workspace.yml",
+              `agents.${agentId}.mcp_servers`,
+              mcpServerId,
+            );
+          }
+        }
+      }
+    }
+
     // Cross-validate job trigger references and agent availability
     for (const [jobName, jobSpec] of Object.entries(jobs)) {
       // Validate that agents referenced in job exist in workspace or atlas
@@ -656,6 +712,9 @@ export class ConfigLoader {
           purpose: workspaceAgentConfig.purpose,
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
+          mcp_servers: workspaceAgentConfig.mcp_servers,
+          max_steps: workspaceAgentConfig.max_steps,
+          tool_choice: workspaceAgentConfig.tool_choice,
         } as LLMAgentConfig;
 
       case "remote":

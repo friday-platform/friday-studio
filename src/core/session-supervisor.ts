@@ -70,6 +70,10 @@ export interface LLMAgentConfig {
     system?: string;
     [key: string]: string | undefined;
   };
+  // MCP integration fields
+  mcp_servers?: string[]; // References to MCP servers
+  max_steps?: number; // For multi-step tool calling
+  tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string }; // Tool choice control
 }
 
 export interface RemoteAgentConfig {

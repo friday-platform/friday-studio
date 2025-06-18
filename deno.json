@@ -17,7 +17,10 @@
     "fmt": "deno fmt",
     "lint": "deno lint",
     "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
-    "example-playwright-mcp-server": "deno run --allow-all --unstable-broadcast-channel --unstable-worker-options examples/workspaces/playwright-mcp/server.ts"
+    "example-playwright-mcp-server": "deno run --allow-all --unstable-broadcast-channel --unstable-worker-options examples/workspaces/playwright-mcp/server.ts",
+    "test-mcp-weather": "deno run --allow-all tests/mocks/weather-mcp-server.ts",
+    "test-mcp-file-tools": "deno run --allow-all tests/mocks/file-tools-mcp-server.ts",
+    "test-mcp-echo": "deno run --allow-all tests/mocks/echo-mcp-server.ts"
   },
   "imports": {
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",

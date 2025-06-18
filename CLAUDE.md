@@ -102,6 +102,44 @@ The codebase now demonstrates enterprise-grade architecture:
 - **Clean Signal Handling**: Reliable termination without hanging processes
 - **Configuration Hierarchy**: Clear separation of concerns between platform and user settings
 
+## Input Validation Standards
+
+### Zod v4 Schema Validation
+
+**IMPORTANT**: Use Zod v4 for parsing and validating all unknown input wherever possible. This provides both compile-time and runtime type safety.
+
+**Modern API Pattern**: When implementing MCP servers or similar protocol handlers, use the modern API approach:
+
+```typescript
+import { z } from "zod";
+
+// Use Zod schemas for type-safe input validation
+const InputSchema = z.object({
+  location: z.string().describe("The location to get weather for"),
+  days: z.number().optional().default(3),
+});
+
+// Register tools with schema validation
+server.registerTool(
+  "get_weather",
+  {
+    description: "Get current weather for a location",
+    inputSchema: InputSchema,
+  },
+  ({ location, days = 3 }) => {
+    // Input is automatically validated and typed
+    return { /* response */ };
+  }
+);
+```
+
+**Key Benefits**:
+- Compile-time type safety with TypeScript inference
+- Runtime validation prevents invalid data
+- Automatic type coercion and defaults
+- Clear API contracts with descriptive schemas
+- Eliminates need for `any` types or unsafe casting
+
 ## Vision & Goals
 
 Transform software delivery into an AI-native process by building a system that orchestrates the

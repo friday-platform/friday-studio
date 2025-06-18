@@ -1,9 +1,12 @@
 import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
-import { type CoreMessage, generateText, streamText } from "ai";
+import { type CoreMessage, generateText, streamText, Tool, ToolCall, ToolResult } from "ai";
 import { z } from "zod";
 import { logger } from "../../utils/logger.ts";
+
+// Import MCP Manager for tool integration
+import { MCPManager, type MCPServerConfig } from "./mcp/mcp-manager.ts";
 
 // Zod schemas for validation
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
@@ -24,9 +27,28 @@ const LLMGenerationOptionsSchema = z.object({
   operationContext: z.record(z.string(), z.any()).optional(),
 });
 
+// Enhanced generation options with MCP tool support
+const LLMGenerationOptionsWithToolsSchema = LLMGenerationOptionsSchema.extend({
+  mcpServers: z.array(z.string()).optional(),
+  tools: z.record(z.string(), z.any()).optional(), // Additional AI SDK tools
+  maxSteps: z.number().positive().optional(),
+  toolChoice: z
+    .union([
+      z.literal("auto"),
+      z.literal("required"),
+      z.literal("none"),
+      z.object({
+        type: z.literal("tool"),
+        toolName: z.string(),
+      }),
+    ])
+    .optional(),
+});
+
 export type LLMProvider = z.infer<typeof LLMProviderSchema>;
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 export type LLMGenerationOptions = z.infer<typeof LLMGenerationOptionsSchema>;
+export type LLMGenerationOptionsWithTools = z.infer<typeof LLMGenerationOptionsWithToolsSchema>;
 
 // Union type for provider clients
 type ProviderClient = AnthropicProvider | OpenAIProvider | GoogleGenerativeAIProvider;
@@ -43,6 +65,7 @@ const PROVIDER_ENV_VARS = {
  */
 export class LLMProviderManager {
   private static clients: Map<string, ProviderClient> = new Map();
+  private static mcpManager = new MCPManager();
 
   private static defaultConfig: Partial<LLMConfig> = {
     provider: "anthropic",
@@ -361,6 +384,230 @@ export class LLMProviderManager {
 
       throw enhancedError;
     }
+  }
+
+  /**
+   * Initialize MCP servers for tool integration
+   * @param servers Array of MCP server configurations
+   */
+  static async initializeMCPServers(servers: MCPServerConfig[]): Promise<void> {
+    logger.info("Initializing MCP servers", {
+      operation: "mcp_initialization",
+      serverCount: servers.length,
+      serverIds: servers.map((s) => s.id),
+    });
+
+    for (const serverConfig of servers) {
+      try {
+        await this.mcpManager.registerServer(serverConfig);
+        logger.debug(`MCP server initialized: ${serverConfig.id}`, {
+          operation: "mcp_server_init",
+          serverId: serverConfig.id,
+          transport: serverConfig.transport.type,
+        });
+      } catch (error) {
+        logger.error(`Failed to initialize MCP server: ${serverConfig.id}`, {
+          operation: "mcp_server_init",
+          serverId: serverConfig.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+
+    logger.info("MCP servers initialization completed", {
+      operation: "mcp_initialization",
+      successCount: servers.length,
+    });
+  }
+
+  /**
+   * Generate text with MCP tool support using AI SDK's native tool calling
+   * @param userPrompt The user prompt
+   * @param options Generation options including MCP server references
+   * @returns Generation result with tool calls and results
+   */
+  static async generateTextWithTools(
+    userPrompt: string,
+    options: LLMGenerationOptionsWithTools & Partial<LLMConfig> = {},
+  ): Promise<{
+    text: string;
+    toolCalls: ToolCall<string, unknown>[];
+    toolResults: ToolResult<string, unknown, unknown>[];
+    steps: unknown[];
+  }> {
+    const startTime = Date.now();
+
+    // Validate and parse configuration
+    const configResult = LLMConfigSchema.safeParse({
+      ...this.defaultConfig,
+      ...options,
+    });
+    if (!configResult.success) {
+      throw new Error(
+        `Invalid LLM configuration: ${configResult.error.message}`,
+      );
+    }
+    const config = configResult.data;
+
+    // Validate generation options
+    const optionsResult = LLMGenerationOptionsWithToolsSchema.safeParse(options);
+    if (!optionsResult.success) {
+      throw new Error(
+        `Invalid generation options: ${optionsResult.error.message}`,
+      );
+    }
+
+    // Prepare tools - combine provided tools with MCP tools
+    const allTools: Record<string, Tool> = { ...options.tools };
+
+    // Add MCP tools if servers are specified
+    if (options.mcpServers && options.mcpServers.length > 0) {
+      try {
+        const mcpTools = await this.mcpManager.getToolsForServers(
+          options.mcpServers,
+        );
+        Object.assign(allTools, mcpTools);
+
+        logger.debug("MCP tools loaded", {
+          operation: "mcp_tools_loading",
+          mcpServers: options.mcpServers,
+          mcpToolCount: Object.keys(mcpTools).length,
+          totalToolCount: Object.keys(allTools).length,
+        });
+      } catch (error) {
+        logger.error("Failed to load MCP tools", {
+          operation: "mcp_tools_loading",
+          mcpServers: options.mcpServers,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), config.timeout);
+
+    try {
+      const client = this.getProviderClient(config.provider, config);
+
+      const messages: CoreMessage[] = [];
+
+      if (options.systemPrompt) {
+        messages.push({
+          role: "system",
+          content: options.systemPrompt,
+        });
+      }
+
+      let contextualPrompt = userPrompt;
+      if (options.memoryContext) {
+        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      }
+
+      messages.push({
+        role: "user",
+        content: contextualPrompt,
+      });
+
+      logger.debug("LLM generation with MCP tools starting", {
+        operation: options.operationContext?.operation || "tool_generation",
+        provider: config.provider,
+        model: config.model,
+        toolCount: Object.keys(allTools).length,
+        mcpServerCount: options.mcpServers?.length || 0,
+        maxSteps: options.maxSteps || 1,
+        toolChoice: options.toolChoice,
+        ...options.operationContext,
+      });
+
+      // TODO: Replace with actual AI SDK tool calling when MCP support is available
+      // For now, this is a placeholder implementation
+      const result = await generateText({
+        model: client(config.model),
+        messages,
+        tools: Object.keys(allTools).length > 0 ? allTools : undefined,
+        // toolChoice: options.toolChoice, // Uncomment when AI SDK supports this
+        // maxSteps: options.maxSteps || 1, // Uncomment when AI SDK supports this
+        maxTokens: config.maxTokens,
+        temperature: config.temperature,
+        abortSignal: controller.signal,
+      });
+
+      clearTimeout(timeout);
+      const duration = Date.now() - startTime;
+
+      // Placeholder response structure - will be replaced with actual AI SDK tool response
+      const toolResponse = {
+        text: result.text,
+        toolCalls: [], // Will be populated by AI SDK
+        toolResults: [], // Will be populated by AI SDK
+        steps: [], // Will be populated by AI SDK
+      };
+
+      logger.debug("LLM generation with MCP tools completed", {
+        operation: options.operationContext?.operation || "tool_generation",
+        provider: config.provider,
+        model: config.model,
+        duration,
+        toolCallCount: toolResponse.toolCalls.length,
+        stepCount: toolResponse.steps.length,
+        responseLength: result.text.length,
+        ...options.operationContext,
+      });
+
+      return toolResponse;
+    } catch (error) {
+      clearTimeout(timeout);
+      const duration = Date.now() - startTime;
+
+      logger.error("LLM generation with MCP tools failed", {
+        operation: options.operationContext?.operation || "tool_generation",
+        provider: config.provider,
+        model: config.model,
+        duration,
+        mcpServerCount: options.mcpServers?.length || 0,
+        toolCount: Object.keys(allTools).length,
+        error: error instanceof Error ? error.message : String(error),
+        ...options.operationContext,
+      });
+
+      throw error;
+    }
+  }
+
+  /**
+   * Dispose MCP resources
+   */
+  static async disposeMCPResources(): Promise<void> {
+    try {
+      await this.mcpManager.dispose();
+      logger.info("MCP resources disposed", {
+        operation: "mcp_cleanup",
+      });
+    } catch (error) {
+      logger.error("Failed to dispose MCP resources", {
+        operation: "mcp_cleanup",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get MCP server status
+   * @returns Map of server IDs to connection status
+   */
+  static getMCPServerStatus(): Map<string, boolean> {
+    return this.mcpManager.getServerStatus();
+  }
+
+  /**
+   * List registered MCP servers
+   * @returns Array of server IDs
+   */
+  static listMCPServers(): string[] {
+    return this.mcpManager.listServers();
   }
 
   /**

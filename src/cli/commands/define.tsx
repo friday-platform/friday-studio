@@ -408,7 +408,6 @@ export default function DefineCommand({ args, subcommand, flags = {} }: DefineCo
           )}
         </>
       )}
-
     </Box>
   );
 }

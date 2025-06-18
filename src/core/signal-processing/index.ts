@@ -5,17 +5,17 @@
 
 export { SignalAnalyzer } from "./signal-analyzer.ts";
 export { TaskGenerator } from "./task-generator.ts";
-export { AgentSelector, type AgentInfo } from "./agent-selector.ts";
-export { SignalProcessor, type ProcessingResult } from "./signal-processor.ts";
+export { type AgentInfo, AgentSelector } from "./agent-selector.ts";
+export { type ProcessingResult, SignalProcessor } from "./signal-processor.ts";
 
 export type {
+  AgentCapabilities,
+  AgentRoutingRule,
+  EnhancedTask,
+  EntityExtraction,
   SignalAnalysis,
   SignalPattern,
-  SignalTrigger,
-  EntityExtraction,
-  TaskTemplate,
-  EnhancedTask,
-  AgentCapabilities,
   SignalProcessingConfig,
-  AgentRoutingRule,
+  SignalTrigger,
+  TaskTemplate,
 } from "./types.ts";
