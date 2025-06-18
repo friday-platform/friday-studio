@@ -504,6 +504,7 @@ export class ConfigLoader {
         const normalizedJobSpec: JobSpecification = {
           name: jobName, // Use the key as the name
           description: jobSpec.description || `Top-level job: ${jobName}`,
+          triggers: jobSpec.triggers, // Include triggers for signal-to-job mapping
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,
