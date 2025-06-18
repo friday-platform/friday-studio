@@ -1,0 +1,155 @@
+version: "1.0"
+
+workspace:
+  id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  name: "Atlas Codebase Analyzer"
+  description: "Autonomous Atlas codebase analysis for performance and developer experience improvements"
+
+# Signal definitions for autonomous operation
+signals:
+  # Built-in codebase watcher - fires on significant code changes
+  codebase-watcher:
+    provider: "codebase-watcher"
+    description: "File monitoring for autonomous analysis"
+    path: "/Users/kenneth/tempest/atlas"
+    watch_patterns:
+      - "src/**/*.ts"
+      - "src/**/*.tsx" 
+      - "*.yml"
+      - "*.md"
+      - "tests/**/*.ts"
+    ignore_patterns:
+      - "node_modules/**"
+      - ".git/**"
+      - "lgtm/**"
+      - "**/target/**"
+    debounce_seconds: 300  # Wait 5 minutes after last change
+    min_changes: 3         # Require at least 3 file changes
+    analysis_triggers:
+      - "performance_patterns"
+      - "developer_experience"
+      - "architecture_changes"
+
+  # Manual trigger for immediate analysis
+  manual-analysis:
+    provider: "http"
+    path: "/analyze"
+    method: "POST"
+    description: "Manual trigger for codebase analysis"
+
+  # Weekly comprehensive analysis
+  weekly-review:
+    provider: "cron-scheduler"
+    description: "Scheduled weekly analysis"
+    schedule: "0 9 * * 1"  # Every Monday at 9 AM
+    timezone: "America/Los_Angeles"
+
+# Agent definitions - using advanced reasoning capabilities
+agents:
+  # Performance analysis agent
+  performance-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Deep performance analysis and optimization recommendations"
+
+  # Developer experience analyzer
+  dx-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Developer experience analysis and improvement recommendations"
+
+  # Architecture analysis agent
+  architecture-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "System architecture analysis and design recommendations"
+
+  # Report generator - synthesizes findings into actionable reports
+  report-generator:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Generate comprehensive markdown reports with prioritized recommendations"
+
+# Job definitions for different analysis workflows
+jobs:
+  comprehensive-analysis:
+    name: "comprehensive-analysis"
+    description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+    execution:
+      strategy: "sequential"
+      context:
+        codebase_files:
+          - "src/core/workspace-runtime.ts"
+          - "src/core/session-supervisor.ts"
+          - "src/core/supervisor.ts"
+          - "src/core/workers/"
+          - "src/cli/commands/workspace.tsx"
+          - "atlas.yml"
+          - "CLAUDE.md"
+        focus_areas:
+          - "Worker architecture and communication patterns"
+          - "XState FSM implementations"
+          - "Signal processing and session lifecycle"
+          - "Memory management and library integration"
+          - "Agent supervision hierarchy"
+      agents:
+        - id: "performance-analyzer"
+          input_source: "codebase_context"
+        - id: "dx-analyzer"
+          input_source: "codebase_context"
+        - id: "architecture-analyzer"
+          input_source: "codebase_context"
+        - id: "report-generator"
+          input_source: "combined"
+        
+  performance-focused:
+    name: "performance-focused"
+    description: "Performance analysis and optimization recommendations"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "performance"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "performance-analyzer"
+        - id: "report-generator"
+        
+  dx-focused:
+    name: "dx-focused"
+    description: "Developer experience analysis and improvements"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "dx"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "dx-analyzer"
+        - id: "report-generator"
+        
+  architecture-review:
+    name: "architecture-review"
+    description: "System architecture analysis and design recommendations"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "architecture"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "architecture-analyzer"
+        - id: "report-generator"
+        
+  weekly-health-check:
+    name: "weekly-health-check"
+    description: "Comprehensive weekly codebase health analysis"
+    triggers:
+      - signal: "weekly-review"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "performance-analyzer"
+        - id: "dx-analyzer"
+        - id: "architecture-analyzer"
+        - id: "report-generator"
