@@ -95,6 +95,7 @@ export interface AgentEnvironment {
     prompts: Record<string, string>;
     tools: string[];
     endpoint?: string;
+    protocol?: string;
     auth?: {
       type: "bearer" | "api_key" | "basic" | "none";
       token_env?: string;
@@ -544,8 +545,10 @@ Focus on safety, efficiency, and reliability.`;
       environment.agent_config.endpoint = remoteConfig.endpoint;
       environment.agent_config.auth = remoteConfig.auth;
 
-      // Copy protocol-specific configuration to parameters
+      // Add protocol at root level for worker validation
       if (remoteConfig.protocol) {
+        (environment.agent_config as any).protocol = remoteConfig.protocol;
+        // Also keep in parameters for backward compatibility
         environment.agent_config.parameters.protocol = remoteConfig.protocol;
       }
 
