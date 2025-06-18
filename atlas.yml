@@ -215,6 +215,15 @@ supervisors:
   agent:
     model: "claude-3-5-sonnet-20241022"
     memory: "agent" # Uses agent-level memory configuration
+    supervision:
+      level: "minimal" # minimal | standard | paranoid
+      cache_enabled: true
+      cache_adapter: "memory" # memory | redis | file
+      cache_ttl_hours: 1
+      parallel_llm_calls: true
+      timeouts:
+        analysis_ms: 5000
+        validation_ms: 3000
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.

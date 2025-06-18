@@ -7,6 +7,8 @@ import { FactExtractor } from "./memory/fact-extractor.ts";
 import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
+import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
+import { SupervisionLevel } from "./caching/supervision-cache.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -300,21 +302,58 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     this.log("AgentSupervisor initialized for supervised agent execution");
   }
 
+  // Initialize AgentSupervisor using atlas.yml configuration
+  async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
+    try {
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+      const agentSupervisorConfig = atlasConfig.supervisors.agent;
+
+      // Extract supervision configuration with defaults
+      const supervisionConfig = agentSupervisorConfig.supervision || {};
+
+      this.initializeAgentSupervisor({
+        model: agentSupervisorConfig.model,
+        memoryConfig: this.memoryConfig,
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        supervisionLevel: supervisionConfig.level || "standard",
+        cacheEnabled: supervisionConfig.cache_enabled !== false,
+        prompts: agentSupervisorConfig.prompts,
+      });
+
+      this.log(
+        `AgentSupervisor initialized with supervision level: ${
+          supervisionConfig.level || "standard"
+        }`,
+      );
+    } catch (error) {
+      this.logger.error("Failed to load atlas config, using defaults", { error });
+
+      // Fallback to minimal config for performance
+      this.initializeAgentSupervisor({
+        model: "claude-4-sonnet-20250514",
+        memoryConfig: this.memoryConfig,
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        supervisionLevel: SupervisionLevel.MINIMAL,
+        cacheEnabled: true,
+        prompts: {
+          system: "You are an AgentSupervisor responsible for safe agent execution.",
+        },
+      });
+    }
+  }
+
   // Initialize session with context from WorkspaceSupervisor
-  initializeSession(context: SessionContext): Promise<void> | void {
+  async initializeSession(context: SessionContext): Promise<void> {
     this.sessionContext = context;
     this.log(
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
     );
 
-    // Initialize AgentSupervisor for supervised execution
-    this.initializeAgentSupervisor({
-      model: "claude-4-sonnet-20250514",
-      memoryConfig: this.memoryConfig, // Pass the proper memory configuration
-      prompts: {
-        system: "You are an AgentSupervisor responsible for safe agent execution.",
-      },
-    });
+    // Initialize AgentSupervisor for supervised execution using atlas.yml config
+    await this.initializeAgentSupervisorFromConfig(context);
 
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
@@ -501,9 +540,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     // Generate plan using reasoning engine
     const planResult = await this.planningEngine.generatePlan(planningTask);
-    
-    this.log(`Generated plan using ${planResult.method} reasoning (confidence: ${planResult.confidence})`);
-    
+
+    this.log(
+      `Generated plan using ${planResult.method} reasoning (confidence: ${planResult.confidence})`,
+    );
+
     // Convert plan result to ExecutionPlan format
     return this.convertReasoningPlanToExecutionPlan(planResult.plan);
   }
@@ -511,31 +552,34 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   // Determine task complexity for reasoning method selection
   private determineTaskComplexity(): number {
     if (!this.sessionContext) return 1;
-    
+
     let complexity = 1;
-    
+
     // Add complexity for multiple agents
     if (this.sessionContext.availableAgents.length > 2) complexity += 1;
-    
+
     // Add complexity for complex signal types
     if (this.sessionContext.signal.id.includes("complex")) complexity += 1;
-    
+
     // Add complexity for large payloads
     if (JSON.stringify(this.sessionContext.payload).length > 1000) complexity += 1;
-    
+
     // Add complexity for constraints
-    if (this.sessionContext.constraints?.timeLimit && this.sessionContext.constraints.timeLimit < 60000) complexity += 1;
-    
+    if (
+      this.sessionContext.constraints?.timeLimit &&
+      this.sessionContext.constraints.timeLimit < 60000
+    ) complexity += 1;
+
     return Math.min(complexity, 5);
   }
 
   // Check if task requires tool usage
   private requiresToolUsage(): boolean {
     if (!this.sessionContext) return false;
-    
+
     // Check if any agents are remote or have tool configurations
-    return this.sessionContext.availableAgents.some(agent => 
-      agent.type === "remote" || 
+    return this.sessionContext.availableAgents.some((agent) =>
+      agent.type === "remote" ||
       (agent.config as any)?.tools?.length > 0
     );
   }
@@ -543,13 +587,13 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   // Check if task is quality critical
   private isQualityCritical(): boolean {
     if (!this.sessionContext) return false;
-    
+
     // Signals containing "critical", "error", or "failure" are quality critical
     const criticalKeywords = ["critical", "error", "failure", "security", "production"];
     const signalText = this.sessionContext.signal.id.toLowerCase();
     const payloadText = JSON.stringify(this.sessionContext.payload).toLowerCase();
-    
-    return criticalKeywords.some(keyword => 
+
+    return criticalKeywords.some((keyword) =>
       signalText.includes(keyword) || payloadText.includes(keyword)
     );
   }
@@ -574,7 +618,10 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         id: "reasoning-planned-phase",
         name: "Advanced Reasoning Execution",
         agents: plan.steps.map((step: any, index: number) => ({
-          agentId: step.agentId || this.sessionContext!.availableAgents[index % this.sessionContext!.availableAgents.length]?.id || "local-assistant",
+          agentId: step.agentId ||
+            this.sessionContext!
+              .availableAgents[index % this.sessionContext!.availableAgents.length]?.id ||
+            "local-assistant",
           task: step.description || step.task || `Step ${index + 1}`,
           inputSource: index === 0 ? "signal" : "previous",
           dependencies: index > 0 ? [plan.steps[index - 1].agentId] : [],
@@ -745,16 +792,16 @@ Respond with a structured plan.`;
     // Use advanced reasoning for:
     // 1. Complex sessions with many agents
     if (results.length > 3) return true;
-    
+
     // 2. Quality critical tasks
     if (this.isQualityCritical()) return true;
-    
+
     // 3. When there are failures that need analysis
-    const hasFailures = results.some(result => 
+    const hasFailures = results.some((result) =>
       !result.output || JSON.stringify(result.output).includes("error")
     );
     if (hasFailures) return true;
-    
+
     return false;
   }
 
@@ -787,32 +834,34 @@ Respond with a structured plan.`;
 
     // Use reasoning engine to evaluate
     const evaluationResult = await this.planningEngine.generatePlan(evaluationTask);
-    
+
     this.log(`Evaluated progress using ${evaluationResult.method} reasoning`);
-    
+
     // Parse the reasoning result
     const evaluation = evaluationResult.plan;
-    
+
     // Check execution count first
     const totalAgentsInPlan = this.executionPlan?.phases.reduce(
       (sum, phase) => sum + phase.agents.length,
       0,
     ) || 0;
-    
+
     const agentsExecuted = results.length;
-    
+
     if (agentsExecuted < totalAgentsInPlan) {
       return {
         isComplete: false,
         nextAction: "continue",
-        feedback: `Advanced reasoning: ${agentsExecuted}/${totalAgentsInPlan} agents executed. ${evaluation.reasoning || "Continuing execution."}`,
+        feedback: `Advanced reasoning: ${agentsExecuted}/${totalAgentsInPlan} agents executed. ${
+          evaluation.reasoning || "Continuing execution."
+        }`,
       };
     }
-    
+
     // All agents executed - evaluate quality
     const isComplete = evaluation.isComplete !== false; // Default to complete if not specified
     const nextAction = evaluation.nextAction || (isComplete ? undefined : "retry");
-    
+
     return {
       isComplete,
       nextAction: nextAction as any,
@@ -827,7 +876,7 @@ Respond with a structured plan.`;
     feedback?: string;
   }> {
     this.executionResults = results;
-    
+
     if (!this.sessionContext || !this.executionPlan) {
       throw new Error("Session context or execution plan not available");
     }

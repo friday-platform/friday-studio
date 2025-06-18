@@ -530,22 +530,31 @@ export class WorkerManager {
 
     return new Promise((resolve, reject) => {
       const timeoutMs = 300000; // Extended to 5 minutes for LLM processing and async operations
+      let isResolved = false;
+      
+      const cleanup = () => {
+        if (!isResolved) {
+          isResolved = true;
+          clearTimeout(timeout);
+          worker.worker.removeEventListener("message", handleMessage);
+        }
+      };
+      
       const timeout = setTimeout(() => {
+        cleanup();
         reject(new Error(`Task ${taskId} timeout after ${timeoutMs}ms`));
       }, timeoutMs);
 
       // Listen for result
       const handleMessage = (event: MessageEvent) => {
         if (event.data.type === "result" && event.data.taskId === taskId) {
-          clearTimeout(timeout);
-          worker.worker.removeEventListener("message", handleMessage);
+          cleanup();
           resolve(event.data.result);
         } else if (
           event.data.type === "error" &&
           event.data.taskId === taskId
         ) {
-          clearTimeout(timeout);
-          worker.worker.removeEventListener("message", handleMessage);
+          cleanup();
           reject(new Error(event.data.error));
         }
       };

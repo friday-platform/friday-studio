@@ -108,9 +108,22 @@ const AtlasAgentConfigSchema = z
     }
   });
 
+const AtlasSupervisionConfigSchema = z.object({
+  level: z.enum(["minimal", "standard", "paranoid"]).default("standard"),
+  cache_enabled: z.boolean().default(true),
+  cache_adapter: z.enum(["memory", "redis", "file"]).default("memory"),
+  cache_ttl_hours: z.number().positive().default(1),
+  parallel_llm_calls: z.boolean().default(true),
+  timeouts: z.object({
+    analysis_ms: z.number().positive().default(10000),
+    validation_ms: z.number().positive().default(8000),
+  }).optional(),
+}).optional();
+
 const AtlasSupervisorConfigSchema = z.object({
   model: z.string().min(1, "Supervisor model cannot be empty"),
   memory: z.string().optional(),
+  supervision: AtlasSupervisionConfigSchema,
   prompts: z
     .object({
       system: z.string().min(1, "System prompt cannot be empty"),
@@ -168,6 +181,7 @@ const AtlasConfigurationSchema = z.object({
 // Inferred types from Zod schemas
 export type AtlasPlatformConfig = z.infer<typeof AtlasPlatformConfigSchema>;
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
+export type AtlasSupervisionConfig = z.infer<typeof AtlasSupervisionConfigSchema>;
 export type AtlasSupervisorConfig = z.infer<typeof AtlasSupervisorConfigSchema>;
 export type AtlasConfiguration = z.infer<typeof AtlasConfigurationSchema>;
 
