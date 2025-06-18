@@ -74,7 +74,7 @@ export class ProviderRegistry implements IProviderRegistry {
       return new TimerSignalProvider(config);
     });
 
-    registry.registerFactory("stream", async (config) => {
+    registry.registerFactory("stream", async (_config) => {
       const { StreamSignalProvider } = await import("./builtin/stream-signal.ts");
       return new StreamSignalProvider();
     });

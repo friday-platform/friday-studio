@@ -8,7 +8,7 @@ configuration:
   authentication:
     type: "bearer"
     token_env: "GITHUB_TOKEN"
-  
+
 capabilities:
   - name: "repository_operations"
     description: "Create, clone, and manage GitHub repositories"
@@ -18,7 +18,7 @@ capabilities:
       - list_repositories
       - get_repository_info
       - update_repository_settings
-  
+
   - name: "issue_management"
     description: "Manage GitHub issues and pull requests"
     tools:
@@ -29,7 +29,7 @@ capabilities:
       - create_pull_request
       - review_pull_request
       - merge_pull_request
-  
+
   - name: "code_analysis"
     description: "Analyze code structure and changes"
     tools:
@@ -44,7 +44,7 @@ prompts:
     You are a GitHub management agent specialized in repository operations, issue tracking, and code analysis.
     You can create repositories, manage issues and pull requests, and analyze code structure.
     Always follow GitHub best practices and maintain clear commit messages and documentation.
-  
+
   user: |
     Execute GitHub operations as requested. Provide clear status updates and handle errors gracefully.
     When creating repositories, ensure proper README and license files are included.

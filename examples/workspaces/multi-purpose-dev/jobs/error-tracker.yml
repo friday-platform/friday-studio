@@ -9,7 +9,7 @@ configuration:
     auth_token_env: "SENTRY_AUTH_TOKEN"
     organization: "your-org"
     project: "your-project"
-  
+
   alert_rules:
     error_threshold: 10
     performance_threshold: "2s"
@@ -26,7 +26,7 @@ capabilities:
       - group_similar_errors
       - resolve_error
       - assign_error
-  
+
   - name: "performance_tracking"
     description: "Track application performance metrics"
     tools:
@@ -34,7 +34,7 @@ capabilities:
       - analyze_slow_transactions
       - identify_bottlenecks
       - generate_performance_report
-  
+
   - name: "alerting_automation"
     description: "Automate error alerts and notifications"
     tools:
@@ -48,7 +48,7 @@ prompts:
     You are an error tracking agent that monitors application health through Sentry.
     You can analyze error patterns, track performance issues, and coordinate resolution efforts.
     Focus on identifying critical issues and facilitating quick resolution.
-  
+
   user: |
     Monitor application errors and performance as requested. Provide insights into error trends
     and performance bottlenecks. Coordinate with development teams for issue resolution.

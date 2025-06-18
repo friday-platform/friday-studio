@@ -94,4 +94,3 @@ signals:
           type: "string"
           description: "The message to transform through the telephone game"
       required: ["message"]
-

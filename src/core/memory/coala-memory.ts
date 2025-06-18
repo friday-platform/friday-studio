@@ -15,13 +15,7 @@ import type {
   ITempestMemoryStorageAdapter,
 } from "../../types/core.ts";
 import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
-import { LocalFileStorageAdapter } from "../../storage/local.ts";
-import {
-  ExtractedFact,
-  type IKnowledgeGraphStorageAdapter,
-  KnowledgeGraphManager,
-  KnowledgeGraphQuery,
-} from "./knowledge-graph.ts";
+import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../../storage/knowledge-graph-local.ts";
 
 export interface CoALAMemoryEntry {
@@ -48,10 +42,10 @@ export enum CoALAMemoryType {
 }
 
 export interface CoALACognitiveLoop {
-  reflect(): Promise<CoALAMemoryEntry[]>;
-  consolidate(): Promise<void>;
-  prune(): Promise<void>;
-  adapt(feedback: any): Promise<void>;
+  reflect(): CoALAMemoryEntry[];
+  consolidate(): void;
+  prune(): void;
+  adapt(feedback: any): void;
 }
 
 export interface CoALAMemoryQuery {
@@ -208,7 +202,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   }
 
   // Cognitive Loop Implementation
-  async reflect(): Promise<CoALAMemoryEntry[]> {
+  reflect(): CoALAMemoryEntry[] {
     // Identify memories that need attention
     const candidatesForReflection = Array.from(this.memories.values())
       .filter((memory) => {
@@ -228,7 +222,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     return candidatesForReflection;
   }
 
-  async consolidate(): Promise<void> {
+  consolidate(): void {
     // Move working memories to long-term storage based on patterns
     const workingMemories = this.queryMemories({
       memoryType: CoALAMemoryType.WORKING,
@@ -246,7 +240,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     this.commitToStorage();
   }
 
-  async prune(): Promise<void> {
+  prune(): void {
     // Remove low-relevance, old memories to maintain performance
     const memoriesToPrune = Array.from(this.memories.values())
       .filter((memory) => {
@@ -269,7 +263,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     this.commitToStorage();
   }
 
-  async adapt(feedback: { memoryId: string; relevanceAdjustment: number }): Promise<void> {
+  adapt(feedback: { memoryId: string; relevanceAdjustment: number }): void {
     const memory = this.memories.get(feedback.memoryId);
     if (memory) {
       memory.relevanceScore = Math.max(
@@ -389,11 +383,11 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   private startCognitiveLoop(): void {
-    this.loopTimer = setInterval(async () => {
+    this.loopTimer = setInterval(() => {
       try {
-        await this.reflect();
-        await this.consolidate();
-        await this.prune();
+        this.reflect();
+        this.consolidate();
+        this.prune();
       } catch (error) {
         console.warn("CoALA cognitive loop error:", error);
       }

@@ -1,5 +1,5 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { load } from "https://deno.land/std@0.208.0/dotenv/mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
+import { load } from "@std/dotenv";
 
 Deno.test("Workspace - Configuration Loading", {
   sanitizeResources: false,

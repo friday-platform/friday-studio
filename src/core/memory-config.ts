@@ -246,7 +246,7 @@ export class MemoryConfigManager {
 
   private createConfiguredMemoryManager(
     scope: IAtlasScope,
-    config: MemoryConfiguration,
+    _config: MemoryConfiguration,
   ): CoALAMemoryManager {
     return new CoALAMemoryManager(
       scope,

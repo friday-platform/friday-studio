@@ -7,7 +7,7 @@ configuration:
   model: "claude-3-5-sonnet-20241022"
   max_tokens: 4000
   temperature: 0.1
-  
+
   tools:
     - name: "code_analyzer"
       description: "Analyze code structure and quality"
@@ -26,7 +26,7 @@ capabilities:
       - detect_code_smells
       - suggest_improvements
       - check_best_practices
-  
+
   - name: "documentation_generation"
     description: "Generate comprehensive code documentation"
     tools:
@@ -34,7 +34,7 @@ capabilities:
       - create_readme
       - write_inline_comments
       - create_diagrams
-  
+
   - name: "development_assistance"
     description: "Assist with development tasks and problem-solving"
     tools:
@@ -48,7 +48,7 @@ prompts:
     You are an advanced code assistant that helps developers with analysis, documentation, and development tasks.
     You can analyze code structure, generate documentation, suggest improvements, and assist with debugging.
     Always provide clear explanations and follow programming best practices.
-  
+
   user: |
     Assist with code-related tasks as requested. Provide detailed analysis, clear explanations,
     and actionable suggestions. Focus on code quality, maintainability, and best practices.

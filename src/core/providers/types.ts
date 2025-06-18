@@ -9,8 +9,8 @@ export interface IProvider {
   version: string;
 
   // Lifecycle methods
-  setup(): Promise<void>;
-  teardown(): Promise<void>;
+  setup(): void;
+  teardown(): void;
 
   // State methods
   getState(): ProviderState;

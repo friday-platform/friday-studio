@@ -87,4 +87,3 @@ signals:
 #
 # For ui-interaction-test:
 # atlas signal trigger ui-test --payload '{"url": "https://example.com", "actions": [{"type": "click", "selector": "button#submit"}]}'
-

@@ -131,7 +131,7 @@ const sessionMachine = createMachine({
       invoke: {
         id: "createPlan",
         src: fromPromise(
-          async (
+          (
             { input }: { input: { intent?: SessionIntent; sessionId: string } },
           ) => {
             // Create logger with session context for FSM operations
@@ -152,7 +152,7 @@ const sessionMachine = createMachine({
               }],
               reasoning: "Default execution plan",
             };
-            return plan;
+            return Promise.resolve(plan);
           },
         ),
         input: ({ context }) => ({
@@ -252,13 +252,13 @@ const sessionMachine = createMachine({
       invoke: {
         id: "executeAgents",
         src: fromPromise(
-          async (
+          (
             { input }: {
               input: { agents?: IWorkspaceAgent[]; sessionId: string };
             },
           ) => {
             if (!input.agents || input.agents.length === 0) {
-              return [];
+              return Promise.resolve([]);
             }
 
             // Create logger for agent execution
@@ -280,7 +280,7 @@ const sessionMachine = createMachine({
               results.push({ agentId: agent.id, status: "completed" });
             }
 
-            return results;
+            return Promise.resolve(results);
           },
         ),
         input: ({ context }) => ({
@@ -317,7 +317,7 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "evaluateResults",
-        src: fromPromise(async ({ input }: {
+        src: fromPromise(({ input }: {
           input: {
             artifacts: IWorkspaceArtifact[];
             intent?: SessionIntent;
@@ -342,15 +342,15 @@ const sessionMachine = createMachine({
           const currentIteration = input.currentIteration || 0;
 
           if (currentIteration >= maxIterations - 1) {
-            return "complete";
+            return Promise.resolve("complete");
           }
 
           // Simulate evaluation logic
           const hasAllResults = input.artifacts.length > 0;
           if (hasAllResults) {
-            return "complete";
+            return Promise.resolve("complete");
           } else {
-            return "refine";
+            return Promise.resolve("refine");
           }
         }),
         input: ({ context }) => ({
@@ -421,7 +421,7 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "refinePlan",
-        src: fromPromise(async ({ input }: {
+        src: fromPromise(({ input }: {
           input: {
             plan?: SessionPlan;
             artifacts: IWorkspaceArtifact[];
@@ -448,7 +448,7 @@ const sessionMachine = createMachine({
             reasoning: `${input.plan?.reasoning || ""} - Refined based on iteration results`,
           };
 
-          return refinedPlan;
+          return Promise.resolve(refinedPlan);
         }),
         input: ({ context }) => ({
           plan: context.plan,
@@ -475,7 +475,7 @@ const sessionMachine = createMachine({
       }),
       invoke: {
         id: "generateWorkingMemorySummary",
-        src: fromPromise(async ({ input }: {
+        src: fromPromise(({ input }: {
           input: {
             sessionId: string;
             artifacts: IWorkspaceArtifact[];
@@ -495,7 +495,7 @@ const sessionMachine = createMachine({
           // The actual summarization is handled in the SessionSupervisorWorker.
           fsmLogger.info("Working memory summarization step completed");
 
-          return { summarized: true };
+          return Promise.resolve({ summarized: true });
         }),
         input: ({ context }) => ({
           sessionId: context.sessionId,
@@ -767,7 +767,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     });
   }
 
-  async cancel(): Promise<void> {
+  cancel(): void {
     this.logger.info("Cancelling session");
 
     // Send CANCEL event to the state machine
@@ -877,7 +877,7 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
     });
   }
 
-  async execute(): Promise<void> {
+  execute(): void {
     // Default implementation
   }
 
@@ -907,7 +907,7 @@ class FunctionCallback implements IWorkspaceSignalCallback {
     });
   }
 
-  async execute(): Promise<void> {
+  execute(): void {
     // Function callback doesn't use execute
   }
 

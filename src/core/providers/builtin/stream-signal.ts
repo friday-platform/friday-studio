@@ -14,7 +14,6 @@ import {
 import {
   createEventSource,
   createRetryableSSEStream,
-  EventSourceMessage,
   parseSSEData,
 } from "../../agents/remote/adapters/sse-utils.ts";
 import { AtlasScope } from "../../scope.ts";
@@ -45,11 +44,11 @@ export class StreamSignalProvider implements ISignalProvider {
     status: ProviderStatus.NOT_CONFIGURED,
   };
 
-  async setup(): Promise<void> {
+  setup(): void {
     this.state.status = ProviderStatus.READY;
   }
 
-  async teardown(): Promise<void> {
+  teardown(): void {
     this.state.status = ProviderStatus.DISABLED;
   }
 
@@ -57,6 +56,7 @@ export class StreamSignalProvider implements ISignalProvider {
     return this.state;
   }
 
+  // deno-lint-ignore require-await
   async checkHealth(): Promise<HealthStatus> {
     return {
       healthy: this.state.status === ProviderStatus.READY,
@@ -267,13 +267,13 @@ class StreamRuntimeSignal extends AtlasScope {
     }
   }
 
-  private shouldProcessEvent(event: StreamEvent): boolean {
+  private shouldProcessEvent(_event: StreamEvent): boolean {
     // Default: process all events (workspace configuration can handle filtering)
     // Individual implementations can override this for source-specific filtering
     return true;
   }
 
-  async teardown(): Promise<void> {
+  teardown(): void {
     if (this.abortController) {
       this.abortController.abort();
     }

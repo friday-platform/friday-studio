@@ -1,9 +1,6 @@
-import {
-  assertEquals,
-  assertStringIncludes,
-} from "https://deno.land/std@0.208.0/testing/asserts.ts";
+import { assertEquals, assertStringIncludes } from "@std/assert";
 import { cleanupTestDir, createTestDir, runCLI } from "./helpers.ts";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import { exists } from "@std/fs";
 
 Deno.test("workspace init creates workspace.yml", async () => {
   const tempDir = await createTestDir();

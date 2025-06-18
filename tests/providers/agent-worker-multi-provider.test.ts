@@ -3,9 +3,9 @@ import {
   ATLAS_MESSAGE_TYPES,
   type AtlasMessageEnvelope,
   createAgentExecuteMessage,
+  deserializeEnvelope,
   isAgentExecutionCompleteMessage,
   isAgentLogMessage,
-  deserializeEnvelope,
 } from "../../src/core/utils/message-envelope.ts";
 
 // Test the agent execution worker with multi-provider support using envelope format
@@ -41,7 +41,9 @@ Deno.test({
         if (result.envelope) {
           envelope = result.envelope;
         }
-      } else if (event.data && typeof event.data === "object" && event.data.type && event.data.domain) {
+      } else if (
+        event.data && typeof event.data === "object" && event.data.type && event.data.domain
+      ) {
         envelope = event.data as AtlasMessageEnvelope;
       }
 
@@ -164,7 +166,7 @@ Deno.test({
       {
         correlationId: crypto.randomUUID(),
         priority: "normal",
-      }
+      },
     );
 
     worker.postMessage(anthropicExecuteMessage);
@@ -230,7 +232,7 @@ Deno.test({
       {
         correlationId: crypto.randomUUID(),
         priority: "normal",
-      }
+      },
     );
 
     worker.postMessage(openaiExecuteMessage);
@@ -296,7 +298,7 @@ Deno.test({
       {
         correlationId: crypto.randomUUID(),
         priority: "normal",
-      }
+      },
     );
 
     worker.postMessage(googleExecuteMessage);

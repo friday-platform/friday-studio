@@ -372,6 +372,17 @@ interface ServerStatus {
    - Yellow: Warnings and workspace names
    - Green: Success and status indicators
 
+## Interactive CLI Guidelines
+
+When working with the interactive CLI component (src/cli/commands/interactive.tsx):
+
+1. **Preserve Interactive History**: NEVER clear the interactive history state (`setOutput([])`). 
+   The interactive CLI should ALWAYS append new outputs to the existing history.
+2. **Clear Command Behavior**: The `/clear` command should only clear the terminal display using 
+   `console.clear()`, not the React state that contains the interactive history.
+3. **Append Only**: All command outputs should be appended to the existing output array using 
+   `setOutput(prev => [...prev, newOutput])` pattern.
+
 ## Error Handling
 
 - Graceful degradation when workspace unavailable

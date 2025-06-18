@@ -1,6 +1,6 @@
 /**
  * Atlas Message Envelope System
- * 
+ *
  * Unified message format for all worker communication in Atlas with Zod validation.
  * Provides standardized structure for observability, correlation, and reliability.
  */
@@ -11,9 +11,9 @@ import { z } from "zod";
 
 export const WorkerTypeSchema = z.enum([
   "workspace-supervisor",
-  "session-supervisor", 
+  "session-supervisor",
   "agent-execution",
-  "manager"
+  "manager",
 ]);
 
 export const MessageDomainSchema = z.enum(["workspace", "session", "agent", "manager"]);
@@ -75,7 +75,9 @@ export type MessagePriority = z.infer<typeof MessagePrioritySchema>;
 export type MessageSource = z.infer<typeof MessageSourceSchema>;
 export type MessageDestination = z.infer<typeof MessageDestinationSchema>;
 export type MessageError = z.infer<typeof MessageErrorSchema>;
-export type AtlasMessageEnvelope<T = unknown> = Omit<z.infer<typeof AtlasMessageEnvelopeSchema>, 'payload'> & { payload: T };
+export type AtlasMessageEnvelope<T = unknown> =
+  & Omit<z.infer<typeof AtlasMessageEnvelopeSchema>, "payload">
+  & { payload: T };
 
 // ===== MESSAGE TYPE CONSTANTS =====
 
@@ -134,7 +136,7 @@ export const ATLAS_MESSAGE_DOMAINS = {
   WORKSPACE: {
     LIFECYCLE: [
       "lifecycle.init",
-      "lifecycle.initialized", 
+      "lifecycle.initialized",
       "lifecycle.ready",
       "lifecycle.shutdown",
       "lifecycle.terminated",
@@ -154,7 +156,7 @@ export const ATLAS_MESSAGE_DOMAINS = {
     LIFECYCLE: [
       "lifecycle.init",
       "lifecycle.initialized",
-      "lifecycle.ready", 
+      "lifecycle.ready",
       "lifecycle.shutdown",
       "lifecycle.terminated",
     ],
@@ -181,7 +183,7 @@ export const ATLAS_MESSAGE_DOMAINS = {
       "lifecycle.init",
       "lifecycle.initialized",
       "lifecycle.ready",
-      "lifecycle.shutdown", 
+      "lifecycle.shutdown",
       "lifecycle.terminated",
     ],
     AGENT_OPS: ["agent.execute", "agent.complete", "agent.execution_complete"],
@@ -258,16 +260,20 @@ export type AgentProgressPayload = z.infer<typeof AgentProgressPayloadSchema>;
 
 export function inferDomainFromWorkerType(workerType: WorkerType): MessageDomain {
   switch (workerType) {
-    case "workspace-supervisor": return "workspace";
-    case "session-supervisor": return "session";
-    case "agent-execution": return "agent";
-    case "manager": return "manager";
+    case "workspace-supervisor":
+      return "workspace";
+    case "session-supervisor":
+      return "session";
+    case "agent-execution":
+      return "agent";
+    case "manager":
+      return "manager";
   }
 }
 
 export function isValidMessageForDomain(
   messageType: string,
-  domain: keyof typeof ATLAS_MESSAGE_DOMAINS
+  domain: keyof typeof ATLAS_MESSAGE_DOMAINS,
 ): boolean {
   const domainEvents = Object.values(ATLAS_MESSAGE_DOMAINS[domain]).flat();
   return domainEvents.includes(messageType);
@@ -275,22 +281,22 @@ export function isValidMessageForDomain(
 
 export function filterMessagesForDomain<T>(
   messages: AtlasMessageEnvelope<T>[],
-  domain: keyof typeof ATLAS_MESSAGE_DOMAINS
+  domain: keyof typeof ATLAS_MESSAGE_DOMAINS,
 ): AtlasMessageEnvelope<T>[] {
-  return messages.filter(msg => 
-    msg.domain === domain.toLowerCase() || 
+  return messages.filter((msg) =>
+    msg.domain === domain.toLowerCase() ||
     isValidMessageForDomain(msg.type, domain)
   );
 }
 
 // ===== VALIDATION FUNCTIONS =====
 
-export function validateEnvelope<T>(envelope: unknown): { 
-  success: true; 
-  data: AtlasMessageEnvelope<T>; 
-} | { 
-  success: false; 
-  error: z.ZodError; 
+export function validateEnvelope<T>(envelope: unknown): {
+  success: true;
+  data: AtlasMessageEnvelope<T>;
+} | {
+  success: false;
+  error: z.ZodError;
 } {
   const result = AtlasMessageEnvelopeSchema.safeParse(envelope);
   if (result.success) {
@@ -303,7 +309,7 @@ export function validateAgentExecutePayload(payload: unknown): {
   success: true;
   data: AgentExecutePayload;
 } | {
-  success: false; 
+  success: false;
   error: z.ZodError;
 } {
   const result = AgentExecutePayloadSchema.safeParse(payload);
@@ -349,10 +355,10 @@ export function createMessage<T>(
   type: string,
   payload: T,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
   const domain = options?.domain || inferDomainFromWorkerType(source.workerType);
-  
+
   if (!isValidMessageForDomain(type, domain.toUpperCase() as keyof typeof ATLAS_MESSAGE_DOMAINS)) {
     console.warn(`Message type "${type}" may not be appropriate for domain "${domain}"`);
   }
@@ -389,7 +395,7 @@ export function createAgentMessage<T>(
   type: string,
   payload: T,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
   return createMessage(type, payload, source, {
     ...options,
@@ -401,7 +407,7 @@ export function createWorkspaceMessage<T>(
   type: string,
   payload: T,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
   return createMessage(type, payload, source, {
     ...options,
@@ -413,7 +419,7 @@ export function createSessionMessage<T>(
   type: string,
   payload: T,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
   return createMessage(type, payload, source, {
     ...options,
@@ -425,7 +431,7 @@ export function createManagerMessage<T>(
   type: string,
   payload: T,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<T> {
   return createMessage(type, payload, source, {
     ...options,
@@ -438,7 +444,7 @@ export function createResponseMessage<T>(
   responseType: string,
   payload: T,
   source: MessageSource,
-  options?: Omit<MessageCreationOptions, 'correlationId' | 'traceHeaders' | 'destination'>
+  options?: Omit<MessageCreationOptions, "correlationId" | "traceHeaders" | "destination">,
 ): AtlasMessageEnvelope<T> {
   return createMessage(responseType, payload, source, {
     ...options,
@@ -458,16 +464,16 @@ export function createErrorResponse<T = unknown>(
   originalMessage: AtlasMessageEnvelope,
   error: MessageError,
   source: MessageSource,
-  payload?: T
+  payload?: T,
 ): AtlasMessageEnvelope<T | undefined> {
   const errorResponse = createResponseMessage(
     originalMessage,
     ATLAS_MESSAGE_TYPES.TASK.ERROR,
     payload,
     source,
-    { priority: "high" }
+    { priority: "high" },
   );
-  
+
   errorResponse.error = error;
   return errorResponse;
 }
@@ -477,7 +483,7 @@ export function createErrorResponse<T = unknown>(
 export function createAgentExecuteMessage(
   payload: AgentExecutePayload,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<AgentExecutePayload> {
   // Validate payload
   const validation = validateAgentExecutePayload(payload);
@@ -493,14 +499,14 @@ export function createAgentExecuteMessage(
       priority: "normal",
       acknowledgmentRequired: true,
       ...options,
-    }
+    },
   );
 }
 
 export function createAgentExecutionCompleteMessage(
   originalMessage: AtlasMessageEnvelope,
   payload: AgentExecutionCompletePayload,
-  source: MessageSource
+  source: MessageSource,
 ): AtlasMessageEnvelope<AgentExecutionCompletePayload> {
   // Validate payload
   const validation = validateAgentExecutionCompletePayload(payload);
@@ -513,14 +519,14 @@ export function createAgentExecutionCompleteMessage(
     ATLAS_MESSAGE_TYPES.AGENT.EXECUTION_COMPLETE,
     payload,
     source,
-    { priority: "normal" }
+    { priority: "normal" },
   );
 }
 
 export function createAgentLogMessage(
   payload: AgentLogPayload,
   source: MessageSource,
-  options?: MessageCreationOptions
+  options?: MessageCreationOptions,
 ): AtlasMessageEnvelope<AgentLogPayload> {
   const validation = AgentLogPayloadSchema.safeParse(payload);
   if (!validation.success) {
@@ -535,14 +541,14 @@ export function createAgentLogMessage(
       priority: payload.level === "error" ? "high" : "low",
       channel: "broadcast",
       ...options,
-    }
+    },
   );
 }
 
 export function createAgentProgressMessage(
   payload: AgentProgressPayload,
   source: MessageSource,
-  correlationId?: string
+  correlationId?: string,
 ): AtlasMessageEnvelope<AgentProgressPayload> {
   const validation = AgentProgressPayloadSchema.safeParse(payload);
   if (!validation.success) {
@@ -557,7 +563,7 @@ export function createAgentProgressMessage(
       priority: "low",
       correlationId,
       channel: "broadcast",
-    }
+    },
   );
 }
 
@@ -570,21 +576,21 @@ export function generateCorrelationId(): string {
 export function extractTraceContext(envelope: AtlasMessageEnvelope): Record<string, string> {
   return {
     ...(envelope.traceHeaders || {}),
-    ...(envelope.traceId && { 'trace-id': envelope.traceId }),
-    ...(envelope.spanId && { 'span-id': envelope.spanId }),
-    ...(envelope.correlationId && { 'correlation-id': envelope.correlationId }),
+    ...(envelope.traceId && { "trace-id": envelope.traceId }),
+    ...(envelope.spanId && { "span-id": envelope.spanId }),
+    ...(envelope.correlationId && { "correlation-id": envelope.correlationId }),
   };
 }
 
 export function createTraceHeaders(
   traceId?: string,
   spanId?: string,
-  correlationId?: string
+  correlationId?: string,
 ): Record<string, string> {
   return {
-    ...(traceId && { 'trace-id': traceId }),
-    ...(spanId && { 'span-id': spanId }),
-    ...(correlationId && { 'correlation-id': correlationId }),
+    ...(traceId && { "trace-id": traceId }),
+    ...(spanId && { "span-id": spanId }),
+    ...(correlationId && { "correlation-id": correlationId }),
   };
 }
 
@@ -599,15 +605,15 @@ export function deserializeEnvelope<T = unknown>(data: string): {
   try {
     const parsed = JSON.parse(data);
     const validation = validateEnvelope<T>(parsed);
-    
+
     if (!validation.success) {
       return { error: `Invalid envelope: ${validation.error.message}` };
     }
 
     return { envelope: validation.data };
   } catch (err) {
-    return { 
-      error: `Failed to parse envelope: ${err instanceof Error ? err.message : 'Unknown error'}` 
+    return {
+      error: `Failed to parse envelope: ${err instanceof Error ? err.message : "Unknown error"}`,
     };
   }
 }
@@ -619,7 +625,7 @@ export function isMessageTimedOut(envelope: AtlasMessageEnvelope): boolean {
 
 export function createTimeoutResponse(
   originalMessage: AtlasMessageEnvelope,
-  source: MessageSource
+  source: MessageSource,
 ): AtlasMessageEnvelope {
   return createErrorResponse(
     originalMessage,
@@ -628,33 +634,33 @@ export function createTimeoutResponse(
       message: `Message timed out after ${originalMessage.timeout}ms`,
       retryable: true,
     },
-    source
+    source,
   );
 }
 
 // ===== TYPE GUARDS =====
 
 export function isAgentExecuteMessage(
-  envelope: AtlasMessageEnvelope
+  envelope: AtlasMessageEnvelope,
 ): envelope is AtlasMessageEnvelope<AgentExecutePayload> {
   return envelope.type === ATLAS_MESSAGE_TYPES.AGENT.EXECUTE && envelope.domain === "agent";
 }
 
 export function isAgentExecutionCompleteMessage(
-  envelope: AtlasMessageEnvelope
+  envelope: AtlasMessageEnvelope,
 ): envelope is AtlasMessageEnvelope<AgentExecutionCompletePayload> {
-  return envelope.type === ATLAS_MESSAGE_TYPES.AGENT.EXECUTION_COMPLETE && envelope.domain === "agent";
+  return envelope.type === ATLAS_MESSAGE_TYPES.AGENT.EXECUTION_COMPLETE &&
+    envelope.domain === "agent";
 }
 
 export function isAgentLogMessage(
-  envelope: AtlasMessageEnvelope
+  envelope: AtlasMessageEnvelope,
 ): envelope is AtlasMessageEnvelope<AgentLogPayload> {
   return envelope.type === ATLAS_MESSAGE_TYPES.AGENT.LOG && envelope.domain === "agent";
 }
 
 export function isAgentProgressMessage(
-  envelope: AtlasMessageEnvelope
+  envelope: AtlasMessageEnvelope,
 ): envelope is AtlasMessageEnvelope<AgentProgressPayload> {
   return envelope.type === ATLAS_MESSAGE_TYPES.TASK.PROGRESS && envelope.domain === "agent";
 }
-

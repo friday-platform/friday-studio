@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text } from "ink";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
-import * as yaml from "https://deno.land/std@0.208.0/yaml/mod.ts";
+import { exists } from "@std/fs";
+import * as yaml from "@std/yaml";
 import { Column, Table } from "../components/Table.tsx";
 import { StatusBadge } from "../components/StatusBadge.tsx";
+import { scanAvailableWorkspaces } from "./workspace.tsx";
+import { ConfigLoader } from "../../core/config-loader.ts";
 
 export interface AgentCommandProps {
   subcommand?: string;
@@ -13,7 +15,7 @@ export interface AgentCommandProps {
 
 export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading",
+    "loading"
   );
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -23,8 +25,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       try {
         switch (subcommand) {
           case "list":
-          case undefined: // Default to list
-            await handleList();
+            await handleList(args[0]);
             break;
           case "describe":
             await handleDescribe(args[0]);
@@ -34,7 +35,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
             break;
           default:
             setError(
-              `Unknown agent command: ${subcommand}. Available: list, describe, test`,
+              `Unknown agent command: ${subcommand}. Available: list, describe, test`
             );
             setStatus("error");
         }
@@ -47,39 +48,76 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
     execute();
   }, []);
 
-  async function handleList() {
-    if (!await exists("workspace.yml")) {
-      throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first.',
+  async function handleList(workspaceId?: string) {
+    let workspacePath = Deno.cwd();
+
+    if (workspaceId) {
+      // Find workspace by ID
+      const availableWorkspaces = await scanAvailableWorkspaces();
+      const targetWorkspace = availableWorkspaces.find(
+        (w) => w.id === workspaceId || w.slug === workspaceId
       );
+
+      if (!targetWorkspace) {
+        throw new Error(
+          `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`
+        );
+      }
+
+      workspacePath = targetWorkspace.path;
+    } else {
+      // Check current directory for workspace.yml
+      if (!(await exists("workspace.yml"))) {
+        throw new Error(
+          "Provide a workspace id or run this command inside of a workspace"
+        );
+      }
     }
 
-    const config = yaml.parse(await Deno.readTextFile("workspace.yml")) as any;
-    const agents = Object.entries(config.agents || {}).map((
-      [id, agent]: [string, any],
-    ) => ({
-      name: id,
-      type: agent.type || "local",
-      model: agent.model || config.supervisor?.model ||
-        "claude-4-sonnet-20250514",
-      status: "ready",
-      purpose: agent.purpose || "No description",
-    }));
+    // Load configuration from the determined workspace path
+    const originalCwd = Deno.cwd();
+    try {
+      Deno.chdir(workspacePath);
 
-    setData({ type: "list", agents });
-    setStatus("ready");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+      const config = mergedConfig.workspace;
+
+      const agents = Object.entries(config.agents || {}).map(
+        ([id, agent]: [string, any]) => ({
+          name: id,
+          type: agent.type || "local",
+          model:
+            agent.model ||
+            config.supervisor?.model ||
+            "claude-4-sonnet-20250514",
+          status: "ready",
+          purpose: agent.purpose || "No description",
+        })
+      );
+
+      setData({
+        type: "list",
+        agents,
+        workspaceName: config.workspace?.name,
+        workspaceId: workspaceId || "current",
+      });
+      setStatus("ready");
+    } finally {
+      Deno.chdir(originalCwd);
+    }
   }
 
   async function handleDescribe(agentName: string | undefined) {
     if (!agentName) {
       throw new Error(
-        "Agent name required. Usage: atlas agent describe <name>",
+        "Agent name required. Usage: atlas agent describe <name>"
       );
     }
 
-    if (!await exists("workspace.yml")) {
+    if (!(await exists("workspace.yml"))) {
       throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first.',
+        'No workspace.yml found. Run "atlas workspace init" first.'
       );
     }
 
@@ -88,7 +126,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
 
     if (!agentConfig) {
       throw new Error(
-        `Agent '${agentName}' not found in workspace configuration`,
+        `Agent '${agentName}' not found in workspace configuration`
       );
     }
 
@@ -97,7 +135,9 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       agent: {
         name: agentName,
         ...agentConfig,
-        model: agentConfig.model || config.supervisor?.model ||
+        model:
+          agentConfig.model ||
+          config.supervisor?.model ||
           "claude-4-sonnet-20250514",
       },
     });
@@ -107,14 +147,14 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
   async function handleTest(agentName: string | undefined, flags: any) {
     if (!agentName) {
       throw new Error(
-        'Agent name required. Usage: atlas agent test <name> --message "..."',
+        'Agent name required. Usage: atlas agent test <name> --message "..."'
       );
     }
 
     const message = flags.message || flags.m;
     if (!message) {
       throw new Error(
-        'Message required. Usage: atlas agent test <name> --message "..."',
+        'Message required. Usage: atlas agent test <name> --message "..."'
       );
     }
 
@@ -123,7 +163,8 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       type: "test",
       agent: agentName,
       message,
-      result: "Agent testing not yet implemented. Use signal trigger to test agents in a workflow.",
+      result:
+        "Agent testing not yet implemented. Use signal trigger to test agents in a workflow.",
     });
     setStatus("ready");
   }
@@ -144,25 +185,42 @@ function AgentOutput({ data }: { data: any }) {
 
   switch (data.type) {
     case "list":
-      if (data.agents.length === 0) {
-        return <Text color="gray">No agents configured</Text>;
-      }
-
-      const columns: Column[] = [
-        { key: "name", label: "AGENT", width: 25 },
-        { key: "type", label: "TYPE", width: 10 },
-        { key: "model", label: "MODEL", width: 30 },
-        { key: "status", label: "STATUS", width: 10 },
-        { key: "purpose", label: "PURPOSE", width: 45 },
-      ];
-
-      return <Table columns={columns} data={data.agents} />;
+      return (
+        <Box flexDirection="column">
+          {data.workspaceName && (
+            <>
+              <Text bold color="cyan">
+                Agents in workspace: {data.workspaceName}
+              </Text>
+              <Text color="gray">
+                ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              </Text>
+            </>
+          )}
+          {data.agents.length === 0 ? (
+            <Text color="gray">No agents configured</Text>
+          ) : (
+            (() => {
+              const columns: Column[] = [
+                { key: "name", label: "AGENT", width: 25 },
+                { key: "type", label: "TYPE", width: 10 },
+                { key: "model", label: "MODEL", width: 30 },
+                { key: "status", label: "STATUS", width: 10 },
+                { key: "purpose", label: "PURPOSE", width: 45 },
+              ];
+              return <Table columns={columns} data={data.agents} />;
+            })()
+          )}
+        </Box>
+      );
 
     case "detail":
       const agent = data.agent;
       return (
         <Box flexDirection="column">
-          <Text bold color="cyan">Agent Details</Text>
+          <Text bold color="cyan">
+            Agent Details
+          </Text>
           <Text>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
           <Text>
             Name: <Text color="white">{agent.name}</Text>
@@ -187,18 +245,18 @@ function AgentOutput({ data }: { data: any }) {
           {agent.prompts && (
             <>
               <Text>Prompts:</Text>
-              {Object.entries(agent.prompts).map((
-                [key, value]: [string, any],
-              ) => (
-                <React.Fragment key={key}>
-                  <Text>
-                    {key}:{" "}
-                    <Text color="gray">
-                      {String(value).substring(0, 50)}...
+              {Object.entries(agent.prompts).map(
+                ([key, value]: [string, any]) => (
+                  <React.Fragment key={key}>
+                    <Text>
+                      {key}:{" "}
+                      <Text color="gray">
+                        {String(value).substring(0, 50)}...
+                      </Text>
                     </Text>
-                  </Text>
-                </React.Fragment>
-              ))}
+                  </React.Fragment>
+                )
+              )}
             </>
           )}
         </Box>

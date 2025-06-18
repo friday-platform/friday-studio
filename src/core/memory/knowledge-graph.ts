@@ -3,8 +3,6 @@
  * Enhances semantic memory to work as a structured knowledge base
  */
 
-import { CoALAMemoryType } from "./coala-memory.ts";
-
 // Knowledge graph entity types
 export enum KnowledgeEntityType {
   PERSON = "person",

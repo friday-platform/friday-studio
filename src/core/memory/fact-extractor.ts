@@ -83,9 +83,9 @@ export class FactExtractor extends BaseAgent {
   async extractFactsFromSessionExecution(
     sessionId: string,
     signal: IWorkspaceSignal,
-    payload: any,
+    _payload: any,
     workingMemoryEntries: any[],
-    sessionSummary: string,
+    _sessionSummary: string,
     sessionContent: string,
   ): Promise<SignalFactExtractionResult> {
     const startTime = Date.now();

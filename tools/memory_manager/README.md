@@ -1,20 +1,17 @@
 # Atlas Memory Manager
 
-A terminal-based tool for navigating and managing Atlas workspace memory across
-different memory types (Working, Episodic, Semantic, Procedural).
+A terminal-based tool for navigating and managing Atlas workspace memory across different memory
+types (Working, Episodic, Semantic, Procedural).
 
 ## Features
 
-- **Tab-based Navigation**: Switch between different memory types using
-  Tab/Shift+Tab
-- **Memory Browsing**: List and navigate through memory entries with arrow keys
-  or vim-style j/k
-- **Detailed View**: View complete memory entry details in a formatted table
-  with progress bars, relative timestamps, and smart content parsing
+- **Tab-based Navigation**: Switch between different memory types using Tab/Shift+Tab
+- **Memory Browsing**: List and navigate through memory entries with arrow keys or vim-style j/k
+- **Detailed View**: View complete memory entry details in a formatted table with progress bars,
+  relative timestamps, and smart content parsing
 - **Search**: Search within memory types using pattern matching
 - **Statistics**: View memory usage statistics and storage information
-- **CRUD Operations**: Create, read, update, and delete memory entries
-  (view/read implemented)
+- **CRUD Operations**: Create, read, update, and delete memory entries (view/read implemented)
 - **Export/Import**: Export memory data to JSON format
 - **Data Validation**: Validate memory data integrity
 
@@ -79,8 +76,7 @@ deno task check       # Type check all files
 | `q`                 | Quit                                   |
 | `Esc`               | Return to list view from other modes   |
 
-**Note**: Arrow keys (↑↓) are now fully supported alongside vim-style j/k
-navigation.
+**Note**: Arrow keys (↑↓) are now fully supported alongside vim-style j/k navigation.
 
 ## Memory Types
 
@@ -126,8 +122,7 @@ tools/memory_manager/
 
 ## Memory File Format
 
-Memory is stored in separate JSON files in the workspace's `.atlas/memory/`
-directory:
+Memory is stored in separate JSON files in the workspace's `.atlas/memory/` directory:
 
 - `working.json` - Working memory entries
 - `episodic.json` - Episodic memory entries
@@ -157,9 +152,8 @@ Each entry contains:
 
 ## Integration with Atlas
 
-The memory manager reads from the same memory files used by Atlas workspaces.
-Changes made through the memory manager will be reflected in Atlas and vice
-versa.
+The memory manager reads from the same memory files used by Atlas workspaces. Changes made through
+the memory manager will be reflected in Atlas and vice versa.
 
 To ensure data consistency:
 
@@ -169,8 +163,8 @@ To ensure data consistency:
 
 ## Limitations
 
-Current version is a read-only implementation. Full CRUD operations (create,
-edit, delete) are planned for future versions.
+Current version is a read-only implementation. Full CRUD operations (create, edit, delete) are
+planned for future versions.
 
 ## Development
 
@@ -199,11 +193,11 @@ Ensure you're running with proper permissions:
 
 ### "No memory files found"
 
-The tool will work with empty memory. Memory files are created automatically
-when Atlas stores memory data.
+The tool will work with empty memory. Memory files are created automatically when Atlas stores
+memory data.
 
 ### Terminal display issues
 
-The tool works best in terminals that support ANSI colors and cursor control. If
-you experience display issues, try a different terminal or disable colors by
-modifying the `colorize` method in `src/tui.ts`.
+The tool works best in terminals that support ANSI colors and cursor control. If you experience
+display issues, try a different terminal or disable colors by modifying the `colorize` method in
+`src/tui.ts`.

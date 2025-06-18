@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text } from "ink";
-import { exists } from "https://deno.land/std@0.208.0/fs/exists.ts";
+import { exists } from "@std/fs";
 import { ConfigLoader } from "../../core/config-loader.ts";
 
 interface WorkspaceDetails {
@@ -37,12 +37,14 @@ interface RuntimeSummary {
 }
 
 interface DefineCommandProps {
+  args: string[];
+  subcommand?: string;
   flags?: Record<string, unknown> & {
     workspace?: string;
   };
 }
 
-export default function DefineCommand({ flags = {} }: DefineCommandProps) {
+export default function DefineCommand({ args, subcommand, flags = {} }: DefineCommandProps) {
   const [workspaceDetails, setWorkspaceDetails] = useState<WorkspaceDetails | null>(null);
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   const [signals, setSignals] = useState<SignalSummary[]>([]);
@@ -50,7 +52,7 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const workspaceName = flags.workspace as string;
+  const workspaceName = args[0] || subcommand || (flags.workspace as string);
 
   useEffect(() => {
     const loadWorkspaceDefinition = async () => {
@@ -58,7 +60,9 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
         setLoading(true);
 
         if (!workspaceName) {
-          throw new Error("Workspace name is required. Use --workspace=<name>");
+          throw new Error(
+            "Workspace ID is required. Usage: atlas define <workspace-id>\n\nTip: Run `atlas workspace list` to see all available workspaces.",
+          );
         }
 
         // Find git repository root
@@ -161,7 +165,7 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
   if (error) {
     return (
       <Box>
-        <Text color="red">Error: {error}</Text>
+        <Text color="gray">Error: {error}</Text>
       </Box>
     );
   }
@@ -405,12 +409,6 @@ export default function DefineCommand({ flags = {} }: DefineCommandProps) {
         </>
       )}
 
-      <Newline />
-      <Box>
-        <Text color="gray">
-          Use 'atlas tui --workspace {workspaceName}' to interactively explore this workspace
-        </Text>
-      </Box>
     </Box>
   );
 }

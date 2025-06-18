@@ -7,7 +7,6 @@ import { AgentCommand } from "./commands/agent.tsx";
 import { LogsCommand } from "./commands/logs.tsx";
 import TUICommand from "./commands/tui.tsx";
 import HelpCommand from "./commands/help.tsx";
-import WorkspacesCommand from "./commands/workspaces.tsx";
 import DefineCommand from "./commands/define.tsx";
 import InteractiveCommand from "./commands/interactive.tsx";
 
@@ -32,16 +31,19 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   // Route to appropriate command
   switch (command) {
     case "workspace":
-      return <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "session":
-      return <SessionCommand subcommand={subcommand} args={args} flags={flags} />;
-
-    case "ps": // Alias for session list
-      return <SessionCommand subcommand="list" args={args} flags={flags} />;
+      return (
+        <SessionCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "signal":
-      return <SignalCommand subcommand={subcommand} args={args} flags={flags} />;
+      return (
+        <SignalCommand subcommand={subcommand} args={args} flags={flags} />
+      );
 
     case "agent":
       return <AgentCommand subcommand={subcommand} args={args} flags={flags} />;
@@ -52,11 +54,10 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "tui":
       return <TUICommand flags={flags} />;
 
-    case "workspaces":
-      return <WorkspacesCommand />;
-
     case "define":
-      return <DefineCommand flags={flags} />;
+      return (
+        <DefineCommand args={args} subcommand={subcommand} flags={flags} />
+      );
 
     default:
       return (

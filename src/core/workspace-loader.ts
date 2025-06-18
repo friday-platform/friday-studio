@@ -6,7 +6,7 @@ import { Workspace } from "./workspace.ts";
 import { WorkspaceConfig } from "./workspace-config.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { ProviderStateManager } from "./providers/state-manager.ts";
-import type { IWorkspace, IWorkspaceSignal } from "../types/core.ts";
+import type { IWorkspace } from "../types/core.ts";
 import type { ISignalProvider } from "./providers/types.ts";
 import { ProviderType } from "./providers/types.ts";
 
@@ -46,10 +46,10 @@ export class WorkspaceLoader {
     await this.loadProviders();
 
     // Load signals
-    await this.loadSignals(workspace);
+    this.loadSignals(workspace);
 
     // Load agents
-    await this.loadAgents(workspace);
+    this.loadAgents(workspace);
 
     // Load workflows
     if (this.config.workflows) {
@@ -106,7 +106,7 @@ export class WorkspaceLoader {
     }
   }
 
-  private async loadSignals(workspace: IWorkspace): Promise<void> {
+  private loadSignals(workspace: IWorkspace): void {
     if (!this.config.signals) return;
 
     console.log(
@@ -150,7 +150,7 @@ export class WorkspaceLoader {
     }
   }
 
-  private async loadAgents(workspace: IWorkspace): Promise<void> {
+  private loadAgents(workspace: IWorkspace): void {
     if (!this.config.agents) return;
 
     console.log(

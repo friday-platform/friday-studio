@@ -248,7 +248,7 @@ export class WorkerManager {
 
     const machine = createWorkerManagerMachine().provide({
       actions: {
-        spawnWorker: ({ context, event }) => {
+        spawnWorker: ({ context: _context, event }) => {
           if (event.type === "SPAWN_WORKER") {
             this.spawnWorker(event.metadata, event.url);
           }
@@ -262,7 +262,7 @@ export class WorkerManager {
             }
           }
         },
-        terminateWorker: ({ context, event }) => {
+        terminateWorker: ({ context: _context, event }) => {
           if (event.type === "TERMINATE_WORKER") {
             this.terminateWorker(event.workerId);
           }
@@ -312,10 +312,10 @@ export class WorkerManager {
     this.actor.start();
   }
 
-  async spawnWorker(
+  spawnWorker(
     metadata: WorkerMetadata,
     url: string,
-  ): Promise<ManagedWorker> {
+  ): ManagedWorker {
     const { id, type } = metadata;
 
     // Create worker with permissions to use BroadcastChannel
@@ -444,12 +444,12 @@ export class WorkerManager {
       worker.ports.forEach((port) => {
         try {
           port.close();
-        } catch (e) { /* ignore */ }
+        } catch (_e) { /* ignore */ }
       });
       if (worker.broadcastChannel) {
         try {
           worker.broadcastChannel.close();
-        } catch (e) { /* ignore */ }
+        } catch (_e) { /* ignore */ }
       }
       worker.actor.send({ type: "TERMINATED" });
       worker.actor.stop();
@@ -522,7 +522,7 @@ export class WorkerManager {
     broadcastChannel.close();
   }
 
-  async sendTask(workerId: string, taskId: string, data: any): Promise<any> {
+  sendTask(workerId: string, taskId: string, data: any): Promise<any> {
     const worker = this.workers.get(workerId);
     if (!worker) {
       throw new Error(`Worker not found: ${workerId}`);
@@ -594,7 +594,7 @@ export class WorkerManager {
         try {
           worker.worker.terminate();
           this.workers.delete(workerId);
-        } catch (e) {
+        } catch (_e) {
           // Ignore errors during force termination
         }
       }
@@ -629,13 +629,13 @@ export class WorkerManager {
     return this.getWorkerState(workerId) === "ready";
   }
 
-  async waitForWorkerReady(workerId: string, timeout = 2000): Promise<boolean> {
+  waitForWorkerReady(workerId: string, timeout = 2000): Promise<boolean> {
     const worker = this.workers.get(workerId);
-    if (!worker) return false;
+    if (!worker) return Promise.resolve(false);
 
     // Check if already ready
     if (worker.actor.getSnapshot().matches("ready")) {
-      return true;
+      return Promise.resolve(true);
     }
 
     return new Promise((resolve) => {
@@ -673,17 +673,11 @@ export class WorkerManager {
       },
     };
 
-    // Spawn supervisor worker and setup broadcast channel in parallel
-    const [supervisor, _] = await Promise.all([
-      this.spawnWorker(
-        supervisorMetadata,
-        new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
-      ),
-      // Channel setup is essentially instantaneous, but run in parallel for clarity
-      Promise.resolve().then(() => {
-        // Note: We can't setup channel before worker exists, so this will happen after spawn
-      }),
-    ]);
+    // Spawn supervisor worker
+    const supervisor = this.spawnWorker(
+      supervisorMetadata,
+      new URL("../workers/workspace-supervisor-worker.ts", import.meta.url).href,
+    );
 
     // Setup broadcast channel immediately after worker creation
     this.setupBroadcastChannel(supervisor.id, `workspace-${workspaceId}`);
@@ -708,7 +702,7 @@ export class WorkerManager {
     sessionId: string,
     workspaceId: string,
     config: any,
-    options: { timeout?: number } = {},
+    _options: { timeout?: number } = {},
   ): Promise<ManagedWorker> {
     // Use worker pool for much faster session creation
     const sessionWorker = await this.getPooledWorker(
@@ -747,7 +741,7 @@ export class WorkerManager {
     };
 
     // Spawn agent worker
-    const agentWorker = await this.spawnWorker(
+    const agentWorker = this.spawnWorker(
       agentMetadata,
       new URL("../workers/agent-worker.ts", import.meta.url).href,
     );
@@ -831,7 +825,7 @@ export class WorkerManager {
         config,
       };
 
-      const worker = await this.spawnWorker(metadata, workerUrl);
+      const worker = this.spawnWorker(metadata, workerUrl);
       pool.inUse.set(worker.id, worker);
       return worker;
     }
@@ -931,7 +925,7 @@ export class WorkerManager {
       };
 
       tasks.push(
-        this.spawnWorker(metadata, workerUrl).then((worker) => {
+        Promise.resolve(this.spawnWorker(metadata, workerUrl)).then((worker) => {
           pool.available.push(worker);
         }),
       );

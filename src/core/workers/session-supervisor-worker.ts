@@ -89,6 +89,8 @@ class SessionSupervisorWorker extends BaseWorker {
       type: "JOIN_CHANNEL",
       channel: `session-${config.sessionId}`,
     });
+
+    await Promise.resolve();
   }
 
   protected async processTask(
@@ -122,7 +124,7 @@ class SessionSupervisorWorker extends BaseWorker {
             sessionId: this.sessionId!,
             workspaceId,
           },
-          async (span) => {
+          async (_span) => {
             const sessionContext: SessionContext = {
               sessionId: this.sessionId!,
               workspaceId,
@@ -158,7 +160,7 @@ class SessionSupervisorWorker extends BaseWorker {
             workerId: this.context.id,
             sessionId: this.sessionId!,
           },
-          async (span) => {
+          async (_span) => {
             const sessionStartTime = Date.now();
 
             // Create execution plan using SessionSupervisor's intelligence
@@ -338,6 +340,8 @@ class SessionSupervisorWorker extends BaseWorker {
     this.log("Cleaning up session supervisor...");
     this.supervisor = null;
     this.sessionId = null;
+
+    await Promise.resolve();
   }
 
   private async executeAgentTask(
@@ -387,7 +391,7 @@ class SessionSupervisorWorker extends BaseWorker {
         sessionId: this.sessionId!,
         agentId,
       },
-      async (span) => {
+      async (_span) => {
         return await this.invokeAgent(agentId, input, crypto.randomUUID(), traceHeaders);
       },
     );
@@ -472,7 +476,7 @@ class SessionSupervisorWorker extends BaseWorker {
   }
 
   // Handle broadcast messages in the session
-  protected override handleBroadcast(channel: string, data: Record<string, unknown>): void {
+  protected override handleBroadcast(_channel: string, data: Record<string, unknown>): void {
     switch (data.type) {
       case "agentMessage":
         this.log(`Agent ${data.from} broadcast: ${data.message}`);

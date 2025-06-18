@@ -9,24 +9,29 @@ date and purpose._
 
 ### **Job-Owns-Relationship Architecture & Runtime Config Migration (MAJOR)**
 
-**Purpose**: Implement cleaner configuration architecture where jobs define their triggers and separate platform concerns from user configuration
+**Purpose**: Implement cleaner configuration architecture where jobs define their triggers and
+separate platform concerns from user configuration
 
 #### **Problem Identified**
 
-- **Backwards relationship**: Signals defined which jobs they triggered instead of jobs defining what triggered them
-- **Mixed concerns**: Runtime configuration (server port, logging) was in workspace.yml alongside business logic
+- **Backwards relationship**: Signals defined which jobs they triggered instead of jobs defining
+  what triggered them
+- **Mixed concerns**: Runtime configuration (server port, logging) was in workspace.yml alongside
+  business logic
 - **Poor job reusability**: Jobs couldn't easily be triggered by multiple signals
 - **Configuration confusion**: Platform settings mixed with user workflow definitions
 
 #### **Solution Implemented**
 
 **Job-Owns-Relationship Architecture:**
+
 - Jobs now define their `triggers` field specifying which signals activate them
 - Enables jobs to be triggered by multiple signals naturally
 - Makes jobs self-contained entities with clear trigger conditions
 - Better foundation for natural language job creation
 
 **Runtime Config Migration:**
+
 - Moved all runtime configuration from workspace.yml to atlas.yml
 - Runtime settings (server, logging, persistence, security) are now platform-managed
 - Workspaces focus purely on business logic (jobs, agents, signals)
@@ -53,6 +58,7 @@ CLI Updates:
 #### **Architecture Change**
 
 **Before (signals own jobs):**
+
 ```yaml
 signals:
   my-signal:
@@ -62,6 +68,7 @@ signals:
 ```
 
 **After (jobs own signals):**
+
 ```yaml
 jobs:
   my-job:
@@ -91,6 +98,7 @@ signals:
 #### **Key Learning**
 
 **Configuration architecture should mirror domain logic:**
+
 - Jobs should own their trigger relationships, not be owned by signals
 - Platform concerns (runtime) should be separated from user concerns (workflows)
 - Configuration structure directly impacts feature development ease

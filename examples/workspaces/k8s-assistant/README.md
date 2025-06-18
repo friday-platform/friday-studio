@@ -1,22 +1,24 @@
 # Kubernetes Assistant Workspace
 
 A demonstration of Atlas AI agent orchestration for Kubernetes management, combining multiple
-specialized agents with **real-time event streaming** to provide intelligent cluster operations and autonomous monitoring.
+specialized agents with **real-time event streaming** to provide intelligent cluster operations and
+autonomous monitoring.
 
 ## Overview
 
 This workspace demonstrates Atlas's advanced capabilities including:
 
 - **Multi-Agent Coordination** - Orchestrates specialized AI agents
-- **Stream Signal Providers** - Real-time event streaming from external monitor agents  
-- **Smart Event Routing** - Critical events trigger immediate responses, all events enable comprehensive monitoring
+- **Stream Signal Providers** - Real-time event streaming from external monitor agents
+- **Smart Event Routing** - Critical events trigger immediate responses, all events enable
+  comprehensive monitoring
 - **Production-Ready Architecture** - Circuit breakers, retry logic, and health monitoring
 
 ### Agent Architecture
 
 1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes operations
 2. **local-assistant** - LLM-based fallback agent for documentation and support
-3. **Built-in k8s-watch signal provider** - Direct Kubernetes API integration for real-time event monitoring
+3. **Built-in k8s-events signal provider** - Direct Kubernetes API integration for real-time event monitoring
 
 ### Signal Types
 
@@ -127,12 +129,14 @@ The `workspace.yml` file defines:
 ## How It Works
 
 ### User-Initiated Operations (HTTP/CLI Signals)
+
 1. **Signal Triggered** - User sends request via HTTP or CLI
-2. **Main Agent Processes** - Analyzes request using ReAct framework  
+2. **Main Agent Processes** - Analyzes request using ReAct framework
 3. **Local Assistant Supports** - Provides documentation and fallback
 4. **Memory Updates** - Stores successful patterns and resolutions
 
 ### Real-Time Event Monitoring (K8s Events Signals)
+
 1. **Built-in Events Provider** - Atlas directly connects to Kubernetes Events API using watch endpoints
 2. **Event Monitoring**:
    - **Kubernetes Events Only** → Watches cluster Events (pod failures, deployments, etc.)
@@ -171,7 +175,6 @@ curl -X POST http://localhost:3001/k8s\
 curl -X POST http://localhost:3001/k8s\
 -H "Content-Type: application/json"\
 -d '{ "message": "Check why my deployment is not ready" }'
-```
 
 ### K8s Events Signal Testing (Real-time Events)
 

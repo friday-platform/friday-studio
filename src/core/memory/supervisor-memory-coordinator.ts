@@ -5,13 +5,8 @@
  * Provides memory coordination between WorkspaceSupervisor and SessionSupervisor
  */
 
-import type {
-  IAtlasScope,
-  IWorkspaceSession,
-  IWorkspaceSignal,
-  IWorkspaceSupervisor,
-} from "../../types/core.ts";
-import { CoALAMemoryManager, CoALAMemoryQuery, CoALAMemoryType } from "./coala-memory.ts";
+import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../types/core.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 
 export interface SupervisorMemoryContext {
@@ -47,11 +42,11 @@ export class SupervisorMemoryCoordinator {
   }
 
   // WorkspaceSupervisor Memory Operations
-  async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
+  analyzeSignalWithMemory(signal: IWorkspaceSignal): {
     relevantMemories: any[];
     analysisContext: string;
     suggestedAgents: string[];
-  }> {
+  } {
     // Query relevant memories for signal analysis
     const signalContent = JSON.stringify(signal);
     const relevantMemories = this.workspaceMemory.queryMemories({
@@ -101,11 +96,11 @@ export class SupervisorMemoryCoordinator {
     };
   }
 
-  async createSessionMemoryContext(
+  createSessionMemoryContext(
     sessionId: string,
     session: IWorkspaceSession,
     workspaceAnalysis: any,
-  ): Promise<CoALAMemoryManager> {
+  ): CoALAMemoryManager {
     // Create isolated session memory
     const sessionMemory = new CoALAMemoryManager(
       session,
@@ -157,14 +152,14 @@ export class SupervisorMemoryCoordinator {
   }
 
   // SessionSupervisor Memory Operations
-  async createExecutionPlanWithMemory(
+  createExecutionPlanWithMemory(
     sessionMemory: CoALAMemoryManager,
     sessionContext: any,
-  ): Promise<{
+  ): {
     executionPlan: any;
     memoryGuidance: string[];
     agentMemoryContexts: Map<string, any>;
-  }> {
+  } {
     // Query session memories for execution planning
     const contextualMemories = sessionMemory.queryMemories({
       memoryType: CoALAMemoryType.CONTEXTUAL,
@@ -226,14 +221,14 @@ export class SupervisorMemoryCoordinator {
     };
   }
 
-  async evaluateProgressWithMemory(
+  evaluateProgressWithMemory(
     sessionMemory: CoALAMemoryManager,
     agentResults: any[],
-  ): Promise<{
+  ): {
     shouldContinue: boolean;
     refinements: string[];
     memoryUpdates: any[];
-  }> {
+  } {
     // Remember agent results
     for (const result of agentResults) {
       sessionMemory.rememberWithMetadata(
@@ -303,13 +298,13 @@ export class SupervisorMemoryCoordinator {
 
     // Cleanup old session memories
     const oldSessions = Array.from(this.sessionMemories.entries())
-      .filter(([sessionId, memory]) => {
+      .filter(([_sessionId, memory]) => {
         // Remove sessions older than 24 hours
         const sessionAge = Date.now() - memory.size() * 1000; // Rough age estimate
         return sessionAge > 86400000;
       });
 
-    for (const [sessionId, _] of oldSessions) {
+    for (const [sessionId, _memory] of oldSessions) {
       await this.consolidateSessionMemory(sessionId);
     }
   }
@@ -334,7 +329,7 @@ export class SupervisorMemoryCoordinator {
       .map(([agentId, _]) => agentId);
   }
 
-  private createAnalysisContext(memories: any[], signal: IWorkspaceSignal): string {
+  private createAnalysisContext(memories: any[], _signal: IWorkspaceSignal): string {
     const patterns = memories
       .filter((m) => m.tags.includes("pattern"))
       .map((m) => m.content)
@@ -373,7 +368,7 @@ export class SupervisorMemoryCoordinator {
     return successes / results.length;
   }
 
-  private generateRefinements(historical: any[], current: any[]): string[] {
+  private generateRefinements(_historical: any[], current: any[]): string[] {
     const failures = current.filter((r) => !r.success);
     return failures.map((f) => `Refine approach for ${f.agentId}: ${f.error || "unknown error"}`);
   }
@@ -381,7 +376,7 @@ export class SupervisorMemoryCoordinator {
 
 // Default memory filtering policy
 class DefaultMemoryFilteringPolicy implements MemoryFilteringPolicy {
-  filterForSession(workspaceMemories: any[], sessionContext: IWorkspaceSession): any[] {
+  filterForSession(workspaceMemories: any[], _sessionContext: IWorkspaceSession): any[] {
     // Provide general knowledge and relevant patterns to sessions
     return workspaceMemories.filter((memory) =>
       memory.memoryType === CoALAMemoryType.SEMANTIC ||

@@ -128,7 +128,6 @@ signals:
       max_retries: 3
       retry_delay_ms: 2000
 
-
 # Memory configuration for k8s operations
 memory:
   enabled: true
