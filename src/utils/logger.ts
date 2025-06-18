@@ -28,13 +28,13 @@ export class AtlasLogger {
   private globalLogPath: string;
   private fileWriter?: Deno.FsFile;
   private workspaceWriters: Map<string, Deno.FsFile> = new Map();
+  private initPromise?: Promise<void>;
+  private isInitialized = false;
 
   private constructor() {
-    // Set up .atlas directory in home or current directory
-    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") ||
-      Deno.cwd();
-    this.logDir = join(homeDir, ".atlas", "logs");
-    this.globalLogPath = join(this.logDir, "global.log");
+    // Paths will be set during initialization
+    this.logDir = "";
+    this.globalLogPath = "";
   }
 
   static getInstance(): AtlasLogger {
@@ -45,24 +45,42 @@ export class AtlasLogger {
   }
 
   async initialize(): Promise<void> {
-    // Ensure log directories exist
-    await ensureDir(this.logDir);
-    await ensureDir(join(this.logDir, "workspaces"));
+    if (this.isInitialized) return;
 
-    // Open global log file
-    this.fileWriter = await Deno.open(this.globalLogPath, {
-      create: true,
-      write: true,
-      append: true,
-    });
+    // If initialization is already in progress, wait for it
+    if (this.initPromise) return this.initPromise;
 
-    // Write initialization message
-    await this.writeLog("global", {
-      level: "info",
-      message: "Atlas logging initialized",
-      timestamp: new Date().toISOString(),
-      pid: Deno.pid,
-    });
+    // Start initialization
+    this.initPromise = (async () => {
+      // Set up paths now that we have permission to access env
+      const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") ||
+        Deno.cwd();
+      this.logDir = join(homeDir, ".atlas", "logs");
+      this.globalLogPath = join(this.logDir, "global.log");
+
+      // Ensure log directories exist
+      await ensureDir(this.logDir);
+      await ensureDir(join(this.logDir, "workspaces"));
+
+      // Open global log file
+      this.fileWriter = await Deno.open(this.globalLogPath, {
+        create: true,
+        write: true,
+        append: true,
+      });
+
+      // Write initialization message
+      await this.writeLog("global", {
+        level: "info",
+        message: "Atlas logging initialized",
+        timestamp: new Date().toISOString(),
+        pid: Deno.pid,
+      });
+
+      this.isInitialized = true;
+    })();
+
+    await this.initPromise;
   }
 
   private async writeLog(target: string, entry: LogEntry): Promise<void> {
@@ -127,7 +145,7 @@ export class AtlasLogger {
   ): Promise<void> {
     const entry = this.formatMessage(level, message, context);
 
-    // Console output with color coding
+    // Console output with color coding (always available)
     const color = {
       error: "\x1b[31m", // red
       warn: "\x1b[33m", // yellow
@@ -149,7 +167,10 @@ export class AtlasLogger {
       `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
     );
 
-    // File output only if initialized
+    // Ensure logger is initialized before file operations
+    await this.initialize();
+
+    // File output (now always available after initialization)
     if (this.fileWriter) {
       const target = context?.workspaceId ? `workspace:${context.workspaceId}` : "global";
       await this.writeLog(target, entry);
@@ -184,6 +205,9 @@ export class AtlasLogger {
     target: string = "global",
     lines: number = 100,
   ): Promise<string[]> {
+    // Ensure logger is initialized before reading logs
+    await this.initialize();
+
     const logPath = target === "global"
       ? this.globalLogPath
       : join(this.logDir, "workspaces", `${target}.log`);
@@ -199,12 +223,26 @@ export class AtlasLogger {
 
   close(): void {
     if (this.fileWriter) {
-      this.fileWriter.close();
+      try {
+        this.fileWriter.close();
+      } catch {
+        // Ignore errors if file is already closed
+      }
+      this.fileWriter = undefined;
     }
 
     for (const writer of this.workspaceWriters.values()) {
-      writer.close();
+      try {
+        writer.close();
+      } catch {
+        // Ignore errors if file is already closed
+      }
     }
+    this.workspaceWriters.clear();
+
+    // Reset initialization state
+    this.isInitialized = false;
+    this.initPromise = undefined;
   }
 }
 
@@ -251,14 +289,5 @@ export class ChildLogger {
   }
 }
 
-// Global logger instance
+// Global logger instance - lazy initialization on first use
 export const logger = AtlasLogger.getInstance();
-
-// Initialize logger on import (only in main thread)
-// @ts-ignore - WorkerGlobalScope may not be defined in all environments
-if (
-  typeof WorkerGlobalScope === "undefined" ||
-  !(self instanceof WorkerGlobalScope)
-) {
-  await logger.initialize();
-}
