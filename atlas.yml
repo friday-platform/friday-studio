@@ -88,6 +88,21 @@ memory:
       max_age_days: 30
       max_entries: 1000
       cleanup_interval_hours: 24
+  
+  # Streaming memory configuration for performance
+  streaming:
+    enabled: true
+    queue_max_size: 1000
+    batch_size: 10
+    flush_interval_ms: 1000
+    background_processing: true
+    persistence_enabled: true
+    error_retry_attempts: 3
+    priority_processing: true
+    dual_write_enabled: true # Safe migration mode
+    legacy_batch_enabled: false # Disable for performance
+    stream_everything: true
+    performance_tracking: true
 
   # Agent-level memory configuration
   agent:

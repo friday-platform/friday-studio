@@ -849,7 +849,6 @@ Focus on safety, efficiency, and reliability.`;
         quality_score: 1.0,
         issues: [],
         recommendations: [],
-        validated_at: new Date().toISOString(),
       };
     }
 

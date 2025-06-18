@@ -159,8 +159,24 @@ const AtlasMemoryScopeSchema = z.object({
   memory_types: z.record(z.string(), z.any()),
 });
 
+const AtlasMemoryStreamingSchema = z.object({
+  enabled: z.boolean().default(true),
+  queue_max_size: z.number().positive().default(1000),
+  batch_size: z.number().positive().default(10),
+  flush_interval_ms: z.number().positive().default(1000),
+  background_processing: z.boolean().default(true),
+  persistence_enabled: z.boolean().default(true),
+  error_retry_attempts: z.number().min(0).default(3),
+  priority_processing: z.boolean().default(true),
+  dual_write_enabled: z.boolean().default(true),
+  legacy_batch_enabled: z.boolean().default(false),
+  stream_everything: z.boolean().default(true),
+  performance_tracking: z.boolean().default(true),
+}).optional();
+
 const AtlasMemoryConfigSchema = z.object({
   default: AtlasMemoryDefaultSchema,
+  streaming: AtlasMemoryStreamingSchema,
   agent: AtlasMemoryScopeSchema,
   session: AtlasMemoryScopeSchema,
   workspace: AtlasMemoryScopeSchema,

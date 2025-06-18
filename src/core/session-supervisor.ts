@@ -10,6 +10,12 @@ import { logger } from "../utils/logger.ts";
 import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
 import { SupervisionLevel } from "./caching/supervision-cache.ts";
 import { getSupervisionConfig } from "./supervision-levels.ts";
+import {
+  type StreamingMemoryConfig,
+  StreamingMemoryManager,
+} from "./memory/streaming/streaming-memory-manager.ts";
+import { WorkspacePlanningEngine } from "./planning/workspace-planning-engine.ts";
+import { PlanningConfigResolver } from "./planning/planning-config.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -215,6 +221,8 @@ export class SessionSupervisor extends BaseAgent {
   private factExtractor?: FactExtractor;
   private knowledgeGraph?: KnowledgeGraphManager;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
+  private streamingMemory?: StreamingMemoryManager;
+  private workspacePlanningEngine?: WorkspacePlanningEngine;
 
   constructor(memoryConfig: AtlasMemoryConfig, parentScopeId?: string) {
     super(memoryConfig, parentScopeId);
@@ -305,6 +313,47 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   }
 
   // Initialize AgentSupervisor using atlas.yml configuration
+  async initializeStreamingMemory(context: SessionContext): Promise<void> {
+    try {
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+
+      // Load streaming memory configuration from atlas.yml
+      const streamingMemoryConfig = (atlasConfig.memory as any)?.streaming || {};
+      const streamingConfig: StreamingMemoryConfig = {
+        queue_max_size: streamingMemoryConfig.queue_max_size || 1000,
+        batch_size: streamingMemoryConfig.batch_size || 10,
+        flush_interval_ms: streamingMemoryConfig.flush_interval_ms || 1000,
+        background_processing: streamingMemoryConfig.background_processing ?? true,
+        persistence_enabled: streamingMemoryConfig.persistence_enabled ?? true,
+        error_retry_attempts: streamingMemoryConfig.error_retry_attempts || 3,
+        priority_processing: streamingMemoryConfig.priority_processing ?? true,
+        dual_write_enabled: streamingMemoryConfig.dual_write_enabled ?? true,
+        legacy_batch_enabled: streamingMemoryConfig.legacy_batch_enabled ?? false,
+        stream_everything: streamingMemoryConfig.stream_everything ?? true,
+        performance_tracking: streamingMemoryConfig.performance_tracking ?? true,
+      };
+
+      // Initialize streaming memory manager
+      this.streamingMemory = new StreamingMemoryManager(
+        this.sessionMemoryManager,
+        streamingConfig,
+        {
+          sessionId: context.sessionId,
+          workspaceId: context.workspaceId,
+        },
+      );
+
+      this.log("Streaming memory initialized");
+    } catch (error) {
+      this.logger.error("Failed to initialize streaming memory", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: context.sessionId,
+      });
+      // Don't fail session initialization if streaming memory fails
+    }
+  }
+
   async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
     try {
       const atlasConfigLoader = AtlasConfigLoader.getInstance();
@@ -312,16 +361,20 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       const agentSupervisorConfig = atlasConfig.supervisors.agent;
 
       // Extract supervision configuration with defaults
-      const supervisionConfig = agentSupervisorConfig.supervision || {};
-      
+      const supervisionConfig = (agentSupervisorConfig.supervision as AtlasSupervisionConfig) || {};
+
       // Set session supervision level for optimizations
-      this.supervisionLevel = supervisionConfig.level ? SupervisionLevel[supervisionConfig.level.toUpperCase() as keyof typeof SupervisionLevel] : SupervisionLevel.MINIMAL;
-      
+      this.supervisionLevel = (supervisionConfig as any).level
+        ? SupervisionLevel[
+          (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
+        ]
+        : SupervisionLevel.MINIMAL;
+
       this.logger.debug("Atlas config supervision settings", {
         supervisionConfig,
-        level: supervisionConfig.level,
-        cache_enabled: supervisionConfig.cache_enabled,
-        sessionSupervisionLevel: this.supervisionLevel
+        level: (supervisionConfig as any).level,
+        cache_enabled: (supervisionConfig as any).cache_enabled,
+        sessionSupervisionLevel: this.supervisionLevel,
       });
 
       this.initializeAgentSupervisor({
@@ -329,14 +382,17 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
-        supervisionLevel: supervisionConfig.level || SupervisionLevel.MINIMAL,
-        cacheEnabled: supervisionConfig.cache_enabled !== false,
+        supervisionLevel: ((supervisionConfig as any).level &&
+          SupervisionLevel[
+            (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
+          ]) || SupervisionLevel.MINIMAL,
+        cacheEnabled: (supervisionConfig as any).cache_enabled !== false,
         prompts: agentSupervisorConfig.prompts,
       });
 
       this.log(
         `AgentSupervisor initialized with supervision level: ${
-          supervisionConfig.level || SupervisionLevel.MINIMAL
+          (supervisionConfig as any).level || SupervisionLevel.MINIMAL
         }`,
       );
     } catch (error) {
@@ -367,6 +423,12 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     // Initialize AgentSupervisor for supervised execution using atlas.yml config
     await this.initializeAgentSupervisorFromConfig(context);
 
+    // Initialize streaming memory for performance
+    await this.initializeStreamingMemory(context);
+
+    // Initialize planning engine for precomputed plan lookup
+    await this.initializePlanningEngine(context);
+
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
       this.sessionMemoryManager,
@@ -379,13 +441,43 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     );
   }
 
+  // Initialize planning engine for precomputed plan lookup
+  async initializePlanningEngine(context: SessionContext): Promise<void> {
+    try {
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+
+      // Load planning configuration from atlas.yml
+      const planningConfig = PlanningConfigResolver.resolveConfig(
+        atlasConfig.planning as any || {},
+        undefined, // workspaceConfig (no workspace-level overrides yet)
+        "session", // supervisorType
+      );
+
+      // Initialize workspace planning engine
+      this.workspacePlanningEngine = new WorkspacePlanningEngine({
+        maxCacheSize: 1000,
+        enableAnalytics: true,
+        persistPlans: false,
+      });
+
+      this.log("Planning engine initialized for precomputed plan lookup");
+    } catch (error) {
+      this.logger.error("Failed to initialize planning engine", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: context.sessionId,
+      });
+      // Don't fail session initialization if planning engine fails
+    }
+  }
+
   // Create execution plan using advanced reasoning or job specification
   async createExecutionPlan(): Promise<ExecutionPlan> {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
 
-    this.log(`[createExecutionPlan] Checking for jobSpec...`);
+    this.log(`[createExecutionPlan] Checking for precomputed plans and jobSpec...`);
     this.log(
       `[createExecutionPlan] SessionContext keys: ${
         Object.keys(
@@ -402,10 +494,38 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       );
     }
 
-    // If we have a job specification, use it directly (fast path)
+    // STEP 1: Check for precomputed execution plans (fastest path - zero LLM calls)
+    if (this.workspacePlanningEngine && this.sessionContext.jobSpec) {
+      const jobName = this.sessionContext.jobSpec.name;
+      this.log(`Checking for precomputed plan for job: ${jobName}`);
+
+      try {
+        const precomputedPlan = await this.workspacePlanningEngine.getPrecomputedPlan(jobName);
+        if (precomputedPlan) {
+          this.log(`Using precomputed execution plan for: ${jobName} (zero LLM calls)`);
+
+          // Convert precomputed plan to ExecutionPlan format with session-specific data
+          const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
+            precomputedPlan,
+            this.sessionContext,
+          );
+
+          this.executionPlan = sessionPlan;
+          return sessionPlan;
+        } else {
+          this.log(
+            `No precomputed plan found for job: ${jobName}, falling back to runtime planning`,
+          );
+        }
+      } catch (error) {
+        this.log(`Error accessing precomputed plan: ${error}, falling back to runtime planning`);
+      }
+    }
+
+    // STEP 2: If we have a job specification, use it directly (fast path)
     if (this.sessionContext.jobSpec) {
       this.log(
-        `Using fast job spec path for: ${this.sessionContext.jobSpec.name}`,
+        `Using job spec path for: ${this.sessionContext.jobSpec.name}`,
       );
       return this.createPlanFromJobSpec(this.sessionContext.jobSpec);
     }
@@ -498,6 +618,62 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     return plan;
   }
 
+  // Convert precomputed plan to session-specific ExecutionPlan
+  private convertPrecomputedPlanToExecutionPlan(
+    precomputedPlan: import("./planning/planning-config.ts").PrecomputedPlan,
+    sessionContext: SessionContext,
+  ): ExecutionPlan {
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: sessionContext.sessionId,
+      phases: [],
+      successCriteria: [
+        `Execute all ${precomputedPlan.steps.length} steps successfully`,
+        "Follow precomputed execution plan",
+        "Complete within estimated duration",
+      ],
+      adaptationStrategy: "rigid", // Precomputed plans are rigid
+    };
+
+    // Convert precomputed steps to session execution phases
+    if (
+      precomputedPlan.type === "static_sequential" || precomputedPlan.type === "static_parallel"
+    ) {
+      plan.phases.push({
+        id: "precomputed-phase",
+        name: `Precomputed ${precomputedPlan.jobName}`,
+        agents: precomputedPlan.steps.map((step, index) => ({
+          agentId: step.agentId,
+          task: step.task,
+          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          dependencies: step.dependencies,
+          mode: step.mode,
+          config: step.config,
+        })),
+        executionStrategy: precomputedPlan.type === "static_sequential" ? "sequential" : "parallel",
+      });
+    } else {
+      // Handle other plan types like behavior_tree, htn, mcts
+      this.log(`Converting complex precomputed plan type: ${precomputedPlan.type}`);
+      // For now, convert to sequential execution - could be enhanced later
+      plan.phases.push({
+        id: "complex-precomputed-phase",
+        name: `Complex ${precomputedPlan.jobName}`,
+        agents: precomputedPlan.steps.map((step) => ({
+          agentId: step.agentId,
+          task: step.task,
+          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          dependencies: step.dependencies,
+          mode: step.mode,
+          config: step.config,
+        })),
+        executionStrategy: "sequential", // Default for complex plans
+      });
+    }
+
+    return plan;
+  }
+
   // Build agent task from job specification
   private buildAgentTask(
     agentSpec: JobAgentSpec,
@@ -550,7 +726,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         executionStrategy: "sequential",
       }],
       successCriteria: ["Execute all agents", "Produce output"],
-      adaptationStrategy: "fixed",
+      adaptationStrategy: "rigid",
     };
 
     this.executionPlan = plan;
@@ -1147,10 +1323,28 @@ Provide a brief evaluation.`;
         supervision,
       );
 
-      // Step 6: Record execution in working memory
+      // Step 6: Stream agent result for immediate memory processing
+      if (this.streamingMemory) {
+        await this.streamingMemory.streamAgentResult(
+          agentId,
+          input,
+          result.output,
+          result.execution_metadata.duration || 0,
+          result.validation.is_valid,
+          {
+            tokensUsed: (result.execution_metadata as any).tokens_used,
+            error: result.validation.is_valid
+              ? undefined
+              : result.validation.issues?.[0]?.description,
+            priority: "normal",
+          },
+        );
+      }
+
+      // Step 7: Record execution in working memory (legacy for dual-write)
       await this.recordExecutionInWorkingMemory(agentId, task, input, result, context);
 
-      // Step 7: Clean up worker
+      // Step 8: Clean up worker
       await this.agentSupervisor.terminateWorker(workerInstance.id);
 
       this.log(`Agent ${agentId} executed successfully with supervision`);
@@ -1441,7 +1635,9 @@ Overall Success: ${
     // Skip expensive LLM summary generation in minimal supervision mode
     if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
       const allResults = phaseResults.flatMap((phase) => phase.results);
-      return `Session completed with ${allResults.length} agent executions. Signal: ${this.sessionContext.signal.id}. Results: ${allResults.map(r => `${r.agentId} (${r.duration}ms)`).join(', ')}.`;
+      return `Session completed with ${allResults.length} agent executions. Signal: ${this.sessionContext.signal.id}. Results: ${
+        allResults.map((r) => `${r.agentId} (${r.duration}ms)`).join(", ")
+      }.`;
     }
 
     const allResults = phaseResults.flatMap((phase) => phase.results);
@@ -2193,5 +2389,42 @@ Overall Session Summary: ${
     }
 
     return enhancedPrompt;
+  }
+
+  /**
+   * Shutdown streaming memory and perform final cleanup
+   */
+  async shutdown(): Promise<void> {
+    try {
+      if (this.streamingMemory) {
+        // Stream session completion before shutdown
+        if (this.sessionContext && this.executionResults.length > 0) {
+          const totalDuration = this.executionResults.reduce(
+            (sum, result) => sum + (result.duration || 0),
+            0,
+          );
+          const successRate = this.executionResults.filter((r) => r.output).length /
+            this.executionResults.length;
+
+          await this.streamingMemory.streamSessionComplete(
+            this.sessionContext.sessionId,
+            totalDuration,
+            this.executionResults.length,
+            successRate,
+            this.executionResults[this.executionResults.length - 1]?.output,
+            `Session with ${this.executionResults.length} agents completed`,
+          );
+        }
+
+        // Shutdown streaming memory
+        await this.streamingMemory.shutdown();
+        this.log("Streaming memory shutdown complete");
+      }
+    } catch (error) {
+      this.logger.error("Error during streaming memory shutdown", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionContext?.sessionId,
+      });
+    }
   }
 }
