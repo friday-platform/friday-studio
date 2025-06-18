@@ -141,6 +141,7 @@ const plan = await agent.generatePlan(
 ## TONIGHT'S EXTENDED PLAN: FULL EXECUTION STACK
 
 ### 🚧 NEXT PHASE: Supervisor Integration (30 mins)
+
 - [ ] WorkspaceSupervisor.initialize() calls enableAdvancedPlanning()
 - [ ] Pre-compute plans for all jobs at workspace startup
 - [ ] Signal processing uses cached plans (with lazy fallback)
@@ -150,6 +151,7 @@ const plan = await agent.generatePlan(
 ### 🎯 PHASE 2: Advanced Execution Strategies (45 mins)
 
 #### Dynamic Execution Structures
+
 - [ ] **Agentic Behavior Trees (ABT)** - Dynamic control flow execution strategy
   - [ ] BehaviorTreeNode base class (Sequence, Selector, Parallel, Condition, Action)
   - [ ] AgentAction nodes that wrap agent execution
@@ -158,13 +160,15 @@ const plan = await agent.generatePlan(
   - [ ] Integration as `strategy: "behavior-tree"` in job specs
 
 #### Hierarchical Task Networks (HTN)
+
 - [ ] **HTN Execution Strategy** - Goal decomposition and method selection
   - [ ] Task decomposition into primitive and compound tasks
   - [ ] Method selection based on context and preconditions
   - [ ] Dynamic replanning when methods fail
   - [ ] Integration as `strategy: "hierarchical-task-network"`
 
-#### Monte Carlo Tree Search (MCTS)  
+#### Monte Carlo Tree Search (MCTS)
+
 - [ ] **MCTS Execution Strategy** - Exploration-based execution planning
   - [ ] Selection phase: Choose promising execution paths
   - [ ] Expansion phase: Try new agent combinations
@@ -175,6 +179,7 @@ const plan = await agent.generatePlan(
 ### 🧠 PHASE 3: Advanced Reasoning Methods (30 mins)
 
 #### Additional Reasoning Approaches
+
 - [ ] **Tree-of-Thought Reasoning** - Explore multiple reasoning branches
   - [ ] Branch generation and evaluation
   - [ ] Best path selection based on confidence scores
@@ -191,12 +196,14 @@ const plan = await agent.generatePlan(
   - [ ] Principle-guided solution refinement
 
 ### 🔄 PHASE 4: Execution Integration (30 mins)
+
 - [ ] ExecutionEngine that coordinates planning + reasoning + execution
 - [ ] Strategy selection based on job complexity and requirements
 - [ ] Runtime strategy switching based on execution results
 - [ ] Execution result feedback to planning and reasoning layers
 
 ### 📊 PHASE 5: Performance & Testing (15 mins)
+
 - [ ] Benchmarking different execution strategies
 - [ ] A/B testing framework for strategy effectiveness
 - [ ] Performance metrics collection and analysis
@@ -205,6 +212,7 @@ const plan = await agent.generatePlan(
 ## IMPLEMENTATION ROADMAP
 
 ### File Structure to Create:
+
 ```
 src/core/execution/
 ├── execution-engine.ts           # Main execution coordinator
@@ -244,8 +252,9 @@ tests/unit/execution/
 ```
 
 ### Integration Points:
+
 1. **JobSpecification** - Add new strategy types and tree configurations
-2. **SessionSupervisor** - Use ExecutionEngine instead of simple agent spawning  
+2. **SessionSupervisor** - Use ExecutionEngine instead of simple agent spawning
 3. **WorkspaceSupervisor** - Pre-compute execution strategies at startup
 4. **ReasoningEngine** - Register new reasoning methods
 5. **Pattern Matching** - Cache execution strategy selections
@@ -253,6 +262,7 @@ tests/unit/execution/
 ### Key Implementation Details:
 
 #### Behavior Tree Integration:
+
 ```typescript
 interface BehaviorTreeSpec {
   type: "sequence" | "selector" | "parallel" | "condition" | "agent";
@@ -269,20 +279,25 @@ jobSpec = {
       type: "sequence",
       children: [
         { type: "agent", agent: "security-scanner" },
-        { 
+        {
           type: "selector",
           children: [
-            { type: "condition", condition: "risk_score > 0.8", then: { type: "agent", agent: "manual-review" }},
-            { type: "agent", agent: "auto-approve" }
-          ]
-        }
-      ]
-    }
-  }
-}
+            {
+              type: "condition",
+              condition: "risk_score > 0.8",
+              then: { type: "agent", agent: "manual-review" },
+            },
+            { type: "agent", agent: "auto-approve" },
+          ],
+        },
+      ],
+    },
+  },
+};
 ```
 
 #### HTN Integration:
+
 ```typescript
 interface HTNSpec {
   goal: string;
@@ -298,6 +313,7 @@ interface HTNMethod {
 ```
 
 #### MCTS Integration:
+
 ```typescript
 interface MCTSSpec {
   max_iterations: number;
@@ -308,6 +324,7 @@ interface MCTSSpec {
 ```
 
 ### Success Criteria Status:
+
 - ✅ Behavior Tree execution strategy working with comprehensive test cases
 - ✅ ReasoningEngine integrated with supervisors for dynamic method selection
 - ✅ Pattern matching implemented and caching execution decisions
@@ -315,15 +332,19 @@ interface MCTSSpec {
 - 🚧 End-to-end test: signal → reasoning → planning → execution → result (in progress)
 
 **PERFORMANCE ACHIEVEMENTS**:
+
 - Pre-computed job plans eliminate planning latency during signal processing
 - Cached reasoning patterns reduce LLM calls for repeated scenarios
 - Dynamic method selection optimizes reasoning approach per complexity
 - Behavior trees provide efficient execution control flow with retry/timeout handling
 
 ### Time Estimate: ~2.5 hours total
+
 - Infrastructure is already built (reasoning + planning)
 - Execution strategies are well-defined patterns
 - Most complexity is in state management and coordination
 - Testing can be done with mock agents initially
 
-**PICKUP INSTRUCTIONS**: Start with BehaviorTreeStrategy as it's the most immediately useful. Then HTN for complex decomposition, then MCTS for optimization. Each strategy should integrate with existing ReasoningEngine for method selection.
+**PICKUP INSTRUCTIONS**: Start with BehaviorTreeStrategy as it's the most immediately useful. Then
+HTN for complex decomposition, then MCTS for optimization. Each strategy should integrate with
+existing ReasoningEngine for method selection.

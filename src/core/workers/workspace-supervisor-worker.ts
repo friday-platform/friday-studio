@@ -336,8 +336,9 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
     // Initialize session with memoryConfig and shared planning cache
     try {
-      // Get precomputed plans from WorkspaceSupervisor's planning engine
-      const precomputedPlans = this.supervisor?.getPrecomputedPlans() || {};
+      // Get precomputed plans from WorkspaceSupervisor's planning engine with security validation
+      const workspaceId = this.workspace?.id;
+      const precomputedPlans = this.supervisor?.getPrecomputedPlans(workspaceId) || {};
       
       sessionWorker.postMessage({
         type: "init",

@@ -34,11 +34,11 @@ import {
   SupervisionLevel,
 } from "./caching/supervision-cache.ts";
 import { MemoryCacheAdapter } from "./caching/adapters/memory-cache-adapter.ts";
-import { 
-  getSupervisionConfig, 
-  shouldRunAnalysis, 
+import {
+  getSupervisionConfig,
+  shouldRunAnalysis,
   shouldRunValidation,
-  type SupervisionConfig 
+  type SupervisionConfig,
 } from "./supervision-levels.ts";
 import { createHash } from "node:crypto";
 
@@ -204,7 +204,8 @@ export class AgentSupervisor extends BaseAgent {
     this.workspaceId = supervisorConfig.workspaceId;
     this.supervisionLevel = supervisorConfig.supervisionLevel || SupervisionLevel.STANDARD;
     this.supervisionConfig = getSupervisionConfig(this.supervisionLevel);
-    this.cacheEnabled = this.supervisionConfig.cacheEnabled && (supervisorConfig.cacheEnabled !== false);
+    this.cacheEnabled = this.supervisionConfig.cacheEnabled &&
+      (supervisorConfig.cacheEnabled !== false);
 
     // Initialize supervision cache
     const cacheAdapter = new MemoryCacheAdapter();
@@ -273,7 +274,9 @@ export class AgentSupervisor extends BaseAgent {
   ): Promise<AgentAnalysis> {
     // Check if analysis should be skipped based on supervision level
     if (!shouldRunAnalysis(this.supervisionLevel)) {
-      this.logger.debug(`Skipping analysis for agent ${agent.id} (supervision level: ${this.supervisionLevel})`);
+      this.logger.debug(
+        `Skipping analysis for agent ${agent.id} (supervision level: ${this.supervisionLevel})`,
+      );
       return this.getMinimalAnalysis(agent, task);
     }
 

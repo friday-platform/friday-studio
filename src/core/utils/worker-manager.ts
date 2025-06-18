@@ -531,7 +531,7 @@ export class WorkerManager {
     return new Promise((resolve, reject) => {
       const timeoutMs = 120000; // 2 minutes for worker operations (allows for LLM calls)
       let isResolved = false;
-      
+
       const cleanup = () => {
         if (!isResolved) {
           isResolved = true;
@@ -539,7 +539,7 @@ export class WorkerManager {
           worker.worker.removeEventListener("message", handleMessage);
         }
       };
-      
+
       const timeout = setTimeout(() => {
         cleanup();
         reject(new Error(`Task ${taskId} timeout after ${timeoutMs}ms`));

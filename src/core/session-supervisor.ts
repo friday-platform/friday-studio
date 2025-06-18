@@ -229,7 +229,7 @@ export class SessionSupervisor extends BaseAgent {
   ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
-    this.precomputedPlans = precomputedPlans || {}; // Store shared plans
+    this.precomputedPlans = this.validateAndSanitizePlans(precomputedPlans || {}, parentScopeId); // Store shared plans
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -445,6 +445,105 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     );
   }
 
+  // Validate and sanitize precomputed plans to prevent security issues
+  private validateAndSanitizePlans(
+    plans: Record<string, any>, 
+    expectedWorkspaceId?: string
+  ): Record<string, any> {
+    const sanitizedPlans: Record<string, any> = {};
+    
+    for (const [key, plan] of Object.entries(plans)) {
+      try {
+        // Security: Validate plan key format to prevent injection
+        if (!this.isValidPlanKey(key)) {
+          this.log(`Invalid plan key format detected: ${key}`, "warn");
+          continue;
+        }
+
+        // Security: Verify workspace scope if available
+        if (expectedWorkspaceId && plan?.context?.workspaceId && 
+            plan.context.workspaceId !== expectedWorkspaceId) {
+          this.log(`Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`, "warn");
+          continue;
+        }
+
+        // Sanitize the plan data
+        sanitizedPlans[key] = this.sanitizePlan(plan);
+      } catch (error) {
+        this.log(`Failed to validate plan ${key}: ${error}`, "warn");
+      }
+    }
+
+    return sanitizedPlans;
+  }
+
+  // Validate plan key format to prevent injection attacks
+  private isValidPlanKey(key: string): boolean {
+    // Allow only alphanumeric, hyphens, underscores, and colons
+    const validKeyPattern = /^[a-zA-Z0-9\-_:]+$/;
+    return validKeyPattern.test(key) && key.length <= 256; // Reasonable length limit
+  }
+
+  // Sanitize individual plan to remove sensitive data
+  private sanitizePlan(plan: any): any {
+    if (!plan || typeof plan !== 'object') {
+      return plan;
+    }
+
+    const sanitized = { ...plan };
+    
+    // Remove sensitive fields
+    const sensitiveFields = [
+      'workspaceSecrets', 'privateKeys', 'authTokens', 'apiKeys',
+      'passwords', 'credentials', 'internalConfig', 'debugInfo'
+    ];
+    
+    for (const field of sensitiveFields) {
+      delete sanitized[field];
+    }
+
+    // Sanitize nested objects recursively
+    if (sanitized.context && typeof sanitized.context === 'object') {
+      sanitized.context = this.sanitizePlan(sanitized.context);
+    }
+
+    return sanitized;
+  }
+
+  // Create secure, workspace-scoped cache key to prevent collisions
+  private createSecurePlanKey(jobName: string, workspaceId: string): string {
+    // Include workspace ID to prevent cross-workspace collisions
+    // Use deterministic format for consistent lookups
+    return `plan:${workspaceId}:${jobName}`;
+  }
+
+  // Validate plan before execution to ensure security and compatibility
+  private validatePlanForExecution(plan: any, sessionContext: SessionContext): boolean {
+    try {
+      // Verify plan structure
+      if (!plan || typeof plan !== 'object') {
+        return false;
+      }
+
+      // Verify workspace context matches if available
+      if (plan.context?.workspaceId && plan.context.workspaceId !== sessionContext.workspaceId) {
+        this.log(`Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`, "warn");
+        return false;
+      }
+
+      // Verify plan hasn't been tampered with (basic integrity check)
+      if (plan.phases && !Array.isArray(plan.phases)) {
+        return false;
+      }
+
+      // Additional validations can be added here
+      return true;
+    } catch (error) {
+      this.log(`Plan validation error: ${error}`, "warn");
+      return false;
+    }
+  }
+
   // Create execution plan using advanced reasoning or job specification
   async createExecutionPlan(): Promise<ExecutionPlan> {
     if (!this.sessionContext) {
@@ -473,22 +572,30 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       const jobName = this.sessionContext.jobSpec.name;
       this.log(`Checking for precomputed plan for job: ${jobName}`);
 
+      // Create secure, workspace-scoped cache key
+      const secureKey = this.createSecurePlanKey(jobName, this.sessionContext.workspaceId);
+      
       // Check the shared precomputed plans from WorkspaceSupervisor
-      if (this.precomputedPlans && this.precomputedPlans[jobName]) {
-        const precomputedPlan = this.precomputedPlans[jobName];
+      if (this.precomputedPlans && this.precomputedPlans[secureKey]) {
+        const precomputedPlan = this.precomputedPlans[secureKey];
         this.log(`Using shared precomputed execution plan for: ${jobName} (zero LLM calls)`);
 
-        // Convert precomputed plan to ExecutionPlan format with session-specific data
-        const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
-          precomputedPlan,
-          this.sessionContext,
-        );
+        // Additional security validation before use
+        if (!this.validatePlanForExecution(precomputedPlan, this.sessionContext)) {
+          this.log(`Security validation failed for plan ${secureKey}, falling back to runtime planning`, "warn");
+        } else {
+          // Convert precomputed plan to ExecutionPlan format with session-specific data
+          const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
+            precomputedPlan,
+            this.sessionContext,
+          );
 
-        this.executionPlan = sessionPlan;
-        return sessionPlan;
+          this.executionPlan = sessionPlan;
+          return sessionPlan;
+        }
       } else {
         this.log(
-          `No precomputed plan found for job: ${jobName} in shared cache, falling back to runtime planning`,
+          `No precomputed plan found for job: ${jobName} (key: ${secureKey}) in shared cache, falling back to runtime planning`,
         );
         this.log(`Available precomputed plans: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
       }

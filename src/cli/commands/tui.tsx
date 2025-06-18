@@ -6,6 +6,10 @@ import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
 import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/splash-screen.tsx";
+import {
+  WorkspaceConfigAssistant,
+  type WorkspaceContext,
+} from "../../core/workspace-config-assistant.ts";
 
 // Parse command arguments while preserving JSON structure
 function parseCommandArgs(command: string): string[] {
@@ -92,7 +96,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     previousTab: _previousTab,
     goToTab,
   } = useTabNavigation({
-    tabCount: 2,
+    tabCount: 3,
     initialTab: 0,
   });
   const [inputFocused, setInputFocused] = useState(true);
@@ -108,6 +112,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   >([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
+
+  // Workspace config assistant state
+  const [configAssistant] = useState(() => new WorkspaceConfigAssistant());
+  const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
+  const [configMode, setConfigMode] = useState<
+    "overview" | "create-job" | "validate" | "confirmations"
+  >("overview");
+  const [_jobDescription, _setJobDescription] = useState("");
+  const [isProcessingJob, setIsProcessingJob] = useState(false);
+  const [configValidation, setConfigValidation] = useState<any>(null);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const serverProcessRef = useRef<Deno.ChildProcess | null>(null);
@@ -120,9 +134,58 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   // Calculate available height for panels (terminal height minus header, input, status)
   const availableHeight = Math.max(10, (stdout.rows || 24) - 6);
 
+  // Load workspace context for config assistant
+  const loadWorkspaceContext = async () => {
+    if (!serverStatus.workspace || showSplashScreen) {
+      setWorkspaceContext(null);
+      return;
+    }
+
+    try {
+      // Load workspace configuration
+      const { ConfigLoader } = await import("../../core/config-loader.ts");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+
+      // Build workspace context
+      const context: WorkspaceContext = {
+        workspaceId: serverStatus.workspace,
+        availableSignals: Object.entries(mergedConfig.workspace.signals || {}).map((
+          [id, config]: [string, any],
+        ) => ({
+          id,
+          provider: config.provider || "unknown",
+          description: config.description,
+          payloadShape: config.payloadShape,
+        })),
+        availableAgents: Object.entries(mergedConfig.workspace.agents || {}).map((
+          [id, config]: [string, any],
+        ) => ({
+          id,
+          type: config.type || "unknown",
+          purpose: config.purpose,
+          capabilities: config.capabilities || [],
+        })),
+        existingJobs: Object.entries(mergedConfig.jobs || {}).map((
+          [name, config]: [string, any],
+        ) => ({
+          name,
+          description: config.description,
+          triggers: config.triggers || [],
+        })),
+      };
+
+      setWorkspaceContext(context);
+    } catch (error) {
+      // Don't log error for missing workspace context
+      setWorkspaceContext(null);
+    }
+  };
+
   // Initialize server on startup
   useEffect(() => {
     initializeWorkspace();
+    loadWorkspaceContext();
     return () => {
       if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
         try {
@@ -141,6 +204,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       }
     };
   }, []);
+
+  // Reload workspace context when workspace changes
+  useEffect(() => {
+    if (serverStatus.workspace && !showSplashScreen) {
+      loadWorkspaceContext();
+    }
+  }, [serverStatus.workspace, showSplashScreen]);
 
   const addLog = (
     type: LogEntry["type"],
@@ -490,6 +560,142 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
   };
 
+  const executeConfigCommand = async (args: string[]) => {
+    if (!workspaceContext) {
+      addLog("error", "Workspace context not loaded. Switch to Workspace Config tab first.");
+      return;
+    }
+
+    const subcommand = args[1];
+
+    switch (subcommand) {
+      case "create-job":
+        if (args.length < 3) {
+          setConfigMode("create-job");
+          goToTab(2); // Switch to workspace config tab
+          addLog("command", "Switched to job creation mode. Describe your job in the input.");
+          return;
+        }
+
+        // Process job description
+        const description = args.slice(2).join(" ");
+        await createJobFromDescription(description);
+        break;
+
+      case "validate":
+        await validateWorkspaceConfig();
+        break;
+
+      case "confirmations":
+        setConfigMode("confirmations");
+        goToTab(2); // Switch to workspace config tab
+        addLog("command", "Showing pending condition confirmations");
+        break;
+
+      case "confirm":
+        if (args.length < 3) {
+          addLog("error", "Usage: /config confirm <confirmation-id>");
+          return;
+        }
+        await confirmConditionParsing(args[2], true);
+        break;
+
+      case "reject":
+        if (args.length < 3) {
+          addLog("error", "Usage: /config reject <confirmation-id>");
+          return;
+        }
+        await confirmConditionParsing(args[2], false);
+        break;
+
+      default:
+        setConfigMode("overview");
+        goToTab(2); // Switch to workspace config tab
+        addLog("command", "Available config commands: create-job, validate, confirmations");
+    }
+  };
+
+  const createJobFromDescription = async (description: string) => {
+    if (!workspaceContext) return;
+
+    setIsProcessingJob(true);
+    setConfigMode("create-job");
+    goToTab(2);
+
+    try {
+      addLog("command", `Creating job from: "${description}"`);
+
+      const result = await configAssistant.parseJobDescription(description, workspaceContext);
+
+      if (result.conditionsNeedConfirmation.length > 0) {
+        addLog(
+          "command",
+          `Job created with ${result.conditionsNeedConfirmation.length} conditions requiring confirmation`,
+        );
+        setConfigMode("confirmations");
+      } else {
+        addLog("command", `Job "${result.job.name}" created successfully!`);
+        addLog("command", `Job definition:\n${JSON.stringify(result.job, null, 2)}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to create job: ${error}`);
+    } finally {
+      setIsProcessingJob(false);
+    }
+  };
+
+  const validateWorkspaceConfig = async () => {
+    if (!workspaceContext) return;
+
+    setConfigMode("validate");
+    goToTab(2);
+
+    try {
+      addLog("command", "Validating workspace configuration...");
+
+      // Load current workspace config
+      const { ConfigLoader } = await import("../../core/config-loader.ts");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+
+      const validation = await configAssistant.validateWorkspaceConfig(
+        mergedConfig,
+        workspaceContext,
+      );
+      setConfigValidation(validation);
+
+      if (validation.valid) {
+        addLog("command", "✅ Workspace configuration is valid!");
+      } else {
+        addLog(
+          "command",
+          `❌ Found ${validation.issues.filter((i: any) => i.type === "error").length} errors and ${
+            validation.issues.filter((i: any) => i.type === "warning").length
+          } warnings`,
+        );
+      }
+    } catch (error) {
+      addLog("error", `Validation failed: ${error}`);
+    }
+  };
+
+  const confirmConditionParsing = (confirmationId: string, approved: boolean) => {
+    try {
+      configAssistant.confirmConditionParsing(confirmationId, approved);
+      addLog(
+        "command",
+        `Condition parsing ${approved ? "approved" : "rejected"}: ${confirmationId}`,
+      );
+
+      // Refresh confirmations mode if active
+      if (configMode === "confirmations") {
+        goToTab(2);
+      }
+    } catch (error) {
+      addLog("error", `Failed to ${approved ? "approve" : "reject"} condition: ${error}`);
+    }
+  };
+
   const executeCommand = async (commandText: string, isPasted = false) => {
     addLog("user", commandText, isPasted);
 
@@ -530,6 +736,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       if (commandText.startsWith("/")) {
         const command = commandText.slice(1); // Remove the '/'
         const args = parseCommandArgs(command);
+
+        // Handle config commands
+        if (args[0] === "config") {
+          await executeConfigCommand(args);
+          return;
+        }
 
         // Special handling for init command in splash screen
         if (showSplashScreen && args[0] === "init") {
@@ -587,6 +799,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       "/agent describe <name>",
       "/ps",
       "/logs <session-id>",
+      "/config create-job <description>",
+      "/config validate",
+      "/config confirmations",
     ];
 
     const debugCommands = [
@@ -1057,7 +1272,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         if (input.trim()) {
           // Check if this was likely a pasted command based on rapid input detection
           const wasPasted = pasteDetectionRef.current > 3; // More than 3 chars in rapid succession
-          executeCommand(input.trim(), wasPasted);
+
+          // Special handling for job creation mode in workspace config tab
+          if (
+            activeTab === 2 && configMode === "create-job" && !input.startsWith("/") &&
+            !isProcessingJob
+          ) {
+            createJobFromDescription(input.trim());
+          } else {
+            executeCommand(input.trim(), wasPasted);
+          }
           setInput("");
           pasteDetectionRef.current = 0; // Reset paste detection
         }
@@ -1353,6 +1577,182 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   const [cursorVisible, setCursorVisible] = useState(true);
 
+  const renderWorkspaceConfigTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>⚙️ Workspace Configuration Assistant</Text>
+      </Box>
+
+      {!workspaceContext
+        ? (
+          <Box flexDirection="column">
+            <Text color="yellow">Loading workspace context...</Text>
+            <Text dimColor>Analyzing signals, agents, and jobs in current workspace</Text>
+          </Box>
+        )
+        : (
+          <Box flexDirection="column">
+            {configMode === "overview" && renderConfigOverview()}
+            {configMode === "create-job" && renderCreateJobMode()}
+            {configMode === "validate" && renderValidateMode()}
+            {configMode === "confirmations" && renderConfirmationsMode()}
+          </Box>
+        )}
+
+      <Box marginTop={1} borderTop borderColor="gray" paddingTop={1}>
+        <Text dimColor>
+          Press Tab to focus input, type config commands:
+        </Text>
+      </Box>
+      <Box>
+        <Text dimColor>
+          /config create-job, /config validate, /config confirmations
+        </Text>
+      </Box>
+    </Box>
+  );
+
+  const renderConfigOverview = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>📊 Workspace Overview</Text>
+      </Box>
+
+      <Box marginBottom={1}>
+        <Text>Signals: {workspaceContext?.availableSignals.length || 0}</Text>
+      </Box>
+      {workspaceContext?.availableSignals.slice(0, 3).map((signal: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {signal.id} ({signal.provider})</Text>
+        </Box>
+      ))}
+
+      <Box marginBottom={1} marginTop={1}>
+        <Text>Agents: {workspaceContext?.availableAgents.length || 0}</Text>
+      </Box>
+      {workspaceContext?.availableAgents.slice(0, 3).map((agent: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {agent.id} ({agent.type})</Text>
+        </Box>
+      ))}
+
+      <Box marginBottom={1} marginTop={1}>
+        <Text>Jobs: {workspaceContext?.existingJobs.length || 0}</Text>
+      </Box>
+      {workspaceContext?.existingJobs.slice(0, 3).map((job: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {job.name}</Text>
+        </Box>
+      ))}
+
+      <Box marginTop={2}>
+        <Text color="green">✨ Use natural language to create jobs:</Text>
+        <Text dimColor>"/config create-job" - Create new job from description</Text>
+        <Text dimColor>"/config validate" - Validate workspace configuration</Text>
+        <Text dimColor>"/config confirmations" - Manage condition confirmations</Text>
+      </Box>
+    </Box>
+  );
+
+  const renderCreateJobMode = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>🛠️ Create Job from Natural Language</Text>
+      </Box>
+
+      <Box marginBottom={1}>
+        <Text>Describe what you want the job to do:</Text>
+      </Box>
+
+      {isProcessingJob
+        ? (
+          <Box>
+            <Text color="yellow">🔄 Processing job description with AI...</Text>
+          </Box>
+        )
+        : (
+          <Box>
+            <Text dimColor>Type your job description in the input below and press Enter.</Text>
+            <Text dimColor>Example: "Monitor Kubernetes pods and alert when they fail"</Text>
+          </Box>
+        )}
+    </Box>
+  );
+
+  const renderValidateMode = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>✅ Configuration Validation</Text>
+      </Box>
+
+      {configValidation
+        ? (
+          <Box flexDirection="column">
+            <Text color={configValidation.valid ? "green" : "red"}>
+              Status: {configValidation.valid ? "✅ Valid" : "❌ Issues Found"}
+            </Text>
+
+            {configValidation.issues.map((issue: any, i: number) => (
+              <Box key={i} marginTop={1} marginLeft={2}>
+                <Text
+                  color={issue.type === "error"
+                    ? "red"
+                    : issue.type === "warning"
+                    ? "yellow"
+                    : "blue"}
+                >
+                  {issue.type === "error" ? "❌" : issue.type === "warning" ? "⚠️" : "💡"}{" "}
+                  {issue.message}
+                </Text>
+                {issue.suggestedFix && (
+                  <Box marginLeft={2}>
+                    <Text dimColor>Fix: {issue.suggestedFix}</Text>
+                  </Box>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )
+        : (
+          <Box>
+            <Text dimColor>Running validation...</Text>
+          </Box>
+        )}
+    </Box>
+  );
+
+  const renderConfirmationsMode = () => {
+    const confirmations = configAssistant.getPendingConditionConfirmations(
+      workspaceContext?.workspaceId || "",
+    );
+
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text bold>📋 Pending Condition Confirmations</Text>
+        </Box>
+
+        {confirmations.length === 0
+          ? <Text dimColor>No pending confirmations.</Text>
+          : (
+            <Box flexDirection="column">
+              <Text>Found {confirmations.length} confirmation(s) pending:</Text>
+              {confirmations.slice(0, 3).map((conf: any, i: number) => (
+                <Box key={i} marginTop={1} marginLeft={2} borderStyle="single" padding={1}>
+                  <Text bold>Confirmation {i + 1}</Text>
+                  <Text>
+                    Original: <Text color="cyan">"{conf.originalText}"</Text>
+                  </Text>
+                  <Text>Confidence: {(conf.parsed.confidence * 100).toFixed(0)}%</Text>
+                  <Text dimColor>Use: /config confirm {conf.id}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+      </Box>
+    );
+  };
+
   useEffect(() => {
     if (inputFocused) {
       const interval = setInterval(() => {
@@ -1416,6 +1816,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 <Tab label="Server Output" icon="▦">
                   {renderServerTab()}
                 </Tab>
+                <Tab label="Workspace Config" icon="⚙">
+                  {renderWorkspaceConfigTab()}
+                </Tab>
               </TabGroup>
             </Box>
 
@@ -1473,8 +1876,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         </Text>
         <Badge
           color={showSplashScreen ? "yellow" : serverStatus.running ? "green" : "red"}
-          children={showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
-        />
+        >
+          {showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
+        </Badge>
         <Text>| Logs: {serverLogs.length} entries</Text>
         {!showSplashScreen && (
           <>

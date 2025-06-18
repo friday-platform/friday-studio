@@ -2,13 +2,13 @@
  * Memory streaming interfaces and types for incremental memory processing
  */
 
-export type MemoryStreamType = 
-  | 'semantic_fact'
-  | 'procedural_pattern' 
-  | 'episodic_event'
-  | 'contextual_update'
-  | 'session_complete'
-  | 'agent_result';
+export type MemoryStreamType =
+  | "semantic_fact"
+  | "procedural_pattern"
+  | "episodic_event"
+  | "contextual_update"
+  | "session_complete"
+  | "agent_result";
 
 export interface MemoryStream {
   id: string;
@@ -17,23 +17,23 @@ export interface MemoryStream {
   timestamp: number;
   sessionId: string;
   agentId?: string;
-  priority: 'low' | 'normal' | 'high';
+  priority: "low" | "normal" | "high";
 }
 
 export interface SemanticFactStream extends MemoryStream {
-  type: 'semantic_fact';
+  type: "semantic_fact";
   data: {
     fact: string;
     confidence: number;
-    source: 'agent_output' | 'user_input' | 'system_event';
+    source: "agent_output" | "user_input" | "system_event";
     context?: Record<string, any>;
   };
 }
 
 export interface ProceduralPatternStream extends MemoryStream {
-  type: 'procedural_pattern';
+  type: "procedural_pattern";
   data: {
-    pattern_type: 'success' | 'failure' | 'optimization';
+    pattern_type: "success" | "failure" | "optimization";
     agent_id: string;
     strategy: string;
     duration_ms: number;
@@ -43,20 +43,20 @@ export interface ProceduralPatternStream extends MemoryStream {
 }
 
 export interface EpisodicEventStream extends MemoryStream {
-  type: 'episodic_event';
+  type: "episodic_event";
   data: {
-    event_type: 'agent_execution' | 'context_change' | 'user_interaction';
+    event_type: "agent_execution" | "context_change" | "user_interaction";
     description: string;
     participants: string[];
-    outcome: 'success' | 'failure' | 'partial';
+    outcome: "success" | "failure" | "partial";
     significance: number; // 0-1 scale
   };
 }
 
 export interface ContextualUpdateStream extends MemoryStream {
-  type: 'contextual_update';
+  type: "contextual_update";
   data: {
-    update_type: 'add' | 'modify' | 'remove';
+    update_type: "add" | "modify" | "remove";
     key: string;
     old_value?: any;
     new_value?: any;
@@ -65,7 +65,7 @@ export interface ContextualUpdateStream extends MemoryStream {
 }
 
 export interface AgentResultStream extends MemoryStream {
-  type: 'agent_result';
+  type: "agent_result";
   data: {
     agent_id: string;
     input: any;
@@ -78,7 +78,7 @@ export interface AgentResultStream extends MemoryStream {
 }
 
 export interface SessionCompleteStream extends MemoryStream {
-  type: 'session_complete';
+  type: "session_complete";
   data: {
     session_id: string;
     total_duration_ms: number;

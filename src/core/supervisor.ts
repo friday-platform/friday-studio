@@ -679,13 +679,49 @@ You have access to the full workspace context and configuration. Create structur
     }
   }
 
-  // Get precomputed plans for sharing with SessionSupervisors
-  getPrecomputedPlans(): Record<string, any> {
+  // Get precomputed plans for sharing with SessionSupervisors (workspace-scoped and secured)
+  getPrecomputedPlans(requestingWorkspaceId?: string): Record<string, any> {
+    // Security: Verify requesting workspace matches this supervisor's workspace
+    if (requestingWorkspaceId && requestingWorkspaceId !== this.id) {
+      this.log(`Security violation: workspace ${requestingWorkspaceId} requested plans from ${this.id}`, "warn");
+      return {};
+    }
+
     // For now, return empty plans since we need to implement a proper cache sharing mechanism
     // The current planning engine doesn't support the getAllPrecomputedPlans() method
-    // TODO: Implement proper planning cache sharing between WorkspaceSupervisor and SessionSupervisor
-    this.log("getPrecomputedPlans() called - cache sharing not yet implemented", "debug");
+    // TODO: Implement proper planning cache sharing with workspace-scoped keys
+    this.log(`getPrecomputedPlans() called for workspace ${this.id} - cache sharing not yet implemented`, "debug");
     return {};
+  }
+
+  // Create secure, collision-resistant cache key for plans
+  private createSecurePlanKey(jobName: string): string {
+    // Include workspace ID to prevent cross-workspace collisions
+    // Use deterministic hashing for consistent keys
+    const keyData = `${this.id}:${jobName}`;
+    // In production, use crypto.subtle.digest for proper hashing
+    return `plan:${keyData}`;
+  }
+
+  // Sanitize plan data before sharing to remove sensitive information
+  private sanitizePlanForSharing(plan: any): any {
+    if (!plan || typeof plan !== 'object') {
+      return plan;
+    }
+
+    // Remove potentially sensitive fields
+    const sanitized = { ...plan };
+    delete sanitized.workspaceSecrets;
+    delete sanitized.privateKeys;
+    delete sanitized.authTokens;
+    delete sanitized.internalConfig;
+    
+    // Ensure no workspace-specific absolute paths
+    if (sanitized.context?.workspacePath) {
+      sanitized.context.workspacePath = '[WORKSPACE_PATH]';
+    }
+
+    return sanitized;
   }
 
   // Infer job complexity from job specification

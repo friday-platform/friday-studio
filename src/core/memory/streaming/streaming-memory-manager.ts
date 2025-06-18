@@ -1,21 +1,21 @@
 import { logger } from "../../../utils/logger.ts";
 import type { CoALAMemoryManager } from "../coala-memory.ts";
 import { AsyncMemoryQueue } from "./async-memory-queue.ts";
-import { 
-  SemanticFactProcessor,
-  ProceduralPatternProcessor, 
+import {
+  AgentResultProcessor,
   EpisodicEventProcessor,
-  AgentResultProcessor
+  ProceduralPatternProcessor,
+  SemanticFactProcessor,
 } from "./memory-stream-processors.ts";
-import type { 
-  MemoryStream,
-  StreamingConfig,
-  SemanticFactStream,
-  ProceduralPatternStream,
-  EpisodicEventStream,
-  ContextualUpdateStream,
+import type {
   AgentResultStream,
-  SessionCompleteStream
+  ContextualUpdateStream,
+  EpisodicEventStream,
+  MemoryStream,
+  ProceduralPatternStream,
+  SemanticFactStream,
+  SessionCompleteStream,
+  StreamingConfig,
 } from "./memory-stream.ts";
 
 /**
@@ -42,13 +42,13 @@ export class StreamingMemoryManager {
     streamsProcessed: 0,
     totalProcessingTime: 0,
     averageLatency: 0,
-    errorCount: 0
+    errorCount: 0,
   };
 
   constructor(
     private memoryManager: CoALAMemoryManager,
     private config: StreamingMemoryConfig,
-    private context: { sessionId?: string; workspaceId?: string } = {}
+    private context: { sessionId?: string; workspaceId?: string } = {},
   ) {
     // Initialize queue
     this.queue = new AsyncMemoryQueue(config, context);
@@ -60,22 +60,22 @@ export class StreamingMemoryManager {
     this.agentResultProcessor = new AgentResultProcessor(
       this.semanticProcessor,
       this.proceduralProcessor,
-      this.episodicProcessor
+      this.episodicProcessor,
     );
 
     // Register processors with queue
-    this.queue.registerProcessor('semantic_fact', this.semanticProcessor);
-    this.queue.registerProcessor('procedural_pattern', this.proceduralProcessor);
-    this.queue.registerProcessor('episodic_event', this.episodicProcessor);
-    this.queue.registerProcessor('agent_result', this.agentResultProcessor);
-    this.queue.registerProcessor('session_complete', {
-      canProcess: (stream) => stream.type === 'session_complete',
+    this.queue.registerProcessor("semantic_fact", this.semanticProcessor);
+    this.queue.registerProcessor("procedural_pattern", this.proceduralProcessor);
+    this.queue.registerProcessor("episodic_event", this.episodicProcessor);
+    this.queue.registerProcessor("agent_result", this.agentResultProcessor);
+    this.queue.registerProcessor("session_complete", {
+      canProcess: (stream) => stream.type === "session_complete",
       process: this.processSessionComplete.bind(this),
       processBatch: async (streams) => {
         for (const stream of streams) {
           await this.processSessionComplete(stream as SessionCompleteStream);
         }
-      }
+      },
     });
 
     logger.info("StreamingMemoryManager initialized", {
@@ -83,7 +83,7 @@ export class StreamingMemoryManager {
       batchSize: config.batch_size,
       backgroundProcessing: config.background_processing,
       dualWriteEnabled: config.dual_write_enabled,
-      sessionId: context.sessionId
+      sessionId: context.sessionId,
     });
   }
 
@@ -96,13 +96,13 @@ export class StreamingMemoryManager {
     output: any,
     duration: number,
     success: boolean,
-    options: { tokensUsed?: number; error?: string; priority?: 'low' | 'normal' | 'high' } = {}
+    options: { tokensUsed?: number; error?: string; priority?: "low" | "normal" | "high" } = {},
   ): Promise<void> {
     if (this.isShutdown) return;
 
     const stream: AgentResultStream = {
       id: `agent-result-${crypto.randomUUID()}`,
-      type: 'agent_result',
+      type: "agent_result",
       data: {
         agent_id: agentId,
         input,
@@ -110,12 +110,12 @@ export class StreamingMemoryManager {
         duration_ms: duration,
         success,
         tokens_used: options.tokensUsed,
-        error: options.error
+        error: options.error,
       },
       timestamp: Date.now(),
-      sessionId: this.context.sessionId || 'unknown',
+      sessionId: this.context.sessionId || "unknown",
       agentId,
-      priority: options.priority || 'normal'
+      priority: options.priority || "normal",
     };
 
     await this.queue.push(stream);
@@ -125,7 +125,7 @@ export class StreamingMemoryManager {
       success,
       duration,
       streamId: stream.id,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -135,25 +135,25 @@ export class StreamingMemoryManager {
   async streamSemanticFact(
     fact: string,
     confidence: number,
-    source: 'agent_output' | 'user_input' | 'system_event',
+    source: "agent_output" | "user_input" | "system_event",
     context?: Record<string, any>,
-    agentId?: string
+    agentId?: string,
   ): Promise<void> {
     if (this.isShutdown) return;
 
     const stream: SemanticFactStream = {
       id: `semantic-fact-${crypto.randomUUID()}`,
-      type: 'semantic_fact',
+      type: "semantic_fact",
       data: {
         fact,
         confidence,
         source,
-        context
+        context,
       },
       timestamp: Date.now(),
-      sessionId: this.context.sessionId || 'unknown',
+      sessionId: this.context.sessionId || "unknown",
       agentId,
-      priority: 'normal'
+      priority: "normal",
     };
 
     await this.queue.push(stream);
@@ -163,7 +163,7 @@ export class StreamingMemoryManager {
       confidence,
       source,
       streamId: stream.id,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -171,30 +171,30 @@ export class StreamingMemoryManager {
    * Stream procedural pattern for immediate processing
    */
   async streamProceduralPattern(
-    patternType: 'success' | 'failure' | 'optimization',
+    patternType: "success" | "failure" | "optimization",
     agentId: string,
     strategy: string,
     duration: number,
     inputCharacteristics: Record<string, any>,
-    outcome: Record<string, any>
+    outcome: Record<string, any>,
   ): Promise<void> {
     if (this.isShutdown) return;
 
     const stream: ProceduralPatternStream = {
       id: `procedural-pattern-${crypto.randomUUID()}`,
-      type: 'procedural_pattern',
+      type: "procedural_pattern",
       data: {
         pattern_type: patternType,
         agent_id: agentId,
         strategy,
         duration_ms: duration,
         input_characteristics: inputCharacteristics,
-        outcome
+        outcome,
       },
       timestamp: Date.now(),
-      sessionId: this.context.sessionId || 'unknown',
+      sessionId: this.context.sessionId || "unknown",
       agentId,
-      priority: 'normal'
+      priority: "normal",
     };
 
     await this.queue.push(stream);
@@ -205,7 +205,7 @@ export class StreamingMemoryManager {
       strategy,
       duration,
       streamId: stream.id,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -213,27 +213,27 @@ export class StreamingMemoryManager {
    * Stream episodic event for immediate processing
    */
   async streamEpisodicEvent(
-    eventType: 'agent_execution' | 'context_change' | 'user_interaction',
+    eventType: "agent_execution" | "context_change" | "user_interaction",
     description: string,
     participants: string[],
-    outcome: 'success' | 'failure' | 'partial',
-    significance: number
+    outcome: "success" | "failure" | "partial",
+    significance: number,
   ): Promise<void> {
     if (this.isShutdown) return;
 
     const stream: EpisodicEventStream = {
       id: `episodic-event-${crypto.randomUUID()}`,
-      type: 'episodic_event',
+      type: "episodic_event",
       data: {
         event_type: eventType,
         description,
         participants,
         outcome,
-        significance
+        significance,
       },
       timestamp: Date.now(),
-      sessionId: this.context.sessionId || 'unknown',
-      priority: significance > 0.7 ? 'high' : 'normal'
+      sessionId: this.context.sessionId || "unknown",
+      priority: significance > 0.7 ? "high" : "normal",
     };
 
     await this.queue.push(stream);
@@ -244,7 +244,7 @@ export class StreamingMemoryManager {
       outcome,
       significance,
       streamId: stream.id,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -257,24 +257,24 @@ export class StreamingMemoryManager {
     agentCount: number,
     successRate: number,
     finalOutput: any,
-    summary?: string
+    summary?: string,
   ): Promise<void> {
     if (this.isShutdown) return;
 
     const stream: SessionCompleteStream = {
       id: `session-complete-${crypto.randomUUID()}`,
-      type: 'session_complete',
+      type: "session_complete",
       data: {
         session_id: sessionId,
         total_duration_ms: totalDuration,
         agent_count: agentCount,
         success_rate: successRate,
         final_output: finalOutput,
-        summary
+        summary,
       },
       timestamp: Date.now(),
       sessionId,
-      priority: 'high' // Session completion is high priority
+      priority: "high", // Session completion is high priority
     };
 
     await this.queue.push(stream);
@@ -284,7 +284,7 @@ export class StreamingMemoryManager {
       totalDuration,
       agentCount,
       successRate,
-      streamId: stream.id
+      streamId: stream.id,
     });
   }
 
@@ -293,7 +293,7 @@ export class StreamingMemoryManager {
    */
   private async processSessionComplete(stream: SessionCompleteStream): Promise<void> {
     const startTime = Date.now();
-    
+
     try {
       // Store lightweight session summary
       await this.memoryManager.storeSessionSummary({
@@ -303,19 +303,19 @@ export class StreamingMemoryManager {
         agentCount: stream.data.agent_count,
         successRate: stream.data.success_rate,
         summary: stream.data.summary,
-        timestamp: stream.timestamp
+        timestamp: stream.timestamp,
       });
 
       logger.info("Session completion processed", {
         sessionId: stream.data.session_id,
         duration: Date.now() - startTime,
-        streamId: stream.id
+        streamId: stream.id,
       });
     } catch (error) {
       logger.error("Failed to process session completion stream", {
         streamId: stream.id,
         sessionId: stream.data.session_id,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
@@ -339,7 +339,7 @@ export class StreamingMemoryManager {
       queueSize: this.queue.size(),
       isProcessing: !this.isShutdown,
       metrics: { ...this.performanceMetrics },
-      config: { ...this.config }
+      config: { ...this.config },
     };
   }
 
@@ -349,16 +349,16 @@ export class StreamingMemoryManager {
   async flush(): Promise<void> {
     logger.info("Flushing streaming memory queue", {
       queueSize: this.queue.size(),
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
 
     // Process all remaining items
     while (this.queue.size() > 0) {
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     logger.info("Streaming memory queue flushed", {
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -367,20 +367,20 @@ export class StreamingMemoryManager {
    */
   async shutdown(): Promise<void> {
     if (this.isShutdown) return;
-    
+
     this.isShutdown = true;
-    
+
     logger.info("Shutting down StreamingMemoryManager", {
       queueSize: this.queue.size(),
       streamsProcessed: this.performanceMetrics.streamsProcessed,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
 
     await this.queue.shutdown();
 
     logger.info("StreamingMemoryManager shutdown complete", {
       finalMetrics: this.performanceMetrics,
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -390,7 +390,7 @@ export class StreamingMemoryManager {
   enableDualWrite(): void {
     this.config.dual_write_enabled = true;
     logger.info("Dual-write mode enabled", {
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 
@@ -400,7 +400,7 @@ export class StreamingMemoryManager {
   disableDualWrite(): void {
     this.config.dual_write_enabled = false;
     logger.info("Dual-write mode disabled", {
-      sessionId: this.context.sessionId
+      sessionId: this.context.sessionId,
     });
   }
 }
