@@ -554,12 +554,12 @@ class AgentExecutionWorker {
 
       // Validate required remote agent configuration
       const params = agentConfig.parameters as Record<string, unknown> || {};
-      
+
       // Protocol MUST be defined in agent config - no fallbacks
       if (!agentConfig.protocol) {
         throw new Error("Remote agent requires 'protocol' field in agent configuration");
       }
-      
+
       const protocol = agentConfig.protocol as "acp" | "a2a" | "custom" | "mcp";
 
       if (protocol === "acp" && !params.agent_name) {

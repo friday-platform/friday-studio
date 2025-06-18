@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
-import { scanAvailableWorkspaces, WorkspaceList, getWorkspaceStatus, WorkspaceStatus } from "./workspace.tsx";
+import {
+  getWorkspaceStatus,
+  scanAvailableWorkspaces,
+  WorkspaceList,
+  WorkspaceStatus,
+} from "./workspace.tsx";
 import DefineCommand from "./define.tsx";
 
 export default function InteractiveCommand() {
@@ -11,7 +16,7 @@ export default function InteractiveCommand() {
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
   const [inputFocused, setInputFocused] = useState(true);
-  const [selectorAction, setSelectorAction] = useState<'describe' | 'status'>('describe');
+  const [selectorAction, setSelectorAction] = useState<"describe" | "status">("describe");
   const { exit } = useApp();
 
   useInput((inputChar, key) => {
@@ -20,21 +25,17 @@ export default function InteractiveCommand() {
     } else if (showWorkspaceSelector && !inputFocused) {
       // Handle workspace selector navigation when input is not focused
       if (key.upArrow || inputChar === "k") {
-        setSelectedWorkspaceIndex((prev) =>
-          prev > 0 ? prev - 1 : workspaces.length - 1
-        );
+        setSelectedWorkspaceIndex((prev) => prev > 0 ? prev - 1 : workspaces.length - 1);
       } else if (key.downArrow || inputChar === "j") {
-        setSelectedWorkspaceIndex((prev) =>
-          prev < workspaces.length - 1 ? prev + 1 : 0
-        );
+        setSelectedWorkspaceIndex((prev) => prev < workspaces.length - 1 ? prev + 1 : 0);
       } else if (key.return || inputChar === " ") {
         // Select workspace and execute the appropriate command
         const selectedWorkspace = workspaces[selectedWorkspaceIndex];
         setShowWorkspaceSelector(false);
         setInputFocused(true);
-        if (selectorAction === 'describe') {
+        if (selectorAction === "describe") {
           executeDescribeCommand(selectedWorkspace.slug);
-        } else if (selectorAction === 'status') {
+        } else if (selectorAction === "status") {
           executeStatusCommand(selectedWorkspace.slug);
         }
       } else if (key.tab) {
@@ -88,29 +89,29 @@ export default function InteractiveCommand() {
           ...prev,
           <Box flexDirection="column" marginLeft={2}>
             <Box>
-              <Text color="cyan">/list </Text>
+              <Text color="cyan">/list</Text>
               <Text color="gray">
                 List all available workspaces with status
               </Text>
             </Box>
             <Box>
-              <Text color="cyan">/describe </Text>
+              <Text color="cyan">/describe</Text>
               <Text color="gray">Show workspace definition and agents</Text>
             </Box>
             <Box>
-              <Text color="cyan">/status </Text>
+              <Text color="cyan">/status</Text>
               <Text color="gray">Show workspace status and server info</Text>
             </Box>
             <Box>
-              <Text color="cyan">/clear </Text>
+              <Text color="cyan">/clear</Text>
               <Text color="gray">Clear output</Text>
             </Box>
             <Box>
-              <Text color="cyan">/commands </Text>
+              <Text color="cyan">/commands</Text>
               <Text color="gray">Show this command list</Text>
             </Box>
             <Box>
-              <Text color="cyan">/exit </Text>
+              <Text color="cyan">/exit</Text>
               <Text color="gray">Exit interactive mode</Text>
             </Box>
           </Box>,
@@ -160,7 +161,7 @@ export default function InteractiveCommand() {
             }
             setWorkspaces(availableWorkspaces);
             setSelectedWorkspaceIndex(0);
-            setSelectorAction('describe');
+            setSelectorAction("describe");
             setShowWorkspaceSelector(true);
             setInputFocused(false);
             return;
@@ -197,7 +198,7 @@ export default function InteractiveCommand() {
             }
             setWorkspaces(availableWorkspaces);
             setSelectedWorkspaceIndex(0);
-            setSelectorAction('status');
+            setSelectorAction("status");
             setShowWorkspaceSelector(true);
             setInputFocused(false);
             return;
@@ -219,8 +220,8 @@ export default function InteractiveCommand() {
         setOutput((prev) => [
           ...prev,
           <Text color="red">
-            Unknown command: {args[0]}. Available commands: /list, /describe,
-            /status, /clear, /commands, /exit
+            Unknown command:{" "}
+            {args[0]}. Available commands: /list, /describe, /status, /clear, /commands, /exit
           </Text>,
           <Newline />,
         ]);
@@ -375,27 +376,27 @@ export default function InteractiveCommand() {
 
       <Box flexDirection="column" marginLeft={2}>
         <Box>
-          <Text color="cyan">/list </Text>
+          <Text color="cyan">/list</Text>
           <Text color="gray">List all available workspaces with status</Text>
         </Box>
         <Box>
-          <Text color="cyan">/describe </Text>
+          <Text color="cyan">/describe</Text>
           <Text color="gray">Show workspace definition and agents</Text>
         </Box>
         <Box>
-          <Text color="cyan">/status </Text>
+          <Text color="cyan">/status</Text>
           <Text color="gray">Show workspace status and server info</Text>
         </Box>
         <Box>
-          <Text color="cyan">/clear </Text>
+          <Text color="cyan">/clear</Text>
           <Text color="gray">Clear output</Text>
         </Box>
         <Box>
-          <Text color="cyan">/commands </Text>
+          <Text color="cyan">/commands</Text>
           <Text color="gray">Show this command list</Text>
         </Box>
         <Box>
-          <Text color="cyan">/exit </Text>
+          <Text color="cyan">/exit</Text>
           <Text color="gray">Exit interactive mode</Text>
         </Box>
       </Box>
@@ -403,9 +404,7 @@ export default function InteractiveCommand() {
       <Newline />
 
       <Box flexDirection="column" marginBottom={1}>
-        {output.map((item, index) => (
-          <Box key={index}>{item}</Box>
-        ))}
+        {output.map((item, index) => <Box key={index}>{item}</Box>)}
       </Box>
 
       {/* Workspace selector or command output */}
@@ -413,8 +412,8 @@ export default function InteractiveCommand() {
         <Box flexDirection="column" marginBottom={1}>
           <Box>
             <Text bold color="yellow">
-              {selectorAction === 'describe' 
-                ? "Select a Workspace to describe:" 
+              {selectorAction === "describe"
+                ? "Select a Workspace to describe:"
                 : "Select a Workspace to check its status:"}
             </Text>
           </Box>
@@ -423,11 +422,7 @@ export default function InteractiveCommand() {
             <Box key={index} marginLeft={2}>
               <Text>
                 <Text
-                  color={
-                    index === selectedWorkspaceIndex && !inputFocused
-                      ? "green"
-                      : "gray"
-                  }
+                  color={index === selectedWorkspaceIndex && !inputFocused ? "green" : "gray"}
                 >
                   {index === selectedWorkspaceIndex ? "▶ " : "  "}
                 </Text>
@@ -443,8 +438,7 @@ export default function InteractiveCommand() {
           <Newline />
           <Box marginLeft={2}>
             <Text color="gray">
-              Use ↑/↓ to navigate, Enter/Space to select, Tab to focus input,
-              Esc to blur input
+              Use ↑/↓ to navigate, Enter/Space to select, Tab to focus input, Esc to blur input
             </Text>
           </Box>
         </Box>

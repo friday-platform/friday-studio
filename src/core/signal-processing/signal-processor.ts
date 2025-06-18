@@ -6,12 +6,8 @@
 import { logger } from "../../utils/logger.ts";
 import { SignalAnalyzer } from "./signal-analyzer.ts";
 import { TaskGenerator } from "./task-generator.ts";
-import { AgentSelector, type AgentInfo } from "./agent-selector.ts";
-import type { 
-  SignalProcessingConfig,
-  EnhancedTask,
-  AgentCapabilities 
-} from "./types.ts";
+import { type AgentInfo, AgentSelector } from "./agent-selector.ts";
+import type { AgentCapabilities, EnhancedTask, SignalProcessingConfig } from "./types.ts";
 
 export interface ProcessingResult {
   task: EnhancedTask;
@@ -41,8 +37,8 @@ export class SignalProcessor {
    */
   async processSignal(
     // deno-lint-ignore no-explicit-any
-    signal: any, 
-    availableAgents: AgentInfo[]
+    signal: any,
+    availableAgents: AgentInfo[],
   ): Promise<ProcessingResult> {
     const startTime = Date.now();
 
@@ -78,7 +74,7 @@ export class SignalProcessor {
       };
     } catch (error) {
       const processingTime = Date.now() - startTime;
-      
+
       logger.error("Signal processing failed", {
         error: error instanceof Error ? error.message : String(error),
         processingTime,
@@ -103,11 +99,11 @@ export class SignalProcessor {
     if (config.patterns) {
       this.analyzer.addPatterns(config.patterns);
     }
-    
+
     if (config.taskTemplates) {
       this.taskGenerator.addTemplates(config.taskTemplates);
     }
-    
+
     if (config.agentRouting) {
       this.agentSelector.addRoutingRules(config.agentRouting);
     }
@@ -125,7 +121,7 @@ export class SignalProcessor {
   getProcessingStats(): {
     analyzer: { totalPatterns: number };
     taskGenerator: { totalTemplates: number };
-    agentSelector: { 
+    agentSelector: {
       totalRules: number;
       registeredAgents: number;
       capabilityDomains: string[];

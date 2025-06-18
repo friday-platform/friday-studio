@@ -43,7 +43,7 @@ export class SignalAnalyzer {
 
     // Use the highest priority matching pattern
     const bestPattern = this.selectBestPattern(matchingPatterns);
-    
+
     // Extract entities based on pattern configuration
     const extractedEntities = this.extractEntities(signal, bestPattern);
 
@@ -72,8 +72,8 @@ export class SignalAnalyzer {
    * Find patterns that match the signal
    */
   private findMatchingPatterns(signal: any): SignalPattern[] {
-    return this.patterns.filter(pattern => {
-      return pattern.triggers.every(trigger => this.evaluateTrigger(signal, trigger));
+    return this.patterns.filter((pattern) => {
+      return pattern.triggers.every((trigger) => this.evaluateTrigger(signal, trigger));
     });
   }
 
@@ -82,7 +82,7 @@ export class SignalAnalyzer {
    */
   private evaluateTrigger(signal: any, trigger: SignalTrigger): boolean {
     const fieldValue = this.getFieldValue(signal, trigger.field);
-    
+
     if (fieldValue === undefined || fieldValue === null) {
       return false;
     }
@@ -120,7 +120,7 @@ export class SignalAnalyzer {
    * Get field value using dot notation
    */
   private getFieldValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => {
+    return path.split(".").reduce((current, key) => {
       return current && current[key] !== undefined ? current[key] : undefined;
     }, obj);
   }
@@ -146,10 +146,11 @@ export class SignalAnalyzer {
 
     for (const extraction of pattern.entityExtraction) {
       const value = this.getFieldValue(signal, extraction.field);
-      
+
       if (value !== undefined) {
-        entities[extraction.name] = extraction.transform ? 
-          this.applyTransform(value, extraction.transform) : value;
+        entities[extraction.name] = extraction.transform
+          ? this.applyTransform(value, extraction.transform)
+          : value;
       } else if (extraction.required) {
         logger.warn("Required entity field missing", {
           pattern: pattern.name,

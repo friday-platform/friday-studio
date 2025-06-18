@@ -92,11 +92,11 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
         description: signal.description || "",
       }));
 
-      setData({ 
-        type: "list", 
+      setData({
+        type: "list",
         signals,
         workspaceName: config.workspace?.name,
-        workspaceId: workspaceId || "current"
+        workspaceId: workspaceId || "current",
       });
       setStatus("ready");
     } finally {
@@ -196,9 +196,7 @@ function SignalOutput({ data }: { data: any }) {
               <Text color="gray">━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
             </>
           )}
-          {data.signals.length === 0 ? (
-            <Text color="gray">No signals configured</Text>
-          ) : (
+          {data.signals.length === 0 ? <Text color="gray">No signals configured</Text> : (
             (() => {
               const columns: Column[] = [
                 { key: "id", label: "SIGNAL", width: 20 },

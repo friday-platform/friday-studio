@@ -4,7 +4,7 @@
  */
 
 import { logger } from "../../utils/logger.ts";
-import type { EnhancedTask, AgentCapabilities, AgentRoutingRule } from "./types.ts";
+import type { AgentCapabilities, AgentRoutingRule, EnhancedTask } from "./types.ts";
 
 export interface AgentInfo {
   id: string;
@@ -64,7 +64,7 @@ export class AgentSelector {
 
     // Step 1: Apply routing rules
     const routedAgents = this.applyRoutingRules(task, availableAgents);
-    
+
     if (routedAgents.length === 0) {
       logger.warn("No agents matched routing rules, using capability-based selection");
       return this.selectByCapabilities(task, availableAgents);
@@ -91,7 +91,7 @@ export class AgentSelector {
    */
   private applyRoutingRules(task: EnhancedTask, agents: AgentInfo[]): AgentInfo[] {
     const matchingRules = this.findMatchingRules(task);
-    
+
     if (matchingRules.length === 0) {
       return agents;
     }
@@ -101,17 +101,17 @@ export class AgentSelector {
     const fallbackAgentIds = new Set<string>();
 
     for (const rule of matchingRules) {
-      rule.preferredAgents.forEach(id => preferredAgentIds.add(id));
-      rule.fallbackAgents.forEach(id => fallbackAgentIds.add(id));
+      rule.preferredAgents.forEach((id) => preferredAgentIds.add(id));
+      rule.fallbackAgents.forEach((id) => fallbackAgentIds.add(id));
     }
 
     // Filter available agents
-    const availableAgentIds = new Set(agents.map(a => a.id));
-    
+    const availableAgentIds = new Set(agents.map((a) => a.id));
+
     // First try preferred agents
     const availablePreferred = Array.from(preferredAgentIds)
-      .filter(id => availableAgentIds.has(id))
-      .map(id => agents.find(a => a.id === id)!)
+      .filter((id) => availableAgentIds.has(id))
+      .map((id) => agents.find((a) => a.id === id)!)
       .filter(Boolean);
 
     if (availablePreferred.length > 0) {
@@ -120,8 +120,8 @@ export class AgentSelector {
 
     // Fall back to fallback agents
     const availableFallback = Array.from(fallbackAgentIds)
-      .filter(id => availableAgentIds.has(id))
-      .map(id => agents.find(a => a.id === id)!)
+      .filter((id) => availableAgentIds.has(id))
+      .map((id) => agents.find((a) => a.id === id)!)
       .filter(Boolean);
 
     return availableFallback;
@@ -131,14 +131,14 @@ export class AgentSelector {
    * Find routing rules that match the task
    */
   private findMatchingRules(task: EnhancedTask): AgentRoutingRule[] {
-    return this.routingRules.filter(rule => {
+    return this.routingRules.filter((rule) => {
       // Check if task requires the capability
       const requiredCapability = rule.capability;
-      
+
       // Simple capability matching - can be enhanced
-      return task.requiredCapabilities.some(cap => 
-        cap === requiredCapability || 
-        cap.startsWith(requiredCapability.split('.')[0])
+      return task.requiredCapabilities.some((cap) =>
+        cap === requiredCapability ||
+        cap.startsWith(requiredCapability.split(".")[0])
       );
     });
   }
@@ -146,8 +146,11 @@ export class AgentSelector {
   /**
    * Score agents by capability match
    */
-  private scoreAgents(task: EnhancedTask, agents: AgentInfo[]): Array<{ agent: AgentInfo; score: number }> {
-    const scored = agents.map(agent => ({
+  private scoreAgents(
+    task: EnhancedTask,
+    agents: AgentInfo[],
+  ): Array<{ agent: AgentInfo; score: number }> {
+    const scored = agents.map((agent) => ({
       agent,
       score: this.calculateAgentScore(task, agent),
     }));
@@ -164,7 +167,7 @@ export class AgentSelector {
 
     // Get agent capabilities
     const capabilities = this.agentCapabilities.get(agent.id) || agent.capabilities;
-    
+
     if (!capabilities) {
       // Default score for agents without registered capabilities
       return 1;
@@ -193,10 +196,10 @@ export class AgentSelector {
     }
 
     // Score based on required capabilities match
-    const matchedCapabilities = task.requiredCapabilities.filter(cap => {
-      return capabilities.domains.includes(cap) || 
-             capabilities.actions.includes(cap) ||
-             capabilities.resourceTypes.includes(cap);
+    const matchedCapabilities = task.requiredCapabilities.filter((cap) => {
+      return capabilities.domains.includes(cap) ||
+        capabilities.actions.includes(cap) ||
+        capabilities.resourceTypes.includes(cap);
     });
     score += matchedCapabilities.length * 3;
 
@@ -209,8 +212,8 @@ export class AgentSelector {
   private extractDomainFromTask(task: EnhancedTask): string {
     // Try to extract domain from required capabilities
     for (const capability of task.requiredCapabilities) {
-      if (capability.includes('.')) {
-        return capability.split('.')[0];
+      if (capability.includes(".")) {
+        return capability.split(".")[0];
       }
     }
 
@@ -223,7 +226,7 @@ export class AgentSelector {
    */
   private selectByCapabilities(task: EnhancedTask, agents: AgentInfo[]): AgentInfo | null {
     const scoredAgents = this.scoreAgents(task, agents);
-    
+
     if (scoredAgents.length === 0) {
       return null;
     }
@@ -249,9 +252,9 @@ export class AgentSelector {
     capabilityDomains: string[];
   } {
     const allDomains = new Set<string>();
-    
+
     for (const capabilities of this.agentCapabilities.values()) {
-      capabilities.domains.forEach(domain => allDomains.add(domain));
+      capabilities.domains.forEach((domain) => allDomains.add(domain));
     }
 
     return {

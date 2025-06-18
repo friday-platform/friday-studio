@@ -16,14 +16,16 @@ This workspace demonstrates Atlas's advanced capabilities including:
 
 ### Agent Architecture
 
-1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes operations
+1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes
+   operations
 2. **local-assistant** - LLM-based fallback agent for documentation and support
-3. **Built-in k8s-events signal provider** - Direct Kubernetes API integration for real-time event monitoring
+3. **Built-in k8s-events signal provider** - Direct Kubernetes API integration for real-time event
+   monitoring
 
 ### Signal Types
 
 1. **HTTP Signals** - Direct API endpoints for user requests
-2. **CLI Signals** - Command-line driven operations  
+2. **CLI Signals** - Command-line driven operations
 3. **🆕 K8s Events Signals** - Built-in real-time Kubernetes Events streaming via Events API
 
 ## Quick Start
@@ -125,7 +127,8 @@ The `workspace.yml` file defines:
    - **Scope**: Kubernetes Events in default namespace (or all namespaces)
    - **Event Types**: ADDED, MODIFIED, DELETED Events
    - **Agents**: k8s-main-agent → local-assistant (sequential)
-   - **Configuration**: Events-only watching with flexible auth options (kubeconfig, service account, direct API)
+   - **Configuration**: Events-only watching with flexible auth options (kubeconfig, service
+     account, direct API)
 
 ## How It Works
 
@@ -138,7 +141,8 @@ The `workspace.yml` file defines:
 
 ### Real-Time Event Monitoring (K8s Events Signals)
 
-1. **Built-in Events Provider** - Atlas directly connects to Kubernetes Events API using watch endpoints
+1. **Built-in Events Provider** - Atlas directly connects to Kubernetes Events API using watch
+   endpoints
 2. **Event Monitoring**:
    - **Kubernetes Events Only** → Watches cluster Events (pod failures, deployments, etc.)
    - **Real-time Streaming** → Direct HTTP streaming from K8s Events API
@@ -226,7 +230,7 @@ To modify the workspace:
 ## Security Considerations
 
 1. **Authentication** - Enable bearer tokens in production
-2. **RBAC** - Configure appropriate Kubernetes permissions  
+2. **RBAC** - Configure appropriate Kubernetes permissions
 3. **API Keys** - Secure AI API keys properly
 4. **Network** - Ensure proper firewall rules
 5. **Kubeconfig Security** - Protect kubeconfig files and limit access

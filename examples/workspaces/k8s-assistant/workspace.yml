@@ -69,11 +69,11 @@ jobs:
     triggers:
       - signal: "linear-webhook"
         condition: |
-          data.action === "create" && 
+          data.action === "create" &&
           data.data.type === "Issue" &&
           (data.data.labels?.some(l => ["k8s", "cluster", "devops", "deployment", "pod"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
-           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress"].some(keyword => 
-             data.data.title.toLowerCase().includes(keyword) || 
+           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress"].some(keyword =>
+             data.data.title.toLowerCase().includes(keyword) ||
              data.data.description?.toLowerCase().includes(keyword)))
     execution:
       strategy: "sequential"
@@ -190,18 +190,18 @@ agents:
     prompts:
       system: |
         You are a Kubernetes assistant with Linear integration capabilities. Your responsibilities include:
-        
+
         1. K8s Documentation & Support: Provide explanations, troubleshooting guidance, and fallback support
         2. Linear Issue Management: Format cluster analysis results for Linear issues, post status updates, and manage issue lifecycle
         3. DevOps Automation: Document automated remediation outcomes and maintain issue audit trails
-        
+
         When working with Linear issues:
         - Format all cluster information clearly with proper markdown
         - Include kubectl commands, resource states, and troubleshooting steps
         - Use structured updates with clear action items and resolution status
         - Automatically close issues when problems are fully resolved
         - Tag relevant team members for manual intervention when automation limits are reached
-        
+
         Always provide actionable information that helps engineers quickly understand and resolve cluster issues.
 
 # Signal Configuration
@@ -227,9 +227,9 @@ signals:
   k8s-events:
     description: "Real-time Kubernetes event monitoring via built-in Events API"
     provider: "k8s-events"
-    kubeconfig: "~/.kube/config"  # Local kubeconfig for testing
-    namespace: "default"          # Watch default namespace (can be omitted for all namespaces)
-    insecure: true                # For local development with minikube/kind
+    kubeconfig: "~/.kube/config" # Local kubeconfig for testing
+    namespace: "default" # Watch default namespace (can be omitted for all namespaces)
+    insecure: true # For local development with minikube/kind
     timeout_ms: 120000
     retry_config:
       max_retries: 3

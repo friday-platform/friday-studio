@@ -2,7 +2,9 @@
 
 ## Overview
 
-This document describes the implementation of the enhanced signal processing system that transforms Atlas supervisors from "dumb pipes" into intelligent processors capable of understanding signals, generating meaningful tasks, and routing them to appropriate agents.
+This document describes the implementation of the enhanced signal processing system that transforms
+Atlas supervisors from "dumb pipes" into intelligent processors capable of understanding signals,
+generating meaningful tasks, and routing them to appropriate agents.
 
 ## Architecture
 
@@ -26,6 +28,7 @@ Signal → Signal Analyzer → Task Generator → Agent Selector → Structured 
 **Purpose**: Analyzes incoming signals to understand their meaning and extract key information.
 
 **Key Features**:
+
 - Configurable pattern matching using triggers
 - Entity extraction from signal data
 - Support for multiple operator types (=, !=, >, <, contains, matches)
@@ -33,6 +36,7 @@ Signal → Signal Analyzer → Task Generator → Agent Selector → Structured 
 - Severity and urgency scoring
 
 **Example Pattern**:
+
 ```typescript
 {
   name: "kubernetes_pod_failure",
@@ -58,12 +62,14 @@ Signal → Signal Analyzer → Task Generator → Agent Selector → Structured 
 **Purpose**: Transforms analyzed signals into structured, actionable tasks.
 
 **Key Features**:
+
 - Template-based task description generation
 - Structured data extraction and transformation
 - Priority calculation based on urgency and severity
 - Target identification and metadata extraction
 
 **Example Task Output**:
+
 ```typescript
 {
   description: "Fix image pull failure for pod my-nginx in default namespace",
@@ -98,12 +104,14 @@ Signal → Signal Analyzer → Task Generator → Agent Selector → Structured 
 **Purpose**: Intelligently selects the best agent for a given task based on capabilities.
 
 **Key Features**:
+
 - Routing rules with preferred and fallback agents
 - Capability-based scoring system
 - Domain, action, and complexity matching
 - Agent capability registration system
 
 **Selection Process**:
+
 1. Apply routing rules to filter agents
 2. Score agents by capability match
 3. Select highest-scoring agent
@@ -114,6 +122,7 @@ Signal → Signal Analyzer → Task Generator → Agent Selector → Structured 
 **Purpose**: Orchestrates the entire signal processing pipeline.
 
 **Key Features**:
+
 - End-to-end signal processing workflow
 - Configuration management
 - Performance tracking
@@ -170,14 +179,16 @@ Default patterns and templates are built into the supervisor:
 ### Before vs After
 
 **Before (Raw Signal Processing)**:
+
 ```json
 {
   "task": "Process input: {\"source\":\"k8s-monitor-agent\",\"event\":{...huge blob...}}",
-  "data": { /* duplicate raw data */ }
+  "data": {/* duplicate raw data */}
 }
 ```
 
 **After (Enhanced Processing)**:
+
 ```json
 {
   "task": "Fix image pull failure for pod my-nginx in default namespace",
@@ -202,6 +213,7 @@ Default patterns and templates are built into the supervisor:
 ### Kubernetes Event Processing
 
 **Input Signal**:
+
 ```json
 {
   "source": "k8s-monitor-agent",
@@ -219,6 +231,7 @@ Default patterns and templates are built into the supervisor:
 ```
 
 **Processing Result**:
+
 1. **Analysis**: Matches "kubernetes_pod_failure" pattern
 2. **Task Generation**: Creates "Fix image pull failure" task
 3. **Agent Selection**: Routes to "k8s-main-agent" based on capabilities
@@ -227,6 +240,7 @@ Default patterns and templates are built into the supervisor:
 ### Web Monitoring Alert
 
 **Input Signal**:
+
 ```json
 {
   "alert": "high_response_time",
@@ -237,6 +251,7 @@ Default patterns and templates are built into the supervisor:
 ```
 
 **Processing Result**:
+
 1. **Analysis**: Matches performance degradation pattern
 2. **Task Generation**: Creates investigation task
 3. **Agent Selection**: Routes to performance monitoring agent
@@ -256,20 +271,20 @@ signalProcessor.updateConfiguration({
     category: "security_issue",
     severity: "critical",
     actionType: "fix",
-    urgency: 10
+    urgency: 10,
   }],
   taskTemplates: [{
     name: "fix_security_issue",
     descriptionTemplate: "Fix {vulnerability_type} in {component}",
     actionType: "fix",
     complexity: "complex",
-    requiredCapabilities: ["security", "fix"]
+    requiredCapabilities: ["security", "fix"],
   }],
   agentRouting: [{
     capability: "security",
     preferredAgents: ["security-agent"],
-    fallbackAgents: ["local-assistant"]
-  }]
+    fallbackAgents: ["local-assistant"],
+  }],
 });
 ```
 
@@ -316,4 +331,6 @@ The implementation includes:
 - 🚧 **Configuration UI**: Visual pattern and template editor
 - 📋 **Machine Learning**: Future enhancement for adaptive patterns
 
-This implementation transforms Atlas from a simple signal forwarder into an intelligent orchestration platform that understands context, generates meaningful tasks, and routes them optimally to agents.
+This implementation transforms Atlas from a simple signal forwarder into an intelligent
+orchestration platform that understands context, generates meaningful tasks, and routes them
+optimally to agents.

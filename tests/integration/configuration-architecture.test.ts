@@ -511,7 +511,7 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
     expect(testJob.triggers).toBeDefined();
     expect(Array.isArray(testJob.triggers)).toBe(true);
     expect(testJob.triggers!.length).toBe(1);
-    
+
     // Verify trigger structure
     const trigger = testJob.triggers![0];
     expect(trigger.signal).toBe("test-signal");
@@ -519,8 +519,8 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
 
     // Verify signal-to-job mapping works via triggers
     const signalId = "test-signal";
-    const jobsForSignal = Object.values(mergedConfig.jobs).filter(job => 
-      job.triggers?.some(t => t.signal === signalId)
+    const jobsForSignal = Object.values(mergedConfig.jobs).filter((job) =>
+      job.triggers?.some((t) => t.signal === signalId)
     );
     expect(jobsForSignal.length).toBe(1);
     expect(jobsForSignal[0].name).toBe("test-job");
@@ -552,7 +552,7 @@ Deno.test("Remote agent protocol validation", async () => {
     expect(remoteAgent.endpoint).toBeDefined();
     expect(remoteAgent.acp?.agent_name).toBe("test-agent");
 
-    // Test atlas remote agent  
+    // Test atlas remote agent
     const atlasRemoteAgent = mergedConfig.atlas.agents?.["security-scanner"];
     expect(atlasRemoteAgent?.type).toBe("remote");
     expect(atlasRemoteAgent?.protocol).toBe("acp");
@@ -629,8 +629,8 @@ signals:
       // Should catch missing protocol field
       expect(
         errorMessage.includes("Remote agents require 'protocol' field") ||
-        errorMessage.includes("protocol") ||
-        errorMessage.includes("remote agent")
+          errorMessage.includes("protocol") ||
+          errorMessage.includes("remote agent"),
       ).toBe(true);
     }
 
