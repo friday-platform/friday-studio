@@ -59,8 +59,8 @@ jobs:
 # Agent Configuration
 # This workspace uses a multi-agent architecture:
 # - k8s-main-agent: Primary AI agent for K8s operations (port 8080)
-# - k8s-monitor-agent: Event monitoring agent (port 8082) - configured as signal provider
 # - local-assistant: Fallback LLM agent for documentation and support
+# Note: k8s-monitor-agent replaced by built-in k8s-watch signal provider
 agents:
   # Primary Kubernetes management agent with ReAct framework
   k8s-main-agent:
@@ -85,24 +85,8 @@ agents:
         timeout_ms: 120000 # Stay open for 2 minutes
         half_open_max_calls: 2 # Test with 2 calls when half-open
 
-  # Monitor agent configured as both agent and signal provider
-  # NOTE: This agent is primarily used as a signal provider via the k8s-events stream signal
-  # Agent configuration here is for fallback and manual operations only
-  k8s-monitor-agent:
-    type: "remote"
-    protocol: "acp"
-    endpoint: "http://localhost:8082"
-    purpose: "Real-time Kubernetes event monitoring and signal generation (primarily used as signal provider)"
-    acp:
-      agent_name: "k8s-event-monitor"
-      default_mode: "stream"
-      health_check_interval: 15000
-    monitoring:
-      enabled: true
-      circuit_breaker:
-        failure_threshold: 5 # More tolerant for monitoring agent
-        timeout_ms: 30000
-        half_open_max_calls: 1
+  # Note: k8s-monitor-agent configuration removed - replaced by built-in k8s-watch signal provider
+  # The built-in provider connects directly to Kubernetes API without external dependencies
 
   # Local LLM agent for fallback and additional processing
   local-assistant:
@@ -117,7 +101,7 @@ agents:
 # Atlas supports multiple signal types for different interaction patterns:
 # - HTTP signals: For direct API calls and webhook integrations
 # - CLI signals: For command-line driven operations
-# - Stream signals: For real-time event streaming (NEW: monitor agent integration)
+# - K8s Watch signals: For real-time Kubernetes event streaming (built-in API integration)
 signals:
   # Single HTTP endpoint for all k8s operations
   http-k8s:
@@ -132,17 +116,17 @@ signals:
     provider: "cli"
     command: "k8s"
 
-  # Monitor agent signals - Real-time K8s event streaming
+  # Built-in Kubernetes events streaming - Direct API integration
   k8s-events:
-    description: "Real-time Kubernetes event monitoring from external monitor agent"
-    provider: "stream"
-    source: "k8s-monitor-agent"
-    endpoint: "http://localhost:8082"
-    timeout_ms: 120000 # 2 minutes - much longer than keepalive interval
+    description: "Real-time Kubernetes event monitoring via built-in Events API"
+    provider: "k8s-events"
+    kubeconfig: "~/.kube/config"  # Local kubeconfig for testing
+    namespace: "default"          # Watch default namespace (can be omitted for all namespaces)
+    insecure: true                # For local development with minikube/kind
+    timeout_ms: 120000
     retry_config:
       max_retries: 3
       retry_delay_ms: 2000
-    # Note: filters removed - jobs now define their own trigger conditions
 
 
 # Memory configuration for k8s operations

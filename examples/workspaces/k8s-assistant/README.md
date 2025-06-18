@@ -15,18 +15,18 @@ This workspace demonstrates Atlas's advanced capabilities including:
 ### Agent Architecture
 
 1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes operations
-2. **k8s-monitor-agent (Port 8082)** - Real-time event monitoring **configured as signal provider**
-3. **local-assistant** - LLM-based fallback agent for documentation and support
+2. **local-assistant** - LLM-based fallback agent for documentation and support
+3. **Built-in k8s-watch signal provider** - Direct Kubernetes API integration for real-time event monitoring
 
 ### Signal Types
 
 1. **HTTP Signals** - Direct API endpoints for user requests
-2. **CLI Signals** - Command-line driven operations
-3. **🆕 Stream Signals** - Real-time event streaming from monitor agent via SSE
+2. **CLI Signals** - Command-line driven operations  
+3. **🆕 K8s Events Signals** - Built-in real-time Kubernetes Events streaming via Events API
 
 ## Quick Start
 
-### 1. Clone and Setup K8s Agent Demo
+### 1. Setup K8s Agent Demo (Main Agent Only)
 
 ```bash
 # Clone the k8s-agent-demo repository
@@ -38,8 +38,8 @@ export GEMINI_API_KEY="your_api_key_here"
 # OR
 export AI_API_KEY="your_api_key_here"
 
-# Build and run
-make start-agents
+# Start only the main agent (monitor agent no longer needed)
+make start-main-agent
 ```
 
 ### 2. Setup and Start the Workspace
@@ -116,13 +116,13 @@ The `workspace.yml` file defines:
    - **Agents**: k8s-main-agent only
 
 3. **🆕 `k8s-events`** - Real-time Kubernetes event streaming
-   - **Type**: Stream Signal Provider
-   - **Source**: k8s-monitor-agent via SSE endpoint (`/events/stream`)
-   - **Endpoint**: `http://localhost:8082`
-   - **Event Types**: Pod failures, deployment issues, node problems
-   - **Routing**: Critical events → main agent, all events → Atlas monitoring
+   - **Type**: K8s Events Signal Provider (built-in)
+   - **Source**: Direct Kubernetes Events API watch integration
+   - **Authentication**: Local kubeconfig (`~/.kube/config`)
+   - **Scope**: Kubernetes Events in default namespace (or all namespaces)
+   - **Event Types**: ADDED, MODIFIED, DELETED Events
    - **Agents**: k8s-main-agent → local-assistant (sequential)
-   - **Filters**: Configurable by resource type and event severity
+   - **Configuration**: Simple Events-only watching with flexible auth
 
 ## How It Works
 
@@ -132,13 +132,13 @@ The `workspace.yml` file defines:
 3. **Local Assistant Supports** - Provides documentation and fallback
 4. **Memory Updates** - Stores successful patterns and resolutions
 
-### Real-Time Event Monitoring (Stream Signals)
-1. **Monitor Agent Watches** - k8s-monitor-agent observes cluster events in real-time
-2. **Smart Event Routing**:
-   - **Critical Events** → Sent directly to main agent for immediate response
-   - **All Events** → Streamed to Atlas via SSE for comprehensive monitoring
-3. **Atlas Processing** - Stream signal triggers k8s-main-agent → local-assistant workflow
-4. **Unified Response** - Coordinated handling prevents duplicate actions
+### Real-Time Event Monitoring (K8s Events Signals)
+1. **Built-in Events Provider** - Atlas directly connects to Kubernetes Events API using watch endpoints
+2. **Event Monitoring**:
+   - **Kubernetes Events Only** → Watches cluster Events (pod failures, deployments, etc.)
+   - **Real-time Streaming** → Direct HTTP streaming from K8s Events API
+3. **Atlas Processing** - K8s Events trigger k8s-main-agent → local-assistant workflow
+4. **Simple Configuration** - Events-only watching with local kubeconfig support
 
 ## Available Endpoints
 
@@ -173,19 +173,20 @@ curl -X POST http://localhost:3001/k8s\
 -d '{ "message": "Check why my deployment is not ready" }'
 ```
 
-### Stream Signal Testing (Real-time Events)
+### K8s Events Signal Testing (Real-time Events)
 
-The k8s-events stream signal automatically processes Kubernetes events. To test:
+The k8s-events signal automatically processes Kubernetes events. To test:
 
 ```bash
 # Create a failing deployment to trigger events
 kubectl create deployment test-fail --image=invalid:latest
 
-# Monitor Atlas logs to see stream signal processing
+# Monitor Atlas logs to see k8s events signal processing
 atlas logs --follow
 
-# Check SSE endpoint directly (optional)
-curl -H "Accept: text/event-stream" http://localhost:8082/events/stream
+# Create/delete pods to see real-time events
+kubectl run test-pod --image=nginx --restart=Never
+kubectl delete pod test-pod
 ```
 
 ### Health Check
@@ -194,8 +195,8 @@ curl -H "Accept: text/event-stream" http://localhost:8082/events/stream
 # Check workspace health
 curl http://localhost:3001/health
 
-# Check monitor agent health
-curl http://localhost:8082/health
+# Check main agent health (monitor agent no longer needed)
+curl http://localhost:8080/health
 ```
 
 ## CLI Usage

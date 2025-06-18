@@ -21,8 +21,9 @@ fi
 echo "🌟 Starting Atlas workspace with OpenTelemetry..."
 
 # Use the correct path to the Atlas CLI
-OTEL_DENO=true \
+NODE_ENV=development \
+    OTEL_DENO=true \
     OTEL_SERVICE_NAME=atlas-k8s-assistant \
     OTEL_SERVICE_VERSION=1.0.0 \
     OTEL_RESOURCE_ATTRIBUTES=service.name=atlas-k8s-assistant,service.version=1.0.0 \
-    deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file ../../../src/cli.tsx workspace serve --port 3001 
+    deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --unsafely-ignore-certificate-errors --env-file ../../../src/cli.tsx workspace serve --port 3001 
