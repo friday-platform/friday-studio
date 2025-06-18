@@ -446,28 +446,43 @@ const workspaceRuntimeMachine = setup({
         for (
           const [signalId, signalConfig] of Object.entries(context.mergedConfig.workspace.signals)
         ) {
-          if (signalConfig.provider === "stream") {
+          if (signalConfig.provider === "stream" || signalConfig.provider === "k8s-events") {
             try {
-              logger.info(`Initializing stream signal: ${signalId}`, {
+              logger.info(`Initializing real-time signal: ${signalId}`, {
                 provider: signalConfig.provider,
                 endpoint: signalConfig.endpoint,
                 source: signalConfig.source,
               });
 
-              // Create provider config
+              // Create provider config based on signal type
               const providerConfig = {
                 id: signalId,
                 type: ProviderType.SIGNAL,
-                provider: "stream",
-                config: {
-                  source: signalConfig.source,
-                  endpoint: signalConfig.endpoint,
-                  timeout_ms: signalConfig.timeout_ms,
-                  retry_config: signalConfig.retry_config,
-                },
+                provider: signalConfig.provider,
+                config: signalConfig.provider === "stream"
+                  ? {
+                    source: signalConfig.source,
+                    endpoint: signalConfig.endpoint,
+                    timeout_ms: signalConfig.timeout_ms,
+                    retry_config: signalConfig.retry_config,
+                  }
+                  : {
+                    // k8s-events config
+                    kubeconfig: signalConfig.kubeconfig,
+                    kubeconfig_content: signalConfig.kubeconfig_content,
+                    kubeconfig_env: signalConfig.kubeconfig_env,
+                    use_service_account: signalConfig.use_service_account,
+                    api_server: signalConfig.api_server,
+                    token: signalConfig.token,
+                    ca_cert: signalConfig.ca_cert,
+                    insecure: signalConfig.insecure,
+                    namespace: signalConfig.namespace,
+                    timeout_ms: signalConfig.timeout_ms,
+                    retry_config: signalConfig.retry_config,
+                  },
               };
 
-              // Load the stream signal provider
+              // Load the signal provider
               const provider = await registry.loadFromConfig(providerConfig);
               const signalProvider = provider as ISignalProvider;
               const signal = signalProvider.createSignal(providerConfig.config);
@@ -482,7 +497,7 @@ const workspaceRuntimeMachine = setup({
                   // Process the signal through the runtime
                   const signalConfig = context.mergedConfig?.workspace.signals?.[signalId];
                   if (signalConfig && context.runtime) {
-                    logger.info(`Stream signal triggered: ${signalId}`, {
+                    logger.info(`Real-time signal triggered: ${signalId}`, {
                       source: payload.source,
                       eventType: payload.event?.reason,
                     });
@@ -491,7 +506,7 @@ const workspaceRuntimeMachine = setup({
                       // Create a signal object that matches IWorkspaceSignal interface
                       const signal = {
                         id: signalId,
-                        provider: { id: "stream", name: "stream" },
+                        provider: { id: signalConfig.provider, name: signalConfig.provider },
                         config: signalConfig,
                       };
 
@@ -516,15 +531,12 @@ const workspaceRuntimeMachine = setup({
               // Extract friendly error message if available
               const errorMessage = error instanceof Error ? error.message : String(error);
 
-              // If it's a friendly error message (starts with ❌), just log the failure without duplicating the message
-              if (errorMessage.startsWith("❌")) {
-                logger.error(`Failed to initialize stream signal: ${signalId}`);
-                // Friendly message is already logged by the stream signal provider
-              } else {
-                logger.error(`Failed to initialize stream signal: ${signalId}`, {
-                  error: errorMessage,
-                });
-              }
+              // Always log the error details for debugging
+              console.error(`❌ K8s Events Signal Error:`, errorMessage);
+              logger.error(`Failed to initialize stream signal: ${signalId}`, {
+                error: errorMessage,
+                provider: signalConfig.provider,
+              });
             }
           }
         }

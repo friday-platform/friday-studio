@@ -79,6 +79,11 @@ export class ProviderRegistry implements IProviderRegistry {
       return new StreamSignalProvider();
     });
 
+    registry.registerFactory("k8s-events", async (config) => {
+      const { K8sEventsSignalProvider } = await import("./builtin/k8s-events.ts");
+      return new K8sEventsSignalProvider();
+    });
+
     // Register built-in agent providers
     registry.registerFactory("anthropic", async (config) => {
       const { AnthropicAgentProvider } = await import(

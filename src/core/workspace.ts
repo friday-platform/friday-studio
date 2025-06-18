@@ -166,8 +166,8 @@ export class Workspace extends AtlasScope implements IWorkspace {
     const workspace = new Workspace(owner);
 
     // Restore ID if provided
-    if (config.id) {
-      (workspace as any).id = config.id;
+    if (config.workspace.id) {
+      (workspace as any).id = config.workspace.id;
     }
 
     // Add signals - handle both array and object formats
