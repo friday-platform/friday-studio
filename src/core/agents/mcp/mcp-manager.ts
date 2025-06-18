@@ -6,6 +6,8 @@ import { experimental_createMCPClient as createMCPClient } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
 import { z } from "zod";
 import { logger } from "../../../utils/logger.ts";
+import { AtlasTelemetry } from "../../../utils/telemetry.ts";
+import type { Span } from "@opentelemetry/api";
 
 // ai doesn't export the MCPClient type, so we need to infer it.
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
@@ -69,9 +71,31 @@ export class MCPManager {
   async registerServer(
     config: Omit<MCPServerConfig, "timeout_ms"> & { timeout_ms?: number },
   ): Promise<void> {
+    return await AtlasTelemetry.withMCPSpan(
+      config.id,
+      "initialize",
+      async (span) => {
+        return await this._registerServerInternal(config, span);
+      },
+      {
+        serverName: config.id,
+      },
+    );
+  }
+
+  private async _registerServerInternal(
+    config: Omit<MCPServerConfig, "timeout_ms"> & { timeout_ms?: number },
+    span: Span | null,
+  ): Promise<void> {
     try {
       // Validate configuration with Zod schema
       const validatedConfig = MCPServerConfigSchema.parse(config);
+
+      // Add telemetry attributes
+      span?.setAttribute("mcp.transport_type", validatedConfig.transport.type);
+      span?.setAttribute("mcp.timeout_ms", validatedConfig.timeout_ms);
+      span?.setAttribute("mcp.has_auth", !!validatedConfig.auth);
+      span?.setAttribute("mcp.scope", validatedConfig.scope || "workspace");
 
       // Create AI SDK MCP client
       let mcpClient: MCPClient;
@@ -114,6 +138,10 @@ export class MCPManager {
         connected: true,
       });
 
+      // Add success telemetry attributes
+      span?.setAttribute("mcp.registration_success", true);
+      span?.setAttribute("mcp.client_connected", true);
+
       logger.info(`MCP server registered successfully: ${config.id}`, {
         operation: "mcp_server_registration",
         serverId: config.id,
@@ -121,6 +149,14 @@ export class MCPManager {
         success: true,
       });
     } catch (error) {
+      // Add error telemetry attributes
+      span?.setAttribute("mcp.registration_success", false);
+      span?.setAttribute("mcp.error_type", error instanceof Error ? error.name : "Unknown");
+      span?.setAttribute(
+        "mcp.error_message",
+        error instanceof Error ? error.message : String(error),
+      );
+
       logger.error(`Failed to register MCP server: ${config.id}`, {
         operation: "mcp_server_registration",
         serverId: config.id,
@@ -139,7 +175,31 @@ export class MCPManager {
    * @returns Promise<Record<string, unknown>> Combined tools object
    */
   async getToolsForServers(serverIds: string[]): Promise<Record<string, unknown>> {
+    return await AtlasTelemetry.withMCPSpan(
+      serverIds.join(","),
+      "tool_call",
+      async (span) => {
+        return await this._getToolsForServersInternal(serverIds, span);
+      },
+      {
+        serverNames: serverIds,
+        serversCount: serverIds.length,
+      },
+    );
+  }
+
+  private async _getToolsForServersInternal(
+    serverIds: string[],
+    span: Span | null,
+  ): Promise<Record<string, unknown>> {
     const allTools: Record<string, unknown> = {};
+
+    // Add telemetry attributes
+    span?.setAttribute("mcp.requested_servers_count", serverIds.length);
+    span?.setAttribute("mcp.requested_server_names", serverIds);
+
+    let availableServersCount = 0;
+    let successfulRetrievals = 0;
 
     for (const serverId of serverIds) {
       const wrapper = this.clients.get(serverId);
@@ -152,6 +212,8 @@ export class MCPManager {
         continue;
       }
 
+      availableServersCount++;
+
       try {
         // Get tools directly from AI SDK MCP client
         const tools = await wrapper.client.tools();
@@ -161,6 +223,8 @@ export class MCPManager {
 
         // Add to combined tools object
         Object.assign(allTools, filteredTools);
+
+        successfulRetrievals++;
 
         logger.debug(
           `Loaded ${Object.keys(filteredTools).length} tools from ${serverId}`,
@@ -178,6 +242,19 @@ export class MCPManager {
           error: error instanceof Error ? error.message : String(error),
         });
       }
+    }
+
+    // Add final telemetry attributes
+    span?.setAttribute("mcp.available_servers_count", availableServersCount);
+    span?.setAttribute("mcp.successful_retrievals_count", successfulRetrievals);
+    span?.setAttribute("mcp.total_tools_retrieved", Object.keys(allTools).length);
+    span?.setAttribute(
+      "mcp.retrieval_success_rate",
+      serverIds.length > 0 ? successfulRetrievals / serverIds.length : 0,
+    );
+
+    if (Object.keys(allTools).length > 0) {
+      span?.setAttribute("mcp.tool_names", Object.keys(allTools));
     }
 
     logger.debug(`Retrieved tools from ${serverIds.length} MCP servers`, {
@@ -318,12 +395,42 @@ export class MCPManager {
    * Disposes all MCP client resources
    */
   async dispose(): Promise<void> {
-    const closePromises = Array.from(this.clients.keys()).map((serverId) =>
-      this.closeServer(serverId)
-    );
+    const serverIds = Array.from(this.clients.keys());
 
-    await Promise.allSettled(closePromises);
+    return await AtlasTelemetry.withMCPSpan(
+      "dispose-all",
+      "cleanup",
+      async (span) => {
+        return await this._disposeInternal(serverIds, span);
+      },
+      {
+        serversCount: serverIds.length,
+        serverNames: serverIds,
+      },
+    );
+  }
+
+  private async _disposeInternal(serverIds: string[], span: Span | null): Promise<void> {
+    // Add telemetry attributes
+    span?.setAttribute("mcp.disposal_servers_count", serverIds.length);
+    span?.setAttribute("mcp.disposal_server_names", serverIds);
+
+    const closePromises = serverIds.map((serverId) => this.closeServer(serverId));
+
+    const results = await Promise.allSettled(closePromises);
     this.clients.clear();
+
+    // Count successful disposals
+    const successfulDisposals = results.filter((result) => result.status === "fulfilled").length;
+    const failedDisposals = results.length - successfulDisposals;
+
+    // Add telemetry metrics
+    span?.setAttribute("mcp.successful_disposals", successfulDisposals);
+    span?.setAttribute("mcp.failed_disposals", failedDisposals);
+    span?.setAttribute(
+      "mcp.disposal_success_rate",
+      serverIds.length > 0 ? successfulDisposals / serverIds.length : 1,
+    );
 
     // Additional cleanup time for any lingering processes
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -331,6 +438,8 @@ export class MCPManager {
     logger.info("MCP Manager disposed all resources", {
       operation: "mcp_manager_disposal",
       serversDisposed: closePromises.length,
+      successfulDisposals,
+      failedDisposals,
     });
   }
 

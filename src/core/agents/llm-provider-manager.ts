@@ -4,6 +4,8 @@ import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-s
 import { type CoreMessage, generateText, streamText, Tool, ToolCall, ToolResult } from "ai";
 import { z } from "zod/v4";
 import { logger } from "../../utils/logger.ts";
+import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import type { Span } from "@opentelemetry/api";
 
 // Import MCP Manager for tool integration
 import { MCPManager, type MCPServerConfig } from "./mcp/mcp-manager.ts";
@@ -122,8 +124,6 @@ export class LLMProviderManager {
     userPrompt: string,
     options: LLMGenerationOptions & Partial<LLMConfig> = {},
   ): Promise<string> {
-    const startTime = Date.now();
-
     // Validate and parse configuration
     const configResult = LLMConfigSchema.safeParse({ ...this.defaultConfig, ...options });
     if (!configResult.success) {
@@ -136,6 +136,36 @@ export class LLMProviderManager {
       throw error;
     }
     const config = configResult.data;
+
+    // Use telemetry to track the LLM operation
+    return await AtlasTelemetry.withLLMSpan(
+      config.provider,
+      config.model,
+      "generate_text",
+      async (span) => {
+        return await this._generateTextInternal(userPrompt, options, config, span);
+      },
+      {
+        temperature: config.temperature,
+        maxTokens: config.maxTokens,
+      },
+    );
+  }
+
+  /**
+   * Internal implementation of generateText with telemetry support
+   */
+  private static async _generateTextInternal(
+    userPrompt: string,
+    options: LLMGenerationOptions & Partial<LLMConfig>,
+    config: LLMConfig,
+    span: Span | null,
+  ): Promise<string> {
+    const startTime = Date.now();
+
+    // Add telemetry attributes
+    span?.setAttribute("llm.prompt_length", userPrompt.length);
+    span?.setAttribute("llm.operation_context", options.operationContext?.operation || "unknown");
 
     // Log resolved configuration for debugging
     logger.debug("LLM generation starting", {
@@ -198,7 +228,7 @@ export class LLMProviderManager {
         operation: options.operationContext?.operation || "unknown",
       });
 
-      const { text } = await generateText({
+      const result = await generateText({
         model: client(modelToUse),
         messages,
         maxTokens: config.maxTokens,
@@ -209,17 +239,30 @@ export class LLMProviderManager {
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
 
+      // Add telemetry attributes from generation result
+      span?.setAttribute("llm.response_length", result.text.length);
+      span?.setAttribute("llm.finish_reason", result.finishReason || "unknown");
+
+      // Add token usage if available
+      if (result.usage) {
+        span?.setAttribute("llm.input_tokens", result.usage.promptTokens);
+        span?.setAttribute("llm.output_tokens", result.usage.completionTokens);
+        span?.setAttribute("llm.total_tokens", result.usage.totalTokens);
+      }
+
       logger.debug("LLM generation completed", {
         operation: options.operationContext?.operation || "unknown",
         provider: config.provider,
         model: modelToUse,
         duration,
         promptLength: userPrompt.length,
-        responseLength: text.length,
+        responseLength: result.text.length,
+        finishReason: result.finishReason,
+        usage: result.usage,
         ...options.operationContext,
       });
 
-      return text;
+      return result.text;
     } catch (error) {
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
@@ -436,8 +479,6 @@ export class LLMProviderManager {
     toolResults: ToolResult<string, unknown, unknown>[];
     steps: unknown[];
   }> {
-    const startTime = Date.now();
-
     // Validate and parse configuration
     const configResult = LLMConfigSchema.safeParse({
       ...this.defaultConfig,
@@ -449,6 +490,57 @@ export class LLMProviderManager {
       );
     }
     const config = configResult.data;
+
+    // Use composite LLM+MCP telemetry span
+    return await AtlasTelemetry.withLLMToolSpan(
+      config.provider,
+      config.model,
+      options.mcpServers || [],
+      async (span, mcpSpanCreator) => {
+        return await this._generateTextWithToolsInternal(
+          userPrompt,
+          options,
+          config,
+          span,
+          mcpSpanCreator,
+        );
+      },
+      {
+        temperature: config.temperature,
+        maxTokens: config.maxTokens,
+        maxSteps: options.maxSteps,
+      },
+    );
+  }
+
+  /**
+   * Internal implementation of generateTextWithTools with telemetry support
+   */
+  private static async _generateTextWithToolsInternal(
+    userPrompt: string,
+    options: LLMGenerationOptionsWithTools & Partial<LLMConfig>,
+    config: LLMConfig,
+    span: Span | null,
+    mcpSpanCreator: (
+      serverName: string,
+      operation: "initialize" | "tool_call" | "cleanup",
+      toolFn: (span: Span | null) => Promise<unknown>,
+      attributes?: Record<string, unknown>,
+    ) => Promise<unknown>,
+  ): Promise<{
+    text: string;
+    toolCalls: ToolCall<string, unknown>[];
+    toolResults: ToolResult<string, unknown, unknown>[];
+    steps: unknown[];
+  }> {
+    const startTime = Date.now();
+
+    // Add telemetry attributes
+    span?.setAttribute("llm.prompt_length", userPrompt.length);
+    span?.setAttribute(
+      "llm.operation_context",
+      options.operationContext?.operation || "tool_generation",
+    );
 
     // Validate generation options
     const optionsResult = LLMGenerationOptionsWithToolsSchema.safeParse(options);
@@ -463,11 +555,23 @@ export class LLMProviderManager {
 
     // Add MCP tools if servers are specified
     if (options.mcpServers && options.mcpServers.length > 0) {
+      // Track MCP tool loading with a child span
+      for (const serverName of options.mcpServers) {
+        await mcpSpanCreator(serverName, "initialize", async (mcpSpan: any) => {
+          // This initialization span will be created for visibility
+          mcpSpan?.setAttribute("mcp.server_name", serverName);
+        });
+      }
+
       try {
         const mcpTools = await this.mcpManager.getToolsForServers(
           options.mcpServers,
         );
         Object.assign(allTools, mcpTools);
+
+        // Add MCP tool count to parent span
+        span?.setAttribute("mcp.tool_count", Object.keys(mcpTools).length);
+        span?.setAttribute("mcp.total_tool_count", Object.keys(allTools).length);
 
         logger.debug("MCP tools loaded", {
           operation: "mcp_tools_loading",
@@ -544,6 +648,42 @@ export class LLMProviderManager {
         steps: result.steps || [],
       };
 
+      // Add telemetry attributes from generation result
+      span?.setAttribute("llm.response_length", result.text.length);
+      span?.setAttribute("llm.finish_reason", result.finishReason || "unknown");
+      span?.setAttribute("llm.tool_calls_count", toolResponse.toolCalls.length);
+      span?.setAttribute("llm.steps_count", toolResponse.steps.length);
+
+      // Add token usage if available
+      if (result.usage) {
+        span?.setAttribute("llm.input_tokens", result.usage.promptTokens);
+        span?.setAttribute("llm.output_tokens", result.usage.completionTokens);
+        span?.setAttribute("llm.total_tokens", result.usage.totalTokens);
+      }
+
+      // Track tool usage for each call
+      if (toolResponse.toolCalls.length > 0) {
+        const toolNames = toolResponse.toolCalls.map((call) => call.toolName);
+        span?.setAttribute("llm.tools_used", toolNames);
+
+        // Create child spans for individual tool calls
+        for (const toolCall of toolResponse.toolCalls) {
+          const serverName = options.mcpServers?.find((server) =>
+            toolCall.toolName.includes(server)
+          ) || "unknown";
+
+          await mcpSpanCreator(serverName, "tool_call", async (toolSpan: any) => {
+            toolSpan?.setAttribute("mcp.tool_name", toolCall.toolName);
+            toolSpan?.setAttribute("mcp.tool_call_id", toolCall.toolCallId);
+            if (toolCall.args) {
+              toolSpan?.setAttribute("mcp.tool_args_size", JSON.stringify(toolCall.args).length);
+            }
+          }, {
+            toolsUsed: [toolCall.toolName],
+          });
+        }
+      }
+
       logger.debug("LLM generation with MCP tools completed", {
         operation: options.operationContext?.operation || "tool_generation",
         provider: config.provider,
@@ -552,6 +692,8 @@ export class LLMProviderManager {
         toolCallCount: toolResponse.toolCalls.length,
         stepCount: toolResponse.steps.length,
         responseLength: result.text.length,
+        finishReason: result.finishReason,
+        usage: result.usage,
         ...options.operationContext,
       });
 

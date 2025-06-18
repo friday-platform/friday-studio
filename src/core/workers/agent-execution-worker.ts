@@ -5,6 +5,7 @@
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import type { Span } from "@opentelemetry/api";
 import { WorkspaceMCPConfigurationService } from "../services/mcp-configuration-service.ts";
 import {
   type AgentExecutePayload,
@@ -95,6 +96,7 @@ class AgentExecutionWorker {
   private logger: ChildLogger;
   private sessionId?: string;
   private workspaceId?: string;
+  private traceHeaders?: Record<string, string>;
 
   constructor() {
     this.workerId = crypto.randomUUID();
@@ -211,6 +213,7 @@ class AgentExecutionWorker {
         this.workerId = (payload.worker_id as string) || this.workerId;
         this.sessionId = envelope.source.sessionId;
         this.workspaceId = envelope.source.workspaceId;
+        this.traceHeaders = envelope.traceHeaders;
         this.isInitialized = true;
         this.startTime = Date.now();
 
@@ -440,6 +443,42 @@ class AgentExecutionWorker {
   }
 
   private async executeLLMAgent(request: AgentExecutePayload): Promise<Record<string, unknown>> {
+    // Extract basic info for telemetry context
+    const agentConfig = request.agent_config as Record<string, unknown>;
+    const model = agentConfig.model as string;
+    const parameters = (agentConfig.parameters as Record<string, unknown>) || {};
+    const mcp_servers = agentConfig.mcp_servers as string[] | undefined;
+    const max_steps = agentConfig.max_steps as number | undefined;
+    const provider = parameters.provider || "anthropic";
+
+    // Create telemetry context for worker span
+    const telemetryContext = {
+      operation: "execute",
+      component: "agent" as const,
+      traceHeaders: this.traceHeaders,
+      workerId: this.workerId,
+      sessionId: this.sessionId,
+      agentId: request.agent_id,
+      agentType: "llm",
+      workspaceId: this.workspaceId,
+      attributes: {
+        "agent.provider": provider,
+        "agent.model": model,
+        "agent.has_mcp_servers": !!(mcp_servers && mcp_servers.length > 0),
+        "agent.mcp_server_count": mcp_servers?.length || 0,
+        "agent.max_steps": max_steps || 1,
+      },
+    };
+
+    return await AtlasTelemetry.withWorkerSpan(telemetryContext, async (span) => {
+      return await this._executeLLMAgentInternal(request, span);
+    });
+  }
+
+  private async _executeLLMAgentInternal(
+    request: AgentExecutePayload,
+    span: Span | null,
+  ): Promise<Record<string, unknown>> {
     // Safely extract properties from agent_config with type checking
     const agentConfig = request.agent_config as Record<string, unknown>;
     const model = agentConfig.model as string;
@@ -493,6 +532,12 @@ class AgentExecutionWorker {
     // Prepare prompts
     const systemPrompt = prompts.system || "You are a helpful AI assistant.";
     const userPrompt = this.buildUserPrompt(task, input, prompts);
+
+    // Add telemetry attributes for prompt details
+    span?.setAttribute("agent.task", task || "unknown");
+    span?.setAttribute("agent.input_type", typeof input);
+    span?.setAttribute("agent.system_prompt_length", systemPrompt.length);
+    span?.setAttribute("agent.user_prompt_length", userPrompt.length);
 
     try {
       let result: {
@@ -579,6 +624,22 @@ class AgentExecutionWorker {
         };
       }
 
+      // Add telemetry attributes for execution result
+      span?.setAttribute("agent.execution_success", true);
+      span?.setAttribute("agent.result_length", result.text.length);
+      span?.setAttribute("agent.tool_calls_count", result.toolCalls.length);
+      span?.setAttribute("agent.tool_results_count", result.toolResults.length);
+      span?.setAttribute("agent.steps_count", result.steps.length);
+
+      if (result.toolCalls.length > 0) {
+        const toolNames = result.toolCalls.map((call: unknown) =>
+          (call && typeof call === "object" && "toolName" in call)
+            ? (call as { toolName: string }).toolName
+            : "unknown"
+        );
+        span?.setAttribute("agent.tools_used", toolNames);
+      }
+
       return {
         agent_type: "llm",
         agent_id: request.agent_id,
@@ -594,6 +655,14 @@ class AgentExecutionWorker {
         mcp_servers_used: mcp_servers || [],
       };
     } catch (error) {
+      // Add error telemetry attributes
+      span?.setAttribute("agent.execution_success", false);
+      span?.setAttribute("agent.error_type", error instanceof Error ? error.name : "Unknown");
+      span?.setAttribute(
+        "agent.error_message",
+        error instanceof Error ? error.message : String(error),
+      );
+
       this.log(`LLM execution error for ${request.agent_id}: ${error}`, "error");
       this.log(
         `Error details - Provider: ${provider}, Model: ${model}, Type: ${
