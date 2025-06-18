@@ -273,7 +273,7 @@ const JobExecutionSchema = z.object({
 // Trigger specification schema for job-owns-relationship
 const TriggerSpecificationSchema = z.object({
   signal: z.string(), // Signal name this job listens to
-  condition: z.string().optional(), // Optional condition for triggering
+  condition: z.union([z.string(), z.record(z.string(), z.any())]).optional(), // Optional condition for triggering (string or JSONLogic object)
 });
 
 // Job specification schema for top-level jobs section

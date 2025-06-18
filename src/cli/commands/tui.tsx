@@ -73,7 +73,7 @@ const INITIAL_MESSAGES: LogEntry[] = [
   },
   {
     type: "command",
-    content: "Server will start automatically...",
+    content: "Checking for existing server or starting new one...",
     timestamp: new Date().toTimeString().slice(0, 8),
   },
 ];
@@ -96,12 +96,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     previousTab: _previousTab,
     goToTab,
   } = useTabNavigation({
-    tabCount: 3,
+    tabCount: 4,
     initialTab: 0,
   });
   const [inputFocused, setInputFocused] = useState(true);
   const [conversationScroll, setConversationScroll] = useState(0);
   const [serverScroll, setServerScroll] = useState(0);
+  const [libraryScroll, setLibraryScroll] = useState(0);
   const [showPopover, setShowPopover] = useState(false);
   const [popoverContent, setPopoverContent] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -133,6 +134,34 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   // Calculate available height for panels (terminal height minus header, input, status)
   const availableHeight = Math.max(10, (stdout.rows || 24) - 6);
+
+  // Load library data
+  const loadLibraryData = async () => {
+    if (!serverStatus.running) return;
+    
+    setLibraryLoading(true);
+    try {
+      const port = serverStatus.port || 8080;
+      
+      // Load library items
+      const itemsResponse = await fetch(`http://localhost:${port}/library?limit=50`);
+      if (itemsResponse.ok) {
+        const items = await itemsResponse.json();
+        setLibraryItems(items);
+      }
+      
+      // Load templates
+      const templatesResponse = await fetch(`http://localhost:${port}/library/templates`);
+      if (templatesResponse.ok) {
+        const templates = await templatesResponse.json();
+        setLibraryTemplates(templates);
+      }
+    } catch (error) {
+      // Ignore library loading errors for now
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
 
   // Load workspace context for config assistant
   const loadWorkspaceContext = async () => {
@@ -209,8 +238,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   useEffect(() => {
     if (serverStatus.workspace && !showSplashScreen) {
       loadWorkspaceContext();
+      loadLibraryData();
     }
   }, [serverStatus.workspace, showSplashScreen]);
+
+  // Load library data when server becomes available
+  useEffect(() => {
+    if (serverStatus.running && !showSplashScreen) {
+      loadLibraryData();
+    }
+  }, [serverStatus.running, showSplashScreen]);
 
   const addLog = (
     type: LogEntry["type"],
@@ -269,6 +306,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   const [selectedLogIndex, setSelectedLogIndex] = useState(0); // Start with first log selected
   const [selectedServerLogIndex, setSelectedServerLogIndex] = useState(-1); // Will be set to last log
+  const [selectedLibraryIndex, setSelectedLibraryIndex] = useState(0);
+
+  // Library state
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [libraryTemplates, setLibraryTemplates] = useState<any[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<'items' | 'templates'>('items');
 
   // Function to scan for available workspaces
   const scanAvailableWorkspaces = async (): Promise<AvailableWorkspace[]> => {
@@ -342,7 +386,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       if (await exists("workspace.yml")) {
         setShowSplashScreen(false);
         addLog("command", `Workspace ${workspace.name} loaded successfully`);
-        // Start server in the new workspace directory
+        // Check for existing server or start new one
         await startServer();
       } else {
         addLog("error", `No workspace.yml found in ${workspace.path}`);
@@ -406,42 +450,65 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
   };
 
-  const startServer = async () => {
+  // Check if server is already running on default port
+  const checkExistingServer = async (
+    port = 8080,
+  ): Promise<{ running: boolean; serverInfo?: any }> => {
     try {
-      // Check if workspace.yml exists
-      if (!(await exists("workspace.yml"))) {
-        setShowSplashScreen(true);
-        setInputFocused(false); // Ensure input is not focused in splash screen
-        addLog("error", "No workspace.yml found in current directory");
-        addLog("command", "Scanning for available workspaces...");
+      const response = await fetch(`http://localhost:${port}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(3000), // 3 second timeout
+      });
 
-        // Scan for available workspaces
-        setWorkspacesLoading(true);
-        const workspaces = await scanAvailableWorkspaces();
-        console.log("Setting workspaces in state:", workspaces);
-        setAvailableWorkspaces(workspaces);
-        setSelectedWorkspaceIndex(0); // Reset selection when workspaces change
-        setWorkspacesLoading(false);
-
-        if (workspaces.length > 0) {
-          addLog(
-            "command",
-            `Found ${workspaces.length} available workspace(s)`,
-          );
-          workspaces.forEach((ws) => {
-            addLog("command", `- ${ws.name}`);
-          });
-        } else {
-          addLog("command", "No example workspaces found");
-        }
-
-        addLog(
-          "command",
-          "Showing splash screen - create a workspace to continue",
-        );
-        return;
+      if (response.ok) {
+        const serverInfo = await response.json();
+        return { running: true, serverInfo };
       }
 
+      return { running: false };
+    } catch (error) {
+      return { running: false };
+    }
+  };
+
+  // Connect to existing server without starting a new one
+  const connectToExistingServer = async (port = 8080, serverInfo?: any) => {
+    try {
+      const workspaceYaml = await Deno.readTextFile("workspace.yml");
+      const config = yaml.parse(workspaceYaml) as {
+        workspace?: { name?: string };
+      };
+
+      addLog(
+        "command",
+        `Found existing server on port ${port}, connecting...`,
+      );
+
+      // Use server info if available, otherwise fall back to local config
+      const workspaceName = serverInfo?.workspace?.name || config.workspace?.name;
+      const serverState = serverInfo?.state || "unknown";
+
+      setServerStatus({
+        running: true,
+        port: port,
+        workspace: workspaceName,
+      });
+
+      addLog("command", `Connected to ${workspaceName || "workspace"} server (${serverState})`);
+      addLog("command", "TUI ready - server was already running");
+
+      if (serverInfo?.activeSessions) {
+        addLog("command", `Active sessions: ${serverInfo.activeSessions}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to connect to existing server: ${error}`);
+      // Fall back to starting new server
+      await startNewServer();
+    }
+  };
+
+  const startNewServer = async () => {
+    try {
       const workspaceYaml = await Deno.readTextFile("workspace.yml");
       const config = yaml.parse(workspaceYaml) as {
         workspace?: { name?: string };
@@ -449,7 +516,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       addLog(
         "server",
-        `Starting ${config.workspace?.name || "workspace"} server...`,
+        `Starting new ${config.workspace?.name || "workspace"} server...`,
       );
 
       // Start server process
@@ -555,7 +622,61 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       readOutput(serverProcess.stdout, "server");
       readOutput(serverProcess.stderr, "error");
     } catch (error) {
-      addLog("error", `Failed to start server: ${error}`);
+      addLog("error", `Failed to start new server: ${error}`);
+      setServerStatus({ running: false, error: String(error) });
+    }
+  };
+
+  const startServer = async () => {
+    try {
+      // Check if workspace.yml exists
+      if (!(await exists("workspace.yml"))) {
+        setShowSplashScreen(true);
+        setInputFocused(false); // Ensure input is not focused in splash screen
+        addLog("error", "No workspace.yml found in current directory");
+        addLog("command", "Scanning for available workspaces...");
+
+        // Scan for available workspaces
+        setWorkspacesLoading(true);
+        const workspaces = await scanAvailableWorkspaces();
+        console.log("Setting workspaces in state:", workspaces);
+        setAvailableWorkspaces(workspaces);
+        setSelectedWorkspaceIndex(0); // Reset selection when workspaces change
+        setWorkspacesLoading(false);
+
+        if (workspaces.length > 0) {
+          addLog(
+            "command",
+            `Found ${workspaces.length} available workspace(s)`,
+          );
+          workspaces.forEach((ws) => {
+            addLog("command", `- ${ws.name}`);
+          });
+        } else {
+          addLog("command", "No example workspaces found");
+        }
+
+        addLog(
+          "command",
+          "Showing splash screen - create a workspace to continue",
+        );
+        return;
+      }
+
+      // Check if server is already running before starting a new one
+      addLog("command", "Checking for existing workspace server...");
+      const { running: serverExists, serverInfo } = await checkExistingServer(8080);
+
+      if (serverExists) {
+        // Connect to existing server
+        await connectToExistingServer(8080, serverInfo);
+      } else {
+        // Start new server
+        addLog("command", "No existing server found, starting new server");
+        await startNewServer();
+      }
+    } catch (error) {
+      addLog("error", `Failed to initialize server: ${error}`);
       setServerStatus({ running: false, error: String(error) });
     }
   };
@@ -1032,6 +1153,43 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           return newIndex;
         });
       }
+    } else if (activeTab === 3) {
+      // Library tab navigation
+      const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+      const maxIndex = Math.max(0, currentList.length - 1);
+      const visibleHeight = availableHeight - 6;
+
+      if (sequence === "gg") {
+        // Go to top
+        setSelectedLibraryIndex(0);
+        setLibraryScroll(0);
+      } else if (sequence === "G") {
+        // Go to bottom
+        setSelectedLibraryIndex(maxIndex);
+        if (currentList.length > visibleHeight) {
+          setLibraryScroll(currentList.length - visibleHeight);
+        }
+      } else if (sequence === "J") {
+        // Page down (shift+j)
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.min(maxIndex, prev + pageSize);
+          // Auto-scroll to keep selection visible
+          if (newIndex >= libraryScroll + visibleHeight) {
+            setLibraryScroll(newIndex - visibleHeight + 1);
+          }
+          return newIndex;
+        });
+      } else if (sequence === "K") {
+        // Page up (shift+k)
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.max(0, prev - pageSize);
+          // Auto-scroll to keep selection visible
+          if (newIndex < libraryScroll) {
+            setLibraryScroll(newIndex);
+          }
+          return newIndex;
+        });
+      }
     }
   };
 
@@ -1072,11 +1230,11 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       if (isLeft) {
         // Go to previous tab
-        const newTab = activeTab > 0 ? activeTab - 1 : 1; // Wrap to last tab
+        const newTab = activeTab > 0 ? activeTab - 1 : 3; // Wrap to last tab
         goToTab(newTab);
       } else if (isRight) {
         // Go to next tab
-        const newTab = activeTab < 1 ? activeTab + 1 : 0; // Wrap to first tab
+        const newTab = activeTab < 3 ? activeTab + 1 : 0; // Wrap to first tab
         goToTab(newTab);
       }
       return;
@@ -1216,6 +1374,17 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           }
           return newIndex;
         });
+      } else if (activeTab === 3) {
+        // Library tab navigation
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.max(0, prev - 1);
+          // Auto-scroll to keep selection visible
+          if (newIndex < libraryScroll) {
+            setLibraryScroll(newIndex);
+          }
+          return newIndex;
+        });
       }
     } else if (
       key.downArrow ||
@@ -1249,6 +1418,19 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           const visibleHeight = availableHeight - 8;
           if (newIndex >= serverScroll + visibleHeight) {
             setServerScroll(newIndex - visibleHeight + 1);
+          }
+          return newIndex;
+        });
+      } else if (activeTab === 3) {
+        // Library tab navigation
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const maxIndex = Math.max(0, currentList.length - 1);
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.min(maxIndex, prev + 1);
+          // Auto-scroll to keep selection visible
+          const visibleHeight = availableHeight - 6;
+          if (newIndex >= libraryScroll + visibleHeight) {
+            setLibraryScroll(newIndex - visibleHeight + 1);
           }
           return newIndex;
         });
@@ -1327,6 +1509,18 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
             setShowPopover(true);
             return;
           }
+        } else if (activeTab === 3) {
+          // Library tab - show item details
+          const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+          const selected = currentList[selectedLibraryIndex];
+          if (selected) {
+            const content = libraryMode === 'items' 
+              ? `Library Item: ${selected.name}\n\nType: ${selected.type}\nCreated: ${selected.created_at}\nSize: ${selected.size_bytes} bytes\nTags: ${selected.tags?.join(', ') || 'none'}\n\nDescription: ${selected.description || 'No description'}`
+              : `Template: ${selected.name}\n\nEngine: ${selected.engine}\nFormat: ${selected.format}\n\nDescription: ${selected.description || 'No description'}`;
+            setPopoverContent(content);
+            setShowPopover(true);
+            return;
+          }
         }
       }
     } else if (key.backspace || key.delete) {
@@ -1387,7 +1581,45 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           };
           copyToClipboard();
         }
+      } else if (activeTab === 3) {
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const selected = currentList[selectedLibraryIndex];
+        if (selected) {
+          const textToCopy = libraryMode === 'items'
+            ? `${selected.name} (${selected.type})`
+            : `${selected.id} - ${selected.name}`;
+          const copyToClipboard = async () => {
+            try {
+              const process = new Deno.Command("pbcopy", {
+                stdin: "piped",
+              }).spawn();
+
+              const writer = process.stdin.getWriter();
+              await writer.write(new TextEncoder().encode(textToCopy));
+              await writer.close();
+              await process.status;
+
+              addLog(
+                "command",
+                `Copied to clipboard: ${textToCopy}`,
+              );
+            } catch (error) {
+              addLog("error", `Failed to copy to clipboard: ${error}`);
+            }
+          };
+          copyToClipboard();
+        }
       }
+    } else if (inputChar === "t" && !inputFocused && activeTab === 3) {
+      // Toggle between items and templates in library tab
+      setLibraryMode(prev => prev === 'items' ? 'templates' : 'items');
+      setSelectedLibraryIndex(0);
+      setLibraryScroll(0);
+      addLog("command", `Switched to library ${libraryMode === 'items' ? 'templates' : 'items'}`);
+    } else if (inputChar === "r" && !inputFocused && activeTab === 3) {
+      // Refresh library data
+      addLog("command", "Refreshing library data...");
+      loadLibraryData();
     } else if (inputChar === "/" && !inputFocused && !showSplashScreen) {
       // Typing '/' should focus the command prompt and add the '/'
       setInputFocused(true);
@@ -1753,6 +1985,181 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     );
   };
 
+  const renderLibraryTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      <Box marginBottom={1} flexDirection="row">
+        <Text color="cyan" bold>📚 Library</Text>
+        <Text color="gray"> | </Text>
+        <Text color={libraryMode === 'items' ? 'white' : 'gray'} bold={libraryMode === 'items'}>
+          Items ({libraryItems.length})
+        </Text>
+        <Text color="gray"> | </Text>
+        <Text color={libraryMode === 'templates' ? 'white' : 'gray'} bold={libraryMode === 'templates'}>
+          Templates ({libraryTemplates.length})
+        </Text>
+        {libraryLoading && (
+          <>
+            <Text color="gray"> | </Text>
+            <Text color="yellow">Loading...</Text>
+          </>
+        )}
+      </Box>
+
+      {libraryLoading
+        ? (
+          <Box flexDirection="column">
+            <Text color="yellow">Loading library data...</Text>
+            <Text dimColor>Fetching items and templates from workspace library</Text>
+          </Box>
+        )
+        : (
+          <Box flexDirection="column">
+            {libraryMode === 'items' ? renderLibraryItems() : renderLibraryTemplates()}
+          </Box>
+        )}
+
+      <Box marginTop={1} borderTop borderColor="gray" paddingTop={1}>
+        <Text dimColor>
+          Navigation: j/k to move, Enter for details, t to toggle items/templates, r to refresh
+        </Text>
+      </Box>
+      <Box>
+        <Text dimColor>
+          Commands: /library list, /library templates, /library search &lt;query&gt;
+        </Text>
+      </Box>
+    </Box>
+  );
+
+  const renderLibraryItems = () => {
+    if (libraryItems.length === 0) {
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">No library items found</Text>
+          <Text dimColor>Items will appear here as agents generate reports and artifacts</Text>
+        </Box>
+      );
+    }
+
+    const visibleItems = libraryItems.slice(libraryScroll, libraryScroll + availableHeight - 6);
+    
+    return (
+      <Box flexDirection="column">
+        {visibleItems.map((item: any, i: number) => {
+          const globalIndex = i + libraryScroll;
+          const isSelected = selectedLibraryIndex === globalIndex;
+          
+          // Format size
+          const formatBytes = (bytes: number): string => {
+            if (bytes === 0) return "0 B";
+            const k = 1024;
+            const sizes = ["B", "KB", "MB", "GB"];
+            const sizeIndex = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(1)) + " " + sizes[sizeIndex];
+          };
+          
+          const typeColor = item.type === 'report' ? 'green' : 
+                           item.type === 'template' ? 'blue' :
+                           item.type === 'session_archive' ? 'magenta' : 'cyan';
+          
+          return (
+            <Box key={globalIndex} flexDirection="column">
+              <Text
+                color={isSelected ? "black" : "white"}
+                backgroundColor={isSelected ? "white" : undefined}
+              >
+                {isSelected ? "▶ " : "  "}
+                <Text color={isSelected ? "black" : typeColor} bold>
+                  {item.type.toUpperCase()}
+                </Text>
+                <Text color={isSelected ? "black" : "white"}> {item.name}</Text>
+                <Text color={isSelected ? "black" : "gray"}> ({formatBytes(item.size_bytes)})</Text>
+              </Text>
+              {isSelected && (
+                <Box marginLeft={4}>
+                  <Text color="gray">
+                    Created: {new Date(item.created_at).toLocaleDateString()} | 
+                    Tags: {item.tags?.join(", ") || "none"}
+                  </Text>
+                  {item.description && (
+                    <Text color="gray">{item.description}</Text>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+        
+        {libraryItems.length > 0 && (
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>
+              Selected: {selectedLibraryIndex + 1}/{libraryItems.length}
+            </Text>
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
+  const renderLibraryTemplates = () => {
+    if (libraryTemplates.length === 0) {
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">No templates found</Text>
+          <Text dimColor>Templates are defined in atlas.yml and workspace.yml</Text>
+        </Box>
+      );
+    }
+
+    const visibleTemplates = libraryTemplates.slice(libraryScroll, libraryScroll + availableHeight - 6);
+    
+    return (
+      <Box flexDirection="column">
+        {visibleTemplates.map((template: any, i: number) => {
+          const globalIndex = i + libraryScroll;
+          const isSelected = selectedLibraryIndex === globalIndex;
+          
+          const engineColor = template.engine === 'prompt' ? 'green' : 
+                             template.engine === 'handlebars' ? 'blue' : 'cyan';
+          
+          return (
+            <Box key={globalIndex} flexDirection="column">
+              <Text
+                color={isSelected ? "black" : "white"}
+                backgroundColor={isSelected ? "white" : undefined}
+              >
+                {isSelected ? "▶ " : "  "}
+                <Text color={isSelected ? "black" : engineColor} bold>
+                  {template.engine.toUpperCase()}
+                </Text>
+                <Text color={isSelected ? "black" : "white"}> {template.name || template.id}</Text>
+                <Text color={isSelected ? "black" : "gray"}> ({template.format})</Text>
+              </Text>
+              {isSelected && (
+                <Box marginLeft={4}>
+                  <Text color="gray">
+                    ID: {template.id} | Engine: {template.engine} | Format: {template.format}
+                  </Text>
+                  {template.description && (
+                    <Text color="gray">{template.description}</Text>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+        
+        {libraryTemplates.length > 0 && (
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>
+              Selected: {selectedLibraryIndex + 1}/{libraryTemplates.length}
+            </Text>
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
   useEffect(() => {
     if (inputFocused) {
       const interval = setInterval(() => {
@@ -1818,6 +2225,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 </Tab>
                 <Tab label="Workspace Config" icon="⚙">
                   {renderWorkspaceConfigTab()}
+                </Tab>
+                <Tab label="Library" icon="📚">
+                  {renderLibraryTab()}
                 </Tab>
               </TabGroup>
             </Box>

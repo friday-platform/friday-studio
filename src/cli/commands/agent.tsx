@@ -88,7 +88,6 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
           name: id,
           type: agent.type || "local",
           model: agent.model ||
-            config.supervisor?.model ||
             "claude-4-sonnet-20250514",
           status: "ready",
           purpose: agent.purpose || "No description",

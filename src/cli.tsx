@@ -16,6 +16,7 @@ const cli = meow(
     sig [<name>|list|history]                 Signal operations (defaults to trigger if name provided)
     sesh [list|get|cancel]                    Session management (defaults to list)
     agent [list|describe|test]                Agent management (defaults to list)
+    library [list|search|get|templates]       Library and template management
     logs <session-id>                         Stream session logs
     ps                                        List active sessions
     tui [--workspace <name>]                  Terminal User Interface
@@ -38,6 +39,13 @@ const cli = meow(
     agent list                                List all agents
     agent describe <name>                     Show agent details
     agent test <name> --message <text>        Test an agent
+    
+    library list [--type <type>] [--tags <tags>]  List library items
+    library search <query>                    Search library content
+    library get <id> [--content]             Get library item details
+    library templates                        List available templates
+    library generate <template> <data.json>  Generate content from template
+    library stats                            Show library statistics
 
   Examples
     $ atlas workspace init my-project

@@ -7,6 +7,7 @@ import { WorkerManager } from "./utils/worker-manager.ts";
 import { AtlasConfigLoader } from "./atlas-config-loader.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
+import { AtlasLibrary } from "./library/atlas-library.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -81,6 +82,7 @@ export class WorkspaceRuntime {
   private options: WorkspaceRuntimeOptions;
   private config?: any;
   private stateMachine: Actor<typeof workspaceRuntimeMachine>;
+  private library?: AtlasLibrary;
 
   constructor(
     workspace: IWorkspace,
@@ -91,6 +93,11 @@ export class WorkspaceRuntime {
     this.config = config;
     this.options = options;
     this.workerManager = new WorkerManager();
+
+    // Set up message handler for session completion
+    this.setupMessageHandlers();
+
+    // Library will be initialized lazily
 
     // Agent loading will happen during initialization
 
@@ -126,6 +133,129 @@ export class WorkspaceRuntime {
         workspaceId: workspace.id,
       });
       this.stateMachine.send({ type: "INITIALIZE" });
+    }
+  }
+
+  /**
+   * Set up message handlers for worker communication
+   */
+  private setupMessageHandlers(): void {
+    // Set up global message handler for worker messages
+    this.workerManager.setGlobalMessageHandler(async (workerId: string, message: any) => {
+      if (message.type === "sessionComplete") {
+        await this.handleSessionComplete(message.sessionId, message.result);
+      }
+    });
+  }
+
+  /**
+   * Handle session completion and store results in library
+   */
+  private async handleSessionComplete(sessionId: string, result: any): Promise<void> {
+    try {
+      const library = this.getLibrary();
+      if (!library || !result) {
+        logger.warn("Cannot store session results - library not available or no result", {
+          workspaceId: this.workspace.id,
+          sessionId,
+          hasLibrary: !!library,
+          hasResult: !!result,
+        });
+        return;
+      }
+
+      logger.info("Storing session results in library", {
+        workspaceId: this.workspace.id,
+        sessionId,
+        resultStatus: result.status,
+        hasFinalOutput: !!result.final_output,
+        finalOutputType: typeof result.final_output,
+        hasFinalOutputResult: !!result.final_output?.result,
+        resultKeys: Object.keys(result || {}),
+        timingKeys: result.timing ? Object.keys(result.timing) : null,
+        finalOutputKeys: result.final_output ? Object.keys(result.final_output) : null,
+        agentExecutionsCount: result.timing?.agent_executions?.length,
+        totalDuration: result.timing?.total_duration,
+        totalAgentsInvoked: result.total_agents_invoked,
+      });
+
+      // Extract session data for library storage
+      const sessionData = {
+        session_id: sessionId,
+        workspace_name: this.workspace.id,
+        start_time: new Date(Date.now() - (result.timing?.total_duration || 0)).toISOString(),
+        end_time: new Date().toISOString(),
+        agents_used: result.timing?.agent_executions?.map((exec: any) => ({
+          id: exec.agent,
+          type: "llm",
+          purpose: `Agent execution in session ${sessionId}`,
+        })) || [],
+        artifacts: [],
+        outcomes: [{
+          type: "session_completion",
+          data: result.final_output,
+          agent_count: result.timing?.agent_executions?.length || 0,
+          total_duration: result.timing?.total_duration || 0,
+        }],
+        metadata: {
+          signal: result.original_input || {},
+          phases_executed: result.phases_executed || 1,
+          total_agents_invoked: result.total_agents_invoked || 0,
+          final_output_size: result.final_output?.result?.length || 0,
+          raw_result_structure: Object.keys(result || {}),
+          timing_structure: Object.keys(result.timing || {}),
+          final_output_structure: Object.keys(result.final_output || {}),
+        },
+      };
+
+      // Store session archive in library
+      const archiveId = await library.archiveSession(sessionData);
+      
+      // Also store the final report as a separate library item if available
+      logger.info("Checking for final report to store", {
+        hasFinalOutput: !!result.final_output,
+        hasFinalOutputResult: !!result.final_output?.result,
+        finalOutputResultLength: result.final_output?.result?.length || 0,
+      });
+      
+      if (result.final_output?.result) {
+        logger.info("Creating separate report item", {
+          sessionId,
+          reportLength: result.final_output.result.length,
+        });
+        
+        const reportId = await library.store({
+          type: "report",
+          name: `Analysis Report - ${sessionId.slice(0, 8)}`,
+          content: result.final_output.result,
+          format: "markdown",
+          source: "agent",
+          tags: ["session-report", "analysis", "automated"],
+          description: `Generated analysis report from session ${sessionId}`,
+          metadata: {
+            session_id: sessionId,
+            agent_type: result.final_output.agent_type,
+            agent_id: result.final_output.agent_id,
+            model: result.final_output.model,
+            generation_time: new Date().toISOString(),
+          },
+          session_id: sessionId,
+          agent_ids: result.timing?.agent_executions?.map((exec: any) => exec.agent) || [],
+        });
+
+        logger.info("Session results stored in library", {
+          workspaceId: this.workspace.id,
+          sessionId,
+          archiveId,
+          reportId,
+        });
+      }
+    } catch (error) {
+      logger.error("Failed to store session results in library", {
+        workspaceId: this.workspace.id,
+        sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -393,6 +523,61 @@ export class WorkspaceRuntime {
       workspaceId: this.workspace.id,
       checkpoint: state,
     });
+  }
+
+
+  /**
+   * Get the library instance for this workspace
+   */
+  getLibrary(): AtlasLibrary | undefined {
+    if (!this.library) {
+      // Initialize library synchronously on first access
+      try {
+        const workspacePath = Deno.cwd();
+        
+        // Validate that we have a proper workspace path
+        if (!workspacePath || typeof workspacePath !== 'string') {
+          logger.error("Invalid workspace path", { 
+            workspaceId: this.workspace.id,
+            workspacePath: typeof workspacePath,
+            cwd: Deno.cwd()
+          });
+          return undefined;
+        }
+        
+        const config = {
+          platform_path: "~/.atlas/library",
+          workspace_relative: ".atlas/library"
+        };
+        
+        
+        this.library = new AtlasLibrary(
+          config,
+          workspacePath,
+          this.workspace.id
+        );
+        
+        // Initialize asynchronously but don't wait
+        this.library.initialize().catch(error => {
+          logger.error("Failed to initialize library", { 
+            workspaceId: this.workspace.id, 
+            error 
+          });
+        });
+        
+        logger.info("Library created (initializing in background)", { 
+          workspaceId: this.workspace.id,
+          workspacePath 
+        });
+      } catch (error) {
+        logger.error("Failed to create library", { 
+          workspaceId: this.workspace.id, 
+          error 
+        });
+        return undefined;
+      }
+    }
+    return this.library;
   }
 
   /**

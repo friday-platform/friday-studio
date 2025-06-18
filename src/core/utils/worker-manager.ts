@@ -239,6 +239,7 @@ export class WorkerManager {
   private actor: any;
   private workers: Map<string, ManagedWorker> = new Map();
   private pools: Map<WorkerType, WorkerPool> = new Map();
+  private globalMessageHandler?: (workerId: string, message: any) => Promise<void>;
 
   constructor() {
     // Initialize worker pools
@@ -312,6 +313,13 @@ export class WorkerManager {
     this.actor.start();
   }
 
+  /**
+   * Set a global message handler for all worker messages
+   */
+  setGlobalMessageHandler(handler: (workerId: string, message: any) => Promise<void>): void {
+    this.globalMessageHandler = handler;
+  }
+
   spawnWorker(
     metadata: WorkerMetadata,
     url: string,
@@ -375,6 +383,17 @@ export class WorkerManager {
   }
 
   private handleWorkerMessage(worker: ManagedWorker, message: any) {
+    // Call global message handler first if available
+    if (this.globalMessageHandler) {
+      this.globalMessageHandler(worker.id, message).catch((error) => {
+        logger.error("Global message handler error", {
+          workerId: worker.id,
+          messageType: message.type,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+    }
+
     switch (message.type) {
       case "initialized":
         worker.actor.send({ type: "INITIALIZED" });
@@ -394,6 +413,9 @@ export class WorkerManager {
           workerId: worker.id,
           taskId: message.taskId,
         });
+        break;
+      case "sessionComplete":
+        // This is handled by the global message handler above
         break;
       case "shutdown_ack":
         // Worker acknowledged shutdown - this is handled in terminateWorker's Promise.race

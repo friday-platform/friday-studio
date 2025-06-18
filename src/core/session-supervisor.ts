@@ -40,13 +40,19 @@ export interface JobSpecification {
 
 export interface JobTrigger {
   signal: string;
-  condition?: string;
+  condition?: string | object;
+  naturalLanguageCondition?: string;
 }
 
 export interface JobExecution {
   strategy: "sequential" | "parallel" | "conditional" | "staged";
   agents: JobAgentSpec[];
   stages?: JobStage[];
+  context?: {
+    codebase_files?: string[];
+    focus_areas?: string[];
+    [key: string]: any;
+  };
 }
 
 export interface JobAgentSpec {
@@ -55,6 +61,7 @@ export interface JobAgentSpec {
   prompt?: string;
   config?: Record<string, any>;
   input?: Record<string, any>;
+  input_source?: "signal" | "previous" | "combined" | "codebase_context"; // Source of input for the agent
 }
 
 export interface JobStage {
@@ -194,7 +201,7 @@ export interface ExecutionPhase {
 export interface AgentTask {
   agentId: string;
   task: string;
-  inputSource: "signal" | "previous" | "combined";
+  inputSource: "signal" | "previous" | "combined" | "codebase_context";
   dependencies?: string[];
   mode?: string; // For agents with multiple modes
   config?: Record<string, any>; // Agent-specific configuration
@@ -223,9 +230,9 @@ export class SessionSupervisor extends BaseAgent {
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
 
   constructor(
-    memoryConfig: AtlasMemoryConfig, 
+    memoryConfig: AtlasMemoryConfig,
     parentScopeId?: string,
-    precomputedPlans?: Record<string, any>
+    precomputedPlans?: Record<string, any>,
   ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
@@ -431,7 +438,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     // Log shared precomputed plans received from WorkspaceSupervisor
     const planCount = Object.keys(this.precomputedPlans || {}).length;
-    this.log(`Received ${planCount} precomputed plans from WorkspaceSupervisor: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
+    this.log(
+      `Received ${planCount} precomputed plans from WorkspaceSupervisor: ${
+        Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+      }`,
+    );
 
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
@@ -447,11 +458,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   // Validate and sanitize precomputed plans to prevent security issues
   private validateAndSanitizePlans(
-    plans: Record<string, any>, 
-    expectedWorkspaceId?: string
+    plans: Record<string, any>,
+    expectedWorkspaceId?: string,
   ): Record<string, any> {
     const sanitizedPlans: Record<string, any> = {};
-    
+
     for (const [key, plan] of Object.entries(plans)) {
       try {
         // Security: Validate plan key format to prevent injection
@@ -461,9 +472,14 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         }
 
         // Security: Verify workspace scope if available
-        if (expectedWorkspaceId && plan?.context?.workspaceId && 
-            plan.context.workspaceId !== expectedWorkspaceId) {
-          this.log(`Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`, "warn");
+        if (
+          expectedWorkspaceId && plan?.context?.workspaceId &&
+          plan.context.workspaceId !== expectedWorkspaceId
+        ) {
+          this.log(
+            `Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`,
+            "warn",
+          );
           continue;
         }
 
@@ -486,24 +502,30 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   // Sanitize individual plan to remove sensitive data
   private sanitizePlan(plan: any): any {
-    if (!plan || typeof plan !== 'object') {
+    if (!plan || typeof plan !== "object") {
       return plan;
     }
 
     const sanitized = { ...plan };
-    
+
     // Remove sensitive fields
     const sensitiveFields = [
-      'workspaceSecrets', 'privateKeys', 'authTokens', 'apiKeys',
-      'passwords', 'credentials', 'internalConfig', 'debugInfo'
+      "workspaceSecrets",
+      "privateKeys",
+      "authTokens",
+      "apiKeys",
+      "passwords",
+      "credentials",
+      "internalConfig",
+      "debugInfo",
     ];
-    
+
     for (const field of sensitiveFields) {
       delete sanitized[field];
     }
 
     // Sanitize nested objects recursively
-    if (sanitized.context && typeof sanitized.context === 'object') {
+    if (sanitized.context && typeof sanitized.context === "object") {
       sanitized.context = this.sanitizePlan(sanitized.context);
     }
 
@@ -521,13 +543,16 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   private validatePlanForExecution(plan: any, sessionContext: SessionContext): boolean {
     try {
       // Verify plan structure
-      if (!plan || typeof plan !== 'object') {
+      if (!plan || typeof plan !== "object") {
         return false;
       }
 
       // Verify workspace context matches if available
       if (plan.context?.workspaceId && plan.context.workspaceId !== sessionContext.workspaceId) {
-        this.log(`Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`, "warn");
+        this.log(
+          `Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`,
+          "warn",
+        );
         return false;
       }
 
@@ -574,7 +599,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
       // Create secure, workspace-scoped cache key
       const secureKey = this.createSecurePlanKey(jobName, this.sessionContext.workspaceId);
-      
+
       // Check the shared precomputed plans from WorkspaceSupervisor
       if (this.precomputedPlans && this.precomputedPlans[secureKey]) {
         const precomputedPlan = this.precomputedPlans[secureKey];
@@ -582,7 +607,10 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
         // Additional security validation before use
         if (!this.validatePlanForExecution(precomputedPlan, this.sessionContext)) {
-          this.log(`Security validation failed for plan ${secureKey}, falling back to runtime planning`, "warn");
+          this.log(
+            `Security validation failed for plan ${secureKey}, falling back to runtime planning`,
+            "warn",
+          );
         } else {
           // Convert precomputed plan to ExecutionPlan format with session-specific data
           const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
@@ -597,7 +625,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         this.log(
           `No precomputed plan found for job: ${jobName} (key: ${secureKey}) in shared cache, falling back to runtime planning`,
         );
-        this.log(`Available precomputed plans: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
+        this.log(
+          `Available precomputed plans: ${
+            Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+          }`,
+        );
       }
     }
 
@@ -649,7 +681,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: jobSpec.execution.agents.map((agentSpec, index) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: index === 0 ? "signal" : "previous",
+          inputSource: agentSpec.input_source || (index === 0 ? "signal" : "previous"),
           dependencies: index > 0 ? [jobSpec.execution.agents[index - 1].id] : [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -668,7 +700,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
           agents: stage.agents.map((agentSpec) => ({
             agentId: agentSpec.id,
             task: this.buildAgentTask(agentSpec, jobSpec),
-            inputSource: stageIndex === 0 ? "signal" : "previous",
+            inputSource: agentSpec.input_source || (stageIndex === 0 ? "signal" : "previous"),
             dependencies: [],
             mode: agentSpec.mode,
             config: agentSpec.config,
@@ -684,7 +716,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: jobSpec.execution.agents.map((agentSpec) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: "signal",
+          inputSource: agentSpec.input_source || "signal",
           dependencies: [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -724,7 +756,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: precomputedPlan.steps.map((step, index) => ({
           agentId: step.agentId,
           task: step.task,
-          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
           dependencies: step.dependencies,
           mode: step.mode,
           config: step.config,
@@ -741,7 +775,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: precomputedPlan.steps.map((step) => ({
           agentId: step.agentId,
           task: step.task,
-          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
           dependencies: step.dependencies,
           mode: step.mode,
           config: step.config,
@@ -1637,11 +1673,34 @@ Overall Success: ${
         .find((phase) => phase.executionStrategy === "sequential")
         ?.agents.find((agent) => agent.agentId === agentId);
 
-      const shouldPassCleanInput = currentAgentTask?.inputSource === "previous";
+      const inputSource = currentAgentTask?.inputSource;
+      const shouldPassCleanInput = inputSource === "previous";
+
+      // For codebase_context input source, enhance with signal type information
+      if (inputSource === "codebase_context") {
+        this.log(
+          `Providing codebase analysis context to ${agentId}`,
+        );
+        return {
+          ...originalInput,
+          analysis_type: agentId.includes("performance")
+            ? "performance"
+            : agentId.includes("dx")
+            ? "developer_experience"
+            : agentId.includes("architecture")
+            ? "architecture"
+            : "comprehensive",
+          signal_context: {
+            signal_id: this.sessionContext.signal.id,
+            signal_type: this.sessionContext.signal.provider?.name,
+            triggered_at: new Date().toISOString(),
+          },
+        };
+      }
 
       if (shouldPassCleanInput) {
         this.log(
-          `Passing clean input to ${agentId} for sequential execution (inputSource: ${currentAgentTask?.inputSource})`,
+          `Passing clean input to ${agentId} for sequential execution (inputSource: ${inputSource})`,
         );
         return originalInput;
       }
@@ -2058,6 +2117,105 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     this.log(`Stored session episodic memory: session_summary_${this.sessionContext?.sessionId}`);
   }
 
+  // Load codebase files specified in job context for analysis
+  private async loadCodebaseContext(agentId: string, task: AgentTask): Promise<string> {
+    try {
+      // Check if job spec includes codebase context
+      const jobSpec = this.sessionContext?.jobSpec;
+      if (!jobSpec?.execution?.context?.codebase_files) {
+        return "";
+      }
+
+      this.log(
+        `Loading codebase context for ${agentId}: ${jobSpec.execution.context.codebase_files.length} files, ${
+          jobSpec.execution.context.focus_areas?.length || 0
+        } focus areas`,
+      );
+
+      const codebaseFiles = jobSpec.execution.context.codebase_files;
+      const focusAreas = jobSpec.execution.context.focus_areas || [];
+
+      let codebaseContent = "";
+      let loadedFilesCount = 0;
+      let totalSize = 0;
+      const maxSize = 50000; // Limit total content to ~50KB
+
+      // Add focus areas first
+      if (focusAreas.length > 0) {
+        codebaseContent += `# Analysis Focus Areas\n\n`;
+        focusAreas.forEach((area: string, index: number) => {
+          codebaseContent += `${index + 1}. ${area}\n`;
+        });
+        codebaseContent += `\n---\n\n`;
+      }
+
+      codebaseContent += `# Atlas Codebase Files\n\n`;
+
+      for (const filePath of codebaseFiles) {
+        if (totalSize > maxSize) {
+          codebaseContent += `\n**Note: Additional files truncated due to size limits**\n`;
+          break;
+        }
+
+        try {
+          let actualPath = filePath;
+
+          // Handle directory patterns like "src/core/workers/"
+          if (filePath.endsWith("/")) {
+            // Read directory contents
+            try {
+              const entries = await Array.fromAsync(Deno.readDir(filePath));
+              const tsFiles = entries
+                .filter((entry) => entry.isFile && entry.name.endsWith(".ts"))
+                .slice(0, 3); // Limit to first 3 files per directory
+
+              for (const file of tsFiles) {
+                const fullPath = `${filePath}${file.name}`;
+                try {
+                  const content = await Deno.readTextFile(fullPath);
+                  const truncatedContent = content.length > 3000
+                    ? content.slice(0, 3000) + "\n... (truncated)"
+                    : content;
+
+                  codebaseContent +=
+                    `## ${filePath}${file.name}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
+                  loadedFilesCount++;
+                  totalSize += truncatedContent.length;
+
+                  if (totalSize > maxSize) break;
+                } catch (error) {
+                  this.log(`Warning: Could not read file ${fullPath}: ${error}`);
+                }
+              }
+            } catch (error) {
+              this.log(`Warning: Could not read directory ${filePath}: ${error}`);
+            }
+            continue;
+          }
+
+          // Handle specific files - use relative paths within project
+          const content = await Deno.readTextFile(filePath);
+          const truncatedContent = content.length > 4000
+            ? content.slice(0, 4000) + "\n... (truncated)"
+            : content;
+
+          codebaseContent += `## ${filePath}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
+          loadedFilesCount++;
+          totalSize += truncatedContent.length;
+        } catch (error) {
+          this.log(`Warning: Could not load file ${filePath}: ${error}`);
+          codebaseContent += `## ${filePath}\n*File could not be loaded: ${error}*\n\n`;
+        }
+      }
+
+      this.log(`Loaded codebase context: ${loadedFilesCount} files, ${totalSize} characters`);
+      return codebaseContent;
+    } catch (error) {
+      this.log(`Error loading codebase context: ${error}`);
+      return "";
+    }
+  }
+
   // Memory-Enhanced Prompt Preparation
   async enrichTaskWithMemory(
     agentId: string,
@@ -2085,11 +2243,15 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       // 4. Get episodic summary of previous same-agent executions
       const episodicSummary = this.getPreviousAgentExecutionSummary(agentId);
 
-      // 5. Build enhanced prompt
+      // 5. Load codebase files if specified in job context
+      const codebaseContext = await this.loadCodebaseContext(agentId, task);
+
+      // 6. Build enhanced prompt
       const memoryEnhancedPrompt = this.buildMemoryEnhancedPrompt(
         task.task,
         relevantFacts,
         workingMemoryContext,
+        codebaseContext,
         proceduralRules,
         episodicSummary,
       );
@@ -2402,10 +2564,21 @@ Overall Session Summary: ${
     originalTask: string,
     semanticFacts: any[],
     workingMemory: any[],
+    codebaseContext: string,
     proceduralRules: any[],
     episodicSummary: string | null,
   ): string {
     let enhancedPrompt = originalTask;
+
+    // Add codebase context section FIRST for analysis tasks
+    if (codebaseContext) {
+      enhancedPrompt += `\n\n## CODEBASE CONTEXT\n`;
+      enhancedPrompt +=
+        `You are analyzing the Atlas codebase. Here are the relevant files and focus areas:\n\n`;
+      enhancedPrompt += codebaseContext;
+      enhancedPrompt +=
+        `\n**Please provide specific analysis based on this actual Atlas codebase, not generic recommendations.**\n`;
+    }
 
     // Add semantic facts section
     if (semanticFacts.length > 0) {

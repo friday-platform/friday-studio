@@ -308,6 +308,14 @@ class SessionSupervisorWorker extends BaseWorker {
 
             return {
               status: summary.status,
+              sessionId: this.sessionId,
+              signal: sessionContext?.signal.id,
+              original_input: sessionContext?.payload,
+              phases_executed: results.length,
+              total_agents_invoked: results.flatMap((r) => r.results).length,
+              timing: timing,
+              final_output: results[results.length - 1]
+                ?.results[results[results.length - 1]?.results.length - 1]?.output,
               results,
               plan: summary.plan,
               evaluation: await this.supervisor!.evaluateProgress(

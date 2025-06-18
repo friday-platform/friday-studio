@@ -5,6 +5,7 @@ import { SessionCommand } from "./commands/session.tsx";
 import { SignalCommand } from "./commands/signal.tsx";
 import { AgentCommand } from "./commands/agent.tsx";
 import { LogsCommand } from "./commands/logs.tsx";
+import LibraryCommand from "./commands/library.tsx";
 import TUICommand from "./commands/tui.tsx";
 import HelpCommand from "./commands/help.tsx";
 import DefineCommand from "./commands/define.tsx";
@@ -41,6 +42,9 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
 
     case "agent":
       return <AgentCommand subcommand={subcommand} args={args} flags={flags} />;
+
+    case "library":
+      return <LibraryCommand args={[subcommand, ...args].filter(Boolean)} flags={flags} />;
 
     case "logs":
       return <LogsCommand sessionId={subcommand || args[0]} flags={flags} />;

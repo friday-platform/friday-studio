@@ -34,7 +34,7 @@ version: "1.0"
 workspaceSupervisor:
   model: "claude-4-sonnet-20250514"
   capabilities:
-    - signal_analysis
+    - job_trigger_evaluation
     - context_filtering
     - session_spawning
     - job_selection
@@ -42,13 +42,13 @@ workspaceSupervisor:
     system: |
       You are a WorkspaceSupervisor responsible for analyzing signals and creating session contexts.
       Your capabilities are carefully maintained by the Atlas platform.
-    signal_analysis: |
-      Analyze the incoming signal to understand intent, urgency, and required agent capabilities.
-      Consider workspace context, agent availability, and resource constraints.
-      Select appropriate jobs based on signal content and configured conditions.
+    job_evaluation: |
+      Evaluate job triggers against incoming signals using declarative condition matching.
+      Use the pluggable condition evaluation system for JSONLogic, simple expressions, and exact matches.
+      Create session intent from the best matching job specification.
     context_filtering: |
       Create a filtered context for the session that includes only relevant workspace data.
-      Filter based on signal analysis, agent requirements, and memory relevance.
+      Filter based on job requirements, agent capabilities, and memory relevance.
 
 sessionSupervisor:
   model: "claude-4-sonnet-20250514"
