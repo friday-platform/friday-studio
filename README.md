@@ -191,19 +191,27 @@ supervisor:
 
 agents:
   my-agent:
-    type: "local"
-    path: "./agents/my-agent.ts"
-    model: "claude-4-sonnet-20250514"
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
     purpose: "Agent purpose description"
+    prompts:
+      system: "You are an AI agent that..."
 
 signals:
   my-signal:
     provider: "cli"
     description: "Trigger description"
-    mappings:
-      - agents: ["my-agent"]
-        strategy: "sequential"
-        prompt: "Process this signal by..."
+
+jobs:
+  my-job:
+    triggers:
+      - signal: "my-signal"
+        condition: {"var": "payload"}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "my-agent"
+          input_source: "signal"
 
 runtime:
   server:

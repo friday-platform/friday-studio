@@ -136,7 +136,7 @@ signals:
         condition: "pull_request.changed_files.some(f => f.filename.match(/\\.(tsx|css|js)$/))"
         job: "./jobs/frontend-pr-review.yml"
       - name: "security-review"
-        condition: "action == 'opened' && pull_request.additions > 100"
+        condition: {"and": [{"==": [{"var": "action"}, "opened"]}, {">": [{"var": "pull_request.additions"}, 100]}]}
         job: "./jobs/security-review.yml"
 
   deploy-failed:
