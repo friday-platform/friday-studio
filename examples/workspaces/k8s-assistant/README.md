@@ -9,7 +9,7 @@ autonomous monitoring.
 This workspace demonstrates Atlas's advanced capabilities including:
 
 - **Multi-Agent Coordination** - Orchestrates specialized AI agents
-- **Stream Signal Providers** - Real-time event streaming from external monitor agents
+- **Built-in Signal Providers** - Real-time event streaming via direct Kubernetes API integration
 - **Smart Event Routing** - Critical events trigger immediate responses, all events enable
   comprehensive monitoring
 - **Production-Ready Architecture** - Circuit breakers, retry logic, and health monitoring
@@ -92,15 +92,16 @@ k8s-assistant/
 ├── test.sh               # Test script
 ├── scripts/              # Helper scripts
 ├── .atlas/              # Runtime data (gitignored)
-└── MONITOR_AGENT_PLAN.md # Monitor agent integration plan
+└── README.md            # This documentation
 ```
 
 ## Configuration
 
 The `workspace.yml` file defines:
 
+- **Job Definitions** - Workflow specifications for different operation types
 - **Agent Mappings** - Remote agent connections and capabilities
-- **Signal Configurations** - HTTP and CLI endpoints
+- **Signal Configurations** - HTTP, CLI, and built-in k8s-events endpoints
 - **Memory Settings** - Operation history and patterns
 - **Server Settings** - Port, logging, etc.
 
@@ -108,9 +109,9 @@ The `workspace.yml` file defines:
 
 1. **`http-k8s`** - Unified HTTP endpoint for all Kubernetes operations
    - **Type**: HTTP Signal Provider
-   - **Path**: `/signal/http-k8s`
+   - **Path**: `/k8s`
    - **Method**: POST
-   - **Agents**: k8s-main-agent → local-assistant (sequential)
+   - **Agents**: k8s-main-agent only
 
 2. **`cli-k8s`** - CLI interface for direct operations
    - **Type**: CLI Signal Provider
@@ -124,7 +125,7 @@ The `workspace.yml` file defines:
    - **Scope**: Kubernetes Events in default namespace (or all namespaces)
    - **Event Types**: ADDED, MODIFIED, DELETED Events
    - **Agents**: k8s-main-agent → local-assistant (sequential)
-   - **Configuration**: Simple Events-only watching with flexible auth
+   - **Configuration**: Events-only watching with flexible auth options (kubeconfig, service account, direct API)
 
 ## How It Works
 
@@ -225,9 +226,11 @@ To modify the workspace:
 ## Security Considerations
 
 1. **Authentication** - Enable bearer tokens in production
-2. **RBAC** - Configure appropriate Kubernetes permissions
+2. **RBAC** - Configure appropriate Kubernetes permissions  
 3. **API Keys** - Secure AI API keys properly
 4. **Network** - Ensure proper firewall rules
+5. **Kubeconfig Security** - Protect kubeconfig files and limit access
+6. **TLS Validation** - Use proper certificates in production (avoid `insecure: true`)
 
 ## Troubleshooting
 
@@ -245,9 +248,10 @@ To modify the workspace:
 
 ## Additional Resources
 
-- [Monitor Agent Integration Plan](MONITOR_AGENT_PLAN.md)
-- [Debug Guide](DEBUG_GUIDE.md)
-- [Agent Architecture Analysis](AGENT_ARCHITECTURE_ANALYSIS.md)
+- [Atlas Documentation](../../../docs/)
+- [K8s Events Provider Source](../../../src/core/providers/builtin/k8s-events.ts)
+- [K8s Auth Manager Source](../../../src/core/providers/builtin/k8s-auth.ts)
+- [Unit Tests](../../../tests/unit/providers/)
 
 This workspace demonstrates how Atlas can orchestrate multiple AI agents to provide intelligent
 Kubernetes management, combining the power of AI with the flexibility of the Atlas platform.
