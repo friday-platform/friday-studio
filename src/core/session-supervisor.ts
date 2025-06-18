@@ -14,8 +14,6 @@ import {
   type StreamingMemoryConfig,
   StreamingMemoryManager,
 } from "./memory/streaming/streaming-memory-manager.ts";
-import { WorkspacePlanningEngine } from "./planning/workspace-planning-engine.ts";
-import { PlanningConfigResolver } from "./planning/planning-config.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -222,11 +220,16 @@ export class SessionSupervisor extends BaseAgent {
   private knowledgeGraph?: KnowledgeGraphManager;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private streamingMemory?: StreamingMemoryManager;
-  private workspacePlanningEngine?: WorkspacePlanningEngine;
+  private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
 
-  constructor(memoryConfig: AtlasMemoryConfig, parentScopeId?: string) {
+  constructor(
+    memoryConfig: AtlasMemoryConfig, 
+    parentScopeId?: string,
+    precomputedPlans?: Record<string, any>
+  ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
+    this.precomputedPlans = precomputedPlans || {}; // Store shared plans
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -426,8 +429,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     // Initialize streaming memory for performance
     await this.initializeStreamingMemory(context);
 
-    // Initialize planning engine for precomputed plan lookup
-    await this.initializePlanningEngine(context);
+    // Log shared precomputed plans received from WorkspaceSupervisor
+    const planCount = Object.keys(this.precomputedPlans || {}).length;
+    this.log(`Received ${planCount} precomputed plans from WorkspaceSupervisor: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
 
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
@@ -439,36 +443,6 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       ["session", "context", "initialization"],
       0.9,
     );
-  }
-
-  // Initialize planning engine for precomputed plan lookup
-  async initializePlanningEngine(context: SessionContext): Promise<void> {
-    try {
-      const atlasConfigLoader = AtlasConfigLoader.getInstance();
-      const atlasConfig = await atlasConfigLoader.loadConfiguration();
-
-      // Load planning configuration from atlas.yml
-      const planningConfig = PlanningConfigResolver.resolveConfig(
-        atlasConfig.planning as any || {},
-        undefined, // workspaceConfig (no workspace-level overrides yet)
-        "session", // supervisorType
-      );
-
-      // Initialize workspace planning engine
-      this.workspacePlanningEngine = new WorkspacePlanningEngine({
-        maxCacheSize: 1000,
-        enableAnalytics: true,
-        persistPlans: false,
-      });
-
-      this.log("Planning engine initialized for precomputed plan lookup");
-    } catch (error) {
-      this.logger.error("Failed to initialize planning engine", {
-        error: error instanceof Error ? error.message : String(error),
-        sessionId: context.sessionId,
-      });
-      // Don't fail session initialization if planning engine fails
-    }
   }
 
   // Create execution plan using advanced reasoning or job specification
@@ -495,30 +469,28 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     }
 
     // STEP 1: Check for precomputed execution plans (fastest path - zero LLM calls)
-    if (this.workspacePlanningEngine && this.sessionContext.jobSpec) {
+    if (this.sessionContext.jobSpec) {
       const jobName = this.sessionContext.jobSpec.name;
       this.log(`Checking for precomputed plan for job: ${jobName}`);
 
-      try {
-        const precomputedPlan = await this.workspacePlanningEngine.getPrecomputedPlan(jobName);
-        if (precomputedPlan) {
-          this.log(`Using precomputed execution plan for: ${jobName} (zero LLM calls)`);
+      // Check the shared precomputed plans from WorkspaceSupervisor
+      if (this.precomputedPlans && this.precomputedPlans[jobName]) {
+        const precomputedPlan = this.precomputedPlans[jobName];
+        this.log(`Using shared precomputed execution plan for: ${jobName} (zero LLM calls)`);
 
-          // Convert precomputed plan to ExecutionPlan format with session-specific data
-          const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
-            precomputedPlan,
-            this.sessionContext,
-          );
+        // Convert precomputed plan to ExecutionPlan format with session-specific data
+        const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
+          precomputedPlan,
+          this.sessionContext,
+        );
 
-          this.executionPlan = sessionPlan;
-          return sessionPlan;
-        } else {
-          this.log(
-            `No precomputed plan found for job: ${jobName}, falling back to runtime planning`,
-          );
-        }
-      } catch (error) {
-        this.log(`Error accessing precomputed plan: ${error}, falling back to runtime planning`);
+        this.executionPlan = sessionPlan;
+        return sessionPlan;
+      } else {
+        this.log(
+          `No precomputed plan found for job: ${jobName} in shared cache, falling back to runtime planning`,
+        );
+        this.log(`Available precomputed plans: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
       }
     }
 

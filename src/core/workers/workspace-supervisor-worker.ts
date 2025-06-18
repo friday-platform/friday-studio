@@ -112,7 +112,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
     }
 
     this.log("Supervisor created, initializing advanced planning...");
-    
+
     // Initialize supervisor with advanced planning and job precomputation
     await this.supervisor.initialize();
 
@@ -334,8 +334,11 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       throw new Error(errorMsg);
     }
 
-    // Initialize session with memoryConfig
+    // Initialize session with memoryConfig and shared planning cache
     try {
+      // Get precomputed plans from WorkspaceSupervisor's planning engine
+      const precomputedPlans = this.supervisor?.getPrecomputedPlans() || {};
+      
       sessionWorker.postMessage({
         type: "init",
         id: sessionId,
@@ -344,6 +347,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
           sessionId,
           workspaceId: this.workspace?.id,
           memoryConfig,
+          precomputedPlans, // Share the planning cache
         },
       });
       this.log(`Init message sent to session worker ${sessionId}`);
