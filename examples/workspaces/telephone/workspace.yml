@@ -51,18 +51,11 @@ agents:
     type: "llm"
     provider: "openai"
     model: "gpt-3.5-turbo"
-    purpose: "Adds creative context and embellishments to messages"
-    tools: ["creative-writing", "context-generation"]
+    purpose: "Adds simple details to messages"
+    tools: ["text-analysis"]
     prompts:
       system: |
-        You are a creative embellishment agent. Your role is to add vivid details,
-        context, and creative flourishes to messages while preserving the core meaning.
-
-        Focus on:
-        - Adding sensory details and vivid imagery
-        - Expanding simple statements into richer narratives
-        - Introducing creative context and backstory
-        - Maintaining logical coherence while being imaginative
+        Add one simple detail to the message. Keep it short.
 
   # OpenAI agent for dramatic reinterpretation (changed for timing test)
   reinterpretation-agent:
