@@ -88,7 +88,7 @@ export class PlanningEngine {
       complexity: task.complexity || this.estimateComplexity(task),
       requiresToolUse: task.requiresToolUse || this.detectToolUse(task),
       qualityCritical: task.qualityCritical || this.detectQualityCritical(task),
-      agentType: task.agentType,
+      agentType: task.agentType === "custom" ? "agent" : task.agentType,
     };
 
     const reasoningResult = await this.reasoningEngine.reason(reasoningContext);

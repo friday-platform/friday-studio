@@ -228,6 +228,17 @@ export class SessionSupervisor extends BaseAgent {
     // Initialize knowledge graph and fact extractor for semantic memory
     this.initializeSemanticFactExtraction();
 
+    // Enable advanced planning and reasoning for complex decision making
+    this.enableAdvancedPlanning({
+      cacheDir: Deno.cwd(),
+      enableCaching: true,
+      enablePatternMatching: true,
+      reasoningConfig: {
+        allowLLMSelection: true,
+        defaultMethod: "react", // ReAct is good for session coordination with tool use
+      },
+    });
+
     // Set supervisor-specific prompts
     this.prompts = {
       system:
@@ -239,7 +250,9 @@ Your role is to:
 4. Evaluate results and adapt the plan if needed
 5. Determine when the session goal has been achieved
 
-You have access to a filtered view of the workspace tailored for this specific session.`,
+You have access to a filtered view of the workspace tailored for this specific session.
+
+You can use advanced reasoning methods to make complex decisions about agent coordination and execution strategies.`,
       user: "",
     };
   }
@@ -315,8 +328,8 @@ You have access to a filtered view of the workspace tailored for this specific s
     );
   }
 
-  // Create execution plan using job specification or LLM reasoning
-  createExecutionPlan(): Promise<ExecutionPlan> | ExecutionPlan {
+  // Create execution plan using advanced reasoning or job specification
+  async createExecutionPlan(): Promise<ExecutionPlan> {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
@@ -353,9 +366,19 @@ You have access to a filtered view of the workspace tailored for this specific s
       }`,
     );
 
+    // Use advanced reasoning for complex planning decisions
+    if (this.planningEngine) {
+      try {
+        this.log("Using advanced reasoning for execution planning");
+        return await this.createAdvancedReasoningPlan();
+      } catch (error) {
+        this.log(`Advanced reasoning failed: ${error}`);
+      }
+    }
+
     // Fallback to LLM-based planning
     this.log("Using LLM-based planning fallback");
-    return this.createLLMBasedPlan();
+    return await this.createLLMBasedPlan();
   }
 
   // Create execution plan from job specification
@@ -452,6 +475,129 @@ You have access to a filtered view of the workspace tailored for this specific s
     criteria.push("Produce meaningful outputs from each agent");
 
     return criteria;
+  }
+
+  // Create execution plan using advanced reasoning methods
+  private async createAdvancedReasoningPlan(): Promise<ExecutionPlan> {
+    if (!this.planningEngine || !this.sessionContext) {
+      throw new Error("Advanced planning not available");
+    }
+
+    // Create a planning task for the session
+    const planningTask = {
+      id: `session-plan-${this.sessionContext.sessionId}`,
+      description: `Create execution plan for ${this.sessionContext.signal.id} signal`,
+      context: {
+        signal: this.sessionContext.signal,
+        payload: this.sessionContext.payload,
+        availableAgents: this.sessionContext.availableAgents,
+        constraints: this.sessionContext.constraints,
+      },
+      agentType: "session" as const,
+      complexity: this.determineTaskComplexity(),
+      requiresToolUse: this.requiresToolUsage(),
+      qualityCritical: this.isQualityCritical(),
+    };
+
+    // Generate plan using reasoning engine
+    const planResult = await this.planningEngine.generatePlan(planningTask);
+    
+    this.log(`Generated plan using ${planResult.method} reasoning (confidence: ${planResult.confidence})`);
+    
+    // Convert plan result to ExecutionPlan format
+    return this.convertReasoningPlanToExecutionPlan(planResult.plan);
+  }
+
+  // Determine task complexity for reasoning method selection
+  private determineTaskComplexity(): number {
+    if (!this.sessionContext) return 1;
+    
+    let complexity = 1;
+    
+    // Add complexity for multiple agents
+    if (this.sessionContext.availableAgents.length > 2) complexity += 1;
+    
+    // Add complexity for complex signal types
+    if (this.sessionContext.signal.id.includes("complex")) complexity += 1;
+    
+    // Add complexity for large payloads
+    if (JSON.stringify(this.sessionContext.payload).length > 1000) complexity += 1;
+    
+    // Add complexity for constraints
+    if (this.sessionContext.constraints?.timeLimit && this.sessionContext.constraints.timeLimit < 60000) complexity += 1;
+    
+    return Math.min(complexity, 5);
+  }
+
+  // Check if task requires tool usage
+  private requiresToolUsage(): boolean {
+    if (!this.sessionContext) return false;
+    
+    // Check if any agents are remote or have tool configurations
+    return this.sessionContext.availableAgents.some(agent => 
+      agent.type === "remote" || 
+      (agent.config as any)?.tools?.length > 0
+    );
+  }
+
+  // Check if task is quality critical
+  private isQualityCritical(): boolean {
+    if (!this.sessionContext) return false;
+    
+    // Signals containing "critical", "error", or "failure" are quality critical
+    const criticalKeywords = ["critical", "error", "failure", "security", "production"];
+    const signalText = this.sessionContext.signal.id.toLowerCase();
+    const payloadText = JSON.stringify(this.sessionContext.payload).toLowerCase();
+    
+    return criticalKeywords.some(keyword => 
+      signalText.includes(keyword) || payloadText.includes(keyword)
+    );
+  }
+
+  // Convert reasoning plan result to ExecutionPlan format
+  private convertReasoningPlanToExecutionPlan(plan: any): ExecutionPlan {
+    if (!this.sessionContext) {
+      throw new Error("No session context available");
+    }
+
+    const executionPlan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [],
+      successCriteria: plan.successCriteria || ["All agents executed successfully"],
+      adaptationStrategy: plan.adaptationStrategy || "flexible",
+    };
+
+    // Convert plan steps to execution phases
+    if (plan.steps && Array.isArray(plan.steps)) {
+      executionPlan.phases.push({
+        id: "reasoning-planned-phase",
+        name: "Advanced Reasoning Execution",
+        agents: plan.steps.map((step: any, index: number) => ({
+          agentId: step.agentId || this.sessionContext!.availableAgents[index % this.sessionContext!.availableAgents.length]?.id || "local-assistant",
+          task: step.description || step.task || `Step ${index + 1}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [plan.steps[index - 1].agentId] : [],
+        })),
+        executionStrategy: plan.strategy === "parallel" ? "parallel" : "sequential",
+      });
+    } else {
+      // Fallback: create simple sequential plan
+      executionPlan.phases.push({
+        id: "simple-phase",
+        name: "Sequential Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process with ${agent.name}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [this.sessionContext!.availableAgents[index - 1].id] : [],
+        })),
+        executionStrategy: "sequential",
+      });
+    }
+
+    this.executionPlan = executionPlan;
+    return executionPlan;
   }
 
   // Fallback LLM-based planning for backward compatibility
@@ -575,13 +721,116 @@ Respond with a structured plan.`;
     };
   }
 
-  // Evaluate execution progress and determine next steps
+  // Evaluate execution progress using advanced reasoning
   async evaluateProgress(results: AgentResult[]): Promise<{
     isComplete: boolean;
     nextAction?: "continue" | "retry" | "adapt" | "escalate";
     feedback?: string;
   }> {
+    // Try advanced reasoning first for complex evaluation
+    if (this.planningEngine && this.shouldUseAdvancedReasoning(results)) {
+      try {
+        return await this.evaluateProgressWithReasoning(results);
+      } catch (error) {
+        this.log(`Advanced evaluation failed: ${error}`);
+      }
+    }
+
+    // Fallback to standard LLM evaluation
+    return await this.evaluateProgressWithLLM(results);
+  }
+
+  // Check if we should use advanced reasoning for evaluation
+  private shouldUseAdvancedReasoning(results: AgentResult[]): boolean {
+    // Use advanced reasoning for:
+    // 1. Complex sessions with many agents
+    if (results.length > 3) return true;
+    
+    // 2. Quality critical tasks
+    if (this.isQualityCritical()) return true;
+    
+    // 3. When there are failures that need analysis
+    const hasFailures = results.some(result => 
+      !result.output || JSON.stringify(result.output).includes("error")
+    );
+    if (hasFailures) return true;
+    
+    return false;
+  }
+
+  // Evaluate progress using advanced reasoning methods
+  private async evaluateProgressWithReasoning(results: AgentResult[]): Promise<{
+    isComplete: boolean;
+    nextAction?: "continue" | "retry" | "adapt" | "escalate";
+    feedback?: string;
+  }> {
+    if (!this.planningEngine || !this.sessionContext) {
+      throw new Error("Advanced reasoning not available");
+    }
+
+    // Create an evaluation task
+    const evaluationTask = {
+      id: `evaluation-${this.sessionContext.sessionId}`,
+      description: `Evaluate execution progress for session ${this.sessionContext.sessionId}`,
+      context: {
+        originalSignal: this.sessionContext.signal,
+        originalPayload: this.sessionContext.payload,
+        executionResults: results,
+        executionPlan: this.executionPlan,
+        successCriteria: this.executionPlan?.successCriteria || [],
+      },
+      agentType: "session" as const,
+      complexity: 3, // Evaluation is moderately complex
+      requiresToolUse: false,
+      qualityCritical: true, // Evaluation is always quality critical
+    };
+
+    // Use reasoning engine to evaluate
+    const evaluationResult = await this.planningEngine.generatePlan(evaluationTask);
+    
+    this.log(`Evaluated progress using ${evaluationResult.method} reasoning`);
+    
+    // Parse the reasoning result
+    const evaluation = evaluationResult.plan;
+    
+    // Check execution count first
+    const totalAgentsInPlan = this.executionPlan?.phases.reduce(
+      (sum, phase) => sum + phase.agents.length,
+      0,
+    ) || 0;
+    
+    const agentsExecuted = results.length;
+    
+    if (agentsExecuted < totalAgentsInPlan) {
+      return {
+        isComplete: false,
+        nextAction: "continue",
+        feedback: `Advanced reasoning: ${agentsExecuted}/${totalAgentsInPlan} agents executed. ${evaluation.reasoning || "Continuing execution."}`,
+      };
+    }
+    
+    // All agents executed - evaluate quality
+    const isComplete = evaluation.isComplete !== false; // Default to complete if not specified
+    const nextAction = evaluation.nextAction || (isComplete ? undefined : "retry");
+    
+    return {
+      isComplete,
+      nextAction: nextAction as any,
+      feedback: `Advanced reasoning evaluation: ${evaluation.reasoning || "Execution complete."}`,
+    };
+  }
+
+  // Standard LLM-based evaluation (fallback)
+  private async evaluateProgressWithLLM(results: AgentResult[]): Promise<{
+    isComplete: boolean;
+    nextAction?: "continue" | "retry" | "adapt" | "escalate";
+    feedback?: string;
+  }> {
     this.executionResults = results;
+    
+    if (!this.sessionContext || !this.executionPlan) {
+      throw new Error("Session context or execution plan not available");
+    }
 
     const evaluationPrompt = `Evaluate the execution progress:
 

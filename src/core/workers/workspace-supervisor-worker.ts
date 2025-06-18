@@ -111,9 +111,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       }
     }
 
-    this.log("Supervisor initialized");
+    this.log("Supervisor created, initializing advanced planning...");
+    
+    // Initialize supervisor with advanced planning and job precomputation
+    await this.supervisor.initialize();
 
-    await Promise.resolve();
+    this.log("Supervisor initialization complete");
   }
 
   protected async processTask(

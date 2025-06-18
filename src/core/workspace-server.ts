@@ -83,13 +83,13 @@ export class WorkspaceServer {
           });
 
           try {
-            // Process signal through runtime with proper trace context
-            const session = await this.runtime.processSignal(signal, payload);
+            // Start signal processing asynchronously (fire-and-forget)
+            const sessionPromise = this.runtime.processSignal(signal, payload);
 
+            // Return immediately with session started confirmation
             return c.json({
-              message: "Signal processed",
-              sessionId: session.id,
-              status: session.status,
+              message: "Signal accepted for processing",
+              status: "processing",
             });
           } catch (error) {
             return c.json({

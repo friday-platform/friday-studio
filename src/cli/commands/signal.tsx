@@ -130,6 +130,7 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
     const port = flags.port || flags.p || 8080;
 
     try {
+      // Fire and forget - don't wait for full response
       const response = await fetch(
         `http://localhost:${port}/signals/${signalName}`,
         {
@@ -146,12 +147,12 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
         );
       }
 
-      const result = await response.json();
+      // Signal accepted - don't wait for session completion
       setData({
         type: "triggered",
         signal: signalName,
-        sessionId: result.sessionId,
-        status: result.status,
+        status: "accepted",
+        message: "Signal triggered successfully (processing asynchronously)",
       });
       setStatus("ready");
     } catch (err) {
@@ -215,12 +216,21 @@ function SignalOutput({ data }: { data: any }) {
         <Box flexDirection="column">
           <Text color="green">✓ Signal triggered successfully</Text>
           <Text>Signal: {data.signal}</Text>
-          <Text>Session ID: {data.sessionId}</Text>
+          {data.sessionId && <Text>Session ID: {data.sessionId}</Text>}
           <Text>Status: {data.status}</Text>
+          {data.message && <Text color="cyan">{data.message}</Text>}
           <Text></Text>
-          <Text color="gray">
-            Monitor the session with: atlas logs {data.sessionId}
-          </Text>
+          {data.sessionId
+            ? (
+              <Text color="gray">
+                Monitor the session with: atlas logs {data.sessionId}
+              </Text>
+            )
+            : (
+              <Text color="gray">
+                Use 'atlas ps' to see active sessions
+              </Text>
+            )}
         </Box>
       );
 

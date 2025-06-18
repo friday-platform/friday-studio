@@ -310,6 +310,17 @@ You have access to the full workspace context and configuration. Create structur
       user: config.prompts?.user || "",
     };
 
+    // Enable advanced planning capabilities
+    this.enableAdvancedPlanning({
+      cacheDir: config.atlasPath || Deno.cwd(),
+      enableCaching: true,
+      enablePatternMatching: true,
+      reasoningConfig: {
+        allowLLMSelection: true,
+        defaultMethod: "chain-of-thought",
+      },
+    });
+
     // Initialize signal processor with configuration
     this.signalProcessor = new SignalProcessor(this.createSignalProcessingConfig());
 
@@ -413,6 +424,21 @@ You have access to the full workspace context and configuration. Create structur
 
   setWorkspace(workspace: IWorkspace): void {
     this.workspace = workspace;
+  }
+
+  // Initialize supervisor with workspace and precompute plans
+  async initialize(): Promise<void> {
+    this.log("Initializing WorkspaceSupervisor with advanced planning...");
+
+    // Enable advanced planning if not already enabled
+    if (!this.planningEngine) {
+      this.enableAdvancedPlanning();
+    }
+
+    // Precompute plans for all configured jobs
+    await this.precomputePlansForJobs();
+
+    this.log("WorkspaceSupervisor initialization complete");
   }
 
   getWorkspaceAgents(): IWorkspaceAgent[] | undefined {
@@ -525,6 +551,98 @@ You have access to the full workspace context and configuration. Create structur
       },
       userPrompt: this.config.intentPrompt || "",
     };
+  }
+
+  // Pre-compute plans for all jobs at startup
+  async precomputePlansForJobs(): Promise<void> {
+    if (!this.planningEngine) {
+      this.log("Advanced planning not enabled, skipping plan precomputation");
+      return;
+    }
+
+    if (!this.mergedConfig?.jobs) {
+      this.log("No jobs configured, skipping plan precomputation");
+      return;
+    }
+
+    const jobs = this.mergedConfig.jobs;
+    const jobNames = Object.keys(jobs);
+
+    if (jobNames.length === 0) {
+      this.log("No jobs found to precompute plans for");
+      return;
+    }
+
+    this.log(`Starting background job plan precomputation for ${jobNames.length} jobs...`);
+
+    // Process jobs in background without blocking initialization
+    setTimeout(async () => {
+      const startTime = Date.now();
+
+      for (const jobName of jobNames) {
+        try {
+          const job = jobs[jobName];
+          this.log(`Precomputing plan for job: ${jobName}`);
+
+          // Create a planning task from the job specification
+          const task = {
+            id: `job-${jobName}`,
+            description: job.description || `Execute job: ${jobName}`,
+            context: {
+              jobSpec: job,
+              workspaceId: this.id,
+              availableAgents: this.getAllAgentMetadata(),
+            },
+            agentType: "workspace" as const,
+            complexity: this.inferJobComplexity(job),
+            requiresToolUse: this.jobRequiresTools(job),
+            qualityCritical: job.critical || false,
+          };
+
+          // Generate and cache the plan
+          if (this.planningEngine) {
+            await this.planningEngine.generatePlan(task);
+          }
+          this.log(`Plan precomputed for job: ${jobName}`);
+        } catch (error) {
+          this.log(`Failed to precompute plan for job ${jobName}: ${error}`);
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+      this.log(`Job plan precomputation completed in ${totalTime}ms for ${jobNames.length} jobs`);
+    }, 100); // Small delay to let initialization complete first
+  }
+
+  // Infer job complexity from job specification
+  private inferJobComplexity(job: any): number {
+    let complexity = 1;
+
+    // Add complexity for multiple agents
+    if (job.execution?.agents?.length > 1) complexity += 2;
+
+    // Add complexity for behavior tree strategy
+    if (job.execution?.strategy === "behavior-tree") complexity += 1;
+
+    // Add complexity for multiple stages
+    if (job.execution?.stages?.length > 1) complexity += 1;
+
+    // Add complexity for conditions
+    if (job.triggers?.some((t: any) => t.condition)) complexity += 1;
+
+    return Math.min(complexity, 5); // Cap at 5
+  }
+
+  // Check if job requires tool usage
+  private jobRequiresTools(job: any): boolean {
+    // Check if any agents in the job are tool-based
+    const agentIds = this.extractAgentIdsFromJob(job);
+    const agentMetadata = this.getAllAgentMetadata();
+
+    return agentIds.some((id) => {
+      const agent = agentMetadata.find((a) => a.id === id);
+      return agent?.type === "remote" || agent?.config?.tools?.length > 0;
+    });
   }
 
   // Analyze signal using LLM to create intelligent session intent
@@ -963,7 +1081,36 @@ Provide a structured analysis.`;
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<SessionPlan> {
-    // Use enhanced signal analysis first
+    // Try to use cached plan from advanced planning first
+    if (this.planningEngine) {
+      try {
+        const selectedJob = this.selectJobForSignal(signal, payload);
+        if (selectedJob) {
+          this.log(`Using cached plan for job: ${selectedJob.name}`);
+          const task = {
+            id: `signal-${signal.id}-${Date.now()}`,
+            description: `Execute ${selectedJob.name} for signal ${signal.id}`,
+            context: {
+              jobSpec: selectedJob,
+              signal,
+              payload,
+              workspaceId: this.id,
+            },
+            agentType: "workspace" as const,
+          };
+
+          const planResult = await this.planningEngine.generatePlan(task);
+          if (planResult.cached) {
+            this.log(`Using cached execution plan (${planResult.method})`);
+            return this.convertPlanToPlanFormat(planResult.plan, signal, payload);
+          }
+        }
+      } catch (error) {
+        this.log(`Advanced planning failed, falling back: ${error}`);
+      }
+    }
+
+    // Use enhanced signal analysis as fallback
     try {
       const enhancedResult = await this.analyzeSignalEnhanced(signal, payload);
 
@@ -982,9 +1129,33 @@ Provide a structured analysis.`;
       });
     }
 
-    // Fallback to legacy plan generation
+    // Final fallback to legacy plan generation
     const intent = this.createSessionIntent(signal, payload);
     return this.getDefaultPlan(signal, payload, intent);
+  }
+
+  // Convert planning engine result to SessionPlan format
+  private convertPlanToPlanFormat(plan: any, signal: IWorkspaceSignal, payload: any): SessionPlan {
+    const intent = this.createSessionIntent(signal, payload);
+
+    return {
+      intentId: intent.id,
+      phases: [{
+        id: "advanced-planned-phase",
+        name: plan.description || "Advanced Planned Execution",
+        agents: plan.steps?.map((step: any, index: number) => ({
+          agentId: step.agent || "local-assistant",
+          task: step.description || `Step ${index + 1}`,
+          expectedOutputs: step.outputs || ["result"],
+        })) || [{
+          agentId: "local-assistant",
+          task: "Execute planned action",
+        }],
+        executionStrategy: plan.strategy || "sequential",
+      }],
+      estimatedDuration: plan.estimatedDuration || 120000,
+      reasoning: `Advanced planning generated: ${plan.reasoning || plan.method}`,
+    };
   }
 
   private getAvailableAgents(): string {
