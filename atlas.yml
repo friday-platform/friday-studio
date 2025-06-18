@@ -222,8 +222,8 @@ supervisors:
       cache_ttl_hours: 1
       parallel_llm_calls: true
       timeouts:
-        analysis_ms: 5000
-        validation_ms: 3000
+        analysis_ms: 2000
+        validation_ms: 1000
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.

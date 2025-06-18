@@ -529,7 +529,7 @@ export class WorkerManager {
     }
 
     return new Promise((resolve, reject) => {
-      const timeoutMs = 300000; // Extended to 5 minutes for LLM processing and async operations
+      const timeoutMs = 60000; // 1 minute for worker operations
       let isResolved = false;
       
       const cleanup = () => {

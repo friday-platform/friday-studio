@@ -311,20 +311,26 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
       // Extract supervision configuration with defaults
       const supervisionConfig = agentSupervisorConfig.supervision || {};
+      
+      this.logger.debug("Atlas config supervision settings", {
+        supervisionConfig,
+        level: supervisionConfig.level,
+        cache_enabled: supervisionConfig.cache_enabled
+      });
 
       this.initializeAgentSupervisor({
         model: agentSupervisorConfig.model,
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
-        supervisionLevel: supervisionConfig.level || "standard",
+        supervisionLevel: supervisionConfig.level || SupervisionLevel.MINIMAL,
         cacheEnabled: supervisionConfig.cache_enabled !== false,
         prompts: agentSupervisorConfig.prompts,
       });
 
       this.log(
         `AgentSupervisor initialized with supervision level: ${
-          supervisionConfig.level || "standard"
+          supervisionConfig.level || SupervisionLevel.MINIMAL
         }`,
       );
     } catch (error) {

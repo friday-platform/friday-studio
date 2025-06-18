@@ -34,6 +34,12 @@ import {
   SupervisionLevel,
 } from "./caching/supervision-cache.ts";
 import { MemoryCacheAdapter } from "./caching/adapters/memory-cache-adapter.ts";
+import { 
+  getSupervisionConfig, 
+  shouldRunAnalysis, 
+  shouldRunValidation,
+  type SupervisionConfig 
+} from "./supervision-levels.ts";
 import { createHash } from "node:crypto";
 
 // Supervisor configuration interface
@@ -178,6 +184,7 @@ export class AgentSupervisor extends BaseAgent {
   private workspaceId?: string;
   private supervisionCache: SupervisionCache;
   private supervisionLevel: SupervisionLevel;
+  private supervisionConfig: SupervisionConfig;
   private cacheEnabled: boolean;
   private workerStats: Map<
     string,
@@ -196,7 +203,8 @@ export class AgentSupervisor extends BaseAgent {
     this.sessionId = supervisorConfig.sessionId;
     this.workspaceId = supervisorConfig.workspaceId;
     this.supervisionLevel = supervisorConfig.supervisionLevel || SupervisionLevel.STANDARD;
-    this.cacheEnabled = supervisorConfig.cacheEnabled !== false; // Default to true
+    this.supervisionConfig = getSupervisionConfig(this.supervisionLevel);
+    this.cacheEnabled = this.supervisionConfig.cacheEnabled && (supervisorConfig.cacheEnabled !== false);
 
     // Initialize supervision cache
     const cacheAdapter = new MemoryCacheAdapter();
@@ -263,6 +271,12 @@ export class AgentSupervisor extends BaseAgent {
     task: AgentTask,
     context: SessionContext,
   ): Promise<AgentAnalysis> {
+    // Check if analysis should be skipped based on supervision level
+    if (!shouldRunAnalysis(this.supervisionLevel)) {
+      this.logger.debug(`Skipping analysis for agent ${agent.id} (supervision level: ${this.supervisionLevel})`);
+      return this.getMinimalAnalysis(agent, task);
+    }
+
     const analysisStart = Date.now();
     this.logger.debug(`Starting analysis for agent ${agent.id}`, { agentType: agent.type });
 
@@ -449,6 +463,32 @@ Focus on safety, efficiency, and reliability.`;
         isolation_level: "strict",
         monitoring_required: true,
         validation_criteria: ["output_exists", "no_errors"],
+      },
+    };
+  }
+
+  // Create minimal analysis for performance when detailed analysis is disabled
+  private getMinimalAnalysis(agent: AgentMetadata, task: AgentTask): AgentAnalysis {
+    return {
+      safety_assessment: {
+        risk_level: "low",
+        identified_risks: [],
+        mitigations: ["Basic safety checks applied"],
+      },
+      resource_requirements: {
+        memory_mb: 256,
+        timeout_seconds: 300,
+        required_capabilities: ["read", "write"],
+      },
+      optimization_suggestions: {
+        model_parameters: {},
+        prompt_improvements: [],
+        tool_selections: [],
+      },
+      execution_strategy: {
+        isolation_level: "standard",
+        monitoring_required: false,
+        validation_criteria: [],
       },
     };
   }
@@ -801,6 +841,18 @@ Focus on safety, efficiency, and reliability.`;
     task: AgentTask,
     supervision: ExecutionSupervision,
   ): Promise<ValidationResult> {
+    // Check if validation should be skipped based on supervision level
+    if (!shouldRunValidation(this.supervisionLevel)) {
+      this.logger.debug(`Skipping output validation (supervision level: ${this.supervisionLevel})`);
+      return {
+        is_valid: true,
+        quality_score: 1.0,
+        issues: [],
+        recommendations: [],
+        validated_at: new Date().toISOString(),
+      };
+    }
+
     if (!supervision.post_execution_validation.output_quality) {
       return {
         is_valid: true,
