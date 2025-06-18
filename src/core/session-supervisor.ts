@@ -7,11 +7,13 @@ import { FactExtractor } from "./memory/fact-extractor.ts";
 import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
+import type { TriggerSpecification } from "./config-loader.ts";
 
 // Job specification types
 export interface JobSpecification {
   name: string;
   description: string;
+  triggers?: TriggerSpecification[];
   session_prompts?: {
     planning?: string;
     evaluation?: string;

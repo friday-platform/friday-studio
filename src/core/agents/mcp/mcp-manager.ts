@@ -2,7 +2,6 @@
  * MCP Manager using Vercel AI SDK's experimental MCP client
  * Provides type-safe MCP server connectivity with transport abstraction
  */
-
 import { experimental_createMCPClient as createMCPClient } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
 import { z } from "zod";
@@ -64,7 +63,7 @@ export class MCPManager {
   private clients: Map<string, MCPClientWrapper> = new Map();
 
   /**
-   * Registers an MCP server using AI SDK's experimental MCP client
+   * Registers an MCP server using AI SDK's MCP client
    * @param config MCP server configuration
    */
   async registerServer(
@@ -83,10 +82,9 @@ export class MCPManager {
         transport: config.transport.type,
       });
 
-      // Create client based on transport type (type-safe discriminated union)
+      // Create client based on transport type
       switch (validatedConfig.transport.type) {
         case "sse": {
-          // TypeScript knows transport has url property here
           const { url } = validatedConfig.transport;
           mcpClient = await createMCPClient({
             transport: {
@@ -99,7 +97,6 @@ export class MCPManager {
         }
 
         case "stdio": {
-          // TypeScript knows transport has command and optional args here
           const { command, args } = validatedConfig.transport;
           mcpClient = await createMCPClient({
             transport: new StdioMCPTransport({

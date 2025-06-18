@@ -1,0 +1,120 @@
+name: "analyze-webpage"
+description: |
+  Advanced web page analysis job demonstrating Atlas MCP integration with Playwright.
+
+  This job showcases:
+  - Workspace-level MCP server registry pattern
+  - AI SDK native integration with experimental_createMCPClient
+  - Multi-step tool execution with browser automation
+  - Real-world use case with actionable insights
+
+triggers:
+  - signal: "webpage-analysis"
+    condition: "url && url.startsWith('http')"
+
+execution:
+  strategy: "sequential"
+  timeout: 120000 # 2 minutes for comprehensive analysis
+
+  agents:
+    - id: "web-analyzer"
+      task: |
+        Perform comprehensive web page analysis for: {{url}}
+
+        Analysis type: {{analysis_type || 'detailed'}}
+
+        Required steps:
+        1. Navigate to the webpage and verify it loads successfully
+        2. Capture a screenshot for visual analysis
+        3. Extract the page title and meta information
+        4. Get the main content and analyze text quality
+        5. Extract key links and navigation structure
+        6. Provide insights on:
+           - Content quality and readability
+           - Visual design and layout
+           - Accessibility considerations
+           - Performance observations
+           - SEO effectiveness
+           - User experience assessment
+
+        Generate a comprehensive report with specific recommendations.
+
+      input:
+        url: "{{url}}"
+        analysis_type: "{{analysis_type}}"
+        timestamp: "{{timestamp}}"
+
+      output_format:
+        type: "structured"
+        schema:
+          type: "object"
+          properties:
+            url_analyzed:
+              type: "string"
+              description: "The URL that was analyzed"
+            analysis_timestamp:
+              type: "string"
+              description: "When the analysis was performed"
+            page_info:
+              type: "object"
+              properties:
+                title:
+                  type: "string"
+                meta_description:
+                  type: "string"
+                page_load_success:
+                  type: "boolean"
+            visual_analysis:
+              type: "object"
+              properties:
+                screenshot_taken:
+                  type: "boolean"
+                layout_observations:
+                  type: "string"
+                design_quality:
+                  type: "string"
+            content_analysis:
+              type: "object"
+              properties:
+                content_quality:
+                  type: "string"
+                readability_score:
+                  type: "string"
+                key_topics:
+                  type: "array"
+                  items:
+                    type: "string"
+            technical_analysis:
+              type: "object"
+              properties:
+                accessibility_notes:
+                  type: "string"
+                performance_observations:
+                  type: "string"
+                seo_assessment:
+                  type: "string"
+            recommendations:
+              type: "array"
+              items:
+                type: "object"
+                properties:
+                  category:
+                    type: "string"
+                  priority:
+                    type: "string"
+                    enum: ["high", "medium", "low"]
+                  recommendation:
+                    type: "string"
+            tools_used:
+              type: "array"
+              items:
+                type: "string"
+              description: "List of Playwright MCP tools utilized"
+
+# Job metadata for monitoring and analytics
+metadata:
+  category: "web-analysis"
+  complexity: "medium"
+  expected_duration: "60-120 seconds"
+  mcp_servers_required: ["playwright"]
+  cost_estimate: "low" # Primarily LLM usage, minimal MCP overhead

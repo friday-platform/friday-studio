@@ -1,0 +1,12 @@
+{
+  "name": "atlas-web-analysis-workspace",
+  "version": "1.0.0",
+  "description": "Atlas workspace for web analysis using Playwright MCP",
+  "type": "module",
+  "dependencies": {
+    "@playwright/mcp": "latest"
+  },
+  "devDependencies": {
+    "playwright": "latest"
+  }
+}

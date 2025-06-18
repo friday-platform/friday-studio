@@ -894,7 +894,8 @@ Provide a structured analysis.`;
 
     try {
       // Simple condition evaluation - in production would use safer evaluation
-      // For now, handle the specific telephone game condition
+
+      // Handle telephone game message conditions
       if (condition.includes("message && message.length")) {
         const message = payload.message;
         if (!message) return false;
@@ -904,6 +905,33 @@ Provide a structured analysis.`;
           return message.length > 0 && message.length < 100;
         } else if (condition.includes(">= 100")) {
           return message.length >= 100;
+        }
+      }
+
+      // Handle web analysis URL conditions
+      if (condition.includes("payload.url")) {
+        // Handle patterns like "payload.url && payload.url.startsWith('http')"
+        const url = payload.url;
+        if (!url) return false;
+
+        if (condition.includes("startsWith('http')")) {
+          return typeof url === "string" && url.startsWith("http");
+        }
+        if (condition.includes('startsWith("http")')) {
+          return typeof url === "string" && url.startsWith("http");
+        }
+
+        // Basic URL presence check
+        return typeof url === "string" && url.length > 0;
+      }
+
+      // Handle direct URL conditions (without payload prefix)
+      if (condition.includes("url && url.startsWith")) {
+        const url = payload.url;
+        if (!url) return false;
+
+        if (condition.includes("startsWith('http')") || condition.includes('startsWith("http")')) {
+          return typeof url === "string" && url.startsWith("http");
         }
       }
 

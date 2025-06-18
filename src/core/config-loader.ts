@@ -4,7 +4,7 @@
 
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   MCPAuthConfigSchema,
   MCPToolsConfigSchema,
@@ -400,6 +400,7 @@ export type NewWorkspaceConfig = z.infer<typeof NewWorkspaceConfigSchema>;
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
+export type TriggerSpecification = z.infer<typeof TriggerSpecificationSchema>;
 
 // Merged configuration that combines both
 export interface MergedConfig {
@@ -533,6 +534,7 @@ export class ConfigLoader {
         const normalizedJobSpec: JobSpecification = {
           name: jobName, // Use the key as the name
           description: jobSpec.description || `Top-level job: ${jobName}`,
+          triggers: jobSpec.triggers, // Copy the triggers from the job specification
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,

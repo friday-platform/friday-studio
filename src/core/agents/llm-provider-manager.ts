@@ -2,7 +2,7 @@ import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
 import { type CoreMessage, generateText, streamText, Tool, ToolCall, ToolResult } from "ai";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { logger } from "../../utils/logger.ts";
 
 // Import MCP Manager for tool integration
@@ -521,14 +521,13 @@ export class LLMProviderManager {
         ...options.operationContext,
       });
 
-      // TODO: Replace with actual AI SDK tool calling when MCP support is available
-      // For now, this is a placeholder implementation
+      // Use actual AI SDK tool calling with MCP tools
       const result = await generateText({
         model: client(config.model),
         messages,
         tools: Object.keys(allTools).length > 0 ? allTools : undefined,
-        // toolChoice: options.toolChoice, // Uncomment when AI SDK supports this
-        // maxSteps: options.maxSteps || 1, // Uncomment when AI SDK supports this
+        toolChoice: options.toolChoice,
+        maxSteps: options.maxSteps || 1,
         maxTokens: config.maxTokens,
         temperature: config.temperature,
         abortSignal: controller.signal,
@@ -537,12 +536,12 @@ export class LLMProviderManager {
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
 
-      // Placeholder response structure - will be replaced with actual AI SDK tool response
+      // Use actual AI SDK tool response data
       const toolResponse = {
         text: result.text,
-        toolCalls: [], // Will be populated by AI SDK
-        toolResults: [], // Will be populated by AI SDK
-        steps: [], // Will be populated by AI SDK
+        toolCalls: result.toolCalls || [],
+        toolResults: result.toolResults || [],
+        steps: result.steps || [],
       };
 
       logger.debug("LLM generation with MCP tools completed", {
