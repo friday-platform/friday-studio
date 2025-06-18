@@ -160,7 +160,7 @@ description: "Automated code review process"
 # Define when this job triggers
 triggers:
   - signal: "github-webhook"
-    condition: "event.action == 'opened' && event.pull_request"
+    condition: {"and": [{"==": [{"var": "event.action"}, "opened"]}, {"var": "event.pull_request"}]}
 
 # Define execution strategy
 execution:
@@ -305,7 +305,7 @@ description: "Comprehensive GitHub PR review"
 
 triggers:
   - signal: "github-webhook"
-    condition: "event.action == 'opened' || event.action == 'synchronize'"
+    condition: {"or": [{"==": [{"var": "event.action"}, "opened"]}, {"==": [{"var": "event.action"}, "synchronize"]}]}
 
 execution:
   strategy: "parallel"

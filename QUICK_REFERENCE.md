@@ -204,11 +204,11 @@ execution:
 
 ## 🔍 Condition Examples
 
-### Simple Conditions
+### Simple Conditions (JSONLogic format)
 ```yaml
-condition: "event.action == 'opened'"
-condition: "metric.cpu_usage > 80"
-condition: "status == 'failed'"
+condition: {"==": [{"var": "event.action"}, "opened"]}
+condition: {">":[{"var": "metric.cpu_usage"}, 80]}
+condition: {"==": [{"var": "status"}, "failed"]}
 ```
 
 ### Complex Conditions (JSONLogic)
@@ -335,7 +335,7 @@ execution:
 ```yaml
 triggers:
   - signal: "k8s-events"
-    condition: "event.type == 'Warning'"
+    condition: {"==": [{"var": "event.type"}, "Warning"]}
 execution:
   strategy: "sequential"
   agents:

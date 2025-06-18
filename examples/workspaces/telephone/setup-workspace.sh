@@ -6,52 +6,15 @@ echo "Setting up Atlas workspace for Telephone Game..."
 
 # Create workspace.yml
 cat > workspace.yml << 'EOF'
-version: "1.0"
 workspace:
-  id: "${WORKSPACE_ID}"
   name: "Telephone Game"
+  id: "${WORKSPACE_ID}"
   description: "A game where messages transform through multiple agents"
-supervisor:
-  model: "claude-4-sonnet-20250514"
-  prompts:
-    system: |
-      You are the WorkspaceSupervisor for a telephone game workspace.
-      Your role is to coordinate agents that transform messages sequentially.
-    intent: |
-      You are coordinating a telephone game where a message passes through agents that:
-      1. Mishear the message (mishearing-agent)
-      2. Embellish it with details (embellishment-agent)  
-      3. Reinterpret the meaning (reinterpretation-agent)
-      
-      Each agent should transform the message in their unique way.
-    evaluation: |
-      CRITICAL FOR TELEPHONE GAME:
-      - The session is ONLY complete when ALL THREE agents have processed the message
-      - You must see outputs from: mishearing-agent, embellishment-agent, AND reinterpretation-agent
-      - Even if transformations seem complete, continue until all 3 agents have run
-      - The telephone game requires the full chain of transformations
-    session: |
-      This is a telephone game session. The message must pass through ALL agents in sequence.
-agents:
-  mishearing-agent:
-    type: "local"
-    path: "./agents/mishearing-agent.ts"
-    purpose: "Specializes in phonetic errors and mishearing"
-    model: "claude-4-sonnet-20250514"
-  embellishment-agent:
-    type: "local"
-    path: "./agents/embellishment-agent.ts"
-    purpose: "Adds context and embellishes stories"
-    model: "claude-4-sonnet-20250514"
-  reinterpretation-agent:
-    type: "local"
-    path: "./agents/reinterpretation-agent.ts"
-    purpose: "Dramatically transforms messages"
-    model: "claude-4-sonnet-20250514"
+
 signals:
   telephone-message:
-    description: "Trigger a telephone game with a message"
     provider: "cli"
+    description: "Trigger a telephone game with a message"
     schema:
       type: "object"
       properties:
@@ -59,24 +22,43 @@ signals:
           type: "string"
           description: "The message to transform"
       required: ["message"]
-    mappings:
-      - agents: ["mishearing-agent", "embellishment-agent", "reinterpretation-agent"]
-        strategy: "sequential"
-        prompt: |
-          Process this message through all three agents in sequence.
-          Each agent should transform the output of the previous one.
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-  logging:
-    level: "info"
-    format: "pretty"
-  persistence:
-    type: "local"
-    path: "./.atlas"
-  security:
-    cors: "*"
+
+agents:
+  mishearing-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Specializes in phonetic errors and mishearing"
+    prompts:
+      system: "You are an agent that mishears messages. Transform the input by introducing phonetic errors, similar-sounding word substitutions, and slight misunderstandings."
+
+  embellishment-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Adds context and embellishes stories"
+    prompts:
+      system: "You are an agent that embellishes messages. Add colorful details, context, and creative elements to make the message more elaborate and interesting."
+
+  reinterpretation-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Dramatically transforms messages"
+    prompts:
+      system: "You are an agent that reinterprets messages. Transform the meaning dramatically while maintaining some connection to the original theme."
+
+jobs:
+  telephone:
+    triggers:
+      - signal: "telephone-message"
+        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+          input_source: "signal"
+        - id: "embellishment-agent"
+          input_source: "previous"
+        - id: "reinterpretation-agent"
+          input_source: "previous"
 EOF
 
 # Create .atlas directory

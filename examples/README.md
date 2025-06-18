@@ -40,7 +40,7 @@ Demonstrates core Atlas functionality:
 - Workspace persistence
 
 ```bash
-deno run --allow-read --allow-write examples/example.ts
+deno task atlas workspace serve --workspace examples/
 ```
 
 ### Streaming Example (`example-streaming.ts`)
@@ -52,7 +52,7 @@ Shows agent streaming capabilities:
 - Both streaming and non-streaming modes
 
 ```bash
-deno run --allow-read --allow-write examples/example-streaming.ts
+deno task atlas tui --workspace examples/
 ```
 
 ### Claude Example (`example-claude.ts`)
@@ -68,7 +68,7 @@ Real Claude AI integration:
 cp .env.example .env
 
 # Then run the example
-deno run --allow-read --allow-write --allow-net --allow-env examples/example-claude.ts
+deno task atlas workspace serve --workspace examples/
 ```
 
 ## Workspace Examples
@@ -125,10 +125,10 @@ From the project root:
 
 ```bash
 # Basic Atlas functionality
-deno run --allow-read --allow-write examples/example.ts
+deno task atlas workspace serve --workspace examples/
 
 # Streaming agents
-deno run --allow-read --allow-write examples/example-streaming.ts
+deno task atlas tui --workspace examples/
 ```
 
 ## Creating Custom Agents

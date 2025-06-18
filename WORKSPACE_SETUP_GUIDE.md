@@ -86,7 +86,7 @@ description: "Automated deployment with safety checks"
 # Trigger configuration
 triggers:
   - signal: "github-webhook"
-    condition: "event.action == 'closed' && event.pull_request.merged == true"
+    condition: {"and": [{"==": [{"var": "event.action"}, "closed"]}, {"==": [{"var": "event.pull_request.merged"}, true]}]}
     naturalLanguageCondition: "when a pull request is merged to main branch"
 
 # Execution strategy
@@ -170,7 +170,7 @@ Atlas includes an AI-powered system that converts natural language descriptions 
 
 ```bash
 # Start the TUI
-atlas tui
+deno task atlas tui
 
 # Navigate to the Workspace Config tab (Tab 3)
 # Use the natural language job creation command:
@@ -208,12 +208,12 @@ Generated job:
 name: "deployment-notification"
 triggers:
   - signal: "deployment-webhook"
-    condition: "event.status == 'completed'"
+    condition: {"==": [{"var": "event.status"}, "completed"]}
 execution:
   strategy: "sequential"
   agents:
     - id: "slack-notifier"
-      role: "notification"
+      input_source: "signal"
 ```
 
 **Complex Multi-Agent Workflow**:
@@ -226,20 +226,18 @@ Generated job:
 name: "production-error-response"
 triggers:
   - signal: "error-monitoring"
-    condition: "event.severity == 'critical' && event.environment == 'production'"
+    condition: {"and": [{"==": [{"var": "event.severity"}, "critical"]}, {"==": [{"var": "event.environment"}, "production"]}]}
 execution:
-  strategy: "staged"
+  strategy: "sequential"
   agents:
     - id: "log-analyzer"
-      role: "analysis"
+      input_source: "signal"
     - id: "metrics-checker"
-      role: "monitoring"
+      input_source: "signal"
     - id: "github-manager"
-      role: "issue-creation"
-      dependencies: ["log-analyzer", "metrics-checker"]
+      input_source: "combined"
     - id: "slack-notifier"
-      role: "team-notification"
-      dependencies: ["github-manager"]
+      input_source: "previous"
 ```
 
 ### Condition Parsing with AI
