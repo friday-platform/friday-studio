@@ -49,6 +49,9 @@ export class WorkspaceServer {
       });
     });
 
+    // Library routes
+    this.setupLibraryRoutes();
+
     // List signals
     this.app.get("/signals", (c) => {
       const workspace = (this.runtime as any).workspace;
@@ -83,13 +86,13 @@ export class WorkspaceServer {
           });
 
           try {
-            // Process signal through runtime with proper trace context
-            const session = await this.runtime.processSignal(signal, payload);
+            // Start signal processing asynchronously (fire-and-forget)
+            const sessionPromise = this.runtime.processSignal(signal, payload);
 
+            // Return immediately with session started confirmation
             return c.json({
-              message: "Signal processed",
-              sessionId: session.id,
-              status: session.status,
+              message: "Signal accepted for processing",
+              status: "processing",
             });
           } catch (error) {
             return c.json({
@@ -242,6 +245,185 @@ export class WorkspaceServer {
             },
           );
         });
+      }
+    });
+  }
+
+  private setupLibraryRoutes() {
+    // List library items
+    this.app.get("/library", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const options = {
+          type: c.req.query("type"),
+          tags: c.req.query("tags")?.split(","),
+          since: c.req.query("since"),
+          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
+          workspace: c.req.query("workspace") === "true"
+        };
+
+        const items = await library.list(options);
+        return c.json(items);
+      } catch (error) {
+        return c.json({ 
+          error: `Failed to list library items: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // Get specific library item
+    this.app.get("/library/:itemId", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const itemId = c.req.param("itemId");
+        const result = await library.get(itemId);
+
+        if (!result) {
+          return c.json({ error: `Library item not found: ${itemId}` }, 404);
+        }
+
+        // Return metadata by default, content only if requested
+        const includeContent = c.req.query("content") === "true";
+        
+        if (includeContent) {
+          return c.json({
+            item: result.item,
+            content: typeof result.content === "string" ? result.content : "[Binary Content]"
+          });
+        } else {
+          return c.json(result.item);
+        }
+      } catch (error) {
+        return c.json({ 
+          error: `Failed to get library item: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // Search library
+    this.app.get("/library/search", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const query = {
+          query: c.req.query("q"),
+          type: c.req.query("type"),
+          tags: c.req.query("tags")?.split(","),
+          since: c.req.query("since"),
+          until: c.req.query("until"),
+          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
+          offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : undefined,
+          workspace: c.req.query("workspace") === "true"
+        };
+
+        const results = await library.search(query);
+        return c.json(results);
+      } catch (error) {
+        return c.json({ 
+          error: `Search failed: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // List available templates
+    this.app.get("/library/templates", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const filter = {
+          workspace: c.req.query("workspace") === "true",
+          platform: c.req.query("platform") === "true"
+        };
+
+        const templates = library.getTemplates(filter);
+        return c.json(templates);
+      } catch (error) {
+        return c.json({ 
+          error: `Failed to get templates: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // Generate report from template
+    this.app.post("/library/generate", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const { template, data, store, tags, name, description } = await c.req.json();
+
+        if (!template || !data) {
+          return c.json({ error: "template and data are required" }, 400);
+        }
+
+        const result = await library.generateReport(template, data, {
+          store: store || false,
+          tags,
+          name,
+          description
+        });
+
+        return c.json(result);
+      } catch (error) {
+        return c.json({ 
+          error: `Report generation failed: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // Get library statistics
+    this.app.get("/library/stats", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const stats = await library.getStats();
+        return c.json(stats);
+      } catch (error) {
+        return c.json({ 
+          error: `Failed to get stats: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
+      }
+    });
+
+    // Delete library item
+    this.app.delete("/library/:itemId", async (c) => {
+      try {
+        const library = this.runtime.getLibrary?.();
+        if (!library) {
+          return c.json({ error: "Library not available" }, 503);
+        }
+
+        const itemId = c.req.param("itemId");
+        const success = await library.delete(itemId);
+
+        if (!success) {
+          return c.json({ error: `Failed to delete library item: ${itemId}` }, 404);
+        }
+
+        return c.json({ message: "Library item deleted successfully" });
+      } catch (error) {
+        return c.json({ 
+          error: `Delete failed: ${error instanceof Error ? error.message : String(error)}` 
+        }, 500);
       }
     });
   }

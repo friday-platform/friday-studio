@@ -20,6 +20,7 @@ interface SessionConfig {
   memoryConfig: AtlasMemoryConfig;
   signal?: IWorkspaceSignal;
   payload?: Record<string, unknown>;
+  precomputedPlans?: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
 }
 
 interface InitializeData {
@@ -81,7 +82,11 @@ class SessionSupervisorWorker extends BaseWorker {
 
     // Create the SessionSupervisor (intelligent agent) - this is the main bottleneck
     this.log("Creating SessionSupervisor...");
-    this.supervisor = new SessionSupervisor(config.memoryConfig, config.workspaceId);
+    this.supervisor = new SessionSupervisor(
+      config.memoryConfig, 
+      config.workspaceId, 
+      config.precomputedPlans
+    );
     this.log("SessionSupervisor created successfully");
 
     // Join session broadcast channel (async, non-blocking)
@@ -303,6 +308,14 @@ class SessionSupervisorWorker extends BaseWorker {
 
             return {
               status: summary.status,
+              sessionId: this.sessionId,
+              signal: sessionContext?.signal.id,
+              original_input: sessionContext?.payload,
+              phases_executed: results.length,
+              total_agents_invoked: results.flatMap((r) => r.results).length,
+              timing: timing,
+              final_output: results[results.length - 1]
+                ?.results[results[results.length - 1]?.results.length - 1]?.output,
               results,
               plan: summary.plan,
               evaluation: await this.supervisor!.evaluateProgress(

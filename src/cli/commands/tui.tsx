@@ -6,6 +6,10 @@ import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
 import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/splash-screen.tsx";
+import {
+  WorkspaceConfigAssistant,
+  type WorkspaceContext,
+} from "../../core/workspace-config-assistant.ts";
 
 // Parse command arguments while preserving JSON structure
 function parseCommandArgs(command: string): string[] {
@@ -69,7 +73,7 @@ const INITIAL_MESSAGES: LogEntry[] = [
   },
   {
     type: "command",
-    content: "Server will start automatically...",
+    content: "Checking for existing server or starting new one...",
     timestamp: new Date().toTimeString().slice(0, 8),
   },
 ];
@@ -92,12 +96,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     previousTab: _previousTab,
     goToTab,
   } = useTabNavigation({
-    tabCount: 2,
+    tabCount: 4,
     initialTab: 0,
   });
   const [inputFocused, setInputFocused] = useState(true);
   const [conversationScroll, setConversationScroll] = useState(0);
   const [serverScroll, setServerScroll] = useState(0);
+  const [libraryScroll, setLibraryScroll] = useState(0);
   const [showPopover, setShowPopover] = useState(false);
   const [popoverContent, setPopoverContent] = useState("");
   const [autoScroll, setAutoScroll] = useState(true);
@@ -108,6 +113,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   >([]);
   const [workspacesLoading, setWorkspacesLoading] = useState(false);
   const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
+
+  // Workspace config assistant state
+  const [configAssistant] = useState(() => new WorkspaceConfigAssistant());
+  const [workspaceContext, setWorkspaceContext] = useState<WorkspaceContext | null>(null);
+  const [configMode, setConfigMode] = useState<
+    "overview" | "create-job" | "validate" | "confirmations"
+  >("overview");
+  const [_jobDescription, _setJobDescription] = useState("");
+  const [isProcessingJob, setIsProcessingJob] = useState(false);
+  const [configValidation, setConfigValidation] = useState<any>(null);
   const { exit } = useApp();
   const { stdout } = useStdout();
   const serverProcessRef = useRef<Deno.ChildProcess | null>(null);
@@ -120,9 +135,86 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   // Calculate available height for panels (terminal height minus header, input, status)
   const availableHeight = Math.max(10, (stdout.rows || 24) - 6);
 
+  // Load library data
+  const loadLibraryData = async () => {
+    if (!serverStatus.running) return;
+    
+    setLibraryLoading(true);
+    try {
+      const port = serverStatus.port || 8080;
+      
+      // Load library items
+      const itemsResponse = await fetch(`http://localhost:${port}/library?limit=50`);
+      if (itemsResponse.ok) {
+        const items = await itemsResponse.json();
+        setLibraryItems(items);
+      }
+      
+      // Load templates
+      const templatesResponse = await fetch(`http://localhost:${port}/library/templates`);
+      if (templatesResponse.ok) {
+        const templates = await templatesResponse.json();
+        setLibraryTemplates(templates);
+      }
+    } catch (error) {
+      // Ignore library loading errors for now
+    } finally {
+      setLibraryLoading(false);
+    }
+  };
+
+  // Load workspace context for config assistant
+  const loadWorkspaceContext = async () => {
+    if (!serverStatus.workspace || showSplashScreen) {
+      setWorkspaceContext(null);
+      return;
+    }
+
+    try {
+      // Load workspace configuration
+      const { ConfigLoader } = await import("../../core/config-loader.ts");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+
+      // Build workspace context
+      const context: WorkspaceContext = {
+        workspaceId: serverStatus.workspace,
+        availableSignals: Object.entries(mergedConfig.workspace.signals || {}).map((
+          [id, config]: [string, any],
+        ) => ({
+          id,
+          provider: config.provider || "unknown",
+          description: config.description,
+          payloadShape: config.payloadShape,
+        })),
+        availableAgents: Object.entries(mergedConfig.workspace.agents || {}).map((
+          [id, config]: [string, any],
+        ) => ({
+          id,
+          type: config.type || "unknown",
+          purpose: config.purpose,
+          capabilities: config.capabilities || [],
+        })),
+        existingJobs: Object.entries(mergedConfig.jobs || {}).map((
+          [name, config]: [string, any],
+        ) => ({
+          name,
+          description: config.description,
+          triggers: config.triggers || [],
+        })),
+      };
+
+      setWorkspaceContext(context);
+    } catch (error) {
+      // Don't log error for missing workspace context
+      setWorkspaceContext(null);
+    }
+  };
+
   // Initialize server on startup
   useEffect(() => {
     initializeWorkspace();
+    loadWorkspaceContext();
     return () => {
       if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
         try {
@@ -141,6 +233,21 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       }
     };
   }, []);
+
+  // Reload workspace context when workspace changes
+  useEffect(() => {
+    if (serverStatus.workspace && !showSplashScreen) {
+      loadWorkspaceContext();
+      loadLibraryData();
+    }
+  }, [serverStatus.workspace, showSplashScreen]);
+
+  // Load library data when server becomes available
+  useEffect(() => {
+    if (serverStatus.running && !showSplashScreen) {
+      loadLibraryData();
+    }
+  }, [serverStatus.running, showSplashScreen]);
 
   const addLog = (
     type: LogEntry["type"],
@@ -199,6 +306,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   const [selectedLogIndex, setSelectedLogIndex] = useState(0); // Start with first log selected
   const [selectedServerLogIndex, setSelectedServerLogIndex] = useState(-1); // Will be set to last log
+  const [selectedLibraryIndex, setSelectedLibraryIndex] = useState(0);
+
+  // Library state
+  const [libraryItems, setLibraryItems] = useState<any[]>([]);
+  const [libraryTemplates, setLibraryTemplates] = useState<any[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryMode, setLibraryMode] = useState<'items' | 'templates'>('items');
 
   // Function to scan for available workspaces
   const scanAvailableWorkspaces = async (): Promise<AvailableWorkspace[]> => {
@@ -272,7 +386,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       if (await exists("workspace.yml")) {
         setShowSplashScreen(false);
         addLog("command", `Workspace ${workspace.name} loaded successfully`);
-        // Start server in the new workspace directory
+        // Check for existing server or start new one
         await startServer();
       } else {
         addLog("error", `No workspace.yml found in ${workspace.path}`);
@@ -336,42 +450,65 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
   };
 
-  const startServer = async () => {
+  // Check if server is already running on default port
+  const checkExistingServer = async (
+    port = 8080,
+  ): Promise<{ running: boolean; serverInfo?: any }> => {
     try {
-      // Check if workspace.yml exists
-      if (!(await exists("workspace.yml"))) {
-        setShowSplashScreen(true);
-        setInputFocused(false); // Ensure input is not focused in splash screen
-        addLog("error", "No workspace.yml found in current directory");
-        addLog("command", "Scanning for available workspaces...");
+      const response = await fetch(`http://localhost:${port}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(3000), // 3 second timeout
+      });
 
-        // Scan for available workspaces
-        setWorkspacesLoading(true);
-        const workspaces = await scanAvailableWorkspaces();
-        console.log("Setting workspaces in state:", workspaces);
-        setAvailableWorkspaces(workspaces);
-        setSelectedWorkspaceIndex(0); // Reset selection when workspaces change
-        setWorkspacesLoading(false);
-
-        if (workspaces.length > 0) {
-          addLog(
-            "command",
-            `Found ${workspaces.length} available workspace(s)`,
-          );
-          workspaces.forEach((ws) => {
-            addLog("command", `- ${ws.name}`);
-          });
-        } else {
-          addLog("command", "No example workspaces found");
-        }
-
-        addLog(
-          "command",
-          "Showing splash screen - create a workspace to continue",
-        );
-        return;
+      if (response.ok) {
+        const serverInfo = await response.json();
+        return { running: true, serverInfo };
       }
 
+      return { running: false };
+    } catch (error) {
+      return { running: false };
+    }
+  };
+
+  // Connect to existing server without starting a new one
+  const connectToExistingServer = async (port = 8080, serverInfo?: any) => {
+    try {
+      const workspaceYaml = await Deno.readTextFile("workspace.yml");
+      const config = yaml.parse(workspaceYaml) as {
+        workspace?: { name?: string };
+      };
+
+      addLog(
+        "command",
+        `Found existing server on port ${port}, connecting...`,
+      );
+
+      // Use server info if available, otherwise fall back to local config
+      const workspaceName = serverInfo?.workspace?.name || config.workspace?.name;
+      const serverState = serverInfo?.state || "unknown";
+
+      setServerStatus({
+        running: true,
+        port: port,
+        workspace: workspaceName,
+      });
+
+      addLog("command", `Connected to ${workspaceName || "workspace"} server (${serverState})`);
+      addLog("command", "TUI ready - server was already running");
+
+      if (serverInfo?.activeSessions) {
+        addLog("command", `Active sessions: ${serverInfo.activeSessions}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to connect to existing server: ${error}`);
+      // Fall back to starting new server
+      await startNewServer();
+    }
+  };
+
+  const startNewServer = async () => {
+    try {
       const workspaceYaml = await Deno.readTextFile("workspace.yml");
       const config = yaml.parse(workspaceYaml) as {
         workspace?: { name?: string };
@@ -379,7 +516,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       addLog(
         "server",
-        `Starting ${config.workspace?.name || "workspace"} server...`,
+        `Starting new ${config.workspace?.name || "workspace"} server...`,
       );
 
       // Start server process
@@ -485,8 +622,198 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       readOutput(serverProcess.stdout, "server");
       readOutput(serverProcess.stderr, "error");
     } catch (error) {
-      addLog("error", `Failed to start server: ${error}`);
+      addLog("error", `Failed to start new server: ${error}`);
       setServerStatus({ running: false, error: String(error) });
+    }
+  };
+
+  const startServer = async () => {
+    try {
+      // Check if workspace.yml exists
+      if (!(await exists("workspace.yml"))) {
+        setShowSplashScreen(true);
+        setInputFocused(false); // Ensure input is not focused in splash screen
+        addLog("error", "No workspace.yml found in current directory");
+        addLog("command", "Scanning for available workspaces...");
+
+        // Scan for available workspaces
+        setWorkspacesLoading(true);
+        const workspaces = await scanAvailableWorkspaces();
+        console.log("Setting workspaces in state:", workspaces);
+        setAvailableWorkspaces(workspaces);
+        setSelectedWorkspaceIndex(0); // Reset selection when workspaces change
+        setWorkspacesLoading(false);
+
+        if (workspaces.length > 0) {
+          addLog(
+            "command",
+            `Found ${workspaces.length} available workspace(s)`,
+          );
+          workspaces.forEach((ws) => {
+            addLog("command", `- ${ws.name}`);
+          });
+        } else {
+          addLog("command", "No example workspaces found");
+        }
+
+        addLog(
+          "command",
+          "Showing splash screen - create a workspace to continue",
+        );
+        return;
+      }
+
+      // Check if server is already running before starting a new one
+      addLog("command", "Checking for existing workspace server...");
+      const { running: serverExists, serverInfo } = await checkExistingServer(8080);
+
+      if (serverExists) {
+        // Connect to existing server
+        await connectToExistingServer(8080, serverInfo);
+      } else {
+        // Start new server
+        addLog("command", "No existing server found, starting new server");
+        await startNewServer();
+      }
+    } catch (error) {
+      addLog("error", `Failed to initialize server: ${error}`);
+      setServerStatus({ running: false, error: String(error) });
+    }
+  };
+
+  const executeConfigCommand = async (args: string[]) => {
+    if (!workspaceContext) {
+      addLog("error", "Workspace context not loaded. Switch to Workspace Config tab first.");
+      return;
+    }
+
+    const subcommand = args[1];
+
+    switch (subcommand) {
+      case "create-job":
+        if (args.length < 3) {
+          setConfigMode("create-job");
+          goToTab(2); // Switch to workspace config tab
+          addLog("command", "Switched to job creation mode. Describe your job in the input.");
+          return;
+        }
+
+        // Process job description
+        const description = args.slice(2).join(" ");
+        await createJobFromDescription(description);
+        break;
+
+      case "validate":
+        await validateWorkspaceConfig();
+        break;
+
+      case "confirmations":
+        setConfigMode("confirmations");
+        goToTab(2); // Switch to workspace config tab
+        addLog("command", "Showing pending condition confirmations");
+        break;
+
+      case "confirm":
+        if (args.length < 3) {
+          addLog("error", "Usage: /config confirm <confirmation-id>");
+          return;
+        }
+        await confirmConditionParsing(args[2], true);
+        break;
+
+      case "reject":
+        if (args.length < 3) {
+          addLog("error", "Usage: /config reject <confirmation-id>");
+          return;
+        }
+        await confirmConditionParsing(args[2], false);
+        break;
+
+      default:
+        setConfigMode("overview");
+        goToTab(2); // Switch to workspace config tab
+        addLog("command", "Available config commands: create-job, validate, confirmations");
+    }
+  };
+
+  const createJobFromDescription = async (description: string) => {
+    if (!workspaceContext) return;
+
+    setIsProcessingJob(true);
+    setConfigMode("create-job");
+    goToTab(2);
+
+    try {
+      addLog("command", `Creating job from: "${description}"`);
+
+      const result = await configAssistant.parseJobDescription(description, workspaceContext);
+
+      if (result.conditionsNeedConfirmation.length > 0) {
+        addLog(
+          "command",
+          `Job created with ${result.conditionsNeedConfirmation.length} conditions requiring confirmation`,
+        );
+        setConfigMode("confirmations");
+      } else {
+        addLog("command", `Job "${result.job.name}" created successfully!`);
+        addLog("command", `Job definition:\n${JSON.stringify(result.job, null, 2)}`);
+      }
+    } catch (error) {
+      addLog("error", `Failed to create job: ${error}`);
+    } finally {
+      setIsProcessingJob(false);
+    }
+  };
+
+  const validateWorkspaceConfig = async () => {
+    if (!workspaceContext) return;
+
+    setConfigMode("validate");
+    goToTab(2);
+
+    try {
+      addLog("command", "Validating workspace configuration...");
+
+      // Load current workspace config
+      const { ConfigLoader } = await import("../../core/config-loader.ts");
+      const configLoader = new ConfigLoader();
+      const mergedConfig = await configLoader.load();
+
+      const validation = await configAssistant.validateWorkspaceConfig(
+        mergedConfig,
+        workspaceContext,
+      );
+      setConfigValidation(validation);
+
+      if (validation.valid) {
+        addLog("command", "✅ Workspace configuration is valid!");
+      } else {
+        addLog(
+          "command",
+          `❌ Found ${validation.issues.filter((i: any) => i.type === "error").length} errors and ${
+            validation.issues.filter((i: any) => i.type === "warning").length
+          } warnings`,
+        );
+      }
+    } catch (error) {
+      addLog("error", `Validation failed: ${error}`);
+    }
+  };
+
+  const confirmConditionParsing = (confirmationId: string, approved: boolean) => {
+    try {
+      configAssistant.confirmConditionParsing(confirmationId, approved);
+      addLog(
+        "command",
+        `Condition parsing ${approved ? "approved" : "rejected"}: ${confirmationId}`,
+      );
+
+      // Refresh confirmations mode if active
+      if (configMode === "confirmations") {
+        goToTab(2);
+      }
+    } catch (error) {
+      addLog("error", `Failed to ${approved ? "approve" : "reject"} condition: ${error}`);
     }
   };
 
@@ -530,6 +857,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       if (commandText.startsWith("/")) {
         const command = commandText.slice(1); // Remove the '/'
         const args = parseCommandArgs(command);
+
+        // Handle config commands
+        if (args[0] === "config") {
+          await executeConfigCommand(args);
+          return;
+        }
 
         // Special handling for init command in splash screen
         if (showSplashScreen && args[0] === "init") {
@@ -587,6 +920,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       "/agent describe <name>",
       "/ps",
       "/logs <session-id>",
+      "/config create-job <description>",
+      "/config validate",
+      "/config confirmations",
     ];
 
     const debugCommands = [
@@ -817,6 +1153,43 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           return newIndex;
         });
       }
+    } else if (activeTab === 3) {
+      // Library tab navigation
+      const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+      const maxIndex = Math.max(0, currentList.length - 1);
+      const visibleHeight = availableHeight - 6;
+
+      if (sequence === "gg") {
+        // Go to top
+        setSelectedLibraryIndex(0);
+        setLibraryScroll(0);
+      } else if (sequence === "G") {
+        // Go to bottom
+        setSelectedLibraryIndex(maxIndex);
+        if (currentList.length > visibleHeight) {
+          setLibraryScroll(currentList.length - visibleHeight);
+        }
+      } else if (sequence === "J") {
+        // Page down (shift+j)
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.min(maxIndex, prev + pageSize);
+          // Auto-scroll to keep selection visible
+          if (newIndex >= libraryScroll + visibleHeight) {
+            setLibraryScroll(newIndex - visibleHeight + 1);
+          }
+          return newIndex;
+        });
+      } else if (sequence === "K") {
+        // Page up (shift+k)
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.max(0, prev - pageSize);
+          // Auto-scroll to keep selection visible
+          if (newIndex < libraryScroll) {
+            setLibraryScroll(newIndex);
+          }
+          return newIndex;
+        });
+      }
     }
   };
 
@@ -857,11 +1230,11 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       if (isLeft) {
         // Go to previous tab
-        const newTab = activeTab > 0 ? activeTab - 1 : 1; // Wrap to last tab
+        const newTab = activeTab > 0 ? activeTab - 1 : 3; // Wrap to last tab
         goToTab(newTab);
       } else if (isRight) {
         // Go to next tab
-        const newTab = activeTab < 1 ? activeTab + 1 : 0; // Wrap to first tab
+        const newTab = activeTab < 3 ? activeTab + 1 : 0; // Wrap to first tab
         goToTab(newTab);
       }
       return;
@@ -1001,6 +1374,17 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           }
           return newIndex;
         });
+      } else if (activeTab === 3) {
+        // Library tab navigation
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.max(0, prev - 1);
+          // Auto-scroll to keep selection visible
+          if (newIndex < libraryScroll) {
+            setLibraryScroll(newIndex);
+          }
+          return newIndex;
+        });
       }
     } else if (
       key.downArrow ||
@@ -1037,6 +1421,19 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           }
           return newIndex;
         });
+      } else if (activeTab === 3) {
+        // Library tab navigation
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const maxIndex = Math.max(0, currentList.length - 1);
+        setSelectedLibraryIndex((prev: number) => {
+          const newIndex = Math.min(maxIndex, prev + 1);
+          // Auto-scroll to keep selection visible
+          const visibleHeight = availableHeight - 6;
+          if (newIndex >= libraryScroll + visibleHeight) {
+            setLibraryScroll(newIndex - visibleHeight + 1);
+          }
+          return newIndex;
+        });
       }
     } else if (key.tab && !inputFocused) {
       // Tab key refocuses input when not focused
@@ -1057,7 +1454,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         if (input.trim()) {
           // Check if this was likely a pasted command based on rapid input detection
           const wasPasted = pasteDetectionRef.current > 3; // More than 3 chars in rapid succession
-          executeCommand(input.trim(), wasPasted);
+
+          // Special handling for job creation mode in workspace config tab
+          if (
+            activeTab === 2 && configMode === "create-job" && !input.startsWith("/") &&
+            !isProcessingJob
+          ) {
+            createJobFromDescription(input.trim());
+          } else {
+            executeCommand(input.trim(), wasPasted);
+          }
           setInput("");
           pasteDetectionRef.current = 0; // Reset paste detection
         }
@@ -1100,6 +1506,18 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           const log = serverOnlyLogs[selectedServerLogIndex];
           if (log && log.fullContent) {
             setPopoverContent(log.fullContent);
+            setShowPopover(true);
+            return;
+          }
+        } else if (activeTab === 3) {
+          // Library tab - show item details
+          const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+          const selected = currentList[selectedLibraryIndex];
+          if (selected) {
+            const content = libraryMode === 'items' 
+              ? `Library Item: ${selected.name}\n\nType: ${selected.type}\nCreated: ${selected.created_at}\nSize: ${selected.size_bytes} bytes\nTags: ${selected.tags?.join(', ') || 'none'}\n\nDescription: ${selected.description || 'No description'}`
+              : `Template: ${selected.name}\n\nEngine: ${selected.engine}\nFormat: ${selected.format}\n\nDescription: ${selected.description || 'No description'}`;
+            setPopoverContent(content);
             setShowPopover(true);
             return;
           }
@@ -1163,7 +1581,45 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           };
           copyToClipboard();
         }
+      } else if (activeTab === 3) {
+        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const selected = currentList[selectedLibraryIndex];
+        if (selected) {
+          const textToCopy = libraryMode === 'items'
+            ? `${selected.name} (${selected.type})`
+            : `${selected.id} - ${selected.name}`;
+          const copyToClipboard = async () => {
+            try {
+              const process = new Deno.Command("pbcopy", {
+                stdin: "piped",
+              }).spawn();
+
+              const writer = process.stdin.getWriter();
+              await writer.write(new TextEncoder().encode(textToCopy));
+              await writer.close();
+              await process.status;
+
+              addLog(
+                "command",
+                `Copied to clipboard: ${textToCopy}`,
+              );
+            } catch (error) {
+              addLog("error", `Failed to copy to clipboard: ${error}`);
+            }
+          };
+          copyToClipboard();
+        }
       }
+    } else if (inputChar === "t" && !inputFocused && activeTab === 3) {
+      // Toggle between items and templates in library tab
+      setLibraryMode(prev => prev === 'items' ? 'templates' : 'items');
+      setSelectedLibraryIndex(0);
+      setLibraryScroll(0);
+      addLog("command", `Switched to library ${libraryMode === 'items' ? 'templates' : 'items'}`);
+    } else if (inputChar === "r" && !inputFocused && activeTab === 3) {
+      // Refresh library data
+      addLog("command", "Refreshing library data...");
+      loadLibraryData();
     } else if (inputChar === "/" && !inputFocused && !showSplashScreen) {
       // Typing '/' should focus the command prompt and add the '/'
       setInputFocused(true);
@@ -1353,6 +1809,357 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   const [cursorVisible, setCursorVisible] = useState(true);
 
+  const renderWorkspaceConfigTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      <Box marginBottom={1}>
+        <Text color="cyan" bold>⚙️ Workspace Configuration Assistant</Text>
+      </Box>
+
+      {!workspaceContext
+        ? (
+          <Box flexDirection="column">
+            <Text color="yellow">Loading workspace context...</Text>
+            <Text dimColor>Analyzing signals, agents, and jobs in current workspace</Text>
+          </Box>
+        )
+        : (
+          <Box flexDirection="column">
+            {configMode === "overview" && renderConfigOverview()}
+            {configMode === "create-job" && renderCreateJobMode()}
+            {configMode === "validate" && renderValidateMode()}
+            {configMode === "confirmations" && renderConfirmationsMode()}
+          </Box>
+        )}
+
+      <Box marginTop={1} borderTop borderColor="gray" paddingTop={1}>
+        <Text dimColor>
+          Press Tab to focus input, type config commands:
+        </Text>
+      </Box>
+      <Box>
+        <Text dimColor>
+          /config create-job, /config validate, /config confirmations
+        </Text>
+      </Box>
+    </Box>
+  );
+
+  const renderConfigOverview = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>📊 Workspace Overview</Text>
+      </Box>
+
+      <Box marginBottom={1}>
+        <Text>Signals: {workspaceContext?.availableSignals.length || 0}</Text>
+      </Box>
+      {workspaceContext?.availableSignals.slice(0, 3).map((signal: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {signal.id} ({signal.provider})</Text>
+        </Box>
+      ))}
+
+      <Box marginBottom={1} marginTop={1}>
+        <Text>Agents: {workspaceContext?.availableAgents.length || 0}</Text>
+      </Box>
+      {workspaceContext?.availableAgents.slice(0, 3).map((agent: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {agent.id} ({agent.type})</Text>
+        </Box>
+      ))}
+
+      <Box marginBottom={1} marginTop={1}>
+        <Text>Jobs: {workspaceContext?.existingJobs.length || 0}</Text>
+      </Box>
+      {workspaceContext?.existingJobs.slice(0, 3).map((job: any, i: number) => (
+        <Box key={i} marginLeft={2}>
+          <Text dimColor>• {job.name}</Text>
+        </Box>
+      ))}
+
+      <Box marginTop={2}>
+        <Text color="green">✨ Use natural language to create jobs:</Text>
+        <Text dimColor>"/config create-job" - Create new job from description</Text>
+        <Text dimColor>"/config validate" - Validate workspace configuration</Text>
+        <Text dimColor>"/config confirmations" - Manage condition confirmations</Text>
+      </Box>
+    </Box>
+  );
+
+  const renderCreateJobMode = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>🛠️ Create Job from Natural Language</Text>
+      </Box>
+
+      <Box marginBottom={1}>
+        <Text>Describe what you want the job to do:</Text>
+      </Box>
+
+      {isProcessingJob
+        ? (
+          <Box>
+            <Text color="yellow">🔄 Processing job description with AI...</Text>
+          </Box>
+        )
+        : (
+          <Box>
+            <Text dimColor>Type your job description in the input below and press Enter.</Text>
+            <Text dimColor>Example: "Monitor Kubernetes pods and alert when they fail"</Text>
+          </Box>
+        )}
+    </Box>
+  );
+
+  const renderValidateMode = () => (
+    <Box flexDirection="column">
+      <Box marginBottom={1}>
+        <Text bold>✅ Configuration Validation</Text>
+      </Box>
+
+      {configValidation
+        ? (
+          <Box flexDirection="column">
+            <Text color={configValidation.valid ? "green" : "red"}>
+              Status: {configValidation.valid ? "✅ Valid" : "❌ Issues Found"}
+            </Text>
+
+            {configValidation.issues.map((issue: any, i: number) => (
+              <Box key={i} marginTop={1} marginLeft={2}>
+                <Text
+                  color={issue.type === "error"
+                    ? "red"
+                    : issue.type === "warning"
+                    ? "yellow"
+                    : "blue"}
+                >
+                  {issue.type === "error" ? "❌" : issue.type === "warning" ? "⚠️" : "💡"}{" "}
+                  {issue.message}
+                </Text>
+                {issue.suggestedFix && (
+                  <Box marginLeft={2}>
+                    <Text dimColor>Fix: {issue.suggestedFix}</Text>
+                  </Box>
+                )}
+              </Box>
+            ))}
+          </Box>
+        )
+        : (
+          <Box>
+            <Text dimColor>Running validation...</Text>
+          </Box>
+        )}
+    </Box>
+  );
+
+  const renderConfirmationsMode = () => {
+    const confirmations = configAssistant.getPendingConditionConfirmations(
+      workspaceContext?.workspaceId || "",
+    );
+
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text bold>📋 Pending Condition Confirmations</Text>
+        </Box>
+
+        {confirmations.length === 0
+          ? <Text dimColor>No pending confirmations.</Text>
+          : (
+            <Box flexDirection="column">
+              <Text>Found {confirmations.length} confirmation(s) pending:</Text>
+              {confirmations.slice(0, 3).map((conf: any, i: number) => (
+                <Box key={i} marginTop={1} marginLeft={2} borderStyle="single" padding={1}>
+                  <Text bold>Confirmation {i + 1}</Text>
+                  <Text>
+                    Original: <Text color="cyan">"{conf.originalText}"</Text>
+                  </Text>
+                  <Text>Confidence: {(conf.parsed.confidence * 100).toFixed(0)}%</Text>
+                  <Text dimColor>Use: /config confirm {conf.id}</Text>
+                </Box>
+              ))}
+            </Box>
+          )}
+      </Box>
+    );
+  };
+
+  const renderLibraryTab = () => (
+    <Box flexDirection="column" height={availableHeight} overflow="hidden">
+      <Box marginBottom={1} flexDirection="row">
+        <Text color="cyan" bold>📚 Library</Text>
+        <Text color="gray"> | </Text>
+        <Text color={libraryMode === 'items' ? 'white' : 'gray'} bold={libraryMode === 'items'}>
+          Items ({libraryItems.length})
+        </Text>
+        <Text color="gray"> | </Text>
+        <Text color={libraryMode === 'templates' ? 'white' : 'gray'} bold={libraryMode === 'templates'}>
+          Templates ({libraryTemplates.length})
+        </Text>
+        {libraryLoading && (
+          <>
+            <Text color="gray"> | </Text>
+            <Text color="yellow">Loading...</Text>
+          </>
+        )}
+      </Box>
+
+      {libraryLoading
+        ? (
+          <Box flexDirection="column">
+            <Text color="yellow">Loading library data...</Text>
+            <Text dimColor>Fetching items and templates from workspace library</Text>
+          </Box>
+        )
+        : (
+          <Box flexDirection="column">
+            {libraryMode === 'items' ? renderLibraryItems() : renderLibraryTemplates()}
+          </Box>
+        )}
+
+      <Box marginTop={1} borderTop borderColor="gray" paddingTop={1}>
+        <Text dimColor>
+          Navigation: j/k to move, Enter for details, t to toggle items/templates, r to refresh
+        </Text>
+      </Box>
+      <Box>
+        <Text dimColor>
+          Commands: /library list, /library templates, /library search &lt;query&gt;
+        </Text>
+      </Box>
+    </Box>
+  );
+
+  const renderLibraryItems = () => {
+    if (libraryItems.length === 0) {
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">No library items found</Text>
+          <Text dimColor>Items will appear here as agents generate reports and artifacts</Text>
+        </Box>
+      );
+    }
+
+    const visibleItems = libraryItems.slice(libraryScroll, libraryScroll + availableHeight - 6);
+    
+    return (
+      <Box flexDirection="column">
+        {visibleItems.map((item: any, i: number) => {
+          const globalIndex = i + libraryScroll;
+          const isSelected = selectedLibraryIndex === globalIndex;
+          
+          // Format size
+          const formatBytes = (bytes: number): string => {
+            if (bytes === 0) return "0 B";
+            const k = 1024;
+            const sizes = ["B", "KB", "MB", "GB"];
+            const sizeIndex = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(1)) + " " + sizes[sizeIndex];
+          };
+          
+          const typeColor = item.type === 'report' ? 'green' : 
+                           item.type === 'template' ? 'blue' :
+                           item.type === 'session_archive' ? 'magenta' : 'cyan';
+          
+          return (
+            <Box key={globalIndex} flexDirection="column">
+              <Text
+                color={isSelected ? "black" : "white"}
+                backgroundColor={isSelected ? "white" : undefined}
+              >
+                {isSelected ? "▶ " : "  "}
+                <Text color={isSelected ? "black" : typeColor} bold>
+                  {item.type.toUpperCase()}
+                </Text>
+                <Text color={isSelected ? "black" : "white"}> {item.name}</Text>
+                <Text color={isSelected ? "black" : "gray"}> ({formatBytes(item.size_bytes)})</Text>
+              </Text>
+              {isSelected && (
+                <Box marginLeft={4}>
+                  <Text color="gray">
+                    Created: {new Date(item.created_at).toLocaleDateString()} | 
+                    Tags: {item.tags?.join(", ") || "none"}
+                  </Text>
+                  {item.description && (
+                    <Text color="gray">{item.description}</Text>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+        
+        {libraryItems.length > 0 && (
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>
+              Selected: {selectedLibraryIndex + 1}/{libraryItems.length}
+            </Text>
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
+  const renderLibraryTemplates = () => {
+    if (libraryTemplates.length === 0) {
+      return (
+        <Box flexDirection="column">
+          <Text color="yellow">No templates found</Text>
+          <Text dimColor>Templates are defined in atlas.yml and workspace.yml</Text>
+        </Box>
+      );
+    }
+
+    const visibleTemplates = libraryTemplates.slice(libraryScroll, libraryScroll + availableHeight - 6);
+    
+    return (
+      <Box flexDirection="column">
+        {visibleTemplates.map((template: any, i: number) => {
+          const globalIndex = i + libraryScroll;
+          const isSelected = selectedLibraryIndex === globalIndex;
+          
+          const engineColor = template.engine === 'prompt' ? 'green' : 
+                             template.engine === 'handlebars' ? 'blue' : 'cyan';
+          
+          return (
+            <Box key={globalIndex} flexDirection="column">
+              <Text
+                color={isSelected ? "black" : "white"}
+                backgroundColor={isSelected ? "white" : undefined}
+              >
+                {isSelected ? "▶ " : "  "}
+                <Text color={isSelected ? "black" : engineColor} bold>
+                  {template.engine.toUpperCase()}
+                </Text>
+                <Text color={isSelected ? "black" : "white"}> {template.name || template.id}</Text>
+                <Text color={isSelected ? "black" : "gray"}> ({template.format})</Text>
+              </Text>
+              {isSelected && (
+                <Box marginLeft={4}>
+                  <Text color="gray">
+                    ID: {template.id} | Engine: {template.engine} | Format: {template.format}
+                  </Text>
+                  {template.description && (
+                    <Text color="gray">{template.description}</Text>
+                  )}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+        
+        {libraryTemplates.length > 0 && (
+          <Box marginTop={1}>
+            <Text color="gray" dimColor>
+              Selected: {selectedLibraryIndex + 1}/{libraryTemplates.length}
+            </Text>
+          </Box>
+        )}
+      </Box>
+    );
+  };
+
   useEffect(() => {
     if (inputFocused) {
       const interval = setInterval(() => {
@@ -1416,6 +2223,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 <Tab label="Server Output" icon="▦">
                   {renderServerTab()}
                 </Tab>
+                <Tab label="Workspace Config" icon="⚙">
+                  {renderWorkspaceConfigTab()}
+                </Tab>
+                <Tab label="Library" icon="📚">
+                  {renderLibraryTab()}
+                </Tab>
               </TabGroup>
             </Box>
 
@@ -1473,8 +2286,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         </Text>
         <Badge
           color={showSplashScreen ? "yellow" : serverStatus.running ? "green" : "red"}
-          children={showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
-        />
+        >
+          {showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
+        </Badge>
         <Text>| Logs: {serverLogs.length} entries</Text>
         {!showSplashScreen && (
           <>

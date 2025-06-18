@@ -108,9 +108,22 @@ const AtlasAgentConfigSchema = z
     }
   });
 
+const AtlasSupervisionConfigSchema = z.object({
+  level: z.enum(["minimal", "standard", "paranoid"]).default("standard"),
+  cache_enabled: z.boolean().default(true),
+  cache_adapter: z.enum(["memory", "redis", "file"]).default("memory"),
+  cache_ttl_hours: z.number().positive().default(1),
+  parallel_llm_calls: z.boolean().default(true),
+  timeouts: z.object({
+    analysis_ms: z.number().positive().default(10000),
+    validation_ms: z.number().positive().default(8000),
+  }).optional(),
+}).optional();
+
 const AtlasSupervisorConfigSchema = z.object({
   model: z.string().min(1, "Supervisor model cannot be empty"),
   memory: z.string().optional(),
+  supervision: AtlasSupervisionConfigSchema,
   prompts: z
     .object({
       system: z.string().min(1, "System prompt cannot be empty"),
@@ -146,17 +159,75 @@ const AtlasMemoryScopeSchema = z.object({
   memory_types: z.record(z.string(), z.any()),
 });
 
+const AtlasMemoryStreamingSchema = z.object({
+  enabled: z.boolean().default(true),
+  queue_max_size: z.number().positive().default(1000),
+  batch_size: z.number().positive().default(10),
+  flush_interval_ms: z.number().positive().default(1000),
+  background_processing: z.boolean().default(true),
+  persistence_enabled: z.boolean().default(true),
+  error_retry_attempts: z.number().min(0).default(3),
+  priority_processing: z.boolean().default(true),
+  dual_write_enabled: z.boolean().default(true),
+  legacy_batch_enabled: z.boolean().default(false),
+  stream_everything: z.boolean().default(true),
+  performance_tracking: z.boolean().default(true),
+}).optional();
+
 const AtlasMemoryConfigSchema = z.object({
   default: AtlasMemoryDefaultSchema,
+  streaming: AtlasMemoryStreamingSchema,
   agent: AtlasMemoryScopeSchema,
   session: AtlasMemoryScopeSchema,
   workspace: AtlasMemoryScopeSchema,
 });
 
+// Planning configuration schemas
+const AtlasExecutionPlanningSchema = z.object({
+  precomputation: z.enum(["aggressive", "moderate", "minimal", "disabled"]).default("moderate"),
+  cache_enabled: z.boolean().default(true),
+  cache_ttl_hours: z.number().positive().default(24),
+  invalidate_on_job_change: z.boolean().default(true),
+  strategy_selection: z.object({
+    simple_jobs: z.enum(["precomputed", "behavior-tree", "htn", "mcts"]).default("precomputed"),
+    complex_jobs: z.enum(["behavior-tree", "htn", "mcts"]).default("behavior-tree"),
+    optimization_jobs: z.enum(["mcts", "htn"]).default("mcts"),
+    planning_jobs: z.enum(["htn", "behavior-tree"]).default("htn"),
+  }).optional(),
+  strategy_thresholds: z.object({
+    complexity: z.number().min(0).max(1).default(0.6),
+    uncertainty: z.number().min(0).max(1).default(0.5),
+    optimization: z.number().min(0).max(1).default(0.7),
+  }).optional(),
+}).optional();
+
+const AtlasValidationPlanningSchema = z.object({
+  precomputation: z.enum(["aggressive", "moderate", "minimal", "disabled"]).default("moderate"),
+  functional_validators: z.boolean().default(true),
+  smoke_tests: z.boolean().default(true),
+  content_safety: z.boolean().default(true),
+  llm_threshold: z.number().min(0).max(1).default(0.7),
+  llm_fallback: z.boolean().default(true),
+  cache_enabled: z.boolean().default(true),
+  cache_ttl_hours: z.number().positive().default(1),
+  fail_fast: z.boolean().default(false),
+  external_services: z.object({
+    openai_moderation: z.boolean().default(false),
+    perspective_api: z.boolean().default(false),
+    deepeval_service: z.string().nullable().optional(),
+  }).optional(),
+}).optional();
+
+const AtlasPlanningSchema = z.object({
+  execution: AtlasExecutionPlanningSchema,
+  validation: AtlasValidationPlanningSchema,
+}).optional();
+
 const AtlasConfigurationSchema = z.object({
   version: z.string().min(1, "Version cannot be empty"),
   platform: AtlasPlatformConfigSchema,
   memory: AtlasMemoryConfigSchema,
+  planning: AtlasPlanningSchema,
   agents: z.record(z.string(), AtlasAgentConfigSchema),
   supervisors: z.object({
     workspace: AtlasSupervisorConfigSchema,
@@ -168,6 +239,7 @@ const AtlasConfigurationSchema = z.object({
 // Inferred types from Zod schemas
 export type AtlasPlatformConfig = z.infer<typeof AtlasPlatformConfigSchema>;
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
+export type AtlasSupervisionConfig = z.infer<typeof AtlasSupervisionConfigSchema>;
 export type AtlasSupervisorConfig = z.infer<typeof AtlasSupervisorConfigSchema>;
 export type AtlasConfiguration = z.infer<typeof AtlasConfigurationSchema>;
 
@@ -239,6 +311,31 @@ export class AtlasConfigLoader {
       throw new Error("Configuration not loaded. Call loadConfiguration() first.");
     }
     return this.config.memory;
+  }
+
+  getPlanningConfiguration() {
+    if (!this.config) {
+      throw new Error("Configuration not loaded. Call loadConfiguration() first.");
+    }
+    return this.config.planning || {
+      execution: {
+        precomputation: "moderate" as const,
+        cache_enabled: true,
+        cache_ttl_hours: 24,
+        invalidate_on_job_change: true,
+      },
+      validation: {
+        precomputation: "moderate" as const,
+        functional_validators: true,
+        smoke_tests: true,
+        content_safety: true,
+        llm_threshold: 0.7,
+        llm_fallback: true,
+        cache_enabled: true,
+        cache_ttl_hours: 1,
+        fail_fast: false,
+      },
+    };
   }
 
   getSupervisorConfiguration(type: "workspace" | "session" | "agent"): AtlasSupervisorConfig {

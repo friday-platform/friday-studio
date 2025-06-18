@@ -89,6 +89,21 @@ memory:
       max_entries: 1000
       cleanup_interval_hours: 24
 
+  # Streaming memory configuration for performance
+  streaming:
+    enabled: true
+    queue_max_size: 1000
+    batch_size: 10
+    flush_interval_ms: 1000
+    background_processing: true
+    persistence_enabled: true
+    error_retry_attempts: 3
+    priority_processing: true
+    dual_write_enabled: true # Safe migration mode
+    legacy_batch_enabled: false # Disable for performance
+    stream_everything: true
+    performance_tracking: true
+
   # Agent-level memory configuration
   agent:
     enabled: true
@@ -215,6 +230,15 @@ supervisors:
   agent:
     model: "claude-3-5-sonnet-20241022"
     memory: "agent" # Uses agent-level memory configuration
+    supervision:
+      level: "minimal" # minimal | standard | paranoid
+      cache_enabled: true
+      cache_adapter: "memory" # memory | redis | file
+      cache_ttl_hours: 1
+      parallel_llm_calls: true
+      timeouts:
+        analysis_ms: 2000
+        validation_ms: 1000
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.
@@ -226,6 +250,38 @@ supervisors:
         - Monitor agent execution in real-time
         - Validate outputs for quality and safety
         - Handle failures and recovery scenarios
+
+# A Priori Planning Configuration
+planning:
+  execution:
+    precomputation: "moderate" # aggressive | moderate | minimal | disabled
+    cache_enabled: true
+    cache_ttl_hours: 24
+    invalidate_on_job_change: true
+    strategy_selection:
+      simple_jobs: "precomputed" # Use precomputed plans for simple jobs
+      complex_jobs: "behavior-tree" # Use behavior trees for conditional logic
+      optimization_jobs: "mcts" # Use MCTS for optimization problems
+      planning_jobs: "htn" # Use HTN for hierarchical planning
+    strategy_thresholds:
+      complexity: 0.6 # Above this complexity, use ExecutionEngine
+      uncertainty: 0.5 # Above this uncertainty, consider MCTS
+      optimization: 0.7 # Above this, prefer MCTS optimization
+
+  validation:
+    precomputation: "moderate" # aggressive | moderate | minimal | disabled
+    functional_validators: true # Enable custom functional validators
+    smoke_tests: true # Enable heuristic smoke tests
+    content_safety: true # Enable content safety validation
+    llm_threshold: 0.7 # Confidence threshold for LLM fallback
+    llm_fallback: true # Enable expensive LLM validation fallback
+    cache_enabled: true
+    cache_ttl_hours: 1
+    fail_fast: false # Continue validation even after failures
+    external_services:
+      openai_moderation: false # Enable OpenAI Moderation API
+      perspective_api: false # Enable Google Perspective API
+      deepeval_service: null # URL for Python DeepEval service
 
 # Runtime configuration for Atlas platform
 runtime:

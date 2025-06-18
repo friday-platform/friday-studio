@@ -8,12 +8,19 @@ import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
 import type { TriggerSpecification } from "./config-loader.ts";
+import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
+import { SupervisionLevel } from "./caching/supervision-cache.ts";
+import { getSupervisionConfig } from "./supervision-levels.ts";
+import {
+  type StreamingMemoryConfig,
+  StreamingMemoryManager,
+} from "./memory/streaming/streaming-memory-manager.ts";
 
 // Job specification types
 export interface JobSpecification {
   name: string;
   description: string;
-  triggers?: TriggerSpecification[];
+  triggers?: JobTrigger[]; // Signal triggers that activate this job
   session_prompts?: {
     planning?: string;
     evaluation?: string;
@@ -32,10 +39,21 @@ export interface JobSpecification {
   };
 }
 
+export interface JobTrigger {
+  signal: string;
+  condition?: string | object;
+  naturalLanguageCondition?: string;
+}
+
 export interface JobExecution {
   strategy: "sequential" | "parallel" | "conditional" | "staged";
   agents: JobAgentSpec[];
   stages?: JobStage[];
+  context?: {
+    codebase_files?: string[];
+    focus_areas?: string[];
+    [key: string]: any;
+  };
 }
 
 export interface JobAgentSpec {
@@ -44,6 +62,7 @@ export interface JobAgentSpec {
   prompt?: string;
   config?: Record<string, any>;
   input?: Record<string, any>;
+  input_source?: "signal" | "previous" | "combined" | "codebase_context"; // Source of input for the agent
 }
 
 export interface JobStage {
@@ -187,7 +206,7 @@ export interface ExecutionPhase {
 export interface AgentTask {
   agentId: string;
   task: string;
-  inputSource: "signal" | "previous" | "combined";
+  inputSource: "signal" | "previous" | "combined" | "codebase_context";
   dependencies?: string[];
   mode?: string; // For agents with multiple modes
   config?: Record<string, any>; // Agent-specific configuration
@@ -211,10 +230,18 @@ export class SessionSupervisor extends BaseAgent {
   private memoryConfig: AtlasMemoryConfig; // Store for AgentSupervisor
   private factExtractor?: FactExtractor;
   private knowledgeGraph?: KnowledgeGraphManager;
+  private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
+  private streamingMemory?: StreamingMemoryManager;
+  private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
 
-  constructor(memoryConfig: AtlasMemoryConfig, parentScopeId?: string) {
+  constructor(
+    memoryConfig: AtlasMemoryConfig,
+    parentScopeId?: string,
+    precomputedPlans?: Record<string, any>,
+  ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
+    this.precomputedPlans = this.validateAndSanitizePlans(precomputedPlans || {}, parentScopeId); // Store shared plans
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -228,6 +255,17 @@ export class SessionSupervisor extends BaseAgent {
     // Initialize knowledge graph and fact extractor for semantic memory
     this.initializeSemanticFactExtraction();
 
+    // Enable advanced planning and reasoning for complex decision making
+    this.enableAdvancedPlanning({
+      cacheDir: Deno.cwd(),
+      enableCaching: true,
+      enablePatternMatching: true,
+      reasoningConfig: {
+        allowLLMSelection: true,
+        defaultMethod: "react", // ReAct is good for session coordination with tool use
+      },
+    });
+
     // Set supervisor-specific prompts
     this.prompts = {
       system:
@@ -239,7 +277,9 @@ Your role is to:
 4. Evaluate results and adapt the plan if needed
 5. Determine when the session goal has been achieved
 
-You have access to a filtered view of the workspace tailored for this specific session.`,
+You have access to a filtered view of the workspace tailored for this specific session.
+
+You can use advanced reasoning methods to make complex decisions about agent coordination and execution strategies.`,
       user: "",
     };
   }
@@ -287,21 +327,127 @@ You have access to a filtered view of the workspace tailored for this specific s
     this.log("AgentSupervisor initialized for supervised agent execution");
   }
 
+  // Initialize AgentSupervisor using atlas.yml configuration
+  async initializeStreamingMemory(context: SessionContext): Promise<void> {
+    try {
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+
+      // Load streaming memory configuration from atlas.yml
+      const streamingMemoryConfig = (atlasConfig.memory as any)?.streaming || {};
+      const streamingConfig: StreamingMemoryConfig = {
+        queue_max_size: streamingMemoryConfig.queue_max_size || 1000,
+        batch_size: streamingMemoryConfig.batch_size || 10,
+        flush_interval_ms: streamingMemoryConfig.flush_interval_ms || 1000,
+        background_processing: streamingMemoryConfig.background_processing ?? true,
+        persistence_enabled: streamingMemoryConfig.persistence_enabled ?? true,
+        error_retry_attempts: streamingMemoryConfig.error_retry_attempts || 3,
+        priority_processing: streamingMemoryConfig.priority_processing ?? true,
+        dual_write_enabled: streamingMemoryConfig.dual_write_enabled ?? true,
+        legacy_batch_enabled: streamingMemoryConfig.legacy_batch_enabled ?? false,
+        stream_everything: streamingMemoryConfig.stream_everything ?? true,
+        performance_tracking: streamingMemoryConfig.performance_tracking ?? true,
+      };
+
+      // Initialize streaming memory manager
+      this.streamingMemory = new StreamingMemoryManager(
+        this.sessionMemoryManager,
+        streamingConfig,
+        {
+          sessionId: context.sessionId,
+          workspaceId: context.workspaceId,
+        },
+      );
+
+      this.log("Streaming memory initialized");
+    } catch (error) {
+      this.logger.error("Failed to initialize streaming memory", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: context.sessionId,
+      });
+      // Don't fail session initialization if streaming memory fails
+    }
+  }
+
+  async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
+    try {
+      const atlasConfigLoader = AtlasConfigLoader.getInstance();
+      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+      const agentSupervisorConfig = atlasConfig.supervisors.agent;
+
+      // Extract supervision configuration with defaults
+      const supervisionConfig = (agentSupervisorConfig.supervision as AtlasSupervisionConfig) || {};
+
+      // Set session supervision level for optimizations
+      this.supervisionLevel = (supervisionConfig as any).level
+        ? SupervisionLevel[
+          (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
+        ]
+        : SupervisionLevel.MINIMAL;
+
+      this.logger.debug("Atlas config supervision settings", {
+        supervisionConfig,
+        level: (supervisionConfig as any).level,
+        cache_enabled: (supervisionConfig as any).cache_enabled,
+        sessionSupervisionLevel: this.supervisionLevel,
+      });
+
+      this.initializeAgentSupervisor({
+        model: agentSupervisorConfig.model,
+        memoryConfig: this.memoryConfig,
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        supervisionLevel: ((supervisionConfig as any).level &&
+          SupervisionLevel[
+            (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
+          ]) || SupervisionLevel.MINIMAL,
+        cacheEnabled: (supervisionConfig as any).cache_enabled !== false,
+        prompts: agentSupervisorConfig.prompts,
+      });
+
+      this.log(
+        `AgentSupervisor initialized with supervision level: ${
+          (supervisionConfig as any).level || SupervisionLevel.MINIMAL
+        }`,
+      );
+    } catch (error) {
+      this.logger.error("Failed to load atlas config, using defaults", { error });
+
+      // Fallback to minimal config for performance
+      this.initializeAgentSupervisor({
+        model: "claude-4-sonnet-20250514",
+        memoryConfig: this.memoryConfig,
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        supervisionLevel: SupervisionLevel.MINIMAL,
+        cacheEnabled: true,
+        prompts: {
+          system: "You are an AgentSupervisor responsible for safe agent execution.",
+        },
+      });
+    }
+  }
+
   // Initialize session with context from WorkspaceSupervisor
-  initializeSession(context: SessionContext): Promise<void> | void {
+  async initializeSession(context: SessionContext): Promise<void> {
     this.sessionContext = context;
     this.log(
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
     );
 
-    // Initialize AgentSupervisor for supervised execution
-    this.initializeAgentSupervisor({
-      model: "claude-4-sonnet-20250514",
-      memoryConfig: this.memoryConfig, // Pass the proper memory configuration
-      prompts: {
-        system: "You are an AgentSupervisor responsible for safe agent execution.",
-      },
-    });
+    // Initialize AgentSupervisor for supervised execution using atlas.yml config
+    await this.initializeAgentSupervisorFromConfig(context);
+
+    // Initialize streaming memory for performance
+    await this.initializeStreamingMemory(context);
+
+    // Log shared precomputed plans received from WorkspaceSupervisor
+    const planCount = Object.keys(this.precomputedPlans || {}).length;
+    this.log(
+      `Received ${planCount} precomputed plans from WorkspaceSupervisor: ${
+        Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+      }`,
+    );
 
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
@@ -315,13 +461,126 @@ You have access to a filtered view of the workspace tailored for this specific s
     );
   }
 
-  // Create execution plan using job specification or LLM reasoning
-  createExecutionPlan(): Promise<ExecutionPlan> | ExecutionPlan {
+  // Validate and sanitize precomputed plans to prevent security issues
+  private validateAndSanitizePlans(
+    plans: Record<string, any>,
+    expectedWorkspaceId?: string,
+  ): Record<string, any> {
+    const sanitizedPlans: Record<string, any> = {};
+
+    for (const [key, plan] of Object.entries(plans)) {
+      try {
+        // Security: Validate plan key format to prevent injection
+        if (!this.isValidPlanKey(key)) {
+          this.log(`Invalid plan key format detected: ${key}`, "warn");
+          continue;
+        }
+
+        // Security: Verify workspace scope if available
+        if (
+          expectedWorkspaceId && plan?.context?.workspaceId &&
+          plan.context.workspaceId !== expectedWorkspaceId
+        ) {
+          this.log(
+            `Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`,
+            "warn",
+          );
+          continue;
+        }
+
+        // Sanitize the plan data
+        sanitizedPlans[key] = this.sanitizePlan(plan);
+      } catch (error) {
+        this.log(`Failed to validate plan ${key}: ${error}`, "warn");
+      }
+    }
+
+    return sanitizedPlans;
+  }
+
+  // Validate plan key format to prevent injection attacks
+  private isValidPlanKey(key: string): boolean {
+    // Allow only alphanumeric, hyphens, underscores, and colons
+    const validKeyPattern = /^[a-zA-Z0-9\-_:]+$/;
+    return validKeyPattern.test(key) && key.length <= 256; // Reasonable length limit
+  }
+
+  // Sanitize individual plan to remove sensitive data
+  private sanitizePlan(plan: any): any {
+    if (!plan || typeof plan !== "object") {
+      return plan;
+    }
+
+    const sanitized = { ...plan };
+
+    // Remove sensitive fields
+    const sensitiveFields = [
+      "workspaceSecrets",
+      "privateKeys",
+      "authTokens",
+      "apiKeys",
+      "passwords",
+      "credentials",
+      "internalConfig",
+      "debugInfo",
+    ];
+
+    for (const field of sensitiveFields) {
+      delete sanitized[field];
+    }
+
+    // Sanitize nested objects recursively
+    if (sanitized.context && typeof sanitized.context === "object") {
+      sanitized.context = this.sanitizePlan(sanitized.context);
+    }
+
+    return sanitized;
+  }
+
+  // Create secure, workspace-scoped cache key to prevent collisions
+  private createSecurePlanKey(jobName: string, workspaceId: string): string {
+    // Include workspace ID to prevent cross-workspace collisions
+    // Use deterministic format for consistent lookups
+    return `plan:${workspaceId}:${jobName}`;
+  }
+
+  // Validate plan before execution to ensure security and compatibility
+  private validatePlanForExecution(plan: any, sessionContext: SessionContext): boolean {
+    try {
+      // Verify plan structure
+      if (!plan || typeof plan !== "object") {
+        return false;
+      }
+
+      // Verify workspace context matches if available
+      if (plan.context?.workspaceId && plan.context.workspaceId !== sessionContext.workspaceId) {
+        this.log(
+          `Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`,
+          "warn",
+        );
+        return false;
+      }
+
+      // Verify plan hasn't been tampered with (basic integrity check)
+      if (plan.phases && !Array.isArray(plan.phases)) {
+        return false;
+      }
+
+      // Additional validations can be added here
+      return true;
+    } catch (error) {
+      this.log(`Plan validation error: ${error}`, "warn");
+      return false;
+    }
+  }
+
+  // Create execution plan using advanced reasoning or job specification
+  async createExecutionPlan(): Promise<ExecutionPlan> {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
 
-    this.log(`[createExecutionPlan] Checking for jobSpec...`);
+    this.log(`[createExecutionPlan] Checking for precomputed plans and jobSpec...`);
     this.log(
       `[createExecutionPlan] SessionContext keys: ${
         Object.keys(
@@ -338,10 +597,51 @@ You have access to a filtered view of the workspace tailored for this specific s
       );
     }
 
-    // If we have a job specification, use it directly (fast path)
+    // STEP 1: Check for precomputed execution plans (fastest path - zero LLM calls)
+    if (this.sessionContext.jobSpec) {
+      const jobName = this.sessionContext.jobSpec.name;
+      this.log(`Checking for precomputed plan for job: ${jobName}`);
+
+      // Create secure, workspace-scoped cache key
+      const secureKey = this.createSecurePlanKey(jobName, this.sessionContext.workspaceId);
+
+      // Check the shared precomputed plans from WorkspaceSupervisor
+      if (this.precomputedPlans && this.precomputedPlans[secureKey]) {
+        const precomputedPlan = this.precomputedPlans[secureKey];
+        this.log(`Using shared precomputed execution plan for: ${jobName} (zero LLM calls)`);
+
+        // Additional security validation before use
+        if (!this.validatePlanForExecution(precomputedPlan, this.sessionContext)) {
+          this.log(
+            `Security validation failed for plan ${secureKey}, falling back to runtime planning`,
+            "warn",
+          );
+        } else {
+          // Convert precomputed plan to ExecutionPlan format with session-specific data
+          const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
+            precomputedPlan,
+            this.sessionContext,
+          );
+
+          this.executionPlan = sessionPlan;
+          return sessionPlan;
+        }
+      } else {
+        this.log(
+          `No precomputed plan found for job: ${jobName} (key: ${secureKey}) in shared cache, falling back to runtime planning`,
+        );
+        this.log(
+          `Available precomputed plans: ${
+            Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+          }`,
+        );
+      }
+    }
+
+    // STEP 2: If we have a job specification, use it directly (fast path)
     if (this.sessionContext.jobSpec) {
       this.log(
-        `Using fast job spec path for: ${this.sessionContext.jobSpec.name}`,
+        `Using job spec path for: ${this.sessionContext.jobSpec.name}`,
       );
       return this.createPlanFromJobSpec(this.sessionContext.jobSpec);
     }
@@ -353,9 +653,19 @@ You have access to a filtered view of the workspace tailored for this specific s
       }`,
     );
 
+    // Use advanced reasoning for complex planning decisions
+    if (this.planningEngine) {
+      try {
+        this.log("Using advanced reasoning for execution planning");
+        return await this.createAdvancedReasoningPlan();
+      } catch (error) {
+        this.log(`Advanced reasoning failed: ${error}`);
+      }
+    }
+
     // Fallback to LLM-based planning
     this.log("Using LLM-based planning fallback");
-    return this.createLLMBasedPlan();
+    return await this.createLLMBasedPlan();
   }
 
   // Create execution plan from job specification
@@ -376,7 +686,7 @@ You have access to a filtered view of the workspace tailored for this specific s
         agents: jobSpec.execution.agents.map((agentSpec, index) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: index === 0 ? "signal" : "previous",
+          inputSource: agentSpec.input_source || (index === 0 ? "signal" : "previous"),
           dependencies: index > 0 ? [jobSpec.execution.agents[index - 1].id] : [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -395,7 +705,7 @@ You have access to a filtered view of the workspace tailored for this specific s
           agents: stage.agents.map((agentSpec) => ({
             agentId: agentSpec.id,
             task: this.buildAgentTask(agentSpec, jobSpec),
-            inputSource: stageIndex === 0 ? "signal" : "previous",
+            inputSource: agentSpec.input_source || (stageIndex === 0 ? "signal" : "previous"),
             dependencies: [],
             mode: agentSpec.mode,
             config: agentSpec.config,
@@ -411,7 +721,7 @@ You have access to a filtered view of the workspace tailored for this specific s
         agents: jobSpec.execution.agents.map((agentSpec) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: "signal",
+          inputSource: agentSpec.input_source || "signal",
           dependencies: [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -421,6 +731,66 @@ You have access to a filtered view of the workspace tailored for this specific s
     }
 
     this.executionPlan = plan;
+    return plan;
+  }
+
+  // Convert precomputed plan to session-specific ExecutionPlan
+  private convertPrecomputedPlanToExecutionPlan(
+    precomputedPlan: import("./planning/planning-config.ts").PrecomputedPlan,
+    sessionContext: SessionContext,
+  ): ExecutionPlan {
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: sessionContext.sessionId,
+      phases: [],
+      successCriteria: [
+        `Execute all ${precomputedPlan.steps.length} steps successfully`,
+        "Follow precomputed execution plan",
+        "Complete within estimated duration",
+      ],
+      adaptationStrategy: "rigid", // Precomputed plans are rigid
+    };
+
+    // Convert precomputed steps to session execution phases
+    if (
+      precomputedPlan.type === "static_sequential" || precomputedPlan.type === "static_parallel"
+    ) {
+      plan.phases.push({
+        id: "precomputed-phase",
+        name: `Precomputed ${precomputedPlan.jobName}`,
+        agents: precomputedPlan.steps.map((step, index) => ({
+          agentId: step.agentId,
+          task: step.task,
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
+          dependencies: step.dependencies,
+          mode: step.mode,
+          config: step.config,
+        })),
+        executionStrategy: precomputedPlan.type === "static_sequential" ? "sequential" : "parallel",
+      });
+    } else {
+      // Handle other plan types like behavior_tree, htn, mcts
+      this.log(`Converting complex precomputed plan type: ${precomputedPlan.type}`);
+      // For now, convert to sequential execution - could be enhanced later
+      plan.phases.push({
+        id: "complex-precomputed-phase",
+        name: `Complex ${precomputedPlan.jobName}`,
+        agents: precomputedPlan.steps.map((step) => ({
+          agentId: step.agentId,
+          task: step.task,
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
+          dependencies: step.dependencies,
+          mode: step.mode,
+          config: step.config,
+        })),
+        executionStrategy: "sequential", // Default for complex plans
+      });
+    }
+
     return plan;
   }
 
@@ -454,8 +824,174 @@ You have access to a filtered view of the workspace tailored for this specific s
     return criteria;
   }
 
+  // Create simplified execution plan for minimal supervision mode
+  private createSimplifiedPlan(): ExecutionPlan {
+    if (!this.sessionContext) {
+      throw new Error("Session context not available");
+    }
+
+    // Create a simple sequential plan using all available agents
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [{
+        id: "simple-phase",
+        name: "Sequential Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process signal ${this.sessionContext!.signal.id}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [this.sessionContext!.availableAgents[index - 1].id] : [],
+        })),
+        executionStrategy: "sequential",
+      }],
+      successCriteria: ["Execute all agents", "Produce output"],
+      adaptationStrategy: "rigid",
+    };
+
+    this.executionPlan = plan;
+    return plan;
+  }
+
+  // Create execution plan using advanced reasoning methods
+  private async createAdvancedReasoningPlan(): Promise<ExecutionPlan> {
+    if (!this.planningEngine || !this.sessionContext) {
+      throw new Error("Advanced planning not available");
+    }
+
+    // Create a planning task for the session
+    const planningTask = {
+      id: `session-plan-${this.sessionContext.sessionId}`,
+      description: `Create execution plan for ${this.sessionContext.signal.id} signal`,
+      context: {
+        signal: this.sessionContext.signal,
+        payload: this.sessionContext.payload,
+        availableAgents: this.sessionContext.availableAgents,
+        constraints: this.sessionContext.constraints,
+      },
+      agentType: "session" as const,
+      complexity: this.determineTaskComplexity(),
+      requiresToolUse: this.requiresToolUsage(),
+      qualityCritical: this.isQualityCritical(),
+    };
+
+    // Generate plan using reasoning engine
+    const planResult = await this.planningEngine.generatePlan(planningTask);
+
+    this.log(
+      `Generated plan using ${planResult.method} reasoning (confidence: ${planResult.confidence})`,
+    );
+
+    // Convert plan result to ExecutionPlan format
+    return this.convertReasoningPlanToExecutionPlan(planResult.plan);
+  }
+
+  // Determine task complexity for reasoning method selection
+  private determineTaskComplexity(): number {
+    if (!this.sessionContext) return 1;
+
+    let complexity = 1;
+
+    // Add complexity for multiple agents
+    if (this.sessionContext.availableAgents.length > 2) complexity += 1;
+
+    // Add complexity for complex signal types
+    if (this.sessionContext.signal.id.includes("complex")) complexity += 1;
+
+    // Add complexity for large payloads
+    if (JSON.stringify(this.sessionContext.payload).length > 1000) complexity += 1;
+
+    // Add complexity for constraints
+    if (
+      this.sessionContext.constraints?.timeLimit &&
+      this.sessionContext.constraints.timeLimit < 60000
+    ) complexity += 1;
+
+    return Math.min(complexity, 5);
+  }
+
+  // Check if task requires tool usage
+  private requiresToolUsage(): boolean {
+    if (!this.sessionContext) return false;
+
+    // Check if any agents are remote or have tool configurations
+    return this.sessionContext.availableAgents.some((agent) =>
+      agent.type === "remote" ||
+      (agent.config as any)?.tools?.length > 0
+    );
+  }
+
+  // Check if task is quality critical
+  private isQualityCritical(): boolean {
+    if (!this.sessionContext) return false;
+
+    // Signals containing "critical", "error", or "failure" are quality critical
+    const criticalKeywords = ["critical", "error", "failure", "security", "production"];
+    const signalText = this.sessionContext.signal.id.toLowerCase();
+    const payloadText = JSON.stringify(this.sessionContext.payload).toLowerCase();
+
+    return criticalKeywords.some((keyword) =>
+      signalText.includes(keyword) || payloadText.includes(keyword)
+    );
+  }
+
+  // Convert reasoning plan result to ExecutionPlan format
+  private convertReasoningPlanToExecutionPlan(plan: any): ExecutionPlan {
+    if (!this.sessionContext) {
+      throw new Error("No session context available");
+    }
+
+    const executionPlan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [],
+      successCriteria: plan.successCriteria || ["All agents executed successfully"],
+      adaptationStrategy: plan.adaptationStrategy || "flexible",
+    };
+
+    // Convert plan steps to execution phases
+    if (plan.steps && Array.isArray(plan.steps)) {
+      executionPlan.phases.push({
+        id: "reasoning-planned-phase",
+        name: "Advanced Reasoning Execution",
+        agents: plan.steps.map((step: any, index: number) => ({
+          agentId: step.agentId ||
+            this.sessionContext!
+              .availableAgents[index % this.sessionContext!.availableAgents.length]?.id ||
+            "local-assistant",
+          task: step.description || step.task || `Step ${index + 1}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [plan.steps[index - 1].agentId] : [],
+        })),
+        executionStrategy: plan.strategy === "parallel" ? "parallel" : "sequential",
+      });
+    } else {
+      // Fallback: create simple sequential plan
+      executionPlan.phases.push({
+        id: "simple-phase",
+        name: "Sequential Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process with ${agent.name}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [this.sessionContext!.availableAgents[index - 1].id] : [],
+        })),
+        executionStrategy: "sequential",
+      });
+    }
+
+    this.executionPlan = executionPlan;
+    return executionPlan;
+  }
+
   // Fallback LLM-based planning for backward compatibility
   private async createLLMBasedPlan(): Promise<ExecutionPlan> {
+    // Use simplified planning in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      this.log("Using simplified planning (minimal supervision mode)");
+      return this.createSimplifiedPlan();
+    }
+
     const planPrompt = `Given the following session context, create an execution plan:
 
 Signal: ${this.sessionContext!.signal.id}
@@ -575,13 +1111,118 @@ Respond with a structured plan.`;
     };
   }
 
-  // Evaluate execution progress and determine next steps
+  // Evaluate execution progress using advanced reasoning
   async evaluateProgress(results: AgentResult[]): Promise<{
     isComplete: boolean;
     nextAction?: "continue" | "retry" | "adapt" | "escalate";
     feedback?: string;
   }> {
+    // Try advanced reasoning first for complex evaluation
+    if (this.planningEngine && this.shouldUseAdvancedReasoning(results)) {
+      try {
+        return await this.evaluateProgressWithReasoning(results);
+      } catch (error) {
+        this.log(`Advanced evaluation failed: ${error}`);
+      }
+    }
+
+    // Fallback to standard LLM evaluation
+    return await this.evaluateProgressWithLLM(results);
+  }
+
+  // Check if we should use advanced reasoning for evaluation
+  private shouldUseAdvancedReasoning(results: AgentResult[]): boolean {
+    // Use advanced reasoning for:
+    // 1. Complex sessions with many agents
+    if (results.length > 3) return true;
+
+    // 2. Quality critical tasks
+    if (this.isQualityCritical()) return true;
+
+    // 3. When there are failures that need analysis
+    const hasFailures = results.some((result) =>
+      !result.output || JSON.stringify(result.output).includes("error")
+    );
+    if (hasFailures) return true;
+
+    return false;
+  }
+
+  // Evaluate progress using advanced reasoning methods
+  private async evaluateProgressWithReasoning(results: AgentResult[]): Promise<{
+    isComplete: boolean;
+    nextAction?: "continue" | "retry" | "adapt" | "escalate";
+    feedback?: string;
+  }> {
+    if (!this.planningEngine || !this.sessionContext) {
+      throw new Error("Advanced reasoning not available");
+    }
+
+    // Create an evaluation task
+    const evaluationTask = {
+      id: `evaluation-${this.sessionContext.sessionId}`,
+      description: `Evaluate execution progress for session ${this.sessionContext.sessionId}`,
+      context: {
+        originalSignal: this.sessionContext.signal,
+        originalPayload: this.sessionContext.payload,
+        executionResults: results,
+        executionPlan: this.executionPlan,
+        successCriteria: this.executionPlan?.successCriteria || [],
+      },
+      agentType: "session" as const,
+      complexity: 3, // Evaluation is moderately complex
+      requiresToolUse: false,
+      qualityCritical: true, // Evaluation is always quality critical
+    };
+
+    // Use reasoning engine to evaluate
+    const evaluationResult = await this.planningEngine.generatePlan(evaluationTask);
+
+    this.log(`Evaluated progress using ${evaluationResult.method} reasoning`);
+
+    // Parse the reasoning result
+    const evaluation = evaluationResult.plan;
+
+    // Check execution count first
+    const totalAgentsInPlan = this.executionPlan?.phases.reduce(
+      (sum, phase) => sum + phase.agents.length,
+      0,
+    ) || 0;
+
+    const agentsExecuted = results.length;
+
+    if (agentsExecuted < totalAgentsInPlan) {
+      return {
+        isComplete: false,
+        nextAction: "continue",
+        feedback: `Advanced reasoning: ${agentsExecuted}/${totalAgentsInPlan} agents executed. ${
+          evaluation.reasoning || "Continuing execution."
+        }`,
+      };
+    }
+
+    // All agents executed - evaluate quality
+    const isComplete = evaluation.isComplete !== false; // Default to complete if not specified
+    const nextAction = evaluation.nextAction || (isComplete ? undefined : "retry");
+
+    return {
+      isComplete,
+      nextAction: nextAction as any,
+      feedback: `Advanced reasoning evaluation: ${evaluation.reasoning || "Execution complete."}`,
+    };
+  }
+
+  // Standard LLM-based evaluation (fallback)
+  private async evaluateProgressWithLLM(results: AgentResult[]): Promise<{
+    isComplete: boolean;
+    nextAction?: "continue" | "retry" | "adapt" | "escalate";
+    feedback?: string;
+  }> {
     this.executionResults = results;
+
+    if (!this.sessionContext || !this.executionPlan) {
+      throw new Error("Session context or execution plan not available");
+    }
 
     const evaluationPrompt = `Evaluate the execution progress:
 
@@ -802,10 +1443,28 @@ Provide a brief evaluation.`;
         supervision,
       );
 
-      // Step 6: Record execution in working memory
+      // Step 6: Stream agent result for immediate memory processing
+      if (this.streamingMemory) {
+        await this.streamingMemory.streamAgentResult(
+          agentId,
+          input,
+          result.output,
+          result.execution_metadata.duration || 0,
+          result.validation.is_valid,
+          {
+            tokensUsed: (result.execution_metadata as any).tokens_used,
+            error: result.validation.is_valid
+              ? undefined
+              : result.validation.issues?.[0]?.description,
+            priority: "normal",
+          },
+        );
+      }
+
+      // Step 7: Record execution in working memory (legacy for dual-write)
       await this.recordExecutionInWorkingMemory(agentId, task, input, result, context);
 
-      // Step 7: Clean up worker
+      // Step 8: Clean up worker
       await this.agentSupervisor.terminateWorker(workerInstance.id);
 
       this.log(`Agent ${agentId} executed successfully with supervision`);
@@ -1019,11 +1678,34 @@ Overall Success: ${
         .find((phase) => phase.executionStrategy === "sequential")
         ?.agents.find((agent) => agent.agentId === agentId);
 
-      const shouldPassCleanInput = currentAgentTask?.inputSource === "previous";
+      const inputSource = currentAgentTask?.inputSource;
+      const shouldPassCleanInput = inputSource === "previous";
+
+      // For codebase_context input source, enhance with signal type information
+      if (inputSource === "codebase_context") {
+        this.log(
+          `Providing codebase analysis context to ${agentId}`,
+        );
+        return {
+          ...originalInput,
+          analysis_type: agentId.includes("performance")
+            ? "performance"
+            : agentId.includes("dx")
+            ? "developer_experience"
+            : agentId.includes("architecture")
+            ? "architecture"
+            : "comprehensive",
+          signal_context: {
+            signal_id: this.sessionContext.signal.id,
+            signal_type: this.sessionContext.signal.provider?.name,
+            triggered_at: new Date().toISOString(),
+          },
+        };
+      }
 
       if (shouldPassCleanInput) {
         this.log(
-          `Passing clean input to ${agentId} for sequential execution (inputSource: ${currentAgentTask?.inputSource})`,
+          `Passing clean input to ${agentId} for sequential execution (inputSource: ${inputSource})`,
         );
         return originalInput;
       }
@@ -1091,6 +1773,14 @@ Overall Success: ${
   async generateSessionSummary(phaseResults: any[]): Promise<string> {
     if (!this.sessionContext) {
       return "No session context available for summary.";
+    }
+
+    // Skip expensive LLM summary generation in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      const allResults = phaseResults.flatMap((phase) => phase.results);
+      return `Session completed with ${allResults.length} agent executions. Signal: ${this.sessionContext.signal.id}. Results: ${
+        allResults.map((r) => `${r.agentId} (${r.duration}ms)`).join(", ")
+      }.`;
     }
 
     const allResults = phaseResults.flatMap((phase) => phase.results);
@@ -1247,6 +1937,12 @@ Keep the summary focused and relevant to the specific use case.`;
       this.log(
         "Warning: Cannot generate working memory summary - missing context or memory manager",
       );
+      return;
+    }
+
+    // Skip expensive memory consolidation in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      this.log("Skipping working memory consolidation (minimal supervision mode)");
       return;
     }
 
@@ -1426,6 +2122,105 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     this.log(`Stored session episodic memory: session_summary_${this.sessionContext?.sessionId}`);
   }
 
+  // Load codebase files specified in job context for analysis
+  private async loadCodebaseContext(agentId: string, task: AgentTask): Promise<string> {
+    try {
+      // Check if job spec includes codebase context
+      const jobSpec = this.sessionContext?.jobSpec;
+      if (!jobSpec?.execution?.context?.codebase_files) {
+        return "";
+      }
+
+      this.log(
+        `Loading codebase context for ${agentId}: ${jobSpec.execution.context.codebase_files.length} files, ${
+          jobSpec.execution.context.focus_areas?.length || 0
+        } focus areas`,
+      );
+
+      const codebaseFiles = jobSpec.execution.context.codebase_files;
+      const focusAreas = jobSpec.execution.context.focus_areas || [];
+
+      let codebaseContent = "";
+      let loadedFilesCount = 0;
+      let totalSize = 0;
+      const maxSize = 50000; // Limit total content to ~50KB
+
+      // Add focus areas first
+      if (focusAreas.length > 0) {
+        codebaseContent += `# Analysis Focus Areas\n\n`;
+        focusAreas.forEach((area: string, index: number) => {
+          codebaseContent += `${index + 1}. ${area}\n`;
+        });
+        codebaseContent += `\n---\n\n`;
+      }
+
+      codebaseContent += `# Atlas Codebase Files\n\n`;
+
+      for (const filePath of codebaseFiles) {
+        if (totalSize > maxSize) {
+          codebaseContent += `\n**Note: Additional files truncated due to size limits**\n`;
+          break;
+        }
+
+        try {
+          let actualPath = filePath;
+
+          // Handle directory patterns like "src/core/workers/"
+          if (filePath.endsWith("/")) {
+            // Read directory contents
+            try {
+              const entries = await Array.fromAsync(Deno.readDir(filePath));
+              const tsFiles = entries
+                .filter((entry) => entry.isFile && entry.name.endsWith(".ts"))
+                .slice(0, 3); // Limit to first 3 files per directory
+
+              for (const file of tsFiles) {
+                const fullPath = `${filePath}${file.name}`;
+                try {
+                  const content = await Deno.readTextFile(fullPath);
+                  const truncatedContent = content.length > 3000
+                    ? content.slice(0, 3000) + "\n... (truncated)"
+                    : content;
+
+                  codebaseContent +=
+                    `## ${filePath}${file.name}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
+                  loadedFilesCount++;
+                  totalSize += truncatedContent.length;
+
+                  if (totalSize > maxSize) break;
+                } catch (error) {
+                  this.log(`Warning: Could not read file ${fullPath}: ${error}`);
+                }
+              }
+            } catch (error) {
+              this.log(`Warning: Could not read directory ${filePath}: ${error}`);
+            }
+            continue;
+          }
+
+          // Handle specific files - use relative paths within project
+          const content = await Deno.readTextFile(filePath);
+          const truncatedContent = content.length > 4000
+            ? content.slice(0, 4000) + "\n... (truncated)"
+            : content;
+
+          codebaseContent += `## ${filePath}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
+          loadedFilesCount++;
+          totalSize += truncatedContent.length;
+        } catch (error) {
+          this.log(`Warning: Could not load file ${filePath}: ${error}`);
+          codebaseContent += `## ${filePath}\n*File could not be loaded: ${error}*\n\n`;
+        }
+      }
+
+      this.log(`Loaded codebase context: ${loadedFilesCount} files, ${totalSize} characters`);
+      return codebaseContent;
+    } catch (error) {
+      this.log(`Error loading codebase context: ${error}`);
+      return "";
+    }
+  }
+
   // Memory-Enhanced Prompt Preparation
   async enrichTaskWithMemory(
     agentId: string,
@@ -1453,11 +2248,15 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       // 4. Get episodic summary of previous same-agent executions
       const episodicSummary = this.getPreviousAgentExecutionSummary(agentId);
 
-      // 5. Build enhanced prompt
+      // 5. Load codebase files if specified in job context
+      const codebaseContext = await this.loadCodebaseContext(agentId, task);
+
+      // 6. Build enhanced prompt
       const memoryEnhancedPrompt = this.buildMemoryEnhancedPrompt(
         task.task,
         relevantFacts,
         workingMemoryContext,
+        codebaseContext,
         proceduralRules,
         episodicSummary,
       );
@@ -1770,10 +2569,21 @@ Overall Session Summary: ${
     originalTask: string,
     semanticFacts: any[],
     workingMemory: any[],
+    codebaseContext: string,
     proceduralRules: any[],
     episodicSummary: string | null,
   ): string {
     let enhancedPrompt = originalTask;
+
+    // Add codebase context section FIRST for analysis tasks
+    if (codebaseContext) {
+      enhancedPrompt += `\n\n## CODEBASE CONTEXT\n`;
+      enhancedPrompt +=
+        `You are analyzing the Atlas codebase. Here are the relevant files and focus areas:\n\n`;
+      enhancedPrompt += codebaseContext;
+      enhancedPrompt +=
+        `\n**Please provide specific analysis based on this actual Atlas codebase, not generic recommendations.**\n`;
+    }
 
     // Add semantic facts section
     if (semanticFacts.length > 0) {
@@ -1836,5 +2646,42 @@ Overall Session Summary: ${
     }
 
     return enhancedPrompt;
+  }
+
+  /**
+   * Shutdown streaming memory and perform final cleanup
+   */
+  async shutdown(): Promise<void> {
+    try {
+      if (this.streamingMemory) {
+        // Stream session completion before shutdown
+        if (this.sessionContext && this.executionResults.length > 0) {
+          const totalDuration = this.executionResults.reduce(
+            (sum, result) => sum + (result.duration || 0),
+            0,
+          );
+          const successRate = this.executionResults.filter((r) => r.output).length /
+            this.executionResults.length;
+
+          await this.streamingMemory.streamSessionComplete(
+            this.sessionContext.sessionId,
+            totalDuration,
+            this.executionResults.length,
+            successRate,
+            this.executionResults[this.executionResults.length - 1]?.output,
+            `Session with ${this.executionResults.length} agents completed`,
+          );
+        }
+
+        // Shutdown streaming memory
+        await this.streamingMemory.shutdown();
+        this.log("Streaming memory shutdown complete");
+      }
+    } catch (error) {
+      this.logger.error("Error during streaming memory shutdown", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionContext?.sessionId,
+      });
+    }
   }
 }

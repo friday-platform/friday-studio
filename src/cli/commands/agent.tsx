@@ -15,7 +15,7 @@ export interface AgentCommandProps {
 
 export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -35,7 +35,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
             break;
           default:
             setError(
-              `Unknown agent command: ${subcommand}. Available: list, describe, test`
+              `Unknown agent command: ${subcommand}. Available: list, describe, test`,
             );
             setStatus("error");
         }
@@ -55,12 +55,12 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       // Find workspace by ID
       const availableWorkspaces = await scanAvailableWorkspaces();
       const targetWorkspace = availableWorkspaces.find(
-        (w) => w.id === workspaceId || w.slug === workspaceId
+        (w) => w.id === workspaceId || w.slug === workspaceId,
       );
 
       if (!targetWorkspace) {
         throw new Error(
-          `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`
+          `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`,
         );
       }
 
@@ -69,7 +69,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       // Check current directory for workspace.yml
       if (!(await exists("workspace.yml"))) {
         throw new Error(
-          "Provide a workspace id or run this command inside of a workspace"
+          "Provide a workspace id or run this command inside of a workspace",
         );
       }
     }
@@ -87,13 +87,11 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
         ([id, agent]: [string, any]) => ({
           name: id,
           type: agent.type || "local",
-          model:
-            agent.model ||
-            config.supervisor?.model ||
+          model: agent.model ||
             "claude-4-sonnet-20250514",
           status: "ready",
           purpose: agent.purpose || "No description",
-        })
+        }),
       );
 
       setData({
@@ -111,13 +109,13 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
   async function handleDescribe(agentName: string | undefined) {
     if (!agentName) {
       throw new Error(
-        "Agent name required. Usage: atlas agent describe <name>"
+        "Agent name required. Usage: atlas agent describe <name>",
       );
     }
 
     if (!(await exists("workspace.yml"))) {
       throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first.'
+        'No workspace.yml found. Run "atlas workspace init" first.',
       );
     }
 
@@ -126,7 +124,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
 
     if (!agentConfig) {
       throw new Error(
-        `Agent '${agentName}' not found in workspace configuration`
+        `Agent '${agentName}' not found in workspace configuration`,
       );
     }
 
@@ -135,8 +133,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       agent: {
         name: agentName,
         ...agentConfig,
-        model:
-          agentConfig.model ||
+        model: agentConfig.model ||
           config.supervisor?.model ||
           "claude-4-sonnet-20250514",
       },
@@ -147,14 +144,14 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
   async function handleTest(agentName: string | undefined, flags: any) {
     if (!agentName) {
       throw new Error(
-        'Agent name required. Usage: atlas agent test <name> --message "..."'
+        'Agent name required. Usage: atlas agent test <name> --message "..."',
       );
     }
 
     const message = flags.message || flags.m;
     if (!message) {
       throw new Error(
-        'Message required. Usage: atlas agent test <name> --message "..."'
+        'Message required. Usage: atlas agent test <name> --message "..."',
       );
     }
 
@@ -163,8 +160,7 @@ export function AgentCommand({ subcommand, args, flags }: AgentCommandProps) {
       type: "test",
       agent: agentName,
       message,
-      result:
-        "Agent testing not yet implemented. Use signal trigger to test agents in a workflow.",
+      result: "Agent testing not yet implemented. Use signal trigger to test agents in a workflow.",
     });
     setStatus("ready");
   }
@@ -197,9 +193,7 @@ function AgentOutput({ data }: { data: any }) {
               </Text>
             </>
           )}
-          {data.agents.length === 0 ? (
-            <Text color="gray">No agents configured</Text>
-          ) : (
+          {data.agents.length === 0 ? <Text color="gray">No agents configured</Text> : (
             (() => {
               const columns: Column[] = [
                 { key: "name", label: "AGENT", width: 25 },
@@ -255,7 +249,7 @@ function AgentOutput({ data }: { data: any }) {
                       </Text>
                     </Text>
                   </React.Fragment>
-                )
+                ),
               )}
             </>
           )}

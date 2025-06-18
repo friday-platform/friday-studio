@@ -35,6 +35,7 @@ interface AgentExecutionRequest {
   agent_config: {
     type: string;
     model?: string;
+    protocol?: string;
     parameters: Record<string, unknown>;
     prompts: Record<string, string>;
     tools: string[];
@@ -668,7 +669,13 @@ class AgentExecutionWorker {
 
       // Validate required remote agent configuration
       const params = agentConfig.parameters as Record<string, unknown> || {};
-      const protocol = (params.protocol || "acp") as "acp" | "a2a" | "custom";
+
+      // Protocol MUST be defined in agent config - no fallbacks
+      if (!agentConfig.protocol) {
+        throw new Error("Remote agent requires 'protocol' field in agent configuration");
+      }
+
+      const protocol = agentConfig.protocol as "acp" | "a2a" | "custom" | "mcp";
 
       if (protocol === "acp" && !params.agent_name) {
         throw new Error("ACP remote agent requires 'agent_name' parameter");

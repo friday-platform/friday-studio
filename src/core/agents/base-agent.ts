@@ -12,6 +12,11 @@ import { MessageManager as Messages } from "../messages.ts";
 import { LLMService } from "../llm-service.ts";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
+import {
+  PlanningEngine,
+  type PlanningEngineConfig,
+  type PlanningTask,
+} from "../planning/planning-engine.ts";
 
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
@@ -24,6 +29,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   gates: any[] = [];
   protected logger: ChildLogger;
   protected memoryConfigManager: MemoryConfigManager;
+  protected planningEngine?: PlanningEngine;
 
   constructor(memoryConfig?: AtlasMemoryConfig, id?: string) {
     this.id = id || crypto.randomUUID();
@@ -529,5 +535,94 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
    */
   protected setPrompts(system: string, user: string = ""): void {
     this.prompts = { system, user };
+  }
+
+  // Advanced Planning & Reasoning Methods (Optional Enhancement)
+
+  /**
+   * Enable advanced planning capabilities with configurable reasoning
+   */
+  enableAdvancedPlanning(config?: PlanningEngineConfig): void {
+    const planningConfig: PlanningEngineConfig = {
+      cacheDir: Deno.cwd(), // Use current working directory by default
+      enableCaching: true,
+      enablePatternMatching: true,
+      ...config,
+    };
+
+    this.planningEngine = new PlanningEngine(planningConfig);
+    this.logger.info("Advanced planning enabled", { agentId: this.id, agentName: this.name() });
+  }
+
+  /**
+   * Generate a plan using advanced reasoning methods
+   */
+  async generatePlan(
+    description: string,
+    context?: any,
+    options?: {
+      complexity?: number;
+      requiresToolUse?: boolean;
+      qualityCritical?: boolean;
+    },
+  ): Promise<any> {
+    if (!this.planningEngine) {
+      throw new Error("Advanced planning not enabled. Call enableAdvancedPlanning() first.");
+    }
+
+    const task: PlanningTask = {
+      id: crypto.randomUUID(),
+      description,
+      context: context || {},
+      agentType: this.getAgentType(),
+      complexity: options?.complexity,
+      requiresToolUse: options?.requiresToolUse,
+      qualityCritical: options?.qualityCritical,
+    };
+
+    const result = await this.planningEngine.generatePlan(task);
+
+    // Remember the planning session
+    this.rememberTask(
+      `planning_${task.id}`,
+      { description, options, agentType: task.agentType },
+      { plan: result.plan, method: result.method, confidence: result.confidence },
+      true,
+    );
+
+    this.logger.info("Generated plan", {
+      taskId: task.id,
+      method: result.method,
+      confidence: result.confidence,
+      cached: result.cached,
+    });
+
+    return result.plan;
+  }
+
+  /**
+   * Get the agent type for planning context
+   */
+  private getAgentType(): "workspace" | "session" | "agent" | "custom" {
+    if (this.constructor.name.includes("Workspace")) return "workspace";
+    if (this.constructor.name.includes("Session")) return "session";
+    return "agent";
+  }
+
+  /**
+   * Check if advanced planning is enabled
+   */
+  isAdvancedPlanningEnabled(): boolean {
+    return this.planningEngine !== undefined;
+  }
+
+  /**
+   * Get available reasoning methods (if planning is enabled)
+   */
+  getAvailableReasoningMethods(): string[] {
+    if (!this.planningEngine) {
+      return [];
+    }
+    return this.planningEngine.getReasoningEngine().getAvailableMethods();
   }
 }

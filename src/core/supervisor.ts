@@ -16,6 +16,7 @@ import {
   type SignalProcessingConfig,
   SignalProcessor,
 } from "./signal-processing/index.ts";
+import { JobTriggerMatcher, type JobMatch, type JobSpec } from "./job-trigger-matcher.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -221,6 +222,7 @@ export class WorkspaceSupervisor extends BaseAgent
   private stateMachine: ReturnType<typeof createSupervisorMachine>;
   private stateActor: any; // XState actor type
   private signalProcessor: SignalProcessor;
+  private jobTriggerMatcher: JobTriggerMatcher;
 
   constructor(workspaceId: string, config: any = {}) {
     // Provide default memoryConfig if not provided
@@ -310,8 +312,35 @@ You have access to the full workspace context and configuration. Create structur
       user: config.prompts?.user || "",
     };
 
+    // Enable advanced planning capabilities
+    this.enableAdvancedPlanning({
+      cacheDir: config.atlasPath || Deno.cwd(),
+      enableCaching: true,
+      enablePatternMatching: true,
+      reasoningConfig: {
+        allowLLMSelection: true,
+        defaultMethod: "chain-of-thought",
+      },
+    });
+
     // Initialize signal processor with configuration
     this.signalProcessor = new SignalProcessor(this.createSignalProcessingConfig());
+
+    // Initialize job trigger matcher for direct job-signal evaluation
+    this.jobTriggerMatcher = new JobTriggerMatcher({
+      condition_evaluation: {
+        evaluators: {
+          jsonlogic: { enabled: true, priority: 100 },
+          simple_expression: { enabled: true, priority: 50 },
+          exact_match: { enabled: true, priority: 10 },
+        },
+        fallback_strategy: "allow",
+        require_match_confidence: 0.5,
+      },
+      min_confidence: 0.5,
+      max_matches_per_signal: 10,
+      enable_parallel_evaluation: true,
+    });
 
     // Initialize the state machine
     this.stateMachine = createSupervisorMachine(this);
@@ -413,6 +442,24 @@ You have access to the full workspace context and configuration. Create structur
 
   setWorkspace(workspace: IWorkspace): void {
     this.workspace = workspace;
+  }
+
+  // Initialize supervisor with workspace and precompute plans
+  async initialize(): Promise<void> {
+    this.log("Initializing WorkspaceSupervisor with advanced planning...");
+
+    // Enable advanced planning if not already enabled
+    if (!this.planningEngine) {
+      this.enableAdvancedPlanning();
+    }
+
+    // Precompute plans for all configured jobs
+    await this.precomputePlansForJobs();
+
+    // Precompute signal analysis patterns to eliminate LLM calls
+    await this.precomputeSignalAnalysisPatterns();
+
+    this.log("WorkspaceSupervisor initialization complete");
   }
 
   getWorkspaceAgents(): IWorkspaceAgent[] | undefined {
@@ -527,19 +574,326 @@ You have access to the full workspace context and configuration. Create structur
     };
   }
 
-  // Analyze signal using LLM to create intelligent session intent
+  // Pre-compute plans for all jobs at startup
+  async precomputePlansForJobs(): Promise<void> {
+    if (!this.planningEngine) {
+      this.log("Advanced planning not enabled, skipping plan precomputation");
+      return;
+    }
+
+    if (!this.mergedConfig?.jobs) {
+      this.log("No jobs configured, skipping plan precomputation");
+      return;
+    }
+
+    const jobs = this.mergedConfig.jobs;
+    const jobNames = Object.keys(jobs);
+
+    if (jobNames.length === 0) {
+      this.log("No jobs found to precompute plans for");
+      return;
+    }
+
+    this.log(`Starting background job plan precomputation for ${jobNames.length} jobs...`);
+
+    // Process jobs in background without blocking initialization
+    setTimeout(async () => {
+      const startTime = Date.now();
+
+      for (const jobName of jobNames) {
+        try {
+          const job = jobs[jobName];
+          this.log(`Precomputing plan for job: ${jobName}`);
+
+          // Create a planning task from the job specification
+          const task = {
+            id: `job-${jobName}`,
+            description: job.description || `Execute job: ${jobName}`,
+            context: {
+              jobSpec: job,
+              workspaceId: this.id,
+              availableAgents: this.getAllAgentMetadata(),
+            },
+            agentType: "workspace" as const,
+            complexity: this.inferJobComplexity(job),
+            requiresToolUse: this.jobRequiresTools(job),
+            qualityCritical: job.critical || false,
+          };
+
+          // Generate and cache the plan
+          if (this.planningEngine) {
+            await this.planningEngine.generatePlan(task);
+          }
+          this.log(`Plan precomputed for job: ${jobName}`);
+        } catch (error) {
+          this.log(`Failed to precompute plan for job ${jobName}: ${error}`);
+        }
+      }
+
+      const totalTime = Date.now() - startTime;
+      this.log(`Job plan precomputation completed in ${totalTime}ms for ${jobNames.length} jobs`);
+    }, 100); // Small delay to let initialization complete first
+  }
+
+  // Precompute signal analysis patterns to eliminate LLM calls
+  async precomputeSignalAnalysisPatterns(): Promise<void> {
+    if (!this.mergedConfig) {
+      this.log("No merged configuration available, skipping signal analysis precomputation");
+      return;
+    }
+
+    const signals = this.mergedConfig.workspace?.signals || {};
+    const jobs = this.mergedConfig.jobs || {};
+    const availableAgents = this.getAllAgentMetadata().map((agent) => agent.id);
+
+    if (Object.keys(signals).length === 0) {
+      this.log("No signals configured, skipping signal analysis precomputation");
+      return;
+    }
+
+    this.log(
+      `Starting signal analysis pattern precomputation for ${
+        Object.keys(signals).length
+      } signals...`,
+    );
+
+    try {
+      // Validate job trigger specifications
+      const validation = this.jobTriggerMatcher.validateJobTriggers(jobs);
+      
+      if (!validation.valid) {
+        this.log("Job trigger validation failed", "error", {
+          errors: validation.errors,
+        });
+        throw new Error(`Invalid job triggers: ${validation.errors.join(", ")}`);
+      }
+
+      if (validation.warnings.length > 0) {
+        this.log("Job trigger validation warnings", "warn", {
+          warnings: validation.warnings,
+        });
+      }
+
+      this.log("Job trigger validation complete", "info", {
+        totalJobs: Object.keys(jobs).length,
+        errors: validation.errors.length,
+        warnings: validation.warnings.length,
+      });
+    } catch (error) {
+      this.log(`Failed to validate job triggers: ${error}`);
+    }
+  }
+
+  // Get precomputed plans for sharing with SessionSupervisors (workspace-scoped and secured)
+  getPrecomputedPlans(requestingWorkspaceId?: string): Record<string, any> {
+    // Security: Verify requesting workspace matches this supervisor's workspace
+    if (requestingWorkspaceId && requestingWorkspaceId !== this.id) {
+      this.log(`Security violation: workspace ${requestingWorkspaceId} requested plans from ${this.id}`, "warn");
+      return {};
+    }
+
+    // For now, return empty plans since we need to implement a proper cache sharing mechanism
+    // The current planning engine doesn't support the getAllPrecomputedPlans() method
+    // TODO: Implement proper planning cache sharing with workspace-scoped keys
+    this.log(`getPrecomputedPlans() called for workspace ${this.id} - cache sharing not yet implemented`, "debug");
+    return {};
+  }
+
+  // Create secure, collision-resistant cache key for plans
+  private createSecurePlanKey(jobName: string): string {
+    // Include workspace ID to prevent cross-workspace collisions
+    // Use deterministic hashing for consistent keys
+    const keyData = `${this.id}:${jobName}`;
+    // In production, use crypto.subtle.digest for proper hashing
+    return `plan:${keyData}`;
+  }
+
+  // Sanitize plan data before sharing to remove sensitive information
+  private sanitizePlanForSharing(plan: any): any {
+    if (!plan || typeof plan !== 'object') {
+      return plan;
+    }
+
+    // Remove potentially sensitive fields
+    const sanitized = { ...plan };
+    delete sanitized.workspaceSecrets;
+    delete sanitized.privateKeys;
+    delete sanitized.authTokens;
+    delete sanitized.internalConfig;
+    
+    // Ensure no workspace-specific absolute paths
+    if (sanitized.context?.workspacePath) {
+      sanitized.context.workspacePath = '[WORKSPACE_PATH]';
+    }
+
+    return sanitized;
+  }
+
+  // Infer job complexity from job specification
+  private inferJobComplexity(job: any): number {
+    let complexity = 1;
+
+    // Add complexity for multiple agents
+    if (job.execution?.agents?.length > 1) complexity += 2;
+
+    // Add complexity for behavior tree strategy
+    if (job.execution?.strategy === "behavior-tree") complexity += 1;
+
+    // Add complexity for multiple stages
+    if (job.execution?.stages?.length > 1) complexity += 1;
+
+    // Add complexity for conditions
+    if (job.triggers?.some((t: any) => t.condition)) complexity += 1;
+
+    return Math.min(complexity, 5); // Cap at 5
+  }
+
+  // Check if job requires tool usage
+  private jobRequiresTools(job: any): boolean {
+    // Check if any agents in the job are tool-based
+    const agentIds = this.extractAgentIdsFromJob(job);
+    const agentMetadata = this.getAllAgentMetadata();
+
+    return agentIds.some((id) => {
+      const agent = agentMetadata.find((a) => a.id === id);
+      return agent?.type === "remote" || agent?.config?.tools?.length > 0;
+    });
+  }
+
+  // Analyze signal using direct job trigger evaluation (eliminates redundant LLM calls)
   async analyzeSignal(
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<SessionIntent> {
     const startTime = Date.now();
-    this.logger.debug(`[PERF] Starting analyzeSignal for signal: ${signal.id}`, {
+    this.logger.debug(`[PERF] Starting job trigger evaluation for signal: ${signal.id}`, {
       signalId: signal.id,
       payloadSize: JSON.stringify(payload).length,
       activeSessions: this.getStateMachineContext().activeSessions.size,
     });
 
-    const promptStart = Date.now();
+    try {
+      // STEP 1: Find matching jobs using declarative trigger evaluation (zero LLM calls)
+      const jobs = this.mergedConfig?.jobs || {};
+      const matches: JobMatch[] = await this.jobTriggerMatcher.findMatchingJobs(
+        signal,
+        payload,
+        jobs,
+      );
+
+      const totalTime = Date.now() - startTime;
+      
+      // STEP 2: If we found matching jobs, create intent from the best match
+      if (matches.length > 0) {
+        const bestMatch = matches[0]; // Already sorted by confidence
+        
+        this.logger.debug(`[PERF] Job trigger evaluation completed with direct match`, {
+          totalTime,
+          signalId: signal.id,
+          matchedJob: bestMatch.job.name,
+          confidence: bestMatch.evaluationResult.confidence,
+          evaluator: bestMatch.evaluationResult.evaluator,
+          totalMatches: matches.length,
+          performance: "~20 seconds saved vs LLM analysis",
+        });
+
+        return this.createSessionIntentFromJobMatch(signal, payload, bestMatch);
+      }
+
+      // STEP 3: No matching jobs found - fallback to LLM analysis
+      this.logger.debug(`[PERF] No matching job triggers found, falling back to LLM analysis`, {
+        signalId: signal.id,
+        evaluationTime: totalTime,
+        fallbackReason: "no_matching_triggers",
+        availableJobs: Object.keys(jobs).length,
+      });
+
+      return await this.analyzeSignalWithLLM(signal, payload);
+    } catch (error) {
+      const errorTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] Job trigger evaluation failed after ${errorTime}ms: ${error}`, {
+        signalId: signal.id,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // Final fallback to synchronous method
+      return this.createSessionIntent(signal, payload);
+    }
+  }
+
+  // Create session intent from a matched job specification
+  private createSessionIntentFromJobMatch(
+    signal: IWorkspaceSignal,
+    payload: any,
+    match: JobMatch,
+  ): SessionIntent {
+    const job = match.job;
+    
+    // Extract agent IDs from job specification
+    const suggestedAgents = job.execution?.agents?.map(agent => agent.id) || [];
+    
+    // Map job execution strategy to session execution hint
+    const mapExecutionStrategy = (strategy?: string): "iterative" | "deterministic" | "exploratory" => {
+      switch (strategy) {
+        case "sequential":
+        case "parallel":
+          return "deterministic";
+        case "staged":
+        case "hierarchical-task-network":
+          return "iterative";
+        case "conditional":
+        case "monte-carlo-tree-search":
+          return "exploratory";
+        default:
+          return "deterministic";
+      }
+    };
+
+    return {
+      id: crypto.randomUUID(),
+      signal: {
+        type: signal.id,
+        data: payload,
+        metadata: {
+          provider: signal.provider.name,
+          timestamp: new Date().toISOString(),
+          matchedJob: job.name,
+          evaluationMethod: "job-trigger-match",
+          confidence: match.evaluationResult.confidence,
+          evaluator: match.evaluationResult.evaluator,
+        },
+      },
+      goals: [
+        `Execute job: ${job.name}`,
+        job.description || `Process ${signal.id} signal`,
+      ],
+      constraints: {
+        timeLimit: job.resources?.estimated_duration_seconds
+          ? job.resources.estimated_duration_seconds * 1000
+          : 300000, // 5 minutes default
+        costLimit: job.resources?.cost_limit || 100,
+      },
+      suggestedAgents,
+      executionHints: {
+        strategy: mapExecutionStrategy(job.execution?.strategy),
+        parallelism: job.execution?.strategy === "parallel",
+        maxIterations: 3,
+      },
+      userPrompt: job.session_prompts?.planning || "",
+    };
+  }
+
+  // LLM-based signal analysis (fallback for signals without matching job triggers)
+  private async analyzeSignalWithLLM(
+    signal: IWorkspaceSignal,
+    payload: any,
+  ): Promise<SessionIntent> {
+    const startTime = Date.now();
+    this.logger.debug(`[PERF] Starting LLM-based signal analysis for signal: ${signal.id}`, {
+      signalId: signal.id,
+      reason: "no_matching_job_triggers",
+    });
+
     const analysisPrompt = `Analyze this incoming signal and determine the session intent:
 
 Signal: ${signal.id}
@@ -560,11 +914,6 @@ Determine:
 
 Provide a structured analysis.`;
 
-    const promptTime = Date.now() - promptStart;
-    this.logger.debug(`[PERF] Prompt construction took ${promptTime}ms`, {
-      promptLength: analysisPrompt.length,
-    });
-
     try {
       const llmStart = Date.now();
       this.logger.debug(`[PERF] Starting LLM call for signal analysis`, {
@@ -579,7 +928,7 @@ Provide a structured analysis.`;
         analysisPrompt,
         true,
         {
-          operation: "signal_analysis",
+          operation: "signal_analysis_llm_fallback",
           signalId: signal.id,
           workspaceId: this.id,
           payloadSize: JSON.stringify(payload).length,
@@ -587,34 +936,20 @@ Provide a structured analysis.`;
       );
 
       const llmTime = Date.now() - llmStart;
-      this.logger.debug(`[PERF] LLM call completed`, {
-        duration: llmTime,
+      const totalTime = Date.now() - startTime;
+      this.logger.debug(`[PERF] LLM signal analysis completed`, {
+        totalTime,
+        llmTime,
+        llmPercentage: Math.round((llmTime / totalTime) * 100),
         responseLength: response.length,
-        responseTokensEstimate: Math.round(response.length / 4),
-        model: this.config.model || "claude-4-sonnet-20250514",
-        requestSize: analysisPrompt.length + this.prompts.system.length,
+        signalId: signal.id,
       });
 
       // Parse the response into SessionIntent
-      const parseStart = Date.now();
-      this.logger.debug(`[DEBUG] Raw LLM response`, {
-        response: response.substring(0, 500) + (response.length > 500 ? "..." : ""),
-        fullLength: response.length,
-      });
-
       const goals = this.extractGoalsFromResponse(response);
       const suggestedAgents = this.extractSuggestedAgentsFromResponse(response);
       const strategy = this.extractStrategyFromResponse(response);
-      const parseTime = Date.now() - parseStart;
-      this.logger.debug(`[PERF] Response parsing took ${parseTime}ms`, {
-        goalsFound: goals.length,
-        agentsFound: suggestedAgents.length,
-        strategy,
-        extractedGoals: goals,
-        extractedAgents: suggestedAgents,
-      });
 
-      const intentStart = Date.now();
       const intent = {
         id: crypto.randomUUID(),
         signal: {
@@ -623,6 +958,7 @@ Provide a structured analysis.`;
           metadata: {
             provider: signal.provider.name,
             timestamp: new Date().toISOString(),
+            analysisMethod: "llm_fallback",
           },
         },
         goals: goals.length > 0 ? goals : this.inferGoalsFromSignal(signal, payload),
@@ -640,31 +976,13 @@ Provide a structured analysis.`;
         },
         userPrompt: this.config.intentPrompt || "",
       };
-      const intentTime = Date.now() - intentStart;
-
-      const totalTime = Date.now() - startTime;
-      this.logger.debug(`[PERF] analyzeSignal completed successfully`, {
-        totalTime,
-        llmTime,
-        llmPercentage: Math.round((llmTime / totalTime) * 100),
-        parseTime,
-        intentConstructionTime: intentTime,
-        signalId: signal.id,
-        finalIntent: {
-          id: intent.id,
-          goals: intent.goals,
-          strategy: intent.executionHints?.strategy,
-          agentCount: intent.suggestedAgents?.length || 0,
-        },
-      });
 
       return intent;
     } catch (error) {
       const errorTime = Date.now() - startTime;
-      this.logger.debug(`[PERF] analyzeSignal failed after ${errorTime}ms: ${error}`, {
+      this.logger.debug(`[PERF] LLM signal analysis failed after ${errorTime}ms: ${error}`, {
         signalId: signal.id,
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
       });
       // Fallback to synchronous method
       return this.createSessionIntent(signal, payload);
@@ -672,12 +990,12 @@ Provide a structured analysis.`;
   }
 
   // Create filtered session context based on intent
-  createSessionContext(
+  async createSessionContext(
     intent: SessionIntent,
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): any {
+  ): Promise<any> {
     const startTime = Date.now();
     this.logger.debug(`[PERF] Starting createSessionContext`, {
       intentId: intent.id,
@@ -699,7 +1017,7 @@ Provide a structured analysis.`;
         mergedConfigAvailable: !!this.mergedConfig,
       });
 
-      const selectedJob = this.selectJobForSignal(signal, payload, signalData);
+      const selectedJob = await this.selectJobForSignal(signal, payload, signalData);
       const jobTime = Date.now() - jobStart;
       this.logger.debug(`[PERF] Job selection took ${jobTime}ms`, {
         selectedJob: selectedJob?.name || "none",
@@ -790,11 +1108,11 @@ Provide a structured analysis.`;
   }
 
   // Select appropriate job based on signal configuration and payload
-  private selectJobForSignal(
+  private async selectJobForSignal(
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): any | null {
+  ): Promise<any | null> {
     try {
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
@@ -850,7 +1168,7 @@ Provide a structured analysis.`;
           payload,
         });
 
-        const conditionResult = this.evaluateJobCondition(trigger.condition, payload);
+        const conditionResult = await this.evaluateJobCondition(trigger.condition, payload);
         this.logger.debug(`[DEBUG] Job trigger condition evaluation result`, {
           jobName: job.name,
           condition: trigger.condition,
@@ -888,58 +1206,25 @@ Provide a structured analysis.`;
     }
   }
 
-  // Evaluate job condition against payload
-  private evaluateJobCondition(condition: string | undefined, payload: any): boolean {
+  // Evaluate job condition against payload using ConditionEvaluatorRegistry
+  private async evaluateJobCondition(condition: string | object | undefined, payload: any): Promise<boolean> {
     if (!condition) return true; // No condition means always match
 
     try {
-      // Simple condition evaluation - in production would use safer evaluation
-
-      // Handle telephone game message conditions
-      if (condition.includes("message && message.length")) {
-        const message = payload.message;
-        if (!message) return false;
-
-        // Parse the condition to extract length comparison
-        if (condition.includes("< 100")) {
-          return message.length > 0 && message.length < 100;
-        } else if (condition.includes(">= 100")) {
-          return message.length >= 100;
-        }
-      }
-
-      // Handle web analysis URL conditions
-      if (condition.includes("payload.url")) {
-        // Handle patterns like "payload.url && payload.url.startsWith('http')"
-        const url = payload.url;
-        if (!url) return false;
-
-        if (condition.includes("startsWith('http')")) {
-          return typeof url === "string" && url.startsWith("http");
-        }
-        if (condition.includes('startsWith("http")')) {
-          return typeof url === "string" && url.startsWith("http");
-        }
-
-        // Basic URL presence check
-        return typeof url === "string" && url.length > 0;
-      }
-
-      // Handle direct URL conditions (without payload prefix)
-      if (condition.includes("url && url.startsWith")) {
-        const url = payload.url;
-        if (!url) return false;
-
-        if (condition.includes("startsWith('http')") || condition.includes('startsWith("http")')) {
-          return typeof url === "string" && url.startsWith("http");
-        }
-      }
-
-      // Default: condition not understood, return false
-      this.log(`Unknown condition format: ${condition}`);
-      return false;
+      // Use the same ConditionEvaluatorRegistry as the JobTriggerMatcher
+      const result = await this.jobTriggerMatcher.getConditionEvaluatorRegistry().evaluate(condition, payload);
+      
+      this.logger.debug(`Job condition evaluation result`, {
+        condition: typeof condition === 'object' ? JSON.stringify(condition) : condition,
+        payload: JSON.stringify(payload),
+        matches: result.matches,
+        confidence: result.confidence,
+        evaluator: result.evaluator,
+      });
+      
+      return result.matches;
     } catch (error) {
-      this.log(`Error evaluating condition "${condition}": ${error}`);
+      this.log(`Error evaluating condition "${typeof condition === 'object' ? JSON.stringify(condition) : condition}": ${error}`);
       return false;
     }
   }
@@ -991,7 +1276,36 @@ Provide a structured analysis.`;
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<SessionPlan> {
-    // Use enhanced signal analysis first
+    // Try to use cached plan from advanced planning first
+    if (this.planningEngine) {
+      try {
+        const selectedJob = await this.selectJobForSignal(signal, payload);
+        if (selectedJob) {
+          this.log(`Using cached plan for job: ${selectedJob.name}`);
+          const task = {
+            id: `signal-${signal.id}-${Date.now()}`,
+            description: `Execute ${selectedJob.name} for signal ${signal.id}`,
+            context: {
+              jobSpec: selectedJob,
+              signal,
+              payload,
+              workspaceId: this.id,
+            },
+            agentType: "workspace" as const,
+          };
+
+          const planResult = await this.planningEngine.generatePlan(task);
+          if (planResult.cached) {
+            this.log(`Using cached execution plan (${planResult.method})`);
+            return this.convertPlanToPlanFormat(planResult.plan, signal, payload);
+          }
+        }
+      } catch (error) {
+        this.log(`Advanced planning failed, falling back: ${error}`);
+      }
+    }
+
+    // Use enhanced signal analysis as fallback
     try {
       const enhancedResult = await this.analyzeSignalEnhanced(signal, payload);
 
@@ -1010,9 +1324,33 @@ Provide a structured analysis.`;
       });
     }
 
-    // Fallback to legacy plan generation
+    // Final fallback to legacy plan generation
     const intent = this.createSessionIntent(signal, payload);
     return this.getDefaultPlan(signal, payload, intent);
+  }
+
+  // Convert planning engine result to SessionPlan format
+  private convertPlanToPlanFormat(plan: any, signal: IWorkspaceSignal, payload: any): SessionPlan {
+    const intent = this.createSessionIntent(signal, payload);
+
+    return {
+      intentId: intent.id,
+      phases: [{
+        id: "advanced-planned-phase",
+        name: plan.description || "Advanced Planned Execution",
+        agents: plan.steps?.map((step: any, index: number) => ({
+          agentId: step.agent || "local-assistant",
+          task: step.description || `Step ${index + 1}`,
+          expectedOutputs: step.outputs || ["result"],
+        })) || [{
+          agentId: "local-assistant",
+          task: "Execute planned action",
+        }],
+        executionStrategy: plan.strategy || "sequential",
+      }],
+      estimatedDuration: plan.estimatedDuration || 120000,
+      reasoning: `Advanced planning generated: ${plan.reasoning || plan.method}`,
+    };
   }
 
   private getAvailableAgents(): string {

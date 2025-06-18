@@ -111,9 +111,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       }
     }
 
-    this.log("Supervisor initialized");
+    this.log("Supervisor created, initializing advanced planning...");
 
-    await Promise.resolve();
+    // Initialize supervisor with advanced planning and job precomputation
+    await this.supervisor.initialize();
+
+    this.log("Supervisor initialization complete");
   }
 
   protected async processTask(
@@ -165,8 +168,8 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             this.log("Creating session context...");
             const sessionContext = await AtlasTelemetry.withSpan(
               "supervisor.createSessionContext",
-              () => {
-                return this.supervisor!.createSessionContext(intent, signal, payload, {
+              async () => {
+                return await this.supervisor!.createSessionContext(intent, signal, payload, {
                   signalConfig,
                   jobs,
                 });
@@ -331,8 +334,12 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       throw new Error(errorMsg);
     }
 
-    // Initialize session with memoryConfig
+    // Initialize session with memoryConfig and shared planning cache
     try {
+      // Get precomputed plans from WorkspaceSupervisor's planning engine with security validation
+      const workspaceId = this.workspace?.id;
+      const precomputedPlans = this.supervisor?.getPrecomputedPlans(workspaceId) || {};
+      
       sessionWorker.postMessage({
         type: "init",
         id: sessionId,
@@ -341,6 +348,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
           sessionId,
           workspaceId: this.workspace?.id,
           memoryConfig,
+          precomputedPlans, // Share the planning cache
         },
       });
       this.log(`Init message sent to session worker ${sessionId}`);

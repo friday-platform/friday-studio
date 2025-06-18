@@ -259,6 +259,14 @@ Activated when workspace is loaded:
 
 ## TUI Command System
 
+### Startup Behavior
+
+The TUI automatically:
+1. **Detects existing servers**: Checks `/health` endpoint on port 8080
+2. **Connects to running servers**: Shows server state and session count
+3. **Falls back gracefully**: Starts new server if none found
+4. **Provides feedback**: Clear status messages for all connection states
+
 ### Slash Commands (Normal Mode)
 
 All commands must be prefixed with `/`:
@@ -328,10 +336,12 @@ interface ServerStatus {
 
 ### Server Integration
 
-- **Process Management**: Spawns workspace server as child process
+- **Smart Connection**: Automatically detects existing workspace servers via `/health` endpoint
+- **Process Management**: Spawns workspace server as child process only when needed
 - **Output Streaming**: Real-time log capture with ANSI escape sequence cleaning
 - **Health Monitoring**: Automatic server status detection and port discovery
 - **Signal Handling**: Clean shutdown with Ctrl+C
+- **Fallback Logic**: Gracefully falls back to starting new server if connection fails
 
 ### Performance Features
 

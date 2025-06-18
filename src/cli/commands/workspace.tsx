@@ -70,7 +70,7 @@ export async function scanAvailableWorkspaces() {
             // Skip workspaces with invalid YAML
             console.warn(
               `Failed to parse workspace.yml in ${dirEntry.name}:`,
-              error
+              error,
             );
           }
         }
@@ -95,7 +95,7 @@ export function WorkspaceCommand({
   flags,
 }: WorkspaceCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<any>(null);
@@ -133,7 +133,7 @@ export function WorkspaceCommand({
     // Check if workspace.yml already exists
     if (await exists("workspace.yml")) {
       const config = yaml.parse(
-        await Deno.readTextFile("workspace.yml")
+        await Deno.readTextFile("workspace.yml"),
       ) as any;
       setData({
         type: "exists",
@@ -206,8 +206,8 @@ export function WorkspaceCommand({
           version: "1.0.0",
         },
         null,
-        2
-      )
+        2,
+      ),
     );
 
     // Create .env if it doesn't exist
@@ -223,7 +223,7 @@ ANTHROPIC_API_KEY=your_api_key_here
 # OpenAI API Key (optional)
 # Get from: https://platform.openai.com/api-keys
 OPENAI_API_KEY=your_api_key_here
-`
+`,
       );
     }
 
@@ -233,7 +233,7 @@ OPENAI_API_KEY=your_api_key_here
       if (!gitignore.includes(".env")) {
         await Deno.writeTextFile(
           ".gitignore",
-          gitignore + "\n.env\n.atlas/\n*.log\n"
+          gitignore + "\n.env\n.atlas/\n*.log\n",
         );
       }
     } else {
@@ -369,7 +369,7 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
       } catch (err) {
         console.error(
           "Failed to start server:",
-          err instanceof Error ? err.message : String(err)
+          err instanceof Error ? err.message : String(err),
         );
         Deno.exit(1);
       }
@@ -390,12 +390,12 @@ export async function getWorkspaceStatus(workspaceId?: string) {
     // Find workspace by ID
     const availableWorkspaces = await scanAvailableWorkspaces();
     const targetWorkspace = availableWorkspaces.find(
-      (w) => w.id === workspaceId || w.slug === workspaceId
+      (w) => w.id === workspaceId || w.slug === workspaceId,
     );
 
     if (!targetWorkspace) {
       throw new Error(
-        `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`
+        `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`,
       );
     }
 
@@ -404,7 +404,7 @@ export async function getWorkspaceStatus(workspaceId?: string) {
     // Check current directory for workspace.yml
     if (!(await exists("workspace.yml"))) {
       throw new Error(
-        'No workspace.yml found. Run "atlas workspace init" first or specify a workspace-id.'
+        'No workspace.yml found. Run "atlas workspace init" first or specify a workspace-id.',
       );
     }
   }
@@ -425,9 +425,7 @@ export async function getWorkspaceStatus(workspaceId?: string) {
     let serverRunning = false;
     try {
       const response = await fetch(
-        `http://localhost:${
-          mergedConfig.atlas.runtime?.server?.port || 8080
-        }/health`
+        `http://localhost:${mergedConfig.atlas.runtime?.server?.port || 8080}/health`,
       );
       if (response.ok) {
         const healthData = await response.json();
@@ -494,12 +492,9 @@ export function WorkspaceStatus({ statusData }: { statusData: any }) {
         Signals: <Text color="white">{statusData.signals.length}</Text>
       </Text>
       <Text>
-        Server:{" "}
-        {statusData.serverRunning ? (
-          <Text color="green">Running on port {statusData.port}</Text>
-        ) : (
-          <Text color="gray">Not running</Text>
-        )}
+        Server: {statusData.serverRunning
+          ? <Text color="green">Running on port {statusData.port}</Text>
+          : <Text color="gray">Not running</Text>}
       </Text>
     </Box>
   );
@@ -524,10 +519,8 @@ export function WorkspaceList({ workspaces }: { workspaces: any[] }) {
 
   // Calculate column widths
   const idWidth = Math.max(2, ...workspaces.map((w: any) => w.id.length)) + 2;
-  const nameWidth =
-    Math.max(4, ...workspaces.map((w: any) => w.name.length)) + 2;
-  const slugWidth =
-    Math.max(4, ...workspaces.map((w: any) => w.slug.length)) + 2;
+  const nameWidth = Math.max(4, ...workspaces.map((w: any) => w.name.length)) + 2;
+  const slugWidth = Math.max(4, ...workspaces.map((w: any) => w.slug.length)) + 2;
   const portWidth = 8; // Fixed width for port (e.g., "8080")
   const statusWidth = 10; // Fixed width for status (e.g., "Running")
 

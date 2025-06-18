@@ -26,6 +26,21 @@ import {
   isAgentLogMessage,
   type MessageSource,
 } from "./utils/message-envelope.ts";
+import {
+  type AgentAnalysisResult,
+  type CacheKeyContext,
+  type OutputValidationResult,
+  SupervisionCache,
+  SupervisionLevel,
+} from "./caching/supervision-cache.ts";
+import { MemoryCacheAdapter } from "./caching/adapters/memory-cache-adapter.ts";
+import {
+  getSupervisionConfig,
+  shouldRunAnalysis,
+  shouldRunValidation,
+  type SupervisionConfig,
+} from "./supervision-levels.ts";
+import { createHash } from "node:crypto";
 
 // Supervisor configuration interface
 interface AgentSupervisorConfig {
@@ -33,6 +48,8 @@ interface AgentSupervisorConfig {
   memoryConfig: AtlasMemoryConfig;
   sessionId?: string;
   workspaceId?: string;
+  supervisionLevel?: SupervisionLevel;
+  cacheEnabled?: boolean;
   prompts?: {
     system?: string;
     user?: string;
@@ -78,6 +95,7 @@ export interface AgentEnvironment {
     prompts: Record<string, string>;
     tools: string[];
     endpoint?: string;
+    protocol?: string;
     auth?: {
       type: "bearer" | "api_key" | "basic" | "none";
       token_env?: string;
@@ -165,6 +183,10 @@ export class AgentSupervisor extends BaseAgent {
   private supervisorCreatedAt: Date = new Date();
   private sessionId?: string;
   private workspaceId?: string;
+  private supervisionCache: SupervisionCache;
+  private supervisionLevel: SupervisionLevel;
+  private supervisionConfig: SupervisionConfig;
+  private cacheEnabled: boolean;
   private workerStats: Map<
     string,
     {
@@ -181,6 +203,17 @@ export class AgentSupervisor extends BaseAgent {
     this.supervisorConfig = supervisorConfig;
     this.sessionId = supervisorConfig.sessionId;
     this.workspaceId = supervisorConfig.workspaceId;
+    this.supervisionLevel = supervisorConfig.supervisionLevel || SupervisionLevel.STANDARD;
+    this.supervisionConfig = getSupervisionConfig(this.supervisionLevel);
+    this.cacheEnabled = this.supervisionConfig.cacheEnabled &&
+      (supervisorConfig.cacheEnabled !== false);
+
+    // Initialize supervision cache
+    const cacheAdapter = new MemoryCacheAdapter();
+    this.supervisionCache = new SupervisionCache(cacheAdapter, {
+      defaultTtl: 60 * 60 * 1000, // 1 hour cache
+      maxEntries: 5000,
+    });
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -240,8 +273,36 @@ export class AgentSupervisor extends BaseAgent {
     task: AgentTask,
     context: SessionContext,
   ): Promise<AgentAnalysis> {
+    // Check if analysis should be skipped based on supervision level
+    if (!shouldRunAnalysis(this.supervisionLevel)) {
+      this.logger.debug(
+        `Skipping analysis for agent ${agent.id} (supervision level: ${this.supervisionLevel})`,
+      );
+      return this.getMinimalAnalysis(agent, task);
+    }
+
     const analysisStart = Date.now();
     this.logger.debug(`Starting analysis for agent ${agent.id}`, { agentType: agent.type });
+
+    // Try cache first if enabled
+    if (this.cacheEnabled) {
+      const cacheContext = this.createCacheContext(agent, task, context);
+      const cached = await this.supervisionCache.getAnalysis(cacheContext);
+
+      if (cached) {
+        this.logger.debug(`Cache hit for agent analysis: ${agent.id}`, {
+          cacheKey: this.supervisionCache.generateAnalysisKey(cacheContext),
+          riskLevel: cached.riskLevel,
+        });
+
+        // Convert cached result to AgentAnalysis format
+        return this.convertCachedAnalysis(cached, agent, task);
+      }
+
+      this.logger.debug(`Cache miss for agent analysis: ${agent.id}`, {
+        cacheKey: this.supervisionCache.generateAnalysisKey(cacheContext),
+      });
+    }
 
     const analysisPrompt = `Analyze this agent configuration and task for safe execution:
 
@@ -281,6 +342,25 @@ Focus on safety, efficiency, and reliability.`;
       // Parse LLM response into structured analysis
       const analysis = this.parseAgentAnalysis(response, agent, task);
       const analysisDuration = Date.now() - analysisStart;
+
+      // Cache the analysis result if enabled
+      if (this.cacheEnabled) {
+        const cacheContext = this.createCacheContext(agent, task, context);
+        const cacheableResult: AgentAnalysisResult = {
+          riskLevel: analysis.safety_assessment.risk_level,
+          requiredIsolation: analysis.execution_strategy.isolation_level,
+          preExecutionChecks: ["safety_check", "resource_check", "permission_check"],
+          estimatedDuration: analysisDuration,
+          analysis: JSON.stringify(analysis),
+          confidence: 0.8, // TODO: Extract from LLM response
+        };
+
+        await this.supervisionCache.setAnalysis(cacheContext, cacheableResult);
+        this.logger.debug(`Cached agent analysis: ${agent.id}`, {
+          cacheKey: this.supervisionCache.generateAnalysisKey(cacheContext),
+          duration: analysisDuration,
+        });
+      }
 
       this.logger.debug(`Agent analysis completed in ${analysisDuration}ms`, {
         agentId: agent.id,
@@ -391,6 +471,32 @@ Focus on safety, efficiency, and reliability.`;
     };
   }
 
+  // Create minimal analysis for performance when detailed analysis is disabled
+  private getMinimalAnalysis(agent: AgentMetadata, task: AgentTask): AgentAnalysis {
+    return {
+      safety_assessment: {
+        risk_level: "low",
+        identified_risks: [],
+        mitigations: ["Basic safety checks applied"],
+      },
+      resource_requirements: {
+        memory_mb: 256,
+        timeout_seconds: 300,
+        required_capabilities: ["read", "write"],
+      },
+      optimization_suggestions: {
+        model_parameters: {},
+        prompt_improvements: [],
+        tool_selections: [],
+      },
+      execution_strategy: {
+        isolation_level: "standard",
+        monitoring_required: false,
+        validation_criteria: [],
+      },
+    };
+  }
+
   // Prepare secure execution environment based on analysis
   prepareEnvironment(
     agent: AgentMetadata,
@@ -439,8 +545,10 @@ Focus on safety, efficiency, and reliability.`;
       environment.agent_config.endpoint = remoteConfig.endpoint;
       environment.agent_config.auth = remoteConfig.auth;
 
-      // Copy protocol-specific configuration to parameters
+      // Add protocol at root level for worker validation
       if (remoteConfig.protocol) {
+        (environment.agent_config as any).protocol = remoteConfig.protocol;
+        // Also keep in parameters for backward compatibility
         environment.agent_config.parameters.protocol = remoteConfig.protocol;
       }
 
@@ -739,6 +847,17 @@ Focus on safety, efficiency, and reliability.`;
     task: AgentTask,
     supervision: ExecutionSupervision,
   ): Promise<ValidationResult> {
+    // Check if validation should be skipped based on supervision level
+    if (!shouldRunValidation(this.supervisionLevel)) {
+      this.logger.debug(`Skipping output validation (supervision level: ${this.supervisionLevel})`);
+      return {
+        is_valid: true,
+        quality_score: 1.0,
+        issues: [],
+        recommendations: [],
+      };
+    }
+
     if (!supervision.post_execution_validation.output_quality) {
       return {
         is_valid: true,
@@ -746,6 +865,36 @@ Focus on safety, efficiency, and reliability.`;
         issues: [],
         recommendations: [],
       };
+    }
+
+    // Check cache first for validation results
+    if (this.cacheEnabled) {
+      const outputHash = this.hashObject(output);
+      const cacheContext: CacheKeyContext = {
+        agentId: "validation", // Generic for output validation
+        agentType: "validation",
+        inputHash: this.hashObject({ task: task.task, outputHash }),
+        supervisionLevel: this.supervisionLevel,
+      };
+
+      const cached = await this.supervisionCache.getValidation(cacheContext, outputHash);
+      if (cached) {
+        this.logger.debug(`Cache hit for output validation`, {
+          outputHash,
+          validationScore: cached.riskScore,
+        });
+
+        return {
+          is_valid: cached.isValid,
+          quality_score: 1.0 - cached.riskScore, // Convert risk to quality
+          issues: cached.findings.map((f) => ({
+            type: f.type as "security" | "quality" | "format" | "completeness",
+            severity: f.severity,
+            description: f.description,
+          })),
+          recommendations: cached.recommendations,
+        };
+      }
     }
 
     const validationPrompt = `Validate this agent execution output:
@@ -768,7 +917,34 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
         validationPrompt,
       );
 
-      return this.parseValidationResult(response);
+      const validation = this.parseValidationResult(response);
+
+      // Cache the validation result
+      if (this.cacheEnabled) {
+        const outputHash = this.hashObject(output);
+        const cacheContext: CacheKeyContext = {
+          agentId: "validation",
+          agentType: "validation",
+          inputHash: this.hashObject({ task: task.task, outputHash }),
+          supervisionLevel: this.supervisionLevel,
+        };
+
+        const cacheableResult: OutputValidationResult = {
+          isValid: validation.is_valid,
+          riskScore: 1.0 - validation.quality_score,
+          findings: validation.issues.map((issue) => ({
+            type: issue.type,
+            severity: issue.severity,
+            description: issue.description,
+          })),
+          recommendations: validation.recommendations,
+          confidence: 0.8,
+        };
+
+        await this.supervisionCache.setValidation(cacheContext, outputHash, cacheableResult);
+      }
+
+      return validation;
     } catch (error) {
       this.log(`Error validating output: ${error}`);
       return {
@@ -1238,5 +1414,90 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       memory_usage: totalMemory,
       uptime: Date.now() - this.supervisorCreatedAt.getTime(),
     };
+  }
+
+  // Cache helper methods
+  private createCacheContext(
+    agent: AgentMetadata,
+    task: AgentTask,
+    context: SessionContext,
+  ): CacheKeyContext {
+    // Create deterministic hash of input data
+    const inputData = {
+      agentConfig: agent.config,
+      task: task.task,
+      inputSource: task.inputSource,
+      mode: task.mode,
+      dependencies: task.dependencies,
+      constraints: context.constraints,
+    };
+    const inputHash = this.hashObject(inputData);
+
+    return {
+      agentId: agent.id,
+      agentType: agent.type,
+      inputHash,
+      supervisionLevel: this.supervisionLevel,
+      sessionContext: {
+        signal: context.signal.id,
+        agentSequence: 0, // TODO: Get from session context
+        previousOutputHash: undefined, // TODO: Calculate from previous output
+      },
+    };
+  }
+
+  private convertCachedAnalysis(
+    cached: AgentAnalysisResult,
+    agent: AgentMetadata,
+    task: AgentTask,
+  ): AgentAnalysis {
+    // Parse the cached analysis JSON back to AgentAnalysis format
+    try {
+      const parsed = JSON.parse(cached.analysis);
+      return parsed as AgentAnalysis;
+    } catch (error) {
+      this.logger.warn(`Failed to parse cached analysis for ${agent.id}, generating new`, {
+        error,
+      });
+
+      // Fallback to a basic analysis based on cached risk level
+      return {
+        safety_assessment: {
+          risk_level: cached.riskLevel,
+          identified_risks: [],
+          mitigations: [],
+        },
+        resource_requirements: {
+          memory_mb: 256,
+          timeout_seconds: 300,
+          required_capabilities: ["basic-execution"],
+        },
+        optimization_suggestions: {
+          model_parameters: {},
+          prompt_improvements: [],
+          tool_selections: [],
+        },
+        execution_strategy: {
+          isolation_level: cached.requiredIsolation,
+          monitoring_required: true,
+          validation_criteria: ["output_exists", "no_errors"],
+        },
+      };
+    }
+  }
+
+  private hashObject(obj: any): string {
+    const str = JSON.stringify(obj, Object.keys(obj).sort());
+    return createHash("sha256").update(str).digest("hex").substring(0, 16);
+  }
+
+  // Get cache statistics
+  async getCacheStats() {
+    return await this.supervisionCache.getStats();
+  }
+
+  // Clear supervision cache
+  async clearCache() {
+    await this.supervisionCache.clear();
   }
 }

@@ -300,7 +300,7 @@ const JobExecutionSchema = z.object({
 // Trigger specification schema for job-owns-relationship
 const TriggerSpecificationSchema = z.object({
   signal: z.string(), // Signal name this job listens to
-  condition: z.string().optional(), // Optional condition for triggering
+  condition: z.union([z.string(), z.record(z.string(), z.any())]).optional(), // Optional condition for triggering (string or JSONLogic object)
 });
 
 // Job specification schema for top-level jobs section
@@ -534,7 +534,7 @@ export class ConfigLoader {
         const normalizedJobSpec: JobSpecification = {
           name: jobName, // Use the key as the name
           description: jobSpec.description || `Top-level job: ${jobName}`,
-          triggers: jobSpec.triggers, // Copy the triggers from the job specification
+          triggers: jobSpec.triggers, // Include triggers for signal-to-job mapping
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,

@@ -712,6 +712,184 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }];
   }
 
+  // === STREAMING MEMORY METHODS ===
+  // These methods support incremental memory processing for performance
+
+  /**
+   * Store a single semantic fact (streaming version)
+   */
+  async storeFact(fact: {
+    id: string;
+    content: string;
+    confidence: number;
+    source: string;
+    timestamp: number;
+    sessionId: string;
+    agentId?: string;
+    context?: Record<string, any>;
+  }): Promise<void> {
+    // Store as semantic memory with high confidence
+    this.rememberWithMetadata(fact.id, {
+      statement: fact.content,
+      confidence: fact.confidence,
+      source: fact.source,
+      timestamp: fact.timestamp,
+      sessionId: fact.sessionId,
+      agentId: fact.agentId,
+      context: fact.context,
+    }, {
+      memoryType: CoALAMemoryType.SEMANTIC,
+      tags: ["fact", "streaming", fact.source],
+      relevanceScore: fact.confidence,
+      confidence: fact.confidence,
+    });
+  }
+
+  /**
+   * Store multiple semantic facts in a batch (streaming version)
+   */
+  async storeFactsBatch(
+    facts: Array<{
+      id: string;
+      content: string;
+      confidence: number;
+      source: string;
+      timestamp: number;
+      sessionId: string;
+      agentId?: string;
+      context?: Record<string, any>;
+    }>,
+  ): Promise<void> {
+    const promises = facts.map((fact) => this.storeFact(fact));
+    await Promise.all(promises);
+  }
+
+  /**
+   * Store a single procedural pattern (streaming version)
+   */
+  async storePattern(pattern: {
+    id: string;
+    type: string;
+    agentId: string;
+    strategy: string;
+    duration: number;
+    inputCharacteristics: Record<string, any>;
+    outcome: Record<string, any>;
+    timestamp: number;
+    sessionId: string;
+  }): Promise<void> {
+    this.rememberWithMetadata(pattern.id, {
+      type: pattern.type,
+      agentId: pattern.agentId,
+      strategy: pattern.strategy,
+      duration: pattern.duration,
+      inputCharacteristics: pattern.inputCharacteristics,
+      outcome: pattern.outcome,
+      timestamp: pattern.timestamp,
+      sessionId: pattern.sessionId,
+    }, {
+      memoryType: CoALAMemoryType.PROCEDURAL,
+      tags: ["pattern", pattern.type, pattern.strategy],
+      relevanceScore: pattern.outcome.success ? 0.8 : 0.6,
+      confidence: 0.9,
+    });
+  }
+
+  /**
+   * Store multiple procedural patterns in a batch (streaming version)
+   */
+  async storePatternsBatch(
+    patterns: Array<{
+      id: string;
+      type: string;
+      agentId: string;
+      strategy: string;
+      duration: number;
+      inputCharacteristics: Record<string, any>;
+      outcome: Record<string, any>;
+      timestamp: number;
+      sessionId: string;
+    }>,
+  ): Promise<void> {
+    const promises = patterns.map((pattern) => this.storePattern(pattern));
+    await Promise.all(promises);
+  }
+
+  /**
+   * Store a single episodic event (streaming version)
+   */
+  async storeEpisode(episode: {
+    id: string;
+    eventType: string;
+    description: string;
+    participants: string[];
+    outcome: string;
+    significance: number;
+    timestamp: number;
+    sessionId: string;
+  }): Promise<void> {
+    this.rememberWithMetadata(episode.id, {
+      eventType: episode.eventType,
+      description: episode.description,
+      participants: episode.participants,
+      outcome: episode.outcome,
+      significance: episode.significance,
+      timestamp: episode.timestamp,
+      sessionId: episode.sessionId,
+    }, {
+      memoryType: CoALAMemoryType.EPISODIC,
+      tags: ["episode", episode.eventType, episode.outcome],
+      relevanceScore: episode.significance,
+      confidence: 0.8,
+    });
+  }
+
+  /**
+   * Store multiple episodic events in a batch (streaming version)
+   */
+  async storeEpisodesBatch(
+    episodes: Array<{
+      id: string;
+      eventType: string;
+      description: string;
+      participants: string[];
+      outcome: string;
+      significance: number;
+      timestamp: number;
+      sessionId: string;
+    }>,
+  ): Promise<void> {
+    const promises = episodes.map((episode) => this.storeEpisode(episode));
+    await Promise.all(promises);
+  }
+
+  /**
+   * Store session summary (streaming version)
+   */
+  async storeSessionSummary(summary: {
+    id: string;
+    sessionId: string;
+    totalDuration: number;
+    agentCount: number;
+    successRate: number;
+    summary?: string;
+    timestamp: number;
+  }): Promise<void> {
+    this.rememberWithMetadata(summary.id, {
+      sessionId: summary.sessionId,
+      totalDuration: summary.totalDuration,
+      agentCount: summary.agentCount,
+      successRate: summary.successRate,
+      summary: summary.summary,
+      timestamp: summary.timestamp,
+    }, {
+      memoryType: CoALAMemoryType.EPISODIC,
+      tags: ["session", "summary", "completion"],
+      relevanceScore: summary.successRate,
+      confidence: 0.9,
+    });
+  }
+
   // Cleanup
   dispose(): void {
     if (this.loopTimer) {

@@ -5,6 +5,7 @@ import { SessionCommand } from "./commands/session.tsx";
 import { SignalCommand } from "./commands/signal.tsx";
 import { AgentCommand } from "./commands/agent.tsx";
 import { LogsCommand } from "./commands/logs.tsx";
+import LibraryCommand from "./commands/library.tsx";
 import TUICommand from "./commands/tui.tsx";
 import HelpCommand from "./commands/help.tsx";
 import DefineCommand from "./commands/define.tsx";
@@ -31,22 +32,19 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   // Route to appropriate command
   switch (command) {
     case "workspace":
-      return (
-        <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "session":
-      return (
-        <SessionCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <SessionCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "signal":
-      return (
-        <SignalCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <SignalCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "agent":
       return <AgentCommand subcommand={subcommand} args={args} flags={flags} />;
+
+    case "library":
+      return <LibraryCommand args={[subcommand, ...args].filter(Boolean)} flags={flags} />;
 
     case "logs":
       return <LogsCommand sessionId={subcommand || args[0]} flags={flags} />;
@@ -55,9 +53,7 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
       return <TUICommand flags={flags} />;
 
     case "define":
-      return (
-        <DefineCommand args={args} subcommand={subcommand} flags={flags} />
-      );
+      return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
 
     default:
       return (

@@ -417,7 +417,9 @@ class K8sEventsRuntimeSignal extends AtlasScope {
         const errorMessage = error instanceof Error ? error.message : String(error);
         SecureLogger.secureLog(
           "error",
-          `Kubernetes events watch failed (attempt ${retryCount}/${retryConfig.max_retries + 1}): ${errorMessage}`,
+          `Kubernetes events watch failed (attempt ${retryCount}/${
+            retryConfig.max_retries + 1
+          }): ${errorMessage}`,
         );
 
         if (retryCount <= retryConfig.max_retries) {
@@ -493,16 +495,25 @@ class K8sEventsRuntimeSignal extends AtlasScope {
     } catch (fetchError) {
       const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
       SecureLogger.secureLog("error", `❌ Failed to connect to Kubernetes API: ${errorMessage}`);
-      
+
       // Add specific debugging for common issues
       if (errorMessage.includes("certificate")) {
-        SecureLogger.secureLog("error", "💡 Certificate issue detected. Check kubeconfig client certificates.");
+        SecureLogger.secureLog(
+          "error",
+          "💡 Certificate issue detected. Check kubeconfig client certificates.",
+        );
       } else if (errorMessage.includes("connection")) {
-        SecureLogger.secureLog("error", "💡 Connection issue detected. Check if Kubernetes API server is accessible.");
+        SecureLogger.secureLog(
+          "error",
+          "💡 Connection issue detected. Check if Kubernetes API server is accessible.",
+        );
       } else if (errorMessage.includes("403") || errorMessage.includes("Forbidden")) {
-        SecureLogger.secureLog("error", "💡 Authentication issue detected. Check kubeconfig credentials.");
+        SecureLogger.secureLog(
+          "error",
+          "💡 Authentication issue detected. Check kubeconfig credentials.",
+        );
       }
-      
+
       throw fetchError;
     }
 
