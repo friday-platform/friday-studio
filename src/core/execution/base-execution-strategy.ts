@@ -50,25 +50,25 @@ export interface StrategyExecutionResult {
 export abstract class BaseExecutionStrategy {
   abstract readonly name: string;
   abstract readonly description: string;
-  
+
   protected context: ExecutionContext | null = null;
   protected startTime: number = 0;
-  
+
   // Initialize strategy with execution context
   initialize(context: ExecutionContext): void {
     this.context = context;
     this.startTime = Date.now();
   }
-  
+
   // Execute the strategy with given steps
   abstract execute(steps: ExecutionStep[]): Promise<StrategyExecutionResult>;
-  
+
   // Validate that steps are compatible with this strategy
   abstract validateSteps(steps: ExecutionStep[]): { valid: boolean; errors: string[] };
-  
+
   // Get strategy-specific configuration schema
   abstract getConfigSchema(): Record<string, any>;
-  
+
   // Helper method to create execution result
   protected createExecutionResult(
     stepId: string,
@@ -76,7 +76,7 @@ export abstract class BaseExecutionStrategy {
     output: any,
     duration: number,
     error?: string,
-    metadata?: Record<string, any>
+    metadata?: Record<string, any>,
   ): ExecutionResult {
     return {
       stepId,
@@ -87,16 +87,16 @@ export abstract class BaseExecutionStrategy {
       metadata,
     };
   }
-  
+
   // Helper method to create strategy result
   protected createStrategyResult(
     success: boolean,
     results: ExecutionResult[],
-    adaptations: number = 0
+    adaptations: number = 0,
   ): StrategyExecutionResult {
     const duration = Date.now() - this.startTime;
     const totalSteps = this.countTotalSteps(results);
-    
+
     return {
       success,
       results,
@@ -109,14 +109,14 @@ export abstract class BaseExecutionStrategy {
       },
     };
   }
-  
+
   // Count total steps including nested ones
   private countTotalSteps(results: ExecutionResult[]): number {
     // For now, just return results length
     // Can be overridden by strategies with nested steps
     return results.length;
   }
-  
+
   // Log helper with strategy context
   protected log(message: string, level: "info" | "warn" | "error" = "info"): void {
     const prefix = `[${this.name}] ${this.context?.sessionId || "unknown"}:`;

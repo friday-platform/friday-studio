@@ -3,59 +3,64 @@
  * Implements dynamic control flow execution using agentic behavior trees
  */
 
-import { BaseExecutionStrategy, type ExecutionContext, type ExecutionStep, type StrategyExecutionResult, type ExecutionResult } from "../base-execution-strategy.ts";
+import {
+  BaseExecutionStrategy,
+  type ExecutionContext,
+  type ExecutionResult,
+  type ExecutionStep,
+  type StrategyExecutionResult,
+} from "../base-execution-strategy.ts";
 import { BehaviorTree, type BehaviorTreeSpec } from "../behavior-trees/behavior-tree.ts";
 import { NodeContext, NodeStatus } from "../behavior-trees/base-node.ts";
 
 export class BehaviorTreeStrategy extends BaseExecutionStrategy {
   readonly name = "behavior-tree";
   readonly description = "Dynamic control flow execution using agentic behavior trees";
-  
+
   private behaviorTree: BehaviorTree | null = null;
-  
+
   async execute(steps: ExecutionStep[]): Promise<StrategyExecutionResult> {
     if (!this.context) {
       throw new Error("Strategy not initialized");
     }
-    
+
     this.log("Starting behavior tree execution");
-    
+
     try {
       // Convert steps to behavior tree or use provided tree spec
       this.behaviorTree = this.createBehaviorTreeFromSteps(steps);
-      
+
       // Validate tree
       const validation = this.behaviorTree.validate();
       if (!validation.valid) {
         throw new Error(`Invalid behavior tree: ${validation.errors.join(", ")}`);
       }
-      
+
       // Create execution context for behavior tree
       const nodeContext = this.createNodeContext();
-      
+
       // Execute the behavior tree
       const treeResult = await this.behaviorTree.execute(nodeContext);
-      
+
       this.log(`Behavior tree execution completed: ${treeResult.success ? "SUCCESS" : "FAILURE"}`);
-      
+
       // Convert tree execution result to strategy result
       const executionResults = this.convertTreeResultToExecutionResults(treeResult);
-      
+
       return this.createStrategyResult(treeResult.success, executionResults);
-      
     } catch (error) {
       this.log(`Behavior tree execution failed: ${error}`, "error");
       return this.createStrategyResult(false, [], 0);
     }
   }
-  
+
   validateSteps(steps: ExecutionStep[]): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    
+
     if (steps.length === 0) {
       errors.push("Behavior tree strategy requires at least one step");
     }
-    
+
     // Validate that we can create a valid tree from these steps
     try {
       const tree = this.createBehaviorTreeFromSteps(steps);
@@ -66,13 +71,13 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
     } catch (error) {
       errors.push(`Cannot create behavior tree: ${error}`);
     }
-    
+
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
-  
+
   getConfigSchema(): Record<string, any> {
     return {
       type: "object",
@@ -84,34 +89,34 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
           properties: {
             type: {
               type: "string",
-              enum: ["sequence", "selector", "parallel", "condition", "agent"]
+              enum: ["sequence", "selector", "parallel", "condition", "agent"],
             },
             id: { type: "string" },
             name: { type: "string" },
             children: {
               type: "array",
-              items: { $ref: "#/properties/tree" }
-            }
-          }
+              items: { $ref: "#/properties/tree" },
+            },
+          },
         },
         agentMapping: {
           type: "object",
-          description: "Map execution step IDs to agent IDs"
-        }
-      }
+          description: "Map execution step IDs to agent IDs",
+        },
+      },
     };
   }
-  
+
   private createBehaviorTreeFromSteps(steps: ExecutionStep[]): BehaviorTree {
     // Check if the context contains a pre-built tree specification
     if (this.context?.jobSpec?.execution?.tree) {
       this.log("Using behavior tree from job specification");
       return new BehaviorTree(this.context.jobSpec.execution.tree);
     }
-    
+
     // Build a tree from execution steps
     this.log("Building behavior tree from execution steps");
-    
+
     if (steps.length === 1 && steps[0].type === "agent") {
       // Single agent - just create a simple agent node
       const spec: BehaviorTreeSpec = {
@@ -123,7 +128,7 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
       };
       return new BehaviorTree(spec);
     }
-    
+
     // Multiple steps - create sequence by default
     const children: BehaviorTreeSpec[] = steps.map((step, index) => {
       if (step.type === "agent") {
@@ -145,28 +150,28 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
           type: "parallel",
           id: step.id,
           policy: "all",
-          children: step.children?.map(child => this.stepToTreeSpec(child)) || [],
+          children: step.children?.map((child) => this.stepToTreeSpec(child)) || [],
         };
       } else {
         // Default to sequence
         return {
           type: "sequence",
           id: step.id,
-          children: step.children?.map(child => this.stepToTreeSpec(child)) || [],
+          children: step.children?.map((child) => this.stepToTreeSpec(child)) || [],
         };
       }
     });
-    
+
     const rootSpec: BehaviorTreeSpec = {
       type: "sequence",
       id: "behavior-tree-root",
       name: "Generated Behavior Tree",
       children,
     };
-    
+
     return new BehaviorTree(rootSpec);
   }
-  
+
   private stepToTreeSpec(step: ExecutionStep): BehaviorTreeSpec {
     switch (step.type) {
       case "agent":
@@ -187,22 +192,22 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
           type: "parallel",
           id: step.id,
           policy: "all",
-          children: step.children?.map(child => this.stepToTreeSpec(child)) || [],
+          children: step.children?.map((child) => this.stepToTreeSpec(child)) || [],
         };
       default:
         return {
           type: "sequence",
           id: step.id,
-          children: step.children?.map(child => this.stepToTreeSpec(child)) || [],
+          children: step.children?.map((child) => this.stepToTreeSpec(child)) || [],
         };
     }
   }
-  
+
   private createNodeContext(): NodeContext {
     if (!this.context) {
       throw new Error("Execution context not available");
     }
-    
+
     return {
       sessionId: this.context.sessionId,
       workspaceId: this.context.workspaceId,
@@ -220,10 +225,10 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
       },
     };
   }
-  
+
   private convertTreeResultToExecutionResults(treeResult: any): ExecutionResult[] {
     const results: ExecutionResult[] = [];
-    
+
     for (const traceEntry of treeResult.executionTrace) {
       results.push(this.createExecutionResult(
         traceEntry.nodeId,
@@ -234,10 +239,10 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
         {
           nodeType: traceEntry.nodeType,
           startTime: traceEntry.startTime,
-        }
+        },
       ));
     }
-    
+
     return results;
   }
 }
