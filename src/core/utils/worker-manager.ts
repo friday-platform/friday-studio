@@ -529,7 +529,7 @@ export class WorkerManager {
     }
 
     return new Promise((resolve, reject) => {
-      const timeoutMs = 60000; // 1 minute for worker operations
+      const timeoutMs = 120000; // 2 minutes for worker operations (allows for LLM calls)
       let isResolved = false;
       
       const cleanup = () => {

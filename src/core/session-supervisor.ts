@@ -9,6 +9,7 @@ import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-lo
 import { logger } from "../utils/logger.ts";
 import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
 import { SupervisionLevel } from "./caching/supervision-cache.ts";
+import { getSupervisionConfig } from "./supervision-levels.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -213,6 +214,7 @@ export class SessionSupervisor extends BaseAgent {
   private memoryConfig: AtlasMemoryConfig; // Store for AgentSupervisor
   private factExtractor?: FactExtractor;
   private knowledgeGraph?: KnowledgeGraphManager;
+  private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
 
   constructor(memoryConfig: AtlasMemoryConfig, parentScopeId?: string) {
     super(memoryConfig, parentScopeId);
@@ -312,10 +314,14 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       // Extract supervision configuration with defaults
       const supervisionConfig = agentSupervisorConfig.supervision || {};
       
+      // Set session supervision level for optimizations
+      this.supervisionLevel = supervisionConfig.level ? SupervisionLevel[supervisionConfig.level.toUpperCase() as keyof typeof SupervisionLevel] : SupervisionLevel.MINIMAL;
+      
       this.logger.debug("Atlas config supervision settings", {
         supervisionConfig,
         level: supervisionConfig.level,
-        cache_enabled: supervisionConfig.cache_enabled
+        cache_enabled: supervisionConfig.cache_enabled,
+        sessionSupervisionLevel: this.supervisionLevel
       });
 
       this.initializeAgentSupervisor({
@@ -522,6 +528,35 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     return criteria;
   }
 
+  // Create simplified execution plan for minimal supervision mode
+  private createSimplifiedPlan(): ExecutionPlan {
+    if (!this.sessionContext) {
+      throw new Error("Session context not available");
+    }
+
+    // Create a simple sequential plan using all available agents
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [{
+        id: "simple-phase",
+        name: "Sequential Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process signal ${this.sessionContext!.signal.id}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [this.sessionContext!.availableAgents[index - 1].id] : [],
+        })),
+        executionStrategy: "sequential",
+      }],
+      successCriteria: ["Execute all agents", "Produce output"],
+      adaptationStrategy: "fixed",
+    };
+
+    this.executionPlan = plan;
+    return plan;
+  }
+
   // Create execution plan using advanced reasoning methods
   private async createAdvancedReasoningPlan(): Promise<ExecutionPlan> {
     if (!this.planningEngine || !this.sessionContext) {
@@ -655,6 +690,12 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   // Fallback LLM-based planning for backward compatibility
   private async createLLMBasedPlan(): Promise<ExecutionPlan> {
+    // Use simplified planning in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      this.log("Using simplified planning (minimal supervision mode)");
+      return this.createSimplifiedPlan();
+    }
+
     const planPrompt = `Given the following session context, create an execution plan:
 
 Signal: ${this.sessionContext!.signal.id}
@@ -1397,6 +1438,12 @@ Overall Success: ${
       return "No session context available for summary.";
     }
 
+    // Skip expensive LLM summary generation in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      const allResults = phaseResults.flatMap((phase) => phase.results);
+      return `Session completed with ${allResults.length} agent executions. Signal: ${this.sessionContext.signal.id}. Results: ${allResults.map(r => `${r.agentId} (${r.duration}ms)`).join(', ')}.`;
+    }
+
     const allResults = phaseResults.flatMap((phase) => phase.results);
 
     const summaryPrompt = `Summarize this session execution:
@@ -1551,6 +1598,12 @@ Keep the summary focused and relevant to the specific use case.`;
       this.log(
         "Warning: Cannot generate working memory summary - missing context or memory manager",
       );
+      return;
+    }
+
+    // Skip expensive memory consolidation in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      this.log("Skipping working memory consolidation (minimal supervision mode)");
       return;
     }
 
