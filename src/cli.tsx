@@ -2,6 +2,7 @@
 
 import React from "react";
 import { render } from "ink";
+import { withFullScreen } from "fullscreen-ink";
 import meow from "meow";
 import App from "./cli/app.tsx";
 
@@ -104,50 +105,50 @@ let [command, subcommand, ...args] = cli.input;
 // Natural shorthands (shown in help) - includes singular/plural
 const naturalShorthands: Record<string, string> = {
   // Workspace variants
-  "work": "workspace",
-  "workspace": "workspace",
+  work: "workspace",
+  workspace: "workspace",
 
   // Signal variants
-  "sig": "signal",
-  "signal": "signal",
-  "signals": "signal",
+  sig: "signal",
+  signal: "signal",
+  signals: "signal",
 
   // Session variants
-  "sesh": "session",
-  "sess": "session",
-  "session": "session",
-  "sessions": "session",
+  sesh: "session",
+  sess: "session",
+  session: "session",
+  sessions: "session",
 
   // Agent variants
-  "agent": "agent",
-  "agents": "agent",
+  agent: "agent",
+  agents: "agent",
 
   // Log variants
-  "log": "logs",
-  "logs": "logs",
+  log: "logs",
+  logs: "logs",
 };
 
 // Hidden single-letter shortcuts (power users)
 const hiddenShorthands: Record<string, string> = {
-  "w": "work",
-  "s": "sesh",
-  "x": "sig",
-  "a": "agent",
-  "l": "logs",
-  "h": "help",
+  w: "work",
+  s: "sesh",
+  x: "sig",
+  a: "agent",
+  l: "logs",
+  h: "help",
   "?": "help",
 };
 
 // Smart defaults when no subcommand provided
 const commandDefaults: Record<string, string> = {
-  "work": "serve", // atlas work → workspace serve
-  "workspace": "serve", // atlas workspace → workspace serve
-  "sig": "trigger", // atlas sig <name> → signal trigger <name>
-  "signal": "list", // atlas signal → signal list
-  "sesh": "list", // atlas sesh → session list
-  "sess": "list", // atlas sess → session list
-  "session": "list", // atlas session → session list
-  "agent": "list", // atlas agent → agent list
+  work: "serve", // atlas work → workspace serve
+  workspace: "serve", // atlas workspace → workspace serve
+  sig: "trigger", // atlas sig <name> → signal trigger <name>
+  signal: "list", // atlas signal → signal list
+  sesh: "list", // atlas sesh → session list
+  sess: "list", // atlas sess → session list
+  session: "list", // atlas session → session list
+  agent: "list", // atlas agent → agent list
 };
 
 // All shorthands combined
@@ -177,7 +178,8 @@ if (!subcommand && commandDefaults[command]) {
     subcommand = commandDefaults[command];
   }
 } else if (
-  (command === "sig" || command === "signal") && subcommand &&
+  (command === "sig" || command === "signal") &&
+  subcommand &&
   !["list", "trigger", "history"].includes(subcommand)
 ) {
   // If subcommand looks like a signal name, shift arguments
@@ -194,9 +196,12 @@ if (command === "workspace" && subcommand && naturalShorthands[subcommand]) {
   args = args.slice(1);
 }
 
-render(React.createElement(App, {
-  command,
-  subcommand,
-  args,
-  flags: cli.flags,
-}));
+// Test: Try without withFullScreen to see if that's causing the resize issue
+render(
+  React.createElement(App, {
+    command,
+    subcommand,
+    args,
+    flags: cli.flags,
+  }),
+);

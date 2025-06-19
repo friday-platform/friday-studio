@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-import { FullScreenBox } from "fullscreen-ink";
 import { Badge } from "@inkjs/ui";
 import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
@@ -138,18 +137,18 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   // Load library data
   const loadLibraryData = async () => {
     if (!serverStatus.running) return;
-    
+
     setLibraryLoading(true);
     try {
       const port = serverStatus.port || 8080;
-      
+
       // Load library items
       const itemsResponse = await fetch(`http://localhost:${port}/library?limit=50`);
       if (itemsResponse.ok) {
         const items = await itemsResponse.json();
         setLibraryItems(items);
       }
-      
+
       // Load templates
       const templatesResponse = await fetch(`http://localhost:${port}/library/templates`);
       if (templatesResponse.ok) {
@@ -312,7 +311,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
   const [libraryTemplates, setLibraryTemplates] = useState<any[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [libraryMode, setLibraryMode] = useState<'items' | 'templates'>('items');
+  const [libraryMode, setLibraryMode] = useState<"items" | "templates">("items");
 
   // Function to scan for available workspaces
   const scanAvailableWorkspaces = async (): Promise<AvailableWorkspace[]> => {
@@ -1155,7 +1154,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       }
     } else if (activeTab === 3) {
       // Library tab navigation
-      const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+      const currentList = libraryMode === "items" ? libraryItems : libraryTemplates;
       const maxIndex = Math.max(0, currentList.length - 1);
       const visibleHeight = availableHeight - 6;
 
@@ -1376,7 +1375,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         });
       } else if (activeTab === 3) {
         // Library tab navigation
-        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const currentList = libraryMode === "items" ? libraryItems : libraryTemplates;
         setSelectedLibraryIndex((prev: number) => {
           const newIndex = Math.max(0, prev - 1);
           // Auto-scroll to keep selection visible
@@ -1423,7 +1422,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         });
       } else if (activeTab === 3) {
         // Library tab navigation
-        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const currentList = libraryMode === "items" ? libraryItems : libraryTemplates;
         const maxIndex = Math.max(0, currentList.length - 1);
         setSelectedLibraryIndex((prev: number) => {
           const newIndex = Math.min(maxIndex, prev + 1);
@@ -1511,12 +1510,16 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           }
         } else if (activeTab === 3) {
           // Library tab - show item details
-          const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+          const currentList = libraryMode === "items" ? libraryItems : libraryTemplates;
           const selected = currentList[selectedLibraryIndex];
           if (selected) {
-            const content = libraryMode === 'items' 
-              ? `Library Item: ${selected.name}\n\nType: ${selected.type}\nCreated: ${selected.created_at}\nSize: ${selected.size_bytes} bytes\nTags: ${selected.tags?.join(', ') || 'none'}\n\nDescription: ${selected.description || 'No description'}`
-              : `Template: ${selected.name}\n\nEngine: ${selected.engine}\nFormat: ${selected.format}\n\nDescription: ${selected.description || 'No description'}`;
+            const content = libraryMode === "items"
+              ? `Library Item: ${selected.name}\n\nType: ${selected.type}\nCreated: ${selected.created_at}\nSize: ${selected.size_bytes} bytes\nTags: ${
+                selected.tags?.join(", ") || "none"
+              }\n\nDescription: ${selected.description || "No description"}`
+              : `Template: ${selected.name}\n\nEngine: ${selected.engine}\nFormat: ${selected.format}\n\nDescription: ${
+                selected.description || "No description"
+              }`;
             setPopoverContent(content);
             setShowPopover(true);
             return;
@@ -1582,10 +1585,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
           copyToClipboard();
         }
       } else if (activeTab === 3) {
-        const currentList = libraryMode === 'items' ? libraryItems : libraryTemplates;
+        const currentList = libraryMode === "items" ? libraryItems : libraryTemplates;
         const selected = currentList[selectedLibraryIndex];
         if (selected) {
-          const textToCopy = libraryMode === 'items'
+          const textToCopy = libraryMode === "items"
             ? `${selected.name} (${selected.type})`
             : `${selected.id} - ${selected.name}`;
           const copyToClipboard = async () => {
@@ -1612,10 +1615,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       }
     } else if (inputChar === "t" && !inputFocused && activeTab === 3) {
       // Toggle between items and templates in library tab
-      setLibraryMode(prev => prev === 'items' ? 'templates' : 'items');
+      setLibraryMode((prev) => prev === "items" ? "templates" : "items");
       setSelectedLibraryIndex(0);
       setLibraryScroll(0);
-      addLog("command", `Switched to library ${libraryMode === 'items' ? 'templates' : 'items'}`);
+      addLog("command", `Switched to library ${libraryMode === "items" ? "templates" : "items"}`);
     } else if (inputChar === "r" && !inputFocused && activeTab === 3) {
       // Refresh library data
       addLog("command", "Refreshing library data...");
@@ -1989,17 +1992,20 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     <Box flexDirection="column" height={availableHeight} overflow="hidden">
       <Box marginBottom={1} flexDirection="row">
         <Text color="cyan" bold>📚 Library</Text>
-        <Text color="gray"> | </Text>
-        <Text color={libraryMode === 'items' ? 'white' : 'gray'} bold={libraryMode === 'items'}>
+        <Text color="gray">|</Text>
+        <Text color={libraryMode === "items" ? "white" : "gray"} bold={libraryMode === "items"}>
           Items ({libraryItems.length})
         </Text>
-        <Text color="gray"> | </Text>
-        <Text color={libraryMode === 'templates' ? 'white' : 'gray'} bold={libraryMode === 'templates'}>
+        <Text color="gray">|</Text>
+        <Text
+          color={libraryMode === "templates" ? "white" : "gray"}
+          bold={libraryMode === "templates"}
+        >
           Templates ({libraryTemplates.length})
         </Text>
         {libraryLoading && (
           <>
-            <Text color="gray"> | </Text>
+            <Text color="gray">|</Text>
             <Text color="yellow">Loading...</Text>
           </>
         )}
@@ -2014,7 +2020,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         )
         : (
           <Box flexDirection="column">
-            {libraryMode === 'items' ? renderLibraryItems() : renderLibraryTemplates()}
+            {libraryMode === "items" ? renderLibraryItems() : renderLibraryTemplates()}
           </Box>
         )}
 
@@ -2042,13 +2048,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
 
     const visibleItems = libraryItems.slice(libraryScroll, libraryScroll + availableHeight - 6);
-    
+
     return (
       <Box flexDirection="column">
         {visibleItems.map((item: any, i: number) => {
           const globalIndex = i + libraryScroll;
           const isSelected = selectedLibraryIndex === globalIndex;
-          
+
           // Format size
           const formatBytes = (bytes: number): string => {
             if (bytes === 0) return "0 B";
@@ -2057,11 +2063,15 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
             const sizeIndex = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(1)) + " " + sizes[sizeIndex];
           };
-          
-          const typeColor = item.type === 'report' ? 'green' : 
-                           item.type === 'template' ? 'blue' :
-                           item.type === 'session_archive' ? 'magenta' : 'cyan';
-          
+
+          const typeColor = item.type === "report"
+            ? "green"
+            : item.type === "template"
+            ? "blue"
+            : item.type === "session_archive"
+            ? "magenta"
+            : "cyan";
+
           return (
             <Box key={globalIndex} flexDirection="column">
               <Text
@@ -2072,24 +2082,22 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 <Text color={isSelected ? "black" : typeColor} bold>
                   {item.type.toUpperCase()}
                 </Text>
-                <Text color={isSelected ? "black" : "white"}> {item.name}</Text>
-                <Text color={isSelected ? "black" : "gray"}> ({formatBytes(item.size_bytes)})</Text>
+                <Text color={isSelected ? "black" : "white"}>{item.name}</Text>
+                <Text color={isSelected ? "black" : "gray"}>({formatBytes(item.size_bytes)})</Text>
               </Text>
               {isSelected && (
                 <Box marginLeft={4}>
                   <Text color="gray">
-                    Created: {new Date(item.created_at).toLocaleDateString()} | 
-                    Tags: {item.tags?.join(", ") || "none"}
+                    Created: {new Date(item.created_at).toLocaleDateString()} | Tags:{" "}
+                    {item.tags?.join(", ") || "none"}
                   </Text>
-                  {item.description && (
-                    <Text color="gray">{item.description}</Text>
-                  )}
+                  {item.description && <Text color="gray">{item.description}</Text>}
                 </Box>
               )}
             </Box>
           );
         })}
-        
+
         {libraryItems.length > 0 && (
           <Box marginTop={1}>
             <Text color="gray" dimColor>
@@ -2111,17 +2119,23 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       );
     }
 
-    const visibleTemplates = libraryTemplates.slice(libraryScroll, libraryScroll + availableHeight - 6);
-    
+    const visibleTemplates = libraryTemplates.slice(
+      libraryScroll,
+      libraryScroll + availableHeight - 6,
+    );
+
     return (
       <Box flexDirection="column">
         {visibleTemplates.map((template: any, i: number) => {
           const globalIndex = i + libraryScroll;
           const isSelected = selectedLibraryIndex === globalIndex;
-          
-          const engineColor = template.engine === 'prompt' ? 'green' : 
-                             template.engine === 'handlebars' ? 'blue' : 'cyan';
-          
+
+          const engineColor = template.engine === "prompt"
+            ? "green"
+            : template.engine === "handlebars"
+            ? "blue"
+            : "cyan";
+
           return (
             <Box key={globalIndex} flexDirection="column">
               <Text
@@ -2132,23 +2146,21 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 <Text color={isSelected ? "black" : engineColor} bold>
                   {template.engine.toUpperCase()}
                 </Text>
-                <Text color={isSelected ? "black" : "white"}> {template.name || template.id}</Text>
-                <Text color={isSelected ? "black" : "gray"}> ({template.format})</Text>
+                <Text color={isSelected ? "black" : "white"}>{template.name || template.id}</Text>
+                <Text color={isSelected ? "black" : "gray"}>({template.format})</Text>
               </Text>
               {isSelected && (
                 <Box marginLeft={4}>
                   <Text color="gray">
                     ID: {template.id} | Engine: {template.engine} | Format: {template.format}
                   </Text>
-                  {template.description && (
-                    <Text color="gray">{template.description}</Text>
-                  )}
+                  {template.description && <Text color="gray">{template.description}</Text>}
                 </Box>
               )}
             </Box>
           );
         })}
-        
+
         {libraryTemplates.length > 0 && (
           <Box marginTop={1}>
             <Text color="gray" dimColor>
@@ -2196,7 +2208,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   };
 
   return (
-    <FullScreenBox flexDirection="column">
+    <Box flexDirection="column" height="100%" width="100%">
       {showSplashScreen
         ? (
           // Splash screen mode
@@ -2306,7 +2318,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         )}
         {showSplashScreen && <Text color="cyan">| Type "/init" or "reload"</Text>}
       </Box>
-    </FullScreenBox>
+    </Box>
   );
 };
 

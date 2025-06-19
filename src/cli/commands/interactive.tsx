@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, Newline, Text, useApp, useInput } from "ink";
-import { FullScreenBox } from "fullscreen-ink";
+import { Box, Newline, Text, useApp, useInput, useStdout } from "ink";
 import {
   getWorkspaceStatus,
   scanAvailableWorkspaces,
@@ -23,6 +22,30 @@ export default function InteractiveCommand() {
   const [alertMessage, setAlertMessage] = useState<string>("");
   const [alertVisible, setAlertVisible] = useState(false);
   const { exit } = useApp();
+  const { stdout } = useStdout();
+  const [forceUpdate, setForceUpdate] = useState(0);
+
+  // Calculate responsive dimensions based on terminal size
+  const terminalWidth = stdout.columns || 80;
+  const terminalHeight = stdout.rows || 24;
+  const contentWidth = Math.min(80, Math.floor(terminalWidth * 0.8));
+  const availableHeight = Math.max(10, terminalHeight - 10); // Reserve space for title and margins
+
+  // Listen for terminal resize events - try multiple approaches
+  useEffect(() => {
+    const handleResize = () => {
+      setForceUpdate((prev) => prev + 1);
+    };
+
+    // Try both approaches
+    process.stdout.on("resize", handleResize);
+    process.on("SIGWINCH", handleResize);
+
+    return () => {
+      process.stdout.off("resize", handleResize);
+      process.off("SIGWINCH", handleResize);
+    };
+  }, []);
 
   // Load available workspaces on mount
   useEffect(() => {
@@ -94,7 +117,7 @@ export default function InteractiveCommand() {
         case "/load":
           if (!args[1]) {
             showAlert(
-              "/load requires a workspace name. Usage: /load <workspace-name>"
+              "/load requires a workspace name. Usage: /load <workspace-name>",
             );
             return;
           }
@@ -103,7 +126,7 @@ export default function InteractiveCommand() {
 
         default:
           showAlert(
-            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`
+            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`,
           );
       }
     } catch (error) {
@@ -224,7 +247,7 @@ export default function InteractiveCommand() {
       const selectedWorkspace = workspaces.find(
         (w) =>
           w.name.toLowerCase() === workspaceName.toLowerCase() ||
-          w.id === workspaceName
+          w.id === workspaceName,
       );
 
       if (!selectedWorkspace) {
@@ -298,10 +321,12 @@ export default function InteractiveCommand() {
   };
 
   return (
-    <FullScreenBox
+    <Box
       flexDirection="column"
       justifyContent="center"
       alignItems="center"
+      width={terminalWidth}
+      height={terminalHeight}
     >
       {/* ASCII Art */}
       <Box
@@ -337,6 +362,9 @@ export default function InteractiveCommand() {
       >
         <Text bold>Atlas</Text>
         <Text dimColor>Made by Tempest</Text>
+        <Text color="gray" dimColor>
+          Terminal: {terminalWidth}x{terminalHeight} | Update: {forceUpdate}
+        </Text>
       </Box>
 
       {/* Centered input prompt */}
@@ -344,7 +372,7 @@ export default function InteractiveCommand() {
         borderStyle="round"
         borderColor="gray"
         paddingX={1}
-        width={60}
+        width={contentWidth}
         height={3}
         flexShrink={0}
       >
@@ -363,8 +391,8 @@ export default function InteractiveCommand() {
 
       <Box
         flexDirection="column"
-        height={workspaces.length + 2}
-        width={60}
+        height={Math.min(workspaces.length + 2, Math.floor(availableHeight * 0.4))}
+        width={contentWidth}
         marginTop={1}
         flexShrink={0}
       >
@@ -380,7 +408,7 @@ export default function InteractiveCommand() {
           onChange={(selectedWorkspaceId) => {
             // Handle workspace selection
             const selectedWorkspace = workspaces.find(
-              (w) => w.id === selectedWorkspaceId
+              (w) => w.id === selectedWorkspaceId,
             );
             if (selectedWorkspace) {
               console.log("Selected workspace:", selectedWorkspace);
@@ -397,8 +425,8 @@ export default function InteractiveCommand() {
           flexDirection="column"
           marginTop={2}
           paddingX={2}
-          width={80}
-          maxHeight={10}
+          width={contentWidth}
+          maxHeight={Math.floor(availableHeight * 0.3)}
           borderStyle="round"
           borderColor="gray"
           flexShrink={0}
@@ -420,6 +448,6 @@ export default function InteractiveCommand() {
 
       {/* ErrorAlert must be last for proper absolute positioning overlay */}
       <ErrorAlert message={alertMessage} visible={alertVisible} />
-    </FullScreenBox>
+    </Box>
   );
 }
