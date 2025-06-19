@@ -22,62 +22,35 @@ triggers:
 
 # Execution strategy using Hierarchical Task Network
 execution:
-  strategy: "hierarchical-task-network"
+  strategy: "sequential"
   
-  # High-level goals
-  goals:
-    - id: "analyze-codebase"
-      description: "Perform comprehensive codebase analysis"
-      priority: "high"
-      
-  # HTN methods for goal decomposition
-  methods:
-    - goal: "analyze-codebase"
-      method: "parallel-analysis-with-synthesis"
-      decomposition:
-        # Phase 1: Parallel analysis
-        - task_group: "parallel-analysis"
-          strategy: "parallel"
-          agents:
-            - id: "performance-analyzer"
-              role: "performance-analysis"
-              subtasks:
-                - "analyze-memory-patterns"
-                - "evaluate-async-efficiency"
-                - "audit-llm-call-optimization"
-                - "assess-cache-performance"
-                - "review-worker-communication"
-                
-            - id: "dx-analyzer" 
-              role: "developer-experience"
-              subtasks:
-                - "evaluate-api-ergonomics"
-                - "audit-error-messages"
-                - "assess-documentation"
-                - "review-cli-usability"
-                - "evaluate-testing-experience"
-                
-            - id: "architecture-analyzer"
-              role: "architecture-review"
-              subtasks:
-                - "analyze-separation-of-concerns"
-                - "evaluate-dependency-structure"
-                - "assess-modularity"
-                - "review-security-patterns"
-                - "evaluate-scalability-design"
-        
-        # Phase 2: Synthesis and reporting
-        - task_group: "synthesis"
-          strategy: "sequential"
-          dependencies: ["parallel-analysis"]
-          agents:
-            - id: "report-generator"
-              role: "comprehensive-synthesis"
-              subtasks:
-                - "consolidate-findings"
-                - "prioritize-recommendations"
-                - "generate-implementation-plan"
-                - "create-executive-summary"
+  # Filesystem context for analysis via EMCP
+  context:
+    filesystem:
+      patterns:
+        - "src/core/workspace-runtime.ts"
+        - "src/core/session-supervisor.ts" 
+        - "src/core/supervisor.ts"
+        - "src/core/workers/*.ts"
+        - "src/core/emcp/*.ts"
+        - "src/core/context/*.ts"
+        - "src/cli/commands/workspace.tsx"
+        - "atlas.yml"
+        - "CLAUDE.md"
+      base_path: "/Users/kenneth/tempest/atlas"
+      max_file_size: 100000
+      include_content: true
+  
+  # Sequential agent execution
+  agents:
+    - id: "performance-analyzer"
+      input_source: "filesystem_context"
+    - id: "dx-analyzer"
+      input_source: "filesystem_context"
+    - id: "architecture-analyzer"
+      input_source: "filesystem_context"
+    - id: "report-generator"
+      input_source: "combined"
 
 # Advanced session prompts for HTN execution
 session_prompts:

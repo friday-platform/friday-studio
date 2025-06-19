@@ -1071,7 +1071,7 @@ Provide a structured analysis.`;
         additionalPrompts: {
           signal: this.config.signalPrompts?.[signal.id] || "",
           session: this.config.prompts?.session || "",
-          evaluation: this.config.prompts?.evaluation || "",
+          evaluation: selectedJob?.session_prompts?.evaluation || this.config.prompts?.evaluation || "",
         },
       };
       const contextTime = Date.now() - contextStart;

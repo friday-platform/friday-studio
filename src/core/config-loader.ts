@@ -308,7 +308,31 @@ const JobSpecificationSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   triggers: z.array(TriggerSpecificationSchema).optional(), // NEW: Jobs define their signal triggers
-  execution: JobExecutionSchema,
+  session_prompts: z.object({
+    planning: z.string().optional(),
+    evaluation: z.string().optional(),
+  }).optional(),
+  execution: JobExecutionSchema.extend({
+    context: z.object({
+      filesystem: z.object({
+        patterns: z.array(z.string()),
+        base_path: z.string().optional(),
+        max_file_size: z.number().optional(),
+        include_content: z.boolean().optional(),
+      }).optional(),
+    }).catchall(z.any()).optional(),
+  }),
+  success_criteria: z.record(z.string(), z.any()).optional(),
+  error_handling: z.object({
+    max_retries: z.number().optional(),
+    retry_delay_seconds: z.number().optional(),
+    timeout_seconds: z.number().optional(),
+  }).optional(),
+  resources: z.object({
+    estimated_duration_seconds: z.number().optional(),
+    max_memory_mb: z.number().optional(),
+    required_capabilities: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 const WorkspaceSignalConfigSchema = z.object({
@@ -538,13 +562,74 @@ export class ConfigLoader {
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,
+            context: jobSpec.execution.context, // Include context
           },
+          session_prompts: jobSpec.session_prompts, // Include session prompts
+          success_criteria: jobSpec.success_criteria,
+          error_handling: jobSpec.error_handling,
+          resources: jobSpec.resources,
         };
 
         jobs[jobName] = normalizedJobSpec;
       }
     }
 
+    // Load jobs from separate job files in jobs/ directory
+    const jobsFromFiles = this.loadJobsFromFiles();
+    Object.assign(jobs, jobsFromFiles);
+
+    return jobs;
+  }
+
+  private loadJobsFromFiles(): Record<string, JobSpecification> {
+    const jobs: Record<string, JobSpecification> = {};
+    
+    try {
+      const jobsPath = `${this.workspaceDir}/jobs`;
+      
+      // Check if jobs directory exists
+      const stat = Deno.statSync(jobsPath);
+      if (!stat.isDirectory) {
+        return jobs;
+      }
+
+      // Read all .yml and .yaml files in jobs directory
+      for (const dirEntry of Deno.readDirSync(jobsPath)) {
+        if (dirEntry.isFile && (dirEntry.name.endsWith('.yml') || dirEntry.name.endsWith('.yaml'))) {
+          try {
+            const jobFilePath = `${jobsPath}/${dirEntry.name}`;
+            const jobContent = Deno.readTextFileSync(jobFilePath);
+            const jobSpec = parseYaml(jobContent) as JobSpecification;
+            
+            // Use filename (without extension) as job name if not specified
+            const jobName = jobSpec.name || dirEntry.name.replace(/\.(yml|yaml)$/, '');
+            
+            // Normalize agents if needed
+            if (jobSpec.execution?.agents) {
+              jobSpec.execution.agents = jobSpec.execution.agents.map((agent) => {
+                if (typeof agent === "string") {
+                  return { id: agent };
+                }
+                return agent;
+              });
+            }
+            
+            jobs[jobName] = {
+              ...jobSpec,
+              name: jobName,
+            };
+            
+            console.log(`Loaded job spec: ${jobName} from ${dirEntry.name}`);
+          } catch (error) {
+            console.error(`Failed to load job file ${dirEntry.name}: ${error}`);
+          }
+        }
+      }
+    } catch (error) {
+      // Jobs directory doesn't exist or can't be read - that's fine
+      console.log(`Jobs directory not found or accessible: ${error}`);
+    }
+    
     return jobs;
   }
 

@@ -15,6 +15,7 @@ import {
   type StreamingMemoryConfig,
   StreamingMemoryManager,
 } from "./memory/streaming/streaming-memory-manager.ts";
+import { ContextProvisioner } from "./context/context-provisioner.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -50,8 +51,12 @@ export interface JobExecution {
   agents: JobAgentSpec[];
   stages?: JobStage[];
   context?: {
-    codebase_files?: string[];
-    focus_areas?: string[];
+    filesystem?: {
+      patterns: string[];
+      base_path?: string;
+      max_file_size?: number;
+      include_content?: boolean;
+    };
     [key: string]: any;
   };
 }
@@ -62,7 +67,7 @@ export interface JobAgentSpec {
   prompt?: string;
   config?: Record<string, any>;
   input?: Record<string, any>;
-  input_source?: "signal" | "previous" | "combined" | "codebase_context"; // Source of input for the agent
+  input_source?: "signal" | "previous" | "combined" | "filesystem_context"; // Source of input for the agent
 }
 
 export interface JobStage {
@@ -206,7 +211,7 @@ export interface ExecutionPhase {
 export interface AgentTask {
   agentId: string;
   task: string;
-  inputSource: "signal" | "previous" | "combined" | "codebase_context";
+  inputSource: "signal" | "previous" | "combined" | "filesystem_context";
   dependencies?: string[];
   mode?: string; // For agents with multiple modes
   config?: Record<string, any>; // Agent-specific configuration
@@ -233,6 +238,7 @@ export class SessionSupervisor extends BaseAgent {
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private streamingMemory?: StreamingMemoryManager;
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
+  private contextProvisioner?: ContextProvisioner;
 
   constructor(
     memoryConfig: AtlasMemoryConfig,
@@ -369,6 +375,25 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     }
   }
 
+  async initializeContextProvisioner(context: SessionContext): Promise<void> {
+    try {
+      this.contextProvisioner = new ContextProvisioner({
+        workspaceId: context.workspaceId,
+      });
+
+      // Initialize with workspace sources (empty for now - Phase 1)
+      await this.contextProvisioner.initialize();
+
+      this.log("Context provisioner initialized for EMCP-based context loading");
+    } catch (error) {
+      this.logger.error("Failed to initialize context provisioner", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: context.sessionId,
+      });
+      // Don't fail session initialization if context provisioner fails
+    }
+  }
+
   async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
     try {
       const atlasConfigLoader = AtlasConfigLoader.getInstance();
@@ -440,6 +465,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     // Initialize streaming memory for performance
     await this.initializeStreamingMemory(context);
+
+    // Initialize context provisioner for EMCP-based context loading
+    await this.initializeContextProvisioner(context);
 
     // Log shared precomputed plans received from WorkspaceSupervisor
     const planCount = Object.keys(this.precomputedPlans || {}).length;
@@ -1681,10 +1709,10 @@ Overall Success: ${
       const inputSource = currentAgentTask?.inputSource;
       const shouldPassCleanInput = inputSource === "previous";
 
-      // For codebase_context input source, enhance with signal type information
-      if (inputSource === "codebase_context") {
+      // For filesystem_context input source, enhance with signal type information
+      if (inputSource === "filesystem_context") {
         this.log(
-          `Providing codebase analysis context to ${agentId}`,
+          `Providing filesystem analysis context to ${agentId}`,
         );
         return {
           ...originalInput,
@@ -2122,101 +2150,36 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     this.log(`Stored session episodic memory: session_summary_${this.sessionContext?.sessionId}`);
   }
 
-  // Load codebase files specified in job context for analysis
-  private async loadCodebaseContext(agentId: string, task: AgentTask): Promise<string> {
+  // Provision filesystem context via EMCP providers
+  private async provisionFilesystemContext(agentId: string, task: AgentTask): Promise<string> {
     try {
-      // Check if job spec includes codebase context
-      const jobSpec = this.sessionContext?.jobSpec;
-      if (!jobSpec?.execution?.context?.codebase_files) {
+      // Check if context provisioner is available
+      if (!this.contextProvisioner) {
+        this.log("Warning: Context provisioner not initialized, skipping filesystem context");
         return "";
       }
 
-      this.log(
-        `Loading codebase context for ${agentId}: ${jobSpec.execution.context.codebase_files.length} files, ${
-          jobSpec.execution.context.focus_areas?.length || 0
-        } focus areas`,
+      // Check if session context and job spec are available
+      if (!this.sessionContext?.jobSpec) {
+        return "";
+      }
+
+      const jobSpec = this.sessionContext.jobSpec;
+
+      // Use EMCP filesystem provisioning method
+      const context = await this.contextProvisioner.provisionFilesystemContext(
+        agentId,
+        jobSpec,
+        this.sessionContext.sessionId,
       );
 
-      const codebaseFiles = jobSpec.execution.context.codebase_files;
-      const focusAreas = jobSpec.execution.context.focus_areas || [];
-
-      let codebaseContent = "";
-      let loadedFilesCount = 0;
-      let totalSize = 0;
-      const maxSize = 50000; // Limit total content to ~50KB
-
-      // Add focus areas first
-      if (focusAreas.length > 0) {
-        codebaseContent += `# Analysis Focus Areas\n\n`;
-        focusAreas.forEach((area: string, index: number) => {
-          codebaseContent += `${index + 1}. ${area}\n`;
-        });
-        codebaseContent += `\n---\n\n`;
+      if (context) {
+        this.log(`Provisioned filesystem context for ${agentId} via EMCP providers`);
       }
 
-      codebaseContent += `# Atlas Codebase Files\n\n`;
-
-      for (const filePath of codebaseFiles) {
-        if (totalSize > maxSize) {
-          codebaseContent += `\n**Note: Additional files truncated due to size limits**\n`;
-          break;
-        }
-
-        try {
-          let actualPath = filePath;
-
-          // Handle directory patterns like "src/core/workers/"
-          if (filePath.endsWith("/")) {
-            // Read directory contents
-            try {
-              const entries = await Array.fromAsync(Deno.readDir(filePath));
-              const tsFiles = entries
-                .filter((entry) => entry.isFile && entry.name.endsWith(".ts"))
-                .slice(0, 3); // Limit to first 3 files per directory
-
-              for (const file of tsFiles) {
-                const fullPath = `${filePath}${file.name}`;
-                try {
-                  const content = await Deno.readTextFile(fullPath);
-                  const truncatedContent = content.length > 3000
-                    ? content.slice(0, 3000) + "\n... (truncated)"
-                    : content;
-
-                  codebaseContent +=
-                    `## ${filePath}${file.name}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
-                  loadedFilesCount++;
-                  totalSize += truncatedContent.length;
-
-                  if (totalSize > maxSize) break;
-                } catch (error) {
-                  this.log(`Warning: Could not read file ${fullPath}: ${error}`);
-                }
-              }
-            } catch (error) {
-              this.log(`Warning: Could not read directory ${filePath}: ${error}`);
-            }
-            continue;
-          }
-
-          // Handle specific files - use relative paths within project
-          const content = await Deno.readTextFile(filePath);
-          const truncatedContent = content.length > 4000
-            ? content.slice(0, 4000) + "\n... (truncated)"
-            : content;
-
-          codebaseContent += `## ${filePath}\n\`\`\`typescript\n${truncatedContent}\n\`\`\`\n\n`;
-          loadedFilesCount++;
-          totalSize += truncatedContent.length;
-        } catch (error) {
-          this.log(`Warning: Could not load file ${filePath}: ${error}`);
-          codebaseContent += `## ${filePath}\n*File could not be loaded: ${error}*\n\n`;
-        }
-      }
-
-      this.log(`Loaded codebase context: ${loadedFilesCount} files, ${totalSize} characters`);
-      return codebaseContent;
+      return context;
     } catch (error) {
-      this.log(`Error loading codebase context: ${error}`);
+      this.log(`Error provisioning filesystem context: ${error}`);
       return "";
     }
   }
@@ -2248,15 +2211,15 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       // 4. Get episodic summary of previous same-agent executions
       const episodicSummary = this.getPreviousAgentExecutionSummary(agentId);
 
-      // 5. Load codebase files if specified in job context
-      const codebaseContext = await this.loadCodebaseContext(agentId, task);
+      // 5. Load filesystem context via EMCP providers if specified in job context
+      const filesystemContext = await this.provisionFilesystemContext(agentId, task);
 
       // 6. Build enhanced prompt
       const memoryEnhancedPrompt = this.buildMemoryEnhancedPrompt(
         task.task,
         relevantFacts,
         workingMemoryContext,
-        codebaseContext,
+        filesystemContext,
         proceduralRules,
         episodicSummary,
       );
@@ -2569,18 +2532,25 @@ Overall Session Summary: ${
     originalTask: string,
     semanticFacts: any[],
     workingMemory: any[],
-    codebaseContext: string,
+    filesystemContext: string,
     proceduralRules: any[],
     episodicSummary: string | null,
   ): string {
     let enhancedPrompt = originalTask;
 
-    // Add codebase context section FIRST for analysis tasks
-    if (codebaseContext) {
-      enhancedPrompt += `\n\n## CODEBASE CONTEXT\n`;
+    // Add execution prompts from job specification if available
+    if (this.sessionContext?.jobSpec?.session_prompts?.planning) {
+      enhancedPrompt += `\n\n## EXECUTION GUIDANCE\n`;
+      enhancedPrompt += this.sessionContext.jobSpec.session_prompts.planning;
+      enhancedPrompt += `\n`;
+    }
+
+    // Add filesystem context section FIRST for analysis tasks
+    if (filesystemContext) {
+      enhancedPrompt += `\n\n## FILESYSTEM CONTEXT\n`;
       enhancedPrompt +=
-        `You are analyzing the Atlas codebase. Here are the relevant files and focus areas:\n\n`;
-      enhancedPrompt += codebaseContext;
+        `You are analyzing the Atlas codebase. Here are the relevant files:\n\n`;
+      enhancedPrompt += filesystemContext;
       enhancedPrompt +=
         `\n**Please provide specific analysis based on this actual Atlas codebase, not generic recommendations.**\n`;
     }
@@ -2679,6 +2649,19 @@ Overall Session Summary: ${
       }
     } catch (error) {
       this.logger.error("Error during streaming memory shutdown", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionContext?.sessionId,
+      });
+    }
+
+    // Shutdown context provisioner
+    try {
+      if (this.contextProvisioner) {
+        await this.contextProvisioner.shutdown();
+        this.log("Context provisioner shutdown complete");
+      }
+    } catch (error) {
+      this.logger.error("Error during context provisioner shutdown", {
         error: error instanceof Error ? error.message : String(error),
         sessionId: this.sessionContext?.sessionId,
       });

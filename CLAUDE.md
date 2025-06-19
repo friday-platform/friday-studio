@@ -220,6 +220,30 @@ Hierarchical containers that encapsulate context, memory, and conversation for A
 Create a call stack for context, memory, and messages. Each scope inherits from its parent but
 maintains isolation.
 
+### Atlas Resource Management Architecture
+
+Atlas manages three distinct types of resources with clear architectural boundaries:
+
+```
+Atlas Resource Management
+├── Context (external reference materials)
+├── Memory (internal learned state)
+└── Tools (EMCP providers - actions/capabilities)
+    ├── GitHub provider
+    ├── Database provider
+    ├── Filesystem provider
+    ├── API call providers
+    └── Analysis tool providers
+```
+
+**Critical Distinctions:**
+
+- **Memory**: Internal Atlas-managed state (semantic facts, working memory, episodic summaries, procedural rules). Atlas-native storage and retrieval.
+- **Context**: External reference materials fetched for current tasks (codebase files, documentation, schemas). Sourced via EMCP providers.
+- **Tools**: Actions and capabilities provided by Extended Model Context Protocol (EMCP) providers. External services that can perform operations or fetch data.
+
+**IMPORTANT**: Memory is NOT context. Memory is internal learned state, while context is external reference material. Tools (EMCP providers) can fetch context but are separate from both memory and context systems.
+
 ### Hierarchical Supervisor Architecture
 
 The system implements a three-tier supervision hierarchy with LLM intelligence at each level:
