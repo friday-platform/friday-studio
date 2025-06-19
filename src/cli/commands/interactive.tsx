@@ -23,7 +23,7 @@ export default function InteractiveCommand() {
   const [alertVisible, setAlertVisible] = useState(false);
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const [forceUpdate, setForceUpdate] = useState(0);
+  const [, setForceUpdate] = useState(0);
 
   // Calculate responsive dimensions based on terminal size
   const terminalWidth = stdout.columns || 80;
@@ -362,9 +362,6 @@ export default function InteractiveCommand() {
       >
         <Text bold>Atlas</Text>
         <Text dimColor>Made by Tempest</Text>
-        <Text color="gray" dimColor>
-          Terminal: {terminalWidth}x{terminalHeight} | Update: {forceUpdate}
-        </Text>
       </Box>
 
       {/* Centered input prompt */}
