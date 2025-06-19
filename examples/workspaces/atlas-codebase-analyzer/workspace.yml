@@ -3,7 +3,9 @@ version: "1.0"
 workspace:
   id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
   name: "Atlas Codebase Analyzer"
-  description: "Autonomous Atlas codebase analysis for performance and developer experience improvements"
+  description: "Autonomous Atlas codebase analysis using enhanced EMCP filesystem capabilities"
+
+# No MCP servers needed - using EMCP context provisioning
 
 # Signal definitions for autonomous operation
 signals:
@@ -44,31 +46,58 @@ signals:
     schedule: "0 9 * * 1"  # Every Monday at 9 AM
     timezone: "America/Los_Angeles"
 
-# Agent definitions - using advanced reasoning capabilities
+# Agent definitions - using EMCP context provisioning (no MCP servers)
 agents:
-  # Performance analysis agent
+  # Performance analysis agent with secure filesystem context
   performance-analyzer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Deep performance analysis and optimization recommendations"
+    purpose: "Deep performance analysis using Atlas EMCP filesystem context"
+    max_steps: 3
+    prompts:
+      system: |
+        You are a performance analysis expert with secure read-only access to the Atlas codebase.
+        You receive comprehensive codebase context through Atlas EMCP filesystem provisioning.
+        Analyze code patterns, identify bottlenecks, and suggest optimizations.
+        Focus on worker architecture, state management, and async patterns.
 
-  # Developer experience analyzer
+  # Developer experience analyzer with metadata capabilities
   dx-analyzer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Developer experience analysis and improvement recommendations"
+    purpose: "Developer experience analysis with advanced filesystem metadata"
+    max_steps: 3
+    prompts:
+      system: |
+        You are a developer experience expert with access to enhanced filesystem analysis.
+        You receive detailed codebase context with metadata through Atlas EMCP.
+        Understand code complexity, dependencies, and maintainability patterns.
+        Focus on developer workflows, testing patterns, and code organization.
 
-  # Architecture analysis agent
+  # Architecture analysis agent with comprehensive context
   architecture-analyzer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "System architecture analysis and design recommendations"
+    purpose: "System architecture analysis using comprehensive codebase context"
+    max_steps: 3
+    prompts:
+      system: |
+        You are an architecture expert with advanced codebase analysis capabilities.
+        You receive comprehensive system context through Atlas EMCP context provisioning.
+        Understand system design, patterns, and relationships.
+        Focus on supervision hierarchy, communication patterns, and architectural consistency.
 
-  # Report generator - synthesizes findings into actionable reports
+  # Report generator with secure context access
   report-generator:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Generate comprehensive markdown reports with prioritized recommendations"
+    purpose: "Generate comprehensive reports using secure filesystem context"
+    max_steps: 2
+    prompts:
+      system: |
+        You are a technical report generator with read-only filesystem context.
+        Synthesize analysis findings into actionable markdown reports with priorities.
+        Use the provided context to understand file relationships and generate comprehensive documentation.
 
 # Job definitions for different analysis workflows
 jobs:
@@ -116,6 +145,14 @@ jobs:
           base_path: "/Users/kenneth/tempest/atlas"
           max_file_size: 100000
           include_content: true
+          # Enhanced EMCP provider configuration with security controls
+          provider_config:
+            allowedDirectories: ["/Users/kenneth/tempest/atlas"]
+            deniedPaths: ["/Users/kenneth/tempest/atlas/node_modules", "/Users/kenneth/tempest/atlas/.git"]
+            readOnly: true  # Analysis workspace should be read-only for security
+            maxFileSize: "100kb"
+            maxTotalSize: "5mb"
+            allowedExtensions: [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
       agents:
         - id: "performance-analyzer"
           input_source: "filesystem_context"

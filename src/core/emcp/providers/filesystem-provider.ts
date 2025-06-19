@@ -22,6 +22,11 @@ export interface FilesystemProviderConfig {
   readonly allowedExtensions?: string[];
   readonly maxFileSize?: string;
   readonly maxTotalSize?: string;
+  // Security controls (from official MCP filesystem server)
+  readonly allowedDirectories?: string[];
+  readonly deniedPaths?: string[];
+  readonly readOnly?: boolean;
+  readonly followSymlinks?: boolean;
 }
 
 export class FilesystemProvider extends BaseEMCPProvider {
@@ -32,7 +37,7 @@ export class FilesystemProvider extends BaseEMCPProvider {
     capabilities: [
       {
         type: "codebase",
-        operations: ["read", "list", "analyze"],
+        operations: ["read", "list", "analyze", "write", "create", "move", "metadata"],
         formats: ["typescript", "javascript", "markdown", "json", "yaml"],
         constraints: {
           maxSize: "50kb",
@@ -50,6 +55,11 @@ export class FilesystemProvider extends BaseEMCPProvider {
   private allowedExtensions = [".ts", ".js", ".md", ".json", ".yaml", ".yml"];
   private maxFileSize = 4000; // characters
   private maxTotalSize = 50000; // characters
+  // Security controls
+  private allowedDirectories: string[] = [];
+  private deniedPaths: string[] = [];
+  private readOnly = false;
+  private followSymlinks = false;
 
   protected doInitialize(config: Record<string, unknown>): Promise<void> {
     // Extract filesystem-specific configuration
@@ -71,10 +81,29 @@ export class FilesystemProvider extends BaseEMCPProvider {
       if (fsConfig.maxTotalSize) {
         this.maxTotalSize = this.parseSize(fsConfig.maxTotalSize);
       }
+
+      // Security controls configuration
+      if (fsConfig.allowedDirectories) {
+        this.allowedDirectories = fsConfig.allowedDirectories;
+      }
+
+      if (fsConfig.deniedPaths) {
+        this.deniedPaths = fsConfig.deniedPaths;
+      }
+
+      if (fsConfig.readOnly !== undefined) {
+        this.readOnly = fsConfig.readOnly;
+      }
+
+      if (fsConfig.followSymlinks !== undefined) {
+        this.followSymlinks = fsConfig.followSymlinks;
+      }
     }
 
     console.log(
-      `Filesystem provider initialized with base path: ${this.basePath || "current directory"}`,
+      `Filesystem provider initialized with base path: ${
+        this.basePath || "current directory"
+      }, readOnly: ${this.readOnly}`,
     );
     return Promise.resolve();
   }
@@ -106,6 +135,7 @@ export class FilesystemProvider extends BaseEMCPProvider {
 
     try {
       const filePath = this.resolveFilePath(uri);
+      await this.validatePath(filePath);
       const content = await Deno.readTextFile(filePath);
       const processingTime = Date.now() - startTime;
 
@@ -138,7 +168,7 @@ export class FilesystemProvider extends BaseEMCPProvider {
       const maxSize = codebaseSpec.maxSize
         ? this.parseSize(codebaseSpec.maxSize)
         : this.maxTotalSize;
-      
+
       // Use basePath from context spec if provided, otherwise use provider config
       const effectiveBasePath = codebaseSpec.basePath || this.basePath;
 
@@ -165,7 +195,11 @@ export class FilesystemProvider extends BaseEMCPProvider {
         }
 
         try {
-          const result = await this.processFilePattern(pattern, maxSize - totalSize, effectiveBasePath);
+          const result = await this.processFilePattern(
+            pattern,
+            maxSize - totalSize,
+            effectiveBasePath,
+          );
           if (result.fileCount > 0) {
             codebaseContent += result.content;
             loadedFilesCount += result.fileCount;
@@ -221,16 +255,20 @@ export class FilesystemProvider extends BaseEMCPProvider {
     try {
       // Use glob expansion for pattern matching
       const effectiveBasePath = basePath || this.basePath || ".";
-      const fullPattern = effectiveBasePath && effectiveBasePath !== "." ? `${effectiveBasePath}/${pattern}` : pattern;
-      
+      const fullPattern = effectiveBasePath && effectiveBasePath !== "."
+        ? `${effectiveBasePath}/${pattern}`
+        : pattern;
+
       const matchedFiles: string[] = [];
-      
+
       // Expand glob pattern
-      for await (const entry of expandGlob(fullPattern, {
-        root: effectiveBasePath,
-        includeDirs: false,
-        globstar: true,
-      })) {
+      for await (
+        const entry of expandGlob(fullPattern, {
+          root: effectiveBasePath,
+          includeDirs: false,
+          globstar: true,
+        })
+      ) {
         if (this.isAllowedFile(entry.name)) {
           matchedFiles.push(entry.path);
         }
@@ -255,7 +293,9 @@ export class FilesystemProvider extends BaseEMCPProvider {
           if (size >= remainingSize) break;
         } catch (error) {
           console.warn(`Warning: Could not read file ${filePath}: ${error}`);
-          content += `## ${this.getRelativePath(filePath)}\n*File could not be loaded: ${error}*\n\n`;
+          content += `## ${
+            this.getRelativePath(filePath)
+          }\n*File could not be loaded: ${error}*\n\n`;
         }
       }
 
@@ -268,7 +308,9 @@ export class FilesystemProvider extends BaseEMCPProvider {
           fileCount = result.fileCount;
           size = result.size;
         } catch (error) {
-          throw new Error(`No files matched pattern '${pattern}' and literal file access failed: ${error}`);
+          throw new Error(
+            `No files matched pattern '${pattern}' and literal file access failed: ${error}`,
+          );
         }
       }
     } catch (error) {
@@ -322,13 +364,15 @@ export class FilesystemProvider extends BaseEMCPProvider {
 
     try {
       // Use glob to find all allowed files recursively
-      const pattern = `${dirPath}/**/*{${this.allowedExtensions.join(',')}}`;
-      
-      for await (const entry of expandGlob(pattern, {
-        root: dirPath,
-        includeDirs: false,
-        globstar: true,
-      })) {
+      const pattern = `${dirPath}/**/*{${this.allowedExtensions.join(",")}}`;
+
+      for await (
+        const entry of expandGlob(pattern, {
+          root: dirPath,
+          includeDirs: false,
+          globstar: true,
+        })
+      ) {
         try {
           const stat = await Deno.stat(entry.path);
           resources.push({
@@ -390,5 +434,206 @@ export class FilesystemProvider extends BaseEMCPProvider {
     };
 
     return mimeTypes[ext || ""] || "text/plain";
+  }
+
+  // Security validation methods (from official MCP filesystem server)
+
+  private async validatePath(filePath: string): Promise<void> {
+    const resolvedPath = await Deno.realPath(filePath).catch(() => filePath);
+
+    // Check denied paths
+    for (const deniedPath of this.deniedPaths) {
+      if (resolvedPath.startsWith(deniedPath)) {
+        throw new Error(`Access denied: Path ${filePath} is in denied directory ${deniedPath}`);
+      }
+    }
+
+    // Check allowed directories (if specified)
+    if (this.allowedDirectories.length > 0) {
+      const isAllowed = this.allowedDirectories.some((allowedDir) =>
+        resolvedPath.startsWith(allowedDir)
+      );
+      if (!isAllowed) {
+        throw new Error(`Access denied: Path ${filePath} is not in an allowed directory`);
+      }
+    }
+
+    // Check if path traversal is attempted
+    if (filePath.includes("..") && !this.followSymlinks) {
+      throw new Error(`Access denied: Path traversal not allowed`);
+    }
+  }
+
+  private async validateWriteOperation(filePath: string): Promise<void> {
+    if (this.readOnly) {
+      throw new Error(`Write operation denied: Provider is in read-only mode`);
+    }
+    await this.validatePath(filePath);
+  }
+
+  // Advanced editing operations (from official MCP filesystem server)
+
+  async writeFile(uri: string, content: string, context: EMCPContext): Promise<EMCPResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const filePath = this.resolveFilePath(uri);
+      await this.validateWriteOperation(filePath);
+
+      await Deno.writeTextFile(filePath, content);
+      const processingTime = Date.now() - startTime;
+
+      return this.createSuccessResult(
+        `Successfully wrote ${content.length} characters to ${uri}`,
+        undefined,
+        this.createCostInfo(processingTime, content.length),
+        { filePath, size: content.length, operation: "write" },
+      );
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      return this.createErrorResult(
+        `Failed to write file ${uri}: ${error}`,
+        this.createCostInfo(processingTime),
+      );
+    }
+  }
+
+  async createFile(uri: string, content: string, context: EMCPContext): Promise<EMCPResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const filePath = this.resolveFilePath(uri);
+      await this.validateWriteOperation(filePath);
+
+      // Check if file already exists
+      try {
+        await Deno.stat(filePath);
+        throw new Error(`File ${uri} already exists`);
+      } catch (error) {
+        if (!(error instanceof Deno.errors.NotFound)) {
+          throw error;
+        }
+      }
+
+      await Deno.writeTextFile(filePath, content);
+      const processingTime = Date.now() - startTime;
+
+      return this.createSuccessResult(
+        `Successfully created file ${uri} with ${content.length} characters`,
+        undefined,
+        this.createCostInfo(processingTime, content.length),
+        { filePath, size: content.length, operation: "create" },
+      );
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      return this.createErrorResult(
+        `Failed to create file ${uri}: ${error}`,
+        this.createCostInfo(processingTime),
+      );
+    }
+  }
+
+  async moveFile(oldUri: string, newUri: string, context: EMCPContext): Promise<EMCPResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const oldPath = this.resolveFilePath(oldUri);
+      const newPath = this.resolveFilePath(newUri);
+
+      await this.validatePath(oldPath);
+      await this.validateWriteOperation(newPath);
+
+      await Deno.rename(oldPath, newPath);
+      const processingTime = Date.now() - startTime;
+
+      return this.createSuccessResult(
+        `Successfully moved ${oldUri} to ${newUri}`,
+        undefined,
+        this.createCostInfo(processingTime),
+        { oldPath, newPath, operation: "move" },
+      );
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      return this.createErrorResult(
+        `Failed to move file from ${oldUri} to ${newUri}: ${error}`,
+        this.createCostInfo(processingTime),
+      );
+    }
+  }
+
+  // Metadata operations (from official MCP filesystem server)
+
+  async getFileInfo(uri: string, context: EMCPContext): Promise<EMCPResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const filePath = this.resolveFilePath(uri);
+      await this.validatePath(filePath);
+
+      const stat = await Deno.stat(filePath);
+      const processingTime = Date.now() - startTime;
+
+      const metadata = {
+        path: filePath,
+        name: filePath.split("/").pop() || "",
+        size: stat.size,
+        isFile: stat.isFile,
+        isDirectory: stat.isDirectory,
+        isSymlink: stat.isSymlink,
+        created: stat.birthtime?.toISOString(),
+        modified: stat.mtime?.toISOString(),
+        accessed: stat.atime?.toISOString(),
+        permissions: stat.mode,
+        mimeType: stat.isFile ? this.getMimeType(filePath) : undefined,
+      };
+
+      return this.createSuccessResult(
+        JSON.stringify(metadata, null, 2),
+        undefined,
+        this.createCostInfo(processingTime),
+        { operation: "metadata", filePath, metadata },
+      );
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      return this.createErrorResult(
+        `Failed to get file info for ${uri}: ${error}`,
+        this.createCostInfo(processingTime),
+      );
+    }
+  }
+
+  async createDirectory(uri: string, context: EMCPContext): Promise<EMCPResult> {
+    this.ensureInitialized();
+
+    const startTime = Date.now();
+
+    try {
+      const dirPath = this.resolveFilePath(uri);
+      await this.validateWriteOperation(dirPath);
+
+      await Deno.mkdir(dirPath, { recursive: true });
+      const processingTime = Date.now() - startTime;
+
+      return this.createSuccessResult(
+        `Successfully created directory ${uri}`,
+        undefined,
+        this.createCostInfo(processingTime),
+        { dirPath, operation: "create_directory" },
+      );
+    } catch (error) {
+      const processingTime = Date.now() - startTime;
+      return this.createErrorResult(
+        `Failed to create directory ${uri}: ${error}`,
+        this.createCostInfo(processingTime),
+      );
+    }
   }
 }

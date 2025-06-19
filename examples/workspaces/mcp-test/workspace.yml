@@ -5,16 +5,17 @@ workspace:
   name: "MCP Filesystem Test"
   description: "Testing local MCP filesystem server integration"
 
-# MCP server configuration
+# MCP server configuration - only standard MCP servers
 mcp_servers:
-  filesystem:
-    id: "filesystem"
+  # Official MCP filesystem server for interactive file operations
+  filesystem-mcp:
+    id: "filesystem-mcp"
     transport:
       type: "stdio"
       command: "npx"
       args: ["@modelcontextprotocol/server-filesystem", "/tmp"]
     tools:
-      allowed: ["read_file", "write_file", "list_directory"]
+      allowed: ["read_file", "write_file", "list_directory", "create_directory"]
 
 # Signal for manual testing
 signals:
@@ -24,34 +25,84 @@ signals:
     method: "POST"
     description: "Manual trigger for MCP filesystem testing"
 
-# Simple LLM agent with MCP filesystem access
+# Agents with MCP and EMCP capabilities
 agents:
-  file-assistant:
+  # Interactive file editor using official MCP filesystem server
+  file-editor:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "File operations assistant using MCP filesystem tools"
-    mcp_servers: ["filesystem"]
+    purpose: "Interactive file operations using official MCP filesystem tools"
+    mcp_servers: ["filesystem-mcp"]
     max_steps: 3
     prompts:
       system: |
-        You are a helpful file operations assistant. You have access to filesystem tools
-        that allow you to read, write, and list files in the /tmp directory.
+        You are a file editor assistant using the official MCP filesystem server.
+        You can perform interactive file operations in the /tmp directory:
+        - read_file: Read file contents
+        - write_file: Write/overwrite files
+        - list_directory: List directory contents
+        - create_directory: Create new directories
         
-        When asked to perform file operations, use the available tools:
-        - read_file: Read the contents of a file
-        - write_file: Write content to a file  
-        - list_directory: List files in a directory
+        Focus on direct file manipulation and editing tasks.
+  
+  # Context analyzer with EMCP filesystem context (no MCP servers)
+  context-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Context analysis using Atlas EMCP filesystem capabilities via job context"
+    max_steps: 3
+    prompts:
+      system: |
+        You are a context analysis assistant with access to Atlas EMCP filesystem capabilities.
+        You receive comprehensive filesystem context through the Atlas context provisioning system.
+        This includes:
+        - Advanced glob pattern matching
+        - Batch file analysis with security controls
+        - Metadata operations and file relationships
         
-        Always be helpful and explain what you're doing.
+        Focus on understanding and analyzing the provided context to answer questions.
+  
+  # Full-featured assistant using MCP tools + EMCP context
+  full-assistant:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Complete filesystem assistant with MCP tools and EMCP context"
+    mcp_servers: ["filesystem-mcp"]
+    max_steps: 5
+    prompts:
+      system: |
+        You are a comprehensive file assistant with access to:
+        1. Official MCP filesystem tools for interactive operations
+        2. Atlas EMCP filesystem context for analysis
+        
+        Use MCP tools for editing/creating files: read_file, write_file, list_directory
+        Use the provided context for understanding file relationships and analysis.
+        Always explain which approach you're using and why.
 
-# Job for testing MCP functionality (inline job, no separate file)
+# Jobs for testing different MCP capabilities
 jobs:
   test-filesystem:
     name: "test-filesystem"
-    description: "Test MCP filesystem operations"
+    description: "Test MCP filesystem operations with EMCP context"
     triggers:
       - signal: "test-mcp"
     execution:
       strategy: "sequential"
+      # Add EMCP filesystem context for enhanced analysis
+      context:
+        filesystem:
+          patterns:
+            - "/tmp/*.txt"
+            - "/tmp/*.md"
+          base_path: "/tmp"
+          max_file_size: 10000
+          include_content: true
+          # EMCP provider configuration
+          provider_config:
+            allowedDirectories: ["/tmp"]
+            readOnly: false
+            maxFileSize: "10kb"
+            maxTotalSize: "100kb"
       agents:
-        - id: "file-assistant"
+        - id: "full-assistant"
+          task: "Demonstrate MCP tools and analyze EMCP filesystem context"
