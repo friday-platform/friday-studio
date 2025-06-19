@@ -838,7 +838,16 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       return jobSpec.task_template;
     }
 
-    // Priority 3: Create action-oriented instruction from job description
+    // Priority 3: Try intelligent preparation if we have session context and signal data
+    if (this.sessionContext?.payload && !agentSpec.prompt && !jobSpec.task_template) {
+      // Note: This will be async in practice, but for now we'll start the async operation
+      // and fall back to the basic approach to maintain compatibility
+      this.generateIntelligentTaskForAgent(agentSpec, jobSpec).catch(error => {
+        this.log(`Intelligent task preparation failed: ${error}`, "warn");
+      });
+    }
+
+    // Priority 4: Create action-oriented instruction from job description (fallback)
     const firstLine = jobSpec.description.split("\n")[0];
 
     // Make the instruction more action-oriented by analyzing the description
@@ -854,6 +863,145 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       // Convert descriptive text to actionable instruction
       return `Execute the following task: ${firstLine}`;
     }
+  }
+
+  // Helper method for async intelligent task generation (for future enhancement)
+  private async generateIntelligentTaskForAgent(
+    agentSpec: JobAgentSpec,
+    jobSpec: JobSpecification
+  ): Promise<string> {
+    if (!this.sessionContext) {
+      return this.buildAgentTask(agentSpec, jobSpec);
+    }
+
+    try {
+      return await this.prepareTaskForAgent(
+        agentSpec, 
+        jobSpec, 
+        this.sessionContext.payload, 
+        this.sessionContext
+      );
+    } catch (error) {
+      this.log(`Intelligent task preparation failed: ${error}`, "warn");
+      return this.buildAgentTask(agentSpec, jobSpec);
+    }
+  }
+
+  // Intelligent task preparation method
+  private async prepareTaskForAgent(
+    agentSpec: JobAgentSpec,
+    jobSpec: JobSpecification,
+    rawSignalData: any,
+    sessionContext: SessionContext
+  ): Promise<string> {
+    // Priority 1: Use explicit agent prompt if provided
+    if (agentSpec.prompt) {
+      return agentSpec.prompt;
+    }
+
+    // Priority 2: Use job's task template if provided  
+    if (jobSpec.task_template) {
+      return jobSpec.task_template;
+    }
+
+    // Priority 3: Ask supervisor to intelligently prepare the task
+    return await this.generateIntelligentTaskPrompt(
+      agentSpec, 
+      jobSpec, 
+      rawSignalData, 
+      sessionContext
+    );
+  }
+
+  private async generateIntelligentTaskPrompt(
+    agentSpec: JobAgentSpec,
+    jobSpec: JobSpecification,
+    rawSignalData: any,
+    sessionContext: SessionContext
+  ): Promise<string> {
+    const preparationPrompt = `
+You are a SessionSupervisor preparing a clean, actionable task for an agent. Your job is to:
+
+1. **Extract Important Information**: Identify key data from the raw signal
+2. **Remove Noise**: Filter out metadata, UUIDs, timestamps, and irrelevant fields
+3. **Identify Main Goal**: Determine what actually needs to be done
+4. **Create Clear Instructions**: Write specific, actionable task description
+
+## Context
+**Job**: ${jobSpec.name} - ${jobSpec.description}
+**Agent**: ${agentSpec.id} (Role: ${agentSpec.mode || 'primary'})
+**Signal Type**: ${sessionContext.signal.id}
+
+## Raw Signal Data
+\`\`\`json
+${JSON.stringify(rawSignalData, null, 2)}
+\`\`\`
+
+## Agent Capabilities
+${this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)}
+
+## Instructions
+Create a clear, focused task description that:
+- Focuses on the core issue/request from the signal
+- Removes technical noise (IDs, timestamps, metadata)
+- Provides specific actions for this agent to take
+- Is self-contained and actionable
+
+**Return only the task description - no explanation needed.**
+`;
+
+    const cleanTask = await this.generateLLM(
+      "claude-3-5-sonnet-20241022",
+      "You are an intelligent task preparation assistant.",
+      preparationPrompt,
+      true,
+      {
+        operation: "intelligent_task_preparation",
+        agentId: agentSpec.id,
+        jobName: jobSpec.name,
+        sessionId: sessionContext.sessionId
+      }
+    );
+
+    this.log(`Prepared intelligent task for ${agentSpec.id}`, "info", {
+      originalDataSize: JSON.stringify(rawSignalData).length,
+      cleanTaskLength: cleanTask.length,
+      job: jobSpec.name
+    });
+
+    return cleanTask.trim();
+  }
+
+  private getAgentCapabilitiesDescription(agentId: string, availableAgents?: any[]): string {
+    if (!availableAgents) return "Unknown agent capabilities";
+    
+    const agent = availableAgents.find(a => a.id === agentId);
+    if (!agent) return "Unknown agent capabilities";
+
+    // Build context based on agent type and configuration
+    let capabilities = `Agent Type: ${agent.type}\n`;
+    
+    if (agent.type === "remote" && agent.config?.protocol === "acp") {
+      capabilities += `- Operations via ACP protocol\n`;
+      capabilities += `- Can execute remote commands\n`;
+      capabilities += `- Handles deployment management and troubleshooting\n`;
+    } else if (agent.type === "llm") {
+      capabilities += `- AI analysis and reasoning\n`;
+      capabilities += `- Documentation and explanations\n`;
+      capabilities += `- Integration with external services\n`;
+      if (agent.config?.tools?.includes("computer_use")) {
+        capabilities += `- Computer interactions and automation\n`;
+      }
+    } else if (agent.type === "remote") {
+      capabilities += `- Remote operations via ${agent.config?.protocol || 'custom'} protocol\n`;
+      capabilities += `- Handles external system interactions\n`;
+    } else if (agent.type === "tempest") {
+      capabilities += `- Specialized first-party agent\n`;
+      capabilities += `- Pre-built functionality and tools\n`;
+    }
+
+    capabilities += `Purpose: ${agent.purpose || 'General operations'}`;
+    return capabilities;
   }
 
   // Extract success criteria from job specification
@@ -2562,9 +2710,6 @@ Overall Session Summary: ${
     // Start with clear task instruction
     let enhancedPrompt = originalTask;
 
-<<<<<<< HEAD
-    // Add semantic facts section if available
-=======
     // Add execution prompts from job specification if available
     if (this.sessionContext?.jobSpec?.session_prompts?.planning) {
       enhancedPrompt += `\n\n## EXECUTION GUIDANCE\n`;
@@ -2583,7 +2728,6 @@ Overall Session Summary: ${
     }
 
     // Add semantic facts section
->>>>>>> 2f7d6209f966c2615d11df851d2d99f6e6f60db4
     if (semanticFacts.length > 0) {
       enhancedPrompt += `\n\n## RELEVANT WORKSPACE KNOWLEDGE\n`;
       enhancedPrompt +=

@@ -9,9 +9,10 @@ workspace:
 # JOB DEFINITIONS
 # =============================================================================
 # Jobs define workflows triggered by signals. Each job specifies:
-# - task_template: Clear instructions for agents
+# - description: Job purpose (used by supervisor for intelligent task generation)
 # - triggers: Signal conditions that activate the job
 # - execution: Agent coordination strategy
+# Note: Task templates removed to test intelligent task preparation by supervisor
 # =============================================================================
 
 jobs:
@@ -22,7 +23,6 @@ jobs:
   unified-k8s-operation:
     name: "unified-k8s-operation"
     description: "Comprehensive Kubernetes operation handler via HTTP API"
-    task_template: "Analyze the HTTP request and execute the required kubectl operations. Provide detailed status report with resource states and full audit trail."
     triggers:
       - signal: "http-k8s"
     execution:
@@ -33,7 +33,6 @@ jobs:
   direct-k8s-operation:
     name: "direct-k8s-operation"
     description: "Direct Kubernetes operation execution via CLI interface"
-    task_template: "Process the CLI command input, validate syntax, and execute kubectl operations with proper context and namespace handling."
     triggers:
       - signal: "cli-k8s"
     execution:
@@ -48,7 +47,6 @@ jobs:
   handle-k8s-event:
     name: "handle-k8s-event"
     description: "Real-time Kubernetes event processing and automated incident response"
-    task_template: "Analyze the incoming Kubernetes event and determine severity level. If issues are detected, automatically resolve them when possible (image fixes, restarts, scaling). Perform comprehensive remediation and ensure the problem is fully resolved."
     triggers:
       - signal: "k8s-events"
     execution:
@@ -64,7 +62,6 @@ jobs:
   linear-cluster-issue-triage:
     name: "linear-cluster-issue-triage"
     description: "Automated cluster issue triage from Linear tickets"
-    task_template: "Analyze the Linear issue and perform cluster health diagnostics. Identify any deployment problems, image issues, or resource failures. Take corrective action to resolve identified issues."
     triggers:
       - signal: "linear-webhook"
         condition: |
@@ -83,7 +80,6 @@ jobs:
   linear-devops-automation:
     name: "linear-devops-automation"
     description: "Automated DevOps task execution from Linear issue updates"
-    task_template: "Process the Linear issue or comment and execute the requested kubectl operations safely. Parse any kubectl commands mentioned and execute them if they are in the safe operations list."
     triggers:
       - signal: "linear-webhook"
         condition: |
@@ -101,7 +97,6 @@ jobs:
   linear-incident-resolution:
     name: "linear-incident-resolution"
     description: "Automated incident resolution workflow for assigned cluster issues"
-    task_template: "Analyze the assigned Linear issue and attempt automated resolution. Fix deployment issues, image problems, or resource failures. Document the resolution steps taken."
     triggers:
       - signal: "linear-webhook"
         condition: |
