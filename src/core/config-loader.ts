@@ -4,7 +4,7 @@
 
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
-import { z } from "zod/v4";
+import { z } from "zod";
 import {
   MCPAuthConfigSchema,
   MCPToolsConfigSchema,
@@ -79,6 +79,7 @@ const MCPConfigSchema = z.object({
 
 // Comprehensive MCP server configuration schema for workspace-level MCP servers
 const WorkspaceMCPServerConfigSchema = z.object({
+  id: z.string().optional(), // ID is derived from key, but can be overridden
   transport: MCPTransportConfigSchema,
   auth: MCPAuthConfigSchema.optional(),
   tools: MCPToolsConfigSchema.optional(),
@@ -114,9 +115,9 @@ const WorkspaceAgentConfigSchema = z
     prompts: z.record(z.string(), z.string()).optional(),
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().positive().optional(),
-    // MCP integration for LLM agents
-    mcp_servers: z.array(z.string()).optional(), // References to MCP servers
-    max_steps: z.number().positive().optional(), // For multi-step tool calling
+    // MCP integration (only for LLM agents)
+    mcp_servers: z.array(z.string()).optional(), // References to MCP servers (LLM agents only)
+    max_steps: z.number().positive().optional(), // For multi-step tool calling (LLM agents only)
     tool_choice: z
       .union([
         z.literal("auto"),
@@ -134,7 +135,7 @@ const WorkspaceAgentConfigSchema = z
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
     protocol: z.enum(["acp", "a2a", "custom", "mcp"]).optional(),
-    endpoint: z.url().optional(),
+    endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
 
@@ -160,125 +161,18 @@ const WorkspaceAgentConfigSchema = z
     // Monitoring configuration
     monitoring: MonitoringConfigSchema.optional(),
   })
-  .check((ctx) => {
+  .refine((data) => {
     // Type-specific validation with detailed error messages
-    if (ctx.value.type === "tempest") {
-      if (!ctx.value.agent) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Tempest agents require 'agent' field",
-          path: ["agent"],
-          input: ctx.value,
-        });
-      }
-      if (!ctx.value.version) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Tempest agents require 'version' field",
-          path: ["version"],
-          input: ctx.value,
-        });
-      }
-    } else if (ctx.value.type === "llm") {
-      if (!ctx.value.model) {
-        ctx.issues.push({
-          code: "custom",
-          message: "LLM agents require 'model' field",
-          path: ["model"],
-          input: ctx.value,
-        });
-      }
-
-      // Validate provider and model combination
-      const provider = ctx.value.provider || "anthropic";
-      const model = ctx.value.model;
-
-      const supportedModels = {
-        anthropic: [
-          "claude-3-5-sonnet-20241022",
-          "claude-3-5-haiku-20241022",
-          "claude-3-opus-20240229",
-          "claude-4-sonnet-20250514",
-        ],
-        openai: [
-          "gpt-4",
-          "gpt-4-turbo",
-          "gpt-4o",
-          "gpt-3.5-turbo",
-        ],
-        google: [
-          "gemini-1.5-pro",
-          "gemini-1.5-flash",
-          "gemini-pro",
-        ],
-      };
-
-      if (model && !supportedModels[provider as keyof typeof supportedModels]?.includes(model)) {
-        ctx.issues.push({
-          code: "custom",
-          message:
-            `Model '${model}' is not supported by provider '${provider}'. Supported models: ${
-              supportedModels[provider as keyof typeof supportedModels]?.join(", ") || "none"
-            }`,
-          path: ["model"],
-          input: ctx.value,
-        });
-      }
-    } else if (ctx.value.type === "remote") {
-      if (!ctx.value.endpoint) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Remote agents require 'endpoint' field",
-          path: ["endpoint"],
-          input: ctx.value,
-        });
-      }
-
-      if (!ctx.value.protocol) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Remote agents require 'protocol' field (acp, a2a, custom, or mcp)",
-          path: ["protocol"],
-          input: ctx.value,
-        });
-      }
-
-      // Protocol-specific validation
-      if (ctx.value.protocol === "acp") {
-        if (!ctx.value.acp?.agent_name) {
-          ctx.issues.push({
-            code: "custom",
-            message: "ACP remote agents require 'acp.agent_name' field",
-            path: ["acp", "agent_name"],
-            input: ctx.value,
-          });
-        }
-      } else if (ctx.value.protocol === "mcp") {
-        // MCP doesn't require specific fields beyond endpoint
-        // Optional tools filtering can be configured via mcp.allowed_tools/denied_tools
-      }
-
-      // Authentication validation
-      if (ctx.value.auth) {
-        const authType = ctx.value.auth.type;
-        if (authType === "bearer" && !ctx.value.auth.token_env && !ctx.value.auth.token) {
-          ctx.issues.push({
-            code: "custom",
-            message: "Bearer auth requires either 'token_env' or 'token' field",
-            path: ["auth"],
-            input: ctx.value,
-          });
-        }
-        if (authType === "api_key" && !ctx.value.auth.api_key_env && !ctx.value.auth.token_env) {
-          ctx.issues.push({
-            code: "custom",
-            message: "API key auth requires either 'api_key_env' or 'token_env' field",
-            path: ["auth"],
-            input: ctx.value,
-          });
-        }
-      }
+    if (data.type === "tempest") {
+      return !!(data.agent && data.version);
+    } else if (data.type === "llm") {
+      return !!data.model;
+    } else if (data.type === "remote") {
+      return !!(data.endpoint && data.protocol);
     }
+    return true;
+  }, {
+    message: "Agent configuration validation failed"
   });
 
 // Job execution strategy schema
@@ -358,7 +252,7 @@ const WorkspaceSignalConfigSchema = z.object({
 const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
   workspace: z.object({
-    id: z.uuid("Workspace ID must be a valid UUID"),
+    id: z.string().uuid("Workspace ID must be a valid UUID"),
     name: z.string().min(1, "Workspace name cannot be empty"),
     description: z.string(),
   }),

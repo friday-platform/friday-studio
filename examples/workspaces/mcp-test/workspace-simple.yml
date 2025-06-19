@@ -1,0 +1,38 @@
+version: "1.0"
+
+workspace:
+  id: "mcp-test-workspace"
+  name: "MCP Test"
+  description: "Simple MCP test"
+
+# Minimal MCP server config
+mcp_servers:
+  test-server:
+    transport:
+      type: "stdio"
+      command: "echo"
+      args: ["hello"]
+
+# Simple signal
+signals:
+  test:
+    provider: "http"
+    path: "/test"
+    method: "POST"
+    description: "Test signal"
+
+# Simple agent without MCP
+agents:
+  test-agent:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Test agent"
+
+# Simple job
+jobs:
+  test-job:
+    name: "test-job"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "test-agent"

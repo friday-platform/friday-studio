@@ -1,0 +1,31 @@
+version: "1.0"
+
+platform:
+  name: "Atlas"
+  version: "1.0.0"
+
+# No workspace-specific agents (inherit from platform)
+agents: {}
+
+# Simple supervisor configuration for testing
+supervisors:
+  workspace:
+    model: "claude-3-5-sonnet-20241022"
+    prompts:
+      system: |
+        You are a WorkspaceSupervisor for MCP testing.
+        Route signals to appropriate file operation workflows.
+        
+  session:
+    model: "claude-3-5-sonnet-20241022"
+    prompts:
+      system: |
+        You are a SessionSupervisor for MCP filesystem testing.
+        Coordinate file operations using the file-assistant agent.
+        
+  agent:
+    model: "claude-3-5-sonnet-20241022"
+    prompts:
+      system: |
+        You are an AgentSupervisor for MCP agent execution.
+        Ensure safe file operations within the /tmp directory.
