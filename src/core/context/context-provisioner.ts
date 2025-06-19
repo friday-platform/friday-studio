@@ -73,6 +73,7 @@ export class ContextProvisioner {
       type: "codebase",
       filePatterns: filesystemContext.patterns,
       maxSize: filesystemContext.max_file_size ? `${filesystemContext.max_file_size}b` : "50kb",
+      basePath: filesystemContext.base_path, // Pass base_path through context spec
     };
 
     const context: EMCPContext = {

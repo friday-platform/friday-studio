@@ -147,6 +147,7 @@ export interface CodebaseContextSpec extends ContextSpec {
   readonly focusAreas?: string[];
   readonly includeTests?: boolean;
   readonly language?: string;
+  readonly basePath?: string;
 }
 
 /**

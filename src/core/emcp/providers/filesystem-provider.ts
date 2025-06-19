@@ -138,6 +138,9 @@ export class FilesystemProvider extends BaseEMCPProvider {
       const maxSize = codebaseSpec.maxSize
         ? this.parseSize(codebaseSpec.maxSize)
         : this.maxTotalSize;
+      
+      // Use basePath from context spec if provided, otherwise use provider config
+      const effectiveBasePath = codebaseSpec.basePath || this.basePath;
 
       let codebaseContent = "";
       let loadedFilesCount = 0;
@@ -162,12 +165,17 @@ export class FilesystemProvider extends BaseEMCPProvider {
         }
 
         try {
-          const result = await this.processFilePattern(pattern, maxSize - totalSize);
-          codebaseContent += result.content;
-          loadedFilesCount += result.fileCount;
-          totalSize += result.size;
+          const result = await this.processFilePattern(pattern, maxSize - totalSize, effectiveBasePath);
+          if (result.fileCount > 0) {
+            codebaseContent += result.content;
+            loadedFilesCount += result.fileCount;
+            totalSize += result.size;
+          } else {
+            // Pattern matched no files - add to session report but don't warn in logs
+            codebaseContent += `## ${pattern}\n*No files matched this pattern*\n\n`;
+          }
         } catch (error) {
-          console.warn(`Warning: Could not process pattern ${pattern}: ${error}`);
+          // Add to session report but reduce console noise
           codebaseContent += `## ${pattern}\n*Pattern could not be processed: ${error}*\n\n`;
         }
       }
@@ -204,6 +212,7 @@ export class FilesystemProvider extends BaseEMCPProvider {
   private async processFilePattern(
     pattern: string,
     remainingSize: number,
+    basePath?: string,
   ): Promise<{ content: string; fileCount: number; size: number }> {
     let content = "";
     let fileCount = 0;
@@ -211,14 +220,14 @@ export class FilesystemProvider extends BaseEMCPProvider {
 
     try {
       // Use glob expansion for pattern matching
-      const basePath = this.basePath || ".";
-      const fullPattern = this.basePath ? `${this.basePath}/${pattern}` : pattern;
+      const effectiveBasePath = basePath || this.basePath || ".";
+      const fullPattern = effectiveBasePath && effectiveBasePath !== "." ? `${effectiveBasePath}/${pattern}` : pattern;
       
       const matchedFiles: string[] = [];
       
       // Expand glob pattern
       for await (const entry of expandGlob(fullPattern, {
-        root: basePath,
+        root: effectiveBasePath,
         includeDirs: false,
         globstar: true,
       })) {
@@ -253,7 +262,7 @@ export class FilesystemProvider extends BaseEMCPProvider {
       // If no files matched, try as literal file path
       if (matchedFiles.length === 0 && !this.isGlobPattern(pattern)) {
         try {
-          const filePath = this.resolveFilePath(pattern);
+          const filePath = this.resolveFilePathWithBase(pattern, effectiveBasePath);
           const result = await this.processFile(filePath, pattern);
           content = result.content;
           fileCount = result.fileCount;
@@ -347,6 +356,18 @@ export class FilesystemProvider extends BaseEMCPProvider {
 
     if (this.basePath) {
       return `${this.basePath}/${pattern}`;
+    }
+
+    return pattern; // Relative to current directory
+  }
+
+  private resolveFilePathWithBase(pattern: string, basePath: string): string {
+    if (pattern.startsWith("/")) {
+      return pattern; // Absolute path
+    }
+
+    if (basePath && basePath !== ".") {
+      return `${basePath}/${pattern}`;
     }
 
     return pattern; // Relative to current directory
