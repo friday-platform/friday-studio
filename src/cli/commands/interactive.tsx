@@ -9,6 +9,7 @@ import {
 } from "./workspace.tsx";
 import DefineCommand from "./define.tsx";
 import { Select, TextInput } from "@inkjs/ui";
+import { ErrorAlert } from "../components/ErrorAlert.tsx";
 
 export default function InteractiveCommand() {
   const [input, setInput] = useState("");
@@ -18,9 +19,9 @@ export default function InteractiveCommand() {
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
   const [inputFocused, setInputFocused] = useState(true);
-  const [selectorAction, setSelectorAction] = useState<"describe" | "status">(
-    "describe"
-  );
+  const [selectFocused, setSelectFocused] = useState(false);
+  const [alertMessage, setAlertMessage] = useState<string>("");
+  const [alertVisible, setAlertVisible] = useState(false);
   const { exit } = useApp();
 
   // Load available workspaces on mount
@@ -39,227 +40,118 @@ export default function InteractiveCommand() {
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
       exit();
-    } else if (showWorkspaceSelector && !inputFocused) {
-      // Handle workspace selector navigation when input is not focused
-      if (key.upArrow || inputChar === "k") {
-        setSelectedWorkspaceIndex((prev) =>
-          prev > 0 ? prev - 1 : workspaces.length - 1
-        );
-      } else if (key.downArrow || inputChar === "j") {
-        setSelectedWorkspaceIndex((prev) =>
-          prev < workspaces.length - 1 ? prev + 1 : 0
-        );
-      } else if (key.return || inputChar === " ") {
-        // Select workspace and execute the appropriate command
-        const selectedWorkspace = workspaces[selectedWorkspaceIndex];
-        setShowWorkspaceSelector(false);
-        setInputFocused(true);
-        if (selectorAction === "describe") {
-          executeDescribeCommand(selectedWorkspace.slug);
-        } else if (selectorAction === "status") {
-          executeStatusCommand(selectedWorkspace.slug);
-        }
-      } else if (key.tab) {
-        // Focus input
-        setInputFocused(true);
-      }
-    } else if (inputFocused) {
-      // Handle input when focused
-      if (key.escape && showWorkspaceSelector) {
-        // Blur input when workspace selector is active
-        setInputFocused(false);
-      } else if (key.return) {
-        if (input.trim()) {
-          executeCommand(input.trim());
-          setInput("");
-        }
-      } else if (key.backspace || key.delete) {
-        setInput((prev) => prev.slice(0, -1));
-      } else if (
-        inputChar &&
-        !key.ctrl &&
-        !key.meta &&
-        inputChar.length === 1
-      ) {
-        setInput((prev) => prev + inputChar);
-      }
+      return;
+    }
+
+    // Dismiss alert on any key press when alert is visible
+    if (alertVisible) {
+      setAlertVisible(false);
+      return;
+    }
+
+    // Enable select mode when down arrow or tab is pressed
+    if ((key.downArrow || key.tab) && inputFocused && !selectFocused) {
+      setInputFocused(false);
+      setSelectFocused(true);
+      return;
+    }
+
+    // Enable input mode when tab or escape is pressed from select mode
+    if ((key.tab || key.escape) && selectFocused) {
+      setSelectFocused(false);
+      setInputFocused(true);
+      return;
     }
   });
 
+  const showAlert = (message: string) => {
+    setAlertMessage(message);
+    setAlertVisible(true);
+  };
+
   const executeCommand = async (command: string) => {
+    const args = command.trim().split(/\s+/);
+
     try {
-      // Parse the command
-      const args = command.trim().split(/\s+/);
-
-      // Handle built-in commands
-      if (args[0] === "/exit" || args[0] === "exit" || args[0] === "quit") {
-        exit();
-        return;
-      }
-
-      if (args[0] === "/clear" || args[0] === "clear") {
-        // Clear the output history
-        setOutput([]);
-        console.clear();
-        return;
-      }
-
-      if (args[0] === "/commands") {
-        // Show command list
-        setOutput((prev) => [
-          ...prev,
-          <Box flexDirection="column" marginLeft={2}>
-            <Box>
-              <Text color="cyan">/list</Text>
-              <Text color="gray">
-                List all available workspaces with status
-              </Text>
-            </Box>
-            <Box>
-              <Text color="cyan">/describe</Text>
-              <Text color="gray">Show workspace definition and agents</Text>
-            </Box>
-            <Box>
-              <Text color="cyan">/status</Text>
-              <Text color="gray">Show workspace status and server info</Text>
-            </Box>
-            <Box>
-              <Text color="cyan">/clear</Text>
-              <Text color="gray">Clear output</Text>
-            </Box>
-            <Box>
-              <Text color="cyan">/commands</Text>
-              <Text color="gray">Show this command list</Text>
-            </Box>
-            <Box>
-              <Text color="cyan">/exit</Text>
-              <Text color="gray">Exit interactive mode</Text>
-            </Box>
-          </Box>,
-          <Newline />,
-        ]);
-        return;
-      }
-
-      // Handle /list command
-      if (args[0] === "/list") {
-        try {
-          const workspaces = await scanAvailableWorkspaces();
-          // Use the actual React component
-          setOutput((prev) => [
-            ...prev,
-            <WorkspaceList workspaces={workspaces} />,
-            <Newline />,
-          ]);
+      switch (args[0]) {
+        case "/exit":
+        case "/quit":
+          exit();
           return;
-        } catch (error) {
-          setOutput((prev) => [
-            ...prev,
-            <Text color="red">Error listing workspaces: {String(error)}</Text>,
-            <Newline />,
-          ]);
-          return;
-        }
-      }
 
-      // Handle /describe command
-      if (args[0] === "/describe") {
-        if (args[1]) {
-          // Workspace ID provided, execute describe directly
-          executeDescribeCommand(args[1]);
+        case "/help":
+          showHelp();
           return;
-        } else {
-          // No workspace ID, show selector
-          try {
-            const availableWorkspaces = await scanAvailableWorkspaces();
-            if (availableWorkspaces.length === 0) {
-              setOutput((prev) => [
-                ...prev,
-                <Text color="yellow">No workspaces found to describe</Text>,
-                <Newline />,
-              ]);
-              return;
-            }
-            setWorkspaces(availableWorkspaces);
-            setSelectedWorkspaceIndex(0);
-            setSelectorAction("describe");
-            setShowWorkspaceSelector(true);
-            setInputFocused(false);
-            return;
-          } catch (error) {
-            setOutput((prev) => [
-              ...prev,
-              <Text color="red">
-                Error loading workspaces: {String(error)}
-              </Text>,
-              <Newline />,
-            ]);
+
+        case "/init":
+          if (!args[1]) {
+            showAlert("/init requires a path. Usage: /init <path>");
             return;
           }
-        }
-      }
-
-      // Handle /status command
-      if (args[0] === "/status") {
-        if (args[1]) {
-          // Workspace ID provided, execute status directly
-          executeStatusCommand(args[1]);
+          await executeInit(args[1]);
           return;
-        } else {
-          // No workspace ID, show selector
-          try {
-            const availableWorkspaces = await scanAvailableWorkspaces();
-            if (availableWorkspaces.length === 0) {
-              setOutput((prev) => [
-                ...prev,
-                <Text color="yellow">No workspaces found to check status</Text>,
-                <Newline />,
-              ]);
-              return;
-            }
-            setWorkspaces(availableWorkspaces);
-            setSelectedWorkspaceIndex(0);
-            setSelectorAction("status");
-            setShowWorkspaceSelector(true);
-            setInputFocused(false);
-            return;
-          } catch (error) {
-            setOutput((prev) => [
-              ...prev,
-              <Text color="red">
-                Error loading workspaces: {String(error)}
-              </Text>,
-              <Newline />,
-            ]);
+
+        case "/load":
+          if (!args[1]) {
+            showAlert(
+              "/load requires a workspace name. Usage: /load <workspace-name>"
+            );
             return;
           }
-        }
-      }
+          await executeLoad(args[1]);
+          return;
 
-      // Check if command starts with / but is not a known command
-      if (args[0].startsWith("/")) {
-        setOutput((prev) => [
-          ...prev,
-          <Text color="red">
-            Unknown command: {args[0]}. Available commands: /list, /describe,
-            /status, /clear, /commands, /exit
-          </Text>,
-          <Newline />,
-        ]);
-        return;
+        default:
+          showAlert(
+            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`
+          );
       }
+    } catch (error) {
+      showAlert(`Command failed: ${String(error)}`);
+    }
+  };
 
-      // Reject commands that don't start with / (allow legacy built-ins for now)
-      if (!["exit", "quit", "clear"].includes(args[0])) {
-        setOutput((prev) => [
-          ...prev,
-          <Text color="yellow">
-            Commands must start with /. Try /list to see available workspaces.
-          </Text>,
-          <Newline />,
-        ]);
-        return;
-      }
+  const showHelp = () => {
+    setOutput((prev) => [
+      ...prev,
+      <Box flexDirection="column" marginLeft={2}>
+        <Text bold color="cyan">
+          Available Commands:
+        </Text>
+        <Box marginTop={1}>
+          <Text color="yellow">/init &lt;path&gt;</Text>
+          <Text color="gray">
+            - Initialize a new workspace at the specified path
+          </Text>
+        </Box>
+        <Box>
+          <Text color="yellow">/load &lt;workspace-name&gt;</Text>
+          <Text color="gray">- Load an existing workspace by name</Text>
+        </Box>
+        <Box>
+          <Text color="yellow">/help</Text>
+          <Text color="gray">- Show this help information</Text>
+        </Box>
+        <Box>
+          <Text color="yellow">/exit</Text>
+          <Text color="gray">- Exit the interactive UI</Text>
+        </Box>
+        <Box>
+          <Text color="yellow">/quit</Text>
+          <Text color="gray">- Exit the interactive UI</Text>
+        </Box>
+      </Box>,
+      <Newline />,
+    ]);
+  };
+
+  const executeInit = async (path: string) => {
+    try {
+      setOutput((prev) => [
+        ...prev,
+        <Text color="yellow">Initializing workspace at: {path}</Text>,
+        <Newline />,
+      ]);
 
       // Find git repository root
       const gitRoot = new Deno.Command("git", {
@@ -267,18 +159,13 @@ export default function InteractiveCommand() {
       }).outputSync();
 
       if (!gitRoot.success) {
-        setOutput((prev) => [
-          ...prev,
-          <Text color="red">Error: Not in a git repository</Text>,
-          <Newline />,
-        ]);
-        return;
+        throw new Error("Not in a git repository");
       }
 
       const rootPath = new TextDecoder().decode(gitRoot.stdout).trim();
       const cliPath = `${rootPath}/src/cli.tsx`;
 
-      // Execute the atlas command
+      // Execute atlas init command
       const child = new Deno.Command("deno", {
         args: [
           "run",
@@ -288,7 +175,8 @@ export default function InteractiveCommand() {
           "--unstable-otel",
           "--env-file",
           cliPath,
-          ...args,
+          "init",
+          path,
         ],
         stdout: "piped",
         stderr: "piped",
@@ -299,38 +187,76 @@ export default function InteractiveCommand() {
       const error = new TextDecoder().decode(stderr);
 
       if (output) {
-        // Clean up ANSI escape sequences and task output
-        const cleanOutput = output
-          .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
-          .replace(/\[2K\[1A\[2K\[G/g, "")
-          .split("\n")
-          .filter((line) => line.trim() && !line.includes("Task atlas"))
-          .join("\n")
-          .trim();
-
-        if (cleanOutput) {
-          setOutput((prev) => [
-            ...prev,
-            <Text color="white">{cleanOutput}</Text>,
-            <Newline />,
-          ]);
-        }
+        setOutput((prev) => [
+          ...prev,
+          <Text color="green">{output.trim()}</Text>,
+          <Newline />,
+        ]);
       }
 
       if (error && !error.includes("Task atlas")) {
-        const cleanError = error.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "").trim();
-        if (cleanError) {
-          setOutput((prev) => [
-            ...prev,
-            <Text color="red">Error: {cleanError}</Text>,
-            <Newline />,
-          ]);
-        }
+        setOutput((prev) => [
+          ...prev,
+          <Text color="red">Error: {error.trim()}</Text>,
+          <Newline />,
+        ]);
       }
     } catch (error) {
       setOutput((prev) => [
         ...prev,
-        <Text color="red">Command failed: {String(error)}</Text>,
+        <Text color="red">
+          Failed to initialize workspace: {String(error)}
+        </Text>,
+        <Newline />,
+      ]);
+    }
+  };
+
+  const executeLoad = async (workspaceName: string) => {
+    try {
+      setOutput((prev) => [
+        ...prev,
+        <Text color="yellow">Loading workspace: {workspaceName}</Text>,
+        <Newline />,
+      ]);
+
+      // Find the workspace in available workspaces
+      const selectedWorkspace = workspaces.find(
+        (w) =>
+          w.name.toLowerCase() === workspaceName.toLowerCase() ||
+          w.id === workspaceName
+      );
+
+      if (!selectedWorkspace) {
+        setOutput((prev) => [
+          ...prev,
+          <Text color="red">
+            Workspace '{workspaceName}' not found. Available workspaces:
+          </Text>,
+          <Newline />,
+          ...workspaces.map((w) => (
+            <Text key={w.id} color="gray">
+              - {w.name}
+            </Text>
+          )),
+          <Newline />,
+        ]);
+        return;
+      }
+
+      setOutput((prev) => [
+        ...prev,
+        <Text color="green">Found workspace: {selectedWorkspace.name}</Text>,
+        <Text color="gray">Path: {selectedWorkspace.path}</Text>,
+        <Text color="yellow">
+          TODO: Implement workspace loading navigation
+        </Text>,
+        <Newline />,
+      ]);
+    } catch (error) {
+      setOutput((prev) => [
+        ...prev,
+        <Text color="red">Failed to load workspace: {String(error)}</Text>,
         <Newline />,
       ]);
     }
@@ -409,62 +335,9 @@ export default function InteractiveCommand() {
         marginBottom={3}
         flexShrink={0}
       >
-        <Text bold color="whiteBright">
-          Atlas
-        </Text>
-        <Text color="whiteBright" dimColor>
-          Made by Tempest
-        </Text>
+        <Text bold>Atlas</Text>
+        <Text dimColor>Made by Tempest</Text>
       </Box>
-
-      {/* Command output */}
-      {/* <Box flexDirection="column" marginBottom={1}>
-        {output.map((item, index) => (
-          <Box key={index}>{item}</Box>
-        ))}
-      </Box> */}
-
-      {/* Workspace selector */}
-      {/* {showWorkspaceSelector && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Box>
-            <Text bold color="yellow">
-              {selectorAction === "describe"
-                ? "Select a Workspace to describe:"
-                : "Select a Workspace to check its status:"}
-            </Text>
-          </Box>
-          <Newline />
-          {workspaces.map((workspace, index) => (
-            <Box key={index} marginLeft={2}>
-              <Text>
-                <Text
-                  color={
-                    index === selectedWorkspaceIndex && !inputFocused
-                      ? "green"
-                      : "gray"
-                  }
-                >
-                  {index === selectedWorkspaceIndex ? "▶ " : "  "}
-                </Text>
-                <Text color="blue">{workspace.id}</Text>
-                {" - "}
-                <Text color="yellow">{workspace.name}</Text>{" "}
-                <Text color={workspace.isRunning ? "green" : "gray"}>
-                  ({workspace.isRunning ? "Running" : "Stopped"})
-                </Text>
-              </Text>
-            </Box>
-          ))}
-          <Newline />
-          <Box marginLeft={2}>
-            <Text color="gray">
-              Use ↑/↓ to navigate, Enter/Space to select, Tab to focus input,
-              Esc to blur input
-            </Text>
-          </Box>
-        </Box>
-      )} */}
 
       {/* Centered input prompt */}
       <Box
@@ -476,9 +349,15 @@ export default function InteractiveCommand() {
         flexShrink={0}
       >
         <TextInput
-          suggestions={["/list", "/define", "/init", "/help"]}
+          suggestions={["/init", "/load", "/help", "/exit", "/quit"]}
           placeholder="type / for commands"
-          onSubmit={() => {}}
+          onSubmit={(value) => {
+            // Only execute if input is not empty to prevent showing error messages for accidental Enter presses
+            if (value.trim()) {
+              executeCommand(value.trim());
+            }
+          }}
+          isDisabled={!inputFocused}
         />
       </Box>
 
@@ -508,8 +387,39 @@ export default function InteractiveCommand() {
               // You can add navigation logic here
             }
           }}
+          isDisabled={!selectFocused}
         />
       </Box>
+
+      {/* Command output section - below the workspace selector */}
+      {output.length > 0 && (
+        <Box
+          flexDirection="column"
+          marginTop={2}
+          paddingX={2}
+          width={80}
+          maxHeight={10}
+          borderStyle="round"
+          borderColor="gray"
+          flexShrink={0}
+        >
+          <Box marginBottom={1}>
+            <Text bold color="gray">
+              Command Output:
+            </Text>
+          </Box>
+          <Box flexDirection="column" overflowY="auto">
+            {output.slice(-8).map((entry, index) => (
+              <Box key={index} flexDirection="column">
+                {entry}
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {/* ErrorAlert must be last for proper absolute positioning overlay */}
+      <ErrorAlert message={alertMessage} visible={alertVisible} />
     </FullScreenBox>
   );
 }

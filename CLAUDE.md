@@ -36,9 +36,13 @@ When working with Ink-based TUI components (src/cli/commands/tui.tsx and related
 
 1. **Text Component Wrapping**: Always wrap `<Text>` components in a `<Box>` component for proper
    layout and rendering
-2. **No Unnecessary Emojis**: Do not add emojis to text content unless explicitly requested by the
-   user
-3. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
+2. **STRICT NO EMOJIS POLICY**: NEVER add emojis to any text content, components, or UI elements 
+   unless the user explicitly requests them. This includes error messages, alerts, status indicators,
+   headers, and all other text. Use clean text-only styling.
+3. **Absolute Positioned Components**: Components with `position="absolute"` (like ErrorAlert, 
+   modals, overlays) MUST be placed at the very end of the JSX return statement, just before the 
+   closing tag of the root container. This ensures proper z-index layering and overlay behavior.
+4. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
    interface works correctly
 
 ## Code Quality Review Findings (June 2025)
