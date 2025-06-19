@@ -196,9 +196,12 @@ export class WorkspaceServer {
 
     // Register custom HTTP paths for signals with path configuration
     Object.entries(workspace.signals).forEach(([signalId, signal]: [string, any]) => {
-      if (signal.provider === "http" && signal.path) {
+      if (
+        (signal.provider === "http" && signal.path) ||
+        (signal.provider === "http-webhook" && signal.endpoint)
+      ) {
         const method = (signal.method || "POST").toLowerCase();
-        const path = signal.path;
+        const path = signal.path || signal.endpoint;
 
         logger.info(
           `Registering HTTP signal route: ${method.toUpperCase()} ${path} -> ${signalId}`,

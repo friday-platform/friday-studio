@@ -280,6 +280,7 @@ const TriggerSpecificationSchema = z.object({
 const JobSpecificationSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+  task_template: z.string().optional(), // Optional task template for clearer agent instructions
   triggers: z.array(TriggerSpecificationSchema).optional(), // NEW: Jobs define their signal triggers
   execution: JobExecutionSchema,
 });
@@ -504,6 +505,7 @@ export class ConfigLoader {
         const normalizedJobSpec: JobSpecification = {
           name: jobName, // Use the key as the name
           description: jobSpec.description || `Top-level job: ${jobName}`,
+          task_template: jobSpec.task_template, // Include task template if provided
           triggers: jobSpec.triggers, // Include triggers for signal-to-job mapping
           execution: {
             strategy: jobSpec.execution.strategy,

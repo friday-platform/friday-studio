@@ -19,6 +19,7 @@ import {
 export interface JobSpecification {
   name: string;
   description: string;
+  task_template?: string; // Optional task template for clearer agent instructions
   triggers?: JobTrigger[]; // Signal triggers that activate this job
   session_prompts?: {
     planning?: string;
@@ -223,9 +224,9 @@ export class SessionSupervisor extends BaseAgent {
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
 
   constructor(
-    memoryConfig: AtlasMemoryConfig, 
+    memoryConfig: AtlasMemoryConfig,
     parentScopeId?: string,
-    precomputedPlans?: Record<string, any>
+    precomputedPlans?: Record<string, any>,
   ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
@@ -431,7 +432,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     // Log shared precomputed plans received from WorkspaceSupervisor
     const planCount = Object.keys(this.precomputedPlans || {}).length;
-    this.log(`Received ${planCount} precomputed plans from WorkspaceSupervisor: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
+    this.log(
+      `Received ${planCount} precomputed plans from WorkspaceSupervisor: ${
+        Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+      }`,
+    );
 
     // Store session context in session-scoped memory
     this.memoryConfigManager.rememberWithScope(
@@ -447,11 +452,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   // Validate and sanitize precomputed plans to prevent security issues
   private validateAndSanitizePlans(
-    plans: Record<string, any>, 
-    expectedWorkspaceId?: string
+    plans: Record<string, any>,
+    expectedWorkspaceId?: string,
   ): Record<string, any> {
     const sanitizedPlans: Record<string, any> = {};
-    
+
     for (const [key, plan] of Object.entries(plans)) {
       try {
         // Security: Validate plan key format to prevent injection
@@ -461,9 +466,14 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         }
 
         // Security: Verify workspace scope if available
-        if (expectedWorkspaceId && plan?.context?.workspaceId && 
-            plan.context.workspaceId !== expectedWorkspaceId) {
-          this.log(`Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`, "warn");
+        if (
+          expectedWorkspaceId && plan?.context?.workspaceId &&
+          plan.context.workspaceId !== expectedWorkspaceId
+        ) {
+          this.log(
+            `Plan workspace mismatch: expected ${expectedWorkspaceId}, got ${plan.context.workspaceId}`,
+            "warn",
+          );
           continue;
         }
 
@@ -486,24 +496,30 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   // Sanitize individual plan to remove sensitive data
   private sanitizePlan(plan: any): any {
-    if (!plan || typeof plan !== 'object') {
+    if (!plan || typeof plan !== "object") {
       return plan;
     }
 
     const sanitized = { ...plan };
-    
+
     // Remove sensitive fields
     const sensitiveFields = [
-      'workspaceSecrets', 'privateKeys', 'authTokens', 'apiKeys',
-      'passwords', 'credentials', 'internalConfig', 'debugInfo'
+      "workspaceSecrets",
+      "privateKeys",
+      "authTokens",
+      "apiKeys",
+      "passwords",
+      "credentials",
+      "internalConfig",
+      "debugInfo",
     ];
-    
+
     for (const field of sensitiveFields) {
       delete sanitized[field];
     }
 
     // Sanitize nested objects recursively
-    if (sanitized.context && typeof sanitized.context === 'object') {
+    if (sanitized.context && typeof sanitized.context === "object") {
       sanitized.context = this.sanitizePlan(sanitized.context);
     }
 
@@ -521,13 +537,16 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   private validatePlanForExecution(plan: any, sessionContext: SessionContext): boolean {
     try {
       // Verify plan structure
-      if (!plan || typeof plan !== 'object') {
+      if (!plan || typeof plan !== "object") {
         return false;
       }
 
       // Verify workspace context matches if available
       if (plan.context?.workspaceId && plan.context.workspaceId !== sessionContext.workspaceId) {
-        this.log(`Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`, "warn");
+        this.log(
+          `Plan workspace mismatch: plan=${plan.context.workspaceId}, session=${sessionContext.workspaceId}`,
+          "warn",
+        );
         return false;
       }
 
@@ -574,7 +593,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
       // Create secure, workspace-scoped cache key
       const secureKey = this.createSecurePlanKey(jobName, this.sessionContext.workspaceId);
-      
+
       // Check the shared precomputed plans from WorkspaceSupervisor
       if (this.precomputedPlans && this.precomputedPlans[secureKey]) {
         const precomputedPlan = this.precomputedPlans[secureKey];
@@ -582,7 +601,10 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
         // Additional security validation before use
         if (!this.validatePlanForExecution(precomputedPlan, this.sessionContext)) {
-          this.log(`Security validation failed for plan ${secureKey}, falling back to runtime planning`, "warn");
+          this.log(
+            `Security validation failed for plan ${secureKey}, falling back to runtime planning`,
+            "warn",
+          );
         } else {
           // Convert precomputed plan to ExecutionPlan format with session-specific data
           const sessionPlan = this.convertPrecomputedPlanToExecutionPlan(
@@ -597,7 +619,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         this.log(
           `No precomputed plan found for job: ${jobName} (key: ${secureKey}) in shared cache, falling back to runtime planning`,
         );
-        this.log(`Available precomputed plans: ${Object.keys(this.precomputedPlans || {}).join(', ') || 'none'}`);
+        this.log(
+          `Available precomputed plans: ${
+            Object.keys(this.precomputedPlans || {}).join(", ") || "none"
+          }`,
+        );
       }
     }
 
@@ -724,7 +750,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: precomputedPlan.steps.map((step, index) => ({
           agentId: step.agentId,
           task: step.task,
-          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
           dependencies: step.dependencies,
           mode: step.mode,
           config: step.config,
@@ -741,7 +769,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: precomputedPlan.steps.map((step) => ({
           agentId: step.agentId,
           task: step.task,
-          inputSource: step.inputSource === "memory" ? "combined" : step.inputSource as "signal" | "previous" | "combined",
+          inputSource: step.inputSource === "memory"
+            ? "combined"
+            : step.inputSource as "signal" | "previous" | "combined",
           dependencies: step.dependencies,
           mode: step.mode,
           config: step.config,
@@ -758,10 +788,32 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     agentSpec: JobAgentSpec,
     jobSpec: JobSpecification,
   ): string {
+    // Priority 1: Use explicit agent prompt if provided
     if (agentSpec.prompt) {
       return agentSpec.prompt;
     }
-    return `Execute ${agentSpec.id} according to job specification: ${jobSpec.description}`;
+
+    // Priority 2: Use job's task template if provided
+    if (jobSpec.task_template) {
+      return jobSpec.task_template;
+    }
+
+    // Priority 3: Create action-oriented instruction from job description
+    const firstLine = jobSpec.description.split("\n")[0];
+
+    // Make the instruction more action-oriented by analyzing the description
+    if (
+      firstLine.toLowerCase().includes("analyze") || firstLine.toLowerCase().includes("diagnose")
+    ) {
+      return firstLine;
+    } else if (
+      firstLine.toLowerCase().includes("execute") || firstLine.toLowerCase().includes("perform")
+    ) {
+      return firstLine;
+    } else {
+      // Convert descriptive text to actionable instruction
+      return `Execute the following task: ${firstLine}`;
+    }
   }
 
   // Extract success criteria from job specification
@@ -2405,9 +2457,10 @@ Overall Session Summary: ${
     proceduralRules: any[],
     episodicSummary: string | null,
   ): string {
+    // Start with clear task instruction
     let enhancedPrompt = originalTask;
 
-    // Add semantic facts section
+    // Add semantic facts section if available
     if (semanticFacts.length > 0) {
       enhancedPrompt += `\n\n## RELEVANT WORKSPACE KNOWLEDGE\n`;
       enhancedPrompt +=

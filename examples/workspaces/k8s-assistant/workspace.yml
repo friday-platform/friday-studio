@@ -5,17 +5,24 @@ workspace:
   name: "k8s-assistant"
   description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
 
-# Top-level job definitions
+# =============================================================================
+# JOB DEFINITIONS
+# =============================================================================
+# Jobs define workflows triggered by signals. Each job specifies:
+# - task_template: Clear instructions for agents
+# - triggers: Signal conditions that activate the job
+# - execution: Agent coordination strategy
+# =============================================================================
+
 jobs:
+  # -------------------------
+  # Direct Operations
+  # -------------------------
+  
   unified-k8s-operation:
     name: "unified-k8s-operation"
-    description: |
-      Comprehensive Kubernetes operation handler via HTTP API:
-      1. K8s main agent analyzes the request and determines required kubectl operations
-      2. Executes deployments, scaling, configuration updates, or troubleshooting commands
-      3. Validates operation success and provides detailed status report with resource states
-      Result: Reliable execution of any Kubernetes management task with full audit trail
-      and error recovery for production cluster operations
+    description: "Comprehensive Kubernetes operation handler via HTTP API"
+    task_template: "Analyze the HTTP request and execute the required kubectl operations. Provide detailed status report with resource states and full audit trail."
     triggers:
       - signal: "http-k8s"
     execution:
@@ -25,13 +32,8 @@ jobs:
 
   direct-k8s-operation:
     name: "direct-k8s-operation"
-    description: |
-      Direct Kubernetes operation execution via CLI interface:
-      1. K8s main agent processes CLI command input and validates request syntax
-      2. Executes kubectl operations with appropriate context and namespace handling
-      3. Returns formatted output with success/failure status and next steps
-      Result: Direct CLI-style interaction with Kubernetes cluster through intelligent
-      agent that understands context and provides enhanced error handling
+    description: "Direct Kubernetes operation execution via CLI interface"
+    task_template: "Process the CLI command input, validate syntax, and execute kubectl operations with proper context and namespace handling."
     triggers:
       - signal: "cli-k8s"
     execution:
@@ -39,15 +41,14 @@ jobs:
       agents:
         - id: "k8s-main-agent"
 
+  # -------------------------
+  # Real-time Monitoring
+  # -------------------------
+  
   handle-k8s-event:
     name: "handle-k8s-event"
-    description: |
-      Real-time Kubernetes event processing and incident response:
-      1. K8s main agent analyzes incoming cluster events and determines severity level
-      2. Performs automated diagnostics and immediate remediation if possible
-      3. Local assistant generates detailed incident report with troubleshooting guidance
-      Result: Automated incident response with intelligent triage, immediate fixes
-      where possible, and comprehensive documentation for manual intervention
+    description: "Real-time Kubernetes event processing and automated incident response"
+    task_template: "Analyze the incoming Kubernetes event and determine severity level. If issues are detected, automatically resolve them when possible (image fixes, restarts, scaling). Perform comprehensive remediation and ensure the problem is fully resolved."
     triggers:
       - signal: "k8s-events"
     execution:
@@ -56,16 +57,14 @@ jobs:
         - id: "k8s-main-agent"
         - id: "local-assistant"
 
-  # Linear webhook automation jobs for DevOps ticket handling
+  # -------------------------
+  # Linear Integration
+  # -------------------------
+  
   linear-cluster-issue-triage:
     name: "linear-cluster-issue-triage"
-    description: |
-      Automated cluster issue triage from Linear tickets:
-      1. K8s main agent analyzes Linear issue for cluster-related keywords and severity
-      2. Performs immediate cluster health check and resource diagnostics
-      3. Local assistant documents findings and posts status update to Linear issue
-      Result: Instant cluster analysis when DevOps tickets are created, reducing
-      manual investigation time and providing immediate context for engineers
+    description: "Automated cluster issue triage from Linear tickets"
+    task_template: "Analyze the Linear issue and perform cluster health diagnostics. Identify any deployment problems, image issues, or resource failures. Take corrective action to resolve identified issues."
     triggers:
       - signal: "linear-webhook"
         condition: |
@@ -83,13 +82,8 @@ jobs:
 
   linear-devops-automation:
     name: "linear-devops-automation"
-    description: |
-      Automated DevOps task execution from Linear issue updates:
-      1. K8s main agent parses Linear comments for actionable kubectl commands or requests
-      2. Executes safe cluster operations (restarts, scaling, status checks, log collection)
-      3. Local assistant formats results and updates Linear issue with operation outcomes
-      Result: Hands-free execution of routine DevOps tasks triggered by Linear issue
-      updates, eliminating context switching and manual command execution
+    description: "Automated DevOps task execution from Linear issue updates"
+    task_template: "Process the Linear issue or comment and execute the requested kubectl operations safely. Parse any kubectl commands mentioned and execute them if they are in the safe operations list."
     triggers:
       - signal: "linear-webhook"
         condition: |
@@ -106,13 +100,8 @@ jobs:
 
   linear-incident-resolution:
     name: "linear-incident-resolution"
-    description: |
-      Automated incident resolution workflow for assigned cluster issues:
-      1. K8s main agent analyzes issue priority and performs comprehensive diagnostics
-      2. Attempts automated remediation for common issues (pod restarts, resource scaling)
-      3. Local assistant documents resolution steps and closes issue if successful
-      Result: Fully automated resolution of routine cluster incidents, with detailed
-      audit trail and automatic Linear issue closure for successfully resolved problems
+    description: "Automated incident resolution workflow for assigned cluster issues"
+    task_template: "Analyze the assigned Linear issue and attempt automated resolution. Fix deployment issues, image problems, or resource failures. Document the resolution steps taken."
     triggers:
       - signal: "linear-webhook"
         condition: |
@@ -127,36 +116,38 @@ jobs:
         - id: "k8s-main-agent"
         - id: "local-assistant"
 
-# Agent Configuration
-# This workspace uses a multi-agent architecture:
-# - k8s-main-agent: Primary AI agent for K8s operations (port 8080)
-# - local-assistant: Fallback LLM agent for documentation and support
-# Note: k8s-monitor-agent replaced by built-in k8s-watch signal provider
+# =============================================================================
+# AGENT CONFIGURATION
+# =============================================================================
+# Multi-agent architecture for Kubernetes management:
+# - k8s-main-agent: Primary AI agent for K8s operations via ACP protocol
+# - local-assistant: LLM agent for documentation, Linear integration, and support
+# =============================================================================
+
 agents:
-  # Primary Kubernetes management agent with ReAct framework
   k8s-main-agent:
     type: "remote"
     protocol: "acp"
     endpoint: "http://localhost:8080"
     purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, cluster operations, and Linear issue automation"
-
-    # ACP-specific settings for reliable K8s operations
+    
+    # ACP Protocol Configuration
     acp:
       agent_name: "k8s-deployment-manager"
-      default_mode: "sync" # Synchronous mode for reliable operations
-      timeout_ms: 120000 # 2-minute timeout for complex operations
-      max_retries: 2 # Retry failed requests
-      health_check_interval: 30000 # Health check every 30 seconds
-
-    # Production monitoring and reliability
+      default_mode: "sync"
+      timeout_ms: 120000  # 2-minute timeout for complex operations
+      max_retries: 2
+      health_check_interval: 30000  # Health check every 30 seconds
+    
+    # Monitoring & Reliability
     monitoring:
       enabled: true
       circuit_breaker:
-        failure_threshold: 3 # Open circuit after 3 failures
-        timeout_ms: 120000 # Stay open for 2 minutes
-        half_open_max_calls: 2 # Test with 2 calls when half-open
-
-    # Linear integration context for DevOps automation
+        failure_threshold: 3
+        timeout_ms: 120000
+        half_open_max_calls: 2
+    
+    # DevOps Safety Context
     context:
       linear_integration: true
       automation_mode: "devops_worker"
@@ -172,21 +163,21 @@ agents:
         - "kubectl apply"
         - "kubectl patch"
 
-  # Note: k8s-monitor-agent configuration removed - replaced by built-in k8s-watch signal provider
-  # The built-in provider connects directly to Kubernetes API without external dependencies
-
-  # Local LLM agent for fallback and additional processing
   local-assistant:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Local AI assistant for documentation, explanations, fallback operations, and Linear issue management"
     tools: ["computer_use"]
+    
+    # Linear Integration
     integrations:
       linear:
         api_key: "${LINEAR_API_KEY}"
         team_id: "${LINEAR_TEAM_ID}"
         enabled: true
         auto_update: true
+    
+    # Agent Behavior
     prompts:
       system: |
         You are a Kubernetes assistant with Linear integration capabilities. Your responsibilities include:
@@ -204,38 +195,42 @@ agents:
 
         Always provide actionable information that helps engineers quickly understand and resolve cluster issues.
 
-# Signal Configuration
+# =============================================================================
+# SIGNAL CONFIGURATION
+# =============================================================================
 # Atlas supports multiple signal types for different interaction patterns:
-# - HTTP signals: For direct API calls and webhook integrations
-# - CLI signals: For command-line driven operations
-# - K8s Watch signals: For real-time Kubernetes event streaming (built-in API integration)
+# - HTTP: Direct API calls and webhook integrations
+# - CLI: Command-line driven operations  
+# - K8s Events: Real-time Kubernetes event streaming
+# =============================================================================
+
 signals:
-  # Single HTTP endpoint for all k8s operations
+  # HTTP Endpoints
   http-k8s:
     description: "Unified HTTP endpoint for all Kubernetes operations"
     provider: "http"
     path: "/k8s"
     method: "POST"
 
-  # CLI interface for direct operations
+  # CLI Interface
   cli-k8s:
     description: "CLI interface for Kubernetes operations"
     provider: "cli"
     command: "k8s"
 
-  # Built-in Kubernetes events streaming - Direct API integration
+  # Real-time Monitoring
   k8s-events:
     description: "Real-time Kubernetes event monitoring via built-in Events API"
     provider: "k8s-events"
-    kubeconfig: "~/.kube/config" # Local kubeconfig for testing
-    namespace: "default" # Watch default namespace (can be omitted for all namespaces)
-    insecure: true # For local development with minikube/kind
+    kubeconfig: "~/.kube/config"
+    namespace: "default"  # Watch default namespace
+    insecure: true        # For local development with minikube/kind
     timeout_ms: 120000
     retry_config:
       max_retries: 3
       retry_delay_ms: 2000
 
-  # Linear webhook integration for automated DevOps ticket handling
+  # External Integrations
   linear-webhook:
     description: "Linear issue webhooks for automated K8s cluster issue resolution"
     provider: "http-webhook"
@@ -251,12 +246,17 @@ signals:
         - "Comment"
         - "IssueLabel"
 
-# Memory configuration for k8s operations
+# =============================================================================
+# MEMORY CONFIGURATION
+# =============================================================================
+# Workspace memory for learning and pattern recognition across K8s operations
+# =============================================================================
+
 memory:
   enabled: true
   scope: "workspace"
   retention:
-    max_age_days: 7 # Keep k8s operation history for 7 days
+    max_age_days: 7      # Keep operation history for 7 days
     max_entries: 500
   include_types:
     - "deployment_history"
