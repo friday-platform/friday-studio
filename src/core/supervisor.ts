@@ -16,7 +16,7 @@ import {
   type SignalProcessingConfig,
   SignalProcessor,
 } from "./signal-processing/index.ts";
-import { SignalAnalysisEngine, type SignalAnalysisResult } from "./signal-analysis-engine.ts";
+import { JobTriggerMatcher, type JobMatch, type JobSpec } from "./job-trigger-matcher.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -222,7 +222,7 @@ export class WorkspaceSupervisor extends BaseAgent
   private stateMachine: ReturnType<typeof createSupervisorMachine>;
   private stateActor: any; // XState actor type
   private signalProcessor: SignalProcessor;
-  private signalAnalysisEngine: SignalAnalysisEngine;
+  private jobTriggerMatcher: JobTriggerMatcher;
 
   constructor(workspaceId: string, config: any = {}) {
     // Provide default memoryConfig if not provided
@@ -326,8 +326,8 @@ You have access to the full workspace context and configuration. Create structur
     // Initialize signal processor with configuration
     this.signalProcessor = new SignalProcessor(this.createSignalProcessingConfig());
 
-    // Initialize signal analysis engine for precomputed signal patterns with configuration
-    this.signalAnalysisEngine = new SignalAnalysisEngine({
+    // Initialize job trigger matcher for direct job-signal evaluation
+    this.jobTriggerMatcher = new JobTriggerMatcher({
       condition_evaluation: {
         evaluators: {
           jsonlogic: { enabled: true, priority: 100 },
@@ -337,12 +337,9 @@ You have access to the full workspace context and configuration. Create structur
         fallback_strategy: "allow",
         require_match_confidence: 0.5,
       },
-      defaults: {
-        timeLimit: 300000, // 5 minutes
-        costLimit: 100,
-        maxIterations: 3,
-        fallbackAgent: "local-assistant",
-      },
+      min_confidence: 0.5,
+      max_matches_per_signal: 10,
+      enable_parallel_evaluation: true,
     });
 
     // Initialize the state machine
@@ -661,21 +658,29 @@ You have access to the full workspace context and configuration. Create structur
     );
 
     try {
-      await this.signalAnalysisEngine.precomputeSignalPatterns(
-        signals,
-        jobs,
-        availableAgents,
-      );
+      // Validate job trigger specifications
+      const validation = this.jobTriggerMatcher.validateJobTriggers(jobs);
+      
+      if (!validation.valid) {
+        this.log("Job trigger validation failed", "error", {
+          errors: validation.errors,
+        });
+        throw new Error(`Invalid job triggers: ${validation.errors.join(", ")}`);
+      }
 
-      const coverage = this.signalAnalysisEngine.getAnalyticsCoverage();
-      this.log("Signal analysis precomputation complete", "info", {
-        signalsWithPatterns: coverage.signalsWithPatterns,
-        totalPatterns: coverage.totalPatterns,
-        staticPatterns: coverage.staticPatterns,
-        conditionalPatterns: coverage.conditionalPatterns,
+      if (validation.warnings.length > 0) {
+        this.log("Job trigger validation warnings", "warn", {
+          warnings: validation.warnings,
+        });
+      }
+
+      this.log("Job trigger validation complete", "info", {
+        totalJobs: Object.keys(jobs).length,
+        errors: validation.errors.length,
+        warnings: validation.warnings.length,
       });
     } catch (error) {
-      this.log(`Failed to precompute signal analysis patterns: ${error}`);
+      this.log(`Failed to validate job triggers: ${error}`);
     }
   }
 
@@ -755,67 +760,58 @@ You have access to the full workspace context and configuration. Create structur
     });
   }
 
-  // Analyze signal using precomputed patterns (eliminates 20-second LLM calls)
+  // Analyze signal using direct job trigger evaluation (eliminates redundant LLM calls)
   async analyzeSignal(
     signal: IWorkspaceSignal,
     payload: any,
   ): Promise<SessionIntent> {
     const startTime = Date.now();
-    this.logger.debug(`[PERF] Starting fast signal analysis for signal: ${signal.id}`, {
+    this.logger.debug(`[PERF] Starting job trigger evaluation for signal: ${signal.id}`, {
       signalId: signal.id,
       payloadSize: JSON.stringify(payload).length,
       activeSessions: this.getStateMachineContext().activeSessions.size,
     });
 
     try {
-      // STEP 1: Try precomputed patterns first (zero LLM calls - fastest path)
-      const analysisResult: SignalAnalysisResult = await this.signalAnalysisEngine.analyzeSignal(
+      // STEP 1: Find matching jobs using declarative trigger evaluation (zero LLM calls)
+      const jobs = this.mergedConfig?.jobs || {};
+      const matches: JobMatch[] = await this.jobTriggerMatcher.findMatchingJobs(
         signal,
         payload,
-        this.id,
+        jobs,
       );
 
       const totalTime = Date.now() - startTime;
-      this.logger.debug(`[PERF] Signal analysis completed using ${analysisResult.analysisMethod}`, {
-        totalTime,
-        analysisMethod: analysisResult.analysisMethod,
-        signalId: signal.id,
-        jobName: analysisResult.jobName,
-        computeTime: analysisResult.computeTime,
-        speedup: analysisResult.analysisMethod === "precomputed" ? "~400x faster" : "standard",
-        finalIntent: {
-          id: analysisResult.intent.id,
-          goals: analysisResult.intent.goals?.length || 0,
-          strategy: analysisResult.intent.executionHints?.strategy,
-          agentCount: analysisResult.intent.suggestedAgents?.length || 0,
-        },
-      });
-
-      // STEP 2: If precomputed patterns found a match, return immediately
-      if (
-        analysisResult.analysisMethod === "precomputed" ||
-        analysisResult.analysisMethod === "pattern_match"
-      ) {
-        this.logger.debug(`[PERF] Fast path: precomputed signal analysis eliminated LLM call`, {
-          signalId: signal.id,
+      
+      // STEP 2: If we found matching jobs, create intent from the best match
+      if (matches.length > 0) {
+        const bestMatch = matches[0]; // Already sorted by confidence
+        
+        this.logger.debug(`[PERF] Job trigger evaluation completed with direct match`, {
           totalTime,
-          jobName: analysisResult.jobName,
-          performance: "~20 seconds saved",
+          signalId: signal.id,
+          matchedJob: bestMatch.job.name,
+          confidence: bestMatch.evaluationResult.confidence,
+          evaluator: bestMatch.evaluationResult.evaluator,
+          totalMatches: matches.length,
+          performance: "~20 seconds saved vs LLM analysis",
         });
-        return analysisResult.intent;
+
+        return this.createSessionIntentFromJobMatch(signal, payload, bestMatch);
       }
 
-      // STEP 3: Fallback to LLM analysis only if no patterns matched
-      this.logger.debug(`[PERF] No precomputed patterns available, falling back to LLM analysis`, {
+      // STEP 3: No matching jobs found - fallback to LLM analysis
+      this.logger.debug(`[PERF] No matching job triggers found, falling back to LLM analysis`, {
         signalId: signal.id,
-        patternCheckTime: analysisResult.computeTime,
-        fallbackReason: "requires_llm_analysis",
+        evaluationTime: totalTime,
+        fallbackReason: "no_matching_triggers",
+        availableJobs: Object.keys(jobs).length,
       });
 
       return await this.analyzeSignalWithLLM(signal, payload);
     } catch (error) {
       const errorTime = Date.now() - startTime;
-      this.logger.debug(`[PERF] Signal analysis failed after ${errorTime}ms: ${error}`, {
+      this.logger.debug(`[PERF] Job trigger evaluation failed after ${errorTime}ms: ${error}`, {
         signalId: signal.id,
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
@@ -825,7 +821,69 @@ You have access to the full workspace context and configuration. Create structur
     }
   }
 
-  // LLM-based signal analysis (fallback for signals without precomputed patterns)
+  // Create session intent from a matched job specification
+  private createSessionIntentFromJobMatch(
+    signal: IWorkspaceSignal,
+    payload: any,
+    match: JobMatch,
+  ): SessionIntent {
+    const job = match.job;
+    
+    // Extract agent IDs from job specification
+    const suggestedAgents = job.execution?.agents?.map(agent => agent.id) || [];
+    
+    // Map job execution strategy to session execution hint
+    const mapExecutionStrategy = (strategy?: string): "iterative" | "deterministic" | "exploratory" => {
+      switch (strategy) {
+        case "sequential":
+        case "parallel":
+          return "deterministic";
+        case "staged":
+        case "hierarchical-task-network":
+          return "iterative";
+        case "conditional":
+        case "monte-carlo-tree-search":
+          return "exploratory";
+        default:
+          return "deterministic";
+      }
+    };
+
+    return {
+      id: crypto.randomUUID(),
+      signal: {
+        type: signal.id,
+        data: payload,
+        metadata: {
+          provider: signal.provider.name,
+          timestamp: new Date().toISOString(),
+          matchedJob: job.name,
+          evaluationMethod: "job-trigger-match",
+          confidence: match.evaluationResult.confidence,
+          evaluator: match.evaluationResult.evaluator,
+        },
+      },
+      goals: [
+        `Execute job: ${job.name}`,
+        job.description || `Process ${signal.id} signal`,
+      ],
+      constraints: {
+        timeLimit: job.resources?.estimated_duration_seconds
+          ? job.resources.estimated_duration_seconds * 1000
+          : 300000, // 5 minutes default
+        costLimit: job.resources?.cost_limit || 100,
+      },
+      suggestedAgents,
+      executionHints: {
+        strategy: mapExecutionStrategy(job.execution?.strategy),
+        parallelism: job.execution?.strategy === "parallel",
+        maxIterations: 3,
+      },
+      userPrompt: job.session_prompts?.planning || "",
+    };
+  }
+
+  // LLM-based signal analysis (fallback for signals without matching job triggers)
   private async analyzeSignalWithLLM(
     signal: IWorkspaceSignal,
     payload: any,
@@ -833,7 +891,7 @@ You have access to the full workspace context and configuration. Create structur
     const startTime = Date.now();
     this.logger.debug(`[PERF] Starting LLM-based signal analysis for signal: ${signal.id}`, {
       signalId: signal.id,
-      reason: "no_precomputed_patterns",
+      reason: "no_matching_job_triggers",
     });
 
     const analysisPrompt = `Analyze this incoming signal and determine the session intent:
@@ -932,12 +990,12 @@ Provide a structured analysis.`;
   }
 
   // Create filtered session context based on intent
-  createSessionContext(
+  async createSessionContext(
     intent: SessionIntent,
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): any {
+  ): Promise<any> {
     const startTime = Date.now();
     this.logger.debug(`[PERF] Starting createSessionContext`, {
       intentId: intent.id,
@@ -959,7 +1017,7 @@ Provide a structured analysis.`;
         mergedConfigAvailable: !!this.mergedConfig,
       });
 
-      const selectedJob = this.selectJobForSignal(signal, payload, signalData);
+      const selectedJob = await this.selectJobForSignal(signal, payload, signalData);
       const jobTime = Date.now() - jobStart;
       this.logger.debug(`[PERF] Job selection took ${jobTime}ms`, {
         selectedJob: selectedJob?.name || "none",
@@ -1013,7 +1071,7 @@ Provide a structured analysis.`;
         additionalPrompts: {
           signal: this.config.signalPrompts?.[signal.id] || "",
           session: this.config.prompts?.session || "",
-          evaluation: this.config.prompts?.evaluation || "",
+          evaluation: selectedJob?.session_prompts?.evaluation || this.config.prompts?.evaluation || "",
         },
       };
       const contextTime = Date.now() - contextStart;
@@ -1050,11 +1108,11 @@ Provide a structured analysis.`;
   }
 
   // Select appropriate job based on signal configuration and payload
-  private selectJobForSignal(
+  private async selectJobForSignal(
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): any | null {
+  ): Promise<any | null> {
     try {
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
@@ -1110,7 +1168,7 @@ Provide a structured analysis.`;
           payload,
         });
 
-        const conditionResult = this.evaluateJobCondition(trigger.condition, payload);
+        const conditionResult = await this.evaluateJobCondition(trigger.condition, payload);
         this.logger.debug(`[DEBUG] Job trigger condition evaluation result`, {
           jobName: job.name,
           condition: trigger.condition,
@@ -1148,30 +1206,25 @@ Provide a structured analysis.`;
     }
   }
 
-  // Evaluate job condition against payload
-  private evaluateJobCondition(condition: string | undefined, payload: any): boolean {
+  // Evaluate job condition against payload using ConditionEvaluatorRegistry
+  private async evaluateJobCondition(condition: string | object | undefined, payload: any): Promise<boolean> {
     if (!condition) return true; // No condition means always match
 
     try {
-      // Simple condition evaluation - in production would use safer evaluation
-      // For now, handle the specific telephone game condition
-      if (condition.includes("message && message.length")) {
-        const message = payload.message;
-        if (!message) return false;
-
-        // Parse the condition to extract length comparison
-        if (condition.includes("< 100")) {
-          return message.length > 0 && message.length < 100;
-        } else if (condition.includes(">= 100")) {
-          return message.length >= 100;
-        }
-      }
-
-      // Default: condition not understood, return false
-      this.log(`Unknown condition format: ${condition}`);
-      return false;
+      // Use the same ConditionEvaluatorRegistry as the JobTriggerMatcher
+      const result = await this.jobTriggerMatcher.getConditionEvaluatorRegistry().evaluate(condition, payload);
+      
+      this.logger.debug(`Job condition evaluation result`, {
+        condition: typeof condition === 'object' ? JSON.stringify(condition) : condition,
+        payload: JSON.stringify(payload),
+        matches: result.matches,
+        confidence: result.confidence,
+        evaluator: result.evaluator,
+      });
+      
+      return result.matches;
     } catch (error) {
-      this.log(`Error evaluating condition "${condition}": ${error}`);
+      this.log(`Error evaluating condition "${typeof condition === 'object' ? JSON.stringify(condition) : condition}": ${error}`);
       return false;
     }
   }
@@ -1226,7 +1279,7 @@ Provide a structured analysis.`;
     // Try to use cached plan from advanced planning first
     if (this.planningEngine) {
       try {
-        const selectedJob = this.selectJobForSignal(signal, payload);
+        const selectedJob = await this.selectJobForSignal(signal, payload);
         if (selectedJob) {
           this.log(`Using cached plan for job: ${selectedJob.name}`);
           const task = {

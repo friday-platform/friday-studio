@@ -211,10 +211,10 @@ curl http://localhost:8080/health
 
 ```bash
 # Direct k8s operations via HTTP signal
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ../../../src/cli.tsx signal trigger http-k8s --port 3001 --data '{"message": "Create a namespace called production"}'
+deno task atlas signal trigger http-k8s --data '{"message": "Create a namespace called production"}'
 
 # Alternative using CLI signal
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options ../../../src/cli.tsx signal trigger cli-k8s --port 3001 --data '{"message": "Deploy Redis with persistent storage"}'
+deno task atlas signal trigger cli-k8s --data '{"message": "Deploy Redis with persistent storage"}'
 ```
 
 ## Customization

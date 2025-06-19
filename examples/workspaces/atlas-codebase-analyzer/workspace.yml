@@ -1,0 +1,213 @@
+version: "1.0"
+
+workspace:
+  id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  name: "Atlas Codebase Analyzer"
+  description: "Autonomous Atlas codebase analysis using enhanced EMCP filesystem capabilities"
+
+# No MCP servers needed - using EMCP context provisioning
+
+# Signal definitions for autonomous operation
+signals:
+  # Built-in codebase watcher - fires on significant code changes
+  codebase-watcher:
+    provider: "codebase-watcher"
+    description: "File monitoring for autonomous analysis"
+    path: "/Users/kenneth/tempest/atlas"
+    watch_patterns:
+      - "src/**/*.ts"
+      - "src/**/*.tsx" 
+      - "*.yml"
+      - "*.md"
+      - "tests/**/*.ts"
+    ignore_patterns:
+      - "node_modules/**"
+      - ".git/**"
+      - "lgtm/**"
+      - "**/target/**"
+    debounce_seconds: 300  # Wait 5 minutes after last change
+    min_changes: 3         # Require at least 3 file changes
+    analysis_triggers:
+      - "performance_patterns"
+      - "developer_experience"
+      - "architecture_changes"
+
+  # Manual trigger for immediate analysis
+  manual-analysis:
+    provider: "http"
+    path: "/analyze"
+    method: "POST"
+    description: "Manual trigger for codebase analysis"
+
+  # Weekly comprehensive analysis
+  weekly-review:
+    provider: "cron-scheduler"
+    description: "Scheduled weekly analysis"
+    schedule: "0 9 * * 1"  # Every Monday at 9 AM
+    timezone: "America/Los_Angeles"
+
+# Agent definitions - using EMCP context provisioning (no MCP servers)
+agents:
+  # Performance analysis agent with secure filesystem context
+  performance-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Deep performance analysis using Atlas EMCP filesystem context"
+    max_steps: 3
+    prompts:
+      system: |
+        You are a performance analysis expert with secure read-only access to the Atlas codebase.
+        You receive comprehensive codebase context through Atlas EMCP filesystem provisioning.
+        Analyze code patterns, identify bottlenecks, and suggest optimizations.
+        Focus on worker architecture, state management, and async patterns.
+
+  # Developer experience analyzer with metadata capabilities
+  dx-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Developer experience analysis with advanced filesystem metadata"
+    max_steps: 3
+    prompts:
+      system: |
+        You are a developer experience expert with access to enhanced filesystem analysis.
+        You receive detailed codebase context with metadata through Atlas EMCP.
+        Understand code complexity, dependencies, and maintainability patterns.
+        Focus on developer workflows, testing patterns, and code organization.
+
+  # Architecture analysis agent with comprehensive context
+  architecture-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "System architecture analysis using comprehensive codebase context"
+    max_steps: 3
+    prompts:
+      system: |
+        You are an architecture expert with advanced codebase analysis capabilities.
+        You receive comprehensive system context through Atlas EMCP context provisioning.
+        Understand system design, patterns, and relationships.
+        Focus on supervision hierarchy, communication patterns, and architectural consistency.
+
+  # Report generator with secure context access
+  report-generator:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Generate comprehensive reports using secure filesystem context"
+    max_steps: 2
+    prompts:
+      system: |
+        You are a technical report generator with read-only filesystem context.
+        Synthesize analysis findings into actionable markdown reports with priorities.
+        Use the provided context to understand file relationships and generate comprehensive documentation.
+
+# Job definitions for different analysis workflows
+jobs:
+  comprehensive-analysis:
+    name: "comprehensive-analysis"
+    description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+    session_prompts:
+      planning: |
+        Focus your analysis on these key areas of the Atlas codebase:
+        - Worker architecture and communication patterns
+        - XState FSM implementations  
+        - Signal processing and session lifecycle
+        - Memory management and library integration
+        - Agent supervision hierarchy
+        - EMCP provider architecture and context provisioning
+        - Hierarchical resource scoping (Memory vs Context vs Tools)
+        
+        Provide specific, actionable recommendations based on the actual codebase implementation.
+      evaluation: |
+        Evaluate whether the analysis has covered all critical architectural aspects:
+        - Is the worker communication analysis comprehensive?
+        - Are the FSM patterns properly evaluated?
+        - Has the signal/session lifecycle been thoroughly examined?
+        - Are memory and context management patterns well understood?
+        - Has the supervision hierarchy been properly analyzed?
+        
+        The session is complete only when all areas have been thoroughly analyzed.
+    execution:
+      strategy: "sequential"
+      context:
+        filesystem:
+          patterns:
+            - "src/core/workspace-runtime.ts"
+            - "src/core/session-supervisor.ts" 
+            - "src/core/supervisor.ts"
+            - "src/core/workers/*.ts"  # Use glob pattern instead of directory
+            - "src/core/emcp/*.ts"     # Include new EMCP infrastructure
+            - "src/core/context/*.ts"  # Include new context system
+            - "src/cli/commands/workspace.tsx"
+            - "atlas.yml"
+            - "CLAUDE.md"
+          base_path: "/Users/kenneth/tempest/atlas"
+          max_file_size: 100000
+          include_content: true
+          # Enhanced EMCP provider configuration with security controls
+          provider_config:
+            allowedDirectories: ["/Users/kenneth/tempest/atlas"]
+            deniedPaths: ["/Users/kenneth/tempest/atlas/node_modules", "/Users/kenneth/tempest/atlas/.git"]
+            readOnly: true  # Analysis workspace should be read-only for security
+            maxFileSize: "100kb"
+            maxTotalSize: "5mb"
+            allowedExtensions: [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
+      agents:
+        - id: "performance-analyzer"
+          input_source: "filesystem_context"
+        - id: "dx-analyzer"
+          input_source: "filesystem_context"
+        - id: "architecture-analyzer"
+          input_source: "filesystem_context"
+        - id: "report-generator"
+          input_source: "combined"
+        
+  performance-focused:
+    name: "performance-focused"
+    description: "Performance analysis and optimization recommendations"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "performance"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "performance-analyzer"
+        - id: "report-generator"
+        
+  dx-focused:
+    name: "dx-focused"
+    description: "Developer experience analysis and improvements"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "dx"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "dx-analyzer"
+        - id: "report-generator"
+        
+  architecture-review:
+    name: "architecture-review"
+    description: "System architecture analysis and design recommendations"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"==": [{"var": "type"}, "architecture"]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "architecture-analyzer"
+        - id: "report-generator"
+        
+  weekly-health-check:
+    name: "weekly-health-check"
+    description: "Comprehensive weekly codebase health analysis"
+    triggers:
+      - signal: "weekly-review"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "performance-analyzer"
+        - id: "dx-analyzer"
+        - id: "architecture-analyzer"
+        - id: "report-generator"

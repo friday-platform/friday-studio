@@ -17,7 +17,7 @@ const JobDefinitionSchema = z.object({
   description: z.string(),
   triggers: z.array(z.object({
     signal: z.string(),
-    condition: z.string().optional(),
+    condition: z.union([z.string(), z.record(z.string(), z.any())]).optional(),
     naturalLanguageCondition: z.string().optional(),
   })),
   execution: z.object({

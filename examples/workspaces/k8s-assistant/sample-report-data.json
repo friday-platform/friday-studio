@@ -1,0 +1,20 @@
+{
+  "workspace": "k8s-assistant",
+  "deployment": {
+    "name": "nginx-app",
+    "namespace": "production",
+    "replicas": 3,
+    "image": "nginx:1.21",
+    "ports": [80, 443]
+  },
+  "analysis": {
+    "resource_usage": "moderate",
+    "security_score": 8.5,
+    "recommendations": [
+      "Enable resource limits",
+      "Use specific image tag instead of latest",
+      "Add health checks"
+    ]
+  },
+  "timestamp": "2025-06-18T14:36:00Z"
+}

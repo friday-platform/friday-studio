@@ -5,6 +5,8 @@
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
+import type { Span } from "@opentelemetry/api";
+import { WorkspaceMCPConfigurationService } from "../services/mcp-configuration-service.ts";
 import {
   type AgentExecutePayload,
   type AgentExecutionCompletePayload,
@@ -38,6 +40,9 @@ interface AgentExecutionRequest {
     parameters: Record<string, unknown>;
     prompts: Record<string, string>;
     tools: string[];
+    mcp_servers?: string[]; // MCP server references
+    max_steps?: number; // For multi-step tool calling
+    tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string }; // Tool choice control
     endpoint?: string;
     auth?: {
       type: "bearer" | "api_key" | "basic" | "none";
@@ -91,6 +96,7 @@ class AgentExecutionWorker {
   private logger: ChildLogger;
   private sessionId?: string;
   private workspaceId?: string;
+  private traceHeaders?: Record<string, string>;
 
   constructor() {
     this.workerId = crypto.randomUUID();
@@ -207,6 +213,7 @@ class AgentExecutionWorker {
         this.workerId = (payload.worker_id as string) || this.workerId;
         this.sessionId = envelope.source.sessionId;
         this.workspaceId = envelope.source.workspaceId;
+        this.traceHeaders = envelope.traceHeaders;
         this.isInitialized = true;
         this.startTime = Date.now();
 
@@ -436,59 +443,226 @@ class AgentExecutionWorker {
   }
 
   private async executeLLMAgent(request: AgentExecutePayload): Promise<Record<string, unknown>> {
-    const { model, prompts, parameters } = request.agent_config;
+    // Extract basic info for telemetry context
+    const agentConfig = request.agent_config as Record<string, unknown>;
+    const model = agentConfig.model as string;
+    const parameters = (agentConfig.parameters as Record<string, unknown>) || {};
+    const mcp_servers = agentConfig.mcp_servers as string[] | undefined;
+    const max_steps = agentConfig.max_steps as number | undefined;
+    const provider = parameters.provider || "anthropic";
+
+    // Create telemetry context for worker span
+    const telemetryContext = {
+      operation: "execute",
+      component: "agent" as const,
+      traceHeaders: this.traceHeaders,
+      workerId: this.workerId,
+      sessionId: this.sessionId,
+      agentId: request.agent_id,
+      agentType: "llm",
+      workspaceId: this.workspaceId,
+      attributes: {
+        "agent.provider": provider,
+        "agent.model": model,
+        "agent.has_mcp_servers": !!(mcp_servers && mcp_servers.length > 0),
+        "agent.mcp_server_count": mcp_servers?.length || 0,
+        "agent.max_steps": max_steps || 1,
+      },
+    };
+
+    return await AtlasTelemetry.withWorkerSpan(telemetryContext, async (span) => {
+      return await this._executeLLMAgentInternal(request, span);
+    });
+  }
+
+  private async _executeLLMAgentInternal(
+    request: AgentExecutePayload,
+    span: Span | null,
+  ): Promise<Record<string, unknown>> {
+    // Safely extract properties from agent_config with type checking
+    const agentConfig = request.agent_config as Record<string, unknown>;
+    const model = agentConfig.model as string;
+    const prompts = (agentConfig.prompts as Record<string, string>) || {};
+    const parameters = (agentConfig.parameters as Record<string, unknown>) || {};
+    const mcp_servers = agentConfig.mcp_servers as string[] | undefined;
+    const max_steps = agentConfig.max_steps as number | undefined;
+    const tool_choice = agentConfig.tool_choice as "auto" | "required" | "none" | {
+      type: "tool";
+      toolName: string;
+    } | undefined;
+
     const { task, input } = request;
 
     if (!model) {
       throw new Error("LLM agent requires model specification");
     }
 
-    // Extract provider from parameters or default to anthropic
-    const params = parameters as Record<string, unknown> || {};
-    const provider = params.provider || "anthropic";
+    // Extract provider and parameters
+    const provider = parameters.provider || "anthropic";
 
     // Log configuration details for debugging
     this.log(`LLM Agent Configuration - Provider: ${provider}, Model: ${model}`, "debug");
     this.log(`Agent Config Parameters: ${JSON.stringify(parameters)}`, "debug");
-    this.log(`Environment Config: ${JSON.stringify(request.environment.worker_config)}`, "debug");
+    this.log(`MCP Servers: ${JSON.stringify(mcp_servers)}`, "debug");
 
-    // Prepare prompt
-    const promptsObj = prompts as Record<string, string> || {};
-    const systemPrompt = promptsObj.system || "You are a helpful AI assistant.";
-    const userPrompt = this.buildUserPrompt(task, input, promptsObj);
+    // Initialize MCP servers if specified - CLEAN ENCAPSULATION ✅
+    if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
+      // Use configuration service instead of direct workspace config access
+      const mcpConfigService = new WorkspaceMCPConfigurationService(
+        this.workspaceId!,
+        this.sessionId,
+      );
+
+      // Get properly resolved and filtered server configurations
+      const mcpServerConfigs = mcpConfigService.getServerConfigsForAgent(
+        request.agent_id,
+        mcp_servers,
+        request.agent_config,
+      );
+
+      if (mcpServerConfigs.length > 0) {
+        this.log(`Initializing ${mcpServerConfigs.length} MCP servers for agent`, "debug");
+        await mcpConfigService.initializeServersForSession(
+          mcpServerConfigs.map((c) => c.id),
+          { sessionId: this.sessionId!, agentId: request.agent_id, workspaceId: this.workspaceId },
+        );
+      }
+    }
+
+    // Prepare prompts
+    const systemPrompt = prompts.system || "You are a helpful AI assistant.";
+    const userPrompt = this.buildUserPrompt(task, input, prompts);
+
+    // Add telemetry attributes for prompt details
+    span?.setAttribute("agent.task", task || "unknown");
+    span?.setAttribute("agent.input_type", typeof input);
+    span?.setAttribute("agent.system_prompt_length", systemPrompt.length);
+    span?.setAttribute("agent.user_prompt_length", userPrompt.length);
 
     try {
-      this.log(`Calling LLMProviderManager with provider: ${provider}, model: ${model}`, "debug");
+      let result: {
+        text: string;
+        toolCalls: unknown[];
+        toolResults: unknown[];
+        steps: unknown[];
+      };
 
-      const result = await LLMProviderManager.generateText(userPrompt, {
-        provider: provider as "anthropic" | "openai" | "google",
-        model: model as string,
-        systemPrompt,
-        temperature: params.temperature as number,
-        maxTokens: params.max_tokens as number,
-        timeout: (request.environment as {
-          worker_config: { timeout?: number };
-        }).worker_config?.timeout || 30000,
-        operationContext: {
-          operation: "agent_execution",
-          agentId: request.agent_id,
-          workerId: this.workerId,
-        },
-      });
+      // Use tool-enabled generation if MCP servers are specified
+      if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
+        this.log(`Using MCP tool-enabled generation with ${mcp_servers.length} servers`, "debug");
 
-      this.log(`LLM execution successful for ${request.agent_id}`, "debug");
+        result = await LLMProviderManager.generateTextWithTools(
+          userPrompt,
+          {
+            provider: provider as "anthropic" | "openai" | "google",
+            model: model,
+            systemPrompt,
+            temperature: parameters.temperature as number,
+            maxTokens: parameters.max_tokens as number,
+            timeout: ((request.environment as Record<string, unknown>).worker_config as Record<
+              string,
+              unknown
+            >)?.timeout as number || 30000,
+            mcpServers: mcp_servers,
+            maxSteps: max_steps || 1,
+            toolChoice: tool_choice,
+            operationContext: {
+              operation: "agent_execution",
+              agentId: request.agent_id,
+              workerId: this.workerId,
+            },
+          },
+        );
+
+        this.log(
+          `LLM execution with MCP tools successful for ${request.agent_id}`,
+          "debug",
+        );
+
+        return {
+          agent_type: "llm",
+          agent_id: request.agent_id,
+          provider,
+          model,
+          result: result.text,
+          tool_calls: result.toolCalls,
+          tool_results: result.toolResults,
+          steps: result.steps,
+          input,
+          tokens_used: 0, // TODO: Extract from result
+          finish_reason: "stop",
+          mcp_servers_used: mcp_servers || [],
+        };
+      } else {
+        // Use standard generation without tools
+        this.log(`Using standard LLM generation without tools`, "debug");
+
+        const textResult = await LLMProviderManager.generateText(userPrompt, {
+          provider: provider as "anthropic" | "openai" | "google",
+          model: model,
+          systemPrompt,
+          temperature: parameters.temperature as number,
+          maxTokens: parameters.max_tokens as number,
+          timeout: ((request.environment as Record<string, unknown>).worker_config as Record<
+            string,
+            unknown
+          >)?.timeout as number || 30000,
+          operationContext: {
+            operation: "agent_execution",
+            agentId: request.agent_id,
+            workerId: this.workerId,
+          },
+        });
+
+        this.log(`LLM execution successful for ${request.agent_id}`, "debug");
+
+        result = {
+          text: textResult,
+          toolCalls: [],
+          toolResults: [],
+          steps: [],
+        };
+      }
+
+      // Add telemetry attributes for execution result
+      span?.setAttribute("agent.execution_success", true);
+      span?.setAttribute("agent.result_length", result.text.length);
+      span?.setAttribute("agent.tool_calls_count", result.toolCalls.length);
+      span?.setAttribute("agent.tool_results_count", result.toolResults.length);
+      span?.setAttribute("agent.steps_count", result.steps.length);
+
+      if (result.toolCalls.length > 0) {
+        const toolNames = result.toolCalls.map((call: unknown) =>
+          (call && typeof call === "object" && "toolName" in call)
+            ? (call as { toolName: string }).toolName
+            : "unknown"
+        );
+        span?.setAttribute("agent.tools_used", toolNames);
+      }
 
       return {
         agent_type: "llm",
         agent_id: request.agent_id,
         provider,
         model,
-        result,
+        result: result.text,
+        tool_calls: result.toolCalls,
+        tool_results: result.toolResults,
+        steps: result.steps,
         input,
-        tokens_used: 0, // LLMProviderManager doesn't expose token count yet
+        tokens_used: 0, // TODO: Extract from result
         finish_reason: "stop",
+        mcp_servers_used: mcp_servers || [],
       };
     } catch (error) {
+      // Add error telemetry attributes
+      span?.setAttribute("agent.execution_success", false);
+      span?.setAttribute("agent.error_type", error instanceof Error ? error.name : "Unknown");
+      span?.setAttribute(
+        "agent.error_message",
+        error instanceof Error ? error.message : String(error),
+      );
+
       this.log(`LLM execution error for ${request.agent_id}: ${error}`, "error");
       this.log(
         `Error details - Provider: ${provider}, Model: ${model}, Type: ${
@@ -497,6 +671,16 @@ class AgentExecutionWorker {
         "error",
       );
       throw error;
+    } finally {
+      // Clean up MCP resources
+      if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
+        try {
+          await LLMProviderManager.disposeMCPResources();
+          this.log(`MCP resources cleaned up for ${request.agent_id}`, "debug");
+        } catch (cleanupError) {
+          this.log(`MCP cleanup warning for ${request.agent_id}: ${cleanupError}`, "warn");
+        }
+      }
     }
   }
 

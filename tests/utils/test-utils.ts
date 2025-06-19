@@ -295,3 +295,108 @@ export class TestEnvironment {
 export function createTestEnvironment(): TestEnvironment {
   return new TestEnvironment();
 }
+
+/**
+ * Enhanced test environment with MCP server support
+ */
+export class EnhancedTestEnvironment extends TestEnvironment {
+  private mcpServers: Map<string, any> = new Map();
+  private registryInitialized = false;
+
+  /**
+   * Initialize the MCP Server Registry with test configuration
+   */
+  async initializeMCPRegistry(): Promise<void> {
+    if (this.registryInitialized) return;
+
+    // Import the registry here to avoid circular dependencies
+    const { MCPServerRegistry } = await import("../../src/core/agents/mcp/mcp-server-registry.ts");
+    
+    // Reset registry for clean test state
+    MCPServerRegistry.reset();
+    
+    // Build workspace config from started servers
+    const workspaceConfig = {
+      mcp_servers: Object.fromEntries(
+        Array.from(this.mcpServers.entries()).map(([id, server]) => [
+          id,
+          {
+            id,
+            transport: {
+              type: "stdio" as const,
+              ...server.getCommand(),
+            },
+            timeout_ms: 30000,
+          }
+        ])
+      )
+    };
+
+    // Initialize registry with test configuration
+    MCPServerRegistry.initialize(undefined, workspaceConfig);
+    this.registryInitialized = true;
+
+    // Reset registry on cleanup
+    this.onCleanup(async () => {
+      MCPServerRegistry.reset();
+      this.registryInitialized = false;
+    });
+  }
+
+  /**
+   * Starts an MCP server and registers it for cleanup
+   * @param id Server identifier
+   * @param server MCP server instance
+   * @param initializeRegistry Whether to initialize the registry (default: false for placeholder tests)
+   * @returns Promise<any> Server instance
+   */
+  async startMCPServer(id: string, server: any, initializeRegistry = false): Promise<any> {
+    const startedServer = await server;
+    this.mcpServers.set(id, startedServer);
+    this.onCleanup(() => startedServer.stop());
+    
+    // Only initialize registry if explicitly requested
+    if (initializeRegistry && this.mcpServers.size > 0) {
+      await this.initializeMCPRegistry();
+    }
+    
+    return startedServer;
+  }
+
+  /**
+   * Gets an MCP server by ID
+   * @param id Server identifier
+   * @returns MCP server instance or undefined
+   */
+  getMCPServer(id: string): any {
+    return this.mcpServers.get(id);
+  }
+
+  /**
+   * Stops an MCP server
+   * @param id Server identifier
+   */
+  async stopMCPServer(id: string): Promise<void> {
+    const server = this.mcpServers.get(id);
+    if (server) {
+      await server.stop();
+      this.mcpServers.delete(id);
+    }
+  }
+
+  /**
+   * Lists all active MCP servers
+   * @returns Array of server IDs
+   */
+  listMCPServers(): string[] {
+    return Array.from(this.mcpServers.keys());
+  }
+}
+
+/**
+ * Creates an enhanced test environment with MCP server support
+ * @returns EnhancedTestEnvironment instance
+ */
+export function createEnhancedTestEnvironment(): EnhancedTestEnvironment {
+  return new EnhancedTestEnvironment();
+}

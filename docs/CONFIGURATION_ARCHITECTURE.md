@@ -34,7 +34,7 @@ version: "1.0"
 workspaceSupervisor:
   model: "claude-4-sonnet-20250514"
   capabilities:
-    - signal_analysis
+    - job_trigger_evaluation
     - context_filtering
     - session_spawning
     - job_selection
@@ -42,13 +42,13 @@ workspaceSupervisor:
     system: |
       You are a WorkspaceSupervisor responsible for analyzing signals and creating session contexts.
       Your capabilities are carefully maintained by the Atlas platform.
-    signal_analysis: |
-      Analyze the incoming signal to understand intent, urgency, and required agent capabilities.
-      Consider workspace context, agent availability, and resource constraints.
-      Select appropriate jobs based on signal content and configured conditions.
+    job_evaluation: |
+      Evaluate job triggers against incoming signals using declarative condition matching.
+      Use the pluggable condition evaluation system for JSONLogic, simple expressions, and exact matches.
+      Create session intent from the best matching job specification.
     context_filtering: |
       Create a filtered context for the session that includes only relevant workspace data.
-      Filter based on signal analysis, agent requirements, and memory relevance.
+      Filter based on job requirements, agent capabilities, and memory relevance.
 
 sessionSupervisor:
   model: "claude-4-sonnet-20250514"
@@ -136,7 +136,7 @@ signals:
         condition: "pull_request.changed_files.some(f => f.filename.match(/\\.(tsx|css|js)$/))"
         job: "./jobs/frontend-pr-review.yml"
       - name: "security-review"
-        condition: "action == 'opened' && pull_request.additions > 100"
+        condition: {"and": [{"==": [{"var": "action"}, "opened"]}, {">": [{"var": "pull_request.additions"}, 100]}]}
         job: "./jobs/security-review.yml"
 
   deploy-failed:
@@ -361,3 +361,164 @@ security-scanner:
 - **Advanced Conditions**: ML-based condition inference from natural language
 - **Performance Optimization**: Caching and parallel execution improvements
 - **Workflow Integration**: Integration with existing CI/CD and project management tools
+
+## Working Examples
+
+### Telephone Game Workspace
+
+**File: `examples/workspaces/telephone/workspace.yml`**
+
+```yaml
+version: "1.0"
+
+workspace:
+  id: "7821d138-71a6-434c-bc64-10addcf33532"
+  name: "Multi-Provider Telephone Game"
+  description: "Message transformation through sequential agent processing"
+
+# Signal definitions
+signals:
+  telephone-message:
+    description: "Trigger a telephone game with a message"
+    provider: "http"
+    path: "/telephone"
+    method: "POST"
+
+# Job definitions
+jobs:
+  telephone:
+    name: "telephone"
+    description: "Sequential message transformation workflow"
+    triggers:
+      - signal: "telephone-message"
+        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+          input_source: "signal"
+        - id: "embellishment-agent"
+          input_source: "previous"
+        - id: "reinterpretation-agent"
+          input_source: "previous"
+
+# Agent definitions  
+agents:
+  mishearing-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Specializes in phonetic errors and mishearing transformations"
+
+  embellishment-agent:
+    type: "llm"  
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Adds creative details and context to messages"
+
+  reinterpretation-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Dramatically transforms and reinterprets messages"
+```
+
+### Atlas Codebase Analyzer
+
+**File: `examples/workspaces/atlas-codebase-analyzer/workspace.yml`**
+
+```yaml
+version: "1.0"
+
+workspace:
+  id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  name: "Atlas Codebase Analyzer"
+  description: "Autonomous Atlas codebase analysis for performance and DX improvements"
+
+signals:
+  manual-analysis:
+    provider: "http"
+    path: "/analyze"
+    method: "POST"
+
+jobs:
+  comprehensive-analysis:
+    name: "comprehensive-analysis"
+    description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
+    triggers:
+      - signal: "manual-analysis"
+        condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+    execution:
+      strategy: "sequential"
+      context:
+        codebase_files:
+          - "src/core/workspace-runtime.ts"
+          - "src/core/session-supervisor.ts"
+          - "src/core/workers/"
+        focus_areas:
+          - "Worker architecture and communication patterns"
+          - "XState FSM implementations"
+          - "Signal processing and session lifecycle"
+      agents:
+        - id: "performance-analyzer"
+          input_source: "codebase_context"
+        - id: "dx-analyzer"
+          input_source: "codebase_context"
+        - id: "architecture-analyzer"
+          input_source: "codebase_context"
+        - id: "report-generator"
+          input_source: "combined"
+
+agents:
+  performance-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Deep performance analysis and optimization recommendations"
+
+  dx-analyzer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Developer experience analysis and improvement recommendations"
+```
+
+### Key Configuration Patterns
+
+#### Condition Syntax (JSONLogic)
+
+```yaml
+# Simple existence check
+condition: {"var": "message"}
+
+# String length validation
+condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+
+# Multiple conditions with OR
+condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+
+# Complex nested conditions  
+condition: {"and": [
+  {"var": "action"}, 
+  {"in": [{"var": "action"}, ["create", "update"]]},
+  {">": [{"length": {"var": "description"}}, 10]}
+]}
+```
+
+#### Input Source Options
+
+```yaml
+agents:
+  - id: "first-agent"
+    input_source: "signal"        # Use original signal payload
+  - id: "second-agent"  
+    input_source: "previous"      # Use output from previous agent
+  - id: "analyzer"
+    input_source: "codebase_context"  # Load specified codebase files
+  - id: "synthesizer"
+    input_source: "combined"      # Combine all previous outputs
+```
+
+#### Execution Strategies
+
+```yaml
+execution:
+  strategy: "sequential"    # Execute agents one after another
+  # OR
+  strategy: "parallel"      # Execute all agents simultaneously
+```

@@ -290,33 +290,50 @@ class JSONLogicEvaluator implements ConditionEvaluator {
     switch (operator) {
       case "var":
         return this.getVar(operands, data);
-      case "==":
-        return this.evaluateJSONLogic(operands[0], data) ===
-          this.evaluateJSONLogic(operands[1], data);
-      case "!=":
-        return this.evaluateJSONLogic(operands[0], data) !==
-          this.evaluateJSONLogic(operands[1], data);
-      case "<":
-        return Number(this.evaluateJSONLogic(operands[0], data)) <
-          Number(this.evaluateJSONLogic(operands[1], data));
-      case ">":
-        return Number(this.evaluateJSONLogic(operands[0], data)) >
-          Number(this.evaluateJSONLogic(operands[1], data));
-      case "<=":
-        return Number(this.evaluateJSONLogic(operands[0], data)) <=
-          Number(this.evaluateJSONLogic(operands[1], data));
-      case ">=":
-        return Number(this.evaluateJSONLogic(operands[0], data)) >=
-          Number(this.evaluateJSONLogic(operands[1], data));
-      case "and":
-        return operands.every((op: unknown) => this.evaluateJSONLogic(op as object, data));
-      case "or":
-        return operands.some((op: unknown) => this.evaluateJSONLogic(op as object, data));
+      case "==": {
+        const ops = operands as unknown[];
+        return this.evaluateJSONLogic(ops[0] as object, data) ===
+          this.evaluateJSONLogic(ops[1] as object, data);
+      }
+      case "!=": {
+        const ops = operands as unknown[];
+        return this.evaluateJSONLogic(ops[0] as object, data) !==
+          this.evaluateJSONLogic(ops[1] as object, data);
+      }
+      case "<": {
+        const ops = operands as unknown[];
+        return Number(this.evaluateJSONLogic(ops[0] as object, data)) <
+          Number(this.evaluateJSONLogic(ops[1] as object, data));
+      }
+      case ">": {
+        const ops = operands as unknown[];
+        return Number(this.evaluateJSONLogic(ops[0] as object, data)) >
+          Number(this.evaluateJSONLogic(ops[1] as object, data));
+      }
+      case "<=": {
+        const ops = operands as unknown[];
+        return Number(this.evaluateJSONLogic(ops[0] as object, data)) <=
+          Number(this.evaluateJSONLogic(ops[1] as object, data));
+      }
+      case ">=": {
+        const ops = operands as unknown[];
+        return Number(this.evaluateJSONLogic(ops[0] as object, data)) >=
+          Number(this.evaluateJSONLogic(ops[1] as object, data));
+      }
+      case "and": {
+        const ops = operands as unknown[];
+        return ops.every((op: unknown) => this.evaluateJSONLogic(op as object, data));
+      }
+      case "or": {
+        const ops = operands as unknown[];
+        return ops.some((op: unknown) => this.evaluateJSONLogic(op as object, data));
+      }
       case "not":
-        return !this.evaluateJSONLogic(operands, data);
+        return !this.evaluateJSONLogic(operands as object, data);
       case "in": {
-        const value = this.evaluateJSONLogic((operands as unknown[])[0], data);
-        const array = this.evaluateJSONLogic((operands as unknown[])[1], data);
+        const ops = operands as unknown[];
+        const value = this.evaluateJSONLogic(ops[0] as object, data);
+        const array = this.evaluateJSONLogic(ops[1] as object, data);
         return Array.isArray(array) && array.includes(value);
       }
       default:
@@ -324,7 +341,8 @@ class JSONLogicEvaluator implements ConditionEvaluator {
     }
   }
 
-  private getVar(path: string, data: unknown): unknown {
+  private getVar(path: unknown, data: unknown): unknown {
+    if (typeof path !== "string") return data;
     if (!path) return data;
 
     const keys = path.split(".");
@@ -456,7 +474,7 @@ class SimpleExpressionEvaluator implements ConditionEvaluator {
     // Handle the specific telephone game condition as an example
     if (condition.includes("message && message.length")) {
       const message = (payload as Record<string, unknown>)?.message;
-      if (!message) return false;
+      if (!message || typeof message !== "string") return false;
 
       if (condition.includes("< 100")) {
         return message.length > 0 && message.length < 100;

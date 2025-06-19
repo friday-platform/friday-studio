@@ -7,6 +7,7 @@ import { FactExtractor } from "./memory/fact-extractor.ts";
 import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
+import type { TriggerSpecification } from "./config-loader.ts";
 import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
 import { SupervisionLevel } from "./caching/supervision-cache.ts";
 import { getSupervisionConfig } from "./supervision-levels.ts";
@@ -14,6 +15,7 @@ import {
   type StreamingMemoryConfig,
   StreamingMemoryManager,
 } from "./memory/streaming/streaming-memory-manager.ts";
+import { ContextProvisioner } from "./context/context-provisioner.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -41,13 +43,23 @@ export interface JobSpecification {
 
 export interface JobTrigger {
   signal: string;
-  condition?: string;
+  condition?: string | object;
+  naturalLanguageCondition?: string;
 }
 
 export interface JobExecution {
   strategy: "sequential" | "parallel" | "conditional" | "staged";
   agents: JobAgentSpec[];
   stages?: JobStage[];
+  context?: {
+    filesystem?: {
+      patterns: string[];
+      base_path?: string;
+      max_file_size?: number;
+      include_content?: boolean;
+    };
+    [key: string]: any;
+  };
 }
 
 export interface JobAgentSpec {
@@ -56,6 +68,7 @@ export interface JobAgentSpec {
   prompt?: string;
   config?: Record<string, any>;
   input?: Record<string, any>;
+  input_source?: "signal" | "previous" | "combined" | "filesystem_context"; // Source of input for the agent
 }
 
 export interface JobStage {
@@ -84,6 +97,10 @@ export interface LLMAgentConfig {
     system?: string;
     [key: string]: string | undefined;
   };
+  // MCP integration fields
+  mcp_servers?: string[]; // References to MCP servers
+  max_steps?: number; // For multi-step tool calling
+  tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string }; // Tool choice control
 }
 
 export interface RemoteAgentConfig {
@@ -195,7 +212,7 @@ export interface ExecutionPhase {
 export interface AgentTask {
   agentId: string;
   task: string;
-  inputSource: "signal" | "previous" | "combined";
+  inputSource: "signal" | "previous" | "combined" | "filesystem_context";
   dependencies?: string[];
   mode?: string; // For agents with multiple modes
   config?: Record<string, any>; // Agent-specific configuration
@@ -222,6 +239,7 @@ export class SessionSupervisor extends BaseAgent {
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private streamingMemory?: StreamingMemoryManager;
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
+  private contextProvisioner?: ContextProvisioner;
 
   constructor(
     memoryConfig: AtlasMemoryConfig,
@@ -358,6 +376,25 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     }
   }
 
+  async initializeContextProvisioner(context: SessionContext): Promise<void> {
+    try {
+      this.contextProvisioner = new ContextProvisioner({
+        workspaceId: context.workspaceId,
+      });
+
+      // Initialize with workspace sources (empty for now - Phase 1)
+      await this.contextProvisioner.initialize();
+
+      this.log("Context provisioner initialized for EMCP-based context loading");
+    } catch (error) {
+      this.logger.error("Failed to initialize context provisioner", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: context.sessionId,
+      });
+      // Don't fail session initialization if context provisioner fails
+    }
+  }
+
   async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
     try {
       const atlasConfigLoader = AtlasConfigLoader.getInstance();
@@ -429,6 +466,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     // Initialize streaming memory for performance
     await this.initializeStreamingMemory(context);
+
+    // Initialize context provisioner for EMCP-based context loading
+    await this.initializeContextProvisioner(context);
 
     // Log shared precomputed plans received from WorkspaceSupervisor
     const planCount = Object.keys(this.precomputedPlans || {}).length;
@@ -675,7 +715,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: jobSpec.execution.agents.map((agentSpec, index) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: index === 0 ? "signal" : "previous",
+          inputSource: agentSpec.input_source || (index === 0 ? "signal" : "previous"),
           dependencies: index > 0 ? [jobSpec.execution.agents[index - 1].id] : [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -694,7 +734,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
           agents: stage.agents.map((agentSpec) => ({
             agentId: agentSpec.id,
             task: this.buildAgentTask(agentSpec, jobSpec),
-            inputSource: stageIndex === 0 ? "signal" : "previous",
+            inputSource: agentSpec.input_source || (stageIndex === 0 ? "signal" : "previous"),
             dependencies: [],
             mode: agentSpec.mode,
             config: agentSpec.config,
@@ -710,7 +750,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         agents: jobSpec.execution.agents.map((agentSpec) => ({
           agentId: agentSpec.id,
           task: this.buildAgentTask(agentSpec, jobSpec),
-          inputSource: "signal",
+          inputSource: agentSpec.input_source || "signal",
           dependencies: [],
           mode: agentSpec.mode,
           config: agentSpec.config,
@@ -1689,11 +1729,34 @@ Overall Success: ${
         .find((phase) => phase.executionStrategy === "sequential")
         ?.agents.find((agent) => agent.agentId === agentId);
 
-      const shouldPassCleanInput = currentAgentTask?.inputSource === "previous";
+      const inputSource = currentAgentTask?.inputSource;
+      const shouldPassCleanInput = inputSource === "previous";
+
+      // For filesystem_context input source, enhance with signal type information
+      if (inputSource === "filesystem_context") {
+        this.log(
+          `Providing filesystem analysis context to ${agentId}`,
+        );
+        return {
+          ...originalInput,
+          analysis_type: agentId.includes("performance")
+            ? "performance"
+            : agentId.includes("dx")
+            ? "developer_experience"
+            : agentId.includes("architecture")
+            ? "architecture"
+            : "comprehensive",
+          signal_context: {
+            signal_id: this.sessionContext.signal.id,
+            signal_type: this.sessionContext.signal.provider?.name,
+            triggered_at: new Date().toISOString(),
+          },
+        };
+      }
 
       if (shouldPassCleanInput) {
         this.log(
-          `Passing clean input to ${agentId} for sequential execution (inputSource: ${currentAgentTask?.inputSource})`,
+          `Passing clean input to ${agentId} for sequential execution (inputSource: ${inputSource})`,
         );
         return originalInput;
       }
@@ -2110,6 +2173,40 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     this.log(`Stored session episodic memory: session_summary_${this.sessionContext?.sessionId}`);
   }
 
+  // Provision filesystem context via EMCP providers
+  private async provisionFilesystemContext(agentId: string, task: AgentTask): Promise<string> {
+    try {
+      // Check if context provisioner is available
+      if (!this.contextProvisioner) {
+        this.log("Warning: Context provisioner not initialized, skipping filesystem context");
+        return "";
+      }
+
+      // Check if session context and job spec are available
+      if (!this.sessionContext?.jobSpec) {
+        return "";
+      }
+
+      const jobSpec = this.sessionContext.jobSpec;
+
+      // Use EMCP filesystem provisioning method
+      const context = await this.contextProvisioner.provisionFilesystemContext(
+        agentId,
+        jobSpec,
+        this.sessionContext.sessionId,
+      );
+
+      if (context) {
+        this.log(`Provisioned filesystem context for ${agentId} via EMCP providers`);
+      }
+
+      return context;
+    } catch (error) {
+      this.log(`Error provisioning filesystem context: ${error}`);
+      return "";
+    }
+  }
+
   // Memory-Enhanced Prompt Preparation
   async enrichTaskWithMemory(
     agentId: string,
@@ -2137,11 +2234,15 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       // 4. Get episodic summary of previous same-agent executions
       const episodicSummary = this.getPreviousAgentExecutionSummary(agentId);
 
-      // 5. Build enhanced prompt
+      // 5. Load filesystem context via EMCP providers if specified in job context
+      const filesystemContext = await this.provisionFilesystemContext(agentId, task);
+
+      // 6. Build enhanced prompt
       const memoryEnhancedPrompt = this.buildMemoryEnhancedPrompt(
         task.task,
         relevantFacts,
         workingMemoryContext,
+        filesystemContext,
         proceduralRules,
         episodicSummary,
       );
@@ -2454,13 +2555,35 @@ Overall Session Summary: ${
     originalTask: string,
     semanticFacts: any[],
     workingMemory: any[],
+    filesystemContext: string,
     proceduralRules: any[],
     episodicSummary: string | null,
   ): string {
     // Start with clear task instruction
     let enhancedPrompt = originalTask;
 
+<<<<<<< HEAD
     // Add semantic facts section if available
+=======
+    // Add execution prompts from job specification if available
+    if (this.sessionContext?.jobSpec?.session_prompts?.planning) {
+      enhancedPrompt += `\n\n## EXECUTION GUIDANCE\n`;
+      enhancedPrompt += this.sessionContext.jobSpec.session_prompts.planning;
+      enhancedPrompt += `\n`;
+    }
+
+    // Add filesystem context section FIRST for analysis tasks
+    if (filesystemContext) {
+      enhancedPrompt += `\n\n## FILESYSTEM CONTEXT\n`;
+      enhancedPrompt +=
+        `You are analyzing the Atlas codebase. Here are the relevant files:\n\n`;
+      enhancedPrompt += filesystemContext;
+      enhancedPrompt +=
+        `\n**Please provide specific analysis based on this actual Atlas codebase, not generic recommendations.**\n`;
+    }
+
+    // Add semantic facts section
+>>>>>>> 2f7d6209f966c2615d11df851d2d99f6e6f60db4
     if (semanticFacts.length > 0) {
       enhancedPrompt += `\n\n## RELEVANT WORKSPACE KNOWLEDGE\n`;
       enhancedPrompt +=
@@ -2554,6 +2677,19 @@ Overall Session Summary: ${
       }
     } catch (error) {
       this.logger.error("Error during streaming memory shutdown", {
+        error: error instanceof Error ? error.message : String(error),
+        sessionId: this.sessionContext?.sessionId,
+      });
+    }
+
+    // Shutdown context provisioner
+    try {
+      if (this.contextProvisioner) {
+        await this.contextProvisioner.shutdown();
+        this.log("Context provisioner shutdown complete");
+      }
+    } catch (error) {
+      this.logger.error("Error during context provisioner shutdown", {
         error: error instanceof Error ? error.message : String(error),
         sessionId: this.sessionContext?.sessionId,
       });

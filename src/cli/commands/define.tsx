@@ -183,16 +183,17 @@ export default function DefineCommand({ args, subcommand, flags = {} }: DefineCo
     Math.max("Name:".length, "ID:".length, "Version:".length, "Description:".length) + 2;
 
   // Calculate column widths for agents table
-  const agentIdWidth = Math.max(2, ...agents.map((a) => a.id.length)) + 2;
-  const agentTypeWidth = Math.max(4, ...agents.map((a) => a.type.length)) + 2;
-  const modelWidth = Math.max(5, ...agents.map((a) => a.model?.length || 0)) + 2;
-  const endpointWidth = Math.max(8, ...agents.map((a) => a.endpoint?.length || 0)) + 2;
+  const agentIdWidth = Math.max(2, ...agents.map((a: AgentSummary) => a.id.length)) + 2;
+  const agentTypeWidth = Math.max(4, ...agents.map((a: AgentSummary) => a.type.length)) + 2;
+  const modelWidth = Math.max(5, ...agents.map((a: AgentSummary) => a.model?.length || 0)) + 2;
+  const endpointWidth = Math.max(8, ...agents.map((a: AgentSummary) => a.endpoint?.length || 0)) +
+    2;
 
   // Calculate column widths for signals table
-  const signalIdWidth = Math.max(2, ...signals.map((s) => s.id.length)) + 2;
-  const providerWidth = Math.max(8, ...signals.map((s) => s.provider.length)) + 2;
-  const pathWidth = Math.max(4, ...signals.map((s) => s.path?.length || 0)) + 2;
-  const methodWidth = Math.max(6, ...signals.map((s) => s.method?.length || 0)) + 2;
+  const signalIdWidth = Math.max(2, ...signals.map((s: SignalSummary) => s.id.length)) + 2;
+  const providerWidth = Math.max(8, ...signals.map((s: SignalSummary) => s.provider.length)) + 2;
+  const pathWidth = Math.max(4, ...signals.map((s: SignalSummary) => s.path?.length || 0)) + 2;
+  const methodWidth = Math.max(6, ...signals.map((s: SignalSummary) => s.method?.length || 0)) + 2;
 
   // Calculate column widths for runtime section
   const runtimeLabelWidth = Math.max(
@@ -285,7 +286,7 @@ export default function DefineCommand({ args, subcommand, flags = {} }: DefineCo
             </Box>
 
             {/* Agents Table Rows */}
-            {agents.map((agent, index) => (
+            {agents.map((agent: AgentSummary, index: number) => (
               <Box key={index}>
                 <Text>
                   <Text color="cyan">{padRight(agent.id, agentIdWidth)}</Text>
@@ -342,7 +343,7 @@ export default function DefineCommand({ args, subcommand, flags = {} }: DefineCo
             </Box>
 
             {/* Signals Table Rows */}
-            {signals.map((signal, index) => (
+            {signals.map((signal: SignalSummary, index: number) => (
               <Box key={index}>
                 <Text>
                   <Text color="cyan">{padRight(signal.id, signalIdWidth)}</Text>

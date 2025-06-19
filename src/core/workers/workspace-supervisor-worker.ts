@@ -168,8 +168,8 @@ class WorkspaceSupervisorWorker extends BaseWorker {
             this.log("Creating session context...");
             const sessionContext = await AtlasTelemetry.withSpan(
               "supervisor.createSessionContext",
-              () => {
-                return this.supervisor!.createSessionContext(intent, signal, payload, {
+              async () => {
+                return await this.supervisor!.createSessionContext(intent, signal, payload, {
                   signalConfig,
                   jobs,
                 });

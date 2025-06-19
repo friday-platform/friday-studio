@@ -10,21 +10,20 @@ import { expect } from "@std/expect";
 // WorkspaceSupervisor LLM capabilities
 
 Deno.test.ignore(
-  "WorkspaceSupervisor analyzes signals with LLM intelligence",
+  "WorkspaceSupervisor evaluates job triggers with direct matching",
   async () => {
-    // Test signal analysis using LLM
-    // - Intent recognition from signal payload
-    // - Urgency and priority assessment
-    // - Required agent capability identification
-    // - Context relevance determination
+    // Test job trigger evaluation using declarative conditions
+    // - Direct job-signal matching via trigger conditions
+    // - Condition evaluation using pluggable evaluators
+    // - Job selection based on confidence scores
+    // - Session intent creation from matched jobs
     // const supervisor = new WorkspaceSupervisor("test-workspace", config);
     // const signal = { type: "github-pr", data: { action: "opened", files: ["frontend/"] } };
-    // const payload = { /* PR data */ };
-    // const analysis = await supervisor.analyzeSignal(signal, payload);
-    // assertEquals(analysis.intent, "code-review");
-    // assertEquals(analysis.urgency, "medium");
-    // assertEquals(analysis.required_capabilities.includes("frontend-analysis"), true);
-    // assertEquals(analysis.context_filter.includes("frontend-guidelines"), true);
+    // const payload = { action: "opened", files: ["frontend/App.tsx"] };
+    // const intent = await supervisor.analyzeSignal(signal, payload);
+    // assertEquals(intent.signal.metadata.matchedJob, "frontend-pr-review");
+    // assertEquals(intent.signal.metadata.evaluationMethod, "job-trigger-match");
+    // assertEquals(intent.goals.includes("Execute job: frontend-pr-review"), true);
   },
 );
 
@@ -47,19 +46,21 @@ Deno.test.ignore(
 );
 
 Deno.test.ignore(
-  "WorkspaceSupervisor selects appropriate jobs dynamically",
+  "JobTriggerMatcher evaluates multiple job conditions efficiently",
   async () => {
-    // Test dynamic job selection based on signal content
-    // - Condition evaluation against signal data
-    // - Multiple job prioritization
-    // - Resource availability consideration
-    // - Workspace configuration matching
-    // const supervisor = new WorkspaceSupervisor("test-workspace", config);
-    // const signal = { type: "github-pr", data: { changed_files: ["frontend/App.tsx"] } };
-    // const selectedJobs = await supervisor.selectJobs(signal);
-    // assertEquals(selectedJobs.length > 0, true);
-    // assertEquals(selectedJobs[0].name, "frontend-pr-review");
-    // assertEquals(selectedJobs[0].priority, "high");
+    // Test job trigger matching with multiple candidates
+    // - Parallel condition evaluation for performance
+    // - Confidence-based job ranking and selection
+    // - Support for complex JSONLogic conditions
+    // - Proper handling of no-matches scenarios
+    // const matcher = new JobTriggerMatcher(config);
+    // const signal = { id: "github-pr", provider: { name: "github" } };
+    // const payload = { action: "opened", changed_files: ["frontend/App.tsx"] };
+    // const jobs = { "frontend-review": { triggers: [{ signal: "github-pr", condition: "..." }] } };
+    // const matches = await matcher.findMatchingJobs(signal, payload, jobs);
+    // assertEquals(matches.length > 0, true);
+    // assertEquals(matches[0].job.name, "frontend-review");
+    // assertEquals(matches[0].evaluationResult.confidence >= 0.5, true);
   },
 );
 
@@ -142,7 +143,7 @@ Deno.test.ignore(
     // const configLoader = new ConfigLoader();
     // const atlasConfig = await configLoader.loadAtlasConfig();
     // assertEquals(atlasConfig.workspaceSupervisor.prompts.system.length > 0, true);
-    // assertEquals(atlasConfig.workspaceSupervisor.prompts.signal_analysis.length > 0, true);
+    // assertEquals(atlasConfig.workspaceSupervisor.prompts.job_evaluation.length > 0, true);
     // assertEquals(atlasConfig.sessionSupervisor.prompts.execution_planning.length > 0, true);
   },
 );

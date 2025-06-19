@@ -2,9 +2,14 @@
  * Configuration loader for Atlas that merges atlas.yml and workspace.yml
  */
 
-import { parse as parseYaml } from "@std/yaml";
 import { join } from "@std/path";
-import { z } from "zod/v4";
+import { parse as parseYaml } from "@std/yaml";
+import { z } from "zod";
+import {
+  MCPAuthConfigSchema,
+  MCPToolsConfigSchema,
+  MCPTransportConfigSchema,
+} from "./agents/mcp/mcp-manager.ts";
 import type {
   AgentConfig,
   JobSpecification,
@@ -65,11 +70,20 @@ const ACPConfigSchema = z.object({
   health_check_interval: z.number().positive().default(60000),
 });
 
-// MCP-specific configuration schema
+// MCP-specific configuration schema (for remote agents)
 const MCPConfigSchema = z.object({
   timeout_ms: z.number().positive().default(30000),
   allowed_tools: z.array(z.string()).optional(),
   denied_tools: z.array(z.string()).optional(),
+});
+
+// Comprehensive MCP server configuration schema for workspace-level MCP servers
+const WorkspaceMCPServerConfigSchema = z.object({
+  id: z.string().optional(), // ID is derived from key, but can be overridden
+  transport: MCPTransportConfigSchema,
+  auth: MCPAuthConfigSchema.optional(),
+  tools: MCPToolsConfigSchema.optional(),
+  timeout_ms: z.number().positive().default(30000),
 });
 
 // Validation configuration schema
@@ -101,13 +115,27 @@ const WorkspaceAgentConfigSchema = z
     prompts: z.record(z.string(), z.string()).optional(),
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().positive().optional(),
+    // MCP integration (only for LLM agents)
+    mcp_servers: z.array(z.string()).optional(), // References to MCP servers (LLM agents only)
+    max_steps: z.number().positive().optional(), // For multi-step tool calling (LLM agents only)
+    tool_choice: z
+      .union([
+        z.literal("auto"),
+        z.literal("required"),
+        z.literal("none"),
+        z.object({
+          type: z.literal("tool"),
+          toolName: z.string(),
+        }),
+      ])
+      .optional(), // Tool choice control
     // Tempest agent specific
     agent: z.string().optional(),
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
     protocol: z.enum(["acp", "a2a", "custom", "mcp"]).optional(),
-    endpoint: z.url().optional(),
+    endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
 
@@ -133,125 +161,18 @@ const WorkspaceAgentConfigSchema = z
     // Monitoring configuration
     monitoring: MonitoringConfigSchema.optional(),
   })
-  .check((ctx) => {
+  .refine((data) => {
     // Type-specific validation with detailed error messages
-    if (ctx.value.type === "tempest") {
-      if (!ctx.value.agent) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Tempest agents require 'agent' field",
-          path: ["agent"],
-          input: ctx.value,
-        });
-      }
-      if (!ctx.value.version) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Tempest agents require 'version' field",
-          path: ["version"],
-          input: ctx.value,
-        });
-      }
-    } else if (ctx.value.type === "llm") {
-      if (!ctx.value.model) {
-        ctx.issues.push({
-          code: "custom",
-          message: "LLM agents require 'model' field",
-          path: ["model"],
-          input: ctx.value,
-        });
-      }
-
-      // Validate provider and model combination
-      const provider = ctx.value.provider || "anthropic";
-      const model = ctx.value.model;
-
-      const supportedModels = {
-        anthropic: [
-          "claude-3-5-sonnet-20241022",
-          "claude-3-5-haiku-20241022",
-          "claude-3-opus-20240229",
-          "claude-4-sonnet-20250514",
-        ],
-        openai: [
-          "gpt-4",
-          "gpt-4-turbo",
-          "gpt-4o",
-          "gpt-3.5-turbo",
-        ],
-        google: [
-          "gemini-1.5-pro",
-          "gemini-1.5-flash",
-          "gemini-pro",
-        ],
-      };
-
-      if (model && !supportedModels[provider as keyof typeof supportedModels]?.includes(model)) {
-        ctx.issues.push({
-          code: "custom",
-          message:
-            `Model '${model}' is not supported by provider '${provider}'. Supported models: ${
-              supportedModels[provider as keyof typeof supportedModels]?.join(", ") || "none"
-            }`,
-          path: ["model"],
-          input: ctx.value,
-        });
-      }
-    } else if (ctx.value.type === "remote") {
-      if (!ctx.value.endpoint) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Remote agents require 'endpoint' field",
-          path: ["endpoint"],
-          input: ctx.value,
-        });
-      }
-
-      if (!ctx.value.protocol) {
-        ctx.issues.push({
-          code: "custom",
-          message: "Remote agents require 'protocol' field (acp, a2a, custom, or mcp)",
-          path: ["protocol"],
-          input: ctx.value,
-        });
-      }
-
-      // Protocol-specific validation
-      if (ctx.value.protocol === "acp") {
-        if (!ctx.value.acp?.agent_name) {
-          ctx.issues.push({
-            code: "custom",
-            message: "ACP remote agents require 'acp.agent_name' field",
-            path: ["acp", "agent_name"],
-            input: ctx.value,
-          });
-        }
-      } else if (ctx.value.protocol === "mcp") {
-        // MCP doesn't require specific fields beyond endpoint
-        // Optional tools filtering can be configured via mcp.allowed_tools/denied_tools
-      }
-
-      // Authentication validation
-      if (ctx.value.auth) {
-        const authType = ctx.value.auth.type;
-        if (authType === "bearer" && !ctx.value.auth.token_env && !ctx.value.auth.token) {
-          ctx.issues.push({
-            code: "custom",
-            message: "Bearer auth requires either 'token_env' or 'token' field",
-            path: ["auth"],
-            input: ctx.value,
-          });
-        }
-        if (authType === "api_key" && !ctx.value.auth.api_key_env && !ctx.value.auth.token_env) {
-          ctx.issues.push({
-            code: "custom",
-            message: "API key auth requires either 'api_key_env' or 'token_env' field",
-            path: ["auth"],
-            input: ctx.value,
-          });
-        }
-      }
+    if (data.type === "tempest") {
+      return !!(data.agent && data.version);
+    } else if (data.type === "llm") {
+      return !!data.model;
+    } else if (data.type === "remote") {
+      return !!(data.endpoint && data.protocol);
     }
+    return true;
+  }, {
+    message: "Agent configuration validation failed"
   });
 
 // Job execution strategy schema
@@ -273,7 +194,7 @@ const JobExecutionSchema = z.object({
 // Trigger specification schema for job-owns-relationship
 const TriggerSpecificationSchema = z.object({
   signal: z.string(), // Signal name this job listens to
-  condition: z.string().optional(), // Optional condition for triggering
+  condition: z.union([z.string(), z.record(z.string(), z.any())]).optional(), // Optional condition for triggering (string or JSONLogic object)
 });
 
 // Job specification schema for top-level jobs section
@@ -282,7 +203,31 @@ const JobSpecificationSchema = z.object({
   description: z.string().optional(),
   task_template: z.string().optional(), // Optional task template for clearer agent instructions
   triggers: z.array(TriggerSpecificationSchema).optional(), // NEW: Jobs define their signal triggers
-  execution: JobExecutionSchema,
+  session_prompts: z.object({
+    planning: z.string().optional(),
+    evaluation: z.string().optional(),
+  }).optional(),
+  execution: JobExecutionSchema.extend({
+    context: z.object({
+      filesystem: z.object({
+        patterns: z.array(z.string()),
+        base_path: z.string().optional(),
+        max_file_size: z.number().optional(),
+        include_content: z.boolean().optional(),
+      }).optional(),
+    }).catchall(z.any()).optional(),
+  }),
+  success_criteria: z.record(z.string(), z.any()).optional(),
+  error_handling: z.object({
+    max_retries: z.number().optional(),
+    retry_delay_seconds: z.number().optional(),
+    timeout_seconds: z.number().optional(),
+  }).optional(),
+  resources: z.object({
+    estimated_duration_seconds: z.number().optional(),
+    max_memory_mb: z.number().optional(),
+    required_capabilities: z.array(z.string()).optional(),
+  }).optional(),
 });
 
 const WorkspaceSignalConfigSchema = z.object({
@@ -308,12 +253,13 @@ const WorkspaceSignalConfigSchema = z.object({
 const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
   workspace: z.object({
-    id: z.uuid("Workspace ID must be a valid UUID"),
+    id: z.string().uuid("Workspace ID must be a valid UUID"),
     name: z.string().min(1, "Workspace name cannot be empty"),
     description: z.string(),
   }),
+  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(), // MCP servers configuration
   agents: z.record(z.string(), WorkspaceAgentConfigSchema),
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // NEW: Top-level jobs section
+  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // Top-level jobs section
   signals: z.record(z.string(), WorkspaceSignalConfigSchema),
 });
 
@@ -372,6 +318,8 @@ export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;
 export type NewWorkspaceConfig = z.infer<typeof NewWorkspaceConfigSchema>;
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
+export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
+export type TriggerSpecification = z.infer<typeof TriggerSpecificationSchema>;
 
 // Merged configuration that combines both
 export interface MergedConfig {
@@ -398,14 +346,32 @@ export class ConfigLoader {
 
   constructor(workspaceDir: string = ".") {
     this.workspaceDir = workspaceDir;
-    // Get git root directory to find atlas.yml
-    const gitRoot = new Deno.Command("git", {
-      args: ["rev-parse", "--show-toplevel"],
-      stdout: "piped",
-    }).outputSync();
-    const rootDir = new TextDecoder().decode(gitRoot.stdout).trim();
-
-    this.atlasConfigPath = join(rootDir, "atlas.yml");
+    
+    // Check for workspace-local atlas.yml first, then fall back to git root
+    const workspaceAtlasPath = join(workspaceDir, "atlas.yml");
+    
+    try {
+      // Try to access workspace-local atlas.yml
+      Deno.statSync(workspaceAtlasPath);
+      this.atlasConfigPath = workspaceAtlasPath;
+      console.log(`Using workspace-local atlas.yml: ${workspaceAtlasPath}`);
+    } catch {
+      // Fall back to git root atlas.yml
+      try {
+        const gitRoot = new Deno.Command("git", {
+          args: ["rev-parse", "--show-toplevel"],
+          stdout: "piped",
+        }).outputSync();
+        const rootDir = new TextDecoder().decode(gitRoot.stdout).trim();
+        this.atlasConfigPath = join(rootDir, "atlas.yml");
+        console.log(`Using git root atlas.yml: ${this.atlasConfigPath}`);
+      } catch {
+        // If we can't find git root, use workspace directory as fallback
+        this.atlasConfigPath = workspaceAtlasPath;
+        console.log(`Git root not found, will use/create workspace atlas.yml: ${workspaceAtlasPath}`);
+      }
+    }
+    
     this.workspaceConfigPath = join(workspaceDir, "workspace.yml");
   }
 
@@ -510,13 +476,74 @@ export class ConfigLoader {
           execution: {
             strategy: jobSpec.execution.strategy,
             agents: normalizedAgents,
+            context: jobSpec.execution.context, // Include context
           },
+          session_prompts: jobSpec.session_prompts, // Include session prompts
+          success_criteria: jobSpec.success_criteria,
+          error_handling: jobSpec.error_handling,
+          resources: jobSpec.resources,
         };
 
         jobs[jobName] = normalizedJobSpec;
       }
     }
 
+    // Load jobs from separate job files in jobs/ directory
+    const jobsFromFiles = this.loadJobsFromFiles();
+    Object.assign(jobs, jobsFromFiles);
+
+    return jobs;
+  }
+
+  private loadJobsFromFiles(): Record<string, JobSpecification> {
+    const jobs: Record<string, JobSpecification> = {};
+    
+    try {
+      const jobsPath = `${this.workspaceDir}/jobs`;
+      
+      // Check if jobs directory exists
+      const stat = Deno.statSync(jobsPath);
+      if (!stat.isDirectory) {
+        return jobs;
+      }
+
+      // Read all .yml and .yaml files in jobs directory
+      for (const dirEntry of Deno.readDirSync(jobsPath)) {
+        if (dirEntry.isFile && (dirEntry.name.endsWith('.yml') || dirEntry.name.endsWith('.yaml'))) {
+          try {
+            const jobFilePath = `${jobsPath}/${dirEntry.name}`;
+            const jobContent = Deno.readTextFileSync(jobFilePath);
+            const jobSpec = parseYaml(jobContent) as JobSpecification;
+            
+            // Use filename (without extension) as job name if not specified
+            const jobName = jobSpec.name || dirEntry.name.replace(/\.(yml|yaml)$/, '');
+            
+            // Normalize agents if needed
+            if (jobSpec.execution?.agents) {
+              jobSpec.execution.agents = jobSpec.execution.agents.map((agent) => {
+                if (typeof agent === "string") {
+                  return { id: agent };
+                }
+                return agent;
+              });
+            }
+            
+            jobs[jobName] = {
+              ...jobSpec,
+              name: jobName,
+            };
+            
+            console.log(`Loaded job spec: ${jobName} from ${dirEntry.name}`);
+          } catch (error) {
+            console.error(`Failed to load job file ${dirEntry.name}: ${error}`);
+          }
+        }
+      }
+    } catch (error) {
+      // Jobs directory doesn't exist or can't be read - that's fine
+      console.log(`Jobs directory not found or accessible: ${error}`);
+    }
+    
     return jobs;
   }
 
@@ -525,6 +552,33 @@ export class ConfigLoader {
     workspaceConfig: NewWorkspaceConfig,
     jobs: Record<string, JobSpecification>,
   ): void {
+    // Validate MCP server references in agents
+    for (const [agentId, agentConfig] of Object.entries(workspaceConfig.agents)) {
+      if (agentConfig.mcp_servers && agentConfig.mcp_servers.length > 0) {
+        // Ensure agent is LLM type if using MCP servers
+        if (agentConfig.type !== "llm") {
+          throw new ConfigValidationError(
+            `Agent '${agentId}' has mcp_servers configured but is not an LLM agent. Only LLM agents support MCP servers.`,
+            "workspace.yml",
+            `agents.${agentId}.mcp_servers`,
+            agentConfig.mcp_servers,
+          );
+        }
+
+        // Validate each MCP server reference exists
+        for (const mcpServerId of agentConfig.mcp_servers) {
+          if (!workspaceConfig.mcp_servers?.[mcpServerId]) {
+            throw new ConfigValidationError(
+              `Agent '${agentId}' references MCP server '${mcpServerId}' which is not defined in mcp_servers section`,
+              "workspace.yml",
+              `agents.${agentId}.mcp_servers`,
+              mcpServerId,
+            );
+          }
+        }
+      }
+    }
+
     // Cross-validate job trigger references and agent availability
     for (const [jobName, jobSpec] of Object.entries(jobs)) {
       // Validate that agents referenced in job exist in workspace or atlas
@@ -659,6 +713,9 @@ export class ConfigLoader {
           purpose: workspaceAgentConfig.purpose,
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
+          mcp_servers: workspaceAgentConfig.mcp_servers,
+          max_steps: workspaceAgentConfig.max_steps,
+          tool_choice: workspaceAgentConfig.tool_choice,
         } as LLMAgentConfig;
 
       case "remote":
