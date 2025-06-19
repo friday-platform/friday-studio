@@ -161,18 +161,127 @@ const WorkspaceAgentConfigSchema = z
     // Monitoring configuration
     monitoring: MonitoringConfigSchema.optional(),
   })
-  .refine((data) => {
+  .superRefine((value, ctx) => {
     // Type-specific validation with detailed error messages
-    if (data.type === "tempest") {
-      return !!(data.agent && data.version);
-    } else if (data.type === "llm") {
-      return !!data.model;
-    } else if (data.type === "remote") {
-      return !!(data.endpoint && data.protocol);
+    if (value.type === "tempest") {
+      if (!value.agent) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Tempest agents require 'agent' field",
+          path: ["agent"],
+          input: value,
+        });
+      }
+      if (!value.version) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Tempest agents require 'version' field",
+          path: ["version"],
+          input: value,
+        });
+      }
+    } else if (value.type === "llm") {
+      if (!value.model) {
+        ctx.addIssue({
+          code: "custom",
+          message: "LLM agents require 'model' field",
+          path: ["model"],
+          input: value,
+        });
+      }
+
+      // Validate provider and model combination
+      const provider = value.provider || "anthropic";
+      const model = value.model;
+
+      const supportedModels = {
+        anthropic: [
+          "claude-3-5-sonnet-20241022",
+          "claude-3-5-haiku-20241022",
+          "claude-3-haiku-20240307",
+          "claude-3-sonnet-20240229",
+          "claude-3-opus-20240229",
+        ],
+        openai: [
+          "gpt-4o",
+          "gpt-4o-mini",
+          "gpt-4-turbo",
+          "gpt-4",
+          "gpt-3.5-turbo",
+        ],
+        google: [
+          "gemini-1.5-pro",
+          "gemini-1.5-flash",
+          "gemini-pro",
+        ],
+      };
+
+      if (model && !supportedModels[provider as keyof typeof supportedModels]?.includes(model)) {
+        ctx.addIssue({
+          code: "custom",
+          message:
+            `Model '${model}' is not supported by provider '${provider}'. Supported models: ${
+              supportedModels[provider as keyof typeof supportedModels]?.join(", ") || "none"
+            }`,
+          path: ["model"],
+          input: value,
+        });
+      }
+    } else if (value.type === "remote") {
+      if (!value.endpoint) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Remote agents require 'endpoint' field",
+          path: ["endpoint"],
+          input: value,
+        });
+      }
+
+      if (!value.protocol) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Remote agents require 'protocol' field (acp, a2a, custom, or mcp)",
+          path: ["protocol"],
+          input: value,
+        });
+      }
+
+      // Protocol-specific validation
+      if (value.protocol === "acp") {
+        if (!value.acp?.agent_name) {
+          ctx.addIssue({
+            code: "custom",
+            message: "ACP remote agents require 'acp.agent_name' field",
+            path: ["acp", "agent_name"],
+            input: value,
+          });
+        }
+      } else if (value.protocol === "mcp") {
+        // MCP doesn't require specific fields beyond endpoint
+        // Optional tools filtering can be configured via mcp.allowed_tools/denied_tools
+      }
+
+      // Authentication validation
+      if (value.auth) {
+        const authType = value.auth.type;
+        if (authType === "bearer" && !value.auth.token_env && !value.auth.token) {
+          ctx.addIssue({
+            code: "custom",
+            message: "Bearer auth requires either 'token_env' or 'token' field",
+            path: ["auth"],
+            input: value,
+          });
+        }
+        if (authType === "api_key" && !value.auth.api_key_env && !value.auth.token_env) {
+          ctx.addIssue({
+            code: "custom",
+            message: "API key auth requires either 'api_key_env' or 'token_env' field",
+            path: ["auth"],
+            input: value,
+          });
+        }
+      }
     }
-    return true;
-  }, {
-    message: "Agent configuration validation failed"
   });
 
 // Job execution strategy schema

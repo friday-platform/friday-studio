@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
+import { FullScreenBox } from "fullscreen-ink";
 import {
   getWorkspaceStatus,
   scanAvailableWorkspaces,
@@ -7,6 +8,7 @@ import {
   WorkspaceStatus,
 } from "./workspace.tsx";
 import DefineCommand from "./define.tsx";
+import { Select, TextInput } from "@inkjs/ui";
 
 export default function InteractiveCommand() {
   const [input, setInput] = useState("");
@@ -16,8 +18,23 @@ export default function InteractiveCommand() {
   const [workspaces, setWorkspaces] = useState<any[]>([]);
   const [selectedWorkspaceIndex, setSelectedWorkspaceIndex] = useState(0);
   const [inputFocused, setInputFocused] = useState(true);
-  const [selectorAction, setSelectorAction] = useState<"describe" | "status">("describe");
+  const [selectorAction, setSelectorAction] = useState<"describe" | "status">(
+    "describe"
+  );
   const { exit } = useApp();
+
+  // Load available workspaces on mount
+  useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        const availableWorkspaces = await scanAvailableWorkspaces();
+        setWorkspaces(availableWorkspaces);
+      } catch (error) {
+        console.error("Failed to load workspaces:", error);
+      }
+    };
+    loadWorkspaces();
+  }, []);
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
@@ -25,9 +42,13 @@ export default function InteractiveCommand() {
     } else if (showWorkspaceSelector && !inputFocused) {
       // Handle workspace selector navigation when input is not focused
       if (key.upArrow || inputChar === "k") {
-        setSelectedWorkspaceIndex((prev) => prev > 0 ? prev - 1 : workspaces.length - 1);
+        setSelectedWorkspaceIndex((prev) =>
+          prev > 0 ? prev - 1 : workspaces.length - 1
+        );
       } else if (key.downArrow || inputChar === "j") {
-        setSelectedWorkspaceIndex((prev) => prev < workspaces.length - 1 ? prev + 1 : 0);
+        setSelectedWorkspaceIndex((prev) =>
+          prev < workspaces.length - 1 ? prev + 1 : 0
+        );
       } else if (key.return || inputChar === " ") {
         // Select workspace and execute the appropriate command
         const selectedWorkspace = workspaces[selectedWorkspaceIndex];
@@ -220,8 +241,8 @@ export default function InteractiveCommand() {
         setOutput((prev) => [
           ...prev,
           <Text color="red">
-            Unknown command:{" "}
-            {args[0]}. Available commands: /list, /describe, /status, /clear, /commands, /exit
+            Unknown command: {args[0]}. Available commands: /list, /describe,
+            /status, /clear, /commands, /exit
           </Text>,
           <Newline />,
         ]);
@@ -351,64 +372,60 @@ export default function InteractiveCommand() {
   };
 
   return (
-    <Box flexDirection="column">
-      {/* Initial welcome message and commands */}
-      <Box>
-        <Text bold color="cyan">
-          Atlas - AI Agent Orchestration Platform
+    <FullScreenBox
+      flexDirection="column"
+      justifyContent="center"
+      alignItems="center"
+    >
+      {/* ASCII Art */}
+      <Box
+        flexDirection="column"
+        alignItems="center"
+        marginBottom={2}
+        flexShrink={0}
+      >
+        <Text color="blue">
+          {`
+                ••                 
+          ••••••••••••             
+           ••••••••••••            
+             ••••••••••            
+             •••••••••••           
+            •••••••••••            
+          ••••••••••••             
+                ••     ••••••••••  
+                ••   •••••••••     
+    ••••••••••••••••••••••••••     
+     •••••• •••• •••• ••••••       
+      •••••••••••••••••••••        
+         •••••••••••••••            `}
         </Text>
       </Box>
-      <Box>
-        <Text color="gray">
-          Transform software delivery through human/AI collaboration
+
+      {/* Title and subtitle */}
+      <Box
+        flexDirection="column"
+        alignItems="center"
+        marginBottom={3}
+        flexShrink={0}
+      >
+        <Text bold color="whiteBright">
+          Atlas
+        </Text>
+        <Text color="whiteBright" dimColor>
+          Made by Tempest
         </Text>
       </Box>
 
-      <Newline />
+      {/* Command output */}
+      {/* <Box flexDirection="column" marginBottom={1}>
+        {output.map((item, index) => (
+          <Box key={index}>{item}</Box>
+        ))}
+      </Box> */}
 
-      <Box>
-        <Text bold color="yellow">
-          Interactive Mode - Type commands below:
-        </Text>
-      </Box>
-
-      <Newline />
-
-      <Box flexDirection="column" marginLeft={2}>
-        <Box>
-          <Text color="cyan">/list</Text>
-          <Text color="gray">List all available workspaces with status</Text>
-        </Box>
-        <Box>
-          <Text color="cyan">/describe</Text>
-          <Text color="gray">Show workspace definition and agents</Text>
-        </Box>
-        <Box>
-          <Text color="cyan">/status</Text>
-          <Text color="gray">Show workspace status and server info</Text>
-        </Box>
-        <Box>
-          <Text color="cyan">/clear</Text>
-          <Text color="gray">Clear output</Text>
-        </Box>
-        <Box>
-          <Text color="cyan">/commands</Text>
-          <Text color="gray">Show this command list</Text>
-        </Box>
-        <Box>
-          <Text color="cyan">/exit</Text>
-          <Text color="gray">Exit interactive mode</Text>
-        </Box>
-      </Box>
-
-      <Newline />
-
-      <Box flexDirection="column" marginBottom={1}>
-        {output.map((item, index) => <Box key={index}>{item}</Box>)}
-      </Box>
-
-      {/* Workspace selector or command output */}
-      {showWorkspaceSelector && (
+      {/* Workspace selector */}
+      {/* {showWorkspaceSelector && (
         <Box flexDirection="column" marginBottom={1}>
           <Box>
             <Text bold color="yellow">
@@ -422,7 +439,11 @@ export default function InteractiveCommand() {
             <Box key={index} marginLeft={2}>
               <Text>
                 <Text
-                  color={index === selectedWorkspaceIndex && !inputFocused ? "green" : "gray"}
+                  color={
+                    index === selectedWorkspaceIndex && !inputFocused
+                      ? "green"
+                      : "gray"
+                  }
                 >
                   {index === selectedWorkspaceIndex ? "▶ " : "  "}
                 </Text>
@@ -438,34 +459,57 @@ export default function InteractiveCommand() {
           <Newline />
           <Box marginLeft={2}>
             <Text color="gray">
-              Use ↑/↓ to navigate, Enter/Space to select, Tab to focus input, Esc to blur input
+              Use ↑/↓ to navigate, Enter/Space to select, Tab to focus input,
+              Esc to blur input
             </Text>
           </Box>
         </Box>
-      )}
+      )} */}
 
-      {/* Input prompt */}
+      {/* Centered input prompt */}
       <Box
         borderStyle="round"
-        borderColor={inputFocused ? "green" : "gray"}
+        borderColor="gray"
         paddingX={1}
+        width={60}
+        height={3}
+        flexShrink={0}
       >
-        <Text>
-          {"> "}
-          {input}
-          <Text color="white">{inputFocused ? "█" : " "}</Text>
-        </Text>
+        <TextInput
+          suggestions={["/list", "/define", "/init", "/help"]}
+          placeholder="type / for commands"
+          onSubmit={() => {}}
+        />
       </Box>
 
-      <Newline />
-
-      <Box>
-        <Text color="gray" dimColor>
-          {showWorkspaceSelector && !inputFocused
-            ? "Use Tab to focus input • Ctrl+C to exit"
-            : "Type commands above or 'exit' to quit • Ctrl+C to exit"}
-        </Text>
+      <Box
+        flexDirection="column"
+        height={workspaces.length + 2}
+        width={60}
+        marginTop={1}
+        flexShrink={0}
+      >
+        <Box marginBottom={1}>
+          <Text bold>&nbsp;&nbsp;Available Workspaces</Text>
+        </Box>
+        <Select
+          visibleOptionCount={workspaces.length}
+          options={workspaces.map((workspace) => ({
+            label: workspace.name,
+            value: workspace.id,
+          }))}
+          onChange={(selectedWorkspaceId) => {
+            // Handle workspace selection
+            const selectedWorkspace = workspaces.find(
+              (w) => w.id === selectedWorkspaceId
+            );
+            if (selectedWorkspace) {
+              console.log("Selected workspace:", selectedWorkspace);
+              // You can add navigation logic here
+            }
+          }}
+        />
       </Box>
-    </Box>
+    </FullScreenBox>
   );
 }
