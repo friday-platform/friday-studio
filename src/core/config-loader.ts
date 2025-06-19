@@ -451,14 +451,32 @@ export class ConfigLoader {
 
   constructor(workspaceDir: string = ".") {
     this.workspaceDir = workspaceDir;
-    // Get git root directory to find atlas.yml
-    const gitRoot = new Deno.Command("git", {
-      args: ["rev-parse", "--show-toplevel"],
-      stdout: "piped",
-    }).outputSync();
-    const rootDir = new TextDecoder().decode(gitRoot.stdout).trim();
-
-    this.atlasConfigPath = join(rootDir, "atlas.yml");
+    
+    // Check for workspace-local atlas.yml first, then fall back to git root
+    const workspaceAtlasPath = join(workspaceDir, "atlas.yml");
+    
+    try {
+      // Try to access workspace-local atlas.yml
+      Deno.statSync(workspaceAtlasPath);
+      this.atlasConfigPath = workspaceAtlasPath;
+      console.log(`Using workspace-local atlas.yml: ${workspaceAtlasPath}`);
+    } catch {
+      // Fall back to git root atlas.yml
+      try {
+        const gitRoot = new Deno.Command("git", {
+          args: ["rev-parse", "--show-toplevel"],
+          stdout: "piped",
+        }).outputSync();
+        const rootDir = new TextDecoder().decode(gitRoot.stdout).trim();
+        this.atlasConfigPath = join(rootDir, "atlas.yml");
+        console.log(`Using git root atlas.yml: ${this.atlasConfigPath}`);
+      } catch {
+        // If we can't find git root, use workspace directory as fallback
+        this.atlasConfigPath = workspaceAtlasPath;
+        console.log(`Git root not found, will use/create workspace atlas.yml: ${workspaceAtlasPath}`);
+      }
+    }
+    
     this.workspaceConfigPath = join(workspaceDir, "workspace.yml");
   }
 
