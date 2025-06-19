@@ -27,8 +27,30 @@ export default function InteractiveCommand() {
 
   // Calculate responsive dimensions based on terminal size
   const terminalWidth = stdout.columns || 80;
-  const terminalHeight = stdout.rows || 24;
+  const actualTerminalHeight = stdout.rows || 24;
   const contentWidth = Math.min(80, Math.floor(terminalWidth * 0.8));
+
+  // Calculate fixed content heights
+  const asciiArtHeight = 14; // ASCII ship art lines
+  const titleHeight = 3; // Title + subtitle + spacing
+  const inputHeight = 3; // Input box height
+  const workspaceHeaderHeight = 1; // "Available Workspaces" header
+  const workspaceListHeight = Math.min(workspaces.length, 10); // Max 10 visible workspaces
+  const spacingHeight = 8; // Margins and spacing around elements
+
+  const requiredContentHeight = asciiArtHeight +
+    titleHeight +
+    inputHeight +
+    workspaceHeaderHeight +
+    workspaceListHeight +
+    spacingHeight;
+
+  // Determine layout strategy based on content vs terminal size
+  const contentExceedsScreen = requiredContentHeight > actualTerminalHeight;
+  const terminalHeight = contentExceedsScreen
+    ? requiredContentHeight
+    : Math.max(35, actualTerminalHeight);
+
   const availableHeight = Math.max(10, terminalHeight - 10); // Reserve space for title and margins
 
   // Listen for terminal resize events - try multiple approaches
@@ -66,11 +88,7 @@ export default function InteractiveCommand() {
       return;
     }
 
-    // Dismiss alert on any key press when alert is visible
-    if (alertVisible) {
-      setAlertVisible(false);
-      return;
-    }
+    // Alert dismissal is now handled by ErrorAlert component via onDismiss callback
 
     // Enable select mode when down arrow or tab is pressed
     if ((key.downArrow || key.tab) && inputFocused && !selectFocused) {
@@ -90,6 +108,13 @@ export default function InteractiveCommand() {
   const showAlert = (message: string) => {
     setAlertMessage(message);
     setAlertVisible(true);
+  };
+
+  const handleAlertDismiss = () => {
+    setAlertVisible(false);
+    // Re-focus text input after dismissing alert
+    setInputFocused(true);
+    setSelectFocused(false);
   };
 
   const executeCommand = async (command: string) => {
@@ -382,13 +407,13 @@ export default function InteractiveCommand() {
               executeCommand(value.trim());
             }
           }}
-          isDisabled={!inputFocused}
+          isDisabled={!inputFocused || alertVisible}
         />
       </Box>
 
       <Box
         flexDirection="column"
-        height={Math.min(workspaces.length + 2, Math.floor(availableHeight * 0.4))}
+        height={workspaceListHeight + 2} // +2 for header and spacing
         width={contentWidth}
         marginTop={1}
         flexShrink={0}
@@ -397,7 +422,7 @@ export default function InteractiveCommand() {
           <Text bold>&nbsp;&nbsp;Available Workspaces</Text>
         </Box>
         <Select
-          visibleOptionCount={workspaces.length}
+          visibleOptionCount={workspaceListHeight}
           options={workspaces.map((workspace) => ({
             label: workspace.name,
             value: workspace.id,
@@ -444,7 +469,11 @@ export default function InteractiveCommand() {
       )}
 
       {/* ErrorAlert must be last for proper absolute positioning overlay */}
-      <ErrorAlert message={alertMessage} visible={alertVisible} />
+      <ErrorAlert
+        message={alertMessage}
+        visible={alertVisible}
+        onDismiss={handleAlertDismiss}
+      />
     </Box>
   );
 }
