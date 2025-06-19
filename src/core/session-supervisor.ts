@@ -7,10 +7,8 @@ import { FactExtractor } from "./memory/fact-extractor.ts";
 import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
-import type { TriggerSpecification } from "./config-loader.ts";
 import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
 import { SupervisionLevel } from "./caching/supervision-cache.ts";
-import { getSupervisionConfig } from "./supervision-levels.ts";
 import {
   type StreamingMemoryConfig,
   StreamingMemoryManager,
@@ -842,7 +840,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     if (this.sessionContext?.payload && !agentSpec.prompt && !jobSpec.task_template) {
       // Note: This will be async in practice, but for now we'll start the async operation
       // and fall back to the basic approach to maintain compatibility
-      this.generateIntelligentTaskForAgent(agentSpec, jobSpec).catch(error => {
+      this.generateIntelligentTaskForAgent(agentSpec, jobSpec).catch((error) => {
         this.log(`Intelligent task preparation failed: ${error}`, "warn");
       });
     }
@@ -868,7 +866,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   // Helper method for async intelligent task generation (for future enhancement)
   private async generateIntelligentTaskForAgent(
     agentSpec: JobAgentSpec,
-    jobSpec: JobSpecification
+    jobSpec: JobSpecification,
   ): Promise<string> {
     if (!this.sessionContext) {
       return this.buildAgentTask(agentSpec, jobSpec);
@@ -876,10 +874,10 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
     try {
       return await this.prepareTaskForAgent(
-        agentSpec, 
-        jobSpec, 
-        this.sessionContext.payload, 
-        this.sessionContext
+        agentSpec,
+        jobSpec,
+        this.sessionContext.payload,
+        this.sessionContext,
       );
     } catch (error) {
       this.log(`Intelligent task preparation failed: ${error}`, "warn");
@@ -892,24 +890,24 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     agentSpec: JobAgentSpec,
     jobSpec: JobSpecification,
     rawSignalData: any,
-    sessionContext: SessionContext
+    sessionContext: SessionContext,
   ): Promise<string> {
     // Priority 1: Use explicit agent prompt if provided
     if (agentSpec.prompt) {
       return agentSpec.prompt;
     }
 
-    // Priority 2: Use job's task template if provided  
+    // Priority 2: Use job's task template if provided
     if (jobSpec.task_template) {
       return jobSpec.task_template;
     }
 
     // Priority 3: Ask supervisor to intelligently prepare the task
     return await this.generateIntelligentTaskPrompt(
-      agentSpec, 
-      jobSpec, 
-      rawSignalData, 
-      sessionContext
+      agentSpec,
+      jobSpec,
+      rawSignalData,
+      sessionContext,
     );
   }
 
@@ -917,70 +915,192 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     agentSpec: JobAgentSpec,
     jobSpec: JobSpecification,
     rawSignalData: any,
-    sessionContext: SessionContext
+    sessionContext: SessionContext,
   ): Promise<string> {
+    const agent = sessionContext.availableAgents?.find((a) => a.id === agentSpec.id);
+    const agentType = agent?.type || "unknown";
+
+    // Extract event details for more specific task generation
+    const eventDetails = this.extractEventDetails(rawSignalData);
+
     const preparationPrompt = `
-You are a SessionSupervisor preparing a clean, actionable task for an agent. Your job is to:
+You are an expert SessionSupervisor creating specific, actionable tasks for agents. Transform signal data into focused instructions.
 
-1. **Extract Important Information**: Identify key data from the raw signal
-2. **Remove Noise**: Filter out metadata, UUIDs, timestamps, and irrelevant fields
-3. **Identify Main Goal**: Determine what actually needs to be done
-4. **Create Clear Instructions**: Write specific, actionable task description
-
-## Context
-**Job**: ${jobSpec.name} - ${jobSpec.description}
-**Agent**: ${agentSpec.id} (Role: ${agentSpec.mode || 'primary'})
+## SIGNAL ANALYSIS
 **Signal Type**: ${sessionContext.signal.id}
+**Event Details**: ${eventDetails}
 
-## Raw Signal Data
-\`\`\`json
-${JSON.stringify(rawSignalData, null, 2)}
-\`\`\`
+**Raw Data Summary**:
+- Event Type: ${rawSignalData?.type || "Unknown"}
+- Resource: ${rawSignalData?.event?.involvedObject?.kind || "Unknown"}
+- Name: ${rawSignalData?.event?.name || "Unknown"}
+- Namespace: ${rawSignalData?.event?.namespace || "default"}
+- Reason: ${rawSignalData?.event?.reason || "Unknown"}
+- Message: ${rawSignalData?.event?.message || "No message"}
 
-## Agent Capabilities
+## AGENT CONTEXT
+**Target Agent**: ${agentSpec.id} (${agentType})
+**Job Purpose**: ${jobSpec.description}
+
+**Agent Capabilities**:
 ${this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)}
 
-## Instructions
-Create a clear, focused task description that:
-- Focuses on the core issue/request from the signal
-- Removes technical noise (IDs, timestamps, metadata)
-- Provides specific actions for this agent to take
-- Is self-contained and actionable
+## TASK REQUIREMENTS
+${this.getTaskRequirementsForAgentType(agentType, agentSpec.id)}
 
-**Return only the task description - no explanation needed.**
-`;
+## CRITICAL INSTRUCTIONS
+1. **BE SPECIFIC**: Use actual names, namespaces, and data from the event
+2. **BE ACTIONABLE**: Focus on what the agent should DO, not generic descriptions
+3. **BE RELEVANT**: Address the specific event type and context
+4. **AVOID REPETITION**: Don't repeat the same workspace knowledge in every task
+
+## OUTPUT FORMAT (Use this exact structure):
+
+**Immediate Action**: [Specific first step using actual event data]
+**Core Objective**: [Clear goal based on this specific event, not generic processing]
+**Specific Steps**: 
+1. [First concrete action with actual resource names]
+2. [Second action based on event type and context]
+3. [Third action if needed for completion]
+**Expected Outcome**: [Specific result for this event type]
+**Context**: [Key event details without noise or repeated workspace knowledge]
+
+Generate the task description now following the OUTPUT FORMAT exactly. Focus on THIS SPECIFIC EVENT, not generic Kubernetes processing:`;
 
     const cleanTask = await this.generateLLM(
       "claude-3-5-sonnet-20241022",
-      "You are an intelligent task preparation assistant.",
+      "You are an intelligent task preparation assistant focused on creating specific, actionable tasks.",
       preparationPrompt,
       true,
       {
         operation: "intelligent_task_preparation",
         agentId: agentSpec.id,
         jobName: jobSpec.name,
-        sessionId: sessionContext.sessionId
-      }
+        sessionId: sessionContext.sessionId,
+        eventType: rawSignalData?.event?.reason,
+        resourceName: rawSignalData?.event?.name,
+      },
     );
 
     this.log(`Prepared intelligent task for ${agentSpec.id}`, "info", {
       originalDataSize: JSON.stringify(rawSignalData).length,
       cleanTaskLength: cleanTask.length,
-      job: jobSpec.name
+      job: jobSpec.name,
+      eventType: rawSignalData?.event?.reason,
+      resourceName: rawSignalData?.event?.name,
     });
 
     return cleanTask.trim();
   }
 
+  // Helper method to extract key event details for task generation
+  private extractEventDetails(rawSignalData: any): string {
+    if (!rawSignalData?.event) {
+      return "No event details available";
+    }
+
+    const event = rawSignalData.event;
+    const details = [];
+
+    if (event.type === "Normal") {
+      details.push(`Normal operation: ${event.reason}`);
+    } else if (event.type === "Warning") {
+      details.push(`Warning detected: ${event.reason}`);
+    }
+
+    if (event.involvedObject) {
+      details.push(`${event.involvedObject.kind}: ${event.involvedObject.name}`);
+    }
+
+    if (event.message) {
+      details.push(
+        `Details: ${event.message.substring(0, 100)}${event.message.length > 100 ? "..." : ""}`,
+      );
+    }
+
+    return details.join(" | ");
+  }
+
+  // Helper method to provide agent-specific task requirements
+  private getTaskRequirementsForAgentType(agentType: string, agentId: string): string {
+    switch (agentType) {
+      case "remote":
+        return `For remote agents:
+- Execute specific operations based on the signal data
+- Analyze the event type and severity
+- Determine if the event requires immediate action or is informational
+- Use appropriate protocol-specific commands or API calls
+- Provide clear remediation steps if issues are detected
+- Include resource identifiers and specific error details
+- Consider cascading effects on related resources`;
+
+      case "llm":
+        return `For LLM agents:
+- Provide intelligent analysis of the signal data
+- Extract key insights and patterns
+- Generate human-readable explanations
+- Suggest optimal next steps or recommendations
+- Include reasoning behind any conclusions`;
+
+      case "tempest":
+        return `For Tempest agents:
+- Synthesize multiple data sources if available
+- Create structured output in the requested format
+- Focus on data transformation and aggregation
+- Ensure consistent formatting and quality`;
+
+      default:
+        return `For ${agentType} agents:
+- Execute tasks according to agent-specific capabilities
+- Provide clear, actionable results
+- Include relevant context and error handling`;
+    }
+  }
+
+  // Helper method to provide agent-type specific examples
+  private getTaskExamplesForAgentType(agentType: string): string {
+    switch (agentType) {
+      case "remote":
+        return `Example for resource events:
+**Immediate Action**: Analyze resource event based on signal data
+**Core Objective**: Verify the resource operation completed successfully
+**Specific Steps**: 
+1. Check resource status using appropriate commands
+2. Verify resource health and utilization metrics
+3. Monitor for any related error events
+**Expected Outcome**: Confirm normal operation or identify issues requiring attention
+**Context**: Resource event indicates state change requiring analysis`;
+
+      case "llm":
+        return `Example for analysis tasks:
+**Immediate Action**: Analyze system event patterns
+**Core Objective**: Identify trends in recent Kubernetes events
+**Specific Steps**:
+1. Categorize event types and frequencies
+2. Identify any anomalous patterns
+3. Provide recommendations for optimization
+**Expected Outcome**: Clear analysis report with actionable insights
+**Context**: Event data shows normal operation with occasional container restarts`;
+
+      default:
+        return `Example task structure:
+**Immediate Action**: Process incoming signal data
+**Core Objective**: Execute agent-specific operation
+**Specific Steps**: [Agent-appropriate actions]
+**Expected Outcome**: Successful task completion
+**Context**: [Relevant signal information]`;
+    }
+  }
+
   private getAgentCapabilitiesDescription(agentId: string, availableAgents?: any[]): string {
     if (!availableAgents) return "Unknown agent capabilities";
-    
-    const agent = availableAgents.find(a => a.id === agentId);
+
+    const agent = availableAgents.find((a) => a.id === agentId);
     if (!agent) return "Unknown agent capabilities";
 
     // Build context based on agent type and configuration
     let capabilities = `Agent Type: ${agent.type}\n`;
-    
+
     if (agent.type === "remote" && agent.config?.protocol === "acp") {
       capabilities += `- Operations via ACP protocol\n`;
       capabilities += `- Can execute remote commands\n`;
@@ -993,14 +1113,14 @@ Create a clear, focused task description that:
         capabilities += `- Computer interactions and automation\n`;
       }
     } else if (agent.type === "remote") {
-      capabilities += `- Remote operations via ${agent.config?.protocol || 'custom'} protocol\n`;
+      capabilities += `- Remote operations via ${agent.config?.protocol || "custom"} protocol\n`;
       capabilities += `- Handles external system interactions\n`;
     } else if (agent.type === "tempest") {
       capabilities += `- Specialized first-party agent\n`;
       capabilities += `- Pre-built functionality and tools\n`;
     }
 
-    capabilities += `Purpose: ${agent.purpose || 'General operations'}`;
+    capabilities += `Purpose: ${agent.purpose || "General operations"}`;
     return capabilities;
   }
 
@@ -2423,32 +2543,43 @@ Focus on creating a rich episodic memory that captures both the factual sequence
     }
 
     try {
-      // Extract key terms from task and input for relevance matching
-      const searchTerms = this.extractSearchTerms(task.task, input);
+      // Extract event-specific search terms with intelligent filtering
+      const searchTerms = this.extractEventSpecificSearchTerms(task.task, input);
+
+      // Only proceed if we have relevant search terms
+      if (searchTerms.length === 0) {
+        this.log("No relevant search terms found for semantic fact retrieval");
+        return [];
+      }
 
       const facts = [];
 
       // Query knowledge graph for each search term
-      for (const term of searchTerms.slice(0, 3)) { // Limit search terms to avoid too many queries
+      for (const term of searchTerms.slice(0, 3)) {
         const results = await this.knowledgeGraph.queryKnowledge({
           search: term,
-          minConfidence: 0.6,
-          limit: 4, // Get up to 4 facts per term
+          minConfidence: 0.7, // Higher confidence threshold
+          limit: 3, // Fewer facts per term to reduce noise
         });
 
         facts.push(...results.facts);
       }
 
-      // Remove duplicates and limit to 10 facts
-      const uniqueFacts = facts
+      // Filter facts for relevance and remove duplicates
+      const filteredFacts = this.filterSemanticFactsForRelevance(facts, input);
+
+      // Limit to 5 highly relevant facts maximum
+      const uniqueFacts = filteredFacts
         .filter((fact, index, self) => self.findIndex((f) => f.id === fact.id) === index)
-        .slice(0, 10);
+        .slice(0, 5);
+
+      this.log(`Retrieved ${uniqueFacts.length} relevant semantic facts for task`);
 
       return uniqueFacts.map((fact) => ({
         statement: fact.statement,
         confidence: fact.confidence,
         source: fact.source,
-        entities: fact.entities?.slice(0, 3) || [], // Limit entities for readability
+        entities: fact.entities?.slice(0, 2) || [], // Limit entities for readability
       }));
     } catch (error) {
       this.log(`Warning: Failed to retrieve semantic facts: ${error}`);
@@ -2457,33 +2588,189 @@ Focus on creating a rich episodic memory that captures both the factual sequence
   }
 
   // Extract search terms from task and input
-  private extractSearchTerms(taskDescription: string, input: any): string[] {
+  // Extract event-specific search terms focused on the actual resource/event
+  private extractEventSpecificSearchTerms(taskDescription: string, input: any): string[] {
     const terms = new Set<string>();
 
-    // Extract from task description
-    const taskWords = taskDescription.toLowerCase()
-      .split(/\s+/)
-      .filter((word) => word.length > 3 && !this.isStopWord(word));
-
-    // Extract from input if it's a string or has string properties
-    let inputText = "";
-    if (typeof input === "string") {
-      inputText = input;
-    } else if (input && typeof input === "object") {
-      inputText = JSON.stringify(input);
+    // First, extract specific resource identifiers from the event data
+    if (input && typeof input === "object") {
+      // Extract Kubernetes resource information
+      const event = input.event || input;
+      if (event) {
+        // Add resource type and name
+        if (event.involvedObject?.kind) {
+          terms.add(event.involvedObject.kind.toLowerCase());
+        }
+        if (event.involvedObject?.name) {
+          // Extract base name (remove generated suffixes)
+          const baseName = event.involvedObject.name.split("-")[0];
+          if (baseName && baseName.length > 2) {
+            terms.add(baseName.toLowerCase());
+          }
+        }
+        if (event.namespace && event.namespace !== "default") {
+          terms.add(event.namespace.toLowerCase());
+        }
+        // Add event reason as a key term
+        if (event.reason) {
+          terms.add(event.reason.toLowerCase());
+        }
+        // Add image name if this is an image-related event
+        if (event.message && event.message.includes("image")) {
+          const imageMatch = event.message.match(/image\s+["']?([^\s"']+)["']?/i);
+          if (imageMatch && imageMatch[1]) {
+            const imageName = imageMatch[1].split(":")[0]; // Remove tag
+            terms.add(imageName.toLowerCase());
+          }
+        }
+      }
     }
 
-    const inputWords = inputText.toLowerCase()
-      .split(/\s+/)
-      .filter((word) => word.length > 3 && !this.isStopWord(word));
+    // Only add task-based terms if we have specific resource terms
+    if (terms.size > 0) {
+      // Extract relevant technical terms from task (avoid Atlas internals)
+      const taskWords = taskDescription.toLowerCase()
+        .split(/\s+/)
+        .filter((word) =>
+          word.length > 3 &&
+          !this.isStopWord(word) &&
+          !this.isAtlasInternalTerm(word)
+        );
 
-    // Combine and prioritize
-    [...taskWords.slice(0, 3), ...inputWords.slice(0, 2)].forEach((word) => terms.add(word));
+      // Only add the most relevant task terms
+      taskWords.slice(0, 2).forEach((word) => terms.add(word));
+    }
 
-    return Array.from(terms).slice(0, 5); // Limit to 5 search terms
+    return Array.from(terms).slice(0, 4); // Limit to 4 specific terms
   }
 
-  // Simple stop word filter
+  // Filter out Atlas internal terminology that shouldn't influence fact retrieval
+  private isAtlasInternalTerm(word: string): boolean {
+    const atlasTerms = new Set([
+      "atlas",
+      "workspace",
+      "supervisor",
+      "agent",
+      "signal",
+      "processing",
+      "execution",
+      "session",
+      "configuration",
+      "system",
+      "failure",
+      "critical",
+      "events",
+      "remediation",
+      "automated",
+      "incident",
+      "response",
+    ]);
+    return atlasTerms.has(word.toLowerCase());
+  }
+
+  // Filter semantic facts to only include those relevant to the specific event
+  private filterSemanticFactsForRelevance(facts: any[], input: any): any[] {
+    if (!input || !input.event) {
+      return [];
+    }
+
+    const event = input.event;
+    const relevantFacts = [];
+
+    for (const fact of facts) {
+      // Skip facts about Atlas system internals
+      if (this.isAtlasInternalFact(fact.statement)) {
+        continue;
+      }
+
+      // Include facts that relate to the specific resource
+      if (this.isResourceRelevantFact(fact, event)) {
+        relevantFacts.push(fact);
+      }
+    }
+
+    return relevantFacts;
+  }
+
+  // Check if a fact is about Atlas internal systems (should be excluded)
+  private isAtlasInternalFact(statement: string): boolean {
+    const lowerStatement = statement.toLowerCase();
+    const internalKeywords = [
+      "workspace",
+      "atlas",
+      "supervisor",
+      "signal processing",
+      "agent execution",
+      "configuration gap",
+      "system failure",
+      "workspace configuration",
+    ];
+
+    return internalKeywords.some((keyword) => lowerStatement.includes(keyword));
+  }
+
+  // Check if a fact is relevant to the specific Kubernetes resource/event
+  private isResourceRelevantFact(fact: any, event: any): boolean {
+    const statement = fact.statement.toLowerCase();
+    const entities = fact.entities || [];
+
+    // Check if fact mentions the specific resource
+    if (event.involvedObject?.name) {
+      const baseName = event.involvedObject.name.split("-")[0];
+      if (statement.includes(baseName.toLowerCase())) {
+        return true;
+      }
+    }
+
+    // Check if fact mentions the resource type
+    if (event.involvedObject?.kind && statement.includes(event.involvedObject.kind.toLowerCase())) {
+      return true;
+    }
+
+    // Check if fact mentions the namespace (if not default)
+    if (event.namespace && event.namespace !== "default" && statement.includes(event.namespace)) {
+      return true;
+    }
+
+    // Check if fact relates to the event reason/type
+    if (event.reason && statement.includes(event.reason.toLowerCase())) {
+      return true;
+    }
+
+    // Check if fact relates to image name (for image-related events)
+    if (event.message && event.message.includes("image")) {
+      const imageMatch = event.message.match(/image\s+["']?([^\s"']+)["']?/i);
+      if (imageMatch && imageMatch[1]) {
+        const imageName = imageMatch[1].split(":")[0]; // Remove tag
+        if (statement.includes(imageName.toLowerCase())) {
+          return true;
+        }
+      }
+    }
+
+    // Check entities for resource relevance
+    if (
+      entities.some((entity: any) => {
+        const entityName = entity.name?.toLowerCase() || "";
+        return entityName.includes(
+          event.involvedObject?.name?.split("-")[0]?.toLowerCase() || "",
+        ) ||
+          entityName.includes(event.involvedObject?.kind?.toLowerCase() || "") ||
+          entityName.includes(event.reason?.toLowerCase() || "");
+      })
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private extractSearchTerms(taskDescription: string, input: any): string[] {
+    // Legacy method - redirect to new implementation
+    return this.extractEventSpecificSearchTerms(taskDescription, input);
+  }
+
+  // Enhanced stop word filter
   private isStopWord(word: string): boolean {
     const stopWords = new Set([
       "with",
@@ -2499,6 +2786,32 @@ Focus on creating a rich episodic memory that captures both the factual sequence
       "when",
       "where",
       "their",
+      "there",
+      "then",
+      "than",
+      "them",
+      "these",
+      "those",
+      "through",
+      "during",
+      "before",
+      "after",
+      "above",
+      "below",
+      "should",
+      "could",
+      "would",
+      "might",
+      "must",
+      "shall",
+      "execute",
+      "following",
+      "task",
+      "real",
+      "time",
+      "the",
+      "and",
+      "or",
     ]);
     return stopWords.has(word.toLowerCase());
   }
@@ -2720,8 +3033,7 @@ Overall Session Summary: ${
     // Add filesystem context section FIRST for analysis tasks
     if (filesystemContext) {
       enhancedPrompt += `\n\n## FILESYSTEM CONTEXT\n`;
-      enhancedPrompt +=
-        `You are analyzing the Atlas codebase. Here are the relevant files:\n\n`;
+      enhancedPrompt += `You are analyzing the Atlas codebase. Here are the relevant files:\n\n`;
       enhancedPrompt += filesystemContext;
       enhancedPrompt +=
         `\n**Please provide specific analysis based on this actual Atlas codebase, not generic recommendations.**\n`;
