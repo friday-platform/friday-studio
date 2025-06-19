@@ -1,5 +1,8 @@
 version: "1.0"
 
+# Atlas MCP Test Workspace Configuration  
+# Testing MCP filesystem server integration
+
 platform:
   name: "Atlas"
   version: "1.0.0"
@@ -7,25 +10,82 @@ platform:
 # No workspace-specific agents (inherit from platform)
 agents: {}
 
-# Simple supervisor configuration for testing
+# Supervisor configuration for advanced analysis
 supervisors:
   workspace:
     model: "claude-3-5-sonnet-20241022"
+    memory: "workspace"
     prompts:
       system: |
-        You are a WorkspaceSupervisor for MCP testing.
-        Route signals to appropriate file operation workflows.
+        You are a WorkspaceSupervisor for MCP filesystem testing.
+        Route signals to appropriate file operation workflows using MCP tools.
         
   session:
     model: "claude-3-5-sonnet-20241022"
+    memory: "session"
     prompts:
       system: |
         You are a SessionSupervisor for MCP filesystem testing.
-        Coordinate file operations using the file-assistant agent.
+        Coordinate the file-assistant agent to perform filesystem operations.
         
   agent:
     model: "claude-3-5-sonnet-20241022"
+    memory: "agent"
     prompts:
       system: |
-        You are an AgentSupervisor for MCP agent execution.
+        You are an AgentSupervisor for MCP filesystem agents.
         Ensure safe file operations within the /tmp directory.
+
+# Memory configuration for codebase analysis
+memory:
+  # Default memory configuration
+  default:
+    enabled: true
+    storage: "coala-local"
+    cognitive_loop: true
+    retention:
+      max_age_days: 30
+      max_entries: 1000
+      cleanup_interval_hours: 24
+
+  # Agent-level memory for analysis patterns
+  agent:
+    enabled: true
+    scope: "agent"
+    include_in_context: true
+    context_limits:
+      relevant_memories: 20
+      past_successes: 10
+      past_failures: 10
+    memory_types:
+      contextual: { enabled: true, max_entries: 200 }
+      procedural: { enabled: true, max_entries: 100 }
+      episodic: { enabled: true, max_entries: 100 }
+
+  # Session-level memory for workflow coordination
+  session:
+    enabled: true
+    scope: "session"
+    include_in_context: true
+    context_limits:
+      relevant_memories: 30
+      past_successes: 15
+      past_failures: 15
+    memory_types:
+      contextual: { enabled: true, max_entries: 300 }
+      procedural: { enabled: true, max_entries: 150 }
+      episodic: { enabled: true, max_entries: 150 }
+
+  # Workspace-level memory for learning and improvement
+  workspace:
+    enabled: true
+    scope: "workspace"
+    include_in_context: false
+    context_limits:
+      relevant_memories: 50
+      past_successes: 25
+      past_failures: 25
+    memory_types:
+      contextual: { enabled: true, max_entries: 500 }
+      procedural: { enabled: true, max_entries: 250 }
+      episodic: { enabled: true, max_entries: 250 }

@@ -39,12 +39,12 @@ agents:
         
         When asked to perform file operations, use the available tools:
         - read_file: Read the contents of a file
-        - write_file: Write content to a file
+        - write_file: Write content to a file  
         - list_directory: List files in a directory
         
         Always be helpful and explain what you're doing.
 
-# Job for testing MCP functionality
+# Job for testing MCP functionality (inline job, no separate file)
 jobs:
   test-filesystem:
     name: "test-filesystem"
