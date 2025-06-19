@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "compilerOptions": {
-    "lib": ["deno.window", "deno.worker", "deno.unstable"],
-    "noImplicitAny": true,
-    "strict": true
+    "lib": ["deno.window", "deno.worker", "deno.unstable", "dom", "dom.iterable"],
+    "noImplicitAny": false,
+    "strict": false,
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
   },
   "unstable": ["broadcast-channel", "worker-options", "otel"],
   "tasks": {
@@ -37,6 +39,8 @@
     "openapi-fetch": "npm:openapi-fetch@^0.14.0",
     "openapi-typescript": "npm:openapi-typescript@^7.8.0",
     "react": "npm:react@^18.3.1",
+    "react/": "npm:react@^18.3.1/",
+    "@types/react": "npm:@types/react@^18.3.3",
     "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@^4.0.7",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",

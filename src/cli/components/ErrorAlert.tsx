@@ -1,4 +1,4 @@
-import React from "react";
+// No React import needed with react-jsx
 import { Box, Text, useInput } from "ink";
 
 interface ErrorAlertProps {
@@ -8,7 +8,7 @@ interface ErrorAlertProps {
 }
 
 export const ErrorAlert = ({ message, visible, onDismiss }: ErrorAlertProps) => {
-  useInput((inputChar, key) => {
+  useInput((_inputChar, _key) => {
     if (visible && onDismiss) {
       onDismiss();
     }

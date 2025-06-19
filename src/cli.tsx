@@ -2,7 +2,6 @@
 
 import React from "react";
 import { render } from "ink";
-import { withFullScreen } from "fullscreen-ink";
 import meow from "meow";
 import App from "./cli/app.tsx";
 
@@ -96,7 +95,7 @@ const cli = meow(
         shortFlag: "d",
       },
     },
-  },
+  }
 );
 
 // Parse command with shorthand support
@@ -203,5 +202,5 @@ render(
     subcommand,
     args,
     flags: cli.flags,
-  }),
+  })
 );

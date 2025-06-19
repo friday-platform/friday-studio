@@ -1598,6 +1598,7 @@
       "npm:@inkjs/ui@2",
       "npm:@modelcontextprotocol/sdk@^1.12.1",
       "npm:@opentelemetry/api@^1.9.0",
+      "npm:@types/react@^18.3.3",
       "npm:ai@^4.0.7",
       "npm:eventsource-parser@^3.0.1",
       "npm:fullscreen-ink@^0.0.2",

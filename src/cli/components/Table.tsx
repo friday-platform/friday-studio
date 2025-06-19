@@ -1,4 +1,4 @@
-import React from "react";
+// No React import needed with react-jsx
 import { Box, Text } from "ink";
 
 export interface Column {
@@ -11,7 +11,7 @@ export interface Column {
 
 export interface TableProps {
   columns: Column[];
-  data: any[];
+  data: Record<string, string | number>[];
   borderColor?: string;
 }
 
@@ -44,7 +44,7 @@ export function Table({ columns, data, borderColor = "gray" }: TableProps) {
   );
 
   // Render row
-  const renderRow = (row: any, rowIndex: number) => (
+  const renderRow = (row: Record<string, string | number>, rowIndex: number) => (
     <Box key={rowIndex}>
       {columns.map((col, i) => {
         const value = String(row[col.key] || "");

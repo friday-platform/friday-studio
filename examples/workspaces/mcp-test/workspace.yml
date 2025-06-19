@@ -1,7 +1,7 @@
 version: "1.0"
 
 workspace:
-  id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
+  id: "f47ac10b-58cc-4372-a567-0e02b2c3d480"
   name: "MCP Filesystem Test"
   description: "Testing local MCP filesystem server integration"
 
@@ -42,9 +42,9 @@ agents:
         - write_file: Write/overwrite files
         - list_directory: List directory contents
         - create_directory: Create new directories
-        
+
         Focus on direct file manipulation and editing tasks.
-  
+
   # Context analyzer with EMCP filesystem context (no MCP servers)
   context-analyzer:
     type: "llm"
@@ -59,9 +59,9 @@ agents:
         - Advanced glob pattern matching
         - Batch file analysis with security controls
         - Metadata operations and file relationships
-        
+
         Focus on understanding and analyzing the provided context to answer questions.
-  
+
   # Full-featured assistant using MCP tools + EMCP context
   full-assistant:
     type: "llm"
@@ -74,7 +74,7 @@ agents:
         You are a comprehensive file assistant with access to:
         1. Official MCP filesystem tools for interactive operations
         2. Atlas EMCP filesystem context for analysis
-        
+
         Use MCP tools for editing/creating files: read_file, write_file, list_directory
         Use the provided context for understanding file relationships and analysis.
         Always explain which approach you're using and why.

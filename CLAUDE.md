@@ -16,7 +16,7 @@ environment.
    `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks
    behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in
    SFW/work-appropriate language.
-1. Use `deno check` to statically verify code validity before running
+1. Use `deno check` to statically verify code validity before running (see Known Issues for React components)
 2. Run with required Deno flags:
    `--unstable-broadcast-channel --unstable-worker-options --allow-all --env-file`
 3. Ensure `ANTHROPIC_API_KEY` is set in .env file for LLM functionality
@@ -42,8 +42,31 @@ When working with Ink-based TUI components (src/cli/commands/tui.tsx and related
 3. **Absolute Positioned Components**: Components with `position="absolute"` (like ErrorAlert, 
    modals, overlays) MUST be placed at the very end of the JSX return statement, just before the 
    closing tag of the root container. This ensures proper z-index layering and overlay behavior.
-4. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
+4. **Component Declaration Pattern**: NEVER use `React.FC` type annotation. Instead, apply Props 
+   interface directly to the function parameters. Use `export const Component = ({ prop1, prop2 }: Props) => { ... }`
+   instead of `export const Component: React.FC<Props> = ({ prop1, prop2 }) => { ... }`
+5. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
    interface works correctly
+
+## Known Issues
+
+### React TypeScript Integration
+
+**Issue**: Deno's type checker cannot resolve React types from npm packages
+- **Error**: `Failed resolving types. [ERR_TYPES_NOT_FOUND] Could not find types for react`
+- **Workaround**: Use `--no-check` flag when running React components
+- **Impact**: Components work perfectly at runtime, only type checking is affected
+- **Resolution**: Run CLI with `deno run --allow-all --no-check` for React components
+
+### Development Commands
+
+```bash
+# For React components - use --no-check
+deno run --allow-all --no-check src/cli.tsx interactive
+
+# For non-React code - normal type checking works
+deno check src/core/workspace-server.ts
+```
 
 ## Code Quality Review Findings (June 2025)
 

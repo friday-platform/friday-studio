@@ -1,4 +1,4 @@
-import React from "react";
+// No React import needed with react-jsx
 import { Text } from "ink";
 
 export interface StatusBadgeProps {
