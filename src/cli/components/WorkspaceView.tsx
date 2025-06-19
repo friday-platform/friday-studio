@@ -1,10 +1,8 @@
 import { useEffect, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
-import {
-  loadWorkspaceConfig,
-  WorkspaceConfig,
-} from "../utils/workspace-loader.ts";
+import { loadWorkspaceConfig, WorkspaceConfig } from "../utils/workspace-loader.ts";
+import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
 
 interface WorkspaceViewProps {
   workspaceSlug: string;
@@ -45,13 +43,13 @@ export const WorkspaceView = ({
 
     if (key.escape) {
       const now = Date.now();
-      
+
       if (lastEscapeTime && (now - lastEscapeTime) <= 750) {
         // Double escape within 750ms - trigger onBack
         onBack();
         return;
       }
-      
+
       // First escape or too much time passed - just record the time
       setLastEscapeTime(now);
       return;
@@ -130,81 +128,15 @@ export const WorkspaceView = ({
 
       {/* Tab Content */}
       <Box flexDirection="column" flexGrow={1} width="100%">
-        {activeTab === 0 && (
-          <Box flexDirection="column" padding={2}>
-            <Box marginBottom={2}>
-              <Text color="gray">Workspace ID: {config.workspace.id}</Text>
-            </Box>
-            <Box marginBottom={2}>
-              <Text color="gray">Slug: {workspaceSlug}</Text>
-            </Box>
-            <Box marginTop={4}>
-              <Text color="gray">Press Escape twice to go back</Text>
-              <Text color="gray">Use Alt+← → to navigate tabs</Text>
-            </Box>
-          </Box>
-        )}
+        {activeTab === 0 && <DetailsTab config={config} workspaceSlug={workspaceSlug} />}
 
-        {activeTab === 1 && (
-          <Box flexDirection="column" padding={2}>
-            {config.agents ? (
-              Object.entries(config.agents).map(
-                ([agentId, agent]: [string, Record<string, unknown>]) => (
-                  <Box key={agentId} flexDirection="column" marginBottom={2}>
-                    <Text bold color="cyan">
-                      {agentId}
-                    </Text>
-                    <Text color="gray">Type: {agent.type || "Unknown"}</Text>
-                    {agent.model && (
-                      <Text color="gray">Model: {agent.model}</Text>
-                    )}
-                    {agent.purpose && (
-                      <Text color="yellow">{agent.purpose}</Text>
-                    )}
-                  </Box>
-                )
-              )
-            ) : (
-              <Text color="gray">No agents configured</Text>
-            )}
-          </Box>
-        )}
+        {activeTab === 1 && <AgentsTab config={config} />}
 
-        {activeTab === 2 && (
-          <Box flexDirection="column" padding={2}>
-            <Text color="gray">No active sessions</Text>
-          </Box>
-        )}
+        {activeTab === 2 && <SessionsTab config={config} />}
 
-        {activeTab === 3 && (
-          <Box flexDirection="column" padding={2}>
-            <Text color="gray">No logs available</Text>
-          </Box>
-        )}
+        {activeTab === 3 && <LogsTab config={config} />}
 
-        {activeTab === 4 && (
-          <Box flexDirection="column" padding={2}>
-            {config.signals ? (
-              Object.entries(config.signals).map(
-                ([signalId, signal]: [string, Record<string, unknown>]) => (
-                  <Box key={signalId} flexDirection="column" marginBottom={2}>
-                    <Text bold color="magenta">
-                      {signalId}
-                    </Text>
-                    <Text color="gray">
-                      Provider: {signal.provider || "Unknown"}
-                    </Text>
-                    {signal.description && (
-                      <Text color="yellow">{signal.description}</Text>
-                    )}
-                  </Box>
-                )
-              )
-            ) : (
-              <Text color="gray">No signals configured</Text>
-            )}
-          </Box>
-        )}
+        {activeTab === 4 && <SignalsTab config={config} />}
       </Box>
     </Box>
   );
