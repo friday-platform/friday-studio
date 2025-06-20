@@ -16,6 +16,7 @@ export const LogsTab = ({ config }: LogsTabProps) => {
   const [scrollOffset, setScrollOffset] = useState(0);
   const [selectedLevel, setSelectedLevel] = useState<string>("all");
   const [isPaused, setIsPaused] = useState(false);
+  const [activeToolbarItem, setActiveToolbarItem] = useState(0); // 0: levels, 1: pause/play, 2: clear
   const { stdout } = useStdout();
 
   // Get terminal height to calculate visible rows
@@ -83,13 +84,27 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
   // Handle toolbar interactions
   useInput((inputChar, key) => {
-    if (inputChar === "c") {
-      // Clear logs
-      setLogs([]);
-      setScrollOffset(0);
+    // Navigate between toolbar items
+    if (key.leftArrow || inputChar === "h") {
+      setActiveToolbarItem((prev) => Math.max(0, prev - 1));
+    } else if (key.rightArrow || inputChar === "l") {
+      setActiveToolbarItem((prev) => Math.min(2, prev + 1));
     } else if (inputChar === " ") {
-      // Toggle pause/play
-      setIsPaused(!isPaused);
+      // Handle space key based on active toolbar item
+      if (activeToolbarItem === 0) {
+        // Toggle through log levels
+        const levels = ["all", "info", "warning", "error"];
+        const currentIndex = levels.indexOf(selectedLevel);
+        const nextIndex = (currentIndex + 1) % levels.length;
+        setSelectedLevel(levels[nextIndex]);
+      } else if (activeToolbarItem === 1) {
+        // Toggle pause/play
+        setIsPaused(!isPaused);
+      } else if (activeToolbarItem === 2) {
+        // Clear logs
+        setLogs([]);
+        setScrollOffset(0);
+      }
     }
   });
 
@@ -115,7 +130,12 @@ export const LogsTab = ({ config }: LogsTabProps) => {
       <Box paddingX={2} paddingY={1} flexShrink={0} borderBottom borderColor="gray" borderDimColor>
         <Box flexDirection="row" gap={2}>
           {/* Log Level Segment Controller */}
-          <Box flexDirection="row" gap={1}>
+          <Box 
+            flexDirection="row" 
+            gap={1}
+            borderStyle={activeToolbarItem === 0 ? "round" : undefined}
+            paddingX={activeToolbarItem === 0 ? 1 : 0}
+          >
             <Text dimColor>Level:</Text>
             {["all", "info", "warning", "error"].map((level) => (
               <Box key={level}>
@@ -133,15 +153,21 @@ export const LogsTab = ({ config }: LogsTabProps) => {
           <Box flexGrow={1} />
 
           {/* Pause/Play Toggle */}
-          <Box>
+          <Box
+            borderStyle={activeToolbarItem === 1 ? "round" : undefined}
+            paddingX={activeToolbarItem === 1 ? 1 : 0}
+          >
             <Text dimColor>
-              {isPaused ? "▶" : "⏸"} {isPaused ? "Play" : "Pause"} (space)
+              {isPaused ? "▶" : "⏸"} {isPaused ? "Play" : "Pause"}
             </Text>
           </Box>
 
           {/* Clear Button */}
-          <Box>
-            <Text dimColor>🗑 Clear (c)</Text>
+          <Box
+            borderStyle={activeToolbarItem === 2 ? "round" : undefined}
+            paddingX={activeToolbarItem === 2 ? 1 : 0}
+          >
+            <Text dimColor>Clear</Text>
           </Box>
         </Box>
       </Box>
