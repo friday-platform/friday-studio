@@ -208,6 +208,10 @@ function ServingComponent({ requestedPort, flags, workspacePath }: {
           role: WorkspaceMemberRole.OWNER,
         });
 
+        // Register workspace ID to registry ID mapping for logging
+        const { logger } = await import("../../../utils/logger.ts");
+        logger.registerWorkspaceMapping(workspace.id, workspaceEntry.id);
+
         const runtime = new WorkspaceRuntime(workspace, mergedConfig, {
           lazy: Boolean(flags.lazy) || false,
         });

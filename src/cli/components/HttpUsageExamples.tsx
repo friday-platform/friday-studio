@@ -8,7 +8,7 @@ interface HttpUsageExamplesProps {
 const generateExampleValue = (
   name: string,
   type: string,
-  description?: string
+  description?: string,
 ): unknown => {
   const lowerName = name.toLowerCase();
   const lowerDesc = description?.toLowerCase() || "";
@@ -93,14 +93,14 @@ const generateSchemaExample = (schema: Record<string, unknown>): unknown => {
       example[fieldName] = generateExampleValue(
         fieldName,
         prop.type as string,
-        prop.description as string
+        prop.description as string,
       );
     }
   }
 
   // Add a few optional fields for demonstration
   const optionalFields = Object.keys(properties).filter(
-    (key) => !required.includes(key)
+    (key) => !required.includes(key),
   );
   const fieldsToShow = optionalFields.slice(0, 2); // Show up to 2 optional fields
 
@@ -110,7 +110,7 @@ const generateSchemaExample = (schema: Record<string, unknown>): unknown => {
       example[fieldName] = generateExampleValue(
         fieldName,
         prop.type as string,
-        prop.description as string
+        prop.description as string,
       );
     }
   }
@@ -123,7 +123,7 @@ const generateCurlCommand = (
   method: string,
   path: string,
   headers: Record<string, string>,
-  body?: unknown
+  body?: unknown,
 ): string[] => {
   const lines: string[] = [];
 
@@ -190,9 +190,7 @@ export const HttpUsageExamples = ({ signal }: HttpUsageExamplesProps) => {
 
       <Box flexDirection="column" marginBottom={1}>
         <Text dimColor>Curl command:</Text>
-        {curlLines.map((line, index) => (
-          <Text key={index}>{line}</Text>
-        ))}
+        {curlLines.map((line, index) => <Text key={index}>{line}</Text>)}
       </Box>
 
       {schema && Object.keys(generateSchemaExample(schema)).length > 0 && (

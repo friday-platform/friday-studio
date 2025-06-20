@@ -29,6 +29,7 @@ const cli = meow(
     workspace status [id|name]                Show workspace status
     workspace remove <id|name>                Remove workspace from registry
     workspace cleanup                         Clean up stale registry entries
+    workspace logs [id|name]                  View workspace logs
     
     session list                              List all active sessions
     session get <id>                          Show session details
@@ -95,6 +96,33 @@ const cli = meow(
       data: {
         type: "string",
         shortFlag: "d",
+      },
+      follow: {
+        type: "boolean",
+        shortFlag: "f",
+        default: false,
+      },
+      tail: {
+        type: "number",
+        default: 100,
+      },
+      since: {
+        type: "string",
+      },
+      timestamps: {
+        type: "boolean",
+        default: true,
+      },
+      json: {
+        type: "boolean",
+        default: false,
+      },
+      level: {
+        type: "string",
+      },
+      context: {
+        type: "string",
+        isMultiple: true,
       },
     },
   },
@@ -189,7 +217,13 @@ if (!subcommand && commandDefaults[command]) {
 }
 
 // Handle nested workspace commands (e.g., "atlas workspace sessions")
-if (command === "workspace" && subcommand && naturalShorthands[subcommand]) {
+// But exclude "logs" since it's a valid workspace subcommand
+if (
+  command === "workspace" &&
+  subcommand &&
+  naturalShorthands[subcommand] &&
+  subcommand !== "logs"
+) {
   // This is a cross-command request like "workspace sessions"
   // Redirect to the appropriate command
   command = naturalShorthands[subcommand];
@@ -197,12 +231,32 @@ if (command === "workspace" && subcommand && naturalShorthands[subcommand]) {
   args = args.slice(1);
 }
 
-// Test: Try without withFullScreen to see if that's causing the resize issue
-render(
-  React.createElement(App, {
-    command,
-    subcommand,
-    args,
-    flags: cli.flags,
-  }),
-);
+// For workspace logs command, use direct implementation to avoid Ink's raw mode issues
+if (command === "workspace" && subcommand === "logs") {
+  // Initialize registry first
+  import("./core/workspace-registry.ts")
+    .then(async ({ getWorkspaceRegistry }) => {
+      const registry = getWorkspaceRegistry();
+      await registry.initialize();
+
+      // Then run logs command
+      const { runWorkspaceLogs } = await import(
+        "./cli/commands/workspace/logs/logs-direct.ts"
+      );
+      await runWorkspaceLogs(args, cli.flags);
+    })
+    .catch((err) => {
+      console.error(`\x1b[31mError: ${err.message}\x1b[0m`);
+      Deno.exit(1);
+    });
+} else {
+  // Test: Try without withFullScreen to see if that's causing the resize issue
+  render(
+    React.createElement(App, {
+      command,
+      subcommand,
+      args,
+      flags: cli.flags,
+    }),
+  );
+}

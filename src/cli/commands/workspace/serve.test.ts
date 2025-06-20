@@ -36,14 +36,14 @@ Deno.test("workspace serve - starts server and updates registry", async () => {
     });
 
     const child = serveCommand.spawn();
-    
+
     // Capture stderr and stdout to debug crashes
     const errorReader = child.stderr.getReader();
     const outputReader = child.stdout.getReader();
     const decoder = new TextDecoder();
     let errorOutput = "";
     let stdOutput = "";
-    
+
     // Read stderr in background
     (async () => {
       try {
@@ -56,7 +56,7 @@ Deno.test("workspace serve - starts server and updates registry", async () => {
         // Ignore read errors
       }
     })();
-    
+
     // Read stdout in background
     (async () => {
       try {
@@ -86,7 +86,7 @@ Deno.test("workspace serve - starts server and updates registry", async () => {
       await new Promise((resolve) => setTimeout(resolve, 500));
       attempts++;
     }
-    
+
     // If not running, log the error output
     if (!workspace || workspace.status !== WSStatus.RUNNING) {
       console.error("Server failed to start.");

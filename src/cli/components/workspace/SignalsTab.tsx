@@ -1,13 +1,13 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { z } from "zod";
-import { WorkspaceConfig } from "../../utils/workspace-loader.ts";
-import { useTabNavigation, useActiveFocus } from "../tabs.tsx";
+import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
 
 interface SignalsTabProps {
-  config: WorkspaceConfig;
+  config: NewWorkspaceConfig;
 }
 
 // Schema validation for signal schemas
@@ -41,7 +41,7 @@ const validateSignalSchema = (schema: unknown): SignalSchema | null => {
 const parseProperty = (
   name: string,
   prop: Record<string, unknown>,
-  required: string[] = []
+  required: string[] = [],
 ): PropertyInfo => {
   const isRequired = required.includes(name);
 
@@ -52,12 +52,12 @@ const parseProperty = (
       description: prop.description as string | undefined,
       required: isRequired,
       properties: Object.entries(
-        prop.properties as Record<string, unknown>
+        prop.properties as Record<string, unknown>,
       ).map(([propName, propDef]) =>
         parseProperty(
           propName,
           propDef as Record<string, unknown>,
-          (prop.required as string[]) || []
+          (prop.required as string[]) || [],
         )
       ),
     };
@@ -357,10 +357,10 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
     isActive: isSidebarActive,
   });
 
-  const selectedSignal =
-    signals.length > 0 ? signals[selectedSignalIndex][0] : null;
-  const selectedSignalData =
-    selectedSignal && config.signals ? config.signals[selectedSignal] : null;
+  const selectedSignal = signals.length > 0 ? signals[selectedSignalIndex][0] : null;
+  const selectedSignalData = selectedSignal && config.signals
+    ? config.signals[selectedSignal]
+    : null;
 
   // Handle keyboard navigation for scrolling when main area is active
   useInput((inputChar, key) => {
@@ -422,149 +422,151 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
         borderColor="gray"
         borderDimColor
       >
-        {selectedSignalData ? (
-          <Box
-            flexDirection="column"
-            marginTop={scrollOffset}
-            flexGrow={1}
-            flexShrink={0}
-          >
-            <Box>
-              <Text bold>{selectedSignal}</Text>
-            </Box>
-            {(selectedSignalData as any).description && (
-              <Box marginBottom={1}>
-                <Text dimColor>{(selectedSignalData as any).description}</Text>
+        {selectedSignalData
+          ? (
+            <Box
+              flexDirection="column"
+              marginTop={scrollOffset}
+              flexGrow={1}
+              flexShrink={0}
+            >
+              <Box>
+                <Text bold>{selectedSignal}</Text>
               </Box>
-            )}
-            <Box marginBottom={1}>
-              <Text dimColor>Provider:</Text>
-              <Text>{(selectedSignalData as any).provider || "Unknown"}</Text>
-            </Box>
+              {(selectedSignalData as any).description && (
+                <Box marginBottom={1}>
+                  <Text dimColor>{(selectedSignalData as any).description}</Text>
+                </Box>
+              )}
+              <Box marginBottom={1}>
+                <Text dimColor>Provider:</Text>
+                <Text>{(selectedSignalData as any).provider || "Unknown"}</Text>
+              </Box>
 
-            {/* Provider-Specific Details */}
-            {(() => {
-              const provider = (selectedSignalData as any).provider as string;
+              {/* Provider-Specific Details */}
+              {(() => {
+                const provider = (selectedSignalData as any).provider as string;
 
-              if (provider === "http" || provider === "http-webhook") {
-                return (
-                  <>
-                    <HttpSignalDetails
-                      signal={selectedSignalData as Record<string, unknown>}
-                    />
-                    <HttpUsageExamples
-                      signal={selectedSignalData as Record<string, unknown>}
-                    />
-                  </>
-                );
-              } else if (provider === "cli") {
-                return (
-                  <>
-                    <CliSignalDetails
-                      signal={selectedSignalData as Record<string, unknown>}
-                    />
-                    <CliUsageExamples
-                      signal={selectedSignalData as Record<string, unknown>}
-                    />
-                  </>
-                );
-              } else if (
-                provider &&
-                [
-                  "k8s-events",
-                  "http-webhook",
-                  "codebase-watcher",
-                  "cron",
-                ].includes(provider)
-              ) {
-                return (
-                  <SpecializedProviderDetails
-                    signal={selectedSignalData as Record<string, unknown>}
-                    provider={provider}
-                  />
-                );
-              }
-              return null;
-            })()}
-
-            {/* Schema Documentation */}
-            {(selectedSignalData as any).schema &&
-              (() => {
-                const validatedSchema = validateSignalSchema(
-                  (selectedSignalData as any).schema
-                );
-                if (validatedSchema) {
-                  const properties = Object.entries(
-                    validatedSchema.properties
-                  ).map(([name, prop]) =>
-                    parseProperty(
-                      name,
-                      prop as Record<string, unknown>,
-                      validatedSchema.required || []
-                    )
-                  );
-
+                if (provider === "http" || provider === "http-webhook") {
                   return (
-                    <Box flexDirection="column" marginTop={2}>
-                      <Box marginBottom={1}>
-                        <Text bold color="green">
-                          Schema Documentation:
-                        </Text>
-                      </Box>
-                      {properties.map((property) => (
-                        <PropertyDoc key={property.name} property={property} />
-                      ))}
-                      {validatedSchema.required &&
-                        validatedSchema.required.length > 0 && (
+                    <>
+                      <HttpSignalDetails
+                        signal={selectedSignalData as Record<string, unknown>}
+                      />
+                      <HttpUsageExamples
+                        signal={selectedSignalData as Record<string, unknown>}
+                      />
+                    </>
+                  );
+                } else if (provider === "cli") {
+                  return (
+                    <>
+                      <CliSignalDetails
+                        signal={selectedSignalData as Record<string, unknown>}
+                      />
+                      <CliUsageExamples
+                        signal={selectedSignalData as Record<string, unknown>}
+                      />
+                    </>
+                  );
+                } else if (
+                  provider &&
+                  [
+                    "k8s-events",
+                    "http-webhook",
+                    "codebase-watcher",
+                    "cron",
+                  ].includes(provider)
+                ) {
+                  return (
+                    <SpecializedProviderDetails
+                      signal={selectedSignalData as Record<string, unknown>}
+                      provider={provider}
+                    />
+                  );
+                }
+                return null;
+              })()}
+
+              {/* Schema Documentation */}
+              {(selectedSignalData as any).schema &&
+                (() => {
+                  const validatedSchema = validateSignalSchema(
+                    (selectedSignalData as any).schema,
+                  );
+                  if (validatedSchema) {
+                    const properties = Object.entries(
+                      validatedSchema.properties,
+                    ).map(([name, prop]) =>
+                      parseProperty(
+                        name,
+                        prop as Record<string, unknown>,
+                        validatedSchema.required || [],
+                      )
+                    );
+
+                    return (
+                      <Box flexDirection="column" marginTop={2}>
+                        <Box marginBottom={1}>
+                          <Text bold color="green">
+                            Schema Documentation:
+                          </Text>
+                        </Box>
+                        {properties.map((property) => (
+                          <PropertyDoc key={property.name} property={property} />
+                        ))}
+                        {validatedSchema.required &&
+                          validatedSchema.required.length > 0 && (
                           <Box marginTop={2}>
                             <Text color="red">* Required fields</Text>
                           </Box>
                         )}
-                    </Box>
-                  );
-                } else {
-                  return (
-                    <Box marginTop={2}>
-                      <Text color="red">
-                        Invalid schema format - must be type "object"
-                      </Text>
-                    </Box>
-                  );
-                }
-              })()}
+                      </Box>
+                    );
+                  } else {
+                    return (
+                      <Box marginTop={2}>
+                        <Text color="red">
+                          Invalid schema format - must be type "object"
+                        </Text>
+                      </Box>
+                    );
+                  }
+                })()}
 
-            {/* Raw Configuration (fallback for unknown providers) */}
-            {(selectedSignalData as any).config &&
-              ![
-                "http",
-                "http-webhook",
-                "cli",
-                "k8s-events",
-                "codebase-watcher",
-                "cron",
-              ].includes((selectedSignalData as any).provider as string) && (
+              {/* Raw Configuration (fallback for unknown providers) */}
+              {(selectedSignalData as any).config &&
+                ![
+                  "http",
+                  "http-webhook",
+                  "cli",
+                  "k8s-events",
+                  "codebase-watcher",
+                  "cron",
+                ].includes((selectedSignalData as any).provider as string) && (
                 <Box marginTop={2}>
                   <Text bold>Raw Configuration:</Text>
                   <Text>
                     {JSON.stringify(
                       (selectedSignalData as any).config,
                       null,
-                      2
+                      2,
                     )}
                   </Text>
                 </Box>
               )}
-          </Box>
-        ) : (
-          <Box
-            flexDirection="column"
-            alignItems="center"
-            justifyContent="center"
-            height="100%"
-          >
-            <Text color="gray">Select a signal to view details</Text>
-          </Box>
-        )}
+            </Box>
+          )
+          : (
+            <Box
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              height="100%"
+            >
+              <Text color="gray">Select a signal to view details</Text>
+            </Box>
+          )}
       </Box>
     </Box>
   );

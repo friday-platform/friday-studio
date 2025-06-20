@@ -5,6 +5,7 @@ export { WorkspaceListCommand } from "./list.tsx";
 export { WorkspaceStatusCommand } from "./status.tsx";
 export { WorkspaceRemoveCommand } from "./remove.tsx";
 export { WorkspaceCleanupCommand } from "./cleanup.tsx";
+export { WorkspaceLogsCommand } from "./logs/index.tsx";
 
 // Export shared components and utilities
 export { WorkspaceList } from "./list.tsx";

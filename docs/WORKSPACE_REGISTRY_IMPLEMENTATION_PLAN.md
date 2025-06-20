@@ -6,6 +6,35 @@ This document outlines the plan to implement a centralized workspace registry th
 foundation for all workspace operations in Atlas. We'll refactor the existing CLI to use this
 registry, which will later enable multi-workspace background process support.
 
+## Current Status (December 2024)
+
+### ✅ Phase 1: Core Registry Implementation - **100% COMPLETE**
+
+- All registry types and schemas implemented with Zod validation
+- Docker-style naming system fully functional
+- WorkspaceRegistryManager with all core operations
+- Lazy health checks with proper status transitions
+- Auto-discovery and import of existing workspaces
+- Removed problematic lockfile mechanism for better reliability
+
+### 🚧 Phase 2: CLI Integration - **80% COMPLETE**
+
+- ✅ workspace init - Fully integrated with registry
+- ✅ workspace list - Shows all registered workspaces with status
+- ✅ workspace serve - Accepts workspace ID/name, dynamic port assignment
+- ✅ workspace remove - Removes workspaces from registry
+- ⏳ workspace status - Command exists but needs implementation
+- ⏳ workspace cleanup - Command exists but needs implementation
+- ⏳ Session/log commands - Need workspace ID support
+
+### Key Improvements Made
+
+1. **Dynamic Port Assignment**: Prevents conflicts between multiple workspaces
+2. **Status Tracking**: Fixed issues with 'stopping' and 'starting' states
+3. **Non-blocking Server Start**: Added `startNonBlocking()` method to WorkspaceServer
+4. **Enhanced Health Checks**: Now handles STARTING, RUNNING, and STOPPING states
+5. **Simplified Locking**: Removed file-based locking in favor of atomic operations
+
 ## Key Design Decisions
 
 1. **Zod v4 for Validation**: All registry data structures are validated using Zod schemas,
@@ -1013,34 +1042,54 @@ async vacuum(): Promise<void> {
 
 ## Implementation Steps
 
-### Step 1: Core Registry (Week 1)
+### ✅ Step 1: Core Registry (COMPLETE)
 
-1. Create registry types and interfaces
-2. Implement WorkspaceRegistryManager
-3. Add unit tests for registry operations
-4. Test lazy health checks
+1. ✅ Create registry types and interfaces
+2. ✅ Implement WorkspaceRegistryManager
+3. ✅ Add unit tests for registry operations
+4. ✅ Test lazy health checks
 
-### Step 2: CLI Integration (Week 1-2)
+### 🚧 Step 2: CLI Integration (IN PROGRESS - 80% Complete)
 
-1. Update workspace init command
-2. Add workspace list command
-3. Add workspace status command
-4. Update workspace serve to use registry
-5. Test existing functionality with registry
+1. ✅ Update workspace init command
+2. ✅ Add workspace list command
+3. ⏳ Add workspace status command (needs implementation)
+4. ✅ Update workspace serve to use registry
+5. ✅ Test existing functionality with registry
 
-### Step 3: Enhanced Commands (Week 2)
+### 🚧 Step 3: Enhanced Commands (IN PROGRESS - 50% Complete)
 
-1. Add workspace remove command
-2. Add workspace cleanup command
-3. Update logs command to support workspace IDs
-4. Add registry import functionality
+1. ✅ Add workspace remove command
+2. ⏳ Add workspace cleanup command (needs implementation)
+3. ⏳ Update logs command to support workspace IDs
+4. ✅ Add registry import functionality (auto-import on init)
 
-### Step 4: Polish (Week 2-3)
+### ⏳ Step 4: Polish (NOT STARTED)
 
-1. Add proper error handling
-2. Improve CLI output formatting
-3. Add progress indicators
-4. Write documentation
+1. ⏳ Add proper error handling
+2. ✅ Improve CLI output formatting (table view)
+3. ⏳ Add progress indicators
+4. ⏳ Write documentation
+
+## Remaining Work
+
+### High Priority
+
+1. Implement `workspace status` command functionality
+2. Implement `workspace cleanup` command functionality
+3. Add workspace ID/name support to session and log commands
+
+### Medium Priority
+
+1. Add progress indicators for long operations
+2. Improve error messages and handling
+3. Add `--json` output format support to all commands
+
+### Low Priority
+
+1. Add workspace tagging/grouping support
+2. Add workspace metrics tracking
+3. Create comprehensive documentation
 
 ## Benefits
 
@@ -1067,6 +1116,451 @@ async vacuum(): Promise<void> {
 3. **Edge Cases**: Test concurrent access, missing workspaces, etc.
 4. **Performance**: Ensure registry scales to hundreds of workspaces
 
+## Phase 3.4: Workspace Logs Command
+
+### Overview
+
+Add a `workspace logs` command to the CLI that allows users to view and stream logs from workspace
+log files. This will provide similar functionality to `kubectl logs` for Kubernetes pods.
+
+### Command Interface
+
+```bash
+# View logs from a workspace
+atlas workspace logs [workspace-id|name] [options]
+
+# Options
+--follow, -f              Follow log output (stream new logs as they're written)
+--tail <lines>           Number of lines to show from the end of logs (default: 100)
+--since <duration>       Only show logs newer than a relative duration (e.g., 5m, 2h, 1d)
+--timestamps             Include timestamps in log output (default: true)
+--no-timestamps          Hide timestamps from log output
+--json                   Output logs in JSON format
+--level <level>          Filter logs by level (error, warn, info, debug, trace)
+--context <key=value>    Filter logs by context values (e.g., --context sessionId=abc123)
+```
+
+### Implementation Plan
+
+#### 3.4.1 Create Workspace Logs Command Component
+
+Create `src/cli/commands/workspace/logs.tsx`:
+
+```typescript
+import { Box, Text } from "ink";
+import { useEffect, useState } from "react";
+import { AtlasLogger } from "../../../utils/logger.ts";
+import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+
+interface WorkspaceLogsCommandProps {
+  args: string[];
+  flags: {
+    follow?: boolean;
+    tail?: number;
+    since?: string;
+    timestamps?: boolean;
+    json?: boolean;
+    level?: string;
+    context?: string[];
+  };
+}
+
+export function WorkspaceLogsCommand({ args, flags }: WorkspaceLogsCommandProps) {
+  const [logs, setLogs] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [streaming, setStreaming] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const workspaceIdOrName = args[0];
+        if (!workspaceIdOrName) {
+          // Try to get current workspace
+          const registry = getWorkspaceRegistry();
+          const workspace = await registry.getCurrentWorkspace();
+          if (!workspace) {
+            throw new Error("No workspace specified and not in a workspace directory");
+          }
+          await streamLogs(workspace.id);
+        } else {
+          // Find workspace by ID or name
+          const registry = getWorkspaceRegistry();
+          const workspace = await registry.findById(workspaceIdOrName) ||
+            await registry.findByName(workspaceIdOrName);
+          if (!workspace) {
+            throw new Error(`Workspace '${workspaceIdOrName}' not found`);
+          }
+          await streamLogs(workspace.id);
+        }
+      } catch (err) {
+        setError(err.message);
+      }
+    })();
+  }, []);
+
+  async function streamLogs(workspaceId: string) {
+    const logger = AtlasLogger.getInstance();
+    const reader = new WorkspaceLogReader(logger, workspaceId);
+
+    // Apply filters
+    const filters: LogFilters = {
+      level: flags.level,
+      since: flags.since ? parseDuration(flags.since) : undefined,
+      context: parseContextFilters(flags.context),
+    };
+
+    if (flags.follow) {
+      setStreaming(true);
+      // Stream logs with tail
+      await reader.follow({
+        tail: flags.tail || 100,
+        filters,
+        onLog: (log) => {
+          setLogs((prev) => [...prev, formatLog(log, flags)]);
+        },
+      });
+    } else {
+      // Read logs once
+      const entries = await reader.read({
+        tail: flags.tail || 100,
+        filters,
+      });
+      setLogs(entries.map((log) => formatLog(log, flags)));
+    }
+  }
+
+  if (error) {
+    return <Text color="red">Error: {error}</Text>;
+  }
+
+  return (
+    <Box flexDirection="column">
+      {logs.map((log, i) => <Text key={i}>{log}</Text>)}
+      {streaming && logs.length === 0 && <Text color="gray">Waiting for logs...</Text>}
+    </Box>
+  );
+}
+```
+
+#### 3.4.2 Implement Log Reading and Streaming
+
+Create `src/cli/commands/workspace/log-reader.ts`:
+
+```typescript
+import { join } from "@std/path";
+import { LogEntry } from "../../../utils/logger.ts";
+
+export interface LogFilters {
+  level?: string;
+  since?: Date;
+  context?: Record<string, string>;
+}
+
+export interface ReadOptions {
+  tail?: number;
+  filters?: LogFilters;
+}
+
+export interface FollowOptions extends ReadOptions {
+  onLog: (entry: LogEntry) => void;
+  pollInterval?: number;
+}
+
+export class WorkspaceLogReader {
+  private logPath: string;
+  private fileHandle?: Deno.FsFile;
+  private followAbort?: AbortController;
+
+  constructor(
+    private logger: AtlasLogger,
+    private workspaceId: string,
+  ) {
+    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
+    this.logPath = join(homeDir, ".atlas", "logs", "workspaces", `${workspaceId}.log`);
+  }
+
+  async read(options: ReadOptions = {}): Promise<LogEntry[]> {
+    const { tail = 100, filters } = options;
+
+    try {
+      const content = await Deno.readTextFile(this.logPath);
+      const lines = content.trim().split("\n").filter(Boolean);
+
+      // Parse log entries
+      let entries: LogEntry[] = [];
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line) as LogEntry;
+          if (this.matchesFilters(entry, filters)) {
+            entries.push(entry);
+          }
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      // Return last N entries
+      return entries.slice(-tail);
+    } catch (error) {
+      if (error instanceof Deno.errors.NotFound) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async follow(options: FollowOptions): Promise<void> {
+    const { tail = 100, filters, onLog, pollInterval = 1000 } = options;
+
+    // First, read existing logs
+    const initial = await this.read({ tail, filters });
+    for (const entry of initial) {
+      onLog(entry);
+    }
+
+    // Open file for watching
+    this.fileHandle = await Deno.open(this.logPath, { read: true });
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let position = (await this.fileHandle.stat()).size;
+
+    this.followAbort = new AbortController();
+
+    // Poll for new content
+    const pollLoop = async () => {
+      while (!this.followAbort.signal.aborted) {
+        try {
+          const stat = await this.fileHandle!.stat();
+          if (stat.size > position) {
+            // Read new content
+            const newContent = new Uint8Array(stat.size - position);
+            await this.fileHandle!.seek(position, Deno.SeekMode.Start);
+            const bytesRead = await this.fileHandle!.read(newContent);
+
+            if (bytesRead) {
+              position += bytesRead;
+              buffer += decoder.decode(newContent.subarray(0, bytesRead));
+
+              // Process complete lines
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || ""; // Keep incomplete line in buffer
+
+              for (const line of lines) {
+                if (line.trim()) {
+                  try {
+                    const entry = JSON.parse(line) as LogEntry;
+                    if (this.matchesFilters(entry, filters)) {
+                      onLog(entry);
+                    }
+                  } catch {
+                    // Skip malformed lines
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          if (!this.followAbort.signal.aborted) {
+            console.error("Error reading log file:", error);
+          }
+          break;
+        }
+
+        // Wait before next poll
+        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      }
+    };
+
+    await pollLoop();
+  }
+
+  stop(): void {
+    if (this.followAbort) {
+      this.followAbort.abort();
+    }
+    if (this.fileHandle) {
+      this.fileHandle.close();
+    }
+  }
+
+  private matchesFilters(entry: LogEntry, filters?: LogFilters): boolean {
+    if (!filters) return true;
+
+    // Level filter
+    if (filters.level) {
+      const levels = ["error", "warn", "info", "debug", "trace"];
+      const entryLevel = levels.indexOf(entry.level);
+      const filterLevel = levels.indexOf(filters.level);
+      if (entryLevel < filterLevel) return false;
+    }
+
+    // Time filter
+    if (filters.since && new Date(entry.timestamp) < filters.since) {
+      return false;
+    }
+
+    // Context filters
+    if (filters.context && entry.context) {
+      for (const [key, value] of Object.entries(filters.context)) {
+        if (entry.context[key] !== value) return false;
+      }
+    }
+
+    return true;
+  }
+}
+
+// Helper functions
+export function parseDuration(duration: string): Date {
+  const match = duration.match(/^(\d+)([smhd])$/);
+  if (!match) {
+    throw new Error(`Invalid duration format: ${duration}`);
+  }
+
+  const [, amount, unit] = match;
+  const value = parseInt(amount, 10);
+  const now = new Date();
+
+  switch (unit) {
+    case "s":
+      now.setSeconds(now.getSeconds() - value);
+      break;
+    case "m":
+      now.setMinutes(now.getMinutes() - value);
+      break;
+    case "h":
+      now.setHours(now.getHours() - value);
+      break;
+    case "d":
+      now.setDate(now.getDate() - value);
+      break;
+  }
+
+  return now;
+}
+
+export function parseContextFilters(filters?: string[]): Record<string, string> | undefined {
+  if (!filters || filters.length === 0) return undefined;
+
+  const result: Record<string, string> = {};
+  for (const filter of filters) {
+    const [key, value] = filter.split("=");
+    if (key && value) {
+      result[key] = value;
+    }
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+export function formatLog(
+  entry: LogEntry,
+  flags: { timestamps?: boolean; json?: boolean },
+): string {
+  if (flags.json) {
+    return JSON.stringify(entry);
+  }
+
+  const parts: string[] = [];
+
+  if (flags.timestamps !== false) {
+    parts.push(entry.timestamp);
+  }
+
+  parts.push(entry.level.toUpperCase());
+
+  if (entry.context) {
+    const contextStr = Object.entries(entry.context)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(" ");
+    parts.push(`[${contextStr}]`);
+  }
+
+  parts.push(entry.message);
+
+  return parts.join(" ");
+}
+```
+
+#### 3.4.3 Update Workspace Command Router
+
+Update `src/cli/commands/workspace.tsx`:
+
+```typescript
+import { WorkspaceLogsCommand } from "./workspace/logs.tsx";
+
+// In the switch statement, add:
+case "logs":
+  return <WorkspaceLogsCommand args={args} flags={flags} />;
+```
+
+#### 3.4.4 Update CLI Meow Configuration
+
+Update `src/cli.tsx` to add the workspace logs flags:
+
+```typescript
+flags: {
+  // ... existing flags ...
+  follow: {
+    type: "boolean",
+    shortFlag: "f",
+    default: false,
+  },
+  tail: {
+    type: "number",
+    default: 100,
+  },
+  since: {
+    type: "string",
+  },
+  timestamps: {
+    type: "boolean",
+    default: true,
+  },
+  "no-timestamps": {
+    type: "boolean",
+    default: false,
+  },
+  json: {
+    type: "boolean",
+    default: false,
+  },
+  level: {
+    type: "string",
+  },
+  context: {
+    type: "string",
+    isMultiple: true,
+  },
+}
+```
+
+### Implementation Notes
+
+1. **File Watching**: Use polling instead of Deno's file watcher API for better cross-platform
+   compatibility
+2. **Performance**: For large log files, consider implementing a more efficient tail algorithm using
+   file seeking
+3. **Memory Management**: When following logs, implement a circular buffer to prevent unlimited
+   memory growth
+4. **Error Handling**: Gracefully handle missing log files, permission errors, and file rotation
+5. **Signal Handling**: Properly clean up file handles and abort controllers on process termination
+
+### Testing Strategy
+
+1. **Unit Tests**: Test log parsing, filtering, and formatting functions
+2. **Integration Tests**: Test reading from actual log files
+3. **Performance Tests**: Ensure efficient handling of large log files
+4. **Stress Tests**: Test following logs with high write rates
+
+### Future Enhancements
+
+1. **Log Rotation Support**: Handle log rotation gracefully when following
+2. **Multi-Workspace Logs**: Support tailing logs from multiple workspaces simultaneously
+3. **Advanced Filtering**: Support regex patterns and complex queries
+4. **Export Functionality**: Export filtered logs to files
+5. **Log Analysis**: Basic log analysis features (error rates, patterns, etc.)
+
 ## Future Extensions
 
 Once the registry is in place, we can add:
@@ -1078,3 +1572,28 @@ Once the registry is in place, we can add:
 5. **Workspace Metrics**: Track usage, uptime, etc.
 
 This foundation will make Atlas more powerful and user-friendly while maintaining simplicity.
+
+## Implementation Summary (December 2024)
+
+### What We Achieved
+
+1. **Full Registry Core**: All planned registry functionality is working
+2. **Enhanced Features**: Added dynamic port assignment and better status tracking
+3. **Simplified Design**: Removed lockfile mechanism for better reliability
+4. **Auto-Discovery**: Workspaces are automatically imported on registry init
+5. **Better UX**: Can run `atlas workspace serve <name>` from anywhere
+
+### What Changed from Plan
+
+1. **No Lockfile**: Removed file-based locking in favor of atomic operations
+2. **Singleton Pattern**: Using `getWorkspaceRegistry()` instead of global export
+3. **Dynamic Ports**: Added port finder utility for conflict-free operation
+4. **Status Fixes**: Enhanced lazy health checks to handle all process states
+
+### Current Capabilities
+
+- Run multiple workspaces simultaneously without port conflicts
+- Track workspace status accurately even when processes are killed
+- Navigate workspaces by memorable Docker-style names
+- Auto-discover and import existing workspaces
+- Clean table view of all registered workspaces

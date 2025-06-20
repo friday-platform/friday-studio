@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
-import { WorkspaceConfig } from "../../utils/workspace-loader.ts";
+import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 
 interface LogsTabProps {
-  config: WorkspaceConfig;
+  config: NewWorkspaceConfig;
 }
 
 export const LogsTab = ({ config: _config }: LogsTabProps) => {

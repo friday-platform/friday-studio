@@ -10,6 +10,7 @@ import {
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
 import { generateUniqueWorkspaceName } from "./workspace-names.ts";
+import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
 
 export class WorkspaceRegistryManager {
   private registryPath: string;
@@ -469,6 +470,38 @@ export class WorkspaceRegistryManager {
     }
 
     return imported;
+  }
+
+  // Convenience method to get workspace configuration by slug
+  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<NewWorkspaceConfig | null> {
+    if (!this.registry) await this.initialize();
+
+    // Find workspace by ID or name
+    let workspace = await this.findById(workspaceSlug);
+    if (!workspace) {
+      workspace = await this.findByName(workspaceSlug);
+    }
+
+    if (!workspace) {
+      return null;
+    }
+
+    try {
+      // Read and parse the workspace.yml file
+      const workspaceContent = await Deno.readTextFile(workspace.configPath);
+      const rawConfig = yaml.parse(workspaceContent);
+
+      // Validate with Zod schema
+      const config = NewWorkspaceConfigSchema.parse(rawConfig);
+      return config;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        console.error(`Invalid workspace configuration for ${workspaceSlug}:`, error.errors);
+      } else {
+        console.error(`Failed to load workspace config for ${workspaceSlug}:`, error);
+      }
+      return null;
+    }
   }
 }
 

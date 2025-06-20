@@ -3,6 +3,7 @@ import {
   WorkspaceCleanupCommand,
   WorkspaceInitCommand,
   WorkspaceListCommand,
+  WorkspaceLogsCommand,
   WorkspaceRemoveCommand,
   WorkspaceServeCommand,
   WorkspaceStatusCommand,
@@ -23,20 +24,25 @@ export function WorkspaceCommand({
     case "init":
       return <WorkspaceInitCommand args={args} flags={flags} />;
 
-    case "serve":
+    case "start":
       return <WorkspaceServeCommand args={args} flags={flags} />;
 
     case "list":
+    case "ls":
       return <WorkspaceListCommand args={args} flags={flags} />;
 
     case "status":
       return <WorkspaceStatusCommand args={args} flags={flags} />;
 
     case "remove":
+    case "rm":
       return <WorkspaceRemoveCommand args={args} flags={flags} />;
 
     case "cleanup":
       return <WorkspaceCleanupCommand args={args} flags={flags} />;
+
+    case "logs":
+      return <WorkspaceLogsCommand args={args} flags={flags} />;
 
     default:
       if (!subcommand) {

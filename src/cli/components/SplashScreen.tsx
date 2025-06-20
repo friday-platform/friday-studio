@@ -38,8 +38,7 @@ export const SplashScreen = ({
   const workspaceListHeight = Math.min(workspaces.length, 10); // Max 10 visible workspaces
   const spacingHeight = 8; // Margins and spacing around elements
 
-  const requiredContentHeight =
-    asciiArtHeight +
+  const requiredContentHeight = asciiArtHeight +
     titleHeight +
     inputHeight +
     workspaceHeaderHeight +
@@ -139,7 +138,7 @@ export const SplashScreen = ({
         case "/load":
           if (!args[1]) {
             showAlert(
-              "/load requires a workspace name. Usage: /load <workspace-name>"
+              "/load requires a workspace name. Usage: /load <workspace-name>",
             );
             return;
           }
@@ -148,7 +147,7 @@ export const SplashScreen = ({
 
         default:
           showAlert(
-            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`
+            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`,
           );
       }
     } catch (error) {
@@ -269,7 +268,7 @@ export const SplashScreen = ({
       const selectedWorkspace = workspaces.find(
         (w) =>
           w.name.toLowerCase() === workspaceName.toLowerCase() ||
-          w.id === workspaceName
+          w.id === workspaceName,
       );
 
       if (!selectedWorkspace) {
@@ -379,7 +378,7 @@ export const SplashScreen = ({
           onChange={(selectedWorkspaceId) => {
             // Handle workspace selection
             const selectedWorkspace = workspaces.find(
-              (w) => w.id === selectedWorkspaceId
+              (w) => w.id === selectedWorkspaceId,
             );
             if (selectedWorkspace) {
               onWorkspaceSelect(selectedWorkspace);

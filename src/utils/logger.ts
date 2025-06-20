@@ -28,6 +28,7 @@ export class AtlasLogger {
   private globalLogPath: string;
   private fileWriter?: Deno.FsFile;
   private workspaceWriters: Map<string, Deno.FsFile> = new Map();
+  private workspaceIdToRegistryId: Map<string, string> = new Map();
   private initPromise?: Promise<void>;
   private isInitialized = false;
 
@@ -92,20 +93,22 @@ export class AtlasLogger {
       await this.fileWriter.write(data);
     } else if (target.startsWith("workspace:")) {
       const workspaceId = target.split(":")[1];
-      let writer = this.workspaceWriters.get(workspaceId);
+      // Use registry ID if we have a mapping, otherwise use the workspace ID
+      const logId = this.workspaceIdToRegistryId.get(workspaceId) || workspaceId;
+      let writer = this.workspaceWriters.get(logId);
 
       if (!writer) {
         const workspacePath = join(
           this.logDir,
           "workspaces",
-          `${workspaceId}.log`,
+          `${logId}.log`,
         );
         writer = await Deno.open(workspacePath, {
           create: true,
           write: true,
           append: true,
         });
-        this.workspaceWriters.set(workspaceId, writer);
+        this.workspaceWriters.set(logId, writer);
       }
 
       await writer.write(data);
@@ -199,6 +202,13 @@ export class AtlasLogger {
 
   createChildLogger(defaultContext: LogContext): ChildLogger {
     return new ChildLogger(this, defaultContext);
+  }
+
+  /**
+   * Register a mapping from workspace UUID to registry ID for log file naming
+   */
+  registerWorkspaceMapping(workspaceId: string, registryId: string): void {
+    this.workspaceIdToRegistryId.set(workspaceId, registryId);
   }
 
   async readLogs(

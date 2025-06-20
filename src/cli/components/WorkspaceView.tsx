@@ -1,17 +1,9 @@
 import { useEffect, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
-import {
-  loadWorkspaceConfig,
-  WorkspaceConfig,
-} from "../utils/workspace-loader.ts";
-import {
-  AgentsTab,
-  DetailsTab,
-  LogsTab,
-  SessionsTab,
-  SignalsTab,
-} from "./workspace/index.ts";
+import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
+import { NewWorkspaceConfig } from "../../core/config-loader.ts";
+import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
 
 interface WorkspaceViewProps {
   workspaceSlug: string;
@@ -23,7 +15,7 @@ export const WorkspaceView = ({
   onBack,
 }: WorkspaceViewProps) => {
   const { exit } = useApp();
-  const [config, setConfig] = useState<WorkspaceConfig | null>(null);
+  const [config, setConfig] = useState<NewWorkspaceConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastEscapeTime, setLastEscapeTime] = useState<number | null>(null);
   const tabLabels = ["Details", "Agents", "Sessions", "Logs", "Signals"];
@@ -36,7 +28,8 @@ export const WorkspaceView = ({
   useEffect(() => {
     const loadConfig = async () => {
       setLoading(true);
-      const workspaceConfig = await loadWorkspaceConfig(workspaceSlug);
+      const registry = getWorkspaceRegistry();
+      const workspaceConfig = await registry.getWorkspaceConfigBySlug(workspaceSlug);
       setConfig(workspaceConfig);
       setLoading(false);
     };
@@ -135,9 +128,7 @@ export const WorkspaceView = ({
 
       {/* Tab Content */}
       <Box flexDirection="column" flexGrow={1} width="100%">
-        {activeTab === 0 && (
-          <DetailsTab config={config} workspaceSlug={workspaceSlug} />
-        )}
+        {activeTab === 0 && <DetailsTab config={config} workspaceSlug={workspaceSlug} />}
 
         {activeTab === 1 && <AgentsTab config={config} />}
 

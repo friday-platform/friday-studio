@@ -8,7 +8,7 @@ interface CliUsageExamplesProps {
 const generateExampleValue = (
   name: string,
   type: string,
-  description?: string
+  description?: string,
 ): unknown => {
   const lowerName = name.toLowerCase();
   const lowerDesc = description?.toLowerCase() || "";
@@ -93,7 +93,7 @@ const generateSchemaExample = (schema: Record<string, unknown>): unknown => {
       let value = generateExampleValue(
         fieldName,
         prop.type as string,
-        prop.description as string
+        prop.description as string,
       );
 
       // Handle enum values - pick the first one
@@ -107,7 +107,7 @@ const generateSchemaExample = (schema: Record<string, unknown>): unknown => {
 
   // Add a few optional fields for demonstration
   const optionalFields = Object.keys(properties).filter(
-    (key) => !required.includes(key)
+    (key) => !required.includes(key),
   );
   const fieldsToShow = optionalFields.slice(0, 2); // Show up to 2 optional fields
 
@@ -117,7 +117,7 @@ const generateSchemaExample = (schema: Record<string, unknown>): unknown => {
       let value = generateExampleValue(
         fieldName,
         prop.type as string,
-        prop.description as string
+        prop.description as string,
       );
 
       // Handle enum values - pick the first one
@@ -159,7 +159,7 @@ const formatFlagValue = (key: string, value: unknown): string[] => {
 const generateFlagCommand = (
   commandName: string,
   schema: Record<string, unknown>,
-  requiredOnly = false
+  requiredOnly = false,
 ): string[] => {
   if (schema.type !== "object" || !schema.properties) {
     return [`atlas signal trigger ${commandName}`];
@@ -175,14 +175,12 @@ const generateFlagCommand = (
   // Start with base command
   lines.push(`atlas signal trigger ${commandName} \\`);
 
-  const fieldsToProcess = requiredOnly
-    ? required
-    : [
-        ...required,
-        ...Object.keys(properties)
-          .filter((key) => !required.includes(key))
-          .slice(0, 2),
-      ];
+  const fieldsToProcess = requiredOnly ? required : [
+    ...required,
+    ...Object.keys(properties)
+      .filter((key) => !required.includes(key))
+      .slice(0, 2),
+  ];
 
   fieldsToProcess.forEach((fieldName, index) => {
     const prop = properties[fieldName];
@@ -190,7 +188,7 @@ const generateFlagCommand = (
       let value = generateExampleValue(
         fieldName,
         prop.type as string,
-        prop.description as string
+        prop.description as string,
       );
 
       // Handle enum values - pick the first one
@@ -201,8 +199,7 @@ const generateFlagCommand = (
       const flagValues = formatFlagValue(fieldName, value);
 
       flagValues.forEach((flagLine, flagIndex) => {
-        const isLastFlag =
-          index === fieldsToProcess.length - 1 &&
+        const isLastFlag = index === fieldsToProcess.length - 1 &&
           flagIndex === flagValues.length - 1;
         if (isLastFlag) {
           lines.push(`  ${flagLine}`);
@@ -218,8 +215,7 @@ const generateFlagCommand = (
 
 export const CliUsageExamples = ({ signal }: CliUsageExamplesProps) => {
   // Determine command name: use signal.command if available, otherwise signal name
-  const commandName =
-    (signal.command as string) || (signal.name as string) || "signal-name";
+  const commandName = (signal.command as string) || (signal.name as string) || "signal-name";
 
   const schema = signal.schema as Record<string, unknown> | undefined;
 

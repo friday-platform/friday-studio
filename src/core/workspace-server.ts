@@ -216,7 +216,7 @@ export class WorkspaceServer {
         description: signal.description || `HTTP signal for ${signalId}`,
         provider: "http",
         path: signal.path,
-        method: signal.method || "POST"
+        method: signal.method || "POST",
       });
 
       const route = provider.getRoutePattern();
@@ -224,7 +224,7 @@ export class WorkspaceServer {
 
       logger.info(
         `Registering HTTP signal route: ${route.method} ${route.path} -> ${signalId}`,
-        { signalId, path: route.path, method: route.method }
+        { signalId, path: route.path, method: route.method },
       );
 
       // Register the dynamic route
@@ -241,7 +241,7 @@ export class WorkspaceServer {
             try {
               // Process request through HTTP signal provider
               const httpSignal = await provider.processRequest(c.req.raw);
-              
+
               // Process signal through runtime
               const session = await this.runtime.processSignal(signal, httpSignal.data);
 
@@ -268,7 +268,7 @@ export class WorkspaceServer {
     } catch (error) {
       logger.error(`Failed to register HTTP signal route for ${signalId}`, {
         signalId,
-        error: error instanceof Error ? error.message : String(error)
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }

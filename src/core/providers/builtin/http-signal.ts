@@ -3,12 +3,7 @@
  * Handles simple HTTP signals with configurable methods and paths
  */
 
-import type { 
-  IProvider, 
-  ISignalProvider, 
-  ProviderState, 
-  HealthStatus
-} from "../types.ts";
+import type { HealthStatus, IProvider, ISignalProvider, ProviderState } from "../types.ts";
 import { ProviderStatus, ProviderType } from "../types.ts";
 
 export interface HTTPSignalConfig {
@@ -50,7 +45,7 @@ export class HTTPSignalProvider implements IProvider {
     this.validateConfig(config);
     this.config = {
       ...config,
-      method: config.method || "POST"
+      method: config.method || "POST",
     };
     this.id = config.id;
     this.state = {
@@ -64,7 +59,9 @@ export class HTTPSignalProvider implements IProvider {
     }
 
     if (config.method && !this.allowedMethods.includes(config.method)) {
-      throw new Error(`Invalid HTTP method '${config.method}'. Allowed: ${this.allowedMethods.join(", ")}`);
+      throw new Error(
+        `Invalid HTTP method '${config.method}'. Allowed: ${this.allowedMethods.join(", ")}`,
+      );
     }
   }
 
@@ -117,14 +114,12 @@ export class HTTPSignalProvider implements IProvider {
    * Generate route pattern for server registration
    */
   getRoutePattern(): HTTPRoutePattern {
-    const path = this.config.path.startsWith("/") 
-      ? this.config.path 
-      : `/${this.config.path}`;
+    const path = this.config.path.startsWith("/") ? this.config.path : `/${this.config.path}`;
 
     return {
       path,
       method: this.getMethod(),
-      signalId: this.config.id
+      signalId: this.config.id,
     };
   }
 
@@ -137,7 +132,7 @@ export class HTTPSignalProvider implements IProvider {
       id: this.config.id,
       type: "http",
       timestamp: new Date().toISOString(),
-      data: {}
+      data: {},
     };
 
     // Extract query parameters
@@ -164,7 +159,7 @@ export class HTTPSignalProvider implements IProvider {
     if (request.method === "POST" || request.method === "PUT") {
       try {
         const contentType = request.headers.get("content-type");
-        
+
         if (contentType?.includes("application/json")) {
           const body = await request.text();
           if (body.trim()) {

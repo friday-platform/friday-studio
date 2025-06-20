@@ -359,7 +359,7 @@ const WorkspaceSignalConfigSchema = z.object({
   command: z.string().optional(),
 }).catchall(z.any()); // Allow additional provider-specific fields
 
-const NewWorkspaceConfigSchema = z.object({
+export const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
   workspace: z.object({
     id: z.string().uuid("Workspace ID must be a valid UUID"),

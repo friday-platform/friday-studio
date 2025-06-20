@@ -14,7 +14,7 @@ Deno.test("HTTPSignalProvider - initialization", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
@@ -27,7 +27,7 @@ Deno.test("HTTPSignalProvider - initialization", async (t) => {
       id: "test-http",
       description: "Test HTTP signal",
       provider: "http" as const,
-      method: "POST" as const
+      method: "POST" as const,
       // missing path
     };
 
@@ -44,7 +44,7 @@ Deno.test("HTTPSignalProvider - initialization", async (t) => {
       id: "test-http",
       description: "Test HTTP signal",
       provider: "http",
-      path: "/test"
+      path: "/test",
       // no method specified
     };
 
@@ -54,14 +54,14 @@ Deno.test("HTTPSignalProvider - initialization", async (t) => {
 
   await t.step("should support GET, POST, PUT, DELETE methods", () => {
     const methods = ["GET", "POST", "PUT", "DELETE"] as const;
-    
-    methods.forEach(method => {
+
+    methods.forEach((method) => {
       const config: HTTPSignalConfig = {
         id: "test-http",
         description: "Test HTTP signal",
         provider: "http",
         path: "/test",
-        method
+        method,
       };
 
       const provider = new HTTPSignalProvider(config);
@@ -75,7 +75,7 @@ Deno.test("HTTPSignalProvider - initialization", async (t) => {
       description: "Test HTTP signal",
       provider: "http" as const,
       path: "/test",
-      method: "INVALID"
+      method: "INVALID",
     };
 
     try {
@@ -94,12 +94,12 @@ Deno.test("HTTPSignalProvider - route registration", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/api/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
     const route = provider.getRoutePattern();
-    
+
     assertEquals(route.path, "/api/test");
     assertEquals(route.method, "POST");
     assertEquals(route.signalId, "test-http");
@@ -111,7 +111,7 @@ Deno.test("HTTPSignalProvider - route registration", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "GET"
+      method: "GET",
     };
 
     const provider = new HTTPSignalProvider(config);
@@ -125,7 +125,7 @@ Deno.test("HTTPSignalProvider - route registration", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "test",
-      method: "GET"
+      method: "GET",
     };
 
     const provider = new HTTPSignalProvider(config);
@@ -141,19 +141,19 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "test data" })
+      body: JSON.stringify({ message: "test data" }),
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     assertEquals(signal.id, "test-http");
     assertEquals(signal.type, "http");
     assertEquals(signal.data.message, "test data");
@@ -166,17 +166,17 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "GET"
+      method: "GET",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test", {
-      method: "GET"
+      method: "GET",
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     assertEquals(signal.id, "test-http");
     assertEquals(signal.type, "http");
     assertEquals(signal.data, {});
@@ -188,17 +188,17 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "GET"
+      method: "GET",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test?param1=value1&param2=value2", {
-      method: "GET"
+      method: "GET",
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     assertEquals(signal.data.query.param1, "value1");
     assertEquals(signal.data.query.param2, "value2");
   });
@@ -209,21 +209,21 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test", {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
-        "X-Custom-Header": "test-value"
-      }
+        "X-Custom-Header": "test-value",
+      },
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     assertEquals(signal.data.headers["content-type"], "application/json");
     assertEquals(signal.data.headers["x-custom-header"], "test-value");
   });
@@ -236,19 +236,19 @@ Deno.test("HTTPSignalProvider - error handling", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "invalid json {"
+      body: "invalid json {",
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     // Should still process but with raw body
     assertEquals(signal.id, "test-http");
     assertEquals(signal.data.body, "invalid json {");
@@ -260,17 +260,17 @@ Deno.test("HTTPSignalProvider - error handling", async (t) => {
       description: "Test HTTP signal",
       provider: "http",
       path: "/test",
-      method: "POST"
+      method: "POST",
     };
 
     const provider = new HTTPSignalProvider(config);
-    
+
     const mockRequest = new Request("http://localhost:8080/test", {
-      method: "POST"
+      method: "POST",
     });
 
     const signal = await provider.processRequest(mockRequest);
-    
+
     assertEquals(signal.id, "test-http");
     assertEquals(signal.data, {});
   });
