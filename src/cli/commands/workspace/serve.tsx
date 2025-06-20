@@ -1,17 +1,23 @@
 import { load } from "@std/dotenv";
-import { Text, useApp } from "ink";
+import { Box, Text, useApp } from "ink";
 import { useEffect, useState } from "react";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { findAvailablePort } from "../../../utils/port-finder.ts";
 import { WorkspaceCommandProps } from "./utils.ts";
+import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 
 export function WorkspaceServeCommand({ args, flags }: WorkspaceCommandProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "ready" | "error" | "detached">("loading");
   const [error, setError] = useState<string>("");
   const [workspacePath, setWorkspacePath] = useState<string>("");
+  const [detachedInfo, setDetachedInfo] = useState<
+    { pid: number; port: number; workspaceId: string; workspaceName: string } | null
+  >(null);
   const requestedPort = flags.port ? Number(flags.port) : undefined;
+  const isDetached = flags.detached === true;
+  const isInternalDetached = flags.internalDetached === true;
 
   useEffect(() => {
     const validateAndServe = async () => {
@@ -54,7 +60,40 @@ export function WorkspaceServeCommand({ args, flags }: WorkspaceCommandProps) {
         }
 
         setWorkspacePath(targetPath);
-        setStatus("ready");
+
+        // Handle detached mode
+        if (isDetached) {
+          const processManager = new WorkspaceProcessManager();
+          const registry = getWorkspaceRegistry();
+
+          try {
+            // Start detached process
+            const pid = await processManager.startDetached(targetPath, {
+              port: requestedPort,
+              logLevel: flags.logLevel as string | undefined,
+            });
+
+            // Wait for workspace to be ready
+            const workspace = await registry.findByPath(targetPath) ||
+              await registry.getCurrentWorkspace();
+
+            if (workspace && await processManager.waitForReady(workspace.id)) {
+              setDetachedInfo({
+                pid,
+                port: workspace.port!,
+                workspaceId: workspace.id,
+                workspaceName: workspace.name,
+              });
+              setStatus("detached");
+            } else {
+              throw new Error("Workspace failed to start");
+            }
+          } catch (err) {
+            throw err;
+          }
+        } else {
+          setStatus("ready");
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         setStatus("error");
@@ -72,15 +111,46 @@ export function WorkspaceServeCommand({ args, flags }: WorkspaceCommandProps) {
     return <Text color="red">Error: {error}</Text>;
   }
 
+  if (status === "detached") {
+    return <DetachedComponent detachedInfo={detachedInfo!} />;
+  }
+
   return (
-    <ServingComponent requestedPort={requestedPort} flags={flags} workspacePath={workspacePath} />
+    <ServingComponent
+      requestedPort={requestedPort}
+      flags={flags}
+      workspacePath={workspacePath}
+      isInternalDetached={isInternalDetached}
+    />
   );
 }
 
-function ServingComponent({ requestedPort, flags, workspacePath }: {
+function DetachedComponent({ detachedInfo }: {
+  detachedInfo: { pid: number; port: number; workspaceId: string; workspaceName: string };
+}) {
+  const { exit } = useApp();
+
+  useEffect(() => {
+    // Exit immediately after displaying the message
+    setTimeout(() => exit(), 100);
+  }, [exit]);
+
+  return (
+    <Box flexDirection="column">
+      <Text color="green">✓ Workspace '{detachedInfo.workspaceName}' started in background</Text>
+      <Text>ID: {detachedInfo.workspaceId}</Text>
+      <Text>PID: {detachedInfo.pid}</Text>
+      <Text>Port: {detachedInfo.port}</Text>
+      <Text>Logs: atlas logs {detachedInfo.workspaceId}</Text>
+    </Box>
+  );
+}
+
+function ServingComponent({ requestedPort, flags, workspacePath, isInternalDetached }: {
   requestedPort?: number;
   flags: Record<string, unknown>;
   workspacePath: string;
+  isInternalDetached: boolean;
 }) {
   const { exit } = useApp();
 
@@ -92,11 +162,31 @@ function ServingComponent({ requestedPort, flags, workspacePath }: {
 
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Change to workspace directory if needed
-        const originalCwd = Deno.cwd();
-        if (workspacePath && workspacePath !== originalCwd) {
-          console.log(`Changing to workspace directory: ${workspacePath}`);
-          Deno.chdir(workspacePath);
+        // Handle internal detached mode
+        if (isInternalDetached) {
+          // Get workspace ID from flags
+          const workspaceId = flags.workspaceId as string;
+          if (!workspaceId) {
+            throw new Error("Internal detached mode requires workspaceId flag");
+          }
+
+          // Find workspace by ID
+          const registry = getWorkspaceRegistry();
+          const workspace = await registry.findById(workspaceId);
+          if (!workspace) {
+            throw new Error(`Workspace ${workspaceId} not found`);
+          }
+
+          // Change to workspace directory
+          console.log(`Changing to workspace directory: ${workspace.path}`);
+          Deno.chdir(workspace.path);
+        } else {
+          // Change to workspace directory if needed
+          const originalCwd = Deno.cwd();
+          if (workspacePath && workspacePath !== originalCwd) {
+            console.log(`Changing to workspace directory: ${workspacePath}`);
+            Deno.chdir(workspacePath);
+          }
         }
 
         await load({ export: true });

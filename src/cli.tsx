@@ -24,9 +24,11 @@ const cli = meow(
     
   Full Commands
     workspace init <name> [path]              Initialize a new workspace
-    workspace serve                           Start workspace server
+    workspace serve [-d|--detached]           Start workspace server (use -d for background)
     workspace list                            List all workspaces
     workspace status [id|name]                Show workspace status
+    workspace stop <id|name> [--force]        Stop a running workspace
+    workspace restart <id|name>               Restart a workspace
     workspace remove <id|name>                Remove workspace from registry
     workspace cleanup                         Clean up stale registry entries
     workspace logs [id|name]                  View workspace logs
@@ -95,7 +97,6 @@ const cli = meow(
       },
       data: {
         type: "string",
-        shortFlag: "d",
       },
       follow: {
         type: "boolean",
@@ -123,6 +124,21 @@ const cli = meow(
       context: {
         type: "string",
         isMultiple: true,
+      },
+      detached: {
+        type: "boolean",
+        shortFlag: "d",
+        default: false,
+      },
+      internalDetached: {
+        type: "boolean",
+        default: false,
+      },
+      workspaceId: {
+        type: "string",
+      },
+      logFile: {
+        type: "string",
       },
     },
   },

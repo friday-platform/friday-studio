@@ -53,15 +53,17 @@ export class WorkspaceProcessManager {
       "--allow-all",
       "--unstable-broadcast-channel",
       "--unstable-worker-options",
-      join(Deno.cwd(), "src/cli.tsx"),
+      "src/cli.tsx",
       "workspace",
       "serve",
       workspace.id,
-      "--internal-detached",
+      "--internalDetached",
       "--port",
       port.toString(),
-      "--log-file",
+      "--logFile",
       logFile,
+      "--workspaceId",
+      workspace.id,
     ];
 
     if (options.logLevel) {
@@ -74,15 +76,22 @@ export class WorkspaceProcessManager {
 
     logger.debug("Spawning detached process", {
       command: Deno.execPath(),
-      args: args.slice(0, 8) + "...", // Log first few args
+      args: [...args.slice(0, 8), "..."], // Log first few args
     });
 
-    // Spawn detached process
-    const cmd = new Deno.Command(Deno.execPath(), {
-      args,
-      stdin: "null",
-      stdout: "null",
+    // Use our custom script for proper detachment
+    const scriptPath = join(
+      dirname(import.meta.url.replace("file://", "")),
+      "..",
+      "utils",
+      "start-detached.sh",
+    );
+
+    const cmd = new Deno.Command(scriptPath, {
+      args: [Deno.execPath(), ...args],
+      stdout: "piped", // We need to capture the PID
       stderr: "null",
+      cwd: Deno.cwd(),
       env: {
         ...Deno.env.toObject(),
         ATLAS_WORKSPACE_ID: workspace.id,
@@ -94,34 +103,47 @@ export class WorkspaceProcessManager {
       },
     });
 
-    const child = cmd.spawn();
+    const output = await cmd.output();
+
+    // Parse the PID from the script output
+    const pidStr = new TextDecoder().decode(output.stdout).trim();
+    const pid = parseInt(pidStr, 10);
+
+    if (isNaN(pid)) {
+      throw new Error(`Failed to get PID from detached script: ${pidStr}`);
+    }
 
     // Update registry immediately
     await this.registry.updateStatus(workspace.id, "starting", {
-      pid: child.pid,
+      pid,
       port,
       startedAt: new Date().toISOString(),
     });
 
-    // Detach from parent
-    child.unref();
+    // Script handles detachment
 
     logger.info("Detached process spawned", {
       workspaceId: workspace.id,
-      pid: child.pid,
+      pid,
       port,
     });
 
     // Wait briefly for process to start
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     // Verify process started
-    if (!await this.isProcessRunning(child.pid)) {
+    const isRunning = await this.isProcessRunning(pid);
+    logger.debug("Process running check", { pid, isRunning });
+
+    if (!isRunning) {
+      // Process failed to start
+      logger.error("Process failed to start", { pid });
+
       await this.registry.updateStatus(workspace.id, "crashed");
       throw new Error("Failed to start workspace process");
     }
 
-    return child.pid;
+    return pid;
   }
 
   async stop(workspaceId: string, force = false): Promise<void> {
@@ -203,9 +225,16 @@ export class WorkspaceProcessManager {
 
   async isProcessRunning(pid: number): Promise<boolean> {
     try {
-      // Signal 0 checks if process exists without killing it
-      Deno.kill(pid, "SIGCONT");
-      return true;
+      // Signal 0 would be ideal, but Deno doesn't support it
+      // Instead, we can try to get process info
+      const proc = new Deno.Command("ps", {
+        args: ["-p", pid.toString()],
+        stdout: "piped",
+        stderr: "piped",
+      });
+
+      const output = await proc.output();
+      return output.success;
     } catch {
       return false;
     }

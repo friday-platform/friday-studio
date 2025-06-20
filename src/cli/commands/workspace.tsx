@@ -5,8 +5,10 @@ import {
   WorkspaceListCommand,
   WorkspaceLogsCommand,
   WorkspaceRemoveCommand,
+  WorkspaceRestartCommand,
   WorkspaceServeCommand,
   WorkspaceStatusCommand,
+  WorkspaceStopCommand,
 } from "./workspace/index.ts";
 
 export interface WorkspaceCommandProps {
@@ -25,6 +27,7 @@ export function WorkspaceCommand({
       return <WorkspaceInitCommand args={args} flags={flags} />;
 
     case "start":
+    case "serve":
       return <WorkspaceServeCommand args={args} flags={flags} />;
 
     case "list":
@@ -33,6 +36,12 @@ export function WorkspaceCommand({
 
     case "status":
       return <WorkspaceStatusCommand args={args} flags={flags} />;
+
+    case "stop":
+      return <WorkspaceStopCommand args={args} flags={flags} />;
+
+    case "restart":
+      return <WorkspaceRestartCommand args={args} flags={flags} />;
 
     case "remove":
     case "rm":

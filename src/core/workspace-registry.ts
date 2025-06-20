@@ -218,7 +218,10 @@ export class WorkspaceRegistryManager {
   }
 
   // Lazy health check - core of our approach
-  private async checkAndUpdateHealth(workspace: WorkspaceEntry): Promise<WorkspaceEntry> {
+  private async checkAndUpdateHealth(
+    workspace: WorkspaceEntry,
+    useHttpCheck = false,
+  ): Promise<WorkspaceEntry> {
     // Check if status indicates it should have a running process
     if (
       (workspace.status === WorkspaceStatus.RUNNING ||
@@ -227,8 +230,8 @@ export class WorkspaceRegistryManager {
       workspace.pid
     ) {
       try {
-        // Check if process exists
-        const isRunning = this.isProcessRunning(workspace.pid);
+        // First check if process exists
+        const isRunning = await this.isProcessRunning(workspace.pid);
 
         if (!isRunning) {
           // Process died - update status based on previous state
@@ -247,6 +250,21 @@ export class WorkspaceRegistryManager {
             port: undefined,
           });
           workspace.status = newStatus;
+        } else if (useHttpCheck && workspace.port && workspace.status === WorkspaceStatus.RUNNING) {
+          // Process exists, optionally check HTTP health for more accuracy
+          try {
+            const response = await fetch(`http://localhost:${workspace.port}/api/health`, {
+              signal: AbortSignal.timeout(2000), // 2 second timeout
+            });
+
+            if (!response.ok) {
+              // HTTP check failed but process exists - might be starting up
+              workspace.status = WorkspaceStatus.STARTING;
+            }
+          } catch {
+            // HTTP check failed but process exists - might be starting up
+            workspace.status = WorkspaceStatus.STARTING;
+          }
         }
       } catch {
         // Error checking process - mark as unknown
@@ -257,14 +275,19 @@ export class WorkspaceRegistryManager {
     return workspace;
   }
 
-  private isProcessRunning(pid: number): boolean {
+  private async isProcessRunning(pid: number): Promise<boolean> {
     try {
-      // Try to get process info by sending a harmless signal
-      // SIGCONT continues a stopped process but has no effect on running ones
-      Deno.kill(pid, "SIGCONT");
-      return true;
+      // Use ps command to reliably check if process exists
+      // This matches the implementation in WorkspaceProcessManager
+      const proc = new Deno.Command("ps", {
+        args: ["-p", pid.toString()],
+        stdout: "piped",
+        stderr: "piped",
+      });
+
+      const output = await proc.output();
+      return output.success;
     } catch {
-      // Process doesn't exist or we don't have permission
       return false;
     }
   }
