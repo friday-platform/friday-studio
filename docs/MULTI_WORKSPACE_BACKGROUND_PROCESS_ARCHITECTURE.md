@@ -7,6 +7,45 @@ as background processes. Currently, Atlas can only serve a single workspace atta
 terminal. This enhancement will enable users to run multiple workspaces concurrently as detached
 processes with proper lifecycle management.
 
+## Current Status (December 2024)
+
+### ✅ Completed Foundation Work
+
+From the Workspace Registry Implementation Plan, the following has been completed:
+
+1. **Core Registry Implementation (100% Complete)**
+   - Full registry types and schemas with Zod validation
+   - Docker-style naming system (e.g., `fervent_einstein`, `happy_turing`)
+   - WorkspaceRegistryManager with all CRUD operations
+   - Lazy health checks with proper status transitions
+   - Auto-discovery and import of existing workspaces
+   - Singleton pattern with `getWorkspaceRegistry()`
+
+2. **CLI Integration (80% Complete)**
+   - ✅ `workspace init` - Fully integrated with registry
+   - ✅ `workspace list` - Shows all registered workspaces with status
+   - ✅ `workspace serve` - Accepts workspace ID/name, dynamic port assignment
+   - ✅ `workspace remove` - Removes workspaces from registry
+   - ⏳ `workspace status` - Command exists but needs implementation
+   - ⏳ `workspace cleanup` - Command exists but needs implementation
+
+3. **Key Improvements Implemented**
+   - Dynamic port assignment prevents conflicts between workspaces
+   - Enhanced status tracking (STOPPED, STARTING, RUNNING, STOPPING, CRASHED)
+   - Non-blocking server start with `startNonBlocking()` method
+   - Simplified architecture without file-based locking
+
+### 🚧 Remaining Work for Background Process Support
+
+While the registry foundation is solid, true detached/background process support requires:
+
+1. **Detached Process Spawning** - The `-d` flag implementation
+2. **Process Lifecycle Management** - Start, stop, restart operations
+3. **Signal Handling** - Graceful shutdown in detached mode
+4. **Health Monitoring** - HTTP health endpoint and monitoring
+5. **Log Management** - Streaming logs from detached processes
+6. **Complete CLI Commands** - status, cleanup, enhanced logs
+
 ## Goals
 
 - Enable detached workspace execution with `atlas workspace serve -d`
@@ -17,99 +56,19 @@ processes with proper lifecycle management.
 
 ## Architecture Components
 
-### 1. Workspace Registry
+### 1. Workspace Registry (✅ COMPLETED)
 
-A persistent registry stored at `~/.atlas/registry.json` that tracks all registered workspaces and
-their current state.
+The persistent registry at `~/.atlas/registry.json` is fully implemented with:
 
-#### Schema
+- Zod-validated schemas for type safety
+- Docker-style naming for memorable workspace IDs
+- Lazy health checks on read operations
+- Atomic file operations (no lockfile needed)
+- Auto-discovery of existing workspaces
 
-```typescript
-interface WorkspaceRegistry {
-  version: string; // Registry schema version for future migrations
-  workspaces: WorkspaceEntry[];
-  lastUpdated: string; // ISO timestamp
-}
+### 2. Process Management (🚧 TO BE IMPLEMENTED)
 
-interface WorkspaceEntry {
-  // Identification
-  id: string; // UUID for unique identification
-  name: string; // Human-readable name
-
-  // Location
-  path: string; // Absolute path to workspace directory
-  configPath: string; // Path to workspace.yml
-
-  // Runtime state
-  status: WorkspaceStatus;
-  pid?: number; // Process ID when running
-  port?: number; // HTTP server port
-
-  // Timestamps
-  createdAt: string; // When workspace was registered
-  startedAt?: string; // Last start time
-  stoppedAt?: string; // Last stop time
-  lastHealthCheck?: string;
-
-  // Metadata
-  metadata?: {
-    version?: string; // Atlas version that started it
-    environment?: Record<string, string>;
-    tags?: string[];
-  };
-}
-
-enum WorkspaceStatus {
-  STOPPED = "stopped", // Not running
-  STARTING = "starting", // Process spawned, waiting for ready
-  RUNNING = "running", // Process running and healthy
-  STOPPING = "stopping", // Shutdown signal sent
-  CRASHED = "crashed", // Process died unexpectedly
-  UNKNOWN = "unknown", // State cannot be determined
-}
-```
-
-### 2. Process Management
-
-#### 2.1 WorkspaceRegistryManager
-
-Handles all registry operations with file locking to prevent race conditions.
-
-```typescript
-class WorkspaceRegistryManager {
-  private registryPath: string;
-  private lockFile: string;
-
-  constructor() {
-    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
-    this.registryPath = join(homeDir, ".atlas", "registry.json");
-    this.lockFile = `${this.registryPath}.lock`;
-  }
-
-  // Core operations
-  async initialize(): Promise<void>;
-  async register(entry: Omit<WorkspaceEntry, "id" | "createdAt">): Promise<WorkspaceEntry>;
-  async unregister(id: string): Promise<void>;
-  async updateStatus(
-    id: string,
-    status: WorkspaceStatus,
-    updates?: Partial<WorkspaceEntry>,
-  ): Promise<void>;
-
-  // Query operations
-  async findById(id: string): Promise<WorkspaceEntry | null>;
-  async findByName(name: string): Promise<WorkspaceEntry | null>;
-  async findByPath(path: string): Promise<WorkspaceEntry | null>;
-  async listAll(): Promise<WorkspaceEntry[]>;
-  async getRunning(): Promise<WorkspaceEntry[]>;
-
-  // Maintenance
-  async cleanupStale(): Promise<void>; // Remove entries for non-existent processes
-  async backup(): Promise<void>; // Create registry backup
-}
-```
-
-#### 2.2 WorkspaceProcessManager
+#### 2.1 WorkspaceProcessManager
 
 Manages the lifecycle of workspace processes.
 
@@ -118,7 +77,7 @@ class WorkspaceProcessManager {
   constructor(private registry: WorkspaceRegistryManager) {}
 
   // Process control
-  async startDetached(entry: WorkspaceEntry, options: StartOptions): Promise<number>;
+  async startDetached(workspaceId: string, options: StartOptions): Promise<number>;
   async stop(id: string, graceful: boolean = true): Promise<void>;
   async restart(id: string): Promise<void>;
 
@@ -127,9 +86,8 @@ class WorkspaceProcessManager {
   async getProcessInfo(pid: number): Promise<ProcessInfo | null>;
   async waitForReady(id: string, timeout: number = 30000): Promise<boolean>;
 
-  // Port management
-  async findAvailablePort(preferred?: number): Promise<number>;
-  async isPortAvailable(port: number): Promise<boolean>;
+  // Health checks
+  async checkHttpHealth(port: number): Promise<boolean>;
 }
 
 interface StartOptions {
@@ -141,7 +99,6 @@ interface StartOptions {
 
 interface ProcessInfo {
   pid: number;
-  ppid: number;
   cpu: number;
   memory: number;
   uptime: number;
@@ -150,491 +107,339 @@ interface ProcessInfo {
 
 ### 3. Detached Process Implementation
 
-Based on the research in `deno-background-output.md`, implement proper process detachment:
+#### 3.1 Process Spawning Strategy
+
+Based on Deno's process model, implement proper detachment:
 
 ```typescript
-async startDetached(entry: WorkspaceEntry, options: StartOptions): Promise<number> {
-  const logFile = join(this.getLogDir(), "workspaces", `${entry.id}.log`);
+async startDetached(workspaceId: string, options: StartOptions): Promise<number> {
+  const registry = getWorkspaceRegistry();
+  const workspace = await registry.findById(workspaceId);
+  if (!workspace) throw new Error(`Workspace ${workspaceId} not found`);
+
+  // Find available port if not specified
+  const port = options.port || await findAvailablePort();
   
-  // Prepare command arguments
+  // Prepare log file
+  const logFile = join(getAtlasHome(), "logs", "workspaces", `${workspaceId}.log`);
+  await ensureDir(dirname(logFile));
+  
+  // Build command arguments
   const args = [
     "run",
-    "--allow-read",
-    "--allow-write", 
-    "--allow-net",
-    "--allow-env",
+    "--allow-all",
     "--unstable-broadcast-channel",
     "--unstable-worker-options",
     join(Deno.cwd(), "src/cli.tsx"),
     "workspace",
     "serve",
-    "--internal-detached",  // Special flag for detached mode
-    "--workspace-id", entry.id,
-    "--workspace-path", entry.path,
-    "--port", (options.port || entry.port).toString(),
+    workspaceId,
+    "--internal-detached",
+    "--port", port.toString(),
     "--log-file", logFile,
   ];
   
-  if (options.additionalFlags) {
-    args.push(...options.additionalFlags);
-  }
-  
-  // Create detached process
+  // Spawn detached process
   const cmd = new Deno.Command(Deno.execPath(), {
     args,
-    stdin: "null",    // Critical for detachment
-    stdout: "null",   // Redirect to /dev/null
-    stderr: "null",   // Redirect to /dev/null
+    stdin: "null",
+    stdout: "null", 
+    stderr: "null",
     env: {
       ...Deno.env.toObject(),
-      ATLAS_WORKSPACE_ID: entry.id,
-      ATLAS_WORKSPACE_NAME: entry.name,
+      ATLAS_WORKSPACE_ID: workspaceId,
       ATLAS_DETACHED: "true",
       ...options.env,
     },
   });
   
   const child = cmd.spawn();
-  child.unref();  // Detach from parent process
   
-  // Update registry immediately
-  await this.registry.updateStatus(entry.id, WorkspaceStatus.STARTING, {
+  // Update registry
+  await registry.updateStatus(workspaceId, "starting", {
     pid: child.pid,
+    port,
     startedAt: new Date().toISOString(),
   });
+  
+  // Detach from parent
+  child.unref();
   
   return child.pid;
 }
 ```
 
-### 4. Enhanced CLI Commands
+#### 3.2 Signal Handling in Detached Mode
 
-#### 4.1 CLI Integration
-
-The CLI uses a meow-based parser in `src/cli.tsx`. We need to:
-
-1. Add new flags to the meow configuration:
+Enhance workspace server to handle signals properly when detached:
 
 ```typescript
-// In src/cli.tsx
-flags: {
-  // ... existing flags ...
-  detached: {
-    type: "boolean",
-    shortFlag: "d",
-    default: false,
-  },
-  "internal-detached": {
-    type: "boolean",
-    default: false,
-  },
-  "workspace-id": {
-    type: "string",
-  },
-  "workspace-path": {
-    type: "string",
-  },
-  "log-file": {
-    type: "string",
-  },
-}
-```
-
-2. The CLI already routes `workspace` commands properly, so detached mode will work with existing
-   shortcuts:
-
-```bash
-# All of these will work for detached mode:
-atlas workspace serve -d
-atlas work serve -d
-atlas w serve -d
-atlas work -d  # defaults to serve
-```
-
-#### 4.2 Workspace Serve Command
-
-Modify the existing workspace serve command to support detached mode:
-
-```bash
-# Attached mode (current behavior)
-atlas workspace serve
-
-# Detached mode
-atlas workspace serve -d
-atlas workspace serve --detached
-atlas workspace serve -d --name "my-workspace" --port 8080
-
-# Options
---detached, -d         Run workspace in background
---name <name>         Set workspace name (default: directory name)
---port <port>         HTTP server port (default: auto-assign)
---log-level <level>   Set log level (error, warn, info, debug)
-```
-
-#### 4.2 New Workspace Management Commands
-
-```bash
-# List all workspaces
-atlas workspace list [--format json|table]
-atlas workspace ls
-
-# Output example:
-# ID        NAME           STATUS    PORT   PID     UPTIME
-# a1b2c3    my-workspace   running   8080   12345   2h 15m
-# d4e5f6    test-ws       stopped   -      -       -
-
-# Stop a workspace
-atlas workspace stop <id|name> [--force]
-
-# Get workspace status
-atlas workspace status <id|name> [--format json|yaml]
-
-# Restart a workspace
-atlas workspace restart <id|name>
-
-# Remove workspace from registry
-atlas workspace remove <id|name> [--force]
-
-# Show workspace information
-atlas workspace info <id|name>
-```
-
-#### 4.3 Enhanced Logs Command
-
-```bash
-# Tail logs from detached workspace
-atlas logs <workspace-id|name> [options]
-
-# Options
---follow, -f          Follow log output
---lines, -n <num>     Number of lines to show (default: 100)
---since <duration>    Show logs since duration (e.g., "5m", "1h")
---level <level>       Filter by log level
---format <format>     Output format (text, json)
-```
-
-### 5. Internal Process Communication
-
-#### 5.1 Health Check Endpoint
-
-Each workspace server will expose a health endpoint:
-
-```typescript
-// In workspace server
-if (Deno.env.get("ATLAS_DETACHED") === "true") {
-  server.addRoute("/health", async (req) => {
-    return new Response(
-      JSON.stringify({
-        status: "healthy",
-        workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
-        uptime: process.uptime(),
-        memory: Deno.memoryUsage(),
-        timestamp: new Date().toISOString(),
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-      },
-    );
-  });
-}
-```
-
-#### 5.2 Graceful Shutdown
-
-Handle signals properly in detached mode:
-
-```typescript
+// In workspace-server.ts
 if (Deno.env.get("ATLAS_DETACHED") === "true") {
   const workspaceId = Deno.env.get("ATLAS_WORKSPACE_ID")!;
-  const registry = new WorkspaceRegistryManager();
+  const registry = getWorkspaceRegistry();
 
-  // Handle SIGTERM for graceful shutdown
-  Deno.addSignalListener("SIGTERM", async () => {
-    await registry.updateStatus(workspaceId, WorkspaceStatus.STOPPING);
-    logger.info("Received SIGTERM, shutting down gracefully...");
-
-    // Shutdown server and workers
-    await server.shutdown();
-    await workerManager.terminateAll();
-
-    // Update final status
-    await registry.updateStatus(workspaceId, WorkspaceStatus.STOPPED, {
-      stoppedAt: new Date().toISOString(),
-      pid: undefined,
-    });
-
+  // Graceful shutdown handler
+  const shutdown = async (signal: string) => {
+    logger.info(`Received ${signal}, shutting down gracefully...`);
+    await registry.updateStatus(workspaceId, "stopping");
+    
+    try {
+      await server.shutdown();
+      await registry.updateStatus(workspaceId, "stopped", {
+        stoppedAt: new Date().toISOString(),
+        pid: undefined,
+      });
+    } catch (error) {
+      await registry.updateStatus(workspaceId, "crashed");
+      throw error;
+    }
+    
     Deno.exit(0);
-  });
+  };
 
-  // Handle SIGINT (Ctrl+C) - should not happen in detached mode
-  Deno.addSignalListener("SIGINT", async () => {
-    logger.warn("Received SIGINT in detached mode");
-    // Same shutdown procedure
-  });
+  Deno.addSignalListener("SIGTERM", () => shutdown("SIGTERM"));
+  Deno.addSignalListener("SIGINT", () => shutdown("SIGINT"));
 }
 ```
 
-### 6. Monitoring and Recovery
+### 4. Enhanced CLI Commands
 
-#### 6.1 Health Monitor Approaches
+#### 4.1 Detached Mode Support
 
-Since we don't maintain state across system restarts (workspaces will appear as CRASHED after a
-reboot), health monitoring is implemented through two complementary approaches:
-
-##### Approach A: Lazy Health Checks (Recommended)
-
-Perform health checks on-demand when users interact with workspaces:
+Modify workspace serve command to support detached flag:
 
 ```typescript
-class WorkspaceRegistryManager {
-  // Called before any operation that displays workspace status
-  async checkAndUpdateHealth(workspace: WorkspaceEntry): Promise<WorkspaceEntry> {
-    if (workspace.status === WorkspaceStatus.RUNNING && workspace.pid) {
-      const isRunning = await this.processManager.isRunning(workspace.pid);
-
-      if (!isRunning) {
-        await this.updateStatus(workspace.id, WorkspaceStatus.CRASHED, {
-          stoppedAt: new Date().toISOString(),
-          pid: undefined,
-        });
-        workspace.status = WorkspaceStatus.CRASHED;
-      } else if (workspace.port) {
-        // Optionally check HTTP health
-        const healthy = await this.checkHttpHealth(workspace.port);
-        workspace.lastHealthCheck = new Date().toISOString();
-      }
-    }
-
-    return workspace;
-  }
-
-  // Enhanced listAll with health checks
-  async listAllWithHealthCheck(): Promise<WorkspaceEntry[]> {
-    const workspaces = await this.listAll();
-    return Promise.all(workspaces.map((ws) => this.checkAndUpdateHealth(ws)));
-  }
+// In workspace.tsx
+if (flags.detached || flags.d) {
+  // Start in detached mode
+  const processManager = new WorkspaceProcessManager(registry);
+  const pid = await processManager.startDetached(workspace.id, {
+    port: flags.port,
+    logLevel: flags.logLevel,
+  });
+  
+  console.log(`Workspace '${workspace.name}' started in background`);
+  console.log(`  ID: ${workspace.id}`);
+  console.log(`  PID: ${pid}`);
+  console.log(`  Port: ${workspace.port}`);
+  console.log(`  Logs: atlas logs ${workspace.id}`);
+  
+  process.exit(0);
+} else {
+  // Existing attached mode
+  await server.start();
 }
 ```
 
-##### Approach B: Optional Daemon Process
-
-For users who want active monitoring, provide an optional monitoring daemon:
+#### 4.2 New Management Commands
 
 ```bash
-# Start the health monitor daemon
-atlas monitor start [-d|--daemon]
+# Stop a running workspace
+atlas workspace stop <id|name> [--force]
 
-# Stop the monitor
-atlas monitor stop
+# Restart a workspace  
+atlas workspace restart <id|name>
 
-# Check monitor status
-atlas monitor status
+# Get detailed workspace status
+atlas workspace status <id|name>
+
+# Clean up stale registry entries
+atlas workspace cleanup
+
+# Tail logs from detached workspace
+atlas logs <workspace-id|name> [--follow] [--tail 100]
 ```
 
-Implementation:
+### 5. Health Monitoring
+
+#### 5.1 HTTP Health Endpoint
+
+Add health endpoint to workspace server:
 
 ```typescript
-// src/cli/commands/monitor.tsx
-class MonitorCommand {
-  async start(flags: { daemon?: boolean }): Promise<void> {
-    if (flags.daemon) {
-      // Start as detached process
-      const cmd = new Deno.Command(Deno.execPath(), {
-        args: [
-          "run",
-          "--allow-all",
-          join(Deno.cwd(), "src/cli.tsx"),
-          "monitor",
-          "start",
-          "--internal-daemon",
-        ],
-        stdin: "null",
-        stdout: "null",
-        stderr: "null",
-      });
-
-      const child = cmd.spawn();
-      child.unref();
-
-      console.log(`Monitor daemon started with PID: ${child.pid}`);
-    } else {
-      // Run in foreground
-      const monitor = new WorkspaceHealthMonitor();
-      await monitor.startMonitoring();
-    }
-  }
-}
-
-class WorkspaceHealthMonitor {
-  private checkInterval = 30000; // 30 seconds
-  private registry: WorkspaceRegistryManager;
-  private processManager: WorkspaceProcessManager;
-
-  constructor() {
-    this.registry = new WorkspaceRegistryManager();
-    this.processManager = new WorkspaceProcessManager(this.registry);
-  }
-
-  async startMonitoring(): Promise<void> {
-    console.log("Starting workspace health monitor...");
-
-    // Initial check
-    await this.checkAllWorkspaces();
-
-    // Set up interval
-    setInterval(async () => {
-      await this.checkAllWorkspaces();
-    }, this.checkInterval);
-
-    // Keep process alive
-    await new Promise(() => {});
-  }
-
-  private async checkAllWorkspaces(): Promise<void> {
-    const running = await this.registry.getRunning();
-
-    for (const workspace of running) {
-      try {
-        await this.registry.checkAndUpdateHealth(workspace);
-      } catch (error) {
-        logger.error(`Health check failed for ${workspace.name}: ${error}`);
-      }
-    }
-  }
-}
-```
-
-### 7. Logging Architecture
-
-#### 7.1 Log File Management
-
-Enhance the existing logger to support explicit log files for detached processes:
-
-```typescript
-// In AtlasLogger
-async initializeDetached(options: DetachedLogOptions): Promise<void> {
-  const { logFile, workspaceId, workspaceName } = options;
+// In workspace-server.ts
+server.addRoute("/api/health", async (req) => {
+  const runtime = server.getRuntime();
+  const stats = await runtime.getStats();
   
-  // Set up file writer for detached mode
-  this.fileWriter = await Deno.open(logFile, {
-    create: true,
-    write: true,
-    append: true,
-  });
-  
-  // Write startup entry
-  await this.writeLog("workspace", {
-    level: "info",
-    message: `Workspace ${workspaceName} starting in detached mode`,
+  return new Response(JSON.stringify({
+    status: "healthy",
+    workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
+    uptime: Date.now() - server.startTime,
+    sessions: stats.activeSessions,
+    memory: Deno.memoryUsage(),
     timestamp: new Date().toISOString(),
-    pid: Deno.pid,
-    context: {
-      workspaceId,
-      workspaceName,
-      mode: "detached",
-    },
+  }), {
+    headers: { "Content-Type": "application/json" },
   });
-}
+});
+```
 
-interface DetachedLogOptions {
-  logFile: string;
-  workspaceId: string;
-  workspaceName: string;
+#### 5.2 Health Check Integration
+
+The existing lazy health check system will be enhanced:
+
+```typescript
+// In workspace-registry.ts
+async checkAndUpdateHealth(workspace: WorkspaceEntry): Promise<WorkspaceEntry> {
+  if (workspace.status === "running" && workspace.pid) {
+    // First check process existence
+    const processExists = await this.isProcessRunning(workspace.pid);
+    
+    if (!processExists) {
+      await this.updateStatus(workspace.id, "crashed");
+      workspace.status = "crashed";
+    } else if (workspace.port) {
+      // Then check HTTP health
+      try {
+        const response = await fetch(`http://localhost:${workspace.port}/api/health`);
+        if (response.ok) {
+          workspace.lastSeen = new Date().toISOString();
+        }
+      } catch {
+        // HTTP check failed but process exists - mark as unhealthy
+        workspace.status = "unhealthy";
+      }
+    }
+  }
+  
+  return workspace;
 }
 ```
 
-#### 7.2 Log Rotation
+### 6. Log Management
 
-Implement log rotation for long-running processes:
+#### 6.1 Detached Logging
+
+Enhance AtlasLogger for explicit file output:
 
 ```typescript
-class LogRotator {
-  private maxSize = 10 * 1024 * 1024; // 10MB
-  private maxFiles = 5;
-
-  async rotateIfNeeded(logFile: string): Promise<void> {
-    const stat = await Deno.stat(logFile);
-
-    if (stat.size > this.maxSize) {
-      // Rotate files: .log -> .log.1, .log.1 -> .log.2, etc.
-      for (let i = this.maxFiles - 1; i > 0; i--) {
-        const oldFile = `${logFile}.${i}`;
-        const newFile = `${logFile}.${i + 1}`;
-
-        try {
-          await Deno.rename(oldFile, newFile);
-        } catch {
-          // File doesn't exist, skip
-        }
-      }
-
-      // Move current to .1
-      await Deno.rename(logFile, `${logFile}.1`);
-    }
+// In logger.ts
+class AtlasLogger {
+  private fileHandle?: Deno.FsFile;
+  
+  async initializeDetached(logFile: string): Promise<void> {
+    this.fileHandle = await Deno.open(logFile, {
+      create: true,
+      write: true,
+      append: true,
+    });
+    
+    // Redirect all log output to file
+    this.addTransport({
+      write: async (entry: LogEntry) => {
+        const line = JSON.stringify(entry) + "\n";
+        await this.fileHandle!.write(new TextEncoder().encode(line));
+      },
+    });
   }
 }
 ```
 
-### 8. Implementation Phases
+#### 6.2 Log Streaming Command
 
-#### Phase 1: Core Infrastructure (Priority: High)
+Implement the workspace logs functionality (partially done in registry plan):
 
-1. Implement WorkspaceRegistry and WorkspaceRegistryManager
-2. Create WorkspaceProcessManager with basic start/stop
-3. Modify workspace serve command to support -d flag
-4. Implement detached process spawning with proper stdio handling
+```typescript
+// Complete the WorkspaceLogsCommand implementation
+export function WorkspaceLogsCommand({ args, flags }: Props) {
+  const [workspaceId] = args;
+  const reader = new WorkspaceLogReader(workspaceId);
+  
+  if (flags.follow) {
+    // Stream logs in real-time
+    await reader.follow({
+      tail: flags.tail || 100,
+      onLog: (entry) => console.log(formatLogEntry(entry)),
+    });
+  } else {
+    // Show recent logs
+    const entries = await reader.read({ tail: flags.tail || 100 });
+    entries.forEach(entry => console.log(formatLogEntry(entry)));
+  }
+}
+```
 
-#### Phase 2: Process Management (Priority: High)
+## Implementation Plan
 
-1. Implement workspace list command with lazy health checks
-2. Add workspace stop command with graceful shutdown
-3. Create workspace status command
-4. Add process existence checking during registry operations
+### Phase 1: Core Detached Process Support (🔥 IMMEDIATE PRIORITY)
 
-#### Phase 3: Monitoring & Logs (Priority: Medium)
+1. **Implement WorkspaceProcessManager**
+   - [ ] Create process manager class
+   - [ ] Add startDetached method with proper stdio handling
+   - [ ] Implement stop/restart functionality
+   - [ ] Add process existence checking
 
-1. Enhance logs command for detached workspaces
-2. Implement health check endpoint in workspace server
-3. Add optional monitor daemon command
-4. Create log rotation mechanism
+2. **Modify Workspace Server**
+   - [ ] Add signal handlers for detached mode
+   - [ ] Implement health endpoint
+   - [ ] Update registry on shutdown
+   - [ ] Handle detached-specific initialization
 
-#### Phase 4: Advanced Features (Priority: Low)
+3. **CLI Integration**
+   - [ ] Add -d/--detached flag to workspace serve
+   - [ ] Implement workspace stop command
+   - [ ] Implement workspace restart command
+   - [ ] Complete workspace status implementation
 
-1. Implement workspace restart command
-2. Add configurable health check intervals
-3. Create workspace batch operations
-4. Add workspace resource usage tracking
+### Phase 2: Monitoring and Logs (📋 NEXT PRIORITY)
 
-### 9. Security Considerations
+1. **Log Management**
+   - [ ] Complete WorkspaceLogsCommand implementation
+   - [ ] Add log rotation for long-running processes
+   - [ ] Implement log filtering and formatting
+   - [ ] Add --follow support for real-time streaming
 
-1. **Process Isolation**: Each workspace runs with the same permissions as the user
-2. **Port Security**: Validate port assignments to prevent conflicts
-3. **Log Access**: Ensure log files have appropriate permissions
-4. **Registry Integrity**: Use file locking to prevent corruption
-5. **Signal Handling**: Prevent unauthorized process termination
+2. **Health Monitoring**
+   - [ ] Enhance lazy health checks with HTTP endpoint
+   - [ ] Add health status to workspace list output
+   - [ ] Implement cleanup command for stale entries
+   - [ ] Add automatic recovery options
 
-### 10. Error Handling
+### Phase 3: Advanced Features (🚀 FUTURE)
 
-1. **Port Conflicts**: Automatically find available ports
-2. **Stale PIDs**: Clean up registry entries for dead processes
-3. **Disk Space**: Monitor log file growth and implement rotation
-4. **Permission Errors**: Provide clear error messages for permission issues
-5. **Network Errors**: Retry health checks with exponential backoff
+1. **Process Management**
+   - [ ] Resource usage tracking
+   - [ ] Batch operations (stop all, restart all)
+   - [ ] Process priority management
+   - [ ] Automatic restart on crash
 
-### 11. Future Enhancements
+2. **Integration**
+   - [ ] systemd service file generation (Linux)
+   - [ ] launchd plist generation (macOS)  
+   - [ ] Windows service support
+   - [ ] Docker container support
 
-1. **Systemd Integration**: Generate systemd service files for Linux
-2. **LaunchAgent Integration**: Create launchd configuration for macOS
-3. **Web UI**: Dashboard for managing workspaces
-4. **Remote Management**: API for managing workspaces remotely
-5. **Clustering**: Support for distributed workspace deployment
-6. **Resource Limits**: CPU and memory constraints per workspace
-7. **Workspace Templates**: Quick workspace creation from templates
-8. **Backup/Restore**: Workspace state snapshots
+## Key Design Decisions
 
-## Conclusion
+1. **No Daemon Required**: Use lazy health checks instead of a monitoring daemon
+2. **Atomic Operations**: Registry updates use atomic file operations, no locking needed
+3. **Process Detachment**: Use Deno's `child.unref()` for true detachment
+4. **Log Files**: Each workspace gets its own log file in `~/.atlas/logs/workspaces/`
+5. **Port Management**: Dynamic port assignment prevents conflicts
 
-This architecture provides a robust foundation for running multiple Atlas workspaces as background
-processes. The design prioritizes reliability, debuggability, and user experience while maintaining
-the existing single-workspace functionality. The phased implementation approach allows for
-incremental development and testing of each component.
+## Security Considerations
+
+1. **Process Isolation**: Each workspace runs with user permissions
+2. **Port Validation**: Ensure ports are available and within valid range
+3. **Signal Protection**: Only allow authorized signal handling
+4. **Log Permissions**: Secure log file access
+
+## Success Metrics
+
+- **Reliability**: Workspaces survive terminal closure
+- **Performance**: Minimal overhead for registry operations
+- **Usability**: Simple commands for common operations
+- **Debuggability**: Clear logs and status information
+- **Scalability**: Support 10+ concurrent workspaces
+
+## Next Steps
+
+1. Implement WorkspaceProcessManager class
+2. Add detached mode support to workspace serve
+3. Complete remaining CLI commands (stop, restart, status, cleanup)
+4. Add health endpoint to workspace server
+5. Finish log streaming implementation
+
+The foundation is solid with the registry implementation complete. The remaining work focuses on the actual process management and lifecycle operations needed for true background process support.

@@ -31,6 +31,8 @@ export class AtlasLogger {
   private workspaceIdToRegistryId: Map<string, string> = new Map();
   private initPromise?: Promise<void>;
   private isInitialized = false;
+  private isDetached = false;
+  private detachedFileHandle?: Deno.FsFile;
 
   private constructor() {
     // Paths will be set during initialization
@@ -84,10 +86,52 @@ export class AtlasLogger {
     await this.initPromise;
   }
 
+  /**
+   * Initialize logger for detached mode
+   * In detached mode, all logs go to a specific file and console output is disabled
+   */
+  async initializeDetached(logFile: string): Promise<void> {
+    this.isDetached = true;
+    
+    // Ensure directory exists
+    await ensureDir(join(logFile, ".."));
+    
+    // Open the specific log file
+    this.detachedFileHandle = await Deno.open(logFile, {
+      create: true,
+      write: true,
+      append: true,
+    });
+    
+    // Write startup message
+    const entry: LogEntry = {
+      level: "info",
+      message: "Workspace starting in detached mode",
+      timestamp: new Date().toISOString(),
+      pid: Deno.pid,
+      context: {
+        workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
+        workspaceName: Deno.env.get("ATLAS_WORKSPACE_NAME"),
+        mode: "detached",
+      },
+    };
+    
+    const line = JSON.stringify(entry) + "\n";
+    await this.detachedFileHandle.write(new TextEncoder().encode(line));
+    
+    this.isInitialized = true;
+  }
+
   private async writeLog(target: string, entry: LogEntry): Promise<void> {
     const line = JSON.stringify(entry) + "\n";
     const encoder = new TextEncoder();
     const data = encoder.encode(line);
+
+    // In detached mode, write to the detached file handle
+    if (this.isDetached && this.detachedFileHandle) {
+      await this.detachedFileHandle.write(data);
+      return;
+    }
 
     if (target === "global" && this.fileWriter) {
       await this.fileWriter.write(data);
@@ -148,29 +192,40 @@ export class AtlasLogger {
   ): Promise<void> {
     const entry = this.formatMessage(level, message, context);
 
-    // Console output with color coding (always available)
-    const color = {
-      error: "\x1b[31m", // red
-      warn: "\x1b[33m", // yellow
-      info: "\x1b[36m", // cyan
-      debug: "\x1b[90m", // gray
-      trace: "\x1b[35m", // magenta
-    }[level] || "\x1b[0m";
+    // Skip console output in detached mode
+    if (!this.isDetached) {
+      // Console output with color coding
+      const color = {
+        error: "\x1b[31m", // red
+        warn: "\x1b[33m", // yellow
+        info: "\x1b[36m", // cyan
+        debug: "\x1b[90m", // gray
+        trace: "\x1b[35m", // magenta
+      }[level] || "\x1b[0m";
 
-    const reset = "\x1b[0m";
-    const prefix = context
-      ? `[${context.workerType || "atlas"}${
-        context.workerId ? ":" + context.workerId.slice(0, 8) : ""
-      }${context.sessionId ? ":" + context.sessionId.slice(0, 8) : ""}${
-        context.supervisorId ? ":" + context.supervisorId.slice(0, 8) : ""
-      }${context.agentName ? ":" + context.agentName : ""}]`
-      : "[atlas]";
+      const reset = "\x1b[0m";
+      const prefix = context
+        ? `[${context.workerType || "atlas"}${
+          context.workerId ? ":" + context.workerId.slice(0, 8) : ""
+        }${context.sessionId ? ":" + context.sessionId.slice(0, 8) : ""}${
+          context.supervisorId ? ":" + context.supervisorId.slice(0, 8) : ""
+        }${context.agentName ? ":" + context.agentName : ""}]`
+        : "[atlas]";
 
-    console.log(
-      `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
-    );
+      console.log(
+        `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
+      );
+    }
 
-    // Ensure logger is initialized before file operations
+    // In detached mode, write directly without normal initialization
+    if (this.isDetached) {
+      if (this.detachedFileHandle) {
+        await this.writeLog("detached", entry);
+      }
+      return;
+    }
+
+    // Normal mode - ensure logger is initialized before file operations
     await this.initialize();
 
     // File output (now always available after initialization)
@@ -241,6 +296,15 @@ export class AtlasLogger {
       this.fileWriter = undefined;
     }
 
+    if (this.detachedFileHandle) {
+      try {
+        this.detachedFileHandle.close();
+      } catch {
+        // Ignore errors if file is already closed
+      }
+      this.detachedFileHandle = undefined;
+    }
+
     for (const writer of this.workspaceWriters.values()) {
       try {
         writer.close();
@@ -253,6 +317,7 @@ export class AtlasLogger {
     // Reset initialization state
     this.isInitialized = false;
     this.initPromise = undefined;
+    this.isDetached = false;
   }
 }
 
