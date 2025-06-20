@@ -367,9 +367,9 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
     if (isMainActive) {
       const scrollAmount = key.shift ? 10 : 1; // 10x faster scrolling with Shift
 
-      if (key.upArrow) {
+      if (key.upArrow || inputChar === "j") {
         setScrollOffset((prev) => Math.min(0, prev + scrollAmount)); // Max value 0 (can't scroll up past top)
-      } else if (key.downArrow) {
+      } else if (key.downArrow || inputChar === "k") {
         setScrollOffset((prev) => prev - scrollAmount); // No limit (can scroll down indefinitely)
       }
     }

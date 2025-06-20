@@ -53,14 +53,15 @@ export const useTabNavigation = ({
   // Handle arrow key navigation if enabled and active
   useInput((inputChar, key) => {
     if (useArrowKeys && isActive && tabCount > 0) {
-      if (key.upArrow) {
+      // Handle arrow keys
+      if (key.upArrow || inputChar === "j") {
         if (key.shift) {
           // Jump by 10 items backwards
           goToTab(Math.max(0, activeTab - 10));
         } else {
           previousTab();
         }
-      } else if (key.downArrow) {
+      } else if (key.downArrow || inputChar === "k") {
         if (key.shift) {
           // Jump by 10 items forwards
           goToTab(Math.min(tabCount - 1, activeTab + 10));
@@ -110,9 +111,9 @@ export const useActiveFocus = ({
   // Handle left/right arrow keys for focus navigation
   useInput((inputChar, key) => {
     if (areas.length > 1) {
-      if (key.leftArrow) {
+      if (key.leftArrow || inputChar === "h") {
         previousArea();
-      } else if (key.rightArrow) {
+      } else if (key.rightArrow || inputChar === "l") {
         nextArea();
       }
     }
