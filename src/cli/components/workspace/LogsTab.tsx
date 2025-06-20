@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Text, useStdout } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { formatLog, WorkspaceLogReader } from "../../commands/workspace/logs/log-reader.ts";
@@ -14,11 +14,13 @@ export const LogsTab = ({ config }: LogsTabProps) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [selectedLevel, setSelectedLevel] = useState<string>("all");
+  const [isPaused, setIsPaused] = useState(false);
   const { stdout } = useStdout();
 
   // Get terminal height to calculate visible rows
   const terminalHeight = stdout?.rows || 24;
-  const availableRows = terminalHeight - 4; // Account for footer and padding
+  const availableRows = terminalHeight - 6; // Account for toolbar, footer and padding
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -62,10 +64,12 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
     fetchLogs();
 
-    // Refresh logs every 10 seconds
-    const interval = setInterval(fetchLogs, 10000);
-    return () => clearInterval(interval);
-  }, [config.workspace.name]);
+    // Refresh logs every 10 seconds (only if not paused)
+    if (!isPaused) {
+      const interval = setInterval(fetchLogs, 10000);
+      return () => clearInterval(interval);
+    }
+  }, [config.workspace.name, isPaused]);
 
   // Handle scrolling when logs exceed available height
   useEffect(() => {
@@ -76,6 +80,18 @@ export const LogsTab = ({ config }: LogsTabProps) => {
       setScrollOffset(0);
     }
   }, [logs.length, availableRows]);
+
+  // Handle toolbar interactions
+  useInput((inputChar, key) => {
+    if (inputChar === "c") {
+      // Clear logs
+      setLogs([]);
+      setScrollOffset(0);
+    } else if (inputChar === " ") {
+      // Toggle pause/play
+      setIsPaused(!isPaused);
+    }
+  });
 
   if (loading) {
     return (
@@ -95,6 +111,41 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
   return (
     <Box flexDirection="column" height="100%" width="100%">
+      {/* Toolbar */}
+      <Box paddingX={2} paddingY={1} flexShrink={0} borderBottom borderColor="gray" borderDimColor>
+        <Box flexDirection="row" gap={2}>
+          {/* Log Level Segment Controller */}
+          <Box flexDirection="row" gap={1}>
+            <Text dimColor>Level:</Text>
+            {["all", "info", "warning", "error"].map((level) => (
+              <Box key={level}>
+                <Text
+                  bold={selectedLevel === level}
+                  dimColor={selectedLevel !== level}
+                >
+                  [{level}]
+                </Text>
+              </Box>
+            ))}
+          </Box>
+
+          {/* Spacer */}
+          <Box flexGrow={1} />
+
+          {/* Pause/Play Toggle */}
+          <Box>
+            <Text dimColor>
+              {isPaused ? "▶" : "⏸"} {isPaused ? "Play" : "Pause"} (space)
+            </Text>
+          </Box>
+
+          {/* Clear Button */}
+          <Box>
+            <Text dimColor>🗑 Clear (c)</Text>
+          </Box>
+        </Box>
+      </Box>
+
       {/* Scrollable logs container */}
       <Box flexGrow={1} overflow="hidden">
         <Box
