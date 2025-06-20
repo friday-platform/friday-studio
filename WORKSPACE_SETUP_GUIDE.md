@@ -1,6 +1,8 @@
 # Atlas Workspace Setup & Job Creation Guide
 
-This guide covers the advanced workspace setup and job creation features implemented in Atlas, including the natural language job creation system, workspace configuration assistant, and comprehensive examples.
+This guide covers the advanced workspace setup and job creation features implemented in Atlas,
+including the natural language job creation system, workspace configuration assistant, and
+comprehensive examples.
 
 ## 📋 Table of Contents
 
@@ -58,6 +60,7 @@ Atlas provides several pre-configured workspace templates for different use case
 ### 🚀 Production-Ready Templates
 
 #### 1. **Kubernetes Assistant** (`k8s-assistant/`)
+
 Advanced Kubernetes management with AI-powered automation:
 
 - **Agents**: ACP-enabled k8s agent + LLM assistant
@@ -71,6 +74,7 @@ cd examples/workspaces/k8s-assistant
 ```
 
 #### 2. **Multi-Purpose Development** (`multi-purpose-dev/`)
+
 Comprehensive development workspace with 10 specialized agents:
 
 - **Agents**: GitHub, filesystem, database, web research, Slack, AWS, CI/CD, error tracking
@@ -84,6 +88,7 @@ cd examples/workspaces/multi-purpose-dev
 ```
 
 #### 3. **Atlas Codebase Analyzer** (`atlas-codebase-analyzer/`)
+
 AI-powered codebase analysis and documentation:
 
 - **Agents**: LLM-based analysis agents with filesystem access
@@ -98,6 +103,7 @@ cd examples/workspaces/atlas-codebase-analyzer
 ### 🧪 Specialized Templates
 
 #### 4. **Web Analysis** (`web-analysis/`)
+
 Web content analysis and monitoring:
 
 - **Agents**: MCP-enabled web analysis
@@ -105,6 +111,7 @@ Web content analysis and monitoring:
 - **Integration**: Playwright for advanced web automation
 
 #### 5. **Telephone Game** (`telephone/`)
+
 Multi-agent communication patterns demonstration:
 
 - **Agents**: Message transformation agents (mishearing, embellishment, reinterpretation)
@@ -112,6 +119,7 @@ Multi-agent communication patterns demonstration:
 - **Use Case**: Testing agent coordination and communication patterns
 
 #### 6. **Remote Agents** (`remote-agents/`)
+
 Custom remote agent integration examples:
 
 - **Agents**: HTTP-based custom agents
@@ -119,6 +127,7 @@ Custom remote agent integration examples:
 - **Use Case**: Integration with existing tools and services
 
 #### 7. **MCP Test** (`mcp-test/`)
+
 Model Context Protocol integration testing:
 
 - **Features**: MCP server integration patterns
@@ -126,14 +135,14 @@ Model Context Protocol integration testing:
 
 ### 🔄 Template Comparison
 
-| Template | Agent Count | Protocols | Best For | Complexity |
-|----------|-------------|-----------|----------|------------|
-| k8s-assistant | 2 | ACP, LLM | DevOps automation | Advanced |
-| multi-purpose-dev | 10 | MCP | Full development teams | Advanced |
-| atlas-codebase-analyzer | 1 | LLM | Code analysis | Intermediate |
-| web-analysis | 1 | MCP | Web monitoring | Intermediate |
-| telephone | 3 | Memory | Agent communication | Beginner |
-| remote-agents | Variable | HTTP | Custom integrations | Intermediate |
+| Template                | Agent Count | Protocols | Best For               | Complexity   |
+| ----------------------- | ----------- | --------- | ---------------------- | ------------ |
+| k8s-assistant           | 2           | ACP, LLM  | DevOps automation      | Advanced     |
+| multi-purpose-dev       | 10          | MCP       | Full development teams | Advanced     |
+| atlas-codebase-analyzer | 1           | LLM       | Code analysis          | Intermediate |
+| web-analysis            | 1           | MCP       | Web monitoring         | Intermediate |
+| telephone               | 3           | Memory    | Agent communication    | Beginner     |
+| remote-agents           | Variable    | HTTP      | Custom integrations    | Intermediate |
 
 ### 🛠️ Quick Template Setup
 
@@ -173,6 +182,7 @@ workspace/
 ### Configuration Separation
 
 **workspace.yml** (User-managed):
+
 ```yaml
 workspace:
   name: "Development Team"
@@ -193,12 +203,13 @@ jobs:
 ```
 
 **atlas.yml** (Platform-managed):
+
 ```yaml
 planning:
   workspace_supervisor:
     enabled: true
     model: "claude-3-5-sonnet-20241022"
-    
+
   session_supervisor:
     enabled: true
     model: "claude-3-5-sonnet-20241022"
@@ -207,7 +218,7 @@ runtime:
   server:
     port: 8080
     host: "localhost"
-  
+
   persistence:
     type: "file"
     path: ".atlas"
@@ -226,12 +237,17 @@ description: "Automated deployment with safety checks"
 # Trigger configuration
 triggers:
   - signal: "github-webhook"
-    condition: {"and": [{"==": [{"var": "event.action"}, "closed"]}, {"==": [{"var": "event.pull_request.merged"}, true]}]}
+    condition: {
+      "and": [
+        { "==": [{ "var": "event.action" }, "closed"] },
+        { "==": [{ "var": "event.pull_request.merged" }, true] },
+      ],
+    }
     naturalLanguageCondition: "when a pull request is merged to main branch"
 
 # Execution strategy
 execution:
-  strategy: "staged"  # sequential | parallel | staged | conditional
+  strategy: "staged" # sequential | parallel | staged | conditional
   agents:
     - id: "security-scanner"
       role: "security-validation"
@@ -262,13 +278,15 @@ success_criteria:
 
 ## 🤖 Agent Types & Configuration
 
-Atlas supports multiple agent types, each optimized for different use cases and integration patterns:
+Atlas supports multiple agent types, each optimized for different use cases and integration
+patterns:
 
 ### 1. **LLM Agents** - AI-Powered Intelligence
 
 Direct integration with Large Language Models for intelligent reasoning and analysis.
 
 **Basic Configuration:**
+
 ```yaml
 agents:
   code-reviewer:
@@ -281,6 +299,7 @@ agents:
 ```
 
 **Advanced LLM Configuration:**
+
 ```yaml
 agents:
   local-assistant:
@@ -288,15 +307,15 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Local AI assistant for documentation and explanations"
     tools: ["computer_use"]
-    
+
     # MCP Server Integration
     mcp_servers: ["filesystem", "github"]
     max_steps: 10
     tool_choice: "auto"
-    
+
     # Multi-provider support
-    provider: "anthropic"  # anthropic | openai | google
-    
+    provider: "anthropic" # anthropic | openai | google
+
     prompts:
       system: |
         You are a helpful assistant with access to filesystem and GitHub tools.
@@ -304,8 +323,9 @@ agents:
 ```
 
 **Available LLM Providers:**
+
 - **Anthropic**: Claude models (default)
-- **OpenAI**: GPT models 
+- **OpenAI**: GPT models
 - **Google**: Gemini models
 
 ### 2. **Remote Agents** - External Service Integration
@@ -313,6 +333,7 @@ agents:
 Connect to existing services, APIs, and custom implementations via multiple protocols.
 
 #### **ACP Protocol** (Atlas Agent Communication Protocol)
+
 For Atlas-native agent services:
 
 ```yaml
@@ -322,14 +343,14 @@ agents:
     protocol: "acp"
     endpoint: "http://localhost:8080"
     purpose: "Kubernetes cluster management"
-    
+
     acp:
       agent_name: "k8s-deployment-manager"
       default_mode: "sync"
       timeout_ms: 120000
       max_retries: 2
       health_check_interval: 30000
-    
+
     monitoring:
       enabled: true
       circuit_breaker:
@@ -338,6 +359,7 @@ agents:
 ```
 
 #### **MCP Protocol** (Model Context Protocol)
+
 For standardized tool integration:
 
 ```yaml
@@ -347,16 +369,17 @@ agents:
     protocol: "mcp"
     endpoint: "http://localhost:3020/mcp"
     purpose: "GitHub repository management"
-    
+
     mcp:
       timeout_ms: 30000
       allowed_tools: ["repository_operations", "issue_management"]
       denied_tools: ["destructive_operations"]
-    
+
     tools: ["repository_operations", "issue_management", "code_analysis"]
 ```
 
 #### **Custom HTTP APIs**
+
 For integration with existing services:
 
 ```yaml
@@ -366,12 +389,12 @@ agents:
     protocol: "custom"
     endpoint: "https://api.security-scanner.com/v1"
     purpose: "Security vulnerability scanning"
-    
+
     auth:
       type: "bearer"
       token_env: "SCANNER_API_TOKEN"
       header: "Authorization"
-    
+
     schema:
       validate_input: true
       validate_output: true
@@ -381,8 +404,8 @@ agents:
       output:
         type: "object"
         required: ["vulnerabilities", "status"]
-    
-    timeout: 300000  # 5 minutes
+
+    timeout: 300000 # 5 minutes
 ```
 
 ### 3. **Tempest Agents** - First-Party Specialized Agents
@@ -404,6 +427,7 @@ agents:
 ### 🔧 Agent Configuration Patterns
 
 #### **Environment Variables & Secrets**
+
 ```yaml
 agents:
   api-client:
@@ -416,6 +440,7 @@ agents:
 ```
 
 #### **Health Monitoring & Circuit Breakers**
+
 ```yaml
 agents:
   external-service:
@@ -429,12 +454,13 @@ agents:
 ```
 
 #### **Tool & Capability Restrictions**
+
 ```yaml
 agents:
   restricted-agent:
     type: "llm"
-    tools: ["filesystem"]  # Only filesystem access
-    
+    tools: ["filesystem"] # Only filesystem access
+
     # OR for remote agents
     mcp:
       allowed_tools: ["read_file", "list_directory"]
@@ -443,56 +469,60 @@ agents:
 
 ### 📊 Agent Type Comparison
 
-| Agent Type | Best For | Protocols | Complexity | Performance |
-|------------|----------|-----------|------------|-------------|
-| **LLM** | AI reasoning, analysis, generation | Native | Low | High |
-| **Remote (ACP)** | Atlas-native services | ACP | Medium | High |
-| **Remote (MCP)** | Tool integrations | MCP | Medium | Medium |
-| **Remote (Custom)** | Existing APIs | HTTP | High | Variable |
-| **Tempest** | Specialized tasks | Native | Low | High |
+| Agent Type          | Best For                           | Protocols | Complexity | Performance |
+| ------------------- | ---------------------------------- | --------- | ---------- | ----------- |
+| **LLM**             | AI reasoning, analysis, generation | Native    | Low        | High        |
+| **Remote (ACP)**    | Atlas-native services              | ACP       | Medium     | High        |
+| **Remote (MCP)**    | Tool integrations                  | MCP       | Medium     | Medium      |
+| **Remote (Custom)** | Existing APIs                      | HTTP      | High       | Variable    |
+| **Tempest**         | Specialized tasks                  | Native    | Low        | High        |
 
 ### 🚀 Real-World Agent Examples
 
 From production workspace templates:
 
 #### **Multi-Purpose Development Workspace**
+
 ```yaml
 # 10 specialized agents via MCP
 agents:
-  github-manager:      # Repository management
-  filesystem-manager:  # File operations
-  database-analyst:    # PostgreSQL analysis
-  web-researcher:      # Content fetching
-  slack-communicator:  # Team communication
-  cloud-operator:      # AWS infrastructure
-  ci-cd-monitor:       # Build pipelines
-  error-tracker:       # Application monitoring
-  code-assistant:      # Code analysis
-  memory-keeper:       # Data persistence
+  github-manager: # Repository management
+  filesystem-manager: # File operations
+  database-analyst: # PostgreSQL analysis
+  web-researcher: # Content fetching
+  slack-communicator: # Team communication
+  cloud-operator: # AWS infrastructure
+  ci-cd-monitor: # Build pipelines
+  error-tracker: # Application monitoring
+  code-assistant: # Code analysis
+  memory-keeper: # Data persistence
 ```
 
 #### **Kubernetes Assistant Workspace**
+
 ```yaml
 # Production DevOps automation
 agents:
-  k8s-main-agent:     # ACP-enabled K8s operations
-  local-assistant:    # LLM-based documentation & Linear integration
+  k8s-main-agent: # ACP-enabled K8s operations
+  local-assistant: # LLM-based documentation & Linear integration
 ```
 
 ## 🤖 Natural Language Job Creation
 
-Atlas includes an AI-powered system that converts natural language descriptions into structured job configurations.
+Atlas includes an AI-powered system that converts natural language descriptions into structured job
+configurations.
 
 ## 🧠 Intelligent Task Preparation
 
-Atlas features an intelligent task preparation system where the SessionSupervisor acts as a manager to transform chaotic signal data into clean, actionable tasks for agents.
+Atlas features an intelligent task preparation system where the SessionSupervisor acts as a manager
+to transform chaotic signal data into clean, actionable tasks for agents.
 
 ### How It Works
 
 Instead of overwhelming agents with raw signal data, the supervisor:
 
 1. **Analyzes Signal Data**: Extracts important information from incoming signals
-2. **Removes Noise**: Filters out metadata, UUIDs, timestamps, and irrelevant fields  
+2. **Removes Noise**: Filters out metadata, UUIDs, timestamps, and irrelevant fields
 3. **Understands Context**: Uses agent capabilities and job descriptions for context
 4. **Generates Tasks**: Creates focused, actionable instructions tailored to each agent
 
@@ -502,16 +532,16 @@ Instead of overwhelming agents with raw signal data, the supervisor:
 # Task preparation follows this priority order:
 jobs:
   my-job:
-    description: "Handle Kubernetes events"  # Used for intelligent preparation
+    description: "Handle Kubernetes events" # Used for intelligent preparation
     execution:
       agents:
         - id: "k8s-agent"
           # Priority 1: Explicit prompt (highest)
           prompt: "Execute this specific task"
-          
+
           # Priority 2: Job task template (if no explicit prompt)
           # task_template: "Process K8s events..."  # Can be omitted
-          
+
           # Priority 3: Intelligent preparation (if no prompt/template)
           # Supervisor analyzes signal data and creates contextual task
 ```
@@ -519,11 +549,13 @@ jobs:
 ### Example: Raw Signal vs Intelligent Task
 
 **Raw Signal Data (chaotic):**
+
 ```json
 {
   "metadata": { "uid": "abc-123", "timestamp": "2025-01-01T00:00:00Z" },
   "event": {
-    "type": "Normal", "reason": "Scheduled",
+    "type": "Normal",
+    "reason": "Scheduled",
     "message": "Pod scheduled successfully",
     "involvedObject": { "kind": "Pod", "name": "test-pod" },
     "namespace": "default"
@@ -532,6 +564,7 @@ jobs:
 ```
 
 **Intelligent Task (clean & actionable):**
+
 ```
 Monitor the pod scheduling event and verify successful deployment. 
 Focus on the test-pod in default namespace and ensure it's running properly.
@@ -559,7 +592,7 @@ deno task atlas tui
 
 1. **Intent Recognition**: AI analyzes the description to identify:
    - Trigger conditions (signals and events)
-   - Required agents and their roles  
+   - Required agents and their roles
    - Execution flow and dependencies
    - Success criteria and constraints
 
@@ -577,16 +610,18 @@ deno task atlas tui
 ### Example Natural Language Inputs
 
 **Simple Workflow**:
+
 ```
 "Send a Slack message when a deployment completes"
 ```
 
 Generated job:
+
 ```yaml
 name: "deployment-notification"
 triggers:
   - signal: "deployment-webhook"
-    condition: {"==": [{"var": "event.status"}, "completed"]}
+    condition: { "==": [{ "var": "event.status" }, "completed"] }
 execution:
   strategy: "sequential"
   agents:
@@ -595,16 +630,23 @@ execution:
 ```
 
 **Complex Multi-Agent Workflow**:
+
 ```
 "When a production error occurs, analyze the logs with AI, check system metrics, create a GitHub issue, and notify the team in Slack with a summary"
 ```
 
 Generated job:
+
 ```yaml
 name: "production-error-response"
 triggers:
   - signal: "error-monitoring"
-    condition: {"and": [{"==": [{"var": "event.severity"}, "critical"]}, {"==": [{"var": "event.environment"}, "production"]}]}
+    condition: {
+      "and": [
+        { "==": [{ "var": "event.severity" }, "critical"] },
+        { "==": [{ "var": "event.environment" }, "production"] },
+      ],
+    }
 execution:
   strategy: "sequential"
   agents:
@@ -622,9 +664,10 @@ execution:
 
 Atlas uses AI to convert natural language conditions into safe, executable expressions:
 
-**Natural Language**: *"when CPU usage is above 80% and memory is low"*
+**Natural Language**: _"when CPU usage is above 80% and memory is low"_
 
 **Generated JSONLogic**:
+
 ```json
 {
   "and": [
@@ -647,48 +690,60 @@ The Atlas TUI includes a dedicated "Workspace Config" tab with AI-powered config
 ### Available Commands
 
 #### Create Jobs from Natural Language
+
 ```bash
 /config create-job "Description of the workflow you want to create"
 ```
 
 #### Validate Workspace Configuration
+
 ```bash
 /config validate
 ```
+
 Checks for:
+
 - Invalid agent references
 - Missing signal configurations
 - Malformed job specifications
 - Security issues
 
 #### Manage Condition Confirmations
+
 ```bash
 /config confirmations
 ```
+
 Review and approve AI-generated conditions that need human confirmation.
 
 ### Configuration Assistant Features
 
 #### 1. Workspace Context Analysis
+
 The assistant automatically analyzes your current workspace to understand:
+
 - Available signals and their payload structures
 - Configured agents and their capabilities
 - Existing jobs and patterns
 - Workspace-specific naming conventions
 
 #### 2. Intelligent Job Creation
+
 - **Agent Selection**: Automatically matches job requirements to available agents
 - **Execution Strategy**: Determines optimal execution patterns (sequential, parallel, staged)
 - **Resource Estimation**: Provides duration and cost estimates
 - **Error Handling**: Includes appropriate fallback and retry logic
 
 #### 3. Validation and Safety
+
 - **Security Checks**: Validates all generated configurations for security issues
 - **Agent Verification**: Ensures referenced agents exist and are properly configured
 - **Signal Validation**: Checks that signal references are valid and accessible
 
 #### 4. Human-in-the-Loop Confirmation
+
 For complex conditions that the AI cannot parse with high confidence:
+
 ```
 ⚠️ Condition requires confirmation:
 Original: "when deployment fails and more than 5 users are affected"
@@ -704,6 +759,7 @@ Options:
 ## 🔧 Advanced Job Patterns
 
 ### Conditional Execution
+
 ```yaml
 execution:
   strategy: "conditional"
@@ -719,6 +775,7 @@ execution:
 ```
 
 ### Iterative Refinement
+
 ```yaml
 execution:
   strategy: "iterative"
@@ -730,7 +787,7 @@ execution:
       role: "validation"
     - id: "quality-checker"
       role: "evaluation"
-  
+
   refinement_criteria:
     - "test_coverage >= 80%"
     - "quality_score >= 8.0"
@@ -738,6 +795,7 @@ execution:
 ```
 
 ### Cross-Job Dependencies
+
 ```yaml
 name: "integration-test-suite"
 dependencies:
@@ -757,6 +815,7 @@ triggers:
 Atlas supports multiple signal types for different interaction patterns and data sources:
 
 ### HTTP Signals
+
 Direct API endpoints for webhook integration and HTTP requests:
 
 ```yaml
@@ -766,7 +825,7 @@ signals:
     provider: "http"
     path: "/api/events"
     method: "POST"
-  
+
   # Webhook with validation
   github-webhook:
     provider: "http-webhook"
@@ -781,6 +840,7 @@ signals:
 ```
 
 ### CLI Signals
+
 Command-line driven operations:
 
 ```yaml
@@ -792,6 +852,7 @@ signals:
 ```
 
 ### Real-time Event Streams
+
 Live monitoring and event processing:
 
 ```yaml
@@ -801,12 +862,12 @@ signals:
     provider: "k8s-events"
     kubeconfig: "~/.kube/config"
     namespace: "default"
-    insecure: true  # For local development
+    insecure: true # For local development
     timeout_ms: 120000
     retry_config:
       max_retries: 3
       retry_delay_ms: 2000
-  
+
   # Stream processing
   data-stream:
     provider: "stream-signal"
@@ -816,6 +877,7 @@ signals:
 ```
 
 ### External Service Integration
+
 Integration with third-party platforms:
 
 ```yaml
@@ -828,7 +890,7 @@ signals:
       webhook_secret: "${LINEAR_WEBHOOK_SECRET}"
       signature_validation: true
       allowed_event_types: ["Issue", "Comment", "IssueLabel"]
-  
+
   # Slack events
   slack-events:
     provider: "slack-events"
@@ -840,31 +902,34 @@ signals:
 ### 🔄 Signal Processing Patterns
 
 #### **Condition-Based Filtering**
+
 ```yaml
 jobs:
   critical-alerts:
     triggers:
       - signal: "monitoring-alert"
         condition: |
-          data.severity === "critical" && 
+          data.severity === "critical" &&
           data.service === "production" &&
           data.alert_count > 5
         naturalLanguageCondition: "critical production alerts with more than 5 occurrences"
 ```
 
 #### **Multiple Signal Sources**
+
 ```yaml
 jobs:
   incident-response:
     triggers:
       - signal: "error-spike"
-      - signal: "performance-degradation"  
+      - signal: "performance-degradation"
       - signal: "user-complaints"
     execution:
-      strategy: "parallel"  # Handle all trigger types simultaneously
+      strategy: "parallel" # Handle all trigger types simultaneously
 ```
 
 #### **Signal Transformation**
+
 ```yaml
 signals:
   transformed-data:
@@ -881,6 +946,7 @@ signals:
 ## 🛠️ Workspace Setup Best Practices
 
 ### 1. **Start Simple, Scale Up**
+
 ```yaml
 # Begin with basic LLM agents
 agents:
@@ -898,16 +964,18 @@ agents:
 ```
 
 ### 2. **Use Environment Variables for Secrets**
+
 ```yaml
 # Never hardcode secrets
 agents:
   secure-agent:
     auth:
-      api_key_env: "SERVICE_API_KEY"  # ✅ Good
+      api_key_env: "SERVICE_API_KEY" # ✅ Good
       # api_key: "sk-12345..."       # ❌ Bad
 ```
 
 ### 3. **Implement Health Monitoring**
+
 ```yaml
 agents:
   production-agent:
@@ -919,6 +987,7 @@ agents:
 ```
 
 ### 4. **Design for Observability**
+
 ```yaml
 # Include memory for learning
 memory:
@@ -934,6 +1003,7 @@ memory:
 ```
 
 ### 5. **Test Incrementally**
+
 ```bash
 # Test individual components
 atlas signal trigger test-signal --data '{"test": true}'
@@ -949,9 +1019,11 @@ tail -f ~/.atlas/logs/workspaces/<workspace-id>/workspace.log
 
 ### Cache Sharing Security
 
-Atlas implements secure cache sharing between WorkspaceSupervisor and SessionSupervisor with multiple protection layers:
+Atlas implements secure cache sharing between WorkspaceSupervisor and SessionSupervisor with
+multiple protection layers:
 
 #### 1. Workspace Isolation
+
 ```typescript
 // Cache keys are workspace-scoped to prevent collisions
 const secureKey = `plan:${workspaceId}:${jobName}`;
@@ -963,15 +1035,22 @@ function validateWorkspaceAccess(requestingId: string, supervisorId: string): bo
 ```
 
 #### 2. Data Sanitization
+
 ```typescript
 // Sensitive data is automatically removed from cached plans
 const sensitiveFields = [
-  'workspaceSecrets', 'privateKeys', 'authTokens', 'apiKeys',
-  'passwords', 'credentials', 'internalConfig'
+  "workspaceSecrets",
+  "privateKeys",
+  "authTokens",
+  "apiKeys",
+  "passwords",
+  "credentials",
+  "internalConfig",
 ];
 ```
 
 #### 3. Input Validation
+
 ```typescript
 // Plan keys are validated to prevent injection attacks
 const validKeyPattern = /^[a-zA-Z0-9\-_:]+$/;
@@ -999,7 +1078,7 @@ planning:
     enabled: true
     cache_duration_hours: 24
     background_refresh: true
-  
+
   cache_sharing:
     enabled: true
     security_validation: true
@@ -1019,7 +1098,7 @@ signal_analysis:
         - pattern: "pull_request.opened"
           job: "code-review"
           confidence: 0.95
-        - pattern: "release.published"  
+        - pattern: "release.published"
           job: "deployment"
           confidence: 0.98
 ```
@@ -1050,24 +1129,28 @@ atlas analytics --workspace my-workspace --metrics performance,cache,memory
 ## 🎯 Best Practices
 
 ### Job Design
+
 1. **Clear Descriptions**: Use descriptive job names and detailed descriptions
 2. **Appropriate Agents**: Match agent capabilities to job requirements
 3. **Resource Limits**: Set realistic duration and cost constraints
 4. **Error Handling**: Include fallback strategies and retry logic
 
 ### Configuration Management
+
 1. **Version Control**: Keep workspace.yml and jobs/ in version control
 2. **Environment Variables**: Use environment variables for secrets and config
 3. **Validation**: Regularly run `/config validate` to catch issues
 4. **Documentation**: Comment complex conditions and workflows
 
 ### Performance
+
 1. **Cache Utilization**: Use job specifications to enable plan caching
 2. **Agent Reuse**: Design jobs to reuse agents efficiently
 3. **Condition Optimization**: Use simple conditions when possible for better caching
 4. **Resource Monitoring**: Monitor job execution times and costs
 
 ### Security
+
 1. **Secret Management**: Never commit secrets to workspace configuration
 2. **Agent Permissions**: Use least-privilege agent configurations
 3. **Input Validation**: Validate all external inputs and webhook payloads
@@ -1076,6 +1159,7 @@ atlas analytics --workspace my-workspace --metrics performance,cache,memory
 ## 🚀 Getting Started Checklist
 
 ### Quick Start (5 minutes)
+
 ```bash
 # 1. Choose a template
 cd examples/workspaces/k8s-assistant
@@ -1088,6 +1172,7 @@ cd examples/workspaces/k8s-assistant
 ```
 
 ### Custom Workspace (15 minutes)
+
 ```bash
 # 1. Create workspace directory
 mkdir my-workspace && cd my-workspace
@@ -1133,6 +1218,7 @@ curl -X POST http://localhost:8080/api \
 ```
 
 ### Validation & Testing
+
 ```bash
 # Validate configuration
 atlas config validate
@@ -1150,26 +1236,31 @@ atlas signal trigger http-api --data '{"test": true}'
 ## 📚 Additional Resources
 
 ### Example Configurations
+
 - **Production DevOps**: `examples/workspaces/k8s-assistant/`
 - **Development Team**: `examples/workspaces/multi-purpose-dev/`
 - **Code Analysis**: `examples/workspaces/atlas-codebase-analyzer/`
 - **Web Monitoring**: `examples/workspaces/web-analysis/`
 
 ### Documentation
+
 - **Agent Protocols**: `/docs/REMOTE_AGENT_IMPLEMENTATION_PLAN.md`
 - **MCP Integration**: `/docs/MCP_ADAPTER_IMPLEMENTATION_PLAN.md`
 - **Configuration Architecture**: `/docs/CONFIGURATION_ARCHITECTURE.md`
 - **Signal Processing**: `/docs/ENHANCED_SIGNAL_PROCESSING.md`
 
 ### Community Examples
+
 Explore the `examples/workspaces/` directory for real-world configurations and patterns.
 
 ## 🎯 Next Steps
 
 1. **Choose Your Use Case**: Start with a template that matches your needs
-2. **Customize Gradually**: Modify agents, signals, and jobs incrementally  
+2. **Customize Gradually**: Modify agents, signals, and jobs incrementally
 3. **Test Early**: Use the testing scripts and validation tools
 4. **Scale Up**: Add more agents and complex workflows as you learn
 5. **Share**: Contribute your configurations back to the community
 
-This comprehensive system transforms Atlas from a basic agent orchestration platform into a sophisticated, AI-powered workflow automation system that can understand natural language descriptions and convert them into secure, efficient execution plans.
+This comprehensive system transforms Atlas from a basic agent orchestration platform into a
+sophisticated, AI-powered workflow automation system that can understand natural language
+descriptions and convert them into secure, efficient execution plans.

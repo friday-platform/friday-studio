@@ -3,7 +3,7 @@ import { Box, Text } from "ink";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
 import { Column, Table } from "../components/Table.tsx";
-import { scanAvailableWorkspaces } from "./workspace.tsx";
+import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import { ConfigLoader } from "../../core/config-loader.ts";
 
 export interface SignalCommandProps {
@@ -51,15 +51,14 @@ export function SignalCommand({ subcommand, args, flags }: SignalCommandProps) {
     let workspacePath = Deno.cwd();
 
     if (workspaceId) {
-      // Find workspace by ID
-      const availableWorkspaces = await scanAvailableWorkspaces();
-      const targetWorkspace = availableWorkspaces.find((w) =>
-        w.id === workspaceId || w.slug === workspaceId
-      );
+      // Find workspace by ID in the registry
+      const registry = getWorkspaceRegistry();
+      const targetWorkspace = (await registry.findById(workspaceId)) ||
+        (await registry.findByName(workspaceId));
 
       if (!targetWorkspace) {
         throw new Error(
-          `Workspace '${workspaceId}' not found. Use 'atlas workspace list' to see available workspaces.`,
+          `Workspace '${workspaceId}' not found in registry. Use 'atlas workspace list' to see registered workspaces.`,
         );
       }
 

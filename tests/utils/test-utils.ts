@@ -311,10 +311,10 @@ export class EnhancedTestEnvironment extends TestEnvironment {
 
     // Import the registry here to avoid circular dependencies
     const { MCPServerRegistry } = await import("../../src/core/agents/mcp/mcp-server-registry.ts");
-    
+
     // Reset registry for clean test state
     MCPServerRegistry.reset();
-    
+
     // Build workspace config from started servers
     const workspaceConfig = {
       mcp_servers: Object.fromEntries(
@@ -327,9 +327,9 @@ export class EnhancedTestEnvironment extends TestEnvironment {
               ...server.getCommand(),
             },
             timeout_ms: 30000,
-          }
-        ])
-      )
+          },
+        ]),
+      ),
     };
 
     // Initialize registry with test configuration
@@ -354,12 +354,12 @@ export class EnhancedTestEnvironment extends TestEnvironment {
     const startedServer = await server;
     this.mcpServers.set(id, startedServer);
     this.onCleanup(() => startedServer.stop());
-    
+
     // Only initialize registry if explicitly requested
     if (initializeRegistry && this.mcpServers.size > 0) {
       await this.initializeMCPRegistry();
     }
-    
+
     return startedServer;
   }
 

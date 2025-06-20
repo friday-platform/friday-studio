@@ -14,7 +14,7 @@ console.log("Testing MCP schemas individually...");
 const testTransport = {
   type: "stdio",
   command: "echo",
-  args: ["hello"]
+  args: ["hello"],
 };
 
 console.log("Testing transport schema...");
@@ -31,17 +31,17 @@ try {
   const content = await Deno.readTextFile("./examples/workspaces/mcp-test/workspace-simple.yml");
   const rawConfig = parseYaml(content);
   console.log("Raw MCP servers config:", rawConfig.mcp_servers);
-  
+
   const WorkspaceMCPServerConfigSchema = z.object({
     transport: MCPTransportConfigSchema,
     auth: MCPAuthConfigSchema.optional(),
     tools: MCPToolsConfigSchema.optional(),
     timeout_ms: z.number().positive().default(30000),
   });
-  
+
   const mcpServerConfig = rawConfig.mcp_servers["test-server"];
   console.log("Testing MCP server config:", mcpServerConfig);
-  
+
   const result = WorkspaceMCPServerConfigSchema.parse(mcpServerConfig);
   console.log("✅ MCP server config works:", result);
 } catch (error) {

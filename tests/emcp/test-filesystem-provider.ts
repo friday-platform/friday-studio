@@ -8,7 +8,7 @@ import type { CodebaseContextSpec, EMCPContext } from "../../src/core/emcp/emcp-
 
 Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
   const provider = new FilesystemProvider();
-  
+
   await t.step("should initialize successfully", async () => {
     await provider.initialize({
       default: {
@@ -18,7 +18,7 @@ Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
         maxTotalSize: "5kb",
       },
     });
-    
+
     assertEquals(provider.config.name, "filesystem");
     assertEquals(provider.canProvide("codebase"), true);
     assertEquals(provider.canProvide("database"), false);
@@ -39,7 +39,7 @@ Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertExists(result.content);
     assertStringIncludes(result.content!.content as string, "Analysis Focus Areas");
@@ -58,12 +58,12 @@ Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
 
     const context: EMCPContext = {
       workspaceId: "test-workspace",
-      sessionId: "test-session", 
+      sessionId: "test-session",
       agentId: "test-agent",
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertStringIncludes(result.content!.content as string, "Pattern could not be processed");
   });
@@ -82,7 +82,7 @@ Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertStringIncludes(result.content!.content as string, "Atlas Codebase Files");
   });
@@ -94,7 +94,7 @@ Deno.test("FilesystemProvider - Basic Functionality", async (t) => {
 
 Deno.test("FilesystemProvider - Edge Cases", async (t) => {
   const provider = new FilesystemProvider();
-  
+
   await t.step("should handle wrong context type", async () => {
     await provider.initialize({ default: {} });
 
@@ -125,7 +125,7 @@ Deno.test("FilesystemProvider - Edge Cases", async (t) => {
     });
 
     const spec: CodebaseContextSpec = {
-      type: "codebase", 
+      type: "codebase",
       filePatterns: ["README.md", "CLAUDE.md"],
       maxSize: "100b",
     };
@@ -137,7 +137,7 @@ Deno.test("FilesystemProvider - Edge Cases", async (t) => {
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     // Should truncate due to size limits
     assertStringIncludes(result.content!.content as string, "truncated due to size limits");
@@ -150,7 +150,7 @@ Deno.test("FilesystemProvider - Edge Cases", async (t) => {
 
 Deno.test("FilesystemProvider - Glob Support", async (t) => {
   const provider = new FilesystemProvider();
-  
+
   await t.step("should initialize for glob tests", async () => {
     await provider.initialize({
       default: {
@@ -177,7 +177,7 @@ Deno.test("FilesystemProvider - Glob Support", async (t) => {
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertStringIncludes(result.content!.content as string, "documentation");
     assertExists(result.metadata);
@@ -199,7 +199,7 @@ Deno.test("FilesystemProvider - Glob Support", async (t) => {
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertExists(result.metadata);
     assertEquals(typeof result.metadata!.filesLoaded, "number");
@@ -214,13 +214,13 @@ Deno.test("FilesystemProvider - Glob Support", async (t) => {
     };
 
     const context: EMCPContext = {
-      workspaceId: "test-workspace", 
+      workspaceId: "test-workspace",
       sessionId: "test-session",
       agentId: "test-agent",
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertStringIncludes(result.content!.content as string, "emcp-provider.ts");
     assertEquals(result.metadata!.filesLoaded as number, 1);
@@ -235,12 +235,12 @@ Deno.test("FilesystemProvider - Glob Support", async (t) => {
 
     const context: EMCPContext = {
       workspaceId: "test-workspace",
-      sessionId: "test-session", 
+      sessionId: "test-session",
       agentId: "test-agent",
     };
 
     const result = await provider.provisionContext(spec, context);
-    
+
     assertEquals(result.success, true);
     assertEquals(result.metadata!.filesLoaded as number, 0);
   });

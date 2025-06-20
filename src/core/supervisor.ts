@@ -16,7 +16,7 @@ import {
   type SignalProcessingConfig,
   SignalProcessor,
 } from "./signal-processing/index.ts";
-import { JobTriggerMatcher, type JobMatch, type JobSpec } from "./job-trigger-matcher.ts";
+import { type JobMatch, type JobSpec, JobTriggerMatcher } from "./job-trigger-matcher.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -660,7 +660,7 @@ You have access to the full workspace context and configuration. Create structur
     try {
       // Validate job trigger specifications
       const validation = this.jobTriggerMatcher.validateJobTriggers(jobs);
-      
+
       if (!validation.valid) {
         this.log("Job trigger validation failed", "error", {
           errors: validation.errors,
@@ -688,14 +688,20 @@ You have access to the full workspace context and configuration. Create structur
   getPrecomputedPlans(requestingWorkspaceId?: string): Record<string, any> {
     // Security: Verify requesting workspace matches this supervisor's workspace
     if (requestingWorkspaceId && requestingWorkspaceId !== this.id) {
-      this.log(`Security violation: workspace ${requestingWorkspaceId} requested plans from ${this.id}`, "warn");
+      this.log(
+        `Security violation: workspace ${requestingWorkspaceId} requested plans from ${this.id}`,
+        "warn",
+      );
       return {};
     }
 
     // For now, return empty plans since we need to implement a proper cache sharing mechanism
     // The current planning engine doesn't support the getAllPrecomputedPlans() method
     // TODO: Implement proper planning cache sharing with workspace-scoped keys
-    this.log(`getPrecomputedPlans() called for workspace ${this.id} - cache sharing not yet implemented`, "debug");
+    this.log(
+      `getPrecomputedPlans() called for workspace ${this.id} - cache sharing not yet implemented`,
+      "debug",
+    );
     return {};
   }
 
@@ -710,7 +716,7 @@ You have access to the full workspace context and configuration. Create structur
 
   // Sanitize plan data before sharing to remove sensitive information
   private sanitizePlanForSharing(plan: any): any {
-    if (!plan || typeof plan !== 'object') {
+    if (!plan || typeof plan !== "object") {
       return plan;
     }
 
@@ -720,10 +726,10 @@ You have access to the full workspace context and configuration. Create structur
     delete sanitized.privateKeys;
     delete sanitized.authTokens;
     delete sanitized.internalConfig;
-    
+
     // Ensure no workspace-specific absolute paths
     if (sanitized.context?.workspacePath) {
-      sanitized.context.workspacePath = '[WORKSPACE_PATH]';
+      sanitized.context.workspacePath = "[WORKSPACE_PATH]";
     }
 
     return sanitized;
@@ -782,11 +788,11 @@ You have access to the full workspace context and configuration. Create structur
       );
 
       const totalTime = Date.now() - startTime;
-      
+
       // STEP 2: If we found matching jobs, create intent from the best match
       if (matches.length > 0) {
         const bestMatch = matches[0]; // Already sorted by confidence
-        
+
         this.logger.debug(`[PERF] Job trigger evaluation completed with direct match`, {
           totalTime,
           signalId: signal.id,
@@ -828,12 +834,14 @@ You have access to the full workspace context and configuration. Create structur
     match: JobMatch,
   ): SessionIntent {
     const job = match.job;
-    
+
     // Extract agent IDs from job specification
-    const suggestedAgents = job.execution?.agents?.map(agent => agent.id) || [];
-    
+    const suggestedAgents = job.execution?.agents?.map((agent) => agent.id) || [];
+
     // Map job execution strategy to session execution hint
-    const mapExecutionStrategy = (strategy?: string): "iterative" | "deterministic" | "exploratory" => {
+    const mapExecutionStrategy = (
+      strategy?: string,
+    ): "iterative" | "deterministic" | "exploratory" => {
       switch (strategy) {
         case "sequential":
         case "parallel":
@@ -1071,7 +1079,8 @@ Provide a structured analysis.`;
         additionalPrompts: {
           signal: this.config.signalPrompts?.[signal.id] || "",
           session: this.config.prompts?.session || "",
-          evaluation: selectedJob?.session_prompts?.evaluation || this.config.prompts?.evaluation || "",
+          evaluation: selectedJob?.session_prompts?.evaluation || this.config.prompts?.evaluation ||
+            "",
         },
       };
       const contextTime = Date.now() - contextStart;
@@ -1207,24 +1216,34 @@ Provide a structured analysis.`;
   }
 
   // Evaluate job condition against payload using ConditionEvaluatorRegistry
-  private async evaluateJobCondition(condition: string | object | undefined, payload: any): Promise<boolean> {
+  private async evaluateJobCondition(
+    condition: string | object | undefined,
+    payload: any,
+  ): Promise<boolean> {
     if (!condition) return true; // No condition means always match
 
     try {
       // Use the same ConditionEvaluatorRegistry as the JobTriggerMatcher
-      const result = await this.jobTriggerMatcher.getConditionEvaluatorRegistry().evaluate(condition, payload);
-      
+      const result = await this.jobTriggerMatcher.getConditionEvaluatorRegistry().evaluate(
+        condition,
+        payload,
+      );
+
       this.logger.debug(`Job condition evaluation result`, {
-        condition: typeof condition === 'object' ? JSON.stringify(condition) : condition,
+        condition: typeof condition === "object" ? JSON.stringify(condition) : condition,
         payload: JSON.stringify(payload),
         matches: result.matches,
         confidence: result.confidence,
         evaluator: result.evaluator,
       });
-      
+
       return result.matches;
     } catch (error) {
-      this.log(`Error evaluating condition "${typeof condition === 'object' ? JSON.stringify(condition) : condition}": ${error}`);
+      this.log(
+        `Error evaluating condition "${
+          typeof condition === "object" ? JSON.stringify(condition) : condition
+        }": ${error}`,
+      );
       return false;
     }
   }

@@ -7,12 +7,15 @@
 
 import { LLMProviderManager } from "../../../src/core/agents/llm-provider-manager.ts";
 
-// Set API key 
-Deno.env.set("ANTHROPIC_API_KEY", "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");
+// Set API key
+Deno.env.set(
+  "ANTHROPIC_API_KEY",
+  "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",
+);
 
 async function demonstrateMCPIntegration() {
   console.log("🕷️  Demonstrating Playwright MCP Integration");
-  console.log("=" .repeat(50));
+  console.log("=".repeat(50));
 
   try {
     // Exact same configuration as workspace.yml
@@ -26,17 +29,17 @@ async function demonstrateMCPIntegration() {
       tools: {
         allowed: [
           "browser_navigate",
-          "browser_snapshot", 
+          "browser_snapshot",
           "browser_take_screenshot",
           "browser_click",
           "browser_type",
           "browser_wait_for",
           "browser_network_requests",
           "browser_console_messages",
-          "browser_pdf_save"
-        ]
+          "browser_pdf_save",
+        ],
       },
-      timeout_ms: 30000
+      timeout_ms: 30000,
     };
 
     console.log("🔧 Initializing MCP servers...");
@@ -47,11 +50,12 @@ async function demonstrateMCPIntegration() {
 
     // Test web analysis task
     const task = "Take a screenshot of https://example.com. Be concise.";
-    
+
     const config = {
       provider: "anthropic" as const,
       model: "claude-3-5-sonnet-20241022",
-      systemPrompt: "You are a web analyst. Use browser tools to analyze websites. Use tools immediately and be concise.",
+      systemPrompt:
+        "You are a web analyst. Use browser tools to analyze websites. Use tools immediately and be concise.",
       mcpServers: ["playwright"],
       maxSteps: 2,
       toolChoice: "auto" as const,
@@ -81,7 +85,6 @@ async function demonstrateMCPIntegration() {
 
     // Cleanup
     await LLMProviderManager.disposeMCPResources();
-
   } catch (error) {
     console.error("❌ Error:", error instanceof Error ? error.message : String(error));
   }

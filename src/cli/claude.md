@@ -262,6 +262,7 @@ Activated when workspace is loaded:
 ### Startup Behavior
 
 The TUI automatically:
+
 1. **Detects existing servers**: Checks `/health` endpoint on port 8080
 2. **Connects to running servers**: Shows server state and session count
 3. **Falls back gracefully**: Starts new server if none found

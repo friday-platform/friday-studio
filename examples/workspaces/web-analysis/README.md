@@ -1,19 +1,16 @@
 # Web Analysis Workspace
 
-This workspace demonstrates comprehensive web page analysis using Atlas with
-Playwright MCP integration.
+This workspace demonstrates comprehensive web page analysis using Atlas with Playwright MCP
+integration.
 
 ## Features Showcased
 
 ### 🏗️ **MCP Integration Architecture**
 
-- **Workspace-level MCP registry** - Clean separation of platform and workspace
-  MCP servers
-- **AI SDK native integration** - Using `experimental_createMCPClient` with
-  Playwright
+- **Workspace-level MCP registry** - Clean separation of platform and workspace MCP servers
+- **AI SDK native integration** - Using `experimental_createMCPClient` with Playwright
 - **Type-safe configuration** - Full Zod schema validation throughout the stack
-- **Multi-step tool execution** - Agent orchestrates complex browser automation
-  workflows
+- **Multi-step tool execution** - Agent orchestrates complex browser automation workflows
 
 ### 🌐 **Web Analysis Capabilities**
 

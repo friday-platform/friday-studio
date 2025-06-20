@@ -1,6 +1,6 @@
 /**
  * File Loader Tool for Atlas Agents
- * 
+ *
  * Provides controlled file loading capabilities for agents with proper
  * glob pattern support and size limits to control spend.
  */
@@ -10,7 +10,7 @@ import { relative, resolve } from "jsr:@std/path";
 
 export interface FileLoaderConfig {
   readonly maxFileSize?: number; // bytes
-  readonly maxTotalSize?: number; // bytes  
+  readonly maxTotalSize?: number; // bytes
   readonly allowedExtensions?: string[];
   readonly basePath?: string;
 }
@@ -46,7 +46,8 @@ export class FileLoaderTool {
     this.config = {
       maxFileSize: config.maxFileSize ?? 50 * 1024, // 50KB default
       maxTotalSize: config.maxTotalSize ?? 500 * 1024, // 500KB default
-      allowedExtensions: config.allowedExtensions ?? [".ts", ".js", ".md", ".json", ".yml", ".yaml"],
+      allowedExtensions: config.allowedExtensions ??
+        [".ts", ".js", ".md", ".json", ".yml", ".yaml"],
       basePath: config.basePath ?? ".",
     };
   }
@@ -63,7 +64,7 @@ export class FileLoaderTool {
 
       // Resolve patterns to files
       const matchedPaths = await this.resolvePatterns(request.patterns);
-      
+
       // Sort for consistent ordering
       matchedPaths.sort();
 
@@ -152,14 +153,16 @@ export class FileLoaderTool {
     for (const pattern of patterns) {
       try {
         const fullPattern = this.resolvePattern(pattern);
-        
+
         if (this.isGlobPattern(pattern)) {
           // Use glob expansion
-          for await (const entry of expandGlob(fullPattern, {
-            root: this.config.basePath,
-            includeDirs: false,
-            globstar: true,
-          })) {
+          for await (
+            const entry of expandGlob(fullPattern, {
+              root: this.config.basePath,
+              includeDirs: false,
+              globstar: true,
+            })
+          ) {
             if (this.isAllowedFile(entry.name)) {
               allPaths.add(entry.path);
             }
@@ -191,13 +194,15 @@ export class FileLoaderTool {
   ): Promise<FileInfo | null> {
     try {
       const stat = await Deno.stat(filePath);
-      
+
       if (!stat.isFile) {
         return null;
       }
 
       if (stat.size > this.config.maxFileSize) {
-        console.warn(`File ${filePath} exceeds size limit (${stat.size} > ${this.config.maxFileSize})`);
+        console.warn(
+          `File ${filePath} exceeds size limit (${stat.size} > ${this.config.maxFileSize})`,
+        );
         return null;
       }
 
@@ -207,7 +212,7 @@ export class FileLoaderTool {
       let content: string | undefined;
       if (includeContent) {
         content = await Deno.readTextFile(filePath);
-        
+
         // Truncate if needed
         if (content.length > this.config.maxFileSize) {
           content = content.slice(0, this.config.maxFileSize - 100) + "\n... (truncated)";
@@ -265,13 +270,15 @@ export class FileLoaderTool {
     }
 
     let markdown = `# ${title}\n\n`;
-    
+
     if (result.files.length === 0) {
       markdown += "No files found matching the specified patterns.\n";
       return markdown;
     }
 
-    markdown += `Loaded ${result.files.length} file(s), total size: ${this.formatSize(result.totalSize)}`;
+    markdown += `Loaded ${result.files.length} file(s), total size: ${
+      this.formatSize(result.totalSize)
+    }`;
     if (result.truncated) {
       markdown += " (truncated due to limits)";
     }
@@ -279,7 +286,7 @@ export class FileLoaderTool {
 
     for (const file of result.files) {
       markdown += `## ${file.relativePath}\n\n`;
-      
+
       if (file.content) {
         const language = this.getLanguageFromExtension(file.extension);
         markdown += `\`\`\`${language}\n${file.content}\n\`\`\`\n\n`;

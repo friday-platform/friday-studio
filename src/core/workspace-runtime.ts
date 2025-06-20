@@ -210,20 +210,20 @@ export class WorkspaceRuntime {
 
       // Store session archive in library
       const archiveId = await library.archiveSession(sessionData);
-      
+
       // Also store the final report as a separate library item if available
       logger.info("Checking for final report to store", {
         hasFinalOutput: !!result.final_output,
         hasFinalOutputResult: !!result.final_output?.result,
         finalOutputResultLength: result.final_output?.result?.length || 0,
       });
-      
+
       if (result.final_output?.result) {
         logger.info("Creating separate report item", {
           sessionId,
           reportLength: result.final_output.result.length,
         });
-        
+
         const reportId = await library.store({
           type: "report",
           name: `Analysis Report - ${sessionId.slice(0, 8)}`,
@@ -525,7 +525,6 @@ export class WorkspaceRuntime {
     });
   }
 
-
   /**
    * Get the library instance for this workspace
    */
@@ -534,45 +533,44 @@ export class WorkspaceRuntime {
       // Initialize library synchronously on first access
       try {
         const workspacePath = Deno.cwd();
-        
+
         // Validate that we have a proper workspace path
-        if (!workspacePath || typeof workspacePath !== 'string') {
-          logger.error("Invalid workspace path", { 
+        if (!workspacePath || typeof workspacePath !== "string") {
+          logger.error("Invalid workspace path", {
             workspaceId: this.workspace.id,
             workspacePath: typeof workspacePath,
-            cwd: Deno.cwd()
+            cwd: Deno.cwd(),
           });
           return undefined;
         }
-        
+
         const config = {
           platform_path: "~/.atlas/library",
-          workspace_relative: ".atlas/library"
+          workspace_relative: ".atlas/library",
         };
-        
-        
+
         this.library = new AtlasLibrary(
           config,
           workspacePath,
-          this.workspace.id
+          this.workspace.id,
         );
-        
+
         // Initialize asynchronously but don't wait
-        this.library.initialize().catch(error => {
-          logger.error("Failed to initialize library", { 
-            workspaceId: this.workspace.id, 
-            error 
+        this.library.initialize().catch((error) => {
+          logger.error("Failed to initialize library", {
+            workspaceId: this.workspace.id,
+            error,
           });
         });
-        
-        logger.info("Library created (initializing in background)", { 
+
+        logger.info("Library created (initializing in background)", {
           workspaceId: this.workspace.id,
-          workspacePath 
+          workspacePath,
         });
       } catch (error) {
-        logger.error("Failed to create library", { 
-          workspaceId: this.workspace.id, 
-          error 
+        logger.error("Failed to create library", {
+          workspaceId: this.workspace.id,
+          error,
         });
         return undefined;
       }

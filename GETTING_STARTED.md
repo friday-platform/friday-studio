@@ -1,6 +1,7 @@
 # Atlas Getting Started Guide
 
-Welcome to **Atlas** - the comprehensive AI agent orchestration platform that transforms software delivery through human/AI collaboration.
+Welcome to **Atlas** - the comprehensive AI agent orchestration platform that transforms software
+delivery through human/AI collaboration.
 
 ## 📋 Table of Contents
 
@@ -96,6 +97,7 @@ cd my-dev-team
 ```
 
 This creates a basic workspace structure:
+
 ```
 my-dev-team/
 ├── workspace.yml      # Main configuration
@@ -122,9 +124,9 @@ signals:
     path: "/github"
     method: "POST"
     description: "GitHub webhook events"
-    
+
   manual-trigger:
-    provider: "http-webhook" 
+    provider: "http-webhook"
     path: "/manual"
     method: "POST"
     description: "Manual job triggers"
@@ -136,7 +138,7 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Code review and analysis"
     tools: ["filesystem", "git"]
-    
+
   deployment-manager:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
@@ -160,7 +162,9 @@ description: "Automated code review process"
 # Define when this job triggers
 triggers:
   - signal: "github-webhook"
-    condition: {"and": [{"==": [{"var": "event.action"}, "opened"]}, {"var": "event.pull_request"}]}
+    condition: {
+      "and": [{ "==": [{ "var": "event.action" }, "opened"] }, { "var": "event.pull_request" }],
+    }
 
 # Define execution strategy
 execution:
@@ -168,7 +172,7 @@ execution:
   agents:
     - id: "code-reviewer"
       role: "primary-reviewer"
-    - id: "deployment-manager" 
+    - id: "deployment-manager"
       role: "deployment-checker"
 
 # Configure session behavior
@@ -189,7 +193,7 @@ resources:
 Signals are events that trigger job execution:
 
 - **HTTP Webhooks**: GitHub, GitLab, external services
-- **CLI Triggers**: Manual job execution  
+- **CLI Triggers**: Manual job execution
 - **Stream Signals**: Real-time data feeds
 - **Kubernetes Events**: Pod failures, deployments
 
@@ -207,7 +211,7 @@ Jobs define what happens when signals are received:
 Atlas supports three types of agents:
 
 1. **LLM Agents**: Claude, GPT, or other language models
-2. **Tempest Agents**: Pre-built, specialized agents 
+2. **Tempest Agents**: Pre-built, specialized agents
 3. **Remote Agents**: External HTTP services
 
 ## 🖥️ Working with the TUI
@@ -226,7 +230,7 @@ atlas tui --workspace /path/to/workspace
 
 - **Tab/j/k**: Navigate between interface elements
 - **gg/G**: Jump to top/bottom of logs
-- **Ctrl+D/U**: Page navigation  
+- **Ctrl+D/U**: Page navigation
 - **y**: Copy log entries
 - **Tab**: Switch between conversation and server tabs
 
@@ -278,9 +282,11 @@ atlas job create --description "Monitor Kubernetes pod failures and automaticall
 
 Atlas can understand complex workflows:
 
-- *"When a deployment fails, analyze the logs, check resource usage, and notify the team in Slack with a summary"*
-- *"On every commit to main branch, run tests, build Docker image, and deploy to staging if tests pass"*
-- *"Monitor database performance metrics and alert the DBA team if query times exceed 500ms"*
+- _"When a deployment fails, analyze the logs, check resource usage, and notify the team in Slack
+  with a summary"_
+- _"On every commit to main branch, run tests, build Docker image, and deploy to staging if tests
+  pass"_
+- _"Monitor database performance metrics and alert the DBA team if query times exceed 500ms"_
 
 ### Confirmation Workflow
 
@@ -305,14 +311,19 @@ description: "Comprehensive GitHub PR review"
 
 triggers:
   - signal: "github-webhook"
-    condition: {"or": [{"==": [{"var": "event.action"}, "opened"]}, {"==": [{"var": "event.action"}, "synchronize"]}]}
+    condition: {
+      "or": [
+        { "==": [{ "var": "event.action" }, "opened"] },
+        { "==": [{ "var": "event.action" }, "synchronize"] },
+      ],
+    }
 
 execution:
   strategy: "parallel"
   agents:
     - id: "security-scanner"
       role: "security-review"
-    - id: "code-quality-checker"  
+    - id: "code-quality-checker"
       role: "quality-review"
     - id: "performance-analyzer"
       role: "performance-review"
@@ -325,7 +336,7 @@ session_prompts:
 ### 2. Incident Response
 
 ```yaml
-# jobs/incident-response.yml  
+# jobs/incident-response.yml
 name: "incident-response"
 description: "Automated incident detection and response"
 
@@ -339,7 +350,7 @@ execution:
     - id: "incident-detector"
       role: "triage"
     - id: "log-analyzer"
-      role: "analysis"  
+      role: "analysis"
     - id: "slack-notifier"
       role: "communication"
 
@@ -400,11 +411,12 @@ deno install --allow-all --name atlas src/cli.tsx
 #### 4. "Agent not found"
 
 Check your `workspace.yml` agent configuration:
+
 ```yaml
 agents:
   my-agent:
-    type: "llm"  # Must be: llm, tempest, or remote
-    model: "claude-3-5-sonnet-20241022"  # Required for LLM agents
+    type: "llm" # Must be: llm, tempest, or remote
+    model: "claude-3-5-sonnet-20241022" # Required for LLM agents
 ```
 
 #### 5. TUI not starting
@@ -468,7 +480,8 @@ After completing this guide:
 
 ## 📖 Additional Resources
 
-- **[Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md)**: Deep dive into workspace configuration
+- **[Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md)**: Deep dive into workspace
+  configuration
 - **[Agent Types Guide](docs/AGENT_TYPES.md)**: Comprehensive agent development
 - **[Signal Processing](docs/ENHANCED_SIGNAL_PROCESSING.md)**: Advanced signal configuration
 - **[Memory Management](docs/memory-model-flow.md)**: Understanding Atlas memory systems
@@ -478,4 +491,6 @@ After completing this guide:
 
 **Welcome to the future of AI-powered software delivery!** 🚀
 
-Atlas transforms how teams collaborate with AI agents to build, deploy, and maintain software. Start small with simple jobs and gradually build sophisticated multi-agent workflows that revolutionize your development process.
+Atlas transforms how teams collaborate with AI agents to build, deploy, and maintain software. Start
+small with simple jobs and gradually build sophisticated multi-agent workflows that revolutionize
+your development process.

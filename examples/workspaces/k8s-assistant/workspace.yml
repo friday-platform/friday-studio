@@ -19,7 +19,6 @@ jobs:
   # -------------------------
   # Direct Operations
   # -------------------------
-  
   unified-k8s-operation:
     name: "unified-k8s-operation"
     description: "Comprehensive Kubernetes operation handler via HTTP API"
@@ -43,7 +42,7 @@ jobs:
   # -------------------------
   # Real-time Monitoring
   # -------------------------
-  
+
   handle-k8s-event:
     name: "handle-k8s-event"
     description: "Real-time Kubernetes event processing and automated incident response"
@@ -58,7 +57,7 @@ jobs:
   # -------------------------
   # Linear Integration
   # -------------------------
-  
+
   linear-cluster-issue-triage:
     name: "linear-cluster-issue-triage"
     description: "Automated cluster issue triage from Linear tickets"
@@ -125,15 +124,15 @@ agents:
     protocol: "acp"
     endpoint: "http://localhost:8080"
     purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, cluster operations, and Linear issue automation"
-    
+
     # ACP Protocol Configuration
     acp:
       agent_name: "k8s-deployment-manager"
       default_mode: "sync"
-      timeout_ms: 120000  # 2-minute timeout for complex operations
+      timeout_ms: 120000 # 2-minute timeout for complex operations
       max_retries: 2
-      health_check_interval: 30000  # Health check every 30 seconds
-    
+      health_check_interval: 30000 # Health check every 30 seconds
+
     # Monitoring & Reliability
     monitoring:
       enabled: true
@@ -141,7 +140,7 @@ agents:
         failure_threshold: 3
         timeout_ms: 120000
         half_open_max_calls: 2
-    
+
     # DevOps Safety Context
     context:
       linear_integration: true
@@ -163,7 +162,7 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Local AI assistant for documentation, explanations, fallback operations, and Linear issue management"
     tools: ["computer_use"]
-    
+
     # Linear Integration
     integrations:
       linear:
@@ -171,7 +170,7 @@ agents:
         team_id: "${LINEAR_TEAM_ID}"
         enabled: true
         auto_update: true
-    
+
     # Agent Behavior
     prompts:
       system: |
@@ -195,7 +194,7 @@ agents:
 # =============================================================================
 # Atlas supports multiple signal types for different interaction patterns:
 # - HTTP: Direct API calls and webhook integrations
-# - CLI: Command-line driven operations  
+# - CLI: Command-line driven operations
 # - K8s Events: Real-time Kubernetes event streaming
 # =============================================================================
 
@@ -218,8 +217,8 @@ signals:
     description: "Real-time Kubernetes event monitoring via built-in Events API"
     provider: "k8s-events"
     kubeconfig: "~/.kube/config"
-    namespace: "default"  # Watch default namespace
-    insecure: true        # For local development with minikube/kind
+    namespace: "default" # Watch default namespace
+    insecure: true # For local development with minikube/kind
     timeout_ms: 120000
     retry_config:
       max_retries: 3
@@ -251,7 +250,7 @@ memory:
   enabled: true
   scope: "workspace"
   retention:
-    max_age_days: 7      # Keep operation history for 7 days
+    max_age_days: 7 # Keep operation history for 7 days
     max_entries: 500
   include_types:
     - "deployment_history"

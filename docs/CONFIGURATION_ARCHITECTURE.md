@@ -136,7 +136,12 @@ signals:
         condition: "pull_request.changed_files.some(f => f.filename.match(/\\.(tsx|css|js)$/))"
         job: "./jobs/frontend-pr-review.yml"
       - name: "security-review"
-        condition: {"and": [{"==": [{"var": "action"}, "opened"]}, {">": [{"var": "pull_request.additions"}, 100]}]}
+        condition: {
+          "and": [
+            { "==": [{ "var": "action" }, "opened"] },
+            { ">": [{ "var": "pull_request.additions" }, 100] },
+          ],
+        }
         job: "./jobs/security-review.yml"
 
   deploy-failed:
@@ -391,7 +396,9 @@ jobs:
     description: "Sequential message transformation workflow"
     triggers:
       - signal: "telephone-message"
-        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+        condition: {
+          "and": [{ "var": "message" }, { ">": [{ "length": { "var": "message" } }, 0] }],
+        }
     execution:
       strategy: "sequential"
       agents:
@@ -402,7 +409,7 @@ jobs:
         - id: "reinterpretation-agent"
           input_source: "previous"
 
-# Agent definitions  
+# Agent definitions
 agents:
   mishearing-agent:
     type: "llm"
@@ -410,7 +417,7 @@ agents:
     purpose: "Specializes in phonetic errors and mishearing transformations"
 
   embellishment-agent:
-    type: "llm"  
+    type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative details and context to messages"
 
@@ -444,7 +451,9 @@ jobs:
     description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
     triggers:
       - signal: "manual-analysis"
-        condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+        condition: {
+          "or": [{ "!": { "var": "type" } }, { "==": [{ "var": "type" }, "comprehensive"] }],
+        }
     execution:
       strategy: "sequential"
       context:
@@ -484,20 +493,22 @@ agents:
 
 ```yaml
 # Simple existence check
-condition: {"var": "message"}
+condition: { "var": "message" }
 
 # String length validation
-condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+condition: { "and": [{ "var": "message" }, { ">": [{ "length": { "var": "message" } }, 0] }] }
 
 # Multiple conditions with OR
-condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+condition: { "or": [{ "!": { "var": "type" } }, { "==": [{ "var": "type" }, "comprehensive"] }] }
 
-# Complex nested conditions  
-condition: {"and": [
-  {"var": "action"}, 
-  {"in": [{"var": "action"}, ["create", "update"]]},
-  {">": [{"length": {"var": "description"}}, 10]}
-]}
+# Complex nested conditions
+condition: {
+  "and": [
+    { "var": "action" },
+    { "in": [{ "var": "action" }, ["create", "update"]] },
+    { ">": [{ "length": { "var": "description" } }, 10] },
+  ],
+}
 ```
 
 #### Input Source Options
@@ -505,20 +516,20 @@ condition: {"and": [
 ```yaml
 agents:
   - id: "first-agent"
-    input_source: "signal"        # Use original signal payload
-  - id: "second-agent"  
-    input_source: "previous"      # Use output from previous agent
+    input_source: "signal" # Use original signal payload
+  - id: "second-agent"
+    input_source: "previous" # Use output from previous agent
   - id: "analyzer"
-    input_source: "codebase_context"  # Load specified codebase files
+    input_source: "codebase_context" # Load specified codebase files
   - id: "synthesizer"
-    input_source: "combined"      # Combine all previous outputs
+    input_source: "combined" # Combine all previous outputs
 ```
 
 #### Execution Strategies
 
 ```yaml
 execution:
-  strategy: "sequential"    # Execute agents one after another
+  strategy: "sequential" # Execute agents one after another
   # OR
-  strategy: "parallel"      # Execute all agents simultaneously
+  strategy: "parallel" # Execute all agents simultaneously
 ```

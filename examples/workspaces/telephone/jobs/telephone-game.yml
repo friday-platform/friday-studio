@@ -3,7 +3,7 @@ description: "Telephone game message transformation through sequential agent pro
 
 triggers:
   - signal: "telephone-message"
-    condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+    condition: { "and": [{ "var": "message" }, { ">": [{ "length": { "var": "message" } }, 0] }] }
 
 execution:
   strategy: "sequential"

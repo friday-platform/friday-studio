@@ -339,7 +339,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
       // Get precomputed plans from WorkspaceSupervisor's planning engine with security validation
       const workspaceId = this.workspace?.id;
       const precomputedPlans = this.supervisor?.getPrecomputedPlans(workspaceId) || {};
-      
+
       sessionWorker.postMessage({
         type: "init",
         id: sessionId,

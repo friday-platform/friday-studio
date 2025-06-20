@@ -266,14 +266,16 @@ export class WorkspaceServer {
           tags: c.req.query("tags")?.split(","),
           since: c.req.query("since"),
           limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
-          workspace: c.req.query("workspace") === "true"
+          workspace: c.req.query("workspace") === "true",
         };
 
         const items = await library.list(options);
         return c.json(items);
       } catch (error) {
-        return c.json({ 
-          error: `Failed to list library items: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Failed to list library items: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         }, 500);
       }
     });
@@ -295,18 +297,20 @@ export class WorkspaceServer {
 
         // Return metadata by default, content only if requested
         const includeContent = c.req.query("content") === "true";
-        
+
         if (includeContent) {
           return c.json({
             item: result.item,
-            content: typeof result.content === "string" ? result.content : "[Binary Content]"
+            content: typeof result.content === "string" ? result.content : "[Binary Content]",
           });
         } else {
           return c.json(result.item);
         }
       } catch (error) {
-        return c.json({ 
-          error: `Failed to get library item: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Failed to get library item: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         }, 500);
       }
     });
@@ -327,14 +331,14 @@ export class WorkspaceServer {
           until: c.req.query("until"),
           limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : undefined,
           offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : undefined,
-          workspace: c.req.query("workspace") === "true"
+          workspace: c.req.query("workspace") === "true",
         };
 
         const results = await library.search(query);
         return c.json(results);
       } catch (error) {
-        return c.json({ 
-          error: `Search failed: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Search failed: ${error instanceof Error ? error.message : String(error)}`,
         }, 500);
       }
     });
@@ -349,14 +353,16 @@ export class WorkspaceServer {
 
         const filter = {
           workspace: c.req.query("workspace") === "true",
-          platform: c.req.query("platform") === "true"
+          platform: c.req.query("platform") === "true",
         };
 
         const templates = library.getTemplates(filter);
         return c.json(templates);
       } catch (error) {
-        return c.json({ 
-          error: `Failed to get templates: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Failed to get templates: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         }, 500);
       }
     });
@@ -379,13 +385,15 @@ export class WorkspaceServer {
           store: store || false,
           tags,
           name,
-          description
+          description,
         });
 
         return c.json(result);
       } catch (error) {
-        return c.json({ 
-          error: `Report generation failed: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Report generation failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         }, 500);
       }
     });
@@ -401,8 +409,8 @@ export class WorkspaceServer {
         const stats = await library.getStats();
         return c.json(stats);
       } catch (error) {
-        return c.json({ 
-          error: `Failed to get stats: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Failed to get stats: ${error instanceof Error ? error.message : String(error)}`,
         }, 500);
       }
     });
@@ -424,8 +432,8 @@ export class WorkspaceServer {
 
         return c.json({ message: "Library item deleted successfully" });
       } catch (error) {
-        return c.json({ 
-          error: `Delete failed: ${error instanceof Error ? error.message : String(error)}` 
+        return c.json({
+          error: `Delete failed: ${error instanceof Error ? error.message : String(error)}`,
         }, 500);
       }
     });

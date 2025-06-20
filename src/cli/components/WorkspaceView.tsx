@@ -1,10 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
-import {
-  loadWorkspaceConfig,
-  WorkspaceConfig,
-} from "../utils/workspace-loader.ts";
+import { loadWorkspaceConfig, WorkspaceConfig } from "../utils/workspace-loader.ts";
 
 interface WorkspaceViewProps {
   workspaceSlug: string;
@@ -45,13 +42,13 @@ export const WorkspaceView = ({
 
     if (key.escape) {
       const now = Date.now();
-      
+
       if (lastEscapeTime && (now - lastEscapeTime) <= 750) {
         // Double escape within 750ms - trigger onBack
         onBack();
         return;
       }
-      
+
       // First escape or too much time passed - just record the time
       setLastEscapeTime(now);
       return;
@@ -147,26 +144,22 @@ export const WorkspaceView = ({
 
         {activeTab === 1 && (
           <Box flexDirection="column" padding={2}>
-            {config.agents ? (
-              Object.entries(config.agents).map(
-                ([agentId, agent]: [string, Record<string, unknown>]) => (
-                  <Box key={agentId} flexDirection="column" marginBottom={2}>
-                    <Text bold color="cyan">
-                      {agentId}
-                    </Text>
-                    <Text color="gray">Type: {agent.type || "Unknown"}</Text>
-                    {agent.model && (
-                      <Text color="gray">Model: {agent.model}</Text>
-                    )}
-                    {agent.purpose && (
-                      <Text color="yellow">{agent.purpose}</Text>
-                    )}
-                  </Box>
+            {config.agents
+              ? (
+                Object.entries(config.agents).map(
+                  ([agentId, agent]: [string, Record<string, unknown>]) => (
+                    <Box key={agentId} flexDirection="column" marginBottom={2}>
+                      <Text bold color="cyan">
+                        {agentId}
+                      </Text>
+                      <Text color="gray">Type: {agent.type || "Unknown"}</Text>
+                      {agent.model && <Text color="gray">Model: {agent.model}</Text>}
+                      {agent.purpose && <Text color="yellow">{agent.purpose}</Text>}
+                    </Box>
+                  ),
                 )
               )
-            ) : (
-              <Text color="gray">No agents configured</Text>
-            )}
+              : <Text color="gray">No agents configured</Text>}
           </Box>
         )}
 
@@ -184,25 +177,23 @@ export const WorkspaceView = ({
 
         {activeTab === 4 && (
           <Box flexDirection="column" padding={2}>
-            {config.signals ? (
-              Object.entries(config.signals).map(
-                ([signalId, signal]: [string, Record<string, unknown>]) => (
-                  <Box key={signalId} flexDirection="column" marginBottom={2}>
-                    <Text bold color="magenta">
-                      {signalId}
-                    </Text>
-                    <Text color="gray">
-                      Provider: {signal.provider || "Unknown"}
-                    </Text>
-                    {signal.description && (
-                      <Text color="yellow">{signal.description}</Text>
-                    )}
-                  </Box>
+            {config.signals
+              ? (
+                Object.entries(config.signals).map(
+                  ([signalId, signal]: [string, Record<string, unknown>]) => (
+                    <Box key={signalId} flexDirection="column" marginBottom={2}>
+                      <Text bold color="magenta">
+                        {signalId}
+                      </Text>
+                      <Text color="gray">
+                        Provider: {signal.provider || "Unknown"}
+                      </Text>
+                      {signal.description && <Text color="yellow">{signal.description}</Text>}
+                    </Box>
+                  ),
                 )
               )
-            ) : (
-              <Text color="gray">No signals configured</Text>
-            )}
+              : <Text color="gray">No signals configured</Text>}
           </Box>
         )}
       </Box>

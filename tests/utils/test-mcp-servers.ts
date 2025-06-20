@@ -42,13 +42,13 @@ export class TestMCPServers {
               process.stdin.close();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stdout) {
               await process.stdout.cancel();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stderr) {
               await process.stderr.cancel();
@@ -61,13 +61,15 @@ export class TestMCPServers {
             await process.status;
           } catch (killError) {
             // Process might already be terminated, which is fine
-            if (!(killError instanceof TypeError && killError.message.includes("already terminated"))) {
+            if (
+              !(killError instanceof TypeError && killError.message.includes("already terminated"))
+            ) {
               throw killError;
             }
           }
-          
+
           // Extra wait for cleanup
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           console.warn("Error stopping weather server:", error);
         }
@@ -105,13 +107,13 @@ export class TestMCPServers {
               process.stdin.close();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stdout) {
               await process.stdout.cancel();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stderr) {
               await process.stderr.cancel();
@@ -124,13 +126,15 @@ export class TestMCPServers {
             await process.status;
           } catch (killError) {
             // Process might already be terminated, which is fine
-            if (!(killError instanceof TypeError && killError.message.includes("already terminated"))) {
+            if (
+              !(killError instanceof TypeError && killError.message.includes("already terminated"))
+            ) {
               throw killError;
             }
           }
-          
+
           // Extra wait for cleanup
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           console.warn("Error stopping file tools server:", error);
         }
@@ -168,13 +172,13 @@ export class TestMCPServers {
               process.stdin.close();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stdout) {
               await process.stdout.cancel();
             }
           } catch { /* ignore */ }
-          
+
           try {
             if (process.stderr) {
               await process.stderr.cancel();
@@ -187,13 +191,15 @@ export class TestMCPServers {
             await process.status;
           } catch (killError) {
             // Process might already be terminated, which is fine
-            if (!(killError instanceof TypeError && killError.message.includes("already terminated"))) {
+            if (
+              !(killError instanceof TypeError && killError.message.includes("already terminated"))
+            ) {
               throw killError;
             }
           }
-          
+
           // Extra wait for cleanup
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         } catch (error) {
           console.warn("Error stopping echo server:", error);
         }

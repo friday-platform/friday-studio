@@ -1,6 +1,6 @@
 version: "1.0"
 
-# Atlas MCP Test Workspace Configuration  
+# Atlas MCP Test Workspace Configuration
 # Testing MCP filesystem server integration
 
 platform:
@@ -19,7 +19,7 @@ supervisors:
       system: |
         You are a WorkspaceSupervisor for MCP filesystem testing.
         Route signals to appropriate file operation workflows using MCP tools.
-        
+
   session:
     model: "claude-3-5-sonnet-20241022"
     memory: "session"
@@ -27,7 +27,7 @@ supervisors:
       system: |
         You are a SessionSupervisor for MCP filesystem testing.
         Coordinate the file-assistant agent to perform filesystem operations.
-        
+
   agent:
     model: "claude-3-5-sonnet-20241022"
     memory: "agent"

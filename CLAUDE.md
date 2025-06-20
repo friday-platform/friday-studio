@@ -16,7 +16,8 @@ environment.
    `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks
    behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in
    SFW/work-appropriate language.
-1. Use `deno check` to statically verify code validity before running (see Known Issues for React components)
+1. Use `deno check` to statically verify code validity before running (see Known Issues for React
+   components)
 2. Run with required Deno flags:
    `--unstable-broadcast-channel --unstable-worker-options --allow-all --env-file`
 3. Ensure `ANTHROPIC_API_KEY` is set in .env file for LLM functionality
@@ -36,15 +37,16 @@ When working with Ink-based TUI components (src/cli/commands/tui.tsx and related
 
 1. **Text Component Wrapping**: Always wrap `<Text>` components in a `<Box>` component for proper
    layout and rendering
-2. **STRICT NO EMOJIS POLICY**: NEVER add emojis to any text content, components, or UI elements 
-   unless the user explicitly requests them. This includes error messages, alerts, status indicators,
-   headers, and all other text. Use clean text-only styling.
-3. **Absolute Positioned Components**: Components with `position="absolute"` (like ErrorAlert, 
-   modals, overlays) MUST be placed at the very end of the JSX return statement, just before the 
+2. **STRICT NO EMOJIS POLICY**: NEVER add emojis to any text content, components, or UI elements
+   unless the user explicitly requests them. This includes error messages, alerts, status
+   indicators, headers, and all other text. Use clean text-only styling.
+3. **Absolute Positioned Components**: Components with `position="absolute"` (like ErrorAlert,
+   modals, overlays) MUST be placed at the very end of the JSX return statement, just before the
    closing tag of the root container. This ensures proper z-index layering and overlay behavior.
-4. **Component Declaration Pattern**: NEVER use `React.FC` type annotation. Instead, apply Props 
-   interface directly to the function parameters. Use `export const Component = ({ prop1, prop2 }: Props) => { ... }`
-   instead of `export const Component: React.FC<Props> = ({ prop1, prop2 }) => { ... }`
+4. **Component Declaration Pattern**: NEVER use `React.FC` type annotation. Instead, apply Props
+   interface directly to the function parameters. Use
+   `export const Component = ({ prop1, prop2 }: Props) => { ... }` instead of
+   `export const Component: React.FC<Props> = ({ prop1, prop2 }) => { ... }`
 5. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
    interface works correctly
 
@@ -53,6 +55,7 @@ When working with Ink-based TUI components (src/cli/commands/tui.tsx and related
 ### React TypeScript Integration
 
 **Issue**: Deno's type checker cannot resolve React types from npm packages
+
 - **Error**: `Failed resolving types. [ERR_TYPES_NOT_FOUND] Could not find types for react`
 - **Workaround**: Use `--no-check` flag when running React components
 - **Impact**: Components work perfectly at runtime, only type checking is affected
@@ -133,9 +136,11 @@ The codebase now demonstrates enterprise-grade architecture:
 
 ### Zod v4 Schema Validation
 
-**IMPORTANT**: Use Zod v4 for parsing and validating all unknown input wherever possible. This provides both compile-time and runtime type safety.
+**IMPORTANT**: Use Zod v4 for parsing and validating all unknown input wherever possible. This
+provides both compile-time and runtime type safety.
 
-**Modern API Pattern**: When implementing MCP servers or similar protocol handlers, use the modern API approach:
+**Modern API Pattern**: When implementing MCP servers or similar protocol handlers, use the modern
+API approach:
 
 ```typescript
 import { z } from "zod";
@@ -155,12 +160,13 @@ server.registerTool(
   },
   ({ location, days = 3 }) => {
     // Input is automatically validated and typed
-    return { /* response */ };
-  }
+    return {/* response */};
+  },
 );
 ```
 
 **Key Benefits**:
+
 - Compile-time type safety with TypeScript inference
 - Runtime validation prevents invalid data
 - Automatic type coercion and defaults
@@ -265,11 +271,16 @@ Atlas Resource Management
 
 **Critical Distinctions:**
 
-- **Memory**: Internal Atlas-managed state (semantic facts, working memory, episodic summaries, procedural rules). Atlas-native storage and retrieval.
-- **Context**: External reference materials fetched for current tasks (codebase files, documentation, schemas). Sourced via EMCP providers.
-- **Tools**: Actions and capabilities provided by Extended Model Context Protocol (EMCP) providers. External services that can perform operations or fetch data.
+- **Memory**: Internal Atlas-managed state (semantic facts, working memory, episodic summaries,
+  procedural rules). Atlas-native storage and retrieval.
+- **Context**: External reference materials fetched for current tasks (codebase files,
+  documentation, schemas). Sourced via EMCP providers.
+- **Tools**: Actions and capabilities provided by Extended Model Context Protocol (EMCP) providers.
+  External services that can perform operations or fetch data.
 
-**IMPORTANT**: Memory is NOT context. Memory is internal learned state, while context is external reference material. Tools (EMCP providers) can fetch context but are separate from both memory and context systems.
+**IMPORTANT**: Memory is NOT context. Memory is internal learned state, while context is external
+reference material. Tools (EMCP providers) can fetch context but are separate from both memory and
+context systems.
 
 ### Hierarchical Supervisor Architecture
 

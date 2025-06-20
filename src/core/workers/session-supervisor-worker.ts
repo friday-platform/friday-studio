@@ -83,9 +83,9 @@ class SessionSupervisorWorker extends BaseWorker {
     // Create the SessionSupervisor (intelligent agent) - this is the main bottleneck
     this.log("Creating SessionSupervisor...");
     this.supervisor = new SessionSupervisor(
-      config.memoryConfig, 
-      config.workspaceId, 
-      config.precomputedPlans
+      config.memoryConfig,
+      config.workspaceId,
+      config.precomputedPlans,
     );
     this.log("SessionSupervisor created successfully");
 

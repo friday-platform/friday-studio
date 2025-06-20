@@ -16,7 +16,7 @@ signals:
     path: "/Users/kenneth/tempest/atlas"
     watch_patterns:
       - "src/**/*.ts"
-      - "src/**/*.tsx" 
+      - "src/**/*.tsx"
       - "*.yml"
       - "*.md"
       - "tests/**/*.ts"
@@ -25,8 +25,8 @@ signals:
       - ".git/**"
       - "lgtm/**"
       - "**/target/**"
-    debounce_seconds: 300  # Wait 5 minutes after last change
-    min_changes: 3         # Require at least 3 file changes
+    debounce_seconds: 300 # Wait 5 minutes after last change
+    min_changes: 3 # Require at least 3 file changes
     analysis_triggers:
       - "performance_patterns"
       - "developer_experience"
@@ -43,7 +43,7 @@ signals:
   weekly-review:
     provider: "cron-scheduler"
     description: "Scheduled weekly analysis"
-    schedule: "0 9 * * 1"  # Every Monday at 9 AM
+    schedule: "0 9 * * 1" # Every Monday at 9 AM
     timezone: "America/Los_Angeles"
 
 # Agent definitions - using EMCP context provisioning (no MCP servers)
@@ -106,18 +106,20 @@ jobs:
     description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
     triggers:
       - signal: "manual-analysis"
-        condition: {"or": [{"!": {"var": "type"}}, {"==": [{"var": "type"}, "comprehensive"]}]}
+        condition: {
+          "or": [{ "!": { "var": "type" } }, { "==": [{ "var": "type" }, "comprehensive"] }],
+        }
     session_prompts:
       planning: |
         Focus your analysis on these key areas of the Atlas codebase:
         - Worker architecture and communication patterns
-        - XState FSM implementations  
+        - XState FSM implementations
         - Signal processing and session lifecycle
         - Memory management and library integration
         - Agent supervision hierarchy
         - EMCP provider architecture and context provisioning
         - Hierarchical resource scoping (Memory vs Context vs Tools)
-        
+
         Provide specific, actionable recommendations based on the actual codebase implementation.
       evaluation: |
         Evaluate whether the analysis has covered all critical architectural aspects:
@@ -126,7 +128,7 @@ jobs:
         - Has the signal/session lifecycle been thoroughly examined?
         - Are memory and context management patterns well understood?
         - Has the supervision hierarchy been properly analyzed?
-        
+
         The session is complete only when all areas have been thoroughly analyzed.
     execution:
       strategy: "sequential"
@@ -134,11 +136,11 @@ jobs:
         filesystem:
           patterns:
             - "src/core/workspace-runtime.ts"
-            - "src/core/session-supervisor.ts" 
+            - "src/core/session-supervisor.ts"
             - "src/core/supervisor.ts"
-            - "src/core/workers/*.ts"  # Use glob pattern instead of directory
-            - "src/core/emcp/*.ts"     # Include new EMCP infrastructure
-            - "src/core/context/*.ts"  # Include new context system
+            - "src/core/workers/*.ts" # Use glob pattern instead of directory
+            - "src/core/emcp/*.ts" # Include new EMCP infrastructure
+            - "src/core/context/*.ts" # Include new context system
             - "src/cli/commands/workspace.tsx"
             - "atlas.yml"
             - "CLAUDE.md"
@@ -148,8 +150,11 @@ jobs:
           # Enhanced EMCP provider configuration with security controls
           provider_config:
             allowedDirectories: ["/Users/kenneth/tempest/atlas"]
-            deniedPaths: ["/Users/kenneth/tempest/atlas/node_modules", "/Users/kenneth/tempest/atlas/.git"]
-            readOnly: true  # Analysis workspace should be read-only for security
+            deniedPaths: [
+              "/Users/kenneth/tempest/atlas/node_modules",
+              "/Users/kenneth/tempest/atlas/.git",
+            ]
+            readOnly: true # Analysis workspace should be read-only for security
             maxFileSize: "100kb"
             maxTotalSize: "5mb"
             allowedExtensions: [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
@@ -162,43 +167,43 @@ jobs:
           input_source: "filesystem_context"
         - id: "report-generator"
           input_source: "combined"
-        
+
   performance-focused:
     name: "performance-focused"
     description: "Performance analysis and optimization recommendations"
     triggers:
       - signal: "manual-analysis"
-        condition: {"==": [{"var": "type"}, "performance"]}
+        condition: { "==": [{ "var": "type" }, "performance"] }
     execution:
       strategy: "sequential"
       agents:
         - id: "performance-analyzer"
         - id: "report-generator"
-        
+
   dx-focused:
     name: "dx-focused"
     description: "Developer experience analysis and improvements"
     triggers:
       - signal: "manual-analysis"
-        condition: {"==": [{"var": "type"}, "dx"]}
+        condition: { "==": [{ "var": "type" }, "dx"] }
     execution:
       strategy: "sequential"
       agents:
         - id: "dx-analyzer"
         - id: "report-generator"
-        
+
   architecture-review:
     name: "architecture-review"
     description: "System architecture analysis and design recommendations"
     triggers:
       - signal: "manual-analysis"
-        condition: {"==": [{"var": "type"}, "architecture"]}
+        condition: { "==": [{ "var": "type" }, "architecture"] }
     execution:
       strategy: "sequential"
       agents:
         - id: "architecture-analyzer"
         - id: "report-generator"
-        
+
   weekly-health-check:
     name: "weekly-health-check"
     description: "Comprehensive weekly codebase health analysis"

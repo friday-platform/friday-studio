@@ -13,7 +13,7 @@ Deno.test("ContextProvisioner - Basic Functionality", async (t) => {
 
   await t.step("should initialize successfully", async () => {
     await provisioner.initialize();
-    
+
     const availableTypes = provisioner.getAvailableContextTypes();
     assertEquals(availableTypes.includes("codebase"), true);
     assertEquals(provisioner.canProvideContext("codebase"), true);
@@ -69,7 +69,7 @@ Deno.test("ContextProvisioner - Basic Functionality", async (t) => {
   await t.step("should handle job spec with invalid codebase_files", async () => {
     const jobSpec: JobSpecification = {
       name: "test-job",
-      description: "Test job", 
+      description: "Test job",
       execution: {
         strategy: "sequential",
         context: {

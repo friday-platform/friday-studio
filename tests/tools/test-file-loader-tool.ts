@@ -14,11 +14,11 @@ Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
 
   await t.step("should load specific files", async () => {
     const result = await tool.loadSpecificFiles(["README.md"]);
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length >= 1, true);
-    
-    const readmeFile = result.files.find(f => f.relativePath.endsWith("README.md"));
+
+    const readmeFile = result.files.find((f) => f.relativePath.endsWith("README.md"));
     assertExists(readmeFile);
     assertExists(readmeFile.content);
     assertEquals(readmeFile.extension, ".md");
@@ -29,10 +29,10 @@ Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
       patterns: ["*.md"],
       maxFiles: 5,
     });
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length >= 1, true);
-    
+
     // All files should be markdown
     for (const file of result.files) {
       assertEquals(file.extension, ".md");
@@ -41,10 +41,10 @@ Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
 
   await t.step("should list files without content", async () => {
     const result = await tool.listFiles(["src/core/emcp/*.ts"]);
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length >= 1, true);
-    
+
     // Should not include content
     for (const file of result.files) {
       assertEquals(file.content, undefined);
@@ -57,7 +57,7 @@ Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
       patterns: ["src/**/*.ts"],
       maxFiles: 3,
     });
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length <= 3, true);
   });
@@ -65,7 +65,7 @@ Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
   await t.step("should format as markdown", async () => {
     const result = await tool.loadSpecificFiles(["README.md"]);
     const markdown = tool.formatAsMarkdown(result, "Test Files");
-    
+
     assertStringIncludes(markdown, "# Test Files");
     assertStringIncludes(markdown, "## README.md");
     assertStringIncludes(markdown, "```markdown");
@@ -80,7 +80,7 @@ Deno.test("FileLoaderTool - Error Handling", async (t) => {
 
   await t.step("should handle non-existent files", async () => {
     const result = await tool.loadSpecificFiles(["non-existent-file.ts"]);
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length, 0);
   });
@@ -89,7 +89,7 @@ Deno.test("FileLoaderTool - Error Handling", async (t) => {
     const result = await tool.loadFiles({
       patterns: ["non-existent-dir/**/*.xyz"],
     });
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length, 0);
   });
@@ -98,7 +98,7 @@ Deno.test("FileLoaderTool - Error Handling", async (t) => {
     const result = await tool.loadFiles({
       patterns: ["*.md"], // .md not in allowed extensions
     });
-    
+
     assertEquals(result.success, true);
     assertEquals(result.files.length, 0); // Should filter out .md files
   });

@@ -15,7 +15,7 @@ triggers:
         ]
       }
     naturalLanguageCondition: "when many files change or both performance and API files are modified"
-    
+
   - signal: "manual-analysis"
     condition: "!payload.type || payload.type == 'comprehensive'"
     naturalLanguageCondition: "when manual comprehensive analysis is requested"
@@ -23,13 +23,13 @@ triggers:
 # Execution strategy using Hierarchical Task Network
 execution:
   strategy: "sequential"
-  
+
   # Filesystem context for analysis via EMCP
   context:
     filesystem:
       patterns:
         - "src/core/workspace-runtime.ts"
-        - "src/core/session-supervisor.ts" 
+        - "src/core/session-supervisor.ts"
         - "src/core/supervisor.ts"
         - "src/core/workers/*.ts"
         - "src/core/emcp/*.ts"
@@ -40,7 +40,7 @@ execution:
       base_path: "/Users/kenneth/tempest/atlas"
       max_file_size: 100000
       include_content: true
-  
+
   # Sequential agent execution
   agents:
     - id: "performance-analyzer"
@@ -56,67 +56,67 @@ execution:
 session_prompts:
   planning: |
     You are orchestrating a comprehensive Atlas codebase analysis using Hierarchical Task Network planning.
-    
-    CONTEXT: The Atlas codebase has seen significant changes and requires deep analysis across performance, 
+
+    CONTEXT: The Atlas codebase has seen significant changes and requires deep analysis across performance,
     developer experience, and architecture dimensions.
-    
+
     GOALS:
     1. Identify performance bottlenecks and optimization opportunities
-    2. Evaluate developer experience pain points and improvement areas  
+    2. Evaluate developer experience pain points and improvement areas
     3. Assess architectural quality and scalability concerns
     4. Generate actionable, prioritized recommendations
-    
+
     EXECUTION APPROACH:
     - Use parallel execution for independent analysis tasks
     - Ensure comprehensive coverage of all focus areas
     - Maintain high analysis quality with specific, actionable findings
     - Synthesize results into a cohesive improvement roadmap
-    
+
   execution: |
     Execute the comprehensive analysis with deep technical rigor:
-    
+
     FOR PERFORMANCE ANALYSIS:
     - Profile memory usage patterns and identify leaks
     - Evaluate async operation efficiency and bottlenecks
     - Audit LLM call patterns for optimization opportunities
     - Assess cache hit rates and improvement potential
     - Review worker communication overhead
-    
+
     FOR DEVELOPER EXPERIENCE:
     - Evaluate API ergonomics and ease of use
     - Audit error message clarity and helpfulness
     - Assess documentation completeness and accuracy
     - Review CLI usability and workflow efficiency
     - Evaluate testing experience and coverage
-    
+
     FOR ARCHITECTURE:
     - Analyze separation of concerns and modularity
     - Evaluate dependency structure and coupling
     - Assess security patterns and vulnerabilities
     - Review scalability design and bottlenecks
     - Identify technical debt and refactoring opportunities
-    
+
     QUALITY STANDARDS:
     - Provide specific file/line references for issues
     - Include code examples and before/after suggestions
     - Quantify impact and effort for recommendations
     - Cross-reference findings between analysis areas
-    
+
   evaluation: |
     Evaluate the comprehensive analysis for completeness and quality:
-    
+
     COVERAGE VERIFICATION:
     ✓ All performance focus areas addressed with specific findings
     ✓ Developer experience pain points identified with solutions
     ✓ Architecture assessment covers design and implementation
     ✓ Cross-cutting concerns and interactions analyzed
-    
+
     QUALITY ASSESSMENT:
     ✓ Findings are specific with file/line references
     ✓ Recommendations are actionable with clear steps
     ✓ Impact and effort estimates provided
     ✓ Examples and code snippets included where relevant
-    
+
     SYNTHESIS QUALITY:
     ✓ Findings consolidated without duplication
     ✓ Recommendations prioritized by impact/effort matrix
@@ -125,31 +125,31 @@ session_prompts:
 
 # Resource constraints and optimization
 resources:
-  estimated_duration_seconds: 1800  # 30 minutes for comprehensive analysis
+  estimated_duration_seconds: 1800 # 30 minutes for comprehensive analysis
   cost_limit: 25.00
   max_retries: 2
   memory_limit_mb: 1024
-  
+
   # Parallel execution settings
   max_parallel_agents: 3
-  agent_timeout_seconds: 600  # 10 minutes per agent
-  
+  agent_timeout_seconds: 600 # 10 minutes per agent
+
 # Success criteria for comprehensive analysis
 success_criteria:
   type: "all"
   conditions:
     - description: "Performance analysis completed with at least 5 specific findings"
       metric: "performance_findings_count >= 5"
-      
+
     - description: "Developer experience analysis completed with actionable recommendations"
       metric: "dx_recommendations_count >= 3"
-      
+
     - description: "Architecture analysis identifies key improvement areas"
       metric: "architecture_issues_count >= 3"
-      
+
     - description: "Comprehensive report generated with prioritized roadmap"
       metric: "report_sections_complete >= 4"
-      
+
     - description: "All findings include specific file references"
       metric: "findings_with_references_ratio >= 0.8"
 
@@ -161,13 +161,13 @@ outputs:
     sections:
       - "executive-summary"
       - "performance-findings"
-      - "dx-findings" 
+      - "dx-findings"
       - "architecture-findings"
       - "cross-cutting-concerns"
       - "prioritized-recommendations"
       - "implementation-roadmap"
       - "appendices"
-      
+
   artifacts:
     - "performance-metrics.json"
     - "dx-audit-checklist.md"

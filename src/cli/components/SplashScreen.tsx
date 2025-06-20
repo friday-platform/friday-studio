@@ -1,12 +1,8 @@
 import { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
 import { Select, TextInput } from "@inkjs/ui";
-import {
-  getWorkspaceStatus,
-  scanAvailableWorkspaces,
-  WorkspaceList,
-  WorkspaceStatus,
-} from "../commands/workspace.tsx";
+import { getWorkspaceStatus, WorkspaceList, WorkspaceStatus } from "../commands/workspace.tsx";
+import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import DefineCommand from "../commands/define.tsx";
 import { ErrorAlert } from "./ErrorAlert.tsx";
 
@@ -59,11 +55,21 @@ export const SplashScreen = (
     }
   }, [minHeight, onMinHeightChange]);
 
-  // Load available workspaces on mount
+  // Load registered workspaces on mount
   useEffect(() => {
     const loadWorkspaces = async () => {
       try {
-        const availableWorkspaces = await scanAvailableWorkspaces();
+        const registry = getWorkspaceRegistry();
+        const registeredWorkspaces = await registry.listAll();
+
+        // Convert registry format to the expected format
+        const availableWorkspaces = registeredWorkspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          path: w.path,
+          slug: w.id, // Use id as slug since we don't have slug in registry
+        }));
+
         setWorkspaces(availableWorkspaces);
       } catch (error) {
         console.error("Failed to load workspaces:", error);

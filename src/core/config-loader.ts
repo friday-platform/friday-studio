@@ -455,10 +455,10 @@ export class ConfigLoader {
 
   constructor(workspaceDir: string = ".") {
     this.workspaceDir = workspaceDir;
-    
+
     // Check for workspace-local atlas.yml first, then fall back to git root
     const workspaceAtlasPath = join(workspaceDir, "atlas.yml");
-    
+
     try {
       // Try to access workspace-local atlas.yml
       Deno.statSync(workspaceAtlasPath);
@@ -477,10 +477,12 @@ export class ConfigLoader {
       } catch {
         // If we can't find git root, use workspace directory as fallback
         this.atlasConfigPath = workspaceAtlasPath;
-        console.log(`Git root not found, will use/create workspace atlas.yml: ${workspaceAtlasPath}`);
+        console.log(
+          `Git root not found, will use/create workspace atlas.yml: ${workspaceAtlasPath}`,
+        );
       }
     }
-    
+
     this.workspaceConfigPath = join(workspaceDir, "workspace.yml");
   }
 
@@ -606,10 +608,10 @@ export class ConfigLoader {
 
   private loadJobsFromFiles(): Record<string, JobSpecification> {
     const jobs: Record<string, JobSpecification> = {};
-    
+
     try {
       const jobsPath = `${this.workspaceDir}/jobs`;
-      
+
       // Check if jobs directory exists
       const stat = Deno.statSync(jobsPath);
       if (!stat.isDirectory) {
@@ -618,15 +620,17 @@ export class ConfigLoader {
 
       // Read all .yml and .yaml files in jobs directory
       for (const dirEntry of Deno.readDirSync(jobsPath)) {
-        if (dirEntry.isFile && (dirEntry.name.endsWith('.yml') || dirEntry.name.endsWith('.yaml'))) {
+        if (
+          dirEntry.isFile && (dirEntry.name.endsWith(".yml") || dirEntry.name.endsWith(".yaml"))
+        ) {
           try {
             const jobFilePath = `${jobsPath}/${dirEntry.name}`;
             const jobContent = Deno.readTextFileSync(jobFilePath);
             const jobSpec = parseYaml(jobContent) as JobSpecification;
-            
+
             // Use filename (without extension) as job name if not specified
-            const jobName = jobSpec.name || dirEntry.name.replace(/\.(yml|yaml)$/, '');
-            
+            const jobName = jobSpec.name || dirEntry.name.replace(/\.(yml|yaml)$/, "");
+
             // Normalize agents if needed
             if (jobSpec.execution?.agents) {
               jobSpec.execution.agents = jobSpec.execution.agents.map((agent) => {
@@ -636,12 +640,12 @@ export class ConfigLoader {
                 return agent;
               });
             }
-            
+
             jobs[jobName] = {
               ...jobSpec,
               name: jobName,
             };
-            
+
             console.log(`Loaded job spec: ${jobName} from ${dirEntry.name}`);
           } catch (error) {
             console.error(`Failed to load job file ${dirEntry.name}: ${error}`);
@@ -652,7 +656,7 @@ export class ConfigLoader {
       // Jobs directory doesn't exist or can't be read - that's fine
       console.log(`Jobs directory not found or accessible: ${error}`);
     }
-    
+
     return jobs;
   }
 

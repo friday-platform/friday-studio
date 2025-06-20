@@ -206,7 +206,7 @@ jobs:
   my-job:
     triggers:
       - signal: "my-signal"
-        condition: {"var": "payload"}
+        condition: { "var": "payload" }
     execution:
       strategy: "sequential"
       agents:
@@ -295,19 +295,22 @@ curl -X POST http://localhost:8080/telephone -d '{"message": "The cat sat on the
 **What happens:**
 
 1. **Mishearing Agent** - Introduces phonetic errors and mishearing
-2. **Embellishment Agent** - Adds creative details and context  
+2. **Embellishment Agent** - Adds creative details and context
 3. **Reinterpretation Agent** - Dramatically transforms the meaning
 
 Your message gets hilariously transformed through this chain!
 
 **Sample Configuration:**
+
 ```yaml
 # workspace.yml
 jobs:
   telephone:
     triggers:
       - signal: "telephone-message"
-        condition: {"and": [{"var": "message"}, {">": [{"length": {"var": "message"}}, 0]}]}
+        condition: {
+          "and": [{ "var": "message" }, { ">": [{ "length": { "var": "message" } }, 0] }],
+        }
     execution:
       strategy: "sequential"
       agents:

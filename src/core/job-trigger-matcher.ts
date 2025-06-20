@@ -96,19 +96,21 @@ export class JobTriggerMatcher {
 
     // Collect all job-trigger pairs that match the signal
     const candidatePairs: Array<{ job: JobSpec; trigger: JobTrigger }> = [];
-    
+
     for (const [jobName, jobSpec] of Object.entries(jobs)) {
       for (const trigger of jobSpec.triggers || []) {
         if (trigger.signal === signal.id) {
-          candidatePairs.push({ 
-            job: { ...jobSpec, name: jobName }, 
-            trigger 
+          candidatePairs.push({
+            job: { ...jobSpec, name: jobName },
+            trigger,
           });
         }
       }
     }
 
-    logger.debug(`Found ${candidatePairs.length} candidate job-trigger pairs for signal: ${signal.id}`);
+    logger.debug(
+      `Found ${candidatePairs.length} candidate job-trigger pairs for signal: ${signal.id}`,
+    );
 
     // Evaluate conditions for matching pairs
     if (this.config.enable_parallel_evaluation && candidatePairs.length > 1) {
@@ -119,7 +121,7 @@ export class JobTriggerMatcher {
       });
 
       const evaluationResults = await Promise.all(evaluationPromises);
-      
+
       for (const { job, trigger, result } of evaluationResults) {
         if (result.matches && result.confidence >= (this.config.min_confidence || 0.5)) {
           matches.push({
@@ -134,7 +136,7 @@ export class JobTriggerMatcher {
       // Sequential evaluation
       for (const { job, trigger } of candidatePairs) {
         const result = await this.evaluateTriggerCondition(trigger, payload);
-        
+
         if (result.matches && result.confidence >= (this.config.min_confidence || 0.5)) {
           matches.push({
             job,
@@ -158,8 +160,8 @@ export class JobTriggerMatcher {
       totalMatches: matches.length,
       limitedMatches: limitedMatches.length,
       evaluationTime: duration,
-      avgConfidence: matches.length > 0 
-        ? matches.reduce((sum, m) => sum + m.evaluationResult.confidence, 0) / matches.length 
+      avgConfidence: matches.length > 0
+        ? matches.reduce((sum, m) => sum + m.evaluationResult.confidence, 0) / matches.length
         : 0,
     });
 
@@ -186,7 +188,7 @@ export class JobTriggerMatcher {
     // Use the pluggable condition evaluation system
     try {
       const result = await this.conditionEvaluator.evaluate(trigger.condition, payload);
-      
+
       logger.debug("Trigger condition evaluated", {
         hasCondition: !!trigger.condition,
         conditionType: typeof trigger.condition,
@@ -257,7 +259,7 @@ export class JobTriggerMatcher {
 
       for (let i = 0; i < jobSpec.triggers.length; i++) {
         const trigger = jobSpec.triggers[i];
-        
+
         if (!trigger.signal) {
           errors.push(`Job "${jobName}" trigger ${i} missing signal field`);
         }
@@ -270,7 +272,11 @@ export class JobTriggerMatcher {
               warnings.push(`Job "${jobName}" trigger ${i} has empty condition string`);
             }
           } catch (error) {
-            errors.push(`Job "${jobName}" trigger ${i} has invalid condition: ${error instanceof Error ? error.message : String(error)}`);
+            errors.push(
+              `Job "${jobName}" trigger ${i} has invalid condition: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
           }
         }
 
@@ -278,7 +284,7 @@ export class JobTriggerMatcher {
         if (trigger.naturalLanguageCondition && !trigger.condition) {
           warnings.push(
             `Job "${jobName}" trigger ${i} has naturalLanguageCondition but no condition - ` +
-            `consider converting to executable condition`
+              `consider converting to executable condition`,
           );
         }
       }

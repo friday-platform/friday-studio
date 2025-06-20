@@ -34,18 +34,21 @@ my-workspace/
 ## 🖥️ TUI Commands
 
 **Navigation:**
+
 - `Tab` / `j` / `k` - Navigate interface
 - `gg` / `G` - Jump to top/bottom
 - `Ctrl+D` / `Ctrl+U` - Page up/down
 - `y` - Copy log entry
 
 **Workspace:**
+
 ```bash
 /workspace status        # Show workspace info
 /workspace list          # List available workspaces
 ```
 
 **Signals & Jobs:**
+
 ```bash
 /signal list            # List configured signals
 /signal trigger name    # Trigger signal manually
@@ -54,12 +57,14 @@ my-workspace/
 ```
 
 **Agents:**
+
 ```bash
 /agent list             # Show workspace agents
 /agent describe name    # Get agent details
 ```
 
 **Configuration (Tab 3):**
+
 ```bash
 /config create-job "description"    # AI-powered job creation
 /config validate                    # Check workspace config
@@ -69,12 +74,14 @@ my-workspace/
 ## 📋 Job Creation
 
 ### Natural Language (Recommended)
+
 ```bash
 # In TUI Tab 3:
 /config create-job "When a GitHub PR is opened, review the code and post results to Slack"
 ```
 
 ### Manual Job File
+
 ```yaml
 # jobs/my-job.yml
 name: "my-workflow"
@@ -85,11 +92,11 @@ triggers:
     condition: "event.action == 'opened'"
 
 execution:
-  strategy: "sequential"  # sequential | parallel | staged | conditional
+  strategy: "sequential" # sequential | parallel | staged | conditional
   agents:
     - id: "agent1"
       role: "primary"
-    - id: "agent2" 
+    - id: "agent2"
       role: "secondary"
 
 resources:
@@ -100,6 +107,7 @@ resources:
 ## 🤖 Agent Types
 
 ### LLM Agent
+
 ```yaml
 agents:
   ai-assistant:
@@ -110,6 +118,7 @@ agents:
 ```
 
 ### Tempest Agent (First-party)
+
 ```yaml
 agents:
   k8s-operator:
@@ -119,6 +128,7 @@ agents:
 ```
 
 ### Remote Agent (HTTP service)
+
 ```yaml
 agents:
   external-api:
@@ -132,6 +142,7 @@ agents:
 ## 📡 Signal Types
 
 ### HTTP Webhook
+
 ```yaml
 signals:
   github-webhook:
@@ -141,6 +152,7 @@ signals:
 ```
 
 ### Kubernetes Events
+
 ```yaml
 signals:
   k8s-events:
@@ -150,6 +162,7 @@ signals:
 ```
 
 ### Manual Trigger
+
 ```bash
 # Trigger from CLI
 atlas signal trigger webhook-name --data '{"key": "value"}'
@@ -161,26 +174,29 @@ atlas signal trigger webhook-name --data '{"key": "value"}'
 ## 🔧 Execution Strategies
 
 ### Sequential
+
 ```yaml
 execution:
   strategy: "sequential"
   agents:
     - id: "step1"
-    - id: "step2"  # Runs after step1
-    - id: "step3"  # Runs after step2
+    - id: "step2" # Runs after step1
+    - id: "step3" # Runs after step2
 ```
 
 ### Parallel
+
 ```yaml
 execution:
   strategy: "parallel"
   agents:
-    - id: "task1"  # All run simultaneously
+    - id: "task1" # All run simultaneously
     - id: "task2"
     - id: "task3"
 ```
 
 ### Staged (Dependencies)
+
 ```yaml
 execution:
   strategy: "staged"
@@ -193,6 +209,7 @@ execution:
 ```
 
 ### Conditional
+
 ```yaml
 execution:
   strategy: "conditional"
@@ -205,13 +222,15 @@ execution:
 ## 🔍 Condition Examples
 
 ### Simple Conditions (JSONLogic format)
+
 ```yaml
-condition: {"==": [{"var": "event.action"}, "opened"]}
-condition: {">":[{"var": "metric.cpu_usage"}, 80]}
-condition: {"==": [{"var": "status"}, "failed"]}
+condition: { "==": [{ "var": "event.action" }, "opened"] }
+condition: { ">": [{ "var": "metric.cpu_usage" }, 80] }
+condition: { "==": [{ "var": "status" }, "failed"] }
 ```
 
 ### Complex Conditions (JSONLogic)
+
 ```yaml
 condition: |
   {
@@ -223,6 +242,7 @@ condition: |
 ```
 
 ### Natural Language (AI-parsed)
+
 ```yaml
 naturalLanguageCondition: "when CPU usage is above 80% and memory is low"
 ```
@@ -230,6 +250,7 @@ naturalLanguageCondition: "when CPU usage is above 80% and memory is low"
 ## 📊 Monitoring & Debugging
 
 ### Session Management
+
 ```bash
 atlas ps                          # List active sessions
 atlas session get <session-id>    # Get session details
@@ -238,6 +259,7 @@ atlas session kill <session-id>   # Terminate session
 ```
 
 ### Workspace Status
+
 ```bash
 atlas workspace status     # Show workspace health
 atlas workspace validate   # Check configuration
@@ -245,6 +267,7 @@ atlas agent test <name>     # Test agent connectivity
 ```
 
 ### Performance
+
 ```bash
 # In TUI:
 /perf summary              # Performance overview
@@ -255,6 +278,7 @@ atlas agent test <name>     # Test agent connectivity
 ## 🔒 Security Best Practices
 
 ### Environment Variables
+
 ```bash
 # .env file
 ANTHROPIC_API_KEY=sk-ant-...
@@ -263,16 +287,18 @@ SLACK_WEBHOOK_URL=https://hooks.slack.com/...
 ```
 
 ### Secure Configurations
+
 ```yaml
 # Reference environment variables
 agents:
   github-client:
     type: "remote"
     authentication:
-      token: "${GITHUB_TOKEN}"  # From environment
+      token: "${GITHUB_TOKEN}" # From environment
 ```
 
 ### Workspace Isolation
+
 - Each workspace has isolated cache and memory
 - Cross-workspace access is automatically blocked
 - Agent permissions are workspace-scoped
@@ -280,6 +306,7 @@ agents:
 ## 🚨 Common Issues & Solutions
 
 ### "No workspace found"
+
 ```bash
 # Initialize or navigate to workspace
 atlas workspace init my-workspace
@@ -288,12 +315,14 @@ cd /path/to/workspace
 ```
 
 ### "ANTHROPIC_API_KEY not set"
+
 ```bash
 echo "ANTHROPIC_API_KEY=your-key" > .env
 export ANTHROPIC_API_KEY=your-key
 ```
 
 ### "Agent not found"
+
 ```bash
 # Check workspace.yml agent configuration
 atlas workspace validate
@@ -301,6 +330,7 @@ atlas workspace validate
 ```
 
 ### "Signal trigger failed"
+
 ```bash
 # Test signal configuration
 atlas signal test signal-name
@@ -308,6 +338,7 @@ atlas signal test signal-name
 ```
 
 ### TUI Issues
+
 ```bash
 # Restart TUI with debug info
 deno task atlas tui --trace-leaks
@@ -319,6 +350,7 @@ deno check src/cli.tsx
 ## 📚 Example Workflows
 
 ### Code Review Automation
+
 ```yaml
 triggers:
   - signal: "github-webhook"
@@ -332,10 +364,11 @@ execution:
 ```
 
 ### Incident Response
+
 ```yaml
 triggers:
   - signal: "k8s-events"
-    condition: {"==": [{"var": "event.type"}, "Warning"]}
+    condition: { "==": [{ "var": "event.type" }, "Warning"] }
 execution:
   strategy: "sequential"
   agents:
@@ -345,6 +378,7 @@ execution:
 ```
 
 ### Deployment Pipeline
+
 ```yaml
 triggers:
   - signal: "github-webhook"

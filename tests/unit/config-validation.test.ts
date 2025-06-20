@@ -112,11 +112,11 @@ async function createTempConfig(content: string): Promise<string> {
 
 Deno.test("ConfigLoader - Valid workspace configuration should load", async () => {
   const tempDir = await createTempConfig(validWorkspaceConfig);
-  
+
   try {
     const loader = new ConfigLoader(tempDir);
     const config = await loader.load();
-    
+
     expect(config.workspace.workspace.name).toBe("Test Workspace");
     expect(config.workspace.agents["test-agent"].type).toBe("llm");
     expect(config.workspace.jobs["valid-job"]).toBeDefined();
@@ -127,10 +127,10 @@ Deno.test("ConfigLoader - Valid workspace configuration should load", async () =
 
 Deno.test("ConfigLoader - Invalid agent configuration should be rejected", async () => {
   const tempDir = await createTempConfig(invalidAgentConfig);
-  
+
   try {
     const loader = new ConfigLoader(tempDir);
-    
+
     await expect(async () => {
       await loader.load();
     }).rejects.toThrow(ConfigValidationError);
@@ -141,21 +141,21 @@ Deno.test("ConfigLoader - Invalid agent configuration should be rejected", async
 
 Deno.test("ConfigLoader - Invalid condition syntax should be rejected", async () => {
   const tempDir = await createTempConfig(invalidConditionConfig);
-  
+
   try {
     const loader = new ConfigLoader(tempDir);
-    
+
     // This should either reject the config or validate the condition
     const config = await loader.load();
-    
+
     // If it loads, the condition should be validated somehow
     const job = config.workspace.jobs["invalid-job"];
     expect(job).toBeDefined();
-    
+
     // The condition should be flagged as invalid during validation
     const trigger = job.triggers[0];
     expect(trigger.condition).toBe("type == 'performance'");
-    
+
     // TODO: Add condition validation that would catch this
   } finally {
     await Deno.remove(tempDir, { recursive: true });
@@ -171,12 +171,12 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
 `;
-  
+
   const tempDir = await createTempConfig(missingWorkspaceConfig);
-  
+
   try {
     const loader = new ConfigLoader(tempDir);
-    
+
     await expect(async () => {
       await loader.load();
     }).rejects.toThrow();
@@ -214,12 +214,12 @@ jobs:
       agents:
         - id: "nonexistent-agent"  # This agent doesn't exist
 `;
-  
+
   const tempDir = await createTempConfig(invalidAgentRefConfig);
-  
+
   try {
     const loader = new ConfigLoader(tempDir);
-    
+
     // This should validate that agent references exist
     await expect(async () => {
       await loader.load();

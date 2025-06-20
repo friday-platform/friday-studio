@@ -20,7 +20,7 @@ supervisors:
         You are a WorkspaceSupervisor for the Atlas Codebase Analyzer.
         Your role is to orchestrate autonomous codebase analysis using advanced reasoning.
         Use job trigger evaluation to route signals to appropriate analysis workflows.
-        
+
   session:
     model: "claude-3-5-sonnet-20241022"
     memory: "session"
@@ -29,7 +29,7 @@ supervisors:
         You are a SessionSupervisor for codebase analysis sessions.
         Coordinate multi-agent analysis using advanced execution strategies.
         Focus on performance, developer experience, and architecture improvements.
-        
+
   agent:
     model: "claude-3-5-sonnet-20241022"
     memory: "agent"

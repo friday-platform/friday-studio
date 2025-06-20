@@ -5,7 +5,10 @@ console.log("══════════════════════�
 
 console.log("\n📁 Creating test files in /tmp...");
 await Deno.writeTextFile("/tmp/mcp-test.txt", "Hello from enhanced Atlas MCP test!");
-await Deno.writeTextFile("/tmp/readme.md", "# Enhanced MCP Test\n\nTesting both official MCP and Atlas EMCP filesystem capabilities.");
+await Deno.writeTextFile(
+  "/tmp/readme.md",
+  "# Enhanced MCP Test\n\nTesting both official MCP and Atlas EMCP filesystem capabilities.",
+);
 await Deno.writeTextFile("/tmp/security-test.txt", "This file tests security controls");
 
 console.log("✅ Test files created:");
@@ -22,14 +25,15 @@ try {
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      task: "Demonstrate both MCP and EMCP capabilities: 1) Use MCP tools to list and read files in /tmp, 2) Use EMCP tools for pattern matching and metadata analysis, 3) Show security controls in action"
+      task:
+        "Demonstrate both MCP and EMCP capabilities: 1) Use MCP tools to list and read files in /tmp, 2) Use EMCP tools for pattern matching and metadata analysis, 3) Show security controls in action",
     }),
   });
 
   if (response.ok) {
     console.log("✅ Enhanced multi-MCP test triggered successfully!");
     console.log("📋 Response status:", response.status);
-    
+
     // The response might be streaming, so just log that it started
     console.log("🤖 Atlas is now processing both MCP and EMCP filesystem operations...");
     console.log("📊 Check the Atlas server logs to see:");
