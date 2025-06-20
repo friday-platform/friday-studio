@@ -4,21 +4,65 @@ import { useEffect, useState } from "react";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { findAvailablePort } from "../../../utils/port-finder.ts";
 import { WorkspaceCommandProps } from "./utils.ts";
 
-export function WorkspaceServeCommand({ flags }: WorkspaceCommandProps) {
+export function WorkspaceServeCommand({ args, flags }: WorkspaceCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string>("");
-  const port = flags.port || 8080;
+  const [workspacePath, setWorkspacePath] = useState<string>("");
+  const requestedPort = flags.port ? Number(flags.port) : undefined;
 
   useEffect(() => {
-    handleServe();
-  }, []);
+    const validateAndServe = async () => {
+      try {
+        const { exists } = await import("@std/fs");
+        let targetPath = Deno.cwd();
 
-  function handleServe() {
-    setStatus("ready");
-    // The actual server starting will be handled by the ServingComponent
-  }
+        // If an argument is provided, treat it as workspace ID or name
+        if (args.length > 0) {
+          const idOrName = args[0];
+          const registry = getWorkspaceRegistry();
+          await registry.initialize();
+
+          // Try to find workspace by ID or name
+          const workspace = await registry.findById(idOrName) ||
+            await registry.findByName(idOrName);
+
+          if (!workspace) {
+            throw new Error(
+              `Workspace '${idOrName}' not found. Use 'atlas workspace list' to see available workspaces.`,
+            );
+          }
+
+          targetPath = workspace.path;
+        }
+
+        // Check if workspace.yml exists in the target path
+        const workspaceYmlPath = `${targetPath}/workspace.yml`;
+        if (!(await exists(workspaceYmlPath))) {
+          throw new Error(
+            `No workspace.yml found in ${targetPath}. Run 'atlas workspace init <name>' to create a workspace.`,
+          );
+        }
+
+        // Validate port if specified
+        if (requestedPort && (requestedPort < 1 || requestedPort > 65535)) {
+          throw new Error(
+            `Invalid port number: ${requestedPort}. Port must be between 1 and 65535.`,
+          );
+        }
+
+        setWorkspacePath(targetPath);
+        setStatus("ready");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        setStatus("error");
+      }
+    };
+
+    validateAndServe();
+  }, []);
 
   if (status === "loading") {
     return <Text>Loading...</Text>;
@@ -28,10 +72,16 @@ export function WorkspaceServeCommand({ flags }: WorkspaceCommandProps) {
     return <Text color="red">Error: {error}</Text>;
   }
 
-  return <ServingComponent port={port} flags={flags} />;
+  return (
+    <ServingComponent requestedPort={requestedPort} flags={flags} workspacePath={workspacePath} />
+  );
 }
 
-function ServingComponent({ port, flags }: { port: number; flags: any }) {
+function ServingComponent({ requestedPort, flags, workspacePath }: {
+  requestedPort?: number;
+  flags: Record<string, unknown>;
+  workspacePath: string;
+}) {
   const { exit } = useApp();
 
   useEffect(() => {
@@ -41,6 +91,14 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         exit();
 
         await new Promise((resolve) => setTimeout(resolve, 100));
+
+        // Change to workspace directory if needed
+        const originalCwd = Deno.cwd();
+        if (workspacePath && workspacePath !== originalCwd) {
+          console.log(`Changing to workspace directory: ${workspacePath}`);
+          Deno.chdir(workspacePath);
+        }
+
         await load({ export: true });
 
         const configLoader = new ConfigLoader();
@@ -53,12 +111,84 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
           description: mergedConfig.workspace.workspace.description,
         });
 
-        // Update status to starting
+        // Check if workspace is already running
+        if (workspaceEntry.status === WSStatus.RUNNING && workspaceEntry.pid) {
+          // Double-check if process is actually running
+          try {
+            Deno.kill(workspaceEntry.pid, "SIGCONT");
+            throw new Error(
+              `Workspace '${workspaceEntry.name}' is already running (PID: ${workspaceEntry.pid}, Port: ${workspaceEntry.port}). ` +
+                `Stop it first with 'atlas workspace stop ${workspaceEntry.id}' or kill the process.`,
+            );
+          } catch (err) {
+            if (err instanceof Error && err.message.includes("already running")) {
+              throw err;
+            }
+            // Process is not running, continue
+          }
+        }
+
+        // Find an available port
+        let actualPort = requestedPort;
+        const configPort = mergedConfig.atlas.runtime?.server?.port;
+
+        // Get list of occupied ports from running workspaces
+        const runningWorkspaces = await registry.getRunning();
+        const occupiedPorts = new Set(
+          runningWorkspaces
+            .filter((w) => w.port && w.id !== workspaceEntry.id)
+            .map((w) => w.port!),
+        );
+
+        // If no port specified, find an available one
+        if (!actualPort) {
+          // Try config port first, then find available
+          const preferredPort = configPort || 8080;
+
+          if (!occupiedPorts.has(preferredPort)) {
+            try {
+              // Double-check port is actually available
+              const conn = await Deno.connect({ port: preferredPort, hostname: "localhost" }).catch(
+                () => null,
+              );
+              if (conn) {
+                conn.close();
+                // Port is in use but not by a workspace - find another
+                actualPort = findAvailablePort({
+                  preferredPort: preferredPort + 1,
+                  startPort: 8080,
+                  endPort: 8180,
+                });
+              } else {
+                actualPort = preferredPort;
+              }
+            } catch {
+              actualPort = preferredPort;
+            }
+          } else {
+            // Preferred port is occupied by another workspace
+            actualPort = findAvailablePort({
+              startPort: 8080,
+              endPort: 8180,
+            });
+          }
+        } else {
+          // Check if requested port is occupied by another workspace
+          if (occupiedPorts.has(actualPort)) {
+            const occupyingWorkspace = runningWorkspaces.find((w) => w.port === actualPort);
+            throw new Error(
+              `Port ${actualPort} is already in use by workspace '${occupyingWorkspace?.name}' (${occupyingWorkspace?.id}). ` +
+                `Use a different port or stop the other workspace first.`,
+            );
+          }
+        }
+
+        // Update status to starting with the actual port
         await registry.updateStatus(
           workspaceEntry.id,
           WSStatus.STARTING,
           {
-            port: port || mergedConfig.atlas.runtime?.server?.port || 8080,
+            port: actualPort,
             pid: Deno.pid,
           },
         );
@@ -79,12 +209,15 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
         });
 
         const runtime = new WorkspaceRuntime(workspace, mergedConfig, {
-          lazy: flags.lazy || false,
+          lazy: Boolean(flags.lazy) || false,
         });
 
+        // Already found available port above, now set hostname
+        const hostname = mergedConfig.atlas.runtime?.server?.host || "localhost";
+
         const server = new WorkspaceServer(runtime, {
-          port: port || mergedConfig.atlas.runtime?.server?.port || 8080,
-          hostname: mergedConfig.atlas.runtime?.server?.host || "localhost",
+          port: actualPort,
+          hostname,
         });
 
         // Handle graceful shutdown to update registry status
@@ -99,20 +232,30 @@ function ServingComponent({ port, flags }: { port: number; flags: any }) {
             workspaceEntry.id,
             WSStatus.STOPPED,
           );
+          console.log(`Workspace '${workspaceEntry.name}' stopped successfully.`);
           Deno.exit(0);
         };
 
         Deno.addSignalListener("SIGINT", shutdown);
         Deno.addSignalListener("SIGTERM", shutdown);
 
-        await server.start();
+        console.log(
+          `Starting workspace '${workspaceEntry.name}' (${workspaceEntry.id}) on http://${hostname}:${actualPort}...`,
+        );
+
+        // Start the server and wait for it to be ready
+        const { finished } = await server.startNonBlocking();
 
         // Update status to running
         await registry.updateStatus(workspaceEntry.id, WSStatus.RUNNING);
 
         console.log(
-          `Workspace '${workspaceEntry.name}' (${workspaceEntry.id}) is running on port ${port}`,
+          `✓ Workspace '${workspaceEntry.name}' (${workspaceEntry.id}) is running on http://${hostname}:${actualPort}`,
         );
+        console.log("Press Ctrl+C to stop the server.");
+
+        // Now wait for the server to finish
+        await finished;
       } catch (err) {
         console.error(
           "Failed to start server:",

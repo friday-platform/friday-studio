@@ -9,7 +9,7 @@ import { WorkspaceCommandProps } from "./utils.ts";
 
 export function WorkspaceListCommand({}: WorkspaceCommandProps) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading"
+    "loading",
   );
   const [error, setError] = useState<string>("");
   const [data, setData] = useState<{ registeredWorkspaces: WorkspaceEntry[] }>({
@@ -65,8 +65,7 @@ export function WorkspaceList({
         </Box>
         <Box>
           <Text color="gray">
-            No registered workspaces found. Run 'atlas workspace init' to create
-            a new workspace.
+            No registered workspaces found. Run 'atlas workspace init' to create a new workspace.
           </Text>
         </Box>
       </Box>
@@ -110,12 +109,11 @@ export function WorkspaceList({
 
       {/* Table Rows */}
       {registeredWorkspaces.map((workspace, i) => {
-        const statusColor =
-          workspace.status === WSStatus.RUNNING
-            ? "green"
-            : workspace.status === WSStatus.CRASHED
-            ? "red"
-            : "gray";
+        const statusColor = workspace.status === WSStatus.RUNNING
+          ? "green"
+          : workspace.status === WSStatus.CRASHED
+          ? "red"
+          : "gray";
 
         return (
           <Box key={i}>

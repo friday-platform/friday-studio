@@ -1,11 +1,11 @@
 import { Text } from "ink";
 import {
-  WorkspaceInitCommand,
-  WorkspaceServeCommand,
-  WorkspaceListCommand,
-  WorkspaceStatusCommand,
-  WorkspaceRemoveCommand,
   WorkspaceCleanupCommand,
+  WorkspaceInitCommand,
+  WorkspaceListCommand,
+  WorkspaceRemoveCommand,
+  WorkspaceServeCommand,
+  WorkspaceStatusCommand,
 } from "./workspace/index.ts";
 
 export interface WorkspaceCommandProps {
@@ -19,7 +19,6 @@ export function WorkspaceCommand({
   args,
   flags,
 }: WorkspaceCommandProps) {
-  // Route to the appropriate subcommand component
   switch (subcommand) {
     case "init":
       return <WorkspaceInitCommand args={args} flags={flags} />;
@@ -40,7 +39,6 @@ export function WorkspaceCommand({
       return <WorkspaceCleanupCommand args={args} flags={flags} />;
 
     default:
-      // Default to serve if no subcommand provided
       if (!subcommand) {
         return <WorkspaceServeCommand args={args} flags={flags} />;
       } else {

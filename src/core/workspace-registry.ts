@@ -13,16 +13,12 @@ import { generateUniqueWorkspaceName } from "./workspace-names.ts";
 
 export class WorkspaceRegistryManager {
   private registryPath: string;
-  private lockFile: string;
   private registry: WorkspaceRegistry | null = null;
 
   constructor() {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
     const atlasDir = join(homeDir, ".atlas");
     this.registryPath = join(atlasDir, "registry.json");
-    // Lockfile prevents concurrent registry modifications
-    // When one process is writing, others wait or fail fast
-    this.lockFile = `${this.registryPath}.lock`;
   }
 
   async initialize(): Promise<void> {
@@ -90,32 +86,6 @@ export class WorkspaceRegistryManager {
     await Deno.rename(tempPath, this.registryPath);
   }
 
-  private async acquireLock(): Promise<void> {
-    // Simple file-based locking
-    let attempts = 0;
-    while (attempts < 50) { // 5 seconds max wait
-      try {
-        await Deno.writeTextFile(this.lockFile, Deno.pid.toString(), {
-          createNew: true, // Fails if file exists
-        });
-        return;
-      } catch {
-        // Lock exists, wait and retry
-        await new Promise((resolve) => setTimeout(resolve, 100));
-        attempts++;
-      }
-    }
-    throw new Error("Failed to acquire registry lock");
-  }
-
-  private async releaseLock(): Promise<void> {
-    try {
-      await Deno.remove(this.lockFile);
-    } catch {
-      // Ignore if lock already removed
-    }
-  }
-
   // Core operations
   async register(
     workspacePath: string,
@@ -127,56 +97,46 @@ export class WorkspaceRegistryManager {
   ): Promise<WorkspaceEntry> {
     if (!this.registry) await this.initialize();
 
-    await this.acquireLock();
-    try {
-      // Check if already registered
-      const existing = await this.findByPathUnsafe(workspacePath);
-      if (existing) {
-        return existing;
-      }
-
-      // Generate unique Docker-style ID
-      const existingIds = new Set(this.registry!.workspaces.map((w) => w.id));
-      const id = generateUniqueWorkspaceName(existingIds);
-
-      // Create new entry
-      const entry: WorkspaceEntry = {
-        id,
-        name: options?.name || basename(workspacePath),
-        path: await Deno.realPath(workspacePath),
-        configPath: join(workspacePath, "workspace.yml"),
-        status: WorkspaceStatus.STOPPED,
-        createdAt: new Date().toISOString(),
-        lastSeen: new Date().toISOString(),
-        metadata: {
-          atlasVersion: Deno.version.deno,
-          description: options?.description,
-          tags: options?.tags,
-        },
-      };
-
-      // Validate entry with Zod
-      const validatedEntry = WorkspaceEntrySchema.parse(entry);
-
-      this.registry!.workspaces.push(validatedEntry);
-      await this.save();
-
-      return validatedEntry;
-    } finally {
-      await this.releaseLock();
+    // Check if already registered
+    const existing = await this.findByPathUnsafe(workspacePath);
+    if (existing) {
+      return existing;
     }
+
+    // Generate unique Docker-style ID
+    const existingIds = new Set(this.registry!.workspaces.map((w) => w.id));
+    const id = generateUniqueWorkspaceName(existingIds);
+
+    // Create new entry
+    const entry: WorkspaceEntry = {
+      id,
+      name: options?.name || basename(workspacePath),
+      path: await Deno.realPath(workspacePath),
+      configPath: join(workspacePath, "workspace.yml"),
+      status: WorkspaceStatus.STOPPED,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      metadata: {
+        atlasVersion: Deno.version.deno,
+        description: options?.description,
+        tags: options?.tags,
+      },
+    };
+
+    // Validate entry with Zod
+    const validatedEntry = WorkspaceEntrySchema.parse(entry);
+
+    this.registry!.workspaces.push(validatedEntry);
+    await this.save();
+
+    return validatedEntry;
   }
 
   async unregister(id: string): Promise<void> {
     if (!this.registry) await this.initialize();
 
-    await this.acquireLock();
-    try {
-      this.registry!.workspaces = this.registry!.workspaces.filter((w) => w.id !== id);
-      await this.save();
-    } finally {
-      await this.releaseLock();
-    }
+    this.registry!.workspaces = this.registry!.workspaces.filter((w) => w.id !== id);
+    await this.save();
   }
 
   async updateStatus(
@@ -186,34 +146,29 @@ export class WorkspaceRegistryManager {
   ): Promise<void> {
     if (!this.registry) await this.initialize();
 
-    await this.acquireLock();
-    try {
-      const workspace = this.registry!.workspaces.find((w) => w.id === id);
-      if (!workspace) {
-        throw new Error(`Workspace ${id} not found`);
-      }
-
-      workspace.status = status;
-      workspace.lastSeen = new Date().toISOString();
-
-      // Apply additional updates
-      if (updates) {
-        Object.assign(workspace, updates);
-      }
-
-      // Update timestamps based on status
-      if (status === WorkspaceStatus.RUNNING) {
-        workspace.startedAt = new Date().toISOString();
-      } else if (status === WorkspaceStatus.STOPPED || status === WorkspaceStatus.CRASHED) {
-        workspace.stoppedAt = new Date().toISOString();
-        workspace.pid = undefined;
-        workspace.port = undefined;
-      }
-
-      await this.save();
-    } finally {
-      await this.releaseLock();
+    const workspace = this.registry!.workspaces.find((w) => w.id === id);
+    if (!workspace) {
+      throw new Error(`Workspace ${id} not found`);
     }
+
+    workspace.status = status;
+    workspace.lastSeen = new Date().toISOString();
+
+    // Apply additional updates
+    if (updates) {
+      Object.assign(workspace, updates);
+    }
+
+    // Update timestamps based on status
+    if (status === WorkspaceStatus.RUNNING) {
+      workspace.startedAt = new Date().toISOString();
+    } else if (status === WorkspaceStatus.STOPPED || status === WorkspaceStatus.CRASHED) {
+      workspace.stoppedAt = new Date().toISOString();
+      workspace.pid = undefined;
+      workspace.port = undefined;
+    }
+
+    await this.save();
   }
 
   // Query operations with lazy health checks
@@ -263,20 +218,34 @@ export class WorkspaceRegistryManager {
 
   // Lazy health check - core of our approach
   private async checkAndUpdateHealth(workspace: WorkspaceEntry): Promise<WorkspaceEntry> {
-    // Only check if status indicates it should be running
-    if (workspace.status === WorkspaceStatus.RUNNING && workspace.pid) {
+    // Check if status indicates it should have a running process
+    if (
+      (workspace.status === WorkspaceStatus.RUNNING ||
+        workspace.status === WorkspaceStatus.STOPPING ||
+        workspace.status === WorkspaceStatus.STARTING) &&
+      workspace.pid
+    ) {
       try {
         // Check if process exists
         const isRunning = this.isProcessRunning(workspace.pid);
 
         if (!isRunning) {
-          // Process died - update status
-          await this.updateStatus(workspace.id, WorkspaceStatus.CRASHED, {
+          // Process died - update status based on previous state
+          let newStatus: WorkspaceStatus;
+          if (workspace.status === WorkspaceStatus.STOPPING) {
+            newStatus = WorkspaceStatus.STOPPED;
+          } else if (workspace.status === WorkspaceStatus.STARTING) {
+            newStatus = WorkspaceStatus.CRASHED; // Starting but process died = crashed
+          } else {
+            newStatus = WorkspaceStatus.CRASHED; // Running but process died = crashed
+          }
+
+          await this.updateStatus(workspace.id, newStatus, {
             stoppedAt: new Date().toISOString(),
             pid: undefined,
             port: undefined,
           });
-          workspace.status = WorkspaceStatus.CRASHED;
+          workspace.status = newStatus;
         }
       } catch {
         // Error checking process - mark as unknown
@@ -347,23 +316,18 @@ export class WorkspaceRegistryManager {
   async vacuum(): Promise<void> {
     if (!this.registry) await this.initialize();
 
-    await this.acquireLock();
-    try {
-      // Remove old stopped workspaces
-      const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 30); // 30 days
+    // Remove old stopped workspaces
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30); // 30 days
 
-      this.registry!.workspaces = this.registry!.workspaces.filter((w) => {
-        if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
-          return new Date(w.stoppedAt) > cutoff;
-        }
-        return true;
-      });
+    this.registry!.workspaces = this.registry!.workspaces.filter((w) => {
+      if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
+        return new Date(w.stoppedAt) > cutoff;
+      }
+      return true;
+    });
 
-      await this.save();
-    } finally {
-      await this.releaseLock();
-    }
+    await this.save();
   }
 
   // Migration methods

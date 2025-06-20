@@ -494,6 +494,43 @@ export class WorkspaceServer {
     await this.server.finished;
   }
 
+  /**
+   * Start the server without blocking. Returns a promise that resolves when the server is ready.
+   */
+  async startNonBlocking(): Promise<{ finished: Promise<void> }> {
+    const port = this.options.port || 8080;
+    const hostname = this.options.hostname || "localhost";
+
+    logger.info(`Starting server on http://${hostname}:${port}`, {
+      hostname,
+      port,
+      workspaceId: (this.runtime as any).workspace?.id,
+    });
+
+    let serverReady: () => void;
+    const readyPromise = new Promise<void>((resolve) => {
+      serverReady = resolve;
+    });
+
+    this.server = Deno.serve({
+      port,
+      hostname,
+      onListen: ({ hostname, port }) => {
+        logger.info(`Server running on http://${hostname}:${port}`, {
+          hostname,
+          port,
+          workspaceId: (this.runtime as any).workspace?.id,
+        });
+        serverReady();
+      },
+    }, this.app.fetch);
+
+    // Wait for server to be ready
+    await readyPromise;
+
+    return { finished: this.server.finished };
+  }
+
   async shutdown(): Promise<void> {
     if (this.server && this.server.shutdown) {
       await this.server.shutdown();
