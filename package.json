@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@modelcontextprotocol/server-filesystem": "^2025.3.28"
+    "@modelcontextprotocol/server-filesystem": "^2025.3.28",
+    "@types/react": "^19.1.8"
   }
 }

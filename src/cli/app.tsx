@@ -78,6 +78,9 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "define":
       return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
 
+    // case "tui":
+    //   return <TUICommand workspaceSlug={flags.workspace as string} />;
+
     default:
       return (
         <Text color="red">

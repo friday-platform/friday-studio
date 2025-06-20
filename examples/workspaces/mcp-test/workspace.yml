@@ -24,6 +24,25 @@ signals:
     path: "/test-mcp"
     method: "POST"
     description: "Manual trigger for MCP filesystem testing"
+    schema:
+      type: "object"
+      properties:
+        operation:
+          type: "string"
+          description: "The filesystem operation to perform"
+          enum: ["read", "write", "list", "create"]
+        path:
+          type: "string"
+          description: "Target file or directory path"
+        content:
+          type: "string"
+          description: "Content for write operations"
+        options:
+          type: "object"
+          properties:
+            recursive: { type: "boolean" }
+            encoding: { type: "string" }
+      required: ["operation", "path"]
 
 # Agents with MCP and EMCP capabilities
 agents:

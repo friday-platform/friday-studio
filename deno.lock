@@ -26,6 +26,7 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@types/node@*": "22.15.15",
     "npm:@types/react@^18.3.3": "18.3.23",
+    "npm:@types/react@^19.1.8": "19.1.8",
     "npm:ai@*": "4.3.16_react@18.3.1_zod@3.25.62",
     "npm:ai@^4.0.7": "4.3.16_react@18.3.1_zod@3.25.62",
     "npm:eventsource-parser@^3.0.1": "3.0.2",
@@ -281,6 +282,12 @@
       "integrity": "sha512-/LDXMQh55EzZQ0uVAZmKKhfENivEvWz6E+EYzh+/MCjMhNsotd+ZHhBGIjFDTi6+fz0OhQQQLbTgdQIxxCsC0w==",
       "dependencies": [
         "@types/prop-types",
+        "csstype"
+      ]
+    },
+    "@types/react@19.1.8": {
+      "integrity": "sha512-AwAfQ2Wa5bCx9WP8nZL2uMZWod7J7/JSplxbTmBQ5ms6QpqNYm672H0Vu9ZVKVngQ+ii4R/byguVEUZQyeg44g==",
+      "dependencies": [
         "csstype"
       ]
     },
@@ -757,7 +764,7 @@
       "integrity": "sha512-BqcUyWrG9zq5HIwW6JcfFHsIYebJkWWb4fczNah1goUO0vv5vneIlfwuS85twyJ5hYR/y18FlAYUxrO9ChIWVg==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
-        "@types/react",
+        "@types/react@18.3.23",
         "ansi-escapes",
         "ansi-styles@6.2.1",
         "auto-bind",
@@ -784,7 +791,7 @@
         "yoga-layout"
       ],
       "optionalPeers": [
-        "@types/react"
+        "@types/react@18.3.23"
       ]
     },
     "ipaddr.js@1.9.1": {
@@ -1677,7 +1684,8 @@
     ],
     "packageJson": {
       "dependencies": [
-        "npm:@modelcontextprotocol/server-filesystem@^2025.3.28"
+        "npm:@modelcontextprotocol/server-filesystem@^2025.3.28",
+        "npm:@types/react@^19.1.8"
       ]
     }
   }

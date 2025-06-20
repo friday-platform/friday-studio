@@ -114,6 +114,7 @@ export const WorkspaceView = ({
         borderRight={false}
         borderColor="gray"
         borderDimColor
+        flexShrink={0}
       >
         <Text bold>{config.workspace.name}</Text>
         <Spacer />
@@ -131,9 +132,6 @@ export const WorkspaceView = ({
           ))}
         </Box>
       </Box>
-
-      {/* Border separator */}
-      <Box borderBottom borderColor="gray" />
 
       {/* Tab Content */}
       <Box flexDirection="column" flexGrow={1} width="100%">
