@@ -34,6 +34,7 @@ export function WorkspaceStatusCommand({ args }: WorkspaceCommandProps) {
       config: WorkspaceConfig;
       serverRunning: boolean;
       port: number;
+      healthData: any;
     } | null
   >(null);
 
@@ -96,14 +97,18 @@ export function WorkspaceStatusCommand({ args }: WorkspaceCommandProps) {
       const configContent = await Deno.readTextFile("workspace.yml");
       const config = yaml.parse(configContent) as WorkspaceConfig;
 
-      // Check if server is running
+      // Check if server is running and get health info
       let serverRunning = false;
+      let healthData: any = null;
       const port = config.runtime?.server?.port || 8080;
 
       if (workspace.status === WSStatus.RUNNING && workspace.port) {
         try {
-          const response = await fetch(`http://localhost:${workspace.port}/health`);
-          serverRunning = response.ok;
+          const response = await fetch(`http://localhost:${workspace.port}/api/health`);
+          if (response.ok) {
+            serverRunning = true;
+            healthData = await response.json();
+          }
         } catch {
           serverRunning = false;
         }
@@ -114,6 +119,7 @@ export function WorkspaceStatusCommand({ args }: WorkspaceCommandProps) {
         config,
         serverRunning,
         port,
+        healthData,
       });
       setStatus("ready");
     } finally {
@@ -161,9 +167,10 @@ export function WorkspaceStatusDisplay({
     config: WorkspaceConfig;
     serverRunning: boolean;
     port: number;
+    healthData: any;
   };
 }) {
-  const { workspace, config, serverRunning, port } = data;
+  const { workspace, config, serverRunning, port, healthData } = data;
 
   // Format status color
   const statusColor = workspace.status === WSStatus.RUNNING
@@ -230,6 +237,29 @@ export function WorkspaceStatusDisplay({
           Process ID: <Text color="gray">{workspace.pid}</Text>
         </Text>
       )}
+      {healthData && (
+        <>
+          <Text>
+            Detached Mode:{" "}
+            <Text color={healthData.detached ? "yellow" : "gray"}>
+              {healthData.detached ? "Yes" : "No"}
+            </Text>
+          </Text>
+          <Text>
+            Active Sessions: <Text color="white">{healthData.sessions || 0}</Text>
+          </Text>
+          <Text>
+            Uptime: <Text color="gray">{formatUptime(healthData.uptime)}</Text>
+          </Text>
+          <Text>
+            Memory Usage:{" "}
+            <Text color="gray">
+              {formatBytes(healthData.memory?.heapUsed || 0)} /{" "}
+              {formatBytes(healthData.memory?.heapTotal || 0)}
+            </Text>
+          </Text>
+        </>
+      )}
       <Newline />
 
       <Text bold>Configuration</Text>
@@ -266,4 +296,35 @@ export function WorkspaceStatusDisplay({
       )}
     </Box>
   );
+}
+
+// Helper functions
+function formatUptime(ms: number): string {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+
+  if (days > 0) {
+    return `${days}d ${hours % 24}h ${minutes % 60}m`;
+  } else if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
+function formatBytes(bytes: number): string {
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex++;
+  }
+
+  return `${size.toFixed(1)} ${units[unitIndex]}`;
 }

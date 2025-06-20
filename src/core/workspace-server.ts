@@ -27,6 +27,7 @@ export class WorkspaceServer {
     this.runtime = runtime;
     this.options = options;
     this.app = new Hono();
+    this.isDetached = Deno.env.get("ATLAS_DETACHED") === "true";
 
     this.setupRoutes();
     this.setupSignalHandlers();

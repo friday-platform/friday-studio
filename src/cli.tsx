@@ -26,7 +26,7 @@ const cli = meow(
     workspace init <name> [path]              Initialize a new workspace
     workspace serve [-d|--detached]           Start workspace server (use -d for background)
     workspace list                            List all workspaces
-    workspace status [id|name]                Show workspace status
+    workspace status [id|name] [--json]       Show workspace status (--json for raw health data)
     workspace stop <id|name> [--force]        Stop a running workspace
     workspace restart <id|name>               Restart a workspace
     workspace remove <id|name>                Remove workspace from registry

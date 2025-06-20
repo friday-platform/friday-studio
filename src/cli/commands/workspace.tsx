@@ -1,6 +1,7 @@
 import { Text } from "ink";
 import {
   WorkspaceCleanupCommand,
+  WorkspaceHealthCommand,
   WorkspaceInitCommand,
   WorkspaceListCommand,
   WorkspaceLogsCommand,
@@ -35,6 +36,10 @@ export function WorkspaceCommand({
       return <WorkspaceListCommand args={args} flags={flags} />;
 
     case "status":
+      // If --json flag is passed, show raw health data
+      if (flags.json) {
+        return <WorkspaceHealthCommand args={args} flags={flags} />;
+      }
       return <WorkspaceStatusCommand args={args} flags={flags} />;
 
     case "stop":
