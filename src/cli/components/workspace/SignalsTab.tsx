@@ -367,10 +367,19 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
     if (isMainActive) {
       const scrollAmount = key.shift ? 10 : 1; // 10x faster scrolling with Shift
 
-      if (key.upArrow || inputChar === "j") {
+      if (key.upArrow || inputChar === "k") {
         setScrollOffset((prev) => Math.min(0, prev + scrollAmount)); // Max value 0 (can't scroll up past top)
-      } else if (key.downArrow || inputChar === "k") {
+      } else if (key.downArrow || inputChar === "j") {
         setScrollOffset((prev) => prev - scrollAmount); // No limit (can scroll down indefinitely)
+      }
+
+      // Handle vim keys with shift modifier for fast scrolling
+      if (inputChar === "K") {
+        // Shift+k = fast scroll up
+        setScrollOffset((prev) => Math.min(0, prev + 10));
+      } else if (inputChar === "J") {
+        // Shift+j = fast scroll down
+        setScrollOffset((prev) => prev - 10);
       }
     }
   });

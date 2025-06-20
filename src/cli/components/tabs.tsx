@@ -53,21 +53,30 @@ export const useTabNavigation = ({
   // Handle arrow key navigation if enabled and active
   useInput((inputChar, key) => {
     if (useArrowKeys && isActive && tabCount > 0) {
-      // Handle arrow keys
-      if (key.upArrow || inputChar === "j") {
+      // Handle arrow keys and vim keys
+      if (key.upArrow || inputChar === "k") {
         if (key.shift) {
           // Jump by 10 items backwards
           goToTab(Math.max(0, activeTab - 10));
         } else {
           previousTab();
         }
-      } else if (key.downArrow || inputChar === "k") {
+      } else if (key.downArrow || inputChar === "j") {
         if (key.shift) {
           // Jump by 10 items forwards
           goToTab(Math.min(tabCount - 1, activeTab + 10));
         } else {
           nextTab();
         }
+      }
+
+      // Handle vim keys with shift modifier separately since inputChar doesn't carry shift state
+      if (inputChar === "K") {
+        // Shift+k = fast backwards
+        goToTab(Math.max(0, activeTab - 10));
+      } else if (inputChar === "J") {
+        // Shift+j = fast forwards
+        goToTab(Math.min(tabCount - 1, activeTab + 10));
       }
     }
   });
@@ -108,12 +117,12 @@ export const useActiveFocus = ({
     changeArea(index);
   };
 
-  // Handle left/right arrow keys for focus navigation
+  // Handle left/right arrow keys and vim keys for focus navigation
   useInput((inputChar, key) => {
     if (areas.length > 1) {
-      if (key.leftArrow || inputChar === "h") {
+      if (key.leftArrow || inputChar === "h" || inputChar === "H") {
         previousArea();
-      } else if (key.rightArrow || inputChar === "l") {
+      } else if (key.rightArrow || inputChar === "l" || inputChar === "L") {
         nextArea();
       }
     }
