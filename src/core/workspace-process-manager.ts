@@ -2,7 +2,7 @@ import { getWorkspaceRegistry } from "./workspace-registry.ts";
 import { findAvailablePort } from "../utils/port-finder.ts";
 import { getAtlasHome } from "../utils/paths.ts";
 import { ensureDir } from "@std/fs";
-import { join, dirname } from "@std/path";
+import { dirname, join } from "@std/path";
 import { logger } from "../utils/logger.ts";
 
 export interface ProcessStartOptions {
@@ -17,7 +17,7 @@ export class WorkspaceProcessManager {
 
   async startDetached(
     workspaceIdOrPath: string,
-    options: ProcessStartOptions = {}
+    options: ProcessStartOptions = {},
   ): Promise<number> {
     logger.info("Starting detached workspace", { workspaceIdOrPath, options });
 
@@ -40,13 +40,13 @@ export class WorkspaceProcessManager {
     // Find available port
     const port = options.port || await findAvailablePort();
     logger.debug("Selected port for workspace", { port });
-    
+
     // Prepare log file
     const logDir = join(getAtlasHome(), "logs", "workspaces");
     await ensureDir(logDir);
     const logFile = join(logDir, `${workspace.id}.log`);
     logger.debug("Log file path", { logFile });
-    
+
     // Build command
     const args = [
       "run",
@@ -58,21 +58,23 @@ export class WorkspaceProcessManager {
       "serve",
       workspace.id,
       "--internal-detached",
-      "--port", port.toString(),
-      "--log-file", logFile,
+      "--port",
+      port.toString(),
+      "--log-file",
+      logFile,
     ];
-    
+
     if (options.logLevel) {
       args.push("--log-level", options.logLevel);
     }
-    
+
     if (options.additionalFlags) {
       args.push(...options.additionalFlags);
     }
-    
-    logger.debug("Spawning detached process", { 
+
+    logger.debug("Spawning detached process", {
       command: Deno.execPath(),
-      args: args.slice(0, 8) + "..." // Log first few args
+      args: args.slice(0, 8) + "...", // Log first few args
     });
 
     // Spawn detached process
@@ -91,34 +93,34 @@ export class WorkspaceProcessManager {
         ...options.env,
       },
     });
-    
+
     const child = cmd.spawn();
-    
+
     // Update registry immediately
     await this.registry.updateStatus(workspace.id, "starting", {
       pid: child.pid,
       port,
       startedAt: new Date().toISOString(),
     });
-    
+
     // Detach from parent
     child.unref();
-    
-    logger.info("Detached process spawned", { 
+
+    logger.info("Detached process spawned", {
       workspaceId: workspace.id,
       pid: child.pid,
-      port 
+      port,
     });
 
     // Wait briefly for process to start
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Verify process started
     if (!await this.isProcessRunning(child.pid)) {
       await this.registry.updateStatus(workspace.id, "crashed");
       throw new Error("Failed to start workspace process");
     }
-    
+
     return child.pid;
   }
 
@@ -126,19 +128,19 @@ export class WorkspaceProcessManager {
     logger.info("Stopping workspace", { workspaceId, force });
 
     const workspace = await this.registry.findById(workspaceId) ||
-                     await this.registry.findByName(workspaceId);
-    
+      await this.registry.findByName(workspaceId);
+
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
-    
+
     if (workspace.status !== "running" || !workspace.pid) {
       throw new Error(`Workspace ${workspace.name} is not running`);
     }
-    
+
     // Update status
     await this.registry.updateStatus(workspace.id, "stopping");
-    
+
     try {
       if (force) {
         // Force kill
@@ -148,11 +150,11 @@ export class WorkspaceProcessManager {
         // Graceful shutdown
         logger.debug("Sending SIGTERM to workspace process", { pid: workspace.pid });
         Deno.kill(workspace.pid, "SIGTERM");
-        
+
         // Wait for process to exit (max 30 seconds)
         const timeout = 30000;
         const start = Date.now();
-        
+
         while (await this.isProcessRunning(workspace.pid)) {
           if (Date.now() - start > timeout) {
             // Timeout - force kill
@@ -160,10 +162,10 @@ export class WorkspaceProcessManager {
             Deno.kill(workspace.pid, "SIGKILL");
             break;
           }
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
-      
+
       await this.registry.updateStatus(workspace.id, "stopped", {
         pid: undefined,
         port: undefined,
@@ -182,17 +184,17 @@ export class WorkspaceProcessManager {
     logger.info("Restarting workspace", { workspaceId });
 
     const workspace = await this.registry.findById(workspaceId) ||
-                     await this.registry.findByName(workspaceId);
-    
+      await this.registry.findByName(workspaceId);
+
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
-    
+
     // Stop if running
     if (workspace.status === "running" && workspace.pid) {
       await this.stop(workspace.id);
     }
-    
+
     // Start again with same port if available
     return await this.startDetached(workspace.id, {
       port: workspace.port,
@@ -210,8 +212,8 @@ export class WorkspaceProcessManager {
   }
 
   async waitForReady(
-    workspaceId: string, 
-    timeout = 30000
+    workspaceId: string,
+    timeout = 30000,
   ): Promise<boolean> {
     logger.debug("Waiting for workspace to be ready", { workspaceId, timeout });
 
@@ -220,13 +222,13 @@ export class WorkspaceProcessManager {
       logger.warn("Workspace not found or no port assigned", { workspaceId });
       return false;
     }
-    
+
     const start = Date.now();
-    
+
     while (Date.now() - start < timeout) {
       try {
         const response = await fetch(
-          `http://localhost:${workspace.port}/api/health`
+          `http://localhost:${workspace.port}/api/health`,
         );
         if (response.ok) {
           await this.registry.updateStatus(workspace.id, "running");
@@ -236,10 +238,10 @@ export class WorkspaceProcessManager {
       } catch {
         // Not ready yet
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    
+
     logger.warn("Workspace failed to become ready", { workspaceId });
     return false;
   }

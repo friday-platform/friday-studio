@@ -8,7 +8,7 @@
 import { expect } from "@std/expect";
 import { join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { WorkspaceRegistryManager } from "../../src/core/workspace-registry.ts";
 import { WorkspaceEntrySchema, WorkspaceStatus } from "../../src/core/workspace-registry-types.ts";
 import {

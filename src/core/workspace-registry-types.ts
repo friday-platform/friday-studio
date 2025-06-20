@@ -1,4 +1,4 @@
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Zod schemas for validation
 export const WorkspaceStatusSchema = z.enum([

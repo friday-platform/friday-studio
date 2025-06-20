@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
@@ -13,7 +13,7 @@ interface SignalsTabProps {
 // Schema validation for signal schemas
 const SignalSchemaValidator = z.object({
   type: z.literal("object"),
-  properties: z.record(z.unknown()),
+  properties: z.record(z.string(), z.unknown()),
   required: z.array(z.string()).optional(),
 });
 

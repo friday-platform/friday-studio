@@ -1,7 +1,7 @@
 import { basename, join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
 import * as yaml from "@std/yaml";
-import { z } from "zod";
+import { z } from "zod/v4";
 import {
   WorkspaceEntry,
   WorkspaceEntrySchema,

@@ -2,7 +2,8 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { logger } from "../utils/logger.ts";
+import { AtlasLogger, logger } from "../utils/logger.ts";
+import { getWorkspaceRegistry } from "./workspace-registry.ts";
 
 export interface WorkspaceServerOptions {
   port?: number;
@@ -18,6 +19,9 @@ export class WorkspaceServer {
   private app: Hono;
   private runtime: WorkspaceRuntime;
   private options: WorkspaceServerOptions;
+  private isDetached = false;
+  private startTime = Date.now();
+  private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
 
   constructor(runtime: WorkspaceRuntime, options: WorkspaceServerOptions = {}) {
     this.runtime = runtime;
@@ -46,6 +50,26 @@ export class WorkspaceServer {
       return c.json({
         status: "healthy",
         ...status,
+      });
+    });
+
+    // Enhanced health endpoint for detached mode
+    this.app.get("/api/health", (c) => {
+      const status = this.runtime.getStatus();
+      return c.json({
+        status: "healthy",
+        workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID") || (this.runtime as any).workspace?.id,
+        workspaceName: Deno.env.get("ATLAS_WORKSPACE_NAME"),
+        uptime: Date.now() - this.startTime,
+        sessions: status.activeSessions || 0,
+        memory: Deno.memoryUsage(),
+        timestamp: new Date().toISOString(),
+        version: {
+          deno: Deno.version.deno,
+          v8: Deno.version.v8,
+          typescript: Deno.version.typescript,
+        },
+        detached: this.isDetached,
       });
     });
 
@@ -515,31 +539,101 @@ export class WorkspaceServer {
 
   private setupSignalHandlers() {
     const serverId = crypto.randomUUID().slice(0, 8);
-    const handleShutdown = async () => {
-      // Prevent duplicate shutdown execution
-      if (this.isShuttingDown) {
-        return;
-      }
-      this.isShuttingDown = true;
 
-      logger.info(`Server [${serverId}] shutting down gracefully`, {
-        workspaceId: (this.runtime as any).workspace?.id,
-        serverId,
-      });
+    // Check if running in detached mode
+    if (Deno.env.get("ATLAS_DETACHED") === "true") {
+      const workspaceId = Deno.env.get("ATLAS_WORKSPACE_ID")!;
+      const registry = getWorkspaceRegistry();
 
-      if (this.server && this.server.shutdown) {
-        await this.server.shutdown();
-      }
+      const handleShutdown = async (signal: string) => {
+        // Prevent duplicate shutdown execution
+        if (this.isShuttingDown) {
+          return;
+        }
+        this.isShuttingDown = true;
 
-      await this.runtime.shutdown();
-      Deno.exit(0);
-    };
+        logger.info(`Server [${serverId}] received ${signal}, shutting down gracefully`, {
+          workspaceId,
+          serverId,
+          signal,
+        });
 
-    Deno.addSignalListener("SIGINT", handleShutdown);
-    Deno.addSignalListener("SIGTERM", handleShutdown);
+        // Update registry status to stopping
+        await registry.updateStatus(workspaceId, "stopping");
+
+        try {
+          if (this.server && this.server.shutdown) {
+            await this.server.shutdown();
+          }
+
+          await this.runtime.shutdown();
+
+          // Update registry status to stopped
+          await registry.updateStatus(workspaceId, "stopped", {
+            stoppedAt: new Date().toISOString(),
+            pid: undefined,
+            port: undefined,
+          });
+        } catch (error) {
+          logger.error("Error during shutdown", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+          await registry.updateStatus(workspaceId, "crashed");
+        } finally {
+          Deno.exit(0);
+        }
+      };
+
+      const sigtermHandler = () => handleShutdown("SIGTERM");
+      const sigintHandler = () => handleShutdown("SIGINT");
+
+      Deno.addSignalListener("SIGTERM", sigtermHandler);
+      Deno.addSignalListener("SIGINT", sigintHandler);
+
+      this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
+      this.signalHandlers.push({ signal: "SIGINT", handler: sigintHandler });
+    } else {
+      // Normal mode signal handlers
+      const handleShutdown = async () => {
+        // Prevent duplicate shutdown execution
+        if (this.isShuttingDown) {
+          return;
+        }
+        this.isShuttingDown = true;
+
+        logger.info(`Server [${serverId}] shutting down gracefully`, {
+          workspaceId: (this.runtime as any).workspace?.id,
+          serverId,
+        });
+
+        if (this.server && this.server.shutdown) {
+          await this.server.shutdown();
+        }
+
+        await this.runtime.shutdown();
+        Deno.exit(0);
+      };
+
+      Deno.addSignalListener("SIGINT", handleShutdown);
+      Deno.addSignalListener("SIGTERM", handleShutdown);
+
+      this.signalHandlers.push({ signal: "SIGINT", handler: handleShutdown });
+      this.signalHandlers.push({ signal: "SIGTERM", handler: handleShutdown });
+    }
   }
 
   async start() {
+    // Check if running in detached mode
+    if (Deno.env.get("ATLAS_DETACHED") === "true") {
+      this.isDetached = true;
+      const logFile = Deno.env.get("ATLAS_LOG_FILE");
+
+      // Initialize logger for detached mode
+      if (logFile) {
+        await AtlasLogger.getInstance().initializeDetached(logFile);
+      }
+    }
+
     const port = this.options.port || 8080;
     const hostname = this.options.hostname || "localhost";
 
@@ -547,6 +641,7 @@ export class WorkspaceServer {
       hostname,
       port,
       workspaceId: (this.runtime as any).workspace?.id,
+      detached: this.isDetached,
     });
 
     this.server = Deno.serve({
@@ -557,6 +652,7 @@ export class WorkspaceServer {
           hostname,
           port,
           workspaceId: (this.runtime as any).workspace?.id,
+          detached: this.isDetached,
         });
       },
     }, this.app.fetch);
@@ -568,6 +664,17 @@ export class WorkspaceServer {
    * Start the server without blocking. Returns a promise that resolves when the server is ready.
    */
   async startNonBlocking(): Promise<{ finished: Promise<void> }> {
+    // Check if running in detached mode
+    if (Deno.env.get("ATLAS_DETACHED") === "true") {
+      this.isDetached = true;
+      const logFile = Deno.env.get("ATLAS_LOG_FILE");
+
+      // Initialize logger for detached mode
+      if (logFile) {
+        await AtlasLogger.getInstance().initializeDetached(logFile);
+      }
+    }
+
     const port = this.options.port || 8080;
     const hostname = this.options.hostname || "localhost";
 
@@ -575,6 +682,7 @@ export class WorkspaceServer {
       hostname,
       port,
       workspaceId: (this.runtime as any).workspace?.id,
+      detached: this.isDetached,
     });
 
     let serverReady: () => void;
@@ -590,6 +698,7 @@ export class WorkspaceServer {
           hostname,
           port,
           workspaceId: (this.runtime as any).workspace?.id,
+          detached: this.isDetached,
         });
         serverReady();
       },
@@ -602,6 +711,12 @@ export class WorkspaceServer {
   }
 
   async shutdown(): Promise<void> {
+    // Remove signal handlers
+    for (const { signal, handler } of this.signalHandlers) {
+      Deno.removeSignalListener(signal, handler);
+    }
+    this.signalHandlers = [];
+
     if (this.server && this.server.shutdown) {
       await this.server.shutdown();
     }

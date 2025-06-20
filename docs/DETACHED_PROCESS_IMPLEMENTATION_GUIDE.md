@@ -2,7 +2,9 @@
 
 ## Executive Summary
 
-With the workspace registry foundation complete, Atlas needs true background process support to enable multiple concurrent workspaces. This guide provides a detailed implementation plan for the remaining work.
+With the workspace registry foundation complete, Atlas needs true background process support to
+enable multiple concurrent workspaces. This guide provides a detailed implementation plan for the
+remaining work.
 
 ## Critical Path Analysis
 
@@ -35,7 +37,7 @@ import { getWorkspaceRegistry } from "./workspace-registry.ts";
 import { findAvailablePort } from "../utils/port-finder.ts";
 import { getAtlasHome } from "../utils/paths.ts";
 import { ensureDir } from "@std/fs";
-import { join, dirname } from "@std/path";
+import { dirname, join } from "@std/path";
 
 export interface ProcessStartOptions {
   port?: number;
@@ -49,7 +51,7 @@ export class WorkspaceProcessManager {
 
   async startDetached(
     workspaceIdOrPath: string,
-    options: ProcessStartOptions = {}
+    options: ProcessStartOptions = {},
   ): Promise<number> {
     // Find or register workspace
     let workspace = await this.registry.findById(workspaceIdOrPath);
@@ -68,12 +70,12 @@ export class WorkspaceProcessManager {
 
     // Find available port
     const port = options.port || await findAvailablePort();
-    
+
     // Prepare log file
     const logDir = join(getAtlasHome(), "logs", "workspaces");
     await ensureDir(logDir);
     const logFile = join(logDir, `${workspace.id}.log`);
-    
+
     // Build command
     const args = [
       "run",
@@ -85,18 +87,20 @@ export class WorkspaceProcessManager {
       "serve",
       workspace.id,
       "--internal-detached",
-      "--port", port.toString(),
-      "--log-file", logFile,
+      "--port",
+      port.toString(),
+      "--log-file",
+      logFile,
     ];
-    
+
     if (options.logLevel) {
       args.push("--log-level", options.logLevel);
     }
-    
+
     if (options.additionalFlags) {
       args.push(...options.additionalFlags);
     }
-    
+
     // Spawn detached process
     const cmd = new Deno.Command(Deno.execPath(), {
       args,
@@ -113,46 +117,46 @@ export class WorkspaceProcessManager {
         ...options.env,
       },
     });
-    
+
     const child = cmd.spawn();
-    
+
     // Update registry immediately
     await this.registry.updateStatus(workspace.id, "starting", {
       pid: child.pid,
       port,
       startedAt: new Date().toISOString(),
     });
-    
+
     // Detach from parent
     child.unref();
-    
+
     // Wait briefly for process to start
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
     // Verify process started
     if (!await this.isProcessRunning(child.pid)) {
       await this.registry.updateStatus(workspace.id, "crashed");
       throw new Error("Failed to start workspace process");
     }
-    
+
     return child.pid;
   }
 
   async stop(workspaceId: string, force = false): Promise<void> {
     const workspace = await this.registry.findById(workspaceId) ||
-                     await this.registry.findByName(workspaceId);
-    
+      await this.registry.findByName(workspaceId);
+
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
-    
+
     if (workspace.status !== "running" || !workspace.pid) {
       throw new Error(`Workspace ${workspace.name} is not running`);
     }
-    
+
     // Update status
     await this.registry.updateStatus(workspace.id, "stopping");
-    
+
     try {
       if (force) {
         // Force kill
@@ -160,21 +164,21 @@ export class WorkspaceProcessManager {
       } else {
         // Graceful shutdown
         Deno.kill(workspace.pid, "SIGTERM");
-        
+
         // Wait for process to exit (max 30 seconds)
         const timeout = 30000;
         const start = Date.now();
-        
+
         while (await this.isProcessRunning(workspace.pid)) {
           if (Date.now() - start > timeout) {
             // Timeout - force kill
             Deno.kill(workspace.pid, "SIGKILL");
             break;
           }
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
-      
+
       await this.registry.updateStatus(workspace.id, "stopped", {
         pid: undefined,
         port: undefined,
@@ -188,17 +192,17 @@ export class WorkspaceProcessManager {
 
   async restart(workspaceId: string): Promise<number> {
     const workspace = await this.registry.findById(workspaceId) ||
-                     await this.registry.findByName(workspaceId);
-    
+      await this.registry.findByName(workspaceId);
+
     if (!workspace) {
       throw new Error(`Workspace ${workspaceId} not found`);
     }
-    
+
     // Stop if running
     if (workspace.status === "running" && workspace.pid) {
       await this.stop(workspace.id);
     }
-    
+
     // Start again with same port if available
     return await this.startDetached(workspace.id, {
       port: workspace.port,
@@ -216,18 +220,18 @@ export class WorkspaceProcessManager {
   }
 
   async waitForReady(
-    workspaceId: string, 
-    timeout = 30000
+    workspaceId: string,
+    timeout = 30000,
   ): Promise<boolean> {
     const workspace = await this.registry.findById(workspaceId);
     if (!workspace || !workspace.port) return false;
-    
+
     const start = Date.now();
-    
+
     while (Date.now() - start < timeout) {
       try {
         const response = await fetch(
-          `http://localhost:${workspace.port}/api/health`
+          `http://localhost:${workspace.port}/api/health`,
         );
         if (response.ok) {
           await this.registry.updateStatus(workspace.id, "running");
@@ -236,10 +240,10 @@ export class WorkspaceProcessManager {
       } catch {
         // Not ready yet
       }
-      
-      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
-    
+
     return false;
   }
 }
@@ -427,24 +431,24 @@ In the `handleServe` function:
 ```typescript
 async function handleServe(args: string[], flags: any) {
   const workspaceIdOrPath = args[0] || Deno.cwd();
-  
+
   if (flags.detached || flags.d) {
     // Detached mode
     const processManager = new WorkspaceProcessManager();
-    
+
     try {
       setState({ status: "starting", message: "Starting workspace in background..." });
-      
+
       const pid = await processManager.startDetached(workspaceIdOrPath, {
         port: flags.port,
         logLevel: flags.logLevel,
       });
-      
+
       // Wait for workspace to be ready
       const workspace = await workspaceRegistry.findById(workspaceIdOrPath) ||
-                       await workspaceRegistry.findByName(workspaceIdOrPath) ||
-                       await workspaceRegistry.getCurrentWorkspace();
-      
+        await workspaceRegistry.findByName(workspaceIdOrPath) ||
+        await workspaceRegistry.getCurrentWorkspace();
+
       if (workspace && await processManager.waitForReady(workspace.id)) {
         setState({
           status: "success",
@@ -459,7 +463,7 @@ async function handleServe(args: string[], flags: any) {
       } else {
         throw new Error("Workspace failed to start");
       }
-      
+
       // Exit CLI
       setTimeout(() => Deno.exit(0), 100);
     } catch (error) {
@@ -471,7 +475,7 @@ async function handleServe(args: string[], flags: any) {
     if (!workspace) {
       throw new Error(`Workspace ${flags["workspace-id"]} not found`);
     }
-    
+
     // Run server normally but with detached configuration
     await runWorkspaceServer(workspace, flags);
   } else {
@@ -652,7 +656,7 @@ Location: `src/cli/commands/workspace/logs.tsx`
 
 ```typescript
 import { Box, Text } from "ink";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { WorkspaceLogReader } from "./log-reader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
@@ -669,25 +673,25 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
       try {
         const workspaceIdOrName = args[0];
         const registry = getWorkspaceRegistry();
-        
+
         let workspace;
         if (workspaceIdOrName) {
           workspace = await registry.findById(workspaceIdOrName) ||
-                     await registry.findByName(workspaceIdOrName);
+            await registry.findByName(workspaceIdOrName);
         } else {
           workspace = await registry.getCurrentWorkspace();
         }
-        
+
         if (!workspace) {
           throw new Error("Workspace not found");
         }
-        
+
         const reader = new WorkspaceLogReader(workspace.id);
         readerRef.current = reader;
-        
+
         if (flags.follow || flags.f) {
           setStatus("streaming");
-          
+
           cleanup = await reader.follow({
             tail: flags.tail || 100,
             onLog: (entry) => {
@@ -695,7 +699,7 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
                 timestamps: flags.timestamps !== false && !flags["no-timestamps"],
                 json: flags.json,
               });
-              setLogs(prev => [...prev.slice(-1000), formatted]); // Keep last 1000 lines
+              setLogs((prev) => [...prev.slice(-1000), formatted]); // Keep last 1000 lines
             },
             filters: {
               level: flags.level,
@@ -712,14 +716,14 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
               context: parseContextFilters(flags.context),
             },
           });
-          
-          const formatted = entries.map(entry => 
+
+          const formatted = entries.map((entry) =>
             formatLogEntry(entry, {
               timestamps: flags.timestamps !== false && !flags["no-timestamps"],
               json: flags.json,
             })
           );
-          
+
           setLogs(formatted);
           setStatus("done");
         }
@@ -749,12 +753,8 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
 
   return (
     <Box flexDirection="column">
-      {logs.map((log, i) => (
-        <Text key={i}>{log}</Text>
-      ))}
-      {status === "streaming" && logs.length === 0 && (
-        <Text color="gray">Waiting for logs...</Text>
-      )}
+      {logs.map((log, i) => <Text key={i}>{log}</Text>)}
+      {status === "streaming" && logs.length === 0 && <Text color="gray">Waiting for logs...</Text>}
     </Box>
   );
 }
@@ -806,10 +806,18 @@ function parseDuration(duration: string): Date {
   const now = new Date();
 
   switch (unit) {
-    case "s": now.setSeconds(now.getSeconds() - value); break;
-    case "m": now.setMinutes(now.getMinutes() - value); break;
-    case "h": now.setHours(now.getHours() - value); break;
-    case "d": now.setDate(now.getDate() - value); break;
+    case "s":
+      now.setSeconds(now.getSeconds() - value);
+      break;
+    case "m":
+      now.setMinutes(now.getMinutes() - value);
+      break;
+    case "h":
+      now.setHours(now.getHours() - value);
+      break;
+    case "d":
+      now.setDate(now.getDate() - value);
+      break;
   }
 
   return now;
@@ -844,43 +852,42 @@ import { getWorkspaceRegistry } from "../../src/core/workspace-registry.ts";
 Deno.test("Detached process lifecycle", async () => {
   const processManager = new WorkspaceProcessManager();
   const registry = getWorkspaceRegistry();
-  
+
   // Create test workspace
   const testDir = await Deno.makeTempDir();
   await Deno.writeTextFile(
     join(testDir, "workspace.yml"),
-    "name: test-detached\njobs: []"
+    "name: test-detached\njobs: []",
   );
-  
+
   // Register workspace
   const workspace = await registry.register(testDir, {
     name: "test-detached",
   });
-  
+
   try {
     // Start detached
     const pid = await processManager.startDetached(workspace.id);
     assertExists(pid);
-    
+
     // Verify running
     const running = await processManager.isProcessRunning(pid);
     assertEquals(running, true);
-    
+
     // Check registry status
     const updated = await registry.findById(workspace.id);
     assertEquals(updated?.status, "starting");
-    
+
     // Wait for ready
     const ready = await processManager.waitForReady(workspace.id, 10000);
     assertEquals(ready, true);
-    
+
     // Stop process
     await processManager.stop(workspace.id);
-    
+
     // Verify stopped
     const stopped = await registry.findById(workspace.id);
     assertEquals(stopped?.status, "stopped");
-    
   } finally {
     // Cleanup
     try {
@@ -946,4 +953,7 @@ Add comprehensive error handling throughout:
 
 ## Conclusion
 
-This implementation plan provides a clear path to add detached process support to Atlas. The modular approach allows for incremental development and testing, while the comprehensive error handling ensures reliability. With the registry foundation already in place, the remaining work focuses on process lifecycle management and user experience.
+This implementation plan provides a clear path to add detached process support to Atlas. The modular
+approach allows for incremental development and testing, while the comprehensive error handling
+ensures reliability. With the registry foundation already in place, the remaining work focuses on
+process lifecycle management and user experience.

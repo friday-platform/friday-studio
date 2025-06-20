@@ -92,17 +92,17 @@ export class AtlasLogger {
    */
   async initializeDetached(logFile: string): Promise<void> {
     this.isDetached = true;
-    
+
     // Ensure directory exists
     await ensureDir(join(logFile, ".."));
-    
+
     // Open the specific log file
     this.detachedFileHandle = await Deno.open(logFile, {
       create: true,
       write: true,
       append: true,
     });
-    
+
     // Write startup message
     const entry: LogEntry = {
       level: "info",
@@ -115,10 +115,10 @@ export class AtlasLogger {
         mode: "detached",
       },
     };
-    
+
     const line = JSON.stringify(entry) + "\n";
     await this.detachedFileHandle.write(new TextEncoder().encode(line));
-    
+
     this.isInitialized = true;
   }
 

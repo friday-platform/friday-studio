@@ -131,7 +131,7 @@ agents:
 // src/core/agents/mcp/mcp-manager.ts - IMPLEMENTED ✅
 import { experimental_createMCPClient as createMCPClient } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
-import { z } from "zod";
+import { z } from "zod/v4;
 import { logger } from "../../../utils/logger.ts";
 
 // AI SDK MCP Client type inference

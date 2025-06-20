@@ -4,7 +4,7 @@
  */
 import { experimental_createMCPClient as createMCPClient } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { logger } from "../../../utils/logger.ts";
 import { AtlasTelemetry } from "../../../utils/telemetry.ts";
 import type { Span } from "@opentelemetry/api";

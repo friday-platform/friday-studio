@@ -4,7 +4,7 @@
 
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
-import { z } from "zod";
+import { z } from "zod/v4";
 import {
   MCPAuthConfigSchema,
   MCPToolsConfigSchema,

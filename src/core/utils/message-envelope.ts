@@ -5,7 +5,7 @@
  * Provides standardized structure for observability, correlation, and reliability.
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // ===== ZOD SCHEMAS =====
 
@@ -57,7 +57,7 @@ export const AtlasMessageEnvelopeSchema = z.object({
   broadcastChannel: z.string().optional(),
   traceId: z.string().optional(),
   spanId: z.string().optional(),
-  traceHeaders: z.record(z.string()).optional(),
+  traceHeaders: z.record(z.string(), z.unknown()).optional(),
   payload: z.unknown(),
   error: MessageErrorSchema.optional(),
   priority: MessagePrioritySchema,
@@ -222,7 +222,7 @@ export const AgentExecutePayloadSchema = z.object({
   }).passthrough(),
   task: z.string(),
   input: z.unknown(),
-  environment: z.record(z.unknown()),
+  environment: z.record(z.string(), z.unknown()),
 });
 
 export const AgentExecutionCompletePayloadSchema = z.object({
@@ -240,7 +240,7 @@ export const AgentLogPayloadSchema = z.object({
   level: z.enum(["debug", "info", "warn", "error"]),
   message: z.string(),
   timestamp: z.number(),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const AgentProgressPayloadSchema = z.object({

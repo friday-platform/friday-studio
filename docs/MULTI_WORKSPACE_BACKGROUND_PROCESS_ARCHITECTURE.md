@@ -183,7 +183,7 @@ if (Deno.env.get("ATLAS_DETACHED") === "true") {
   const shutdown = async (signal: string) => {
     logger.info(`Received ${signal}, shutting down gracefully...`);
     await registry.updateStatus(workspaceId, "stopping");
-    
+
     try {
       await server.shutdown();
       await registry.updateStatus(workspaceId, "stopped", {
@@ -194,7 +194,7 @@ if (Deno.env.get("ATLAS_DETACHED") === "true") {
       await registry.updateStatus(workspaceId, "crashed");
       throw error;
     }
-    
+
     Deno.exit(0);
   };
 
@@ -218,13 +218,13 @@ if (flags.detached || flags.d) {
     port: flags.port,
     logLevel: flags.logLevel,
   });
-  
+
   console.log(`Workspace '${workspace.name}' started in background`);
   console.log(`  ID: ${workspace.id}`);
   console.log(`  PID: ${pid}`);
   console.log(`  Port: ${workspace.port}`);
   console.log(`  Logs: atlas logs ${workspace.id}`);
-  
+
   process.exit(0);
 } else {
   // Existing attached mode
@@ -262,17 +262,20 @@ Add health endpoint to workspace server:
 server.addRoute("/api/health", async (req) => {
   const runtime = server.getRuntime();
   const stats = await runtime.getStats();
-  
-  return new Response(JSON.stringify({
-    status: "healthy",
-    workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
-    uptime: Date.now() - server.startTime,
-    sessions: stats.activeSessions,
-    memory: Deno.memoryUsage(),
-    timestamp: new Date().toISOString(),
-  }), {
-    headers: { "Content-Type": "application/json" },
-  });
+
+  return new Response(
+    JSON.stringify({
+      status: "healthy",
+      workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
+      uptime: Date.now() - server.startTime,
+      sessions: stats.activeSessions,
+      memory: Deno.memoryUsage(),
+      timestamp: new Date().toISOString(),
+    }),
+    {
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 });
 ```
 
@@ -318,14 +321,14 @@ Enhance AtlasLogger for explicit file output:
 // In logger.ts
 class AtlasLogger {
   private fileHandle?: Deno.FsFile;
-  
+
   async initializeDetached(logFile: string): Promise<void> {
     this.fileHandle = await Deno.open(logFile, {
       create: true,
       write: true,
       append: true,
     });
-    
+
     // Redirect all log output to file
     this.addTransport({
       write: async (entry: LogEntry) => {
@@ -346,7 +349,7 @@ Implement the workspace logs functionality (partially done in registry plan):
 export function WorkspaceLogsCommand({ args, flags }: Props) {
   const [workspaceId] = args;
   const reader = new WorkspaceLogReader(workspaceId);
-  
+
   if (flags.follow) {
     // Stream logs in real-time
     await reader.follow({
@@ -356,7 +359,7 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
   } else {
     // Show recent logs
     const entries = await reader.read({ tail: flags.tail || 100 });
-    entries.forEach(entry => console.log(formatLogEntry(entry)));
+    entries.forEach((entry) => console.log(formatLogEntry(entry)));
   }
 }
 ```
@@ -407,7 +410,7 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
 
 2. **Integration**
    - [ ] systemd service file generation (Linux)
-   - [ ] launchd plist generation (macOS)  
+   - [ ] launchd plist generation (macOS)
    - [ ] Windows service support
    - [ ] Docker container support
 
@@ -442,4 +445,5 @@ export function WorkspaceLogsCommand({ args, flags }: Props) {
 4. Add health endpoint to workspace server
 5. Finish log streaming implementation
 
-The foundation is solid with the registry implementation complete. The remaining work focuses on the actual process management and lifecycle operations needed for true background process support.
+The foundation is solid with the registry implementation complete. The remaining work focuses on the
+actual process management and lifecycle operations needed for true background process support.

@@ -3,6 +3,7 @@
 ## 🎯 Priority 1: Minimal Viable Detachment (Day 1-2)
 
 ### Step 1: Create WorkspaceProcessManager (2-3 hours)
+
 ```bash
 # Create the file
 touch src/core/workspace-process-manager.ts
@@ -14,12 +15,14 @@ touch src/core/workspace-process-manager.ts
 ```
 
 **Key Implementation Details:**
+
 - Use `child.unref()` for true detachment
 - Set stdio to "null" for all streams
 - Pass workspace ID via environment variables
 - Update registry immediately after spawn
 
 ### Step 2: Add Detached Mode to Logger (1 hour)
+
 ```typescript
 // In src/utils/logger.ts
 async initializeDetached(logFile: string): Promise<void> {
@@ -30,6 +33,7 @@ async initializeDetached(logFile: string): Promise<void> {
 ```
 
 ### Step 3: Update Workspace Server (1-2 hours)
+
 ```typescript
 // In src/core/workspace-server.ts
 // Add at start of start() method:
@@ -41,6 +45,7 @@ if (Deno.env.get("ATLAS_DETACHED") === "true") {
 ```
 
 ### Step 4: Add CLI Flag (30 min)
+
 ```typescript
 // In src/cli.tsx
 detached: {
@@ -51,6 +56,7 @@ detached: {
 ```
 
 ### Step 5: Update Workspace Serve Command (1-2 hours)
+
 ```typescript
 // In src/cli/commands/workspace.tsx
 if (flags.detached) {
@@ -63,25 +69,31 @@ if (flags.detached) {
 ## 🚀 Priority 2: Core Management Commands (Day 2-3)
 
 ### Step 6: Implement Stop Command (1 hour)
+
 ```bash
 atlas workspace stop <id|name>
 ```
+
 - Send SIGTERM for graceful shutdown
 - Update registry status
 - Handle missing/crashed processes
 
 ### Step 7: Implement Status Command (1 hour)
+
 ```bash
 atlas workspace status [id|name]
 ```
+
 - Show detailed workspace info
 - Include health check if running
 - Format output nicely
 
 ### Step 8: Basic Log Viewing (2 hours)
+
 ```bash
 atlas logs <id|name> [--tail 50]
 ```
+
 - Read from workspace log files
 - Basic tail functionality
 - JSON parsing for structured output
@@ -89,6 +101,7 @@ atlas logs <id|name> [--tail 50]
 ## 📋 Priority 3: Robustness (Day 3-4)
 
 ### Step 9: Health Endpoint (1 hour)
+
 ```typescript
 // Add to workspace-server.ts
 server.addRoute("/api/health", async (req) => {
@@ -101,11 +114,13 @@ server.addRoute("/api/health", async (req) => {
 ```
 
 ### Step 10: Process Verification (1 hour)
+
 - Add `waitForReady()` after starting
 - Verify process didn't crash immediately
 - Update status to "running" only after health check
 
 ### Step 11: Error Handling (2 hours)
+
 - Port conflicts → auto-retry
 - Missing workspace → clear error
 - Permission issues → helpful message
@@ -114,6 +129,7 @@ server.addRoute("/api/health", async (req) => {
 ## 🧪 Priority 4: Testing (Day 4-5)
 
 ### Step 12: Manual Testing Checklist
+
 ```bash
 # Start detached
 atlas workspace serve -d
@@ -133,6 +149,7 @@ atlas workspace list
 ```
 
 ### Step 13: Integration Tests
+
 - Test full lifecycle
 - Test error conditions
 - Test concurrent workspaces
@@ -160,6 +177,7 @@ deno task atlas workspace stop fervent_einstein
 ## Code Snippets to Get Started
 
 ### 1. Minimal startDetached Implementation
+
 ```typescript
 async startDetached(workspaceId: string): Promise<number> {
   const workspace = await this.registry.findById(workspaceId);
@@ -193,6 +211,7 @@ async startDetached(workspaceId: string): Promise<number> {
 ```
 
 ### 2. Minimal Signal Handler
+
 ```typescript
 if (Deno.env.get("ATLAS_DETACHED") === "true") {
   Deno.addSignalListener("SIGTERM", async () => {
@@ -205,6 +224,7 @@ if (Deno.env.get("ATLAS_DETACHED") === "true") {
 ```
 
 ### 3. Minimal Health Check
+
 ```typescript
 async checkHealth(port: number): Promise<boolean> {
   try {
@@ -243,4 +263,5 @@ async checkHealth(port: number): Promise<boolean> {
 4. Should crashed workspaces auto-restart?
 5. How to handle workspace updates while running?
 
-Start with Step 1 and work through sequentially. The first 5 steps will give you a working detached mode in a few hours!
+Start with Step 1 and work through sequentially. The first 5 steps will give you a working detached
+mode in a few hours!

@@ -143,7 +143,7 @@ provides both compile-time and runtime type safety.
 API approach:
 
 ```typescript
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Use Zod schemas for type-safe input validation
 const InputSchema = z.object({
@@ -160,7 +160,9 @@ server.registerTool(
   },
   ({ location, days = 3 }) => {
     // Input is automatically validated and typed
-    return {/* response */};
+    return {
+      /* response */
+    };
   },
 );
 ```
@@ -287,12 +289,14 @@ context systems.
 The system implements a three-tier supervision hierarchy with LLM intelligence at each level:
 
 1. **WorkspaceRuntime**: Orchestration layer that:
+
    - Manages the overall workspace lifecycle
    - Spawns and monitors WorkspaceSupervisor
    - Handles signal routing and session tracking
    - Integrates with WorkerManager for process isolation
 
 2. **WorkspaceSupervisor**: Root LLM-enabled agent with XState FSM that:
+
    - Holds global workspace context/memory/messaging
    - **Analyzes signals using LLM** to understand intent and goals
    - **Creates filtered session contexts** based on signal analysis
@@ -301,6 +305,7 @@ The system implements a three-tier supervision hierarchy with LLM intelligence a
    - Coordinates multiple concurrent sessions
 
 3. **SessionSupervisor**: LLM-enabled session coordinator that:
+
    - Receives filtered context from WorkspaceSupervisor
    - **Creates dynamic execution plans** using LLM reasoning
    - Determines agent selection, order, and data flow
@@ -393,19 +398,19 @@ interface IWorkspace extends IAtlasScope {
 
 ```typescript
 interface ITempestMemoryManager {
-  private store: ITempestMemoryStorageAdapter
-  remember(): void
-  recall(): any
-  summarize(): string
-  size(): number
-  forget(): void
+  store: ITempestMemoryStorageAdapter;
+  remember(): void;
+  recall(): any;
+  summarize(): string;
+  size(): number;
+  forget(): void;
 }
 
 interface ITempestContextManager {
-  add(ITempestContext): void
-  remove(ITempestContext): void
-  search(string): ITempestContext[]
-  size(): number
+  add(ITempestContext): void;
+  remove(ITempestContext): void;
+  search(string): ITempestContext[];
+  size(): number;
 }
 ```
 
@@ -507,21 +512,25 @@ interface ITempestContextManager {
 ### ✅ Completed Architecture Changes
 
 1. **Hierarchical Supervisor Architecture**
+
    - WorkspaceRuntime spawns WorkspaceSupervisor with full visibility
    - WorkspaceSupervisor spawns SessionSupervisors with filtered context
    - SessionSupervisors coordinate agents with task-specific instructions
 
 2. **LLM-Enabled Decision Making**
+
    - WorkspaceSupervisor: `analyzeSignal()` and `createSessionContext()` methods
    - SessionSupervisor: `createExecutionPlan()` and `evaluateProgress()` methods
    - Using Vercel AI SDK with Anthropic Claude (`claude-3-5-sonnet-20241022`)
 
 3. **Enhanced Worker Architecture**
+
    - All workers extend BaseWorker with consistent XState FSM
    - BroadcastChannel and MessagePort communication implemented
    - Worker files renamed for clarity (workspace-supervisor-worker.ts, session-supervisor-worker.ts)
 
 4. **Dynamic Signal-to-Agent Mapping**
+
    - WorkspaceSupervisor analyzes signals to determine agent selection
    - Execution plans created dynamically based on signal content
    - Support for sequential, parallel, and conditional execution strategies
@@ -534,16 +543,19 @@ interface ITempestContextManager {
 ### 🚧 Remaining Work
 
 1. **Memory Persistence**
+
    - Currently using in-memory storage
    - Need persistent storage adapters
    - Implement memory filtering for sessions
 
 2. **Cost & Performance Optimization**
+
    - LLM calls add ~10-15s latency
    - Implement caching for repeated patterns
    - Add cost tracking for LLM usage
 
 3. **Error Recovery & Resilience**
+
    - Add retry logic for LLM failures
    - Implement graceful degradation
    - Better timeout handling for long-running operations
@@ -637,12 +649,14 @@ interface ITempestContextManager {
 ### Implementation Priority Order
 
 1. **🔥 IMMEDIATE (Current Sprint)**
+
    - Create `atlas.yml` configuration structure
    - Redesign workspace.yml to use job references
    - Implement basic job specification schema
    - Add multi-agent type support in SessionSupervisor
 
 2. **📋 NEXT (Following Sprint)**
+
    - Build natural language job creation interface
    - Implement entity recognition and structured generation
    - Add job validation and preview capabilities

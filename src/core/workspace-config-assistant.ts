@@ -9,7 +9,7 @@ import { NaturalLanguageConditionParser } from "./conditions/natural-language-pa
 import { logger } from "../utils/logger.ts";
 import { generateObject } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Schema for job definition from natural language
 const JobDefinitionSchema = z.object({
