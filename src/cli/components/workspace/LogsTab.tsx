@@ -18,7 +18,7 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
   // Get terminal height to calculate visible rows
   const terminalHeight = stdout?.rows || 24;
-  const availableRows = terminalHeight - 6; // Account for padding and headers
+  const availableRows = terminalHeight - 4; // Account for footer and padding
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -95,12 +95,6 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
   return (
     <Box flexDirection="column" height="100%" width="100%">
-      {/* Header */}
-      <Box paddingX={2} paddingY={1} flexShrink={0}>
-        <Text bold>Workspace Logs: {config.workspace.name}</Text>
-        <Text dimColor>({logs.length} entries)</Text>
-      </Box>
-
       {/* Scrollable logs container */}
       <Box flexGrow={1} overflow="hidden">
         <Box
