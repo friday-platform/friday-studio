@@ -3,7 +3,7 @@ import { Box, useInput, useStdout } from "ink";
 import process from "node:process";
 
 interface ResponsiveContainerProps {
-  children: JSX.Element | JSX.Element[];
+  children: React.ReactNode;
   minHeight: number;
   onAnyKey?: () => void;
 }
@@ -51,6 +51,7 @@ export const ResponsiveContainer = ({
       alignItems="center"
       width={terminalWidth}
       height={terminalHeight}
+      padding={1}
     >
       {children}
     </Box>

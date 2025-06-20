@@ -5,6 +5,7 @@ import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
+import { SidebarWrapper } from "../SidebarWrapper.tsx";
 
 interface SignalsTabProps {
   config: NewWorkspaceConfig;
@@ -395,30 +396,19 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
   return (
     <Box flexDirection="row" height="100%" width="100%">
       {/* Sidebar */}
-      <Box
-        marginLeft={1}
-        borderStyle={isSidebarActive ? "round" : undefined}
-        borderColor="gray"
-        borderDimColor
-        padding={isSidebarActive ? 0 : 1}
-        width="25%"
-      >
-        <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
-          <Box flexDirection="column">
-            {signals.map(([signalName], index) => (
-              <Box key={signalName}>
-                <Text
-                  bold={index === selectedSignalIndex}
-                  dimColor={index !== selectedSignalIndex}
-                >
-                  {index === selectedSignalIndex ? "❯ " : "  "}
-                  {signalName}
-                </Text>
-              </Box>
-            ))}
+      <SidebarWrapper isActive={isSidebarActive}>
+        {signals.map(([signalName], index) => (
+          <Box key={signalName}>
+            <Text
+              bold={index === selectedSignalIndex}
+              dimColor={index !== selectedSignalIndex}
+            >
+              {index === selectedSignalIndex ? "❯ " : "  "}
+              {signalName}
+            </Text>
           </Box>
-        </Box>
-      </Box>
+        ))}
+      </SidebarWrapper>
 
       {/* Main Area */}
       <Box

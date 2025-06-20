@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
-import { Box, Spacer, Text, useApp, useInput } from "ink";
+import { Box, Spacer, Text, useApp, useInput, useStdout } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import { NewWorkspaceConfig } from "../../core/config-loader.ts";
-import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
+import {
+  AgentsTab,
+  DetailsTab,
+  LogsTab,
+  SessionsTab,
+  SignalsTab,
+} from "./workspace/index.ts";
 
 interface WorkspaceViewProps {
   workspaceSlug: string;
@@ -19,6 +25,8 @@ export const WorkspaceView = ({
   const [loading, setLoading] = useState(true);
   const [lastEscapeTime, setLastEscapeTime] = useState<number | null>(null);
   const tabLabels = ["Details", "Agents", "Sessions", "Logs", "Signals"];
+  const { stdout } = useStdout();
+  const terminalWidth = stdout.columns;
 
   const { activeTab, previousTab, nextTab } = useTabNavigation({
     tabCount: tabLabels.length,
@@ -29,7 +37,9 @@ export const WorkspaceView = ({
     const loadConfig = async () => {
       setLoading(true);
       const registry = getWorkspaceRegistry();
-      const workspaceConfig = await registry.getWorkspaceConfigBySlug(workspaceSlug);
+      const workspaceConfig = await registry.getWorkspaceConfigBySlug(
+        workspaceSlug
+      );
       setConfig(workspaceConfig);
       setLoading(false);
     };
@@ -99,27 +109,22 @@ export const WorkspaceView = ({
       <Box
         flexDirection="row"
         alignItems="center"
-        paddingX={2}
-        paddingY={1}
-        borderStyle="single"
-        borderTop={false}
-        borderLeft={false}
-        borderRight={false}
-        borderColor="gray"
-        borderDimColor
         flexShrink={0}
+        paddingBottom={1}
       >
-        <Text bold>{config.workspace.name}</Text>
+        <Text bold>&nbsp;{config.workspace.name}</Text>
+
         <Spacer />
-        <Box flexDirection="row" gap={3}>
+
+        <Box flexDirection="row">
           {tabLabels.map((label, index) => (
             <Box key={index}>
               <Text
+                backgroundColor={index === activeTab ? "" : "#353637"}
                 bold={index === activeTab}
-                color={index === activeTab ? "blue" : ""}
-                dimColor={index !== activeTab}
+                color="#ffffff"
               >
-                {label}
+                &nbsp;{label}&nbsp;
               </Text>
             </Box>
           ))}
@@ -128,7 +133,9 @@ export const WorkspaceView = ({
 
       {/* Tab Content */}
       <Box flexDirection="column" flexGrow={1} width="100%">
-        {activeTab === 0 && <DetailsTab config={config} workspaceSlug={workspaceSlug} />}
+        {activeTab === 0 && (
+          <DetailsTab config={config} workspaceSlug={workspaceSlug} />
+        )}
 
         {activeTab === 1 && <AgentsTab config={config} />}
 

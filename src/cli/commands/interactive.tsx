@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ResponsiveContainer } from "../components/ResponsiveContainer.tsx";
 import { SplashScreen } from "../components/SplashScreen.tsx";
 import { WorkspaceView } from "../components/WorkspaceView.tsx";
-import { Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 
 type ViewMode = "splash" | "workspace";
 
@@ -22,7 +22,8 @@ export default function InteractiveCommand() {
 
   const handleWorkspaceSelect = (workspace: Workspace) => {
     // Extract slug from path or use a default based on workspace name
-    const slug = workspace.slug ||
+    const slug =
+      workspace.slug ||
       workspace.path.split("/").pop() ||
       workspace.name.toLowerCase().replace(/\s+/g, "-");
     setSelectedWorkspaceSlug(slug);

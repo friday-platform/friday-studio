@@ -3,6 +3,7 @@ import { Box, Text, useInput } from "ink";
 import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { StatusBadge } from "../StatusBadge.tsx";
+import { SidebarWrapper } from "../SidebarWrapper.tsx";
 
 interface SessionsTabProps {
   config: NewWorkspaceConfig;
@@ -179,40 +180,29 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
   return (
     <Box flexDirection="row" height="100%" width="100%">
       {/* Sidebar */}
-      <Box
-        marginLeft={1}
-        borderStyle={isSidebarActive ? "round" : undefined}
-        borderColor="gray"
-        borderDimColor
-        padding={isSidebarActive ? 0 : 1}
-        width="30%"
-      >
-        <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
-          <Box flexDirection="column">
-            {sessions.map((session, index) => (
-              <Box key={session.id} marginBottom={1}>
-                <Box flexDirection="column">
-                  <Box>
-                    <Text
-                      bold={index === selectedSessionIndex}
-                      dimColor={index !== selectedSessionIndex}
-                    >
-                      {index === selectedSessionIndex ? "❯ " : "  "}
-                      {session.id.substring(0, 12)}...
-                    </Text>
-                  </Box>
-                  <Box marginLeft={2}>
-                    <Text dimColor>{session.signal || "manual"}</Text>
-                  </Box>
-                  <Box marginLeft={2}>
-                    <StatusBadge status={session.status} />
-                  </Box>
-                </Box>
+      <SidebarWrapper isActive={isSidebarActive}>
+        {sessions.map((session, index) => (
+          <Box key={session.id} marginBottom={1}>
+            <Box flexDirection="column">
+              <Box>
+                <Text
+                  bold={index === selectedSessionIndex}
+                  dimColor={index !== selectedSessionIndex}
+                >
+                  {index === selectedSessionIndex ? "❯ " : "  "}
+                  {session.id.substring(0, 12)}...
+                </Text>
               </Box>
-            ))}
+              <Box marginLeft={2}>
+                <Text dimColor>{session.signal || "manual"}</Text>
+              </Box>
+              <Box marginLeft={2}>
+                <StatusBadge status={session.status} />
+              </Box>
+            </Box>
           </Box>
-        </Box>
-      </Box>
+        ))}
+      </SidebarWrapper>
 
       {/* Main Area */}
       <Box
