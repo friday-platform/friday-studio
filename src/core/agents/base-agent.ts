@@ -281,11 +281,27 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     level: "debug" | "info" | "warn" | "error" = "info",
     context?: any,
   ): void {
-    this.logger[level](message, {
+    const logContext = {
       agentName: this.name(),
       agentId: this.id,
       ...context,
-    });
+    };
+
+    // Use static method calls instead of dynamic property access for worker compatibility
+    switch (level) {
+      case "debug":
+        this.logger.debug(message, logContext);
+        break;
+      case "info":
+        this.logger.info(message, logContext);
+        break;
+      case "warn":
+        this.logger.warn(message, logContext);
+        break;
+      case "error":
+        this.logger.error(message, logContext);
+        break;
+    }
 
     // Remember significant log events
     if (level === "error" || message.includes("error") || message.includes("failed")) {
