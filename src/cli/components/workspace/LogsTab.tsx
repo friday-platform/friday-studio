@@ -1,114 +1,86 @@
 import { useEffect, useState } from "react";
-import { Box, Text } from "ink";
+import { Box, Text, useStdout } from "ink";
 import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
-import { LogViewer } from "../LogViewer.tsx";
-import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
-
-interface Session {
-  id: string;
-  workspaceName: string;
-  signal?: string;
-  status: string;
-  startedAt: string;
-  completedAt?: string;
-}
+import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { formatLog, WorkspaceLogReader } from "../../commands/workspace/logs/log-reader.ts";
+import type { LogEntry } from "../../../utils/logger.ts";
 
 interface LogsTabProps {
   config: NewWorkspaceConfig;
 }
 
-function formatSessionDisplay(session: Session): string {
-  const signal = session.signal || "manual";
-  const status = session.status;
-  const shortId = session.id.substring(0, 8);
-  return `${shortId} | ${signal} | ${status}`;
-}
-
-function formatDuration(start: string, end?: string): string {
-  if (!start) return "N/A";
-  const startTime = new Date(start).getTime();
-  const endTime = end ? new Date(end).getTime() : Date.now();
-  const durationMs = endTime - startTime;
-
-  const seconds = Math.floor(durationMs / 1000);
-  const minutes = Math.floor(seconds / 60);
-  const hours = Math.floor(minutes / 60);
-
-  if (hours > 0) {
-    return `${hours}h ${minutes % 60}m`;
-  }
-  if (minutes > 0) {
-    return `${minutes}m ${seconds % 60}s`;
-  }
-  return `${seconds}s`;
-}
-
 export const LogsTab = ({ config }: LogsTabProps) => {
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  const [scrollOffset, setScrollOffset] = useState(0);
+  const { stdout } = useStdout();
 
-  // Use active focus to switch between session list and logs viewer
-  const { activeArea } = useActiveFocus({
-    areas: ["sessions", "logs"],
-    initialArea: 0,
-  });
+  // Get terminal height to calculate visible rows
+  const terminalHeight = stdout?.rows || 24;
+  const availableRows = terminalHeight - 6; // Account for padding and headers
 
-  const isSessionsActive = activeArea === 0;
-  const isLogsActive = activeArea === 1;
-
-  // Use tab navigation for session selection when sessions area is active
-  const { activeTab: selectedSessionIndex } = useTabNavigation({
-    tabCount: sessions.length,
-    initialTab: 0,
-    useArrowKeys: true,
-    isActive: isSessionsActive,
-  });
-
-  const selectedSession = sessions.length > 0 ? sessions[selectedSessionIndex] : null;
-
-  // Fetch sessions for this workspace
   useEffect(() => {
-    const fetchSessions = async () => {
+    const fetchLogs = async () => {
       try {
         setLoading(true);
-        const response = await fetch("http://localhost:8080/sessions");
+        const registry = getWorkspaceRegistry();
 
-        if (!response.ok) {
-          throw new Error(`Failed to fetch sessions: ${response.statusText}`);
+        // Find workspace by name
+        const workspace = await registry.findByName(config.workspace.name);
+        if (!workspace) {
+          throw new Error(`Workspace '${config.workspace.name}' not found`);
         }
 
-        const result = await response.json();
-        const allSessions = result.sessions || [];
+        const logReader = new WorkspaceLogReader(workspace.id);
 
-        // Filter sessions for this workspace
-        const workspaceSessions = allSessions.filter((session: Session) =>
-          session.workspaceName === config.workspace.name
-        );
+        // Read logs without following (static view for TUI)
+        const entries = await logReader.read({
+          tail: 200, // Get more logs for scrolling
+          filters: {
+            // No filters for now - show all logs
+          },
+        });
 
-        setSessions(workspaceSessions);
-      } catch (err) {
-        if (err instanceof Error && err.message.includes("Connection refused")) {
-          setSessions([]);
+        if (entries.length === 0) {
+          setLogs(["No logs found for this workspace"]);
         } else {
-          setError(err instanceof Error ? err.message : String(err));
+          const formattedLogs = entries.map((log: LogEntry) =>
+            formatLog(log, {
+              timestamps: true,
+              json: false,
+            })
+          );
+          setLogs(formattedLogs);
         }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
       } finally {
         setLoading(false);
       }
     };
 
-    fetchSessions();
+    fetchLogs();
 
-    // Refresh sessions every 5 seconds
-    const interval = setInterval(fetchSessions, 5000);
+    // Refresh logs every 10 seconds
+    const interval = setInterval(fetchLogs, 10000);
     return () => clearInterval(interval);
   }, [config.workspace.name]);
+
+  // Handle scrolling when logs exceed available height
+  useEffect(() => {
+    if (logs.length > availableRows) {
+      // Auto-scroll to bottom when new logs arrive
+      setScrollOffset(-(logs.length - availableRows));
+    } else {
+      setScrollOffset(0);
+    }
+  }, [logs.length, availableRows]);
 
   if (loading) {
     return (
       <Box flexDirection="column" padding={2}>
-        <Text>Loading sessions...</Text>
+        <Text>Loading workspace logs...</Text>
       </Box>
     );
   }
@@ -121,92 +93,38 @@ export const LogsTab = ({ config }: LogsTabProps) => {
     );
   }
 
-  if (sessions.length === 0) {
-    return (
-      <Box flexDirection="column" padding={2}>
-        <Text color="gray">No sessions found for workspace: {config.workspace.name}</Text>
-        <Text dimColor>Start a session by triggering a signal or running atlas commands</Text>
-      </Box>
-    );
-  }
-
   return (
-    <Box flexDirection="row" height="100%" width="100%">
-      {/* Session List Sidebar */}
-      <Box
-        marginLeft={1}
-        borderStyle={isSessionsActive ? "round" : undefined}
-        borderColor={isSessionsActive ? "gray" : undefined}
-        borderDimColor
-        width="30%"
-      >
-        <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
-          <Box marginBottom={1}>
-            <Text bold>Sessions ({sessions.length})</Text>
-          </Box>
+    <Box flexDirection="column" height="100%" width="100%">
+      {/* Header */}
+      <Box paddingX={2} paddingY={1} flexShrink={0}>
+        <Text bold>Workspace Logs: {config.workspace.name}</Text>
+        <Text dimColor>({logs.length} entries)</Text>
+      </Box>
 
-          <Box flexDirection="column">
-            {sessions.map((session, index) => (
-              <Box key={session.id}>
-                <Text
-                  bold={index === selectedSessionIndex}
-                  dimColor={index !== selectedSessionIndex}
-                >
-                  {index === selectedSessionIndex ? "❯ " : "  "}
-                  {formatSessionDisplay(session)}
-                </Text>
-              </Box>
-            ))}
-          </Box>
-
-          {selectedSession && (
-            <Box marginTop={1} flexDirection="column">
-              <Text dimColor>Duration:</Text>
-              <Text>{formatDuration(selectedSession.startedAt, selectedSession.completedAt)}</Text>
+      {/* Scrollable logs container */}
+      <Box flexGrow={1} overflow="hidden">
+        <Box
+          flexDirection="column"
+          flexGrow={1}
+          marginTop={scrollOffset}
+        >
+          {logs.map((log, index) => (
+            <Box key={index} flexShrink={0}>
+              <Text>{log}</Text>
             </Box>
-          )}
+          ))}
         </Box>
       </Box>
 
-      {/* Logs Viewer */}
-      <Box
-        flexDirection="column"
-        flexGrow={1}
-        paddingX={2}
-        paddingY={1}
-        overflow="hidden"
-        borderStyle={isLogsActive ? "round" : undefined}
-        borderColor={isLogsActive ? "gray" : undefined}
-        borderDimColor
-      >
-        {selectedSession
-          ? (
-            <Box flexDirection="column" height="100%">
-              <Box marginBottom={1}>
-                <Text bold>Session Logs: {selectedSession.id.substring(0, 12)}...</Text>
-                <Text dimColor>
-                  | {selectedSession.signal || "manual"} | {selectedSession.status}
-                </Text>
-              </Box>
-
-              <LogViewer
-                sessionId={selectedSession.id}
-                follow={true}
-                tail={100}
-              />
-            </Box>
-          )
-          : (
-            <Box
-              flexDirection="column"
-              alignItems="center"
-              justifyContent="center"
-              height="100%"
-            >
-              <Text color="gray">Select a session to view logs</Text>
-            </Box>
-          )}
-      </Box>
+      {/* Footer with scroll info */}
+      {logs.length > availableRows && (
+        <Box paddingX={2} paddingY={1} flexShrink={0}>
+          <Text dimColor>
+            Showing {Math.min(logs.length, availableRows)} of {logs.length} log entries
+            {scrollOffset < 0 && ` (scrolled to bottom)`}
+          </Text>
+        </Box>
+      )}
     </Box>
   );
 };
