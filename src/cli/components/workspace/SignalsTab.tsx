@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { z } from "zod";
 import { WorkspaceConfig } from "../../utils/workspace-loader.ts";
-import { Select } from "@inkjs/ui";
+import { useTabNavigation, useActiveFocus } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
 
@@ -41,7 +41,7 @@ const validateSignalSchema = (schema: unknown): SignalSchema | null => {
 const parseProperty = (
   name: string,
   prop: Record<string, unknown>,
-  required: string[] = [],
+  required: string[] = []
 ): PropertyInfo => {
   const isRequired = required.includes(name);
 
@@ -52,12 +52,12 @@ const parseProperty = (
       description: prop.description as string | undefined,
       required: isRequired,
       properties: Object.entries(
-        prop.properties as Record<string, unknown>,
+        prop.properties as Record<string, unknown>
       ).map(([propName, propDef]) =>
         parseProperty(
           propName,
           propDef as Record<string, unknown>,
-          (prop.required as string[]) || [],
+          (prop.required as string[]) || []
         )
       ),
     };
@@ -336,32 +336,35 @@ const SpecializedProviderDetails = ({
 };
 
 export const SignalsTab = ({ config }: SignalsTabProps) => {
-  const [selectedSignal, setSelectedSignal] = useState<string | null>(null);
-  const [selectedIndex, setSelectedIndex] = useState(0);
-  const [mainAreaFocused, setMainAreaFocused] = useState(false);
   const [scrollOffset, setScrollOffset] = useState(0);
 
   const signals = config.signals ? Object.entries(config.signals) : [];
-  const selectedSignalData = selectedSignal && config.signals
-    ? config.signals[selectedSignal]
-    : null;
 
-  // Auto-select first signal on mount
-  useEffect(() => {
-    if (signals.length > 0 && !selectedSignal) {
-      setSelectedSignal(signals[0][0]);
-      setSelectedIndex(0);
-    }
-  }, [signals, selectedSignal]);
+  // Use active focus to switch between sidebar and main area
+  const { activeArea } = useActiveFocus({
+    areas: ["sidebar", "main"],
+    initialArea: 0,
+  });
 
-  // Handle keyboard navigation for scrolling
+  const isSidebarActive = activeArea === 0;
+  const isMainActive = activeArea === 1;
+
+  // Use tab navigation for signals with arrow key support when sidebar is active
+  const { activeTab: selectedSignalIndex } = useTabNavigation({
+    tabCount: signals.length,
+    initialTab: 0,
+    useArrowKeys: true,
+    isActive: isSidebarActive,
+  });
+
+  const selectedSignal =
+    signals.length > 0 ? signals[selectedSignalIndex][0] : null;
+  const selectedSignalData =
+    selectedSignal && config.signals ? config.signals[selectedSignal] : null;
+
+  // Handle keyboard navigation for scrolling when main area is active
   useInput((inputChar, key) => {
-    if (key.tab) {
-      setMainAreaFocused(!mainAreaFocused);
-      return;
-    }
-
-    if (mainAreaFocused) {
+    if (isMainActive) {
       const scrollAmount = key.shift ? 10 : 1; // 10x faster scrolling with Shift
 
       if (key.upArrow) {
@@ -383,181 +386,185 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
   return (
     <Box flexDirection="row" height="100%" width="100%">
       {/* Sidebar */}
-      <Box flexDirection="column" width="25%" paddingX={1} paddingY={1}>
-        <Select
-          visibleOptionCount={signals.length}
-          options={signals.map((signal: [string, Record<string, unknown>]) => ({
-            label: signal[0],
-            value: signal[0],
-          }))}
-          onChange={(selected) => {
-            // Handle workspace selection
-            setSelectedSignal(selected);
-          }}
-          isDisabled={mainAreaFocused}
-        />
-        {mainAreaFocused && (
-          <Box marginTop={1}>
-            <Text dimColor>
-              Main area focused - use ↑↓ to scroll, Shift+↑↓ for fast scroll, Tab to unfocus
-            </Text>
+      <Box
+        marginLeft={1}
+        borderStyle={isSidebarActive ? "round" : undefined}
+        borderColor="gray"
+        borderDimColor
+        padding={isSidebarActive ? 0 : 1}
+        width="25%"
+      >
+        <Box flexDirection="column" paddingX={1} paddingY={1} flexShrink={0}>
+          <Box flexDirection="column">
+            {signals.map(([signalName], index) => (
+              <Box key={signalName}>
+                <Text
+                  bold={index === selectedSignalIndex}
+                  dimColor={index !== selectedSignalIndex}
+                >
+                  {index === selectedSignalIndex ? "❯ " : "  "}
+                  {signalName}
+                </Text>
+              </Box>
+            ))}
           </Box>
-        )}
+        </Box>
       </Box>
 
       {/* Main Area */}
       <Box
         flexDirection="column"
         flexGrow={1}
-        paddingX={2}
-        paddingY={1}
+        paddingX={isMainActive ? 2 : 3}
+        paddingY={isMainActive ? 1 : 2}
         overflow="hidden"
+        borderStyle={isMainActive ? "round" : undefined}
+        borderColor="gray"
+        borderDimColor
       >
-        {selectedSignalData
-          ? (
-            <Box
-              flexDirection="column"
-              marginTop={scrollOffset}
-              flexGrow={1}
-              flexShrink={0}
-            >
-              <Box>
-                <Text bold>{selectedSignal}</Text>
-              </Box>
-              {(selectedSignalData as any).description && (
-                <Box marginBottom={1}>
-                  <Text dimColor>{(selectedSignalData as any).description}</Text>
-                </Box>
-              )}
+        {selectedSignalData ? (
+          <Box
+            flexDirection="column"
+            marginTop={scrollOffset}
+            flexGrow={1}
+            flexShrink={0}
+          >
+            <Box>
+              <Text bold>{selectedSignal}</Text>
+            </Box>
+            {(selectedSignalData as any).description && (
               <Box marginBottom={1}>
-                <Text dimColor>Provider:</Text>
-                <Text>{(selectedSignalData as any).provider || "Unknown"}</Text>
+                <Text dimColor>{(selectedSignalData as any).description}</Text>
               </Box>
+            )}
+            <Box marginBottom={1}>
+              <Text dimColor>Provider:</Text>
+              <Text>{(selectedSignalData as any).provider || "Unknown"}</Text>
+            </Box>
 
-              {/* Provider-Specific Details */}
-              {(() => {
-                const provider = (selectedSignalData as any).provider as string;
+            {/* Provider-Specific Details */}
+            {(() => {
+              const provider = (selectedSignalData as any).provider as string;
 
-                if (provider === "http" || provider === "http-webhook") {
-                  return (
-                    <>
-                      <HttpSignalDetails
-                        signal={selectedSignalData as Record<string, unknown>}
-                      />
-                      <HttpUsageExamples
-                        signal={selectedSignalData as Record<string, unknown>}
-                      />
-                    </>
-                  );
-                } else if (provider === "cli") {
-                  return (
-                    <>
-                      <CliSignalDetails
-                        signal={selectedSignalData as Record<string, unknown>}
-                      />
-                      <CliUsageExamples
-                        signal={selectedSignalData as Record<string, unknown>}
-                      />
-                    </>
-                  );
-                } else if (
-                  provider &&
-                  [
-                    "k8s-events",
-                    "http-webhook",
-                    "codebase-watcher",
-                    "cron",
-                  ].includes(provider)
-                ) {
-                  return (
-                    <SpecializedProviderDetails
+              if (provider === "http" || provider === "http-webhook") {
+                return (
+                  <>
+                    <HttpSignalDetails
                       signal={selectedSignalData as Record<string, unknown>}
-                      provider={provider}
                     />
-                  );
-                }
-                return null;
-              })()}
+                    <HttpUsageExamples
+                      signal={selectedSignalData as Record<string, unknown>}
+                    />
+                  </>
+                );
+              } else if (provider === "cli") {
+                return (
+                  <>
+                    <CliSignalDetails
+                      signal={selectedSignalData as Record<string, unknown>}
+                    />
+                    <CliUsageExamples
+                      signal={selectedSignalData as Record<string, unknown>}
+                    />
+                  </>
+                );
+              } else if (
+                provider &&
+                [
+                  "k8s-events",
+                  "http-webhook",
+                  "codebase-watcher",
+                  "cron",
+                ].includes(provider)
+              ) {
+                return (
+                  <SpecializedProviderDetails
+                    signal={selectedSignalData as Record<string, unknown>}
+                    provider={provider}
+                  />
+                );
+              }
+              return null;
+            })()}
 
-              {/* Schema Documentation */}
-              {(selectedSignalData as any).schema &&
-                (() => {
-                  const validatedSchema = validateSignalSchema(
-                    (selectedSignalData as any).schema,
+            {/* Schema Documentation */}
+            {(selectedSignalData as any).schema &&
+              (() => {
+                const validatedSchema = validateSignalSchema(
+                  (selectedSignalData as any).schema
+                );
+                if (validatedSchema) {
+                  const properties = Object.entries(
+                    validatedSchema.properties
+                  ).map(([name, prop]) =>
+                    parseProperty(
+                      name,
+                      prop as Record<string, unknown>,
+                      validatedSchema.required || []
+                    )
                   );
-                  if (validatedSchema) {
-                    const properties = Object.entries(
-                      validatedSchema.properties,
-                    ).map(([name, prop]) =>
-                      parseProperty(
-                        name,
-                        prop as Record<string, unknown>,
-                        validatedSchema.required || [],
-                      )
-                    );
 
-                    return (
-                      <Box flexDirection="column" marginTop={2}>
-                        <Box marginBottom={1}>
-                          <Text bold color="green">
-                            Schema Documentation:
-                          </Text>
-                        </Box>
-                        {properties.map((property) => (
-                          <PropertyDoc key={property.name} property={property} />
-                        ))}
-                        {validatedSchema.required &&
-                          validatedSchema.required.length > 0 && (
+                  return (
+                    <Box flexDirection="column" marginTop={2}>
+                      <Box marginBottom={1}>
+                        <Text bold color="green">
+                          Schema Documentation:
+                        </Text>
+                      </Box>
+                      {properties.map((property) => (
+                        <PropertyDoc key={property.name} property={property} />
+                      ))}
+                      {validatedSchema.required &&
+                        validatedSchema.required.length > 0 && (
                           <Box marginTop={2}>
                             <Text color="red">* Required fields</Text>
                           </Box>
                         )}
-                      </Box>
-                    );
-                  } else {
-                    return (
-                      <Box marginTop={2}>
-                        <Text color="red">
-                          Invalid schema format - must be type "object"
-                        </Text>
-                      </Box>
-                    );
-                  }
-                })()}
+                    </Box>
+                  );
+                } else {
+                  return (
+                    <Box marginTop={2}>
+                      <Text color="red">
+                        Invalid schema format - must be type "object"
+                      </Text>
+                    </Box>
+                  );
+                }
+              })()}
 
-              {/* Raw Configuration (fallback for unknown providers) */}
-              {(selectedSignalData as any).config &&
-                ![
-                  "http",
-                  "http-webhook",
-                  "cli",
-                  "k8s-events",
-                  "codebase-watcher",
-                  "cron",
-                ].includes((selectedSignalData as any).provider as string) && (
+            {/* Raw Configuration (fallback for unknown providers) */}
+            {(selectedSignalData as any).config &&
+              ![
+                "http",
+                "http-webhook",
+                "cli",
+                "k8s-events",
+                "codebase-watcher",
+                "cron",
+              ].includes((selectedSignalData as any).provider as string) && (
                 <Box marginTop={2}>
                   <Text bold>Raw Configuration:</Text>
                   <Text>
                     {JSON.stringify(
                       (selectedSignalData as any).config,
                       null,
-                      2,
+                      2
                     )}
                   </Text>
                 </Box>
               )}
-            </Box>
-          )
-          : (
-            <Box
-              flexDirection="column"
-              alignItems="center"
-              justifyContent="center"
-              height="100%"
-            >
-              <Text color="gray">Select a signal to view details</Text>
-            </Box>
-          )}
+          </Box>
+        ) : (
+          <Box
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            height="100%"
+          >
+            <Text color="gray">Select a signal to view details</Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );
