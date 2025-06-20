@@ -23,10 +23,12 @@ const cli = meow(
     help                                      Show this help
     
   Full Commands
-    workspace init [name]                     Initialize a new workspace
+    workspace init <name> [path]              Initialize a new workspace
     workspace serve                           Start workspace server
     workspace list                            List all workspaces
-    workspace status                          Show workspace status
+    workspace status [id|name]                Show workspace status
+    workspace remove <id|name>                Remove workspace from registry
+    workspace cleanup                         Clean up stale registry entries
     
     session list                              List all active sessions
     session get <id>                          Show session details
@@ -95,7 +97,7 @@ const cli = meow(
         shortFlag: "d",
       },
     },
-  }
+  },
 );
 
 // Parse command with shorthand support
@@ -202,5 +204,5 @@ render(
     subcommand,
     args,
     flags: cli.flags,
-  })
+  }),
 );

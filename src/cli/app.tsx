@@ -1,15 +1,15 @@
-import React from "react";
-import { Box, Newline, Text } from "ink";
-import { WorkspaceCommand } from "./commands/workspace.tsx";
+import { Text } from "ink";
+import { useEffect, useState } from "react";
+import { AgentCommand } from "./commands/agent.tsx";
+import DefineCommand from "./commands/define.tsx";
+import HelpCommand from "./commands/help.tsx";
+import InteractiveCommand from "./commands/interactive.tsx";
+import LibraryCommand from "./commands/library.tsx";
+import { LogsCommand } from "./commands/logs.tsx";
 import { SessionCommand } from "./commands/session.tsx";
 import { SignalCommand } from "./commands/signal.tsx";
-import { AgentCommand } from "./commands/agent.tsx";
-import { LogsCommand } from "./commands/logs.tsx";
-import LibraryCommand from "./commands/library.tsx";
-// import TUICommand from "./commands/tui.tsx";
-import HelpCommand from "./commands/help.tsx";
-import DefineCommand from "./commands/define.tsx";
-import InteractiveCommand from "./commands/interactive.tsx";
+import { WorkspaceCommand } from "./commands/workspace.tsx";
+import { getWorkspaceRegistry } from "../core/workspace-registry.ts";
 
 interface AppProps {
   command: string;
@@ -19,6 +19,27 @@ interface AppProps {
 }
 
 export default function App({ command, subcommand, args, flags }: AppProps) {
+  const [migrationComplete, setMigrationComplete] = useState(false);
+
+  useEffect(() => {
+    // Initialize workspace registry on every command execution
+    (async () => {
+      try {
+        const registry = getWorkspaceRegistry();
+        await registry.initialize();
+        setMigrationComplete(true);
+      } catch (error) {
+        console.error("Failed to initialize workspace registry:", error);
+        setMigrationComplete(true); // Continue anyway
+      }
+    })();
+  }, []);
+
+  // Wait for migration to complete
+  if (!migrationComplete) {
+    return <Text>Initializing workspace registry...</Text>;
+  }
+
   // Handle no command - show interactive mode
   if (!command) {
     return <InteractiveCommand />;
@@ -32,19 +53,13 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   // Route to appropriate command
   switch (command) {
     case "workspace":
-      return (
-        <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <WorkspaceCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "session":
-      return (
-        <SessionCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <SessionCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "signal":
-      return (
-        <SignalCommand subcommand={subcommand} args={args} flags={flags} />
-      );
+      return <SignalCommand subcommand={subcommand} args={args} flags={flags} />;
 
     case "agent":
       return <AgentCommand subcommand={subcommand} args={args} flags={flags} />;
@@ -61,9 +76,7 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
       return <LogsCommand sessionId={subcommand || args[0]} flags={flags} />;
 
     case "define":
-      return (
-        <DefineCommand args={args} subcommand={subcommand} flags={flags} />
-      );
+      return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
 
     default:
       return (

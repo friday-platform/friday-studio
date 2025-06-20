@@ -1,0 +1,42 @@
+version: "1.0"
+
+workspace:
+  id: "{{WORKSPACE_ID}}"
+  name: "{{WORKSPACE_NAME}}"
+  description: "An Atlas AI agent workspace"
+
+# Signal definitions
+signals:
+  ping:
+    description: "Send a ping message to the echo agent"
+    provider: "http"
+    path: "/ping"
+    method: "POST"
+
+# Job definitions
+jobs:
+  echo:
+    name: "echo"
+    description: |
+      Simple echo workflow that receives a ping and responds with an echo.
+      The echo agent will process the incoming message and return a response.
+    triggers:
+      - signal: "ping"
+        condition: {
+          "and": [
+            { "var": "message" },
+            { ">": [{ "length": { "var": "message" } }, 0] }
+          ]
+        }
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "echo-agent"
+          input_source: "signal"
+
+# Agent definitions
+agents:
+  echo-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Echoes back messages with a friendly response"
