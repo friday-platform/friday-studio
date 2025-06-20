@@ -790,6 +790,7 @@ const workspaceRuntimeMachine = setup({
           ...(context.config?.supervisor || {}),
           // Pass only serializable parts of the merged configuration
           workspaceSignals: mergedConfig.workspace.signals,
+          workspaceMcpServers: mergedConfig.workspace.mcp_servers,
           jobs: mergedConfig.jobs,
           // Add memory configuration for proper supervisor initialization
           memoryConfig: atlasConfig.memory,

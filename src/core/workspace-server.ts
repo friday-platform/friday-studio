@@ -197,58 +197,128 @@ export class WorkspaceServer {
     const workspace = (this.runtime as any).workspace;
     if (!workspace || !workspace.signals) return;
 
-    // Register custom HTTP paths for signals with path configuration
+    // Register HTTP signals using builtin providers
     Object.entries(workspace.signals).forEach(([signalId, signal]: [string, any]) => {
-      if (
-        (signal.provider === "http" && signal.path) ||
-        (signal.provider === "http-webhook" && signal.endpoint)
-      ) {
-        const method = (signal.method || "POST").toLowerCase();
-        const path = signal.path || signal.endpoint;
-
-        logger.info(
-          `Registering HTTP signal route: ${method.toUpperCase()} ${path} -> ${signalId}`,
-        );
-
-        // Register the dynamic route
-        (this.app as any)[method](path, async (c: any) => {
-          const payload = method === "get" ? c.req.query() : await c.req.json();
-
-          // Create root span for HTTP request
-          return await AtlasTelemetry.withServerSpan(
-            `${method.toUpperCase()} ${path}`,
-            async (span) => {
-              AtlasTelemetry.addComponentAttributes(span, "signal", {
-                id: signalId,
-                type: signal.provider || "http",
-              });
-
-              try {
-                // Process signal through runtime
-                const session = await this.runtime.processSignal(signal, payload);
-
-                return c.json({
-                  message: "Signal processed",
-                  sessionId: session.id,
-                  status: session.status,
-                });
-              } catch (error) {
-                return c.json({
-                  error: `Failed to process signal: ${
-                    error instanceof Error ? error.message : String(error)
-                  }`,
-                }, 500);
-              }
-            },
-            {
-              "http.method": method.toUpperCase(),
-              "http.url": path,
-              "signal.id": signalId,
-              "payload.size": JSON.stringify(payload).length,
-            },
-          );
-        });
+      if (signal.provider === "http" && signal.path) {
+        this.registerHttpSignalRoute(signalId, signal);
+      } else if (signal.provider === "http-webhook" && signal.endpoint) {
+        this.registerHttpWebhookRoute(signalId, signal);
       }
+    });
+  }
+
+  private async registerHttpSignalRoute(signalId: string, signal: any) {
+    try {
+      // Import and create HTTP signal provider
+      const { HTTPSignalProvider } = await import("./providers/builtin/http-signal.ts");
+      const provider = new HTTPSignalProvider({
+        id: signalId,
+        description: signal.description || `HTTP signal for ${signalId}`,
+        provider: "http",
+        path: signal.path,
+        method: signal.method || "POST"
+      });
+
+      const route = provider.getRoutePattern();
+      const method = route.method.toLowerCase();
+
+      logger.info(
+        `Registering HTTP signal route: ${route.method} ${route.path} -> ${signalId}`,
+        { signalId, path: route.path, method: route.method }
+      );
+
+      // Register the dynamic route
+      (this.app as any)[method](route.path, async (c: any) => {
+        // Create root span for HTTP request
+        return await AtlasTelemetry.withServerSpan(
+          `${route.method} ${route.path}`,
+          async (span) => {
+            AtlasTelemetry.addComponentAttributes(span, "signal", {
+              id: signalId,
+              type: "http",
+            });
+
+            try {
+              // Process request through HTTP signal provider
+              const httpSignal = await provider.processRequest(c.req.raw);
+              
+              // Process signal through runtime
+              const session = await this.runtime.processSignal(signal, httpSignal.data);
+
+              return c.json({
+                message: "Signal processed",
+                sessionId: session.id,
+                status: session.status,
+              });
+            } catch (error) {
+              return c.json({
+                error: `Failed to process signal: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              }, 500);
+            }
+          },
+          {
+            "http.method": route.method,
+            "http.url": route.path,
+            "signal.id": signalId,
+          },
+        );
+      });
+    } catch (error) {
+      logger.error(`Failed to register HTTP signal route for ${signalId}`, {
+        signalId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  private registerHttpWebhookRoute(signalId: string, signal: any) {
+    // Keep existing webhook handling for now - this is already a proper provider
+    const method = (signal.method || "POST").toLowerCase();
+    const path = signal.endpoint;
+
+    logger.info(
+      `Registering HTTP webhook route: ${method.toUpperCase()} ${path} -> ${signalId}`,
+    );
+
+    // Register the dynamic route
+    (this.app as any)[method](path, async (c: any) => {
+      const payload = method === "get" ? c.req.query() : await c.req.json();
+
+      // Create root span for HTTP request
+      return await AtlasTelemetry.withServerSpan(
+        `${method.toUpperCase()} ${path}`,
+        async (span) => {
+          AtlasTelemetry.addComponentAttributes(span, "signal", {
+            id: signalId,
+            type: "http-webhook",
+          });
+
+          try {
+            // Process signal through runtime
+            const session = await this.runtime.processSignal(signal, payload);
+
+            return c.json({
+              message: "Signal processed",
+              sessionId: session.id,
+              status: session.status,
+            });
+          } catch (error) {
+            return c.json({
+              error: `Failed to process signal: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }, 500);
+          }
+        },
+        {
+          "http.method": method.toUpperCase(),
+          "http.url": path,
+          "signal.id": signalId,
+          "payload.size": JSON.stringify(payload).length,
+        },
+      );
     });
   }
 

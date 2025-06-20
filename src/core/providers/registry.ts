@@ -64,6 +64,21 @@ export class ProviderRegistry implements IProviderRegistry {
     const registry = ProviderRegistry.getInstance();
 
     // Register built-in signal providers
+    registry.registerFactory("http", async (config) => {
+      const { HTTPSignalProvider } = await import("./builtin/http-signal.ts");
+      
+      // Transform ProviderConfig to HTTPSignalConfig
+      const httpConfig = {
+        id: config.id,
+        description: config.config?.description || `HTTP signal for ${config.id}`,
+        provider: "http" as const,
+        path: config.config?.path,
+        method: config.config?.method
+      };
+      
+      return new HTTPSignalProvider(httpConfig);
+    });
+
     registry.registerFactory("http-webhook", async (config) => {
       const { HttpWebhookProvider } = await import("./builtin/http-webhook.ts");
       return new HttpWebhookProvider(config);

@@ -1,3 +1,4 @@
+import { assign, createActor, createMachine, fromPromise } from "xstate";
 import type {
   IAtlasScope,
   IWorkspace,
@@ -7,16 +8,16 @@ import type {
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
-import { Session, SessionIntent, SessionPlan } from "./session.ts";
-import { assign, createActor, createMachine, fromPromise } from "xstate";
+import { MCPServerRegistry } from "./agents/mcp/mcp-server-registry.ts";
+import { type JobMatch, JobTriggerMatcher } from "./job-trigger-matcher.ts";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
+import { Session, SessionIntent, SessionPlan } from "./session.ts";
 import {
   type AgentInfo,
   type EnhancedTask,
   type SignalProcessingConfig,
   SignalProcessor,
 } from "./signal-processing/index.ts";
-import { type JobMatch, type JobSpec, JobTriggerMatcher } from "./job-trigger-matcher.ts";
 
 // XState types for WorkspaceSupervisor FSM
 interface SupervisorContext {
@@ -448,6 +449,9 @@ You have access to the full workspace context and configuration. Create structur
   async initialize(): Promise<void> {
     this.log("Initializing WorkspaceSupervisor with advanced planning...");
 
+    // Initialize MCP Server Registry with workspace configuration
+    await this.initializeMCPRegistry();
+
     // Enable advanced planning if not already enabled
     if (!this.planningEngine) {
       this.enableAdvancedPlanning();
@@ -460,6 +464,49 @@ You have access to the full workspace context and configuration. Create structur
     await this.precomputeSignalAnalysisPatterns();
 
     this.log("WorkspaceSupervisor initialization complete");
+  }
+
+  /**
+   * Initialize MCP Server Registry with platform and workspace configurations
+   */
+  private async initializeMCPRegistry(): Promise<void> {
+    try {
+      this.log("Initializing MCP Server Registry...");
+
+      // Use MCP server configuration passed from workspace runtime
+      const workspaceMcpServers = this.config?.workspaceMcpServers;
+
+      if (workspaceMcpServers) {
+        this.log(`Using passed MCP server configuration`, {
+          mcpServerCount: Object.keys(workspaceMcpServers).length,
+          mcpServerIds: Object.keys(workspaceMcpServers),
+        });
+
+        // Create a minimal workspace config object for the registry
+        const workspaceConfig = { mcp_servers: workspaceMcpServers };
+
+        // Initialize the MCP Server Registry with workspace configuration only
+        // (atlas config not needed since it wasn't being used anyway)
+        MCPServerRegistry.initialize(undefined, workspaceConfig);
+      } else {
+        this.log("No MCP server configuration provided to supervisor worker");
+        MCPServerRegistry.initialize(undefined, undefined);
+      }
+
+      const registeredServers = MCPServerRegistry.listServers();
+      this.log(
+        `MCP Server Registry initialized with ${registeredServers.length} servers: ${
+          registeredServers.join(", ")
+        }`,
+      );
+    } catch (error) {
+      this.log(
+        `Failed to initialize MCP Server Registry: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      // Don't throw - MCP is optional and workspace should continue without it
+    }
   }
 
   getWorkspaceAgents(): IWorkspaceAgent[] | undefined {
