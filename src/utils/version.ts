@@ -7,13 +7,17 @@
 const COMPILED_VERSION = "__ATLAS_VERSION__";
 const COMPILED_GIT_SHA = "__ATLAS_GIT_SHA__";
 
+// Keep original placeholders for comparison (these won't be replaced)
+const VERSION_PLACEHOLDER = "__ATLAS_VERSION__";
+const SHA_PLACEHOLDER = "__ATLAS_GIT_SHA__";
+
 export function getAtlasVersion(): string {
   // Check if running as compiled binary (version was replaced during build)
-  if (COMPILED_VERSION !== "__ATLAS_VERSION__") {
+  if (COMPILED_VERSION !== VERSION_PLACEHOLDER) {
     // This is a compiled binary
     if (COMPILED_VERSION.startsWith("nightly-")) {
       // Nightly build - show nightly-<git-sha>
-      const gitSha = COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : "unknown";
+      const gitSha = COMPILED_GIT_SHA !== SHA_PLACEHOLDER ? COMPILED_GIT_SHA : "unknown";
       return `nightly-${gitSha}`;
     } else {
       // Regular release - show release version
@@ -46,7 +50,7 @@ export function getAtlasVersion(): string {
 
 export function getVersionInfo() {
   const version = getAtlasVersion();
-  const isCompiled = COMPILED_VERSION !== "__ATLAS_VERSION__";
+  const isCompiled = COMPILED_VERSION !== VERSION_PLACEHOLDER;
   const isNightly = version.startsWith("nightly-");
   const isDev = version.startsWith("dev");
   
@@ -57,6 +61,6 @@ export function getVersionInfo() {
     isDev,
     gitSha: isDev ? version.replace("dev-", "") : 
            isNightly ? version.replace("nightly-", "") : 
-           COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : undefined,
+           COMPILED_GIT_SHA !== SHA_PLACEHOLDER ? COMPILED_GIT_SHA : undefined,
   };
 }
