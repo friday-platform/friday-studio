@@ -33,7 +33,7 @@ jobs:
             target: x86_64-apple-darwin
             platform: darwin
             arch: amd64
-          - os: macos-latest
+          - os: macos-14-xlarge
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
@@ -81,24 +81,45 @@ jobs:
             binary_name="atlas"
           fi
           
-          # Compile with Deno
-          deno compile \
-            --no-check \
-            --allow-read \
-            --allow-write \
-            --allow-net \
-            --allow-env \
-            --allow-run \
-            --allow-sys \
-            --allow-ffi \
-            --unstable-broadcast-channel \
-            --unstable-worker-options \
-            --unstable-otel \
-            --include=src \
-            --include=examples \
-            --target ${{ matrix.target }} \
-            --output "./dist/${binary_name}" \
-            ./src/cli.tsx
+          # Native compilation for ARM64 macOS (using macos-14-xlarge), cross-compilation for others
+          if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "Native compilation for ARM64 macOS (no --target flag)"
+            deno compile \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --include=src \
+              --include=examples \
+              --output "./dist/${binary_name}" \
+              ./src/cli.tsx
+          else
+            echo "Cross-compiling for target: ${{ matrix.target }}"
+            deno compile \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --include=src \
+              --include=examples \
+              --target ${{ matrix.target }} \
+              --output "./dist/${binary_name}" \
+              ./src/cli.tsx
+          fi
         shell: bash
 
       - name: Sign macOS binary (if certificates available)
