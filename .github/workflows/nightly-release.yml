@@ -108,11 +108,13 @@ jobs:
           echo "Building version: $VERSION"
           echo "Git SHA: $GIT_SHA"
           
-          # Replace version placeholders in the version utility in-place
-          sed -i "s/__ATLAS_VERSION__/$VERSION/g" src/utils/version.ts
-          sed -i "s/__ATLAS_GIT_SHA__/$GIT_SHA/g" src/utils/version.ts
+          # Replace version placeholders in the version utility in-place (using different separator to avoid path issues)
+          sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
+          sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
           
           echo "Version information embedded in source"
+          echo "Verification:"
+          head -10 src/utils/version.ts
 
       - name: Build binary
         run: |
