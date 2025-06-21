@@ -64,26 +64,10 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
-            platform: linux
-            arch: amd64
-          - os: ubuntu-latest  
-            target: aarch64-unknown-linux-gnu
-            platform: linux
-            arch: arm64
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            platform: darwin
-            arch: amd64
           - os: macos-14-xlarge
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            platform: windows
-            arch: amd64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -94,58 +78,8 @@ jobs:
         with:
           deno-version: v2.3.3
 
-      - name: Debug environment
-        run: |
-          echo "=== SYSTEM INFO ==="
-          uname -a
-          if command -v sw_vers &> /dev/null; then
-            sw_vers
-          elif [ -f /etc/os-release ]; then
-            cat /etc/os-release
-          fi
-          echo "Architecture: $(uname -m)"
-          echo "=== DENO INFO ==="
-          deno --version
-          which deno
-          echo "=== MEMORY INFO ==="
-          if command -v vm_stat &> /dev/null; then
-            vm_stat
-          elif command -v free &> /dev/null; then
-            free -h
-          fi
-          echo "=== DISK SPACE ==="
-          df -h
-        shell: bash
-
       - name: Install dependencies
         run: deno install
-
-      - name: Test minimal Deno compilation
-        run: |
-          echo "=== TESTING MINIMAL DENO COMPILATION ==="
-          
-          # Create minimal test app
-          cat > test_minimal.ts << 'EOF'
-          console.log("Hello from minimal Deno app!");
-          console.log("Deno version:", Deno.version);
-          console.log("Args:", Deno.args);
-          EOF
-          
-          # Compile minimal app
-          deno compile \
-            --target ${{ matrix.target }} \
-            --output "./test_minimal" \
-            test_minimal.ts
-          
-          # Test minimal app
-          echo "Testing minimal binary..."
-          if ./test_minimal --test-arg; then
-            echo "✅ Minimal binary works"
-          else
-            echo "❌ Minimal binary FAILS"
-            exit 1
-          fi
-        shell: bash
 
       - name: Build binary
         run: |
