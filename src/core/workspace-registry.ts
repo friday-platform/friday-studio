@@ -519,7 +519,7 @@ export class WorkspaceRegistryManager {
       return config;
     } catch (error) {
       if (error instanceof z.ZodError) {
-        console.error(`Invalid workspace configuration for ${workspaceSlug}:`, error.errors);
+        console.error(`Invalid workspace configuration for ${workspaceSlug}:`, error.issues);
       } else {
         console.error(`Failed to load workspace config for ${workspaceSlug}:`, error);
       }

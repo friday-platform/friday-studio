@@ -62,7 +62,7 @@ export class WorkspaceServer {
         workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID") || (this.runtime as any).workspace?.id,
         workspaceName: Deno.env.get("ATLAS_WORKSPACE_NAME"),
         uptime: Date.now() - this.startTime,
-        sessions: status.activeSessions || 0,
+        sessions: status.sessions || 0,
         memory: Deno.memoryUsage(),
         timestamp: new Date().toISOString(),
         version: {

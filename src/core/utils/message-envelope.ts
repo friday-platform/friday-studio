@@ -385,7 +385,11 @@ export function createMessage<T>(
   // Validate the created envelope
   const validation = validateEnvelope(envelope);
   if (!validation.success) {
-    throw new Error(`Invalid envelope created: ${validation.error.message}`);
+    throw new Error(
+      `Invalid envelope created: ${
+        (validation as { success: false; error: z.ZodError }).error.message
+      }`,
+    );
   }
 
   return envelope;
@@ -449,7 +453,7 @@ export function createResponseMessage<T>(
   return createMessage(responseType, payload, source, {
     ...options,
     correlationId: originalMessage.correlationId,
-    traceHeaders: originalMessage.traceHeaders,
+    traceHeaders: originalMessage.traceHeaders as Record<string, string>,
     destination: {
       workerId: originalMessage.source.workerId,
       workerType: originalMessage.source.workerType,
@@ -488,7 +492,11 @@ export function createAgentExecuteMessage(
   // Validate payload
   const validation = validateAgentExecutePayload(payload);
   if (!validation.success) {
-    throw new Error(`Invalid agent execute payload: ${validation.error.message}`);
+    throw new Error(
+      `Invalid agent execute payload: ${
+        (validation as { success: false; error: z.ZodError }).error.message
+      }`,
+    );
   }
 
   return createAgentMessage(
@@ -511,7 +519,11 @@ export function createAgentExecutionCompleteMessage(
   // Validate payload
   const validation = validateAgentExecutionCompletePayload(payload);
   if (!validation.success) {
-    throw new Error(`Invalid agent execution complete payload: ${validation.error.message}`);
+    throw new Error(
+      `Invalid agent execution complete payload: ${
+        (validation as { success: false; error: z.ZodError }).error.message
+      }`,
+    );
   }
 
   return createResponseMessage(
@@ -607,7 +619,11 @@ export function deserializeEnvelope<T = unknown>(data: string): {
     const validation = validateEnvelope<T>(parsed);
 
     if (!validation.success) {
-      return { error: `Invalid envelope: ${validation.error.message}` };
+      return {
+        error: `Invalid envelope: ${
+          (validation as { success: false; error: z.ZodError }).error.message
+        }`,
+      };
     }
 
     return { envelope: validation.data };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
-import { Select, TextInput } from "@inkjs/ui";
+// import { Select, TextInput } from "@inkjs/ui"; // Temporarily disabled for build compatibility
 import { getWorkspaceStatus, WorkspaceList, WorkspaceStatus } from "../commands/workspace.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import DefineCommand from "../commands/define.tsx";
