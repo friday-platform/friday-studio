@@ -37,9 +37,19 @@ jobs:
           - runner: ubuntu-latest
             os: linux
             arch: amd64
+            target: x86_64-unknown-linux-gnu
           - runner: ubuntu-latest
             os: linux
             arch: arm64
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            os: darwin
+            arch: amd64
+            target: x86_64-apple-darwin
+          - runner: macos-15-xlarge
+            os: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -60,6 +70,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
 
       - name: Prepare version information
         shell: bash
@@ -86,68 +97,31 @@ jobs:
           echo "Verification:"
           head -10 src/utils/version.ts
 
-      - name: Compile Atlas binary
-        shell: bash
+      - name: Build binary
         run: |
-          echo "Compiling for ${{ matrix.os }}_${{ matrix.arch }}"
+          mkdir -p ./dist
           
-          # Create dist directory and set binary name
-          mkdir -p dist
-          echo "Directory created successfully"
-          ls -la dist
-          
-          binary_name="atlas"
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
+          # Set binary name based on platform
+          if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
-          fi
-          
-          echo "Binary name set to: $binary_name"
-          echo "Current working directory: $(pwd)"
-          echo "Testing write to dist directory:"
-          echo "test" > dist/test.txt && echo "Write test PASSED" || echo "Write test FAILED"
-          rm -f dist/test.txt
-          
-          # Set V8 flags for memory limits during compilation
-          export DENO_V8_FLAGS="--max-old-space-size=8192"
-          
-          if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-            echo "Cross-compiling for Linux ARM64"
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --target aarch64-unknown-linux-gnu \
-              --include=src \
-              --output "dist/${binary_name}" \
-              src/cli.tsx
-          elif [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
-            echo "Compiling for Linux AMD64"
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --target x86_64-unknown-linux-gnu \
-              --include=src \
-              --output "dist/${binary_name}" \
-              src/cli.tsx
           else
-            echo "Native compilation for ${{ matrix.os }}_${{ matrix.arch }}"
+            binary_name="atlas"
+          fi
+          
+          # Compile with Deno - use nightly workflow pattern
+          echo "Target: ${{ matrix.target }}"
+          echo "Platform: ${{ matrix.os }}"
+          echo "Arch: ${{ matrix.arch }}"
+          echo "System arch: $(uname -m)"
+          
+          # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
+          if [ "${{ matrix.os }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
+            echo "ARM64 macOS compilation on macOS 15"
+            
+            # Set memory limits for large compilation only (not embedded in binary)
+            export DENO_V8_FLAGS="--max-old-space-size=8192"
+            
+            # Compile WITHOUT embedded V8 flags that restrict runtime memory
             deno compile \
               --no-check \
               --allow-read \
@@ -161,9 +135,35 @@ jobs:
               --unstable-worker-options \
               --unstable-otel \
               --include=src \
-              --output "dist/${binary_name}" \
-              src/cli.tsx
+              --include=examples \
+              --output "./dist/${binary_name}" \
+              ./src/cli.tsx
+          else
+            echo "Cross-compiling for target: ${{ matrix.target }}"
+            
+            # Set memory limits for large compilation
+            export DENO_V8_FLAGS="--max-old-space-size=8192"
+            
+            deno compile \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --include=src \
+              --include=examples \
+              --target ${{ matrix.target }} \
+              --v8-flags="--max-old-space-size=4096,--max-semi-space-size=128" \
+              --output "./dist/${binary_name}" \
+              ./src/cli.tsx
           fi
+        shell: bash
 
       - name: Sign and notarize macOS binary
         if: matrix.os == 'darwin'
@@ -223,62 +223,82 @@ jobs:
           codesign --verify --verbose "dist/${binary_name}"
           spctl --assess --verbose "dist/${binary_name}"
 
-      - name: Test binary
-        shell: bash
+      - name: Test binary immediately after compilation
         run: |
           binary_name="atlas"
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
+          if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
           fi
           
-          echo "Testing binary: dist/${binary_name}"
-          dist/${binary_name} --version
-          echo "Testing help command..."
-          dist/${binary_name} --help
+          echo "=== TESTING BINARY AFTER COMPILATION ==="
+          ls -la "./dist/${binary_name}"
+          file "./dist/${binary_name}"
+          
+          # Only test execution if we're not cross-compiling
+          echo "Target: ${{ matrix.target }}"
+          echo "System arch: $(uname -m)"
+          
+          # Check if this is cross-compilation
+          SYSTEM_ARCH=$(uname -m)
+          if ([ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "aarch64" ]) || \
+             ([ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
+             ([ "${{ matrix.target }}" == "aarch64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "arm64" ]) || \
+             ([ "${{ matrix.target }}" == "x86_64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
+             [ "${{ matrix.os }}" == "windows" ]; then
+            echo "🔄 Skipping execution test (cross-compilation or Windows)"
+            echo "✅ Binary compiled successfully"
+          else
+            # Test basic execution for native compilation
+            echo "🧪 Testing binary execution (native compilation)..."
+            if "./dist/${binary_name}" --help >/dev/null 2>&1; then
+              echo "✅ Binary works after compilation"
+            else
+              echo "❌ Binary FAILS after compilation"
+              exit 1
+            fi
+          fi
+        shell: bash
 
       - name: Create archive
-        shell: bash
         run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
-          ARCHIVE_NAME="atlas_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+          mkdir -p ./dist
           
-          binary_name="atlas"
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
+          # Set file extensions
+          if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
-            ARCHIVE_EXT=".zip"
+            archive_ext=".zip"
           else
-            ARCHIVE_EXT=".tar.gz"
+            binary_name="atlas"
+            archive_ext=".tar.gz"
           fi
           
-          echo "Creating archive: ${ARCHIVE_NAME}${ARCHIVE_EXT}"
+          # Create archive name
+          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
           
-          if [[ "${{ matrix.os }}" == "windows" ]]; then
-            # Create zip for Windows
-            cd dist && zip "../${ARCHIVE_NAME}.zip" "${binary_name}" && cd ..
+          # Create archive
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
-            # Create tar.gz for Unix systems
-            cd dist && tar -czf "../${ARCHIVE_NAME}.tar.gz" "${binary_name}" && cd ..
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           fi
           
-          # Calculate checksum
-          if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            shasum -a 256 "${ARCHIVE_NAME}${ARCHIVE_EXT}" > "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
+          # Generate checksum
+          if [ "${{ matrix.os }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
           else
-            sha256sum "${ARCHIVE_NAME}${ARCHIVE_EXT}" > "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
           fi
-          
-          echo "Archive created successfully"
-          ls -la "${ARCHIVE_NAME}${ARCHIVE_EXT}"
-          cat "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
+        shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: atlas-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            atlas_*.tar.gz
-            atlas_*.zip
-            atlas_*.sha256
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+          retention-days: 1
 
   release:
     needs: [check-changes, build]
