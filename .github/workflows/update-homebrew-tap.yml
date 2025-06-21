@@ -2,7 +2,7 @@ name: Update Homebrew Tap
 
 on:
   release:
-    types: [published]
+    types: [published, prereleased]
 
 permissions:
   contents: read
