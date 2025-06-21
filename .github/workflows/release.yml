@@ -101,35 +101,6 @@ jobs:
             ./src/cli.tsx
         shell: bash
 
-      - name: Create archive
-        run: |
-          # Set file extensions
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            binary_name="atlas.exe"
-            archive_ext=".zip"
-          else
-            binary_name="atlas"
-            archive_ext=".tar.gz"
-          fi
-          
-          # Create archive name
-          archive_name="atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
-          
-          # Create archive
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
-          else
-            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
-          fi
-          
-          # Generate checksum
-          if [ "${{ matrix.platform }}" == "darwin" ]; then
-            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
-          else
-            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
-          fi
-        shell: bash
-
       - name: Sign macOS binary (if certificates available)
         if: matrix.platform == 'darwin' && env.MACOS_SIGN_P12 != ''
         env:
@@ -184,6 +155,35 @@ jobs:
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
           fi
+
+      - name: Create archive
+        run: |
+          # Set file extensions
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+            archive_ext=".zip"
+          else
+            binary_name="atlas"
+            archive_ext=".tar.gz"
+          fi
+          
+          # Create archive name
+          archive_name="atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
+          
+          # Create archive
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+          fi
+          
+          # Generate checksum
+          if [ "${{ matrix.platform }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+        shell: bash
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
