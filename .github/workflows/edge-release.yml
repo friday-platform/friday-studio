@@ -99,11 +99,20 @@ jobs:
           echo "Compiling for ${{ matrix.os }}_${{ matrix.arch }}"
           
           # Create dist directory and set binary name
-          mkdir -p ./dist
+          mkdir -p dist
+          echo "Directory created successfully"
+          ls -la dist
+          
           binary_name="atlas"
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             binary_name="atlas.exe"
           fi
+          
+          echo "Binary name set to: $binary_name"
+          echo "Current working directory: $(pwd)"
+          echo "Testing write to dist directory:"
+          echo "test" > dist/test.txt && echo "Write test PASSED" || echo "Write test FAILED"
+          rm -f dist/test.txt
           
           if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
             echo "Cross-compiling for Linux ARM64"
@@ -115,7 +124,7 @@ jobs:
               --env-file \
               --no-check \
               --target aarch64-unknown-linux-gnu \
-              --output "./dist/${binary_name}" \
+              --output "dist/${binary_name}" \
               src/cli.tsx
           elif [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
             echo "Compiling for Linux AMD64"
@@ -127,7 +136,7 @@ jobs:
               --env-file \
               --no-check \
               --target x86_64-unknown-linux-gnu \
-              --output "./dist/${binary_name}" \
+              --output "dist/${binary_name}" \
               src/cli.tsx
           else
             echo "Native compilation for ${{ matrix.os }}_${{ matrix.arch }}"
@@ -138,7 +147,7 @@ jobs:
               --unstable-otel \
               --env-file \
               --no-check \
-              --output "./dist/${binary_name}" \
+              --output "dist/${binary_name}" \
               src/cli.tsx
           fi
 
@@ -181,10 +190,10 @@ jobs:
           binary_name="atlas"
           
           # Sign binary
-          codesign --force --options runtime --entitlements entitlements.plist --sign "$APPLE_DEVELOPER_ID" --timestamp "./dist/${binary_name}"
+          codesign --force --options runtime --entitlements entitlements.plist --sign "$APPLE_DEVELOPER_ID" --timestamp "dist/${binary_name}"
           
           # Create zip for notarization
-          zip atlas-temp.zip "./dist/${binary_name}"
+          zip atlas-temp.zip "dist/${binary_name}"
           
           # Notarize
           xcrun notarytool submit atlas-temp.zip \
@@ -194,11 +203,11 @@ jobs:
             --wait
           
           # Staple notarization
-          xcrun stapler staple "./dist/${binary_name}"
+          xcrun stapler staple "dist/${binary_name}"
           
           # Verify
-          codesign --verify --verbose "./dist/${binary_name}"
-          spctl --assess --verbose "./dist/${binary_name}"
+          codesign --verify --verbose "dist/${binary_name}"
+          spctl --assess --verbose "dist/${binary_name}"
 
       - name: Test binary
         shell: bash
@@ -208,10 +217,10 @@ jobs:
             binary_name="atlas.exe"
           fi
           
-          echo "Testing binary: ./dist/${binary_name}"
-          ./dist/${binary_name} --version
+          echo "Testing binary: dist/${binary_name}"
+          dist/${binary_name} --version
           echo "Testing help command..."
-          ./dist/${binary_name} --help
+          dist/${binary_name} --help
 
       - name: Create archive
         shell: bash
@@ -231,10 +240,10 @@ jobs:
           
           if [[ "${{ matrix.os }}" == "windows" ]]; then
             # Create zip for Windows
-            cd ./dist && zip "../${ARCHIVE_NAME}.zip" "${binary_name}" && cd ..
+            cd dist && zip "../${ARCHIVE_NAME}.zip" "${binary_name}" && cd ..
           else
             # Create tar.gz for Unix systems
-            cd ./dist && tar -czf "../${ARCHIVE_NAME}.tar.gz" "${binary_name}" && cd ..
+            cd dist && tar -czf "../${ARCHIVE_NAME}.tar.gz" "${binary_name}" && cd ..
           fi
           
           # Calculate checksum
