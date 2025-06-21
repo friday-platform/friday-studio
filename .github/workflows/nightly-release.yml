@@ -175,13 +175,28 @@ jobs:
           ls -la "./dist/${binary_name}"
           file "./dist/${binary_name}"
           
-          # Test basic execution
-          echo "Testing binary execution..."
-          if "./dist/${binary_name}" --help >/dev/null 2>&1; then
-            echo "✅ Binary works after compilation"
+          # Only test execution if we're not cross-compiling
+          echo "Target: ${{ matrix.target }}"
+          echo "System arch: $(uname -m)"
+          
+          # Check if this is cross-compilation
+          SYSTEM_ARCH=$(uname -m)
+          if ([ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "aarch64" ]) || \
+             ([ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
+             ([ "${{ matrix.target }}" == "aarch64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "arm64" ]) || \
+             ([ "${{ matrix.target }}" == "x86_64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
+             [ "${{ matrix.platform }}" == "windows" ]; then
+            echo "🔄 Skipping execution test (cross-compilation or Windows)"
+            echo "✅ Binary compiled successfully"
           else
-            echo "❌ Binary FAILS after compilation"
-            exit 1
+            # Test basic execution for native compilation
+            echo "🧪 Testing binary execution (native compilation)..."
+            if "./dist/${binary_name}" --help >/dev/null 2>&1; then
+              echo "✅ Binary works after compilation"
+            else
+              echo "❌ Binary FAILS after compilation"
+              exit 1
+            fi
           fi
         shell: bash
 
