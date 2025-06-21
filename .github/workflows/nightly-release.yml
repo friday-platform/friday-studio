@@ -136,6 +136,7 @@ jobs:
               --include=src \
               --include=examples \
               --target aarch64-apple-darwin \
+              --v8-flags="--max-old-space-size=4096,--max-semi-space-size=128" \
               --output "./dist/${binary_name}" \
               ./src/cli.tsx
           else
@@ -159,6 +160,7 @@ jobs:
               --include=src \
               --include=examples \
               --target ${{ matrix.target }} \
+              --v8-flags="--max-old-space-size=4096,--max-semi-space-size=128" \
               --output "./dist/${binary_name}" \
               ./src/cli.tsx
           fi
