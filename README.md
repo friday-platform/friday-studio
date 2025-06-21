@@ -20,14 +20,32 @@ autonomous agents in a secure, auditable, and scalable environment.
 
 ### Prerequisites
 
-- [Deno](https://deno.land/) v2.0+
 - Anthropic API key (for Claude) - [Get one here](https://console.anthropic.com/)
 
 ### Installation
 
+#### Option 1: Homebrew (Recommended)
+
 ```bash
-git clone https://github.com/your-org/atlas.git
+# Add the Tempest tap
+brew tap tempestteam/tap
+
+# Install Atlas
+HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
+
+# Verify installation
+atlas --help
+```
+
+**Note**: You need GitHub CLI (`gh`) installed and authenticated to access the private repository.
+
+#### Option 2: From Source
+
+```bash
+# Requires Deno v2.0+
+git clone https://github.com/tempestteam/atlas.git
 cd atlas
+deno install
 ```
 
 ### Running Examples
@@ -58,6 +76,10 @@ ANTHROPIC_API_KEY=sk-ant-api03-...
 3. **Launch Atlas TUI**
 
 ```bash
+# If installed via Homebrew
+atlas tui
+
+# If running from source
 deno task atlas tui
 ```
 
@@ -120,11 +142,15 @@ curl -X POST http://localhost:8080/signals/telephone-message \
 4. **Monitor execution**
 
 ```bash
-# List active sessions
-deno task atlas ps
+# List active sessions (Homebrew install)
+atlas ps
 
-# Stream session logs  
-deno task atlas logs <session-id>
+# Stream session logs (Homebrew install)
+atlas logs <session-id>
+
+# If running from source, use:
+# deno task atlas ps
+# deno task atlas logs <session-id>
 ```
 
 ## CLI Commands
