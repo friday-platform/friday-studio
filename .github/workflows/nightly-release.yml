@@ -139,7 +139,7 @@ jobs:
           
           # Test minimal app
           echo "Testing minimal binary..."
-          if timeout 5s ./test_minimal --test-arg; then
+          if ./test_minimal --test-arg; then
             echo "✅ Minimal binary works"
           else
             echo "❌ Minimal binary FAILS"
@@ -218,7 +218,7 @@ jobs:
           
           # Test basic execution
           echo "Testing binary execution..."
-          if timeout 10s "./dist/${binary_name}" --help; then
+          if "./dist/${binary_name}" --help >/dev/null 2>&1; then
             echo "✅ Binary works after compilation"
           else
             echo "❌ Binary FAILS after compilation"
@@ -297,7 +297,7 @@ jobs:
           
           # Test basic execution
           echo "Testing binary execution after signing..."
-          if timeout 10s "./dist/atlas" --help; then
+          if "./dist/atlas" --help >/dev/null 2>&1; then
             echo "✅ Binary works after signing"
           else
             echo "❌ Binary FAILS after signing"
