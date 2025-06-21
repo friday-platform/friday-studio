@@ -24,8 +24,11 @@ jobs:
       - name: Generate edge version
         id: version
         run: |
+          # Generate edge version: edge-YYYYMMDD-HHMMSS-gitsha for proper version sorting
+          date_part=$(date -u +%Y%m%d)
+          time_part=$(date -u +%H%M%S)
           git_sha=$(git rev-parse --short HEAD)
-          version="edge-${git_sha}"
+          version="edge-${date_part}-${time_part}-${git_sha}"
           echo "version=${version}" >> $GITHUB_OUTPUT
           echo "Edge version: ${version}"
 
