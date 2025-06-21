@@ -35,9 +35,18 @@ jobs:
     strategy:
       matrix:
         include:
+          - runner: macos-15-xlarge
+            os: darwin
+            arch: arm64
+          - runner: macos-14-xlarge  
+            os: darwin
+            arch: amd64
           - runner: ubuntu-latest
             os: linux
             arch: amd64
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -296,7 +305,15 @@ jobs:
         run: |
           VERSION="${{ needs.check-changes.outputs.version }}"
           
-          # Create release
+          # Create release with only existing files
+          release_files=""
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            release_files="$release_files atlas_*.tar.gz"
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            release_files="$release_files atlas_*.zip"
+          fi
+          
           gh release create "$VERSION" \
             --title "Atlas Edge $VERSION" \
             --notes "Edge release - bleeding edge build from commit $(git rev-parse --short HEAD)
@@ -313,8 +330,7 @@ jobs:
           **Changes:** See commit history for latest changes.
           " \
             --prerelease \
-            atlas_*.tar.gz \
-            atlas_*.zip
+            $release_files
 
       - name: Update Homebrew tap
         env:
