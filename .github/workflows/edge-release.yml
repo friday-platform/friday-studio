@@ -347,6 +347,12 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Create checksums file
+        run: |
+          cat *.sha256 > checksums.txt
+          echo "Generated checksums:"
+          cat checksums.txt
+
       - name: Create release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -378,7 +384,8 @@ jobs:
           **Changes:** See commit history for latest changes.
           " \
             --prerelease \
-            $release_files
+            $release_files \
+            checksums.txt
 
       - name: Update Homebrew tap
         env:
