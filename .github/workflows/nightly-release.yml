@@ -116,7 +116,11 @@ jobs:
           
           # Native compilation for ARM64 macOS (using macos-14-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            echo "Native compilation for ARM64 macOS (no --target flag)"
+            echo "Native compilation for ARM64 macOS (with memory and target flags)"
+            
+            # Set memory limits for large compilation
+            export DENO_V8_FLAGS="--max-old-space-size=8192 --max-semi-space-size=256"
+            
             deno compile \
               --no-check \
               --allow-read \
@@ -131,10 +135,15 @@ jobs:
               --unstable-otel \
               --include=src \
               --include=examples \
+              --target aarch64-apple-darwin \
               --output "./dist/${binary_name}" \
               ./src/cli.tsx
           else
             echo "Cross-compiling for target: ${{ matrix.target }}"
+            
+            # Set memory limits for large compilation
+            export DENO_V8_FLAGS="--max-old-space-size=8192 --max-semi-space-size=256"
+            
             deno compile \
               --no-check \
               --allow-read \
