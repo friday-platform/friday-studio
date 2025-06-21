@@ -260,8 +260,8 @@ jobs:
 
       - name: Update nightly tag
         run: |
-          # Create/update a 'nightly' tag that always points to the latest nightly
-          git tag -f nightly ${{ needs.check-changes.outputs.version }}
+          # Create/update a 'nightly' tag that always points to the latest nightly commit
+          git tag -f nightly HEAD
           git push origin nightly --force
 
   cleanup:
