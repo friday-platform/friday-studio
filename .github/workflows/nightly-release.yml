@@ -94,8 +94,50 @@ jobs:
         with:
           deno-version: v2.3.3
 
+      - name: Debug environment
+        run: |
+          echo "=== SYSTEM INFO ==="
+          uname -a
+          sw_vers
+          echo "Architecture: $(uname -m)"
+          echo "=== DENO INFO ==="
+          deno --version
+          which deno
+          echo "=== MEMORY INFO ==="
+          vm_stat
+          echo "=== DISK SPACE ==="
+          df -h
+        shell: bash
+
       - name: Install dependencies
         run: deno install
+
+      - name: Test minimal Deno compilation
+        run: |
+          echo "=== TESTING MINIMAL DENO COMPILATION ==="
+          
+          # Create minimal test app
+          cat > test_minimal.ts << 'EOF'
+          console.log("Hello from minimal Deno app!");
+          console.log("Deno version:", Deno.version);
+          console.log("Args:", Deno.args);
+          EOF
+          
+          # Compile minimal app
+          deno compile \
+            --target ${{ matrix.target }} \
+            --output "./test_minimal" \
+            test_minimal.ts
+          
+          # Test minimal app
+          echo "Testing minimal binary..."
+          if timeout 5s ./test_minimal --test-arg; then
+            echo "✅ Minimal binary works"
+          else
+            echo "❌ Minimal binary FAILS"
+            exit 1
+          fi
+        shell: bash
 
       - name: Build binary
         run: |
@@ -108,44 +150,51 @@ jobs:
             binary_name="atlas"
           fi
           
-          # Compile with Deno (skip target for native ARM64 macOS builds to avoid cross-compilation issues)
-          if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ] && [ "$(uname -m)" == "arm64" ]; then
-            echo "Building natively for ARM64 macOS (no --target flag)"
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --include=src \
-              --include=examples \
-              --output "./dist/${binary_name}" \
-              ./src/cli.tsx
+          # Compile with Deno - let's try without target flag for macOS ARM64 to test native compilation
+          echo "Target: ${{ matrix.target }}"
+          echo "Platform: ${{ matrix.platform }}"
+          echo "Arch: ${{ matrix.arch }}"
+          echo "System arch: $(uname -m)"
+          
+          # Simple compilation - always use target for consistency
+          echo "Compiling for target: ${{ matrix.target }}"
+          deno compile \
+            --no-check \
+            --allow-read \
+            --allow-write \
+            --allow-net \
+            --allow-env \
+            --allow-run \
+            --allow-sys \
+            --allow-ffi \
+            --unstable-broadcast-channel \
+            --unstable-worker-options \
+            --unstable-otel \
+            --include=src \
+            --include=examples \
+            --target ${{ matrix.target }} \
+            --output "./dist/${binary_name}" \
+            ./src/cli.tsx
+        shell: bash
+
+      - name: Test binary immediately after compilation
+        run: |
+          binary_name="atlas"
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+          fi
+          
+          echo "=== TESTING BINARY AFTER COMPILATION ==="
+          ls -la "./dist/${binary_name}"
+          file "./dist/${binary_name}"
+          
+          # Test basic execution
+          echo "Testing binary execution..."
+          if timeout 10s "./dist/${binary_name}" --help; then
+            echo "✅ Binary works after compilation"
           else
-            echo "Cross-compiling for target: ${{ matrix.target }}"
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --include=src \
-              --include=examples \
-              --target ${{ matrix.target }} \
-              --output "./dist/${binary_name}" \
-              ./src/cli.tsx
+            echo "❌ Binary FAILS after compilation"
+            exit 1
           fi
         shell: bash
 
@@ -207,6 +256,26 @@ jobs:
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
           fi
+
+      - name: Test binary after signing (macOS only)
+        if: matrix.platform == 'darwin'
+        run: |
+          echo "=== TESTING BINARY AFTER SIGNING ==="
+          ls -la "./dist/atlas"
+          file "./dist/atlas"
+          
+          # Check if signed
+          codesign -dv "./dist/atlas" || echo "Binary not signed"
+          
+          # Test basic execution
+          echo "Testing binary execution after signing..."
+          if timeout 10s "./dist/atlas" --help; then
+            echo "✅ Binary works after signing"
+          else
+            echo "❌ Binary FAILS after signing"
+            exit 1
+          fi
+        shell: bash
 
       - name: Create archive
         run: |
