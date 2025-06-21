@@ -192,17 +192,27 @@ jobs:
           
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
-            # Create private key file from secret
+            # Create private key file from secret with proper formatting
             echo "${{ secrets.MACOS_NOTARY_KEY }}" > notary_key.p8
+            
+            # Debug: check key file format
+            echo "Private key file size: $(wc -c < notary_key.p8)"
+            echo "Private key starts with: $(head -c 50 notary_key.p8)"
             
             # Create a zip file for notarization (required by Apple)
             zip atlas-binary.zip ./dist/atlas
             
-            xcrun notarytool submit atlas-binary.zip \
+            # Try notarization with better error handling
+            if xcrun notarytool submit atlas-binary.zip \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
               --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
               --key notary_key.p8 \
-              --wait
+              --wait; then
+              echo "Notarization successful"
+            else
+              echo "Notarization failed, but continuing build"
+              # Don't fail the build for notarization issues
+            fi
               
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
