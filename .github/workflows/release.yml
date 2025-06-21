@@ -166,14 +166,17 @@ jobs:
             # Create private key file from secret
             echo "${{ secrets.MACOS_NOTARY_KEY }}" > notary_key.p8
             
-            xcrun notarytool submit ./dist/atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz \
+            # Create a zip file for notarization (required by Apple)
+            zip atlas-binary.zip ./dist/atlas
+            
+            xcrun notarytool submit atlas-binary.zip \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
               --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
               --key notary_key.p8 \
               --wait
               
-            # Clean up private key file
-            rm -f notary_key.p8
+            # Clean up files
+            rm -f notary_key.p8 atlas-binary.zip
           fi
 
       - name: Upload artifacts
