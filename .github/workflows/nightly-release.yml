@@ -108,82 +108,13 @@ jobs:
           echo "Building version: $VERSION"
           echo "Git SHA: $GIT_SHA"
           
-          # Replace version placeholders using a more robust approach
-          cp src/utils/version.ts src/utils/version.ts.backup
-          
-          # Create the updated version file using printf to avoid YAML conflicts
-          cat > src/utils/version.ts <<'VERSIONEOF'
-/**
- * Version detection utility for Atlas
- * Returns different version strings based on execution context
- */
-
-// This will be replaced during compilation by build scripts
-const COMPILED_VERSION = "REPLACE_VERSION_HERE";
-const COMPILED_GIT_SHA = "REPLACE_SHA_HERE";
-
-export function getAtlasVersion(): string {
-  // Check if running as compiled binary (version was replaced during build)
-  if (COMPILED_VERSION !== "__ATLAS_VERSION__") {
-    // This is a compiled binary
-    if (COMPILED_VERSION.startsWith("nightly-")) {
-      // Nightly build - show nightly-<git-sha>
-      const gitSha = COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : "unknown";
-      return `nightly-${gitSha}`;
-    } else {
-      // Regular release - show release version
-      return COMPILED_VERSION;
-    }
-  }
-
-  // Check if running from source with deno task
-  try {
-    // Try to get git commit hash for source builds
-    const decoder = new TextDecoder();
-    const gitProcess = new Deno.Command("git", {
-      args: ["rev-parse", "--short", "HEAD"],
-      stdout: "piped",
-      stderr: "piped",
-    });
-    const output = gitProcess.outputSync();
-    
-    if (output.success) {
-      const gitSha = decoder.decode(output.stdout).trim();
-      return `dev-${gitSha}`;
-    }
-  } catch (error) {
-    // Git not available or not in git repository
-  }
-
-  // Fallback for source builds without git
-  return "dev";
-}
-
-export function getVersionInfo() {
-  const version = getAtlasVersion();
-  const isCompiled = COMPILED_VERSION !== "__ATLAS_VERSION__";
-  const isNightly = version.startsWith("nightly-");
-  const isDev = version.startsWith("dev");
-  
-  return {
-    version,
-    isCompiled,
-    isNightly,
-    isDev,
-    gitSha: isDev ? version.replace("dev-", "") : 
-           isNightly ? version.replace("nightly-", "") : 
-           COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : undefined,
-  };
-}
-VERSIONEOF
-          
-          # Now replace the placeholders safely
-          sed -i "s/REPLACE_VERSION_HERE/$VERSION/g" src/utils/version.ts
-          sed -i "s/REPLACE_SHA_HERE/$GIT_SHA/g" src/utils/version.ts
+          # Replace version placeholders with safe string replacement (Linux sed syntax)
+          sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
+          sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
           
           echo "Version information embedded in source"
           echo "Verification:"
-          head -15 src/utils/version.ts
+          head -10 src/utils/version.ts
 
       - name: Build binary
         run: |
