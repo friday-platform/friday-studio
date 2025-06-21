@@ -98,13 +98,21 @@ jobs:
         run: |
           echo "=== SYSTEM INFO ==="
           uname -a
-          sw_vers
+          if command -v sw_vers &> /dev/null; then
+            sw_vers
+          elif [ -f /etc/os-release ]; then
+            cat /etc/os-release
+          fi
           echo "Architecture: $(uname -m)"
           echo "=== DENO INFO ==="
           deno --version
           which deno
           echo "=== MEMORY INFO ==="
-          vm_stat
+          if command -v vm_stat &> /dev/null; then
+            vm_stat
+          elif command -v free &> /dev/null; then
+            free -h
+          fi
           echo "=== DISK SPACE ==="
           df -h
         shell: bash
