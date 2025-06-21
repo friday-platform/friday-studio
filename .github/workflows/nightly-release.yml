@@ -431,6 +431,19 @@ jobs:
           git tag -f nightly HEAD
           git push origin nightly --force
 
+      - name: Update Homebrew tap for nightly
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Trigger homebrew tap update for nightly channel
+          curl -X POST \
+            -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/tempestteam/homebrew-tap/dispatches" \
+            -d "{\"event_type\":\"atlas-release\",\"client_payload\":{\"tag\":\"$VERSION\",\"channel\":\"nightly\"}}"
+
   cleanup:
     needs: [check-changes, release]
     if: always() && needs.check-changes.outputs.should_release == 'true'
