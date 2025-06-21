@@ -1,0 +1,54 @@
+name: Update Homebrew Tap
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-homebrew-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract release info
+        id: release
+        run: |
+          # Extract version from tag
+          VERSION="${{ github.event.release.tag_name }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Download checksums file
+          curl -sSL "https://github.com/tempestteam/atlas/releases/download/$VERSION/checksums.txt" > checksums.txt
+          
+          # Extract SHA256 values for each platform
+          DARWIN_AMD64_SHA=$(grep "darwin_amd64.tar.gz" checksums.txt | cut -d' ' -f1)
+          DARWIN_ARM64_SHA=$(grep "darwin_arm64.tar.gz" checksums.txt | cut -d' ' -f1)
+          LINUX_AMD64_SHA=$(grep "linux_amd64.tar.gz" checksums.txt | cut -d' ' -f1)
+          LINUX_ARM64_SHA=$(grep "linux_arm64.tar.gz" checksums.txt | cut -d' ' -f1)
+          
+          echo "darwin_amd64_sha=$DARWIN_AMD64_SHA" >> $GITHUB_OUTPUT
+          echo "darwin_arm64_sha=$DARWIN_ARM64_SHA" >> $GITHUB_OUTPUT
+          echo "linux_amd64_sha=$LINUX_AMD64_SHA" >> $GITHUB_OUTPUT
+          echo "linux_arm64_sha=$LINUX_ARM64_SHA" >> $GITHUB_OUTPUT
+          
+          echo "Extracted checksums:"
+          echo "Darwin AMD64: $DARWIN_AMD64_SHA"
+          echo "Darwin ARM64: $DARWIN_ARM64_SHA"
+          echo "Linux AMD64: $LINUX_AMD64_SHA"
+          echo "Linux ARM64: $LINUX_ARM64_SHA"
+
+      - name: Trigger Homebrew tap update
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          repository: tempestteam/homebrew-tap
+          event-type: atlas-release
+          client-payload: |
+            {
+              "version": "${{ steps.release.outputs.version }}",
+              "darwin_amd64_sha": "${{ steps.release.outputs.darwin_amd64_sha }}",
+              "darwin_arm64_sha": "${{ steps.release.outputs.darwin_arm64_sha }}",
+              "linux_amd64_sha": "${{ steps.release.outputs.linux_amd64_sha }}",
+              "linux_arm64_sha": "${{ steps.release.outputs.linux_arm64_sha }}"
+            }
