@@ -58,6 +58,9 @@ jobs:
         with:
           deno-version: v2.3.3
 
+      - name: Install dependencies
+        run: deno install
+
       - name: Setup cross-compilation for ARM64 (Linux only)
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         run: |
