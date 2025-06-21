@@ -71,17 +71,16 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
-
       - name: Prepare version information
         shell: bash
         run: |
           # Get version and git information
           VERSION="${{ needs.check-changes.outputs.version }}"
           GIT_SHA=$(git rev-parse --short HEAD)
-          
+
           echo "Building version: $VERSION"
           echo "Git SHA: $GIT_SHA"
-          
+
           # Replace version placeholders with cross-platform sed syntax
           if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS sed requires backup extension (empty string for no backup)
@@ -92,7 +91,7 @@ jobs:
             sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
             sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
           fi
-          
+
           echo "Version information embedded in source"
           echo "Verification:"
           head -10 src/utils/version.ts
@@ -100,27 +99,27 @@ jobs:
       - name: Build binary
         run: |
           mkdir -p ./dist
-          
+
           # Set binary name based on platform
           if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
           else
             binary_name="atlas"
           fi
-          
+
           # Compile with Deno - use nightly workflow pattern
           echo "Target: ${{ matrix.target }}"
           echo "Platform: ${{ matrix.os }}"
           echo "Arch: ${{ matrix.arch }}"
           echo "System arch: $(uname -m)"
-          
+
           # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
           if [ "${{ matrix.os }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "ARM64 macOS compilation on macOS 15"
-            
+
             # Set memory limits for large compilation only (not embedded in binary)
             export DENO_V8_FLAGS="--max-old-space-size=8192"
-            
+
             # Compile WITHOUT embedded V8 flags that restrict runtime memory
             deno compile \
               --no-check \
@@ -140,10 +139,10 @@ jobs:
               ./src/cli.tsx
           else
             echo "Cross-compiling for target: ${{ matrix.target }}"
-            
+
             # Set memory limits for large compilation
             export DENO_V8_FLAGS="--max-old-space-size=8192"
-            
+
             deno compile \
               --no-check \
               --allow-read \
@@ -179,7 +178,7 @@ jobs:
           security unlock-keychain -p mypassword build.keychain
           security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
-          
+
           # Auto-detect signing identity if not provided
           if [ -z "$MACOS_SIGN_IDENTITY" ]; then
             SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
@@ -192,7 +191,7 @@ jobs:
             SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
             echo "Using provided signing identity: $SIGN_IDENTITY"
           fi
-          
+
           # Create entitlements for hardened runtime to allow V8 memory allocation
           echo '<?xml version="1.0" encoding="UTF-8"?>' > entitlements.plist
           echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> entitlements.plist
@@ -206,22 +205,22 @@ jobs:
           echo '  <true/>' >> entitlements.plist
           echo '</dict>' >> entitlements.plist
           echo '</plist>' >> entitlements.plist
-          
+
           # Sign binary with entitlements for V8 memory allocation
           codesign --force --options runtime --entitlements entitlements.plist --deep --sign "$SIGN_IDENTITY" ./dist/atlas
-          
+
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
             # Create private key file from base64 encoded secret
             echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-            
+
             # Debug: check key file format
             echo "Private key file size: $(wc -c < notary_key.p8)"
             echo "Private key starts with: $(head -c 50 notary_key.p8)"
-            
+
             # Create a zip file for notarization (required by Apple)
             zip atlas-binary.zip ./dist/atlas
-            
+
             # Try notarization with better error handling
             if xcrun notarytool submit atlas-binary.zip \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
@@ -233,7 +232,7 @@ jobs:
               echo "Notarization failed, but continuing build"
               # Don't fail the build for notarization issues
             fi
-              
+
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
           fi
@@ -244,10 +243,10 @@ jobs:
           echo "=== TESTING BINARY AFTER SIGNING ==="
           ls -la "./dist/atlas"
           file "./dist/atlas"
-          
+
           # Check if signed
           codesign -dv "./dist/atlas" || echo "Binary not signed"
-          
+
           # Test basic execution
           echo "Testing binary execution after signing..."
           if "./dist/atlas" --help >/dev/null 2>&1; then
@@ -264,15 +263,15 @@ jobs:
           if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
           fi
-          
+
           echo "=== TESTING BINARY AFTER COMPILATION ==="
           ls -la "./dist/${binary_name}"
           file "./dist/${binary_name}"
-          
+
           # Only test execution if we're not cross-compiling
           echo "Target: ${{ matrix.target }}"
           echo "System arch: $(uname -m)"
-          
+
           # Check if this is cross-compilation
           SYSTEM_ARCH=$(uname -m)
           if ([ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "aarch64" ]) || \
@@ -297,7 +296,7 @@ jobs:
       - name: Create archive
         run: |
           mkdir -p ./dist
-          
+
           # Set file extensions
           if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
@@ -306,17 +305,17 @@ jobs:
             binary_name="atlas"
             archive_ext=".tar.gz"
           fi
-          
+
           # Create archive name
           archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
-          
+
           # Create archive
           if [ "${{ matrix.os }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
             tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           fi
-          
+
           # Generate checksum
           if [ "${{ matrix.os }}" == "darwin" ]; then
             shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
@@ -358,7 +357,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           VERSION="${{ needs.check-changes.outputs.version }}"
-          
+
           # Create release with only existing files
           release_files=""
           if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
@@ -367,20 +366,20 @@ jobs:
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             release_files="$release_files atlas_*.zip"
           fi
-          
+
           gh release create "$VERSION" \
             --title "Atlas Edge $VERSION" \
             --notes "Edge release - bleeding edge build from commit $(git rev-parse --short HEAD)
 
           ⚠️ **Warning**: This is an edge release built from the latest commit. Use with caution.
-          
+
           **Installation via Homebrew:**
           \`\`\`bash
           HOMEBREW_GITHUB_API_TOKEN=\$(gh auth token) brew install tempest-atlas-edge
           \`\`\`
-          
+
           **Direct download:** Download the appropriate binary for your platform below.
-          
+
           **Changes:** See commit history for latest changes.
           " \
             --prerelease \
@@ -392,7 +391,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ needs.check-changes.outputs.version }}"
-          
+
           # Trigger homebrew tap update for edge channel via repository dispatch
           curl -X POST \
             -H "Authorization: token $GITHUB_TOKEN" \

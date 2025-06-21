@@ -3,13 +3,13 @@ name: Nightly Release
 on:
   schedule:
     # Run at 2 AM PT every day (10 AM UTC to account for daylight saving time)
-    - cron: '0 10 * * *'
+    - cron: "0 10 * * *"
   workflow_dispatch:
     inputs:
       force_release:
-        description: 'Force release even if no changes'
+        description: "Force release even if no changes"
         required: false
-        default: 'false'
+        default: "false"
         type: boolean
   push:
     branches: [main]
@@ -36,7 +36,7 @@ jobs:
         run: |
           # Get the latest nightly tag
           latest_nightly=$(git tag -l "nightly-*" | sort -V | tail -n1)
-          
+
           if [ -z "$latest_nightly" ]; then
             echo "No previous nightly found, creating first nightly"
             echo "should_release=true" >> $GITHUB_OUTPUT
@@ -72,7 +72,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             platform: linux
             arch: amd64
-          - os: ubuntu-latest  
+          - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             platform: linux
             arch: arm64
@@ -107,10 +107,10 @@ jobs:
           # Get version and git information
           VERSION="${{ needs.check-changes.outputs.version }}"
           GIT_SHA=$(git rev-parse --short HEAD)
-          
+
           echo "Building version: $VERSION"
           echo "Git SHA: $GIT_SHA"
-          
+
           # Replace version placeholders with cross-platform sed syntax
           if [[ "$OSTYPE" == "darwin"* ]]; then
             # macOS sed requires backup extension (empty string for no backup)
@@ -121,7 +121,7 @@ jobs:
             sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
             sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
           fi
-          
+
           echo "Version information embedded in source"
           echo "Verification:"
           head -10 src/utils/version.ts
@@ -129,27 +129,27 @@ jobs:
       - name: Build binary
         run: |
           mkdir -p ./dist
-          
+
           # Set binary name based on platform
           if [ "${{ matrix.platform }}" == "windows" ]; then
             binary_name="atlas.exe"
           else
             binary_name="atlas"
           fi
-          
+
           # Compile with Deno - let's try without target flag for macOS ARM64 to test native compilation
           echo "Target: ${{ matrix.target }}"
           echo "Platform: ${{ matrix.platform }}"
           echo "Arch: ${{ matrix.arch }}"
           echo "System arch: $(uname -m)"
-          
+
           # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "ARM64 macOS compilation on macOS 15 - removing restrictive V8 flags"
-            
+
             # Set memory limits for large compilation only (not embedded in binary)
             export DENO_V8_FLAGS="--max-old-space-size=8192"
-            
+
             # Compile WITHOUT embedded V8 flags that restrict runtime memory
             deno compile \
               --no-check \
@@ -169,10 +169,10 @@ jobs:
               ./src/cli.tsx
           else
             echo "Cross-compiling for target: ${{ matrix.target }}"
-            
+
             # Set memory limits for large compilation
             export DENO_V8_FLAGS="--max-old-space-size=8192"
-            
+
             deno compile \
               --no-check \
               --allow-read \
@@ -200,15 +200,15 @@ jobs:
           if [ "${{ matrix.platform }}" == "windows" ]; then
             binary_name="atlas.exe"
           fi
-          
+
           echo "=== TESTING BINARY AFTER COMPILATION ==="
           ls -la "./dist/${binary_name}"
           file "./dist/${binary_name}"
-          
+
           # Only test execution if we're not cross-compiling
           echo "Target: ${{ matrix.target }}"
           echo "System arch: $(uname -m)"
-          
+
           # Check if this is cross-compilation
           SYSTEM_ARCH=$(uname -m)
           if ([ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "aarch64" ]) || \
@@ -244,7 +244,7 @@ jobs:
           security unlock-keychain -p mypassword build.keychain
           security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
-          
+
           # Auto-detect signing identity if not provided
           if [ -z "$MACOS_SIGN_IDENTITY" ]; then
             SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
@@ -257,7 +257,7 @@ jobs:
             SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
             echo "Using provided signing identity: $SIGN_IDENTITY"
           fi
-          
+
           # Create entitlements for hardened runtime to allow V8 memory allocation
           echo '<?xml version="1.0" encoding="UTF-8"?>' > entitlements.plist
           echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> entitlements.plist
@@ -271,22 +271,22 @@ jobs:
           echo '  <true/>' >> entitlements.plist
           echo '</dict>' >> entitlements.plist
           echo '</plist>' >> entitlements.plist
-          
+
           # Sign binary with entitlements for V8 memory allocation
           codesign --force --options runtime --entitlements entitlements.plist --deep --sign "$SIGN_IDENTITY" ./dist/atlas
-          
+
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
             # Create private key file from base64 encoded secret
             echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-            
+
             # Debug: check key file format
             echo "Private key file size: $(wc -c < notary_key.p8)"
             echo "Private key starts with: $(head -c 50 notary_key.p8)"
-            
+
             # Create a zip file for notarization (required by Apple)
             zip atlas-binary.zip ./dist/atlas
-            
+
             # Try notarization with better error handling
             if xcrun notarytool submit atlas-binary.zip \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
@@ -298,7 +298,7 @@ jobs:
               echo "Notarization failed, but continuing build"
               # Don't fail the build for notarization issues
             fi
-              
+
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
           fi
@@ -309,10 +309,10 @@ jobs:
           echo "=== TESTING BINARY AFTER SIGNING ==="
           ls -la "./dist/atlas"
           file "./dist/atlas"
-          
+
           # Check if signed
           codesign -dv "./dist/atlas" || echo "Binary not signed"
-          
+
           # Test basic execution
           echo "Testing binary execution after signing..."
           if "./dist/atlas" --help >/dev/null 2>&1; then
@@ -326,7 +326,7 @@ jobs:
       - name: Create archive
         run: |
           mkdir -p ./dist
-          
+
           # Set file extensions
           if [ "${{ matrix.platform }}" == "windows" ]; then
             binary_name="atlas.exe"
@@ -335,17 +335,17 @@ jobs:
             binary_name="atlas"
             archive_ext=".tar.gz"
           fi
-          
+
           # Create archive name
           archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
-          
+
           # Create archive
           if [ "${{ matrix.platform }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
             tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           fi
-          
+
           # Generate checksum
           if [ "${{ matrix.platform }}" == "darwin" ]; then
             shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
@@ -385,7 +385,7 @@ jobs:
         run: |
           # Get the latest nightly tag for changelog generation
           latest_nightly=$(git tag -l "nightly-*" | sort -V | tail -n1)
-          
+
           if [ -z "$latest_nightly" ]; then
             # First nightly release
             echo "## Changes" > changelog.md
@@ -399,7 +399,7 @@ jobs:
             echo "" >> changelog.md
             git log --oneline --no-merges ${latest_nightly}..HEAD >> changelog.md
           fi
-          
+
           echo "Generated changelog:"
           cat changelog.md
 
@@ -437,7 +437,7 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           VERSION="${{ needs.check-changes.outputs.version }}"
-          
+
           # Trigger homebrew tap update for nightly channel
           curl -X POST \
             -H "Authorization: token $HOMEBREW_TAP_TOKEN" \
@@ -459,10 +459,10 @@ jobs:
         run: |
           # Keep only the last 7 nightly releases
           echo "Cleaning up old nightly releases..."
-          
+
           # Get all nightly tags sorted by creation date (newest first)
           nightly_tags=$(git tag -l "nightly-*" --sort=-version:refname)
-          
+
           # Convert to array and skip first 7 (keep them)
           count=0
           for tag in $nightly_tags; do

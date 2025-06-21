@@ -1,6 +1,7 @@
 # Atlas
 
-AI agent orchestration platform that transforms software delivery through human/AI collaboration. Fixed binary compilation.
+AI agent orchestration platform that transforms software delivery through human/AI collaboration.
+Fixed binary compilation.
 
 ## Overview
 
@@ -49,17 +50,20 @@ atlas --version  # Shows channel-specific version info
 ```
 
 **Channel Details:**
+
 - **Stable**: Official releases (1.0.0, 1.1.0) - maximum stability
 - **Nightly**: Daily builds (nightly-YYYYMMDD) - nightly releases
 - **Edge**: Every commit (edge-YYYYMMDD-HHMMSS-gitsha) - bleeding edge, unstable
 
 ⚠️ **Note**: Only one channel can be installed at a time. To switch channels:
+
 ```bash
 brew uninstall tempest-atlas  # or tempest-atlas-nightly, tempest-atlas-edge
 HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly
 ```
 
-**Prerequisites**: You need GitHub CLI (`gh`) installed and authenticated to access the private repository.
+**Prerequisites**: You need GitHub CLI (`gh`) installed and authenticated to access the private
+repository.
 
 #### Option 2: From Source
 

@@ -23,12 +23,12 @@ export function WorkspaceHealthCommand({ args }: WorkspaceCommandProps) {
 
   async function checkHealth(idOrName?: string) {
     const registry = getWorkspaceRegistry();
-    
+
     // Find workspace
     let workspace;
     if (idOrName) {
       workspace = await registry.findById(idOrName) ||
-                  await registry.findByName(idOrName);
+        await registry.findByName(idOrName);
     } else {
       workspace = await registry.getCurrentWorkspace();
     }
@@ -47,7 +47,7 @@ export function WorkspaceHealthCommand({ args }: WorkspaceCommandProps) {
       if (!response.ok) {
         throw new Error(`Health check failed: ${response.status} ${response.statusText}`);
       }
-      
+
       const healthData = await response.json();
       setData({ workspace, healthData });
       setStatus("ready");
@@ -68,7 +68,7 @@ export function WorkspaceHealthCommand({ args }: WorkspaceCommandProps) {
   return (
     <Box flexDirection="column">
       <Text color="green">✓ Health check successful</Text>
-      <Text> </Text>
+      <Text></Text>
       <Text>{JSON.stringify(data.healthData, null, 2)}</Text>
     </Box>
   );

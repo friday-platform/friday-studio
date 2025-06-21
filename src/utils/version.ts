@@ -12,7 +12,7 @@ export function getAtlasVersion(): string {
   // Use computed string to avoid sed replacement
   const versionPlaceholder = "__ATLAS_" + "VERSION__";
   const shaPlaceholder = "__ATLAS_" + "GIT_SHA__";
-  
+
   if (COMPILED_VERSION !== versionPlaceholder) {
     // This is a compiled binary - return the full version that was embedded
     return COMPILED_VERSION;
@@ -28,7 +28,7 @@ export function getAtlasVersion(): string {
       stderr: "piped",
     });
     const output = gitProcess.outputSync();
-    
+
     if (output.success) {
       const gitSha = decoder.decode(output.stdout).trim();
       return `dev-${gitSha}`;
@@ -48,14 +48,18 @@ export function getVersionInfo() {
   const isCompiled = COMPILED_VERSION !== versionPlaceholder;
   const isNightly = version.startsWith("nightly-");
   const isDev = version.startsWith("dev");
-  
+
   return {
     version,
     isCompiled,
     isNightly,
     isDev,
-    gitSha: isDev ? version.replace("dev-", "") : 
-           isNightly ? version.replace("nightly-", "") : 
-           COMPILED_GIT_SHA !== shaPlaceholder ? COMPILED_GIT_SHA : undefined,
+    gitSha: isDev
+      ? version.replace("dev-", "")
+      : isNightly
+      ? version.replace("nightly-", "")
+      : COMPILED_GIT_SHA !== shaPlaceholder
+      ? COMPILED_GIT_SHA
+      : undefined,
   };
 }

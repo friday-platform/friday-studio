@@ -29,18 +29,18 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
   // Helper function to find jobs that use a specific agent
   const getJobsUsingAgent = (agentId: string) => {
     if (!config.jobs) return [];
-    
+
     return Object.entries(config.jobs)
       .filter(([, job]) => {
         const jobData = job as any;
-        return jobData.execution?.agents?.some((agent: any) => 
-          (typeof agent === 'string' ? agent : agent.id) === agentId
+        return jobData.execution?.agents?.some((agent: any) =>
+          (typeof agent === "string" ? agent : agent.id) === agentId
         );
       })
       .map(([jobId, job]) => ({
         id: jobId,
         name: (job as any).name || jobId,
-        description: (job as any).description
+        description: (job as any).description,
       }));
   };
 
@@ -50,9 +50,9 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
     if (!config.signals || jobsUsingAgent.length === 0) return [];
 
     const signalIds = new Set<string>();
-    
+
     // Find signals that trigger jobs using this agent
-    jobsUsingAgent.forEach(job => {
+    jobsUsingAgent.forEach((job) => {
       const jobData = config.jobs?.[job.id] as any;
       if (jobData?.triggers) {
         jobData.triggers.forEach((trigger: any) => {
@@ -64,12 +64,12 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
     });
 
     return Array.from(signalIds)
-      .map(signalId => {
+      .map((signalId) => {
         const signal = config.signals?.[signalId] as any;
         return {
           id: signalId,
           description: signal?.description,
-          provider: signal?.provider
+          provider: signal?.provider,
         };
       })
       .filter(Boolean);
@@ -258,11 +258,11 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                         <Text dimColor>{promptType}:</Text>
                       </Box>
                       <Box marginLeft={2} flexDirection="column">
-                        {prompt.split('\n').slice(0, 10).map((line, index) => (
+                        {prompt.split("\n").slice(0, 10).map((line, index) => (
                           <Text key={index} dimColor>{line}</Text>
                         ))}
-                        {prompt.split('\n').length > 10 && (
-                          <Text dimColor>... ({prompt.split('\n').length - 10} more lines)</Text>
+                        {prompt.split("\n").length > 10 && (
+                          <Text dimColor>... ({prompt.split("\n").length - 10} more lines)</Text>
                         )}
                       </Box>
                     </Box>
@@ -274,14 +274,14 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
               {(() => {
                 const jobsUsingAgent = getJobsUsingAgent(selectedAgent!);
                 const signalsUsingAgent = getSignalsUsingAgent(selectedAgent!);
-                
+
                 if (jobsUsingAgent.length > 0 || signalsUsingAgent.length > 0) {
                   return (
                     <Box flexDirection="column" marginBottom={2}>
                       <Box marginBottom={1}>
                         <Text bold>Usage:</Text>
                       </Box>
-                      
+
                       {jobsUsingAgent.length > 0 && (
                         <Box flexDirection="column" marginBottom={2}>
                           <Box marginBottom={1}>
@@ -304,7 +304,7 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                           ))}
                         </Box>
                       )}
-                      
+
                       {signalsUsingAgent.length > 0 && (
                         <Box flexDirection="column" marginBottom={2}>
                           <Box marginBottom={1}>
@@ -337,7 +337,9 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                         <Text bold>Usage:</Text>
                       </Box>
                       <Box marginLeft={2}>
-                        <Text dimColor>This agent is not currently used in any jobs or signals</Text>
+                        <Text dimColor>
+                          This agent is not currently used in any jobs or signals
+                        </Text>
                       </Box>
                     </Box>
                   );
@@ -354,15 +356,15 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                     {JSON.stringify(
                       {
                         ...selectedAgentData,
-                        prompts: selectedAgentData.prompts 
+                        prompts: selectedAgentData.prompts
                           ? Object.keys(selectedAgentData.prompts).reduce((acc, key) => ({
-                              ...acc,
-                              [key]: `${selectedAgentData.prompts![key].substring(0, 50)}...`
-                            }), {})
-                          : undefined
+                            ...acc,
+                            [key]: `${selectedAgentData.prompts![key].substring(0, 50)}...`,
+                          }), {})
+                          : undefined,
                       },
                       null,
-                      2
+                      2,
                     )}
                   </Text>
                 </Box>

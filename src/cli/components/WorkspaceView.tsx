@@ -3,13 +3,7 @@ import { Box, Spacer, Text, useApp, useInput, useStdout } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import { NewWorkspaceConfig } from "../../core/config-loader.ts";
-import {
-  AgentsTab,
-  DetailsTab,
-  LogsTab,
-  SessionsTab,
-  SignalsTab,
-} from "./workspace/index.ts";
+import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
 
 interface WorkspaceViewProps {
   workspaceSlug: string;
@@ -38,7 +32,7 @@ export const WorkspaceView = ({
       setLoading(true);
       const registry = getWorkspaceRegistry();
       const workspaceConfig = await registry.getWorkspaceConfigBySlug(
-        workspaceSlug
+        workspaceSlug,
       );
       setConfig(workspaceConfig);
       setLoading(false);
@@ -133,9 +127,7 @@ export const WorkspaceView = ({
 
       {/* Tab Content */}
       <Box flexDirection="column" flexGrow={1} width="100%">
-        {activeTab === 0 && (
-          <DetailsTab config={config} workspaceSlug={workspaceSlug} />
-        )}
+        {activeTab === 0 && <DetailsTab config={config} workspaceSlug={workspaceSlug} />}
 
         {activeTab === 1 && <AgentsTab config={config} />}
 

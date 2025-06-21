@@ -11,7 +11,7 @@ export const SidebarWrapper = ({ isActive, children }: SidebarWrapperProps) => {
   const terminalWidth = stdout.columns;
   const sidebarWidth = Math.max(
     Math.min(Math.floor(terminalWidth * 0.25), 40),
-    24
+    24,
   );
 
   return (

@@ -22,8 +22,7 @@ export default function InteractiveCommand() {
 
   const handleWorkspaceSelect = (workspace: Workspace) => {
     // Extract slug from path or use a default based on workspace name
-    const slug =
-      workspace.slug ||
+    const slug = workspace.slug ||
       workspace.path.split("/").pop() ||
       workspace.name.toLowerCase().replace(/\s+/g, "-");
     setSelectedWorkspaceSlug(slug);

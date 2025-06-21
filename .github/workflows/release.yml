@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g., v1.0.0)'
+        description: "Release tag (e.g., v1.0.0)"
         required: true
         type: string
 
@@ -25,7 +25,7 @@ jobs:
             target: x86_64-unknown-linux-gnu
             platform: linux
             arch: amd64
-          - os: ubuntu-latest  
+          - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             platform: linux
             arch: arm64
@@ -73,14 +73,14 @@ jobs:
       - name: Build binary
         run: |
           mkdir -p ./dist
-          
+
           # Set binary name based on platform
           if [ "${{ matrix.platform }}" == "windows" ]; then
             binary_name="atlas.exe"
           else
             binary_name="atlas"
           fi
-          
+
           # Native compilation for ARM64 macOS (using macos-14-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "Native compilation for ARM64 macOS (no --target flag)"
@@ -136,7 +136,7 @@ jobs:
           security unlock-keychain -p mypassword build.keychain
           security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
-          
+
           # Auto-detect signing identity if not provided
           if [ -z "$MACOS_SIGN_IDENTITY" ]; then
             SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
@@ -149,18 +149,18 @@ jobs:
             SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
             echo "Using provided signing identity: $SIGN_IDENTITY"
           fi
-          
+
           # Sign binary
           codesign --force --options runtime --deep --sign "$SIGN_IDENTITY" ./dist/atlas
-          
+
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
             # Create private key file from base64 encoded secret
             echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-            
+
             # Create a zip file for notarization (required by Apple)
             zip atlas-binary.zip ./dist/atlas
-            
+
             # Try notarization with better error handling
             if xcrun notarytool submit atlas-binary.zip \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
@@ -172,7 +172,7 @@ jobs:
               echo "Notarization failed, but continuing build"
               # Don't fail the build for notarization issues
             fi
-              
+
             # Clean up files
             rm -f notary_key.p8 atlas-binary.zip
           fi
@@ -187,17 +187,17 @@ jobs:
             binary_name="atlas"
             archive_ext=".tar.gz"
           fi
-          
+
           # Create archive name
           archive_name="atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
-          
+
           # Create archive
           if [ "${{ matrix.platform }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
             tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           fi
-          
+
           # Generate checksum
           if [ "${{ matrix.platform }}" == "darwin" ]; then
             shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
@@ -247,7 +247,7 @@ jobs:
         run: |
           # Get the previous tag for changelog generation
           previous_tag=$(git tag --sort=-version:refname | grep -v "${{ steps.version.outputs.version }}" | head -n1)
-          
+
           if [ -z "$previous_tag" ]; then
             # First release
             echo "## What's New" > changelog.md
@@ -260,24 +260,24 @@ jobs:
             # Generate changelog since previous tag
             echo "## What's New in ${{ steps.version.outputs.version }}" > changelog.md
             echo "" >> changelog.md
-            
+
             # Categorize commits
             echo "### ✨ Features" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
             echo "" >> changelog.md
-            
+
             echo "### 🐛 Bug Fixes" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
             echo "" >> changelog.md
-            
+
             echo "### 📚 Documentation" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
             echo "" >> changelog.md
-            
+
             echo "### 🔧 Other Changes" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
           fi
-          
+
           echo "" >> changelog.md
           echo "## Installation" >> changelog.md
           echo "" >> changelog.md
@@ -291,7 +291,7 @@ jobs:
           echo "" >> changelog.md
           echo "### Windows" >> changelog.md
           echo "Extract the ZIP file and add the atlas.exe to your PATH." >> changelog.md
-          
+
           echo "Generated changelog:"
           cat changelog.md
 

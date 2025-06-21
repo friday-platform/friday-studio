@@ -130,8 +130,8 @@ export const LogsTab = ({ config }: LogsTabProps) => {
       <Box paddingX={2} paddingY={1} flexShrink={0} borderBottom borderColor="gray" borderDimColor>
         <Box flexDirection="row" gap={2}>
           {/* Log Level Segment Controller */}
-          <Box 
-            flexDirection="row" 
+          <Box
+            flexDirection="row"
             gap={1}
             borderStyle={activeToolbarItem === 0 ? "round" : undefined}
             paddingX={activeToolbarItem === 0 ? 1 : 0}
