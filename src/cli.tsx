@@ -5,6 +5,13 @@ import { render } from "ink";
 import meow from "meow";
 import App from "./cli/app.tsx";
 
+// Handle --version and -v flags manually (before meow processes them)
+if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
+  const { getAtlasVersion } = await import("./utils/version.ts");
+  console.log(getAtlasVersion());
+  Deno.exit(0);
+}
+
 const cli = meow(
   `
   Usage
@@ -20,6 +27,7 @@ const cli = meow(
     logs <session-id>                         Stream session logs
     ps                                        List active sessions
     tui [--workspace <name>]                  Terminal User Interface
+    version [--json]                          Show Atlas version information
     help                                      Show this help
     
   Full Commands

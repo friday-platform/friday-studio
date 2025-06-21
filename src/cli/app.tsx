@@ -5,6 +5,7 @@ import DefineCommand from "./commands/define.tsx";
 import HelpCommand from "./commands/help.tsx";
 import InteractiveCommand from "./commands/interactive.tsx";
 import LibraryCommand from "./commands/library.tsx";
+import VersionCommand from "./commands/version.tsx";
 import { LogsCommand } from "./commands/logs.tsx";
 import { SessionCommand } from "./commands/session.tsx";
 import { SignalCommand } from "./commands/signal.tsx";
@@ -48,6 +49,11 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
   // Handle help
   if (command === "help") {
     return <HelpCommand />;
+  }
+
+  // Handle version
+  if (command === "version") {
+    return <VersionCommand flags={flags} />;
   }
 
   // Route to appropriate command
