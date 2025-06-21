@@ -76,7 +76,7 @@ jobs:
             target: x86_64-apple-darwin
             platform: darwin
             arch: amd64
-          - os: macos-14-xlarge
+          - os: macos-15-xlarge
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
@@ -114,12 +114,9 @@ jobs:
           echo "Arch: ${{ matrix.arch }}"
           echo "System arch: $(uname -m)"
           
-          # Native compilation for ARM64 macOS (using macos-14-xlarge), cross-compilation for others
+          # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            echo "ARM64 macOS compilation with backward compatibility for macOS 14+"
-            
-            # Set deployment target for backward compatibility with older macOS versions
-            export MACOSX_DEPLOYMENT_TARGET=14.0
+            echo "ARM64 macOS compilation on macOS 15 for maximum compatibility"
             
             # Set memory limits for large compilation
             export DENO_V8_FLAGS="--max-old-space-size=8192"
