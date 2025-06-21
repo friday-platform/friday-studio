@@ -174,8 +174,21 @@ jobs:
           security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
           
+          # Auto-detect signing identity if not provided
+          if [ -z "$MACOS_SIGN_IDENTITY" ]; then
+            SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+            if [ -z "$SIGN_IDENTITY" ]; then
+              echo "No Developer ID Application certificate found, trying any valid identity"
+              SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+            fi
+            echo "Auto-detected signing identity: $SIGN_IDENTITY"
+          else
+            SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
+            echo "Using provided signing identity: $SIGN_IDENTITY"
+          fi
+          
           # Sign binary
-          codesign --force --options runtime --deep --sign "$MACOS_SIGN_IDENTITY" ./dist/atlas
+          codesign --force --options runtime --deep --sign "$SIGN_IDENTITY" ./dist/atlas
           
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
