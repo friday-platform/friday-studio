@@ -1,6 +1,6 @@
 # Atlas
 
-AI agent orchestration platform that transforms software delivery through human/AI collaboration.
+AI agent orchestration platform that transforms software delivery through human/AI collaboration. Fixed binary compilation.
 
 ## Overview
 
