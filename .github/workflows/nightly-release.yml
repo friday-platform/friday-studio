@@ -55,9 +55,10 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          # Generate nightly version: nightly-YYYYMMDD-HHMMSS (date + time for unique releases)
-          timestamp=$(date -u +%Y%m%d-%H%M%S)
-          version="nightly-${timestamp}"
+          # Generate nightly version: nightly-YYYYMMDD-{git_sha} (date + git sha for unique releases)
+          date_part=$(date -u +%Y%m%d)
+          git_sha=$(git rev-parse --short HEAD)
+          version="nightly-${date_part}-${git_sha}"
           echo "version=$version" >> $GITHUB_OUTPUT
           echo "Generated version: $version"
 

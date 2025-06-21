@@ -14,15 +14,8 @@ export function getAtlasVersion(): string {
   const shaPlaceholder = "__ATLAS_" + "GIT_SHA__";
   
   if (COMPILED_VERSION !== versionPlaceholder) {
-    // This is a compiled binary
-    if (COMPILED_VERSION.startsWith("nightly-")) {
-      // Nightly build - show nightly-<git-sha>
-      const gitSha = COMPILED_GIT_SHA !== shaPlaceholder ? COMPILED_GIT_SHA : "unknown";
-      return `nightly-${gitSha}`;
-    } else {
-      // Regular release - show release version
-      return COMPILED_VERSION;
-    }
+    // This is a compiled binary - return the full version that was embedded
+    return COMPILED_VERSION;
   }
 
   // Check if running from source with deno task
