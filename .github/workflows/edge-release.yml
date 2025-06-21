@@ -98,6 +98,13 @@ jobs:
         run: |
           echo "Compiling for ${{ matrix.os }}_${{ matrix.arch }}"
           
+          # Create dist directory and set binary name
+          mkdir -p ./dist
+          binary_name="atlas"
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            binary_name="atlas.exe"
+          fi
+          
           if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
             echo "Cross-compiling for Linux ARM64"
             deno compile \
@@ -108,7 +115,7 @@ jobs:
               --env-file \
               --no-check \
               --target aarch64-unknown-linux-gnu \
-              --output atlas \
+              --output "./dist/${binary_name}" \
               src/cli.tsx
           elif [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
             echo "Compiling for Linux AMD64"
@@ -120,7 +127,7 @@ jobs:
               --env-file \
               --no-check \
               --target x86_64-unknown-linux-gnu \
-              --output atlas \
+              --output "./dist/${binary_name}" \
               src/cli.tsx
           else
             echo "Native compilation for ${{ matrix.os }}_${{ matrix.arch }}"
@@ -131,7 +138,7 @@ jobs:
               --unstable-otel \
               --env-file \
               --no-check \
-              --output atlas \
+              --output "./dist/${binary_name}" \
               src/cli.tsx
           fi
 
@@ -171,11 +178,13 @@ jobs:
           </plist>
           EOF
           
+          binary_name="atlas"
+          
           # Sign binary
-          codesign --force --options runtime --entitlements entitlements.plist --sign "$APPLE_DEVELOPER_ID" --timestamp atlas
+          codesign --force --options runtime --entitlements entitlements.plist --sign "$APPLE_DEVELOPER_ID" --timestamp "./dist/${binary_name}"
           
           # Create zip for notarization
-          zip atlas-temp.zip atlas
+          zip atlas-temp.zip "./dist/${binary_name}"
           
           # Notarize
           xcrun notarytool submit atlas-temp.zip \
@@ -185,18 +194,24 @@ jobs:
             --wait
           
           # Staple notarization
-          xcrun stapler staple atlas
+          xcrun stapler staple "./dist/${binary_name}"
           
           # Verify
-          codesign --verify --verbose atlas
-          spctl --assess --verbose atlas
+          codesign --verify --verbose "./dist/${binary_name}"
+          spctl --assess --verbose "./dist/${binary_name}"
 
       - name: Test binary
         shell: bash
         run: |
-          ./atlas --version
+          binary_name="atlas"
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            binary_name="atlas.exe"
+          fi
+          
+          echo "Testing binary: ./dist/${binary_name}"
+          ./dist/${binary_name} --version
           echo "Testing help command..."
-          ./atlas --help
+          ./dist/${binary_name} --help
 
       - name: Create archive
         shell: bash
@@ -204,19 +219,34 @@ jobs:
           VERSION="${{ needs.check-changes.outputs.version }}"
           ARCHIVE_NAME="atlas_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
           
-          echo "Creating archive: ${ARCHIVE_NAME}.tar.gz"
-          tar -czf "${ARCHIVE_NAME}.tar.gz" atlas
+          binary_name="atlas"
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            binary_name="atlas.exe"
+            ARCHIVE_EXT=".zip"
+          else
+            ARCHIVE_EXT=".tar.gz"
+          fi
+          
+          echo "Creating archive: ${ARCHIVE_NAME}${ARCHIVE_EXT}"
+          
+          if [[ "${{ matrix.os }}" == "windows" ]]; then
+            # Create zip for Windows
+            cd ./dist && zip "../${ARCHIVE_NAME}.zip" "${binary_name}" && cd ..
+          else
+            # Create tar.gz for Unix systems
+            cd ./dist && tar -czf "../${ARCHIVE_NAME}.tar.gz" "${binary_name}" && cd ..
+          fi
           
           # Calculate checksum
           if [[ "${{ matrix.os }}" == "darwin" ]]; then
-            shasum -a 256 "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+            shasum -a 256 "${ARCHIVE_NAME}${ARCHIVE_EXT}" > "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
           else
-            sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+            sha256sum "${ARCHIVE_NAME}${ARCHIVE_EXT}" > "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
           fi
           
           echo "Archive created successfully"
-          ls -la "${ARCHIVE_NAME}.tar.gz"
-          cat "${ARCHIVE_NAME}.tar.gz.sha256"
+          ls -la "${ARCHIVE_NAME}${ARCHIVE_EXT}"
+          cat "${ARCHIVE_NAME}${ARCHIVE_EXT}.sha256"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -224,7 +254,8 @@ jobs:
           name: atlas-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             atlas_*.tar.gz
-            atlas_*.tar.gz.sha256
+            atlas_*.zip
+            atlas_*.sha256
 
   release:
     needs: [check-changes, build]
@@ -261,7 +292,8 @@ jobs:
           **Changes:** See commit history for latest changes.
           " \
             --prerelease \
-            atlas-*/atlas_*.tar.gz
+            atlas_*.tar.gz \
+            atlas_*.zip
 
       - name: Update Homebrew tap
         env:
