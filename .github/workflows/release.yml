@@ -163,11 +163,17 @@ jobs:
           
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+            # Create private key file from secret
+            echo "${{ secrets.MACOS_NOTARY_KEY }}" > notary_key.p8
+            
             xcrun notarytool submit ./dist/atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz \
               --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
               --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
-              --key "${{ secrets.MACOS_NOTARY_KEY }}" \
+              --key notary_key.p8 \
               --wait
+              
+            # Clean up private key file
+            rm -f notary_key.p8
           fi
 
       - name: Upload artifacts
