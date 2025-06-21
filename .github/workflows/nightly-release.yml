@@ -111,16 +111,16 @@ jobs:
           # Replace version placeholders using a more robust approach
           cp src/utils/version.ts src/utils/version.ts.backup
           
-          # Create the updated version file
-          cat > src/utils/version.ts << EOF
+          # Create the updated version file using printf to avoid YAML conflicts
+          cat > src/utils/version.ts <<'VERSIONEOF'
 /**
  * Version detection utility for Atlas
  * Returns different version strings based on execution context
  */
 
 // This will be replaced during compilation by build scripts
-const COMPILED_VERSION = "$VERSION";
-const COMPILED_GIT_SHA = "$GIT_SHA";
+const COMPILED_VERSION = "REPLACE_VERSION_HERE";
+const COMPILED_GIT_SHA = "REPLACE_SHA_HERE";
 
 export function getAtlasVersion(): string {
   // Check if running as compiled binary (version was replaced during build)
@@ -129,7 +129,7 @@ export function getAtlasVersion(): string {
     if (COMPILED_VERSION.startsWith("nightly-")) {
       // Nightly build - show nightly-<git-sha>
       const gitSha = COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : "unknown";
-      return \`nightly-\${gitSha}\`;
+      return `nightly-${gitSha}`;
     } else {
       // Regular release - show release version
       return COMPILED_VERSION;
@@ -149,7 +149,7 @@ export function getAtlasVersion(): string {
     
     if (output.success) {
       const gitSha = decoder.decode(output.stdout).trim();
-      return \`dev-\${gitSha}\`;
+      return `dev-${gitSha}`;
     }
   } catch (error) {
     // Git not available or not in git repository
@@ -175,7 +175,11 @@ export function getVersionInfo() {
            COMPILED_GIT_SHA !== "__ATLAS_GIT_SHA__" ? COMPILED_GIT_SHA : undefined,
   };
 }
-EOF
+VERSIONEOF
+          
+          # Now replace the placeholders safely
+          sed -i "s/REPLACE_VERSION_HERE/$VERSION/g" src/utils/version.ts
+          sed -i "s/REPLACE_SHA_HERE/$GIT_SHA/g" src/utils/version.ts
           
           echo "Version information embedded in source"
           echo "Verification:"
