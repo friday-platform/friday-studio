@@ -35,18 +35,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-15-xlarge
-            os: darwin
-            arch: arm64
-          - runner: macos-14-xlarge  
-            os: darwin
-            arch: amd64
           - runner: ubuntu-latest
             os: linux
             arch: amd64
-          - runner: ubuntu-latest
-            os: linux
-            arch: arm64
 
     runs-on: ${{ matrix.runner }}
     steps:
