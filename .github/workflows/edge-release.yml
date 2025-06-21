@@ -114,39 +114,57 @@ jobs:
           echo "test" > dist/test.txt && echo "Write test PASSED" || echo "Write test FAILED"
           rm -f dist/test.txt
           
+          # Set V8 flags for memory limits during compilation
+          export DENO_V8_FLAGS="--max-old-space-size=8192"
+          
           if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
             echo "Cross-compiling for Linux ARM64"
             deno compile \
-              --allow-all \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
-              --unstable-otel \
-              --env-file \
-              --no-check \
               --target aarch64-unknown-linux-gnu \
+              --include=src \
               --output "dist/${binary_name}" \
               src/cli.tsx
           elif [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
             echo "Compiling for Linux AMD64"
             deno compile \
-              --allow-all \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
-              --unstable-otel \
-              --env-file \
-              --no-check \
               --target x86_64-unknown-linux-gnu \
+              --include=src \
               --output "dist/${binary_name}" \
               src/cli.tsx
           else
             echo "Native compilation for ${{ matrix.os }}_${{ matrix.arch }}"
             deno compile \
-              --allow-all \
+              --no-check \
+              --allow-read \
+              --allow-write \
+              --allow-net \
+              --allow-env \
+              --allow-run \
+              --allow-sys \
+              --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
-              --unstable-otel \
-              --env-file \
-              --no-check \
+              --include=src \
               --output "dist/${binary_name}" \
               src/cli.tsx
           fi
