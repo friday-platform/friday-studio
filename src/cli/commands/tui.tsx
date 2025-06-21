@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
-// import { Badge } from "@inkjs/ui"; // Temporarily disabled for build compatibility
+import { Badge } from "@inkjs/ui";
 import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
 import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
@@ -2296,9 +2296,11 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         <Text bold color="yellow">
           ▣ {showSplashScreen ? "Atlas (No Workspace)" : serverStatus.workspace || "Atlas"}
         </Text>
-        <Text color={showSplashScreen ? "yellow" : serverStatus.running ? "green" : "red"}>
-          [{showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}]
-        </Text>
+        <Badge
+          color={showSplashScreen ? "yellow" : serverStatus.running ? "green" : "red"}
+        >
+          {showSplashScreen ? "Setup" : serverStatus.running ? "Online" : "Offline"}
+        </Badge>
         <Text>| Logs: {serverLogs.length} entries</Text>
         {!showSplashScreen && (
           <>
