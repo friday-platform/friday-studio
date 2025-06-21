@@ -37,7 +37,7 @@ brew tap tempestteam/tap
 # Stable Channel (Default) - Official releases only
 HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
 
-# Nightly Channel - Daily builds with latest stable features  
+# Nightly Channel - Daily builds  
 HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly
 
 # Edge Channel - Bleeding edge builds from every commit (⚠️ unstable)
@@ -50,7 +50,7 @@ atlas --version  # Shows channel-specific version info
 
 **Channel Details:**
 - **Stable**: Official releases (1.0.0, 1.1.0) - maximum stability
-- **Nightly**: Daily builds (nightly-YYYYMMDD) - latest stable features
+- **Nightly**: Daily builds (nightly-YYYYMMDD) - nightly releases
 - **Edge**: Every commit (edge-YYYYMMDD-HHMMSS-gitsha) - bleeding edge, unstable
 
 ⚠️ **Note**: Only one channel can be installed at a time. To switch channels:
