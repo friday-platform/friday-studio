@@ -130,6 +130,7 @@ jobs:
               --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
+              --unstable-otel \
               --target aarch64-unknown-linux-gnu \
               --include=src \
               --output "dist/${binary_name}" \
@@ -147,6 +148,7 @@ jobs:
               --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
+              --unstable-otel \
               --target x86_64-unknown-linux-gnu \
               --include=src \
               --output "dist/${binary_name}" \
@@ -164,6 +166,7 @@ jobs:
               --allow-ffi \
               --unstable-broadcast-channel \
               --unstable-worker-options \
+              --unstable-otel \
               --include=src \
               --output "dist/${binary_name}" \
               src/cli.tsx
