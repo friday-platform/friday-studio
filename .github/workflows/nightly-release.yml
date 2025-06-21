@@ -192,8 +192,8 @@ jobs:
           
           # Notarize if credentials available
           if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
-            # Create private key file from secret with proper formatting
-            echo "${{ secrets.MACOS_NOTARY_KEY }}" > notary_key.p8
+            # Create private key file from base64 encoded secret
+            echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
             
             # Debug: check key file format
             echo "Private key file size: $(wc -c < notary_key.p8)"
