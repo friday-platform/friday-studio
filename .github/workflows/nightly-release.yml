@@ -116,12 +116,12 @@ jobs:
           
           # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            echo "ARM64 macOS compilation on macOS 15 for maximum compatibility"
+            echo "ARM64 macOS compilation on macOS 15 - removing restrictive V8 flags"
             
-            # Set memory limits for large compilation
+            # Set memory limits for large compilation only (not embedded in binary)
             export DENO_V8_FLAGS="--max-old-space-size=8192"
             
-            # Use simpler V8 flags for maximum compatibility across environments
+            # Compile WITHOUT embedded V8 flags that restrict runtime memory
             deno compile \
               --no-check \
               --allow-read \
@@ -136,7 +136,6 @@ jobs:
               --unstable-otel \
               --include=src \
               --include=examples \
-              --v8-flags="--max-old-space-size=2048" \
               --output "./dist/${binary_name}" \
               ./src/cli.tsx
           else
