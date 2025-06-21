@@ -1,0 +1,267 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: amd64
+          - os: ubuntu-latest  
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin
+            arch: amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            arch: amd64
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+            platform: windows
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            version="${{ inputs.tag }}"
+          else
+            version="${{ github.ref_name }}"
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Version: $version"
+        shell: bash
+
+      - name: Build binary
+        run: |
+          mkdir -p ./dist
+          
+          # Set binary name based on platform
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+          else
+            binary_name="atlas"
+          fi
+          
+          # Compile with Deno
+          deno compile \
+            --no-check \
+            --allow-read \
+            --allow-write \
+            --allow-net \
+            --allow-env \
+            --allow-run \
+            --allow-sys \
+            --allow-ffi \
+            --unstable-broadcast-channel \
+            --unstable-worker-options \
+            --unstable-otel \
+            --include=src \
+            --include=examples \
+            --target ${{ matrix.target }} \
+            --output "./dist/${binary_name}" \
+            ./src/cli.tsx
+        shell: bash
+
+      - name: Create archive
+        run: |
+          # Set file extensions
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+            archive_ext=".zip"
+          else
+            binary_name="atlas"
+            archive_ext=".tar.gz"
+          fi
+          
+          # Create archive name
+          archive_name="atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
+          
+          # Create archive
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+          fi
+          
+          # Generate checksum
+          if [ "${{ matrix.platform }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+        shell: bash
+
+      - name: Sign macOS binary (if certificates available)
+        if: matrix.platform == 'darwin' && env.MACOS_SIGN_P12 != ''
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          # Import certificate
+          echo "$MACOS_SIGN_P12" | base64 --decode > certificate.p12
+          security create-keychain -p mypassword build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p mypassword build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
+          
+          # Sign binary
+          codesign --force --options runtime --deep --sign "$MACOS_SIGN_IDENTITY" ./dist/atlas
+          
+          # Notarize if credentials available
+          if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+            xcrun notarytool submit ./dist/atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz \
+              --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
+              --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
+              --key "${{ secrets.MACOS_NOTARY_KEY }}" \
+              --wait
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+          retention-days: 5
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            version="${{ inputs.tag }}"
+          else
+            version="${{ github.ref_name }}"
+          fi
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Version: $version"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag for changelog generation
+          previous_tag=$(git tag --sort=-version:refname | grep -v "${{ steps.version.outputs.version }}" | head -n1)
+          
+          if [ -z "$previous_tag" ]; then
+            # First release
+            echo "## What's New" > changelog.md
+            echo "" >> changelog.md
+            echo "This is the first release of Atlas." >> changelog.md
+            echo "" >> changelog.md
+            echo "### Features" >> changelog.md
+            git log --oneline --no-merges -20 --pretty=format:"- %s" >> changelog.md
+          else
+            # Generate changelog since previous tag
+            echo "## What's New in ${{ steps.version.outputs.version }}" > changelog.md
+            echo "" >> changelog.md
+            
+            # Categorize commits
+            echo "### ✨ Features" >> changelog.md
+            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
+            echo "" >> changelog.md
+            
+            echo "### 🐛 Bug Fixes" >> changelog.md
+            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
+            echo "" >> changelog.md
+            
+            echo "### 📚 Documentation" >> changelog.md
+            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
+            echo "" >> changelog.md
+            
+            echo "### 🔧 Other Changes" >> changelog.md
+            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
+          fi
+          
+          echo "" >> changelog.md
+          echo "## Installation" >> changelog.md
+          echo "" >> changelog.md
+          echo "Download the appropriate binary for your platform from the assets below." >> changelog.md
+          echo "" >> changelog.md
+          echo "### macOS / Linux" >> changelog.md
+          echo '```bash' >> changelog.md
+          echo 'tar -xzf atlas_*_YOUR_PLATFORM_*.tar.gz' >> changelog.md
+          echo 'sudo mv atlas /usr/local/bin/' >> changelog.md
+          echo '```' >> changelog.md
+          echo "" >> changelog.md
+          echo "### Windows" >> changelog.md
+          echo "Extract the ZIP file and add the atlas.exe to your PATH." >> changelog.md
+          
+          echo "Generated changelog:"
+          cat changelog.md
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+          echo "Generated checksums:"
+          cat checksums.txt
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: Atlas ${{ steps.version.outputs.version }}
+          body_path: changelog.md
+          draft: true
+          prerelease: false
+          make_latest: true
+          files: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

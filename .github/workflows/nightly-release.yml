@@ -1,0 +1,293 @@
+name: Nightly Release
+
+on:
+  schedule:
+    # Run at 2 AM PT every day (10 AM UTC to account for daylight saving time)
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: 'Force release even if no changes'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes since last nightly
+        id: check
+        run: |
+          # Get the latest nightly tag
+          latest_nightly=$(git tag -l "nightly-*" | sort -V | tail -n1)
+          
+          if [ -z "$latest_nightly" ]; then
+            echo "No previous nightly found, creating first nightly"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there are commits since the last nightly tag
+            commits_since=$(git rev-list ${latest_nightly}..HEAD --count)
+            if [ "$commits_since" -gt 0 ] || [ "${{ inputs.force_release }}" == "true" ]; then
+              echo "Found $commits_since commits since last nightly, creating new release"
+              echo "should_release=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes since last nightly, skipping release"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Generate version
+        id: version
+        run: |
+          # Generate nightly version: nightly-YYYYMMDD-HHMMSS
+          version="nightly-$(date -u +%Y%m%d-%H%M%S)"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Generated version: $version"
+
+  build:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: amd64
+          - os: ubuntu-latest  
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin
+            arch: amd64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            arch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Build binary
+        run: |
+          mkdir -p ./dist
+          
+          # Set binary name based on platform
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+          else
+            binary_name="atlas"
+          fi
+          
+          # Compile with Deno
+          deno compile \
+            --no-check \
+            --allow-read \
+            --allow-write \
+            --allow-net \
+            --allow-env \
+            --allow-run \
+            --allow-sys \
+            --allow-ffi \
+            --unstable-broadcast-channel \
+            --unstable-worker-options \
+            --unstable-otel \
+            --include=src \
+            --include=examples \
+            --target ${{ matrix.target }} \
+            --output "./dist/${binary_name}" \
+            ./src/cli.tsx
+        shell: bash
+
+      - name: Create archive
+        run: |
+          mkdir -p ./dist
+          
+          # Set file extensions
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+            archive_ext=".zip"
+          else
+            binary_name="atlas"
+            archive_ext=".tar.gz"
+          fi
+          
+          # Create archive name
+          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
+          
+          # Create archive
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+          fi
+          
+          # Generate checksum
+          if [ "${{ matrix.platform }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+        shell: bash
+
+      - name: Sign macOS binary (if certificates available)
+        if: matrix.platform == 'darwin' && env.MACOS_SIGN_P12 != ''
+        env:
+          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
+          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+        run: |
+          # Import certificate
+          echo "$MACOS_SIGN_P12" | base64 --decode > certificate.p12
+          security create-keychain -p mypassword build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p mypassword build.keychain
+          security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
+          
+          # Sign binary
+          codesign --force --options runtime --deep --sign "$MACOS_SIGN_IDENTITY" ./dist/atlas
+          
+          # Notarize if credentials available
+          if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+            xcrun notarytool submit ./dist/atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.tar.gz \
+              --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
+              --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
+              --key "${{ secrets.MACOS_NOTARY_KEY }}" \
+              --wait
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.sha256
+          retention-days: 1
+
+  release:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the latest nightly tag for changelog generation
+          latest_nightly=$(git tag -l "nightly-*" | sort -V | tail -n1)
+          
+          if [ -z "$latest_nightly" ]; then
+            # First nightly release
+            echo "## Changes" > changelog.md
+            echo "" >> changelog.md
+            echo "This is the first nightly release of Atlas." >> changelog.md
+            echo "" >> changelog.md
+            git log --oneline --no-merges -10 >> changelog.md
+          else
+            # Generate changelog since last nightly
+            echo "## Changes since $latest_nightly" > changelog.md
+            echo "" >> changelog.md
+            git log --oneline --no-merges ${latest_nightly}..HEAD >> changelog.md
+          fi
+          
+          echo "Generated changelog:"
+          cat changelog.md
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+          echo "Generated checksums:"
+          cat checksums.txt
+
+      - name: Create nightly release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-changes.outputs.version }}
+          name: Atlas Nightly ${{ needs.check-changes.outputs.version }}
+          body_path: changelog.md
+          draft: false
+          prerelease: true
+          make_latest: false
+          files: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update nightly tag
+        run: |
+          # Create/update a 'nightly' tag that always points to the latest nightly
+          git tag -f nightly ${{ needs.check-changes.outputs.version }}
+          git push origin nightly --force
+
+  cleanup:
+    needs: [check-changes, release]
+    if: always() && needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Clean up old nightly releases
+        run: |
+          # Keep only the last 7 nightly releases
+          echo "Cleaning up old nightly releases..."
+          
+          # Get all nightly tags sorted by creation date (newest first)
+          nightly_tags=$(git tag -l "nightly-*" --sort=-version:refname)
+          
+          # Convert to array and skip first 7 (keep them)
+          count=0
+          for tag in $nightly_tags; do
+            count=$((count + 1))
+            if [ $count -gt 7 ]; then
+              echo "Deleting old nightly release: $tag"
+              # Delete the GitHub release
+              gh release delete "$tag" --yes --cleanup-tag || echo "Failed to delete release $tag"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
