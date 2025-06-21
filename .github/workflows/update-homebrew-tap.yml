@@ -11,6 +11,19 @@ jobs:
   update-homebrew-tap:
     runs-on: ubuntu-latest
     steps:
+      - name: Determine channel from release tag
+        id: channel
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ "$TAG" == nightly-* ]]; then
+            echo "channel=nightly" >> $GITHUB_OUTPUT
+          elif [[ "$TAG" == edge-* ]]; then
+            echo "channel=edge" >> $GITHUB_OUTPUT
+          else
+            echo "channel=stable" >> $GITHUB_OUTPUT
+          fi
+          echo "Detected channel: $(cat $GITHUB_OUTPUT | grep channel | cut -d= -f2)"
+
       - name: Trigger Homebrew tap auto-update
         uses: peter-evans/repository-dispatch@v3
         with:
@@ -19,5 +32,6 @@ jobs:
           event-type: atlas-release
           client-payload: |
             {
-              "tag": "${{ github.event.release.tag_name }}"
+              "tag": "${{ github.event.release.tag_name }}",
+              "channel": "${{ steps.channel.outputs.channel }}"
             }

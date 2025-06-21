@@ -1,0 +1,269 @@
+name: Edge Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate edge version
+        id: version
+        run: |
+          timestamp=$(date -u +%Y%m%d-%H%M%S)
+          git_sha=$(git rev-parse --short HEAD)
+          version="edge-${timestamp}-${git_sha}"
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "Edge version: ${version}"
+
+  build:
+    needs: check-changes
+    strategy:
+      matrix:
+        include:
+          - runner: macos-15-xlarge
+            os: darwin
+            arch: arm64
+          - runner: macos-14-xlarge  
+            os: darwin
+            arch: amd64
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v2.3.3
+
+      - name: Setup cross-compilation for ARM64 (Linux only)
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Prepare version information
+        shell: bash
+        run: |
+          # Get version and git information
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          GIT_SHA=$(git rev-parse --short HEAD)
+          
+          echo "Building version: $VERSION"
+          echo "Git SHA: $GIT_SHA"
+          
+          # Replace version placeholders with cross-platform sed syntax
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS sed requires backup extension (empty string for no backup)
+            sed -i "" "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
+            sed -i "" "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
+          else
+            # Linux/Windows with bash sed syntax
+            sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
+            sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
+          fi
+          
+          echo "Version information embedded in source"
+          echo "Verification:"
+          head -10 src/utils/version.ts
+
+      - name: Compile Atlas binary
+        shell: bash
+        run: |
+          echo "Compiling for ${{ matrix.os }}_${{ matrix.arch }}"
+          
+          if [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+            echo "Cross-compiling for Linux ARM64"
+            deno compile \
+              --allow-all \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --env-file \
+              --target aarch64-unknown-linux-gnu \
+              --output atlas \
+              src/cli.tsx
+          elif [[ "${{ matrix.os }}" == "linux" && "${{ matrix.arch }}" == "amd64" ]]; then
+            echo "Compiling for Linux AMD64"
+            deno compile \
+              --allow-all \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --env-file \
+              --target x86_64-unknown-linux-gnu \
+              --output atlas \
+              src/cli.tsx
+          else
+            echo "Native compilation for ${{ matrix.os }}_${{ matrix.arch }}"
+            deno compile \
+              --allow-all \
+              --unstable-broadcast-channel \
+              --unstable-worker-options \
+              --unstable-otel \
+              --env-file \
+              --output atlas \
+              src/cli.tsx
+          fi
+
+      - name: Sign and notarize macOS binary
+        if: matrix.os == 'darwin'
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          # Create keychain
+          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          
+          # Import certificate
+          echo "$APPLE_CERTIFICATE" | base64 --decode > certificate.p12
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$APPLE_KEYCHAIN_PASSWORD" build.keychain
+          
+          # Create entitlements
+          cat > entitlements.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>com.apple.security.cs.allow-jit</key>
+            <true/>
+            <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+            <true/>
+            <key>com.apple.security.cs.disable-executable-page-protection</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+          
+          # Sign binary
+          codesign --force --options runtime --entitlements entitlements.plist --sign "$APPLE_DEVELOPER_ID" --timestamp atlas
+          
+          # Create zip for notarization
+          zip atlas-temp.zip atlas
+          
+          # Notarize
+          xcrun notarytool submit atlas-temp.zip \
+            --apple-id "$APPLE_DEVELOPER_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          
+          # Staple notarization
+          xcrun stapler staple atlas
+          
+          # Verify
+          codesign --verify --verbose atlas
+          spctl --assess --verbose atlas
+
+      - name: Test binary
+        shell: bash
+        run: |
+          ./atlas --version
+          echo "Testing help command..."
+          ./atlas --help
+
+      - name: Create archive
+        shell: bash
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          ARCHIVE_NAME="atlas_${VERSION}_${{ matrix.os }}_${{ matrix.arch }}"
+          
+          echo "Creating archive: ${ARCHIVE_NAME}.tar.gz"
+          tar -czf "${ARCHIVE_NAME}.tar.gz" atlas
+          
+          # Calculate checksum
+          if [[ "${{ matrix.os }}" == "darwin" ]]; then
+            shasum -a 256 "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+          else
+            sha256sum "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
+          fi
+          
+          echo "Archive created successfully"
+          ls -la "${ARCHIVE_NAME}.tar.gz"
+          cat "${ARCHIVE_NAME}.tar.gz.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: atlas-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            atlas_*.tar.gz
+            atlas_*.tar.gz.sha256
+
+  release:
+    needs: [check-changes, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Create release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Create release
+          gh release create "$VERSION" \
+            --title "Atlas Edge $VERSION" \
+            --notes "Edge release - bleeding edge build from commit $(git rev-parse --short HEAD)
+
+          ⚠️ **Warning**: This is an edge release built from the latest commit. Use with caution.
+          
+          **Installation via Homebrew:**
+          \`\`\`bash
+          HOMEBREW_GITHUB_API_TOKEN=\$(gh auth token) brew install tempest-atlas-edge
+          \`\`\`
+          
+          **Direct download:** Download the appropriate binary for your platform below.
+          
+          **Changes:** See commit history for latest changes.
+          " \
+            --prerelease \
+            atlas-*/atlas_*.tar.gz
+
+      - name: Update Homebrew tap
+        env:
+          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Trigger homebrew tap update for edge channel via repository dispatch
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/tempestteam/homebrew-tap/dispatches" \
+            -d "{\"event_type\":\"atlas-release\",\"client_payload\":{\"tag\":\"$VERSION\",\"channel\":\"edge\"}}"
