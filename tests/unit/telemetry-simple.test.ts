@@ -3,7 +3,7 @@
  * Tests the actual telemetry class behavior without complex mocking
  */
 
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { AtlasTelemetry } from "../../src/utils/telemetry.ts";
 
 // Store original environment

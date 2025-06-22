@@ -6,8 +6,8 @@
  */
 
 import { BaseEMCPProvider } from "./base-provider.ts";
-import { expandGlob } from "jsr:@std/fs";
-import { relative, resolve } from "jsr:@std/path";
+import { expandGlob } from "@std/fs";
+import { relative, resolve } from "@std/path";
 import type {
   CodebaseContextSpec,
   ContextSpec,

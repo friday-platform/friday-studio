@@ -568,16 +568,6 @@ Focus on safety, efficiency, and reliability.`;
             remoteConfig.acp.health_check_interval;
         }
       }
-
-      // Copy A2A configuration if present
-      if (remoteConfig.a2a) {
-        environment.agent_config.parameters.a2a_config = JSON.stringify(remoteConfig.a2a);
-      }
-
-      // Copy custom configuration if present
-      if (remoteConfig.custom) {
-        environment.agent_config.parameters.custom_config = JSON.stringify(remoteConfig.custom);
-      }
     } else if (agent.type === "tempest") {
       const tempestConfig = agent.config;
       environment.agent_config.parameters.agent = tempestConfig.agent;

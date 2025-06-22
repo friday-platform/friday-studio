@@ -3,7 +3,7 @@
  * Tests core security validation functions (no cluster or complex mocking required)
  */
 
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 
 // Test implementation of SecureLogger pattern (simplified)
 class TestSecureLogger {

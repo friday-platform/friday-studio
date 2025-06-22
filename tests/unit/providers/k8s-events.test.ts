@@ -3,7 +3,7 @@
  * Tests security functions, configuration validation, and core functionality
  */
 
-import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "@std/assert";
 import {
   K8sEventsSignalConfig,
   K8sEventsSignalProvider,

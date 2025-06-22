@@ -134,15 +134,13 @@ const WorkspaceAgentConfigSchema = z
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
     // Remote agent specific
-    protocol: z.enum(["acp", "a2a", "custom", "mcp"]).optional(),
+    protocol: z.enum(["acp", "mcp"]).optional(),
     endpoint: z.string().url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
 
     // Protocol-specific configurations
     acp: ACPConfigSchema.optional(),
-    a2a: z.record(z.string(), z.any()).optional(), // Placeholder for A2A
-    custom: z.record(z.string(), z.any()).optional(), // Placeholder for custom
     mcp: MCPConfigSchema.optional(),
 
     // Schema validation
@@ -240,7 +238,7 @@ const WorkspaceAgentConfigSchema = z
       if (!value.protocol) {
         ctx.addIssue({
           code: "custom",
-          message: "Remote agents require 'protocol' field (acp, a2a, custom, or mcp)",
+          message: "Remote agents require 'protocol' field (acp, or mcp)",
           path: ["protocol"],
           input: value,
         });
@@ -840,8 +838,6 @@ export class ConfigLoader {
           timeout: workspaceAgentConfig.timeout,
           schema: workspaceAgentConfig.schema,
           acp: workspaceAgentConfig.acp,
-          a2a: workspaceAgentConfig.a2a,
-          custom: workspaceAgentConfig.custom,
           mcp: workspaceAgentConfig.mcp,
           validation: workspaceAgentConfig.validation,
           monitoring: workspaceAgentConfig.monitoring,

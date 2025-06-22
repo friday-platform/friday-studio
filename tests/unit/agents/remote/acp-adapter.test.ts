@@ -3,7 +3,7 @@
  * Tests the core ACP protocol integration and execution flows
  */
 
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import {
   ACPAdapter,
   ACPAdapterConfig,

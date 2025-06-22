@@ -152,7 +152,9 @@ import { type Agent } from "acp-sdk";
 export abstract class BaseRemoteAdapter {
   abstract discoverAgents(): Promise<Agent[]>;
   abstract getAgentDetails(agentName: string): Promise<Agent>;
-  abstract executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult>;
+  abstract executeAgent(
+    request: RemoteExecutionRequest,
+  ): Promise<RemoteExecutionResult>;
   abstract executeAgentStream(
     request: RemoteExecutionRequest,
   ): AsyncIterableIterator<RemoteExecutionEvent>;
@@ -210,9 +212,13 @@ export class ACPAdapter extends BaseRemoteAdapter {
 
   async discoverAgents(): Promise<Agent[]> {
     try {
-      this.logger.info("Discovering ACP agents", { endpoint: this.config.endpoint });
+      this.logger.info("Discovering ACP agents", {
+        endpoint: this.config.endpoint,
+      });
       const agents = await this.client.agents();
-      this.logger.info("Successfully discovered agents", { count: agents.length });
+      this.logger.info("Successfully discovered agents", {
+        count: agents.length,
+      });
       return agents;
     } catch (error) {
       this.logger.error("Failed to discover agents", { error: error.message });
@@ -231,7 +237,9 @@ export class ACPAdapter extends BaseRemoteAdapter {
     }
   }
 
-  async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
+  async executeAgent(
+    request: RemoteExecutionRequest,
+  ): Promise<RemoteExecutionResult> {
     const startTime = Date.now();
 
     try {
@@ -280,7 +288,12 @@ export class ACPAdapter extends BaseRemoteAdapter {
     request: RemoteExecutionRequest,
   ): AsyncIterableIterator<RemoteExecutionEvent> {
     try {
-      for await (const event of this.client.runStream(request.agentName, request.input)) {
+      for await (
+        const event of this.client.runStream(
+          request.agentName,
+          request.input,
+        )
+      ) {
         yield this.convertACPEvent(event);
       }
     } catch (error) {
@@ -296,7 +309,10 @@ export class ACPAdapter extends BaseRemoteAdapter {
     try {
       await this.client.runCancel(executionId);
     } catch (error) {
-      this.logger.error("Failed to cancel execution", { executionId, error: error.message });
+      this.logger.error("Failed to cancel execution", {
+        executionId,
+        error: error.message,
+      });
       throw error;
     }
   }
@@ -351,7 +367,11 @@ export class ACPAdapter extends BaseRemoteAdapter {
     while (attempts < maxAttempts) {
       const run = await this.client.runStatus(runId);
 
-      if (run.status === "completed" || run.status === "failed" || run.status === "cancelled") {
+      if (
+        run.status === "completed" ||
+        run.status === "failed" ||
+        run.status === "cancelled"
+      ) {
         return run;
       }
 
@@ -436,11 +456,11 @@ interface HealthStatus {
 export class RemoteAgent extends BaseAgent {
   private adapter: BaseRemoteAdapter
   private config: RemoteAgentConfig
-  
+
   constructor(metadata: AgentMetadata, config: RemoteAgentConfig) {
     super(metadata)
     this.config = config
-    
+
     // Create protocol-specific adapter
     this.adapter = this.createAdapter(config.protocol)
   }
@@ -453,7 +473,7 @@ export class RemoteAgent extends BaseAgent {
     }
 
     const result = await this.adapter.executeAgent(request)
-    
+
     if (result.status === 'failed') {
       throw new Error(`Remote agent execution failed: ${result.error}`)
     }
@@ -495,21 +515,25 @@ export class RemoteAgent extends BaseAgent {
 **Advantages Over Custom Implementation:**
 
 1. **🔒 Security & Reliability**
+
    - Peer-reviewed code from IBM with security focus
    - Battle-tested in production environments
    - Regular security updates and patches
 
 2. **🚀 Performance Optimizations**
+
    - Efficient SSE event parsing with `eventsource-parser`
    - Proper connection pooling and resource management
    - Built-in retry logic and error recovery
 
 3. **📊 Observability Built-in**
+
    - OpenTelemetry instrumentation out of the box
    - Structured logging and tracing
    - Performance metrics collection
 
 4. **⚡ Development Velocity**
+
    - ~500 lines of complex HTTP/SSE client code eliminated
    - Type safety guaranteed by Zod schemas
    - Comprehensive test coverage (90+ test cases)
@@ -549,11 +573,15 @@ export class WorkspaceConfigLoader {
     // Validate all agent configurations
     for (const [agentId, agentConfig] of Object.entries(rawConfig.agents)) {
       if (agentConfig.type === "remote") {
-        const validationResult = await this.validateRemoteAgentConfig(agentConfig);
+        const validationResult = await this.validateRemoteAgentConfig(
+          agentConfig,
+        );
         if (!validationResult.valid) {
           throw new ConfigurationError(
             `Invalid remote agent configuration for '${agentId}': ${
-              validationResult.errors.join(", ")
+              validationResult.errors.join(
+                ", ",
+              )
             }`,
           );
         }
@@ -563,14 +591,16 @@ export class WorkspaceConfigLoader {
     return this.transformToWorkspaceConfig(rawConfig);
   }
 
-  private async validateRemoteAgentConfig(config: RemoteAgentConfig): Promise<ValidationResult> {
+  private async validateRemoteAgentConfig(
+    config: RemoteAgentConfig,
+  ): Promise<ValidationResult> {
     // 1. Schema validation using Zod
     const schemaResult = RemoteAgentConfigSchema.safeParse(config);
     if (!schemaResult.success) {
       return {
         valid: false,
-        errors: schemaResult.error.issues.map((issue) =>
-          `${issue.path.join(".")}: ${issue.message}`
+        errors: schemaResult.error.issues.map(
+          (issue) => `${issue.path.join(".")}: ${issue.message}`,
         ),
       };
     }
@@ -588,9 +618,12 @@ export class WorkspaceConfigLoader {
       return { valid: true, errors: [] };
     } catch (error) {
       // Log warning but don't fail configuration loading
-      this.logger.warn(`Remote agent connectivity issue for ${config.agent_name}`, {
-        error: error.message,
-      });
+      this.logger.warn(
+        `Remote agent connectivity issue for ${config.agent_name}`,
+        {
+          error: error.message,
+        },
+      );
       return {
         valid: true,
         errors: [],
@@ -623,7 +656,10 @@ export class AgentLoader {
         return new TempestAgent(metadata, config);
       case "remote":
         // Enhanced remote agent creation with validation
-        return await this.createRemoteAgent(metadata, config as RemoteAgentConfig);
+        return await this.createRemoteAgent(
+          metadata,
+          config as RemoteAgentConfig,
+        );
       default:
         throw new Error(`Unsupported agent type: ${metadata.type}`);
     }
@@ -656,7 +692,9 @@ export class AgentLoader {
     return agent;
   }
 
-  async validateRemoteAgent(config: RemoteAgentConfig): Promise<ValidationResult> {
+  async validateRemoteAgent(
+    config: RemoteAgentConfig,
+  ): Promise<ValidationResult> {
     const errors: string[] = [];
     const warnings: string[] = [];
 
@@ -679,7 +717,9 @@ export class AgentLoader {
           capabilities: agentDetails.metadata?.capabilities?.length || 0,
         });
       } catch (error) {
-        errors.push(`Target agent '${config.agent_name}' not found or inaccessible`);
+        errors.push(
+          `Target agent '${config.agent_name}' not found or inaccessible`,
+        );
         return { valid: false, errors, warnings };
       }
 
@@ -758,13 +798,19 @@ export class RemoteAgentMonitor {
         try {
           await this.performHealthCheck(agentId, agent);
         } catch (error) {
-          this.logger.error("Health check failed", { agentId, error: error.message });
+          this.logger.error("Health check failed", {
+            agentId,
+            error: error.message,
+          });
         }
       }
     }, this.healthCheckInterval);
   }
 
-  private async performHealthCheck(agentId: string, agent: RemoteAgent): Promise<void> {
+  private async performHealthCheck(
+    agentId: string,
+    agent: RemoteAgent,
+  ): Promise<void> {
     const healthStatus = await agent.getAdapter().healthCheck();
 
     if (healthStatus.status === "unhealthy") {
@@ -868,7 +914,9 @@ export class RemoteAgent extends BaseAgent {
 ```typescript
 // src/core/workers/agent-execution-worker.ts (existing file - modifications)
 export class AgentExecutionWorker extends BaseWorker {
-  async executeRemoteAgent(task: AgentExecutionTask): Promise<AgentExecutionResult> {
+  async executeRemoteAgent(
+    task: AgentExecutionTask,
+  ): Promise<AgentExecutionResult> {
     const agent = task.agent as RemoteAgent;
 
     try {
@@ -929,7 +977,11 @@ const ACPConfigSchema = z.object({
   timeout_ms: z.number().positive().default(30000),
   max_retries: z.number().min(0).default(3),
   health_check_interval: z.number().positive().default(60000),
-  agent_name: z.string().min(1).max(63).regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/),
+  agent_name: z
+    .string()
+    .min(1)
+    .max(63)
+    .regex(/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/),
 });
 
 const ValidationConfigSchema = z.object({
@@ -976,14 +1028,18 @@ const WorkspaceAgentConfigSchema = z
     validation: ValidationConfigSchema.optional(),
 
     // Monitoring configuration
-    monitoring: z.object({
-      enabled: z.boolean().default(true),
-      circuit_breaker: z.object({
-        failure_threshold: z.number().positive().default(5),
-        timeout_ms: z.number().positive().default(60000),
-        half_open_max_calls: z.number().positive().default(3),
-      }).optional(),
-    }).optional(),
+    monitoring: z
+      .object({
+        enabled: z.boolean().default(true),
+        circuit_breaker: z
+          .object({
+            failure_threshold: z.number().positive().default(5),
+            timeout_ms: z.number().positive().default(60000),
+            half_open_max_calls: z.number().positive().default(3),
+          })
+          .optional(),
+      })
+      .optional(),
   })
   .superRefine((data, ctx) => {
     // Enhanced type-specific validation
@@ -1049,7 +1105,11 @@ const WorkspaceAgentConfigSchema = z
             path: ["auth"],
           });
         }
-        if (authType === "api_key" && !data.auth.api_key_env && !data.auth.token_env) {
+        if (
+          authType === "api_key" &&
+          !data.auth.api_key_env &&
+          !data.auth.token_env
+        ) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
             message: "API key auth requires either 'api_key_env' or 'token_env' field",
@@ -1069,7 +1129,9 @@ const WorkspaceAgentConfigSchema = z
 export class ConfigLoader {
   // ... existing methods ...
 
-  private async validateRemoteAgentConfig(config: WorkspaceAgentConfig): Promise<ValidationResult> {
+  private async validateRemoteAgentConfig(
+    config: WorkspaceAgentConfig,
+  ): Promise<ValidationResult> {
     if (config.type !== "remote") {
       return { valid: true, errors: [] };
     }
@@ -1098,7 +1160,9 @@ export class ConfigLoader {
     }
   }
 
-  private async testRemoteConnectivity(config: WorkspaceAgentConfig): Promise<void> {
+  private async testRemoteConnectivity(
+    config: WorkspaceAgentConfig,
+  ): Promise<void> {
     if (config.type !== "remote" || !config.endpoint) {
       throw new Error("Invalid remote agent configuration");
     }
@@ -1116,7 +1180,9 @@ export class ConfigLoader {
     }
   }
 
-  private async testACPConnectivity(config: WorkspaceAgentConfig): Promise<void> {
+  private async testACPConnectivity(
+    config: WorkspaceAgentConfig,
+  ): Promise<void> {
     try {
       // Import ACP client dynamically to avoid circular dependencies
       const { Client } = await import("acp-sdk");
@@ -1173,7 +1239,9 @@ export class ConfigLoader {
     };
   }
 
-  private async testCustomConnectivity(config: WorkspaceAgentConfig): Promise<void> {
+  private async testCustomConnectivity(
+    config: WorkspaceAgentConfig,
+  ): Promise<void> {
     // Basic HTTP connectivity test for custom protocols
     const response = await fetch(config.endpoint!, {
       method: "GET",
@@ -1186,7 +1254,9 @@ export class ConfigLoader {
   }
 
   // Enhanced conversion method for remote agents
-  convertToAgentConfig(workspaceAgentConfig: WorkspaceAgentConfig): AgentConfig {
+  convertToAgentConfig(
+    workspaceAgentConfig: WorkspaceAgentConfig,
+  ): AgentConfig {
     switch (workspaceAgentConfig.type) {
       case "tempest":
         return {
@@ -1422,7 +1492,11 @@ export class RemoteAgentLogger extends AtlasLogger {
     });
   }
 
-  logRemoteError(agentName: string, error: Error, context: Record<string, unknown>): void {
+  logRemoteError(
+    agentName: string,
+    error: Error,
+    context: Record<string, unknown>,
+  ): void {
     this.error("remote_agent_error", {
       agent_name: agentName,
       error_message: error.message,

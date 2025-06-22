@@ -2,7 +2,7 @@
  * Tests for FileLoaderTool
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { FileLoaderTool } from "../../src/tools/file-loader-tool.ts";
 
 Deno.test("FileLoaderTool - Basic Functionality", async (t) => {

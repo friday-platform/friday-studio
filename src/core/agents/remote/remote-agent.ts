@@ -1,6 +1,6 @@
 /**
  * Remote Agent implementation for Atlas
- * Integrates external agents via standardized protocols (ACP, A2A, custom)
+ * Integrates external agents via standardized protocols (ACP)
  */
 
 import type { AtlasMemoryConfig } from "../../memory-config.ts";
@@ -296,10 +296,7 @@ export class RemoteAgent extends BaseAgent {
   }
 
   private getAgentName(): string {
-    return this.config.acp?.agent_name ||
-      this.config.a2a?.agent_name ||
-      this.config.custom?.agent_name ||
-      "";
+    return this.config.acp?.agent_name || "";
   }
 
   private buildExecutionRequest(

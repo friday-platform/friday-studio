@@ -45,10 +45,18 @@ class MyTestServer extends BaseTestServer {
 
 // Or implement TestServer interface
 class CustomServer implements TestServer {
-  async start(): Promise<number> {/* implementation */}
-  async stop(): Promise<void> {/* implementation */}
-  getPort(): number {/* implementation */}
-  getBaseUrl(): string {/* implementation */}
+  async start(): Promise<number> {
+    /* implementation */
+  }
+  async stop(): Promise<void> {
+    /* implementation */
+  }
+  getPort(): number {
+    /* implementation */
+  }
+  getBaseUrl(): string {
+    /* implementation */
+  }
 }
 ```
 
@@ -119,7 +127,7 @@ const testId = generateTestId("user"); // "user-a7b3x9m2-1703123456789"
 ### Basic Integration Test
 
 ```typescript
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { delay, findAvailablePort } from "../utils/test-utils.ts";
 import { MyTestServer } from "./my-test-server.ts";
 
@@ -144,7 +152,7 @@ Deno.test("Basic server functionality", async () => {
 ### Advanced Integration Test with Environment
 
 ```typescript
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { createTestEnvironment, waitForUrl } from "../utils/test-utils.ts";
 import { APIServer, DatabaseServer } from "./test-servers.ts";
 
@@ -177,7 +185,7 @@ Deno.test("Full stack integration", async () => {
 ### Concurrent Testing
 
 ```typescript
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { findAvailablePort } from "../utils/test-utils.ts";
 import { MyTestServer } from "./my-test-server.ts";
 

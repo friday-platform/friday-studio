@@ -3,7 +3,7 @@
  * Tests adapter construction and configuration validation
  */
 
-import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "@std/assert";
 import { MCPAdapter } from "../../../../src/core/agents/remote/adapters/mcp-adapter.ts";
 
 // Helper function to create valid test configuration

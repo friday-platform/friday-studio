@@ -2,7 +2,7 @@
  * Tests for ContextProvisioner
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { ContextProvisioner } from "../../src/core/context/context-provisioner.ts";
 import type { JobSpecification } from "../../src/core/session-supervisor.ts";
 

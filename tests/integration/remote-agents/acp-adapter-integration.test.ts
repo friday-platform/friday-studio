@@ -1,7 +1,7 @@
 // ACP Adapter Integration Tests
 // Tests the ACPAdapter against a real ACP server to verify end-to-end functionality
 
-import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "@std/assert";
 import { ACPTestServer } from "./test-server.ts";
 import { ACPAdapter } from "../../../src/core/agents/remote/adapters/acp-adapter.ts";
 import type { RemoteExecutionRequest } from "../../../src/core/agents/remote/types.ts";

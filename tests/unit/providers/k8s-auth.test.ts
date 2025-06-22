@@ -3,7 +3,7 @@
  * Tests security functions and HTTP header creation (no cluster required)
  */
 
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals } from "@std/assert";
 import { K8sAuthConfig, K8sAuthManager } from "../../../src/core/providers/builtin/k8s-auth.ts";
 
 Deno.test("K8sAuthManager - HTTP headers", async (t) => {

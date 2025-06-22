@@ -2,7 +2,7 @@
  * Tests for FilesystemProvider EMCP implementation
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { FilesystemProvider } from "../../src/core/emcp/providers/filesystem-provider.ts";
 import type { CodebaseContextSpec, EMCPContext } from "../../src/core/emcp/emcp-provider.ts";
 

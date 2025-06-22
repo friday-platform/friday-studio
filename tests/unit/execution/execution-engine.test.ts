@@ -4,7 +4,7 @@
  * Tests the complete execution engine with all strategies
  */
 
-import { expect } from "jsr:@std/expect";
+import { expect } from "@std/expect";
 import {
   ExecutionEngine,
   TaskCharacteristics,

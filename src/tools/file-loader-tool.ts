@@ -5,8 +5,8 @@
  * glob pattern support and size limits to control spend.
  */
 
-import { expandGlob } from "jsr:@std/fs";
-import { relative, resolve } from "jsr:@std/path";
+import { expandGlob } from "@std/fs";
+import { relative, resolve } from "@std/path";
 
 export interface FileLoaderConfig {
   readonly maxFileSize?: number; // bytes

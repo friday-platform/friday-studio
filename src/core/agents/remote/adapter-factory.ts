@@ -1,13 +1,13 @@
 /**
  * Factory for creating protocol-specific remote adapters
- * Supports ACP, A2A, and custom HTTP protocols
+ * Supports ACP and MCP protocols
  */
 
 import type { RemoteAgentConfig } from "../../session-supervisor.ts";
 import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./adapters/base-remote-adapter.ts";
 import { logger } from "../../../utils/logger.ts";
 
-export type RemoteProtocol = "acp" | "a2a" | "custom" | "mcp";
+export type RemoteProtocol = "acp" | "mcp";
 
 /**
  * Factory class for creating remote agent adapters
@@ -29,10 +29,6 @@ export class RemoteAdapterFactory {
     switch (protocol) {
       case "acp":
         return this.createACPAdapter(baseConfig, config);
-      case "a2a":
-        return this.createA2AAdapter(baseConfig, config);
-      case "custom":
-        return this.createCustomAdapter(baseConfig, config);
       case "mcp":
         return this.createMCPAdapter(baseConfig, config);
       default:
@@ -76,50 +72,6 @@ export class RemoteAdapterFactory {
       throw new Error(
         `Failed to create ACP adapter: ${error instanceof Error ? error.message : String(error)}`,
       );
-    }
-  }
-
-  /**
-   * Create A2A (Agent-to-Agent) adapter for Google's protocol
-   */
-  private static async createA2AAdapter(
-    baseConfig: BaseRemoteAdapterConfig,
-    config: RemoteAgentConfig,
-  ): Promise<BaseRemoteAdapter> {
-    try {
-      // Dynamic import for A2A adapter (not yet implemented)
-      const { A2AAdapter } = await import("./adapters/a2a-adapter.ts");
-
-      const a2aConfig = {
-        ...baseConfig,
-        a2a: config.a2a || {},
-      };
-
-      return new A2AAdapter(a2aConfig);
-    } catch (_error) {
-      throw new Error("A2A adapter not yet implemented");
-    }
-  }
-
-  /**
-   * Create custom HTTP adapter
-   */
-  private static async createCustomAdapter(
-    baseConfig: BaseRemoteAdapterConfig,
-    config: RemoteAgentConfig,
-  ): Promise<BaseRemoteAdapter> {
-    try {
-      // Dynamic import for custom adapter (not yet implemented)
-      const { CustomAdapter } = await import("./adapters/custom-adapter.ts");
-
-      const customConfig = {
-        ...baseConfig,
-        custom: config.custom || {},
-      };
-
-      return new CustomAdapter(customConfig);
-    } catch (_error) {
-      throw new Error("Custom adapter not yet implemented");
     }
   }
 
@@ -201,7 +153,7 @@ export class RemoteAdapterFactory {
       throw new Error("Remote agent protocol is required");
     }
 
-    if (!["acp", "a2a", "custom", "mcp"].includes(config.protocol)) {
+    if (!["acp", "mcp"].includes(config.protocol)) {
       throw new Error(`Unsupported protocol: ${config.protocol}`);
     }
 
@@ -211,12 +163,6 @@ export class RemoteAdapterFactory {
         if (!config.acp?.agent_name) {
           throw new Error("ACP agent_name is required for ACP protocol");
         }
-        break;
-      case "a2a":
-        // A2A-specific validation would go here
-        break;
-      case "custom":
-        // Custom protocol validation would go here
         break;
       case "mcp":
         // MCP doesn't require specific fields beyond endpoint
@@ -264,7 +210,7 @@ export class RemoteAdapterFactory {
    * Get supported protocols
    */
   static getSupportedProtocols(): RemoteProtocol[] {
-    return ["acp", "a2a", "custom", "mcp"];
+    return ["acp", "mcp"];
   }
 
   /**

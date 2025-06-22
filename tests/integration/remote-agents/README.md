@@ -102,11 +102,13 @@ The `ACPTestServer` provides:
 ### Test Agents
 
 1. **Echo Agent** (`echo`)
+
    - Returns input with "Echo: " prefix
    - Supports all execution modes
    - Used for happy path testing
 
 2. **Error Agent** (`error`)
+
    - Always throws processing errors
    - Used for error handling testing
 
@@ -123,17 +125,17 @@ The `ACPTestServer` provides:
 
 ## Adding New Adapter Tests
 
-To add integration tests for other adapters (A2A, custom):
+To add integration tests for other adapters:
 
 1. **Create Protocol Directory**:
+
    ```
    tests/integration/remote-agents/
    ├── acp/                    # ACP-specific tests
-   ├── a2a/                    # A2A-specific tests  
-   └── custom/                 # Custom adapter tests
    ```
 
 2. **Implement Test Server**:
+
    - Follow the `ACPTestServer` pattern
    - Implement the specific protocol's API
    - Use dynamic port allocation
@@ -161,9 +163,13 @@ Tests have a 10-second timeout. For debugging slow tests:
 
 ```typescript
 // Increase timeout for specific test
-await t.step("Long running test", async () => {
-  // Test implementation
-}, { timeout: 30000 });
+await t.step(
+  "Long running test",
+  async () => {
+    // Test implementation
+  },
+  { timeout: 30000 },
+);
 ```
 
 ### Network Issues

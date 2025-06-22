@@ -3,7 +3,7 @@
  * Tests input parsing, tool filtering, and metadata handling without SDK dependencies
  */
 
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 
 Deno.test("MCPAdapter Core Logic Tests", async (t) => {
   await t.step("should parse JSON tool call input correctly", () => {

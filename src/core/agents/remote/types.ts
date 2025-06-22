@@ -1,6 +1,6 @@
 /**
  * Type definitions for remote agent communication
- * Provides abstraction layer over different remote agent protocols (ACP, A2A, custom)
+ * Provides abstraction layer over different remote agent protocols (ACP)
  */
 
 // Base types for remote agent communication

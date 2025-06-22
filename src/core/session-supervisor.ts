@@ -103,7 +103,7 @@ export interface LLMAgentConfig {
 
 export interface RemoteAgentConfig {
   type: "remote";
-  protocol: "acp" | "a2a" | "custom" | "mcp";
+  protocol: "acp" | "mcp";
   endpoint: string;
   purpose?: string;
   auth?: {
@@ -130,8 +130,6 @@ export interface RemoteAgentConfig {
     max_retries?: number;
     health_check_interval?: number;
   };
-  a2a?: Record<string, any>;
-  custom?: Record<string, any>;
   mcp?: {
     timeout_ms?: number;
     allowed_tools?: string[];

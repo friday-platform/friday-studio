@@ -1,6 +1,6 @@
 /**
  * Base adapter interface for remote agent communication
- * Provides common abstraction for different protocols (ACP, A2A, custom HTTP)
+ * Provides common abstraction for different protocols (ACP)
  */
 
 import type {

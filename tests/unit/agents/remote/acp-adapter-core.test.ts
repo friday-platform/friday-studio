@@ -3,7 +3,7 @@
  * Tests business logic without external dependencies
  */
 
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "@std/assert";
 
 // Test the core adapter logic by mocking the base adapter
 interface MockACPAdapterConfig {

@@ -3,7 +3,7 @@
  * Tests real-world scenarios and cross-worker trace propagation
  */
 
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 import { AtlasTelemetry } from "../../src/utils/telemetry.ts";
 import { delay } from "../utils/test-utils.ts";
 
