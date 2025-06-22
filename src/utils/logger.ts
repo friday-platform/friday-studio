@@ -50,6 +50,12 @@ export class AtlasLogger {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
+    // Skip file initialization during tests
+    if (Deno.env.get("DENO_TESTING") === "true") {
+      this.isInitialized = true;
+      return;
+    }
+
     // If initialization is already in progress, wait for it
     if (this.initPromise) return this.initPromise;
 
@@ -123,6 +129,11 @@ export class AtlasLogger {
   }
 
   private async writeLog(target: string, entry: LogEntry): Promise<void> {
+    // Skip file operations during tests
+    if (Deno.env.get("DENO_TESTING") === "true") {
+      return;
+    }
+
     const line = JSON.stringify(entry) + "\n";
     const encoder = new TextEncoder();
     const data = encoder.encode(line);

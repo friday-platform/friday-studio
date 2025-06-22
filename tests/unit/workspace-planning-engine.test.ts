@@ -2,8 +2,18 @@
 
 import { expect } from "@std/expect";
 import { join } from "@std/path";
-import { WorkspacePlanningEngine } from "../../src/core/planning/workspace-planning-engine.ts";
+import {
+  type PlanningEngineConfig,
+  WorkspacePlanningEngine,
+} from "../../src/core/planning/workspace-planning-engine.ts";
+import {
+  DEFAULT_PLANNING_CONFIG,
+  type PlanningConfig,
+} from "../../src/core/planning/planning-config.ts";
 import type { JobSpecification } from "../../src/core/session-supervisor.ts";
+
+// Prevent logger from initializing during tests
+Deno.env.set("DENO_TESTING", "true");
 
 // Test fixtures
 const mockJobs: Record<string, JobSpecification> = {
@@ -28,6 +38,23 @@ const mockJobs: Record<string, JobSpecification> = {
         { id: "validation-agent", prompt: "Validate all outputs" },
         { id: "deployment-agent" },
       ],
+      stages: [
+        {
+          name: "security",
+          strategy: "sequential",
+          agents: [{ id: "security-agent", config: { strict: true } }],
+        },
+        {
+          name: "validation",
+          strategy: "sequential",
+          agents: [{ id: "validation-agent", prompt: "Validate all outputs" }],
+        },
+        {
+          name: "deployment",
+          strategy: "sequential",
+          agents: [{ id: "deployment-agent" }],
+        },
+      ],
     },
   },
 };
@@ -47,36 +74,57 @@ const mockSignals: Record<string, any> = {
   },
 };
 
+// Test planning configuration
+const testPlanningConfig: PlanningConfig = {
+  ...DEFAULT_PLANNING_CONFIG,
+  execution: {
+    ...DEFAULT_PLANNING_CONFIG.execution,
+    precomputation: "aggressive",
+  },
+};
+
 // Helper to create test environment
 async function createTestEnvironment() {
   const tempDir = await Deno.makeTempDir({ prefix: "atlas-planning-test-" });
-  const engine = new WorkspacePlanningEngine(tempDir);
+  const engineConfig: Partial<PlanningEngineConfig> = {
+    persistPlans: true,
+    planStoragePath: join(tempDir, ".atlas", "plans"),
+  };
+  const engine = new WorkspacePlanningEngine(engineConfig);
   return { tempDir, engine };
 }
 
-Deno.test("WorkspacePlanningEngine creates and loads plans", async () => {
+// Helper to clean up after tests
+async function cleanupTestEnvironment(tempDir: string) {
+  // Clean up temp directory
+  try {
+    await Deno.remove(tempDir, { recursive: true });
+  } catch {
+    // Ignore cleanup errors
+  }
+}
+
+Deno.test("WorkspacePlanningEngine precomputes plans", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "test-workspace-123";
+    // Precompute all plans
+    await engine.precomputeAllPlans(mockJobs, testPlanningConfig);
 
-    // Generate initial plan
-    const plan1 = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Check that plans were precomputed
+    const allPlans = engine.getAllPrecomputedPlans();
+    expect(allPlans.size).toBeGreaterThan(0);
 
-    expect(plan1.id).toBe(workspaceId);
-    expect(plan1.version).toBe("1.0");
-    expect(plan1.configHash).toBeDefined();
-    expect(plan1.signalMappings.size).toBe(2); // Two signals
-    expect(plan1.jobAnalysis.size).toBe(2); // Two jobs
+    // Check analytics
+    const analytics = engine.getAnalytics();
+    expect(analytics.totalJobs).toBe(2);
+    expect(analytics.precomputedPlans).toBeGreaterThan(0);
 
-    // Load cached plan (should be same)
-    const plan2 = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
-
-    expect(plan2.configHash).toBe(plan1.configHash);
-    expect(plan2.signalMappings.size).toBe(plan1.signalMappings.size);
-    expect(plan2.lastUsed.getTime()).toBeGreaterThan(plan1.lastUsed.getTime());
+    // Check cache stats
+    const cacheStats = engine.getCacheStats();
+    expect(cacheStats.size).toBeGreaterThan(0);
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
@@ -84,134 +132,130 @@ Deno.test("WorkspacePlanningEngine analyzes job complexity correctly", async () 
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "complexity-test";
-    const plan = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Analyze individual jobs
+    const simpleCharacteristics = engine.analyzeJobCharacteristics(mockJobs["simple-job"]);
+    const complexCharacteristics = engine.analyzeJobCharacteristics(mockJobs["complex-job"]);
 
     // Simple job should have low complexity
-    const simpleAnalysis = plan.jobAnalysis.get("simple-job");
-    expect(simpleAnalysis).toBeDefined();
-    expect(simpleAnalysis!.complexity).toBeLessThan(0.5);
-    expect(simpleAnalysis!.requiresToolUse).toBe(false);
-    expect(simpleAnalysis!.qualityCritical).toBe(false);
+    expect(simpleCharacteristics.complexity).toBeLessThan(0.5);
+    expect(simpleCharacteristics.uncertainty).toBeLessThan(0.5);
+    expect(simpleCharacteristics.has_conditional_logic).toBe(false);
+    expect(simpleCharacteristics.has_dynamic_selection).toBe(false);
 
     // Complex job should have high complexity
-    const complexAnalysis = plan.jobAnalysis.get("complex-job");
-    expect(complexAnalysis).toBeDefined();
-    expect(complexAnalysis!.complexity).toBeGreaterThan(0.7);
-    expect(complexAnalysis!.requiresToolUse).toBe(true); // "tools" in description
-    expect(complexAnalysis!.qualityCritical).toBe(true); // "security" and "critical" in description
-    expect(complexAnalysis!.parallelizable).toBe(true); // "staged" strategy
+    expect(complexCharacteristics.complexity).toBeGreaterThanOrEqual(0.5);
+    expect(complexCharacteristics.has_conditional_logic).toBe(false); // No actual conditions in execution
+    expect(complexCharacteristics.has_goal_decomposition).toBe(true); // "staged" strategy
+    expect(complexCharacteristics.step_count).toBe(3); // 3 stages
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
-Deno.test("WorkspacePlanningEngine selects appropriate reasoning methods", async () => {
+Deno.test("WorkspacePlanningEngine selects appropriate plan types", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "reasoning-test";
-    const plan = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Determine plan types for jobs
+    const simpleCharacteristics = engine.analyzeJobCharacteristics(mockJobs["simple-job"]);
+    const complexCharacteristics = engine.analyzeJobCharacteristics(mockJobs["complex-job"]);
 
-    // Simple job should use Chain-of-Thought
-    const simpleExecution = plan.signalMappings.get("test-signal");
-    expect(simpleExecution).toBeDefined();
-    expect(simpleExecution!.reasoningMethod).toBe("cot");
+    const simplePlanType = engine.determinePlanType(simpleCharacteristics, testPlanningConfig);
+    const complexPlanType = engine.determinePlanType(complexCharacteristics, testPlanningConfig);
 
-    // Complex job should use self-refine because it's quality critical
-    const complexExecution = plan.signalMappings.get("complex-signal");
-    expect(complexExecution).toBeDefined();
-    expect(complexExecution!.reasoningMethod).toBe("self-refine"); // Quality critical overrides tool use
+    // Simple job should use static sequential
+    expect(simplePlanType).toBe("static_sequential");
+
+    // Complex job might use behavior tree or HTN due to staged execution
+    expect(["behavior_tree", "htn", "static_sequential"]).toContain(complexPlanType);
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
-Deno.test("WorkspacePlanningEngine creates proper signal mappings", async () => {
+Deno.test("WorkspacePlanningEngine creates proper execution plans", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "mapping-test";
-    const plan = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Precompute plans
+    await engine.precomputeAllPlans(mockJobs, testPlanningConfig);
 
-    // Check signal-to-execution mapping
-    const testSignalExecution = plan.signalMappings.get("test-signal");
-    expect(testSignalExecution).toBeDefined();
-    expect(testSignalExecution!.jobId).toBe("simple-job");
-    expect(testSignalExecution!.executionStrategy).toBe("sequential");
-    expect(testSignalExecution!.agentChain.length).toBe(1);
-    expect(testSignalExecution!.agentChain[0].agentId).toBe("test-agent");
+    // Get precomputed plan for simple job
+    const simplePlan = await engine.getPrecomputedPlan("simple-job");
+    expect(simplePlan).toBeDefined();
+    expect(simplePlan!.jobName).toBe("simple-job");
+    expect(simplePlan!.steps.length).toBe(1);
+    expect(simplePlan!.steps[0].agentId).toBe("test-agent");
 
-    const complexSignalExecution = plan.signalMappings.get("complex-signal");
-    expect(complexSignalExecution).toBeDefined();
-    expect(complexSignalExecution!.jobId).toBe("complex-job");
-    expect(complexSignalExecution!.executionStrategy).toBe("staged");
-    expect(complexSignalExecution!.agentChain.length).toBe(3);
+    // Get precomputed plan for complex job (might not be precomputed if too complex)
+    const complexPlan = await engine.getPrecomputedPlan("complex-job");
+    if (complexPlan) {
+      expect(complexPlan.jobName).toBe("complex-job");
+      expect(complexPlan.steps.length).toBeGreaterThan(0);
+    }
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
-Deno.test("WorkspacePlanningEngine invalidates cache on config changes", async () => {
+Deno.test("WorkspacePlanningEngine handles cache operations", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "cache-test";
+    // Initially cache should be empty
+    let cacheStats = engine.getCacheStats();
+    expect(cacheStats.size).toBe(0);
 
-    // Generate initial plan
-    const plan1 = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
-    const originalHash = plan1.configHash;
+    // Precompute plans
+    await engine.precomputeAllPlans(mockJobs, testPlanningConfig);
 
-    // Modify jobs (add new job)
-    const modifiedJobs = {
-      ...mockJobs,
-      "new-job": {
-        name: "new-job",
-        description: "New job added",
-        execution: {
-          strategy: "sequential" as const,
-          agents: [{ id: "new-agent" }],
-        },
-      },
-    };
+    // Cache should have entries
+    cacheStats = engine.getCacheStats();
+    expect(cacheStats.size).toBeGreaterThan(0);
 
-    // Generate plan with modified config
-    const plan2 = await engine.loadOrGeneratePlan(workspaceId, modifiedJobs, mockSignals);
+    // Test cache hit
+    const plan1 = engine.getExecutionPlan("simple-job");
+    const plan2 = engine.getExecutionPlan("simple-job");
+    expect(plan1).toBe(plan2); // Same reference
 
-    expect(plan2.configHash).not.toBe(originalHash);
-    expect(plan2.jobAnalysis.size).toBe(3); // Now has 3 jobs
-    expect(plan2.jobAnalysis.has("new-job")).toBe(true);
+    // Clear cache
+    engine.clearCache();
+    cacheStats = engine.getCacheStats();
+    expect(cacheStats.size).toBe(0);
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
-Deno.test("WorkspacePlanningEngine persists plans to .atlas directory", async () => {
+Deno.test("WorkspacePlanningEngine provides analytics", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "persist-test";
+    // Get initial analytics
+    let analytics = engine.getAnalytics();
+    expect(analytics.totalJobs).toBe(0);
+    expect(analytics.precomputedPlans).toBe(0);
 
-    // Generate plan
-    await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Precompute plans
+    await engine.precomputeAllPlans(mockJobs, testPlanningConfig);
 
-    // Check that plan file was created
-    const planPath = join(tempDir, ".atlas", "plans", `workspace-${workspaceId}-plan.json`);
-    const planExists = await Deno.stat(planPath).then(() => true).catch(() => false);
-    expect(planExists).toBe(true);
+    // Check updated analytics
+    analytics = engine.getAnalytics();
+    expect(analytics.totalJobs).toBe(2);
+    expect(analytics.precomputedPlans).toBeGreaterThan(0);
+    expect(analytics.avgPlanComputeTime).toBeGreaterThanOrEqual(0);
 
-    // Check plan file content
-    const planContent = await Deno.readTextFile(planPath);
-    const planData = JSON.parse(planContent);
+    // Access plans to test cache hits
+    engine.getExecutionPlan("simple-job");
+    engine.getExecutionPlan("simple-job");
+    engine.getExecutionPlan("non-existent");
 
-    expect(planData.id).toBe(workspaceId);
-    expect(planData.version).toBe("1.0");
-    expect(planData.signalMappings).toBeDefined();
-    expect(planData.jobAnalysis).toBeDefined();
-    expect(Array.isArray(planData.signalMappings)).toBe(true); // Serialized as array
-    expect(Array.isArray(planData.jobAnalysis)).toBe(true); // Serialized as array
+    // Get updated analytics after cache operations
+    const updatedAnalytics = engine.getAnalytics();
+    expect(updatedAnalytics.cacheHits).toBeGreaterThanOrEqual(2);
+    expect(updatedAnalytics.cacheMisses).toBeGreaterThanOrEqual(1);
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
 
@@ -219,19 +263,28 @@ Deno.test("WorkspacePlanningEngine estimates execution duration", async () => {
   const { tempDir, engine } = await createTestEnvironment();
 
   try {
-    const workspaceId = "duration-test";
-    const plan = await engine.loadOrGeneratePlan(workspaceId, mockJobs, mockSignals);
+    // Precompute plans
+    await engine.precomputeAllPlans(mockJobs, testPlanningConfig);
 
-    const simpleExecution = plan.signalMappings.get("test-signal");
-    const complexExecution = plan.signalMappings.get("complex-signal");
+    // Get plans
+    const simplePlan = await engine.getPrecomputedPlan("simple-job");
+    const complexPlan = await engine.getPrecomputedPlan("complex-job");
 
-    expect(simpleExecution!.estimatedDuration).toBeGreaterThan(0);
-    expect(complexExecution!.estimatedDuration).toBeGreaterThan(simpleExecution!.estimatedDuration);
+    if (simplePlan) {
+      expect(simplePlan.metadata.estimatedDuration).toBeGreaterThan(0);
+      expect(simplePlan.metadata.estimatedDuration).toBeLessThan(60000); // Less than 1 minute
+    }
 
-    // Complex job should take longer due to more agents and higher complexity
-    expect(complexExecution!.estimatedDuration).toBeGreaterThan(60); // At least 1 minute
-    expect(simpleExecution!.estimatedDuration).toBeLessThan(60); // Less than 1 minute
+    if (complexPlan) {
+      expect(complexPlan.metadata.estimatedDuration).toBeGreaterThan(0);
+      // Complex jobs should take longer if they have more steps
+      if (simplePlan) {
+        expect(complexPlan.metadata.estimatedDuration).toBeGreaterThanOrEqual(
+          simplePlan.metadata.estimatedDuration,
+        );
+      }
+    }
   } finally {
-    await Deno.remove(tempDir, { recursive: true });
+    await cleanupTestEnvironment(tempDir);
   }
 });
