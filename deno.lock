@@ -25,6 +25,7 @@
     "npm:eventsource-parser@^3.0.1": "3.0.2",
     "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@18.3.23_react@18.3.1",
     "npm:ink@^5.0.1": "5.2.1_@types+react@18.3.23_react@18.3.1",
+    "npm:lint-staged@16": "16.1.2",
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:meow@^13.2.0": "13.2.0",
     "npm:openapi-fetch@0.14": "0.14.0",
