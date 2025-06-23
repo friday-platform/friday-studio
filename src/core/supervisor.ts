@@ -297,7 +297,7 @@ export class WorkspaceSupervisor extends BaseAgent
         jobs: config.jobs || {},
       }
       : null;
-    this.model = config.model || "claude-4-sonnet-20250514";
+    this.model = config.model || "claude-3-5-sonnet-20241022";
 
     // Set supervisor-specific prompts
     this.prompts = {
@@ -972,13 +972,13 @@ Provide a structured analysis.`;
     try {
       const llmStart = Date.now();
       this.logger.debug(`[PERF] Starting LLM call for signal analysis`, {
-        model: this.config.model || "claude-4-sonnet-20250514",
+        model: this.config.model || "claude-3-5-sonnet-20241022",
         promptTokensEstimate: Math.round(analysisPrompt.length / 4),
         systemPromptLength: this.prompts.system.length,
       });
 
       const response = await this.generateLLM(
-        this.config.model || "claude-4-sonnet-20250514",
+        this.config.model || "claude-3-5-sonnet-20241022",
         this.prompts.system,
         analysisPrompt,
         true,

@@ -437,7 +437,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
       // Fallback to minimal config for performance
       this.initializeAgentSupervisor({
-        model: "claude-4-sonnet-20250514",
+        model: "claude-3-5-sonnet-20241022",
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
@@ -1590,7 +1590,7 @@ Provide a brief evaluation.`;
 
     try {
       const response = await this.generateLLM(
-        "claude-4-sonnet-20250514",
+        "claude-3-5-sonnet-20241022",
         this.prompts.system,
         evaluationPrompt,
         true,
@@ -2137,7 +2137,7 @@ Keep the summary focused and relevant to the specific use case.`;
 
     try {
       const summary = await this.generateLLM(
-        "claude-4-sonnet-20250514",
+        "claude-3-5-sonnet-20241022",
         this.prompts.system,
         summaryPrompt,
         true,
@@ -2336,7 +2336,7 @@ Create a comprehensive episodic memory summary that includes:
 Focus on creating a rich episodic memory that captures both the factual sequence of events and the qualitative insights that would be valuable for future workspace sessions.`;
 
       const workingMemorySummary = await this.generateLLM(
-        "claude-4-sonnet-20250514",
+        "claude-3-5-sonnet-20241022",
         this.prompts.system,
         summaryPrompt,
         false, // Don't include existing memory context to avoid recursion

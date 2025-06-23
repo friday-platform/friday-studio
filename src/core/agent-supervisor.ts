@@ -334,7 +334,7 @@ Focus on safety, efficiency, and reliability.`;
 
     try {
       const response = await this.generateLLM(
-        this.supervisorConfig?.model || "claude-4-sonnet-20250514",
+        this.supervisorConfig?.model || "claude-3-5-sonnet-20241022",
         this.prompts.system,
         analysisPrompt,
       );
@@ -902,7 +902,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
     try {
       const response = await this.generateLLM(
-        "claude-4-sonnet-20250514",
+        "claude-3-5-sonnet-20241022",
         this.prompts.system,
         validationPrompt,
       );
