@@ -956,7 +956,7 @@ ${this.getTaskRequirementsForAgentType(agentType, agentSpec.id)}
 
 **Immediate Action**: [Specific first step using actual event data]
 **Core Objective**: [Clear goal based on this specific event, not generic processing]
-**Specific Steps**: 
+**Specific Steps**:
 1. [First concrete action with actual resource names]
 2. [Second action based on event type and context]
 3. [Third action if needed for completion]
@@ -1062,7 +1062,7 @@ Generate the task description now following the OUTPUT FORMAT exactly. Focus on 
         return `Example for resource events:
 **Immediate Action**: Analyze resource event based on signal data
 **Core Objective**: Verify the resource operation completed successfully
-**Specific Steps**: 
+**Specific Steps**:
 1. Check resource status using appropriate commands
 2. Verify resource health and utilization metrics
 3. Monitor for any related error events
@@ -2328,7 +2328,7 @@ Session Goals: ${
 Create a comprehensive episodic memory summary that includes:
 1. **What happened**: Clear description of the session's purpose and execution
 2. **Key outcomes**: Primary results and transformations achieved
-3. **Agent interactions**: How agents collaborated and built upon each other's work  
+3. **Agent interactions**: How agents collaborated and built upon each other's work
 4. **Success assessment**: Whether goals were achieved and any notable issues
 5. **Patterns and insights**: Interesting behaviors, efficiency, or learning opportunities
 6. **Context for future sessions**: Information that would be valuable for similar future work
@@ -3019,7 +3019,7 @@ Overall Session Summary: ${
     episodicSummary: string | null,
   ): string {
     // Start with clear task instruction
-    let enhancedPrompt = originalTask;
+    let enhancedPrompt = "";
 
     // Add execution prompts from job specification if available
     if (this.sessionContext?.jobSpec?.session_prompts?.planning) {
@@ -3097,7 +3097,7 @@ Overall Session Summary: ${
         `\n\nUse this context to improve your performance and avoid repeating previous issues.\n`;
     }
 
-    return enhancedPrompt;
+    return enhancedPrompt + "\n\nYOUR TASK: " + originalTask;
   }
 
   /**
