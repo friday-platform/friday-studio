@@ -13,6 +13,7 @@ import {
   type OverlayContent,
   type TabInfo,
   type TUIState,
+  type VectorSearchResult,
 } from "../types/memory-types.ts";
 import { AtlasMemoryOperations } from "../utils/memory-operations.ts";
 
@@ -37,12 +38,12 @@ export class MemoryManagerTUI {
 
   async start(): Promise<void> {
     // Hide cursor and setup raw mode
-    await this.setupTerminal();
+    this.setupTerminal();
 
     try {
       await this.renderLoop();
     } finally {
-      await this.restoreTerminal();
+      this.restoreTerminal();
     }
   }
 
@@ -55,7 +56,7 @@ export class MemoryManagerTUI {
 
   private async render(): Promise<void> {
     // Clear screen
-    await this.clearScreen();
+    this.clearScreen();
 
     // Update terminal size
     this.updateTerminalSize();
@@ -63,7 +64,7 @@ export class MemoryManagerTUI {
     if (this.state.showOverlay) {
       await this.renderOverlay();
     } else if (this.state.showHelp) {
-      await this.renderHelp();
+      this.renderHelp();
     } else {
       await this.renderMain();
     }
@@ -98,19 +99,27 @@ export class MemoryManagerTUI {
       case "search":
         await this.renderSearch();
         break;
+      case "vector-search":
+        await this.renderVectorSearch();
+        break;
     }
 
     // Render footer with key bindings
-    await this.renderFooter();
+    this.renderFooter();
   }
 
   private async renderHeader(): Promise<void> {
     const title = "Atlas Memory Manager";
-    const stats = this.operations.getStats();
-    const currentStats = stats[this.state.currentTab];
+    let headerText: string;
 
-    const headerText =
-      `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+    if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+      const resultCount = this.state.vectorSearchResults?.length || 0;
+      headerText = `${title} | VECTOR SEARCH (${resultCount} results)`;
+    } else {
+      const stats = this.operations.getStats();
+      const currentStats = stats[this.state.currentTab];
+      headerText = `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+    }
 
     console.log(this.colorize(headerText, "bold", "blue"));
     console.log("─".repeat(this.terminalSize.width));
@@ -132,11 +141,22 @@ export class MemoryManagerTUI {
         count: 0,
         color: "magenta",
       },
+      {
+        type: MemoryType.VECTOR_SEARCH,
+        title: "Vector Search",
+        count: 0,
+        color: "cyan",
+      },
     ];
 
     const stats = this.operations.getStats();
     tabs.forEach((tab) => {
-      tab.count = stats[tab.type].count;
+      if (tab.type === MemoryType.VECTOR_SEARCH) {
+        // Vector search shows count of search results, not stored memories
+        tab.count = this.state.vectorSearchResults?.length || 0;
+      } else {
+        tab.count = stats[tab.type].count;
+      }
     });
 
     let tabsLine = "";
@@ -160,6 +180,12 @@ export class MemoryManagerTUI {
   }
 
   private async renderMemoryList(): Promise<void> {
+    // Handle vector search tab differently
+    if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+      await this.renderVectorSearchList();
+      return;
+    }
+
     const entries = await this.operations.list(this.state.currentTab);
     const visibleHeight = this.terminalSize.height - 8; // Account for header, tabs, footer
 
@@ -221,8 +247,14 @@ export class MemoryManagerTUI {
   }
 
   private async renderMemoryView(): Promise<void> {
-    const entries = await this.operations.list(this.state.currentTab);
-    const entry = entries[this.state.selectedIndex];
+    let entry: MemoryEntry | VectorSearchResult | undefined;
+    
+    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+      entry = this.state.vectorSearchResults[this.state.selectedIndex];
+    } else {
+      const entries = await this.operations.list(this.state.currentTab);
+      entry = entries[this.state.selectedIndex];
+    }
 
     if (!entry) {
       console.log(this.colorize("No entry selected", "red"));
@@ -241,8 +273,8 @@ export class MemoryManagerTUI {
       "cyan",
     ));
 
-    // Metadata table
-    this.renderTable([
+    // Metadata table with conditional similarity row
+    const tableData = [
       ["Property", "Value"],
       ["─".repeat(Math.max(1, 20)), "─".repeat(Math.max(1, 30))],
       [
@@ -258,6 +290,18 @@ export class MemoryManagerTUI {
         this.renderProgressBar(entry.relevanceScore, 20) +
         ` ${(entry.relevanceScore * 100).toFixed(1)}%`,
       ],
+    ];
+
+    // Add similarity row for vector search results
+    if ("similarity" in entry && entry.similarity !== undefined) {
+      tableData.push([
+        "Similarity",
+        this.renderProgressBar(entry.similarity, 20) +
+        ` ${(entry.similarity * 100).toFixed(1)}%`,
+      ]);
+    }
+
+    tableData.push(
       [
         "Confidence",
         this.renderProgressBar(entry.confidence, 20) +
@@ -268,7 +312,9 @@ export class MemoryManagerTUI {
       ["Last Accessed", this.formatDate(entry.lastAccessed)],
       ["Source Scope", this.truncateString(entry.sourceScope, 30)],
       ["Decay Rate", entry.decayRate.toFixed(3)],
-    ], width);
+    );
+
+    this.renderTable(tableData, width);
 
     // Tags section
     if (entry.tags.length > 0) {
@@ -485,6 +531,8 @@ export class MemoryManagerTUI {
         return "blue";
       case "procedural":
         return "magenta";
+      case "vector-search":
+        return "cyan";
       default:
         return "white";
     }
@@ -536,7 +584,123 @@ export class MemoryManagerTUI {
     }
   }
 
-  private async renderHelp(): Promise<void> {
+  private async renderVectorSearch(): Promise<void> {
+    console.log(this.colorize("Vector Search Memory", "bold", "cyan"));
+    console.log(`Query: ${this.state.vectorSearchQuery || ""}_`);
+    console.log(this.colorize("Searches across EPISODIC, SEMANTIC, and PROCEDURAL memories", "dim"));
+
+    if (this.state.vectorSearchQuery && this.state.vectorSearchQuery.length > 0) {
+      if (!this.state.vectorSearchResults) {
+        console.log(this.colorize("Performing vector search...", "dim", "yellow"));
+        this.state.vectorSearchResults = await this.operations.vectorSearch(
+          this.state.vectorSearchQuery,
+        );
+      }
+
+      const results = this.state.vectorSearchResults;
+      console.log(`Found ${results.length} results:`);
+
+      const visibleHeight = this.terminalSize.height - 12; // Account for header, tabs, footer, query display
+      const visibleResults = results.slice(0, visibleHeight);
+
+      visibleResults.forEach((entry, index) => {
+        const isSelected = index === this.state.selectedIndex;
+        const similarityBar = "█".repeat(Math.ceil(entry.similarity * 10));
+        const typeColor = this.getMemoryTypeColor(entry.memoryType);
+        
+        let line = `[${entry.memoryType.toUpperCase()}] ${entry.id} │ ${similarityBar} ${(entry.similarity * 100).toFixed(1)}% │ ${entry.matchedContent}`;
+        
+        if (line.length > this.terminalSize.width - 2) {
+          line = line.substring(0, this.terminalSize.width - 5) + "...";
+        }
+
+        if (isSelected) {
+          console.log(this.colorize(`> ${line}`, "bold", "white", "blue"));
+        } else {
+          console.log(`  ${this.colorize(line, "", typeColor)}`);
+        }
+      });
+
+      if (results.length > visibleHeight) {
+        console.log(`\nShowing first ${visibleHeight} of ${results.length} results`);
+      }
+    } else {
+      console.log(this.colorize("Enter a search query to find semantically similar memories", "dim"));
+      console.log(this.colorize("Uses vector embeddings for better semantic matching", "dim"));
+    }
+  }
+
+  private async renderVectorSearchList(): Promise<void> {
+    if (!this.state.vectorSearchQuery || this.state.vectorSearchQuery.length === 0) {
+      console.log(this.colorize("Vector Search", "bold", "cyan"));
+      console.log(this.colorize("Press 'v' to enter vector search mode", "dim"));
+      console.log(this.colorize("Searches across EPISODIC, SEMANTIC, and PROCEDURAL memories using vector embeddings", "dim"));
+      return;
+    }
+
+    const results = this.state.vectorSearchResults || [];
+    const visibleHeight = this.terminalSize.height - 8;
+
+    if (results.length === 0) {
+      console.log(this.colorize("No vector search results found", "dim"));
+      console.log(this.colorize("Try a different query or check that memories are indexed", "dim"));
+      return;
+    }
+
+    // Adjust scroll offset if needed
+    this.state.scrollOffset = Math.max(
+      0,
+      Math.min(
+        this.state.scrollOffset,
+        results.length - visibleHeight,
+      ),
+    );
+
+    const visibleResults = results.slice(
+      this.state.scrollOffset,
+      this.state.scrollOffset + visibleHeight,
+    );
+
+    visibleResults.forEach((entry, index) => {
+      const absoluteIndex = this.state.scrollOffset + index;
+      const isSelected = absoluteIndex === this.state.selectedIndex;
+
+      const similarityBar = "█".repeat(Math.ceil(entry.similarity * 10));
+      const typeColor = this.getMemoryTypeColor(entry.memoryType);
+      const ageInHours = Math.floor(
+        (Date.now() - entry.lastAccessed.getTime()) / (1000 * 60 * 60),
+      );
+      const ageText = ageInHours < 1 ? "< 1h" : `${ageInHours}h`;
+
+      let line = `[${entry.memoryType.toUpperCase()}] ${entry.id.padEnd(20)} │ ${similarityBar.padEnd(10)} │ ${(entry.similarity * 100).toFixed(1)}% │ ${ageText.padEnd(6)} │ ${
+        entry.tags.slice(0, 2).join(", ")
+      }`;
+
+      if (line.length > this.terminalSize.width - 2) {
+        line = line.substring(0, this.terminalSize.width - 5) + "...";
+      }
+
+      if (isSelected) {
+        console.log(this.colorize(`> ${line}`, "bold", "white", "blue"));
+      } else {
+        console.log(`  ${this.colorize(line, "", typeColor)}`);
+      }
+    });
+
+    // Show scroll indicator
+    if (results.length > visibleHeight) {
+      const _scrollPos = Math.floor(
+        (this.state.scrollOffset / results.length) * visibleHeight,
+      );
+      console.log(
+        `\nShowing ${this.state.scrollOffset + 1}-${
+          Math.min(this.state.scrollOffset + visibleHeight, results.length)
+        } of ${results.length} vector search results`,
+      );
+    }
+  }
+
+  private renderHelp(): void {
     console.log(this.colorize("Atlas Memory Manager - Help", "bold", "white"));
     console.log("─".repeat(this.terminalSize.width));
 
@@ -560,6 +724,7 @@ export class MemoryManagerTUI {
         description: "Search in current memory type",
         action: () => {},
       },
+      { key: "v", description: "Vector search mode", action: () => {} },
       { key: "r", description: "Reload memory from disk", action: () => {} },
       { key: "s", description: "Save changes to disk", action: () => {} },
       {
@@ -579,10 +744,10 @@ export class MemoryManagerTUI {
     console.log("Press any key to return to memory view");
   }
 
-  private async renderFooter(): Promise<void> {
+  private renderFooter(): void {
     const modeText = this.state.mode.toUpperCase();
     const footer =
-      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search r:reload s:save`;
+      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
 
     console.log("\n" + "─".repeat(this.terminalSize.width));
     console.log(this.colorize(footer, "dim"));
@@ -612,6 +777,56 @@ export class MemoryManagerTUI {
           break;
           // Ignore other keys in overlay mode
       }
+      return;
+    }
+
+    // Handle vector search input first to prevent conflicts with navigation keys
+    if (this.state.mode === "vector-search") {
+      // Handle special keys that should work even in vector search mode
+      if (key === "ESCAPE") {
+        this.state.mode = "list";
+        this.state.showHelp = false;
+        this.state.vectorSearchQuery = undefined;
+        this.state.vectorSearchResults = undefined;
+        return;
+      } else if (key === "q") {
+        this.running = false;
+        return;
+      } else if (key === "\t") { // Tab
+        this.switchTab(1);
+        return;
+      } else if (key === "SHIFT_TAB") {
+        this.switchTab(-1);
+        return;
+      } else if (key === "ARROW_UP" || key === "k" || key === "K") {
+        // Navigate up in vector search results
+        if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
+          this.navigateUp();
+        }
+        return;
+      } else if (key === "ARROW_DOWN" || key === "j" || key === "J") {
+        // Navigate down in vector search results
+        if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
+          this.navigateDown();
+        }
+        return;
+      } else if (key === "\r") { // Enter
+        // Switch to view mode for selected vector search result
+        if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
+          this.state.mode = "view";
+        }
+        return;
+      } else if (key === "f" || key === "F") {
+        // Show overlay for vector search result
+        if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
+          await this.showCurrentEntryOverlay();
+        }
+        return;
+      } else if (key.length === 1) {
+        await this.handleVectorSearchInput(key);
+        return;
+      }
+      // For other keys in vector search mode, ignore them
       return;
     }
 
@@ -664,6 +879,17 @@ export class MemoryManagerTUI {
       case "/":
         this.state.mode = this.state.mode === "search" ? "list" : "search";
         break;
+      case "v":
+        if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+          this.state.mode = this.state.mode === "vector-search" ? "list" : "vector-search";
+        } else {
+          // Switch to vector search tab and enter vector search mode
+          this.state.currentTab = MemoryType.VECTOR_SEARCH;
+          this.state.mode = "vector-search";
+          this.state.selectedIndex = 0;
+          this.state.scrollOffset = 0;
+        }
+        break;
       case "r":
         await this.operations.reload();
         break;
@@ -674,6 +900,33 @@ export class MemoryManagerTUI {
         this.state.mode = "list";
         this.state.showHelp = false;
         break;
+      default:
+        // All other keys are ignored in normal mode
+        break;
+    }
+  }
+
+  private async handleVectorSearchInput(key: string): Promise<void> {
+    if (!this.state.vectorSearchQuery) {
+      this.state.vectorSearchQuery = "";
+    }
+
+    if (key === "\b" || key === "\x7f") { // Backspace
+      if (this.state.vectorSearchQuery.length > 0) {
+        this.state.vectorSearchQuery = this.state.vectorSearchQuery.slice(0, -1);
+        this.state.vectorSearchResults = undefined; // Clear results to trigger new search
+      }
+    } else if (key === "\r") { // Enter - perform search
+      if (this.state.vectorSearchQuery && this.state.vectorSearchQuery.length > 0) {
+        this.state.vectorSearchResults = await this.operations.vectorSearch(
+          this.state.vectorSearchQuery,
+        );
+        this.state.selectedIndex = 0;
+        this.state.scrollOffset = 0;
+      }
+    } else if (key >= " " && key <= "~") { // Printable characters
+      this.state.vectorSearchQuery += key;
+      this.state.vectorSearchResults = undefined; // Clear results to trigger new search when Enter is pressed
     }
   }
 
@@ -759,8 +1012,14 @@ export class MemoryManagerTUI {
   }
 
   private navigateDown(): void {
-    const entries = this.operations.getAllByType(this.state.currentTab);
-    const maxIndex = Object.keys(entries).length - 1;
+    let maxIndex: number;
+    
+    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+      maxIndex = this.state.vectorSearchResults.length - 1;
+    } else {
+      const entries = this.operations.getAllByType(this.state.currentTab);
+      maxIndex = Object.keys(entries).length - 1;
+    }
 
     if (this.state.selectedIndex < maxIndex) {
       this.state.selectedIndex++;
@@ -809,7 +1068,7 @@ export class MemoryManagerTUI {
     return `${result}\x1b[0m`; // Reset at end
   }
 
-  private async setupTerminal(): Promise<void> {
+  private setupTerminal(): void {
     // Hide cursor
     console.log("\x1b[?25l");
 
@@ -817,7 +1076,7 @@ export class MemoryManagerTUI {
     Deno.stdin.setRaw(true);
   }
 
-  private async restoreTerminal(): Promise<void> {
+  private restoreTerminal(): void {
     // Show cursor
     console.log("\x1b[?25h");
 
@@ -828,7 +1087,7 @@ export class MemoryManagerTUI {
     console.log("\x1b[2J\x1b[H");
   }
 
-  private async clearScreen(): Promise<void> {
+  private clearScreen(): void {
     console.log("\x1b[2J\x1b[H");
   }
 
@@ -1061,7 +1320,7 @@ export class MemoryManagerTUI {
           } else {
             // Wrap long JSON lines while preserving indentation
             let currentIndent = indent;
-            const baseAvailableWidth = maxWidth - indent.length;
+            const _baseAvailableWidth = maxWidth - indent.length;
             let remainingContent = contentPart;
 
             while (remainingContent.length > 0) {
@@ -1116,8 +1375,14 @@ export class MemoryManagerTUI {
 
   // Show overlay for currently selected memory entry
   private async showCurrentEntryOverlay(): Promise<void> {
-    const entries = await this.operations.list(this.state.currentTab);
-    const entry = entries[this.state.selectedIndex];
+    let entry: MemoryEntry | VectorSearchResult | undefined;
+    
+    if (this.state.currentTab === MemoryType.VECTOR_SEARCH && this.state.vectorSearchResults) {
+      entry = this.state.vectorSearchResults[this.state.selectedIndex];
+    } else {
+      const entries = await this.operations.list(this.state.currentTab);
+      entry = entries[this.state.selectedIndex];
+    }
 
     if (!entry) {
       return;

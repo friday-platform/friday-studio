@@ -15,6 +15,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
     [MemoryType.EPISODIC]: "episodic.json",
     [MemoryType.SEMANTIC]: "semantic.json",
     [MemoryType.PROCEDURAL]: "procedural.json",
+    [MemoryType.VECTOR_SEARCH]: "vector_search.json", // Not used for storage but needed for completeness
   };
 
   constructor(workspacePath?: string) {
@@ -29,9 +30,16 @@ export class AtlasMemoryLoader implements MemoryStorage {
       [MemoryType.EPISODIC]: {},
       [MemoryType.SEMANTIC]: {},
       [MemoryType.PROCEDURAL]: {},
+      [MemoryType.VECTOR_SEARCH]: {}, // Not used for storage but needed for completeness
     };
 
     for (const memoryType of Object.values(MemoryType)) {
+      // Skip vector search as it's not persisted to disk
+      if (memoryType === MemoryType.VECTOR_SEARCH) {
+        result[memoryType] = {};
+        continue;
+      }
+      
       try {
         result[memoryType] = await this.loadByType(memoryType);
       } catch (error) {
@@ -71,7 +79,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
 
       // Convert raw data to MemoryEntry objects
       for (const [key, rawEntry] of Object.entries(rawData)) {
-        const entry = rawEntry as any;
+        const entry = rawEntry as Record<string, unknown>;
         entries[key] = {
           id: key,
           content: entry.content,
@@ -113,7 +121,7 @@ export class AtlasMemoryLoader implements MemoryStorage {
     const filePath = join(this.storagePath, fileName);
 
     // Convert MemoryEntry objects to serializable format
-    const serializable: Record<string, any> = {};
+    const serializable: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(data)) {
       serializable[key] = {
         ...entry,
@@ -140,9 +148,16 @@ export class AtlasMemoryLoader implements MemoryStorage {
       [MemoryType.EPISODIC]: { count: 0 },
       [MemoryType.SEMANTIC]: { count: 0 },
       [MemoryType.PROCEDURAL]: { count: 0 },
+      [MemoryType.VECTOR_SEARCH]: { count: 0 },
     };
 
     for (const memoryType of Object.values(MemoryType)) {
+      // Skip vector search as it's not persisted to disk
+      if (memoryType === MemoryType.VECTOR_SEARCH) {
+        stats[memoryType] = { count: 0 };
+        continue;
+      }
+      
       const fileName = this.memoryTypeFiles[memoryType];
       const filePath = join(this.storagePath, fileName);
 

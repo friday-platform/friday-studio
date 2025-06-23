@@ -9,11 +9,12 @@ export enum MemoryType {
   EPISODIC = "episodic",
   SEMANTIC = "semantic",
   PROCEDURAL = "procedural",
+  VECTOR_SEARCH = "vector-search",
 }
 
 export interface MemoryEntry {
   id: string;
-  content: any;
+  content: unknown;
   timestamp: Date;
   accessCount: number;
   lastAccessed: Date;
@@ -26,12 +27,17 @@ export interface MemoryEntry {
   decayRate: number;
 }
 
+export interface VectorSearchResult extends MemoryEntry {
+  similarity: number;
+  matchedContent: string;
+}
+
 export interface MemoryOperations {
   // CRUD operations
   create(
     type: MemoryType,
     key: string,
-    content: any,
+    content: unknown,
     metadata?: Partial<MemoryEntry>,
   ): Promise<void>;
   read(type: MemoryType, key: string): Promise<MemoryEntry | null>;
@@ -45,6 +51,9 @@ export interface MemoryOperations {
   // List and search
   list(type: MemoryType): Promise<MemoryEntry[]>;
   search(type: MemoryType, query: string): Promise<MemoryEntry[]>;
+  
+  // Vector search operations
+  vectorSearch(query: string): Promise<VectorSearchResult[]>;
 
   // Storage operations
   save(): Promise<void>;
@@ -67,10 +76,12 @@ export interface TUIState {
   scrollOffset: number;
   searchQuery: string;
   showHelp: boolean;
-  mode: "list" | "view" | "edit" | "create" | "delete" | "search";
+  mode: "list" | "view" | "edit" | "create" | "delete" | "search" | "vector-search";
   editState?: EditState;
   showOverlay: boolean;
   overlayContent?: OverlayContent;
+  vectorSearchQuery?: string;
+  vectorSearchResults?: VectorSearchResult[];
 }
 
 export interface OverlayContent {
