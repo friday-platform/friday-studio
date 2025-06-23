@@ -1,14 +1,23 @@
 import type {
   IAtlasGate,
   IAtlasScope,
+  ICoALAMemoryStorageAdapter,
   ITempestContextManager,
   ITempestMemoryManager,
+  ITempestMemoryStorageAdapter,
   ITempestMessageManager,
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { ContextManager } from "./context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { MessageManager } from "./messages.ts";
+
+export interface AtlasScopeOptions {
+  parentScopeId?: string;
+  supervisor?: IWorkspaceSupervisor;
+  storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter;
+  enableCognitiveLoop?: boolean;
+}
 
 export class AtlasScope implements IAtlasScope {
   public readonly id: string;
@@ -23,12 +32,47 @@ export class AtlasScope implements IAtlasScope {
   constructor(
     parentScopeId?: string,
     supervisor?: IWorkspaceSupervisor,
+    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
+    enableCognitiveLoop?: boolean,
+  );
+  constructor(options?: AtlasScopeOptions);
+  constructor(
+    parentScopeIdOrOptions?: string | AtlasScopeOptions,
+    supervisor?: IWorkspaceSupervisor,
+    storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
+    enableCognitiveLoop?: boolean,
   ) {
+    // Handle overloaded constructor
+    let actualParentScopeId: string | undefined;
+    let actualSupervisor: IWorkspaceSupervisor | undefined;
+    let actualStorageAdapter: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter | undefined;
+    let actualEnableCognitiveLoop: boolean = true;
+
+    if (typeof parentScopeIdOrOptions === "object" && parentScopeIdOrOptions !== null) {
+      // Options object provided
+      actualParentScopeId = parentScopeIdOrOptions.parentScopeId;
+      actualSupervisor = parentScopeIdOrOptions.supervisor;
+      actualStorageAdapter = parentScopeIdOrOptions.storageAdapter;
+      actualEnableCognitiveLoop = parentScopeIdOrOptions.enableCognitiveLoop ?? true;
+    } else if (typeof parentScopeIdOrOptions === "string") {
+      // Legacy parameters provided
+      actualParentScopeId = parentScopeIdOrOptions;
+      actualSupervisor = supervisor;
+      actualStorageAdapter = storageAdapter;
+      actualEnableCognitiveLoop = enableCognitiveLoop ?? true;
+    } else {
+      // No parameters provided
+      actualParentScopeId = undefined;
+      actualSupervisor = undefined;
+      actualStorageAdapter = undefined;
+      actualEnableCognitiveLoop = true;
+    }
+
     this.id = crypto.randomUUID();
-    this.parentScopeId = parentScopeId;
-    this.supervisor = supervisor;
+    this.parentScopeId = actualParentScopeId;
+    this.supervisor = actualSupervisor;
     this.context = new ContextManager();
-    this.memory = new CoALAMemoryManager(this);
+    this.memory = new CoALAMemoryManager(this, actualStorageAdapter, actualEnableCognitiveLoop);
     this.messages = new MessageManager();
     this.prompts = {
       system: "",

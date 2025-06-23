@@ -593,8 +593,12 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     workflows?: IWorkspaceWorkflow[],
     sources?: IWorkspaceSource[],
     intent?: SessionIntent,
+    storageAdapter?:
+      | import("../types/core.ts").ITempestMemoryStorageAdapter
+      | import("../types/core.ts").ICoALAMemoryStorageAdapter,
+    enableCognitiveLoop: boolean = true,
   ) {
-    super(workspaceId);
+    super(workspaceId, undefined, storageAdapter, enableCognitiveLoop);
 
     // Initialize logger for this session
     this.logger = logger.createChildLogger({

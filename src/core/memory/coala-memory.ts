@@ -92,7 +92,10 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     // Initialize knowledge graph for semantic memory enhancement
     this.initializeKnowledgeGraph();
 
-    this.loadFromStorage();
+    // Only load from storage if not using in-memory adapter
+    if (this.store.constructor.name !== "InMemoryStorageAdapter") {
+      this.loadFromStorage();
+    }
 
     if (enableCognitiveLoop) {
       this.startCognitiveLoop();
@@ -574,6 +577,12 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   // Initialize knowledge graph for semantic memory enhancement
   private initializeKnowledgeGraph(): void {
     try {
+      // Skip knowledge graph initialization for in-memory storage
+      // to avoid file system access in tests
+      if (this.store.constructor.name === "InMemoryStorageAdapter") {
+        return;
+      }
+
       // Get base path for storage - assume we can get this from the scope or store
       const basePath = this.getKnowledgeGraphBasePath();
       const kgStorageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
