@@ -118,9 +118,9 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     // Only load from storage if not using in-memory adapter
     if (this.store.constructor.name !== "InMemoryStorageAdapter") {
       this.loadFromStorage();
+      // Initialize vector search if enabled
+      this.initializeVectorSearch(vectorSearchConfig);
     }
-    // Initialize vector search if enabled
-    this.initializeVectorSearch(vectorSearchConfig);
 
     if (enableCognitiveLoop) {
       this.startCognitiveLoop();
