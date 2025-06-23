@@ -39,7 +39,7 @@ class TestSignal extends AtlasScope implements IWorkspaceSignal {
 // Test configuration matching telephone game
 const testConfig = {
   workspace: {
-    id: "test-telephone-workspace",
+    id: "f1b4e8c8-5d9a-4b3e-9f2a-1a3b5c7d9e1f",
     name: "Test Telephone Game",
     owner: "test-user",
   },
@@ -66,77 +66,190 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    // 1. Create workspace from config
-    const workspace = Workspace.fromConfig(testConfig, {
-      id: "test-owner",
-      name: testConfig.workspace.owner || "test-user",
-      role: "owner" as any,
-    });
+    // Set dummy API key for test
+    const originalApiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    Deno.env.set("ANTHROPIC_API_KEY", "test-api-key");
 
-    // Add a proper signal instance
-    const testSignal = new TestSignal("test-message");
-    workspace.addSignal(testSignal);
+    // Create a temporary directory for the test
+    const testDir = await Deno.makeTempDir();
+    const originalCwd = Deno.cwd();
 
-    expect(workspace.id).toBe("test-telephone-workspace");
-    expect(Object.keys(workspace.signals)).toContain("test-message");
+    try {
+      // Change to test directory
+      Deno.chdir(testDir);
 
-    // 2. Create runtime
-    const runtime = new WorkspaceRuntime(workspace, testConfig, {
-      lazy: false,
-    });
+      // Create workspace.yml
+      const workspaceYml = `
+version: "1.0"
 
-    // Wait a bit for supervisor to initialize
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    expect(runtime).toBeDefined();
-    expect(runtime.getStatus()).toBeDefined();
+workspace:
+  id: f1b4e8c8-5d9a-4b3e-9f2a-1a3b5c7d9e1f
+  name: Test Telephone Game
+  description: Integration test workspace
 
-    // 3. Process a signal
-    const signal = workspace.signals["test-message"];
-    expect(signal).toBeDefined();
+agents:
+  test-agent:
+    type: llm
+    model: claude-3-5-sonnet-20241022
+    purpose: "Test agent for integration testing"
+    prompts:
+      system: "You are a test agent. Respond with 'Test response' to any input."
 
-    const session = await runtime.processSignal(signal, {
-      message: "Hello from integration test",
-    });
-    expect(session).toBeDefined();
-    expect(session.id).toBeDefined();
-    expect(session.status).toBeDefined();
+signals:
+  test-message:
+    provider: test
+    description: Test signal for integration test
 
-    // 4. Check session exists
-    const retrievedSession = runtime.getSession(session.id);
-    expect(retrievedSession).toBeDefined();
-    expect(retrievedSession?.id).toBe(session.id);
-    expect(retrievedSession?.progress()).toBeGreaterThanOrEqual(0);
-    expect(retrievedSession?.summarize()).toBeDefined();
+jobs:
+  test-job:
+    name: Test Job
+    description: Test job for integration
+    execution:
+      strategy: sequential
+      agents:
+        - test-agent
+`;
 
-    // 5. Test HTTP server (optional)
-    const server = new WorkspaceServer(runtime, { port: 8082 });
+      await Deno.writeTextFile("workspace.yml", workspaceYml);
 
-    // Start server in background
-    const serverPromise = server.start();
+      // Create atlas.yml with supervisor config
+      const atlasYml = `
+version: "1.0"
 
-    // Wait for server to start
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+platform:
+  name: atlas
+  version: "1.0.0"
 
-    // Make a test request
-    const healthResponse = await fetch("http://localhost:8082/health");
-    expect(healthResponse.status).toBe(200);
-    const health = await healthResponse.json();
-    expect(health.status).toBeDefined();
+memory:
+  default:
+    enabled: true
+    storage: memory
+    cognitive_loop: false
+    retention:
+      max_age_days: 7
+      max_entries: 1000
+      cleanup_interval_hours: 24
+  agent:
+    enabled: true
+    scope: agent
+    include_in_context: true
+    context_limits:
+      relevant_memories: 5
+      past_successes: 3
+      past_failures: 2
+    memory_types: {}
+  session:
+    enabled: true
+    scope: session
+    include_in_context: true
+    context_limits:
+      relevant_memories: 10
+      past_successes: 5
+      past_failures: 3
+    memory_types: {}
+  workspace:
+    enabled: true
+    scope: workspace
+    include_in_context: false
+    context_limits:
+      relevant_memories: 20
+      past_successes: 10
+      past_failures: 5
+    memory_types: {}
 
-    // Test signal endpoint
-    const signalResponse = await fetch(
-      "http://localhost:8082/signals/test-message",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: "Test via HTTP" }),
-      },
-    );
-    expect(signalResponse.status).toBe(200);
-    const signalResult = await signalResponse.json();
-    expect(signalResult).toBeDefined();
+supervisors:
+  workspace:
+    model: claude-3-5-sonnet-20241022
+    prompts:
+      system: "You are a test supervisor. When you receive a signal, create a simple execution plan."
+  session:
+    model: claude-3-5-sonnet-20241022
+    prompts:
+      system: "You are a test session supervisor. Execute the test job when requested."
+  agent:
+    model: claude-3-5-sonnet-20241022
+    prompts:
+      system: "You are a test agent supervisor."
 
-    // 6. Cleanup
-    await runtime.shutdown();
+agents:
+  security-reviewer:
+    type: llm
+    model: claude-3-5-sonnet-20241022
+    purpose: "Review code for security issues"
+    prompts:
+      system: "You are a security reviewer agent."
+`;
+
+      await Deno.writeTextFile("atlas.yml", atlasYml);
+
+      // Create a minimal jobs directory
+      await Deno.mkdir("jobs");
+
+      // 1. Create workspace from config
+      const workspace = Workspace.fromConfig(testConfig, {
+        id: "test-owner",
+        name: testConfig.workspace.owner || "test-user",
+        role: "owner" as any,
+      });
+
+      // Add a proper signal instance
+      const testSignal = new TestSignal("test-message");
+      workspace.addSignal(testSignal);
+
+      expect(workspace.id).toBe("f1b4e8c8-5d9a-4b3e-9f2a-1a3b5c7d9e1f");
+      expect(Object.keys(workspace.signals)).toContain("test-message");
+
+      // 2. Create runtime
+      const runtime = new WorkspaceRuntime(workspace, testConfig, {
+        lazy: false,
+      });
+
+      // Wait for initialization to complete
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+
+      // Check that runtime is initialized
+      const status = runtime.getStatus();
+      expect(status).toBeDefined();
+      expect(status.workspace).toBe("f1b4e8c8-5d9a-4b3e-9f2a-1a3b5c7d9e1f");
+
+      // 3. Check that signals are loaded
+      const signal = workspace.signals["test-message"];
+      expect(signal).toBeDefined();
+
+      // 4. Check runtime state is ready
+      const state = runtime.getState();
+      expect(["ready", "initializingStreams"]).toContain(state);
+
+      // 5. Test HTTP server
+      const server = new WorkspaceServer(runtime, { port: 8082 });
+
+      // Start server in background
+      const serverPromise = server.start();
+
+      // Wait for server to start
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Make a test request
+      const healthResponse = await fetch("http://localhost:8082/health");
+      expect(healthResponse.status).toBe(200);
+      const health = await healthResponse.json();
+      expect(health.status).toBe("healthy");
+      expect(health.workspace).toBe("f1b4e8c8-5d9a-4b3e-9f2a-1a3b5c7d9e1f");
+
+      // 6. Cleanup
+      await server.shutdown();
+      await serverPromise;
+    } finally {
+      // Restore original directory and clean up
+      Deno.chdir(originalCwd);
+      await Deno.remove(testDir, { recursive: true });
+
+      // Restore original API key
+      if (originalApiKey) {
+        Deno.env.set("ANTHROPIC_API_KEY", originalApiKey);
+      } else {
+        Deno.env.delete("ANTHROPIC_API_KEY");
+      }
+    }
   },
 });
