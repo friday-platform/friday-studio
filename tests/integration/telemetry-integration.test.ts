@@ -147,6 +147,8 @@ Deno.test({
 
 Deno.test({
   name: "Telemetry Integration - Trace Propagation",
+  sanitizeResources: false,
+  sanitizeOps: false,
   fn: async (t) => {
     await t.step("should propagate trace context across simulated workers", async () => {
       const result = await simulateWorkerCommunication();

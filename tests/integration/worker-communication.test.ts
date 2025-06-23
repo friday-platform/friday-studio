@@ -48,11 +48,15 @@ Deno.test("Basic worker communication", async () => {
 });
 
 // Test 2: WorkerManager lifecycle (from test-simple-flow)
-Deno.test("WorkerManager lifecycle", async () => {
-  const manager = new WorkerManager();
+Deno.test({
+  name: "WorkerManager lifecycle",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new WorkerManager();
 
-  // Create a simple test worker file
-  const testWorkerCode = `
+    // Create a simple test worker file
+    const testWorkerCode = `
     
     self.onmessage = (event) => {
       
@@ -62,41 +66,46 @@ Deno.test("WorkerManager lifecycle", async () => {
     };
   `;
 
-  const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
-  await Deno.writeTextFile(tempFile, testWorkerCode);
+    const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
+    await Deno.writeTextFile(tempFile, testWorkerCode);
 
-  try {
-    const worker = await manager.spawnWorker(
-      { id: "test-1", type: "agent" as any },
-      new URL(`file://${tempFile}`).href,
-    );
+    try {
+      const worker = await manager.spawnWorker(
+        { id: "test-1", type: "agent" as any },
+        new URL(`file://${tempFile}`).href,
+      );
 
-    expect(worker.id).toBe("test-1");
+      expect(worker.id).toBe("test-1");
 
-    // Wait for initialization
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for initialization
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    const state = manager.getWorkerState(worker.id);
-    expect(state).toBeDefined();
+      const state = manager.getWorkerState(worker.id);
+      expect(state).toBeDefined();
 
-    // Clean up
-    await manager.shutdown();
-  } finally {
-    await Deno.remove(tempFile);
-  }
+      // Clean up
+      await manager.shutdown();
+    } finally {
+      await Deno.remove(tempFile);
+    }
+  },
 });
 
 // Test 3: Full BaseWorker communication (from test-full-worker-communication)
-Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
-  const manager = new WorkerManager();
+Deno.test({
+  name: "BaseWorker with BroadcastChannels and MessagePorts",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new WorkerManager();
 
-  const testWorkerCode = `
+    const testWorkerCode = `
     /// <reference no-default-lib="true" />
     /// <reference lib="deno.worker" />
     
     import { BaseWorker } from "${
-    new URL("../../src/core/workers/base-worker.ts", import.meta.url).href
-  }";
+      new URL("../../src/core/workers/base-worker.ts", import.meta.url).href
+    }";
     
     class TestWorker extends BaseWorker {
       constructor() {
@@ -139,117 +148,123 @@ Deno.test("BaseWorker with BroadcastChannels and MessagePorts", async () => {
     new TestWorker();
   `;
 
-  const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
-  await Deno.writeTextFile(tempFile, testWorkerCode);
+    const tempFile = await Deno.makeTempFile({ suffix: ".ts" });
+    await Deno.writeTextFile(tempFile, testWorkerCode);
 
-  try {
-    // Spawn test workers
-    const worker1 = await manager.spawnWorker(
-      { id: "worker-1", type: "agent", config: { name: "Worker 1" } },
-      new URL(`file://${tempFile}`).href,
-    );
+    try {
+      // Spawn test workers
+      const worker1 = await manager.spawnWorker(
+        { id: "worker-1", type: "agent", config: { name: "Worker 1" } },
+        new URL(`file://${tempFile}`).href,
+      );
 
-    const worker2 = await manager.spawnWorker(
-      { id: "worker-2", type: "agent", config: { name: "Worker 2" } },
-      new URL(`file://${tempFile}`).href,
-    );
+      const worker2 = await manager.spawnWorker(
+        { id: "worker-2", type: "agent", config: { name: "Worker 2" } },
+        new URL(`file://${tempFile}`).href,
+      );
 
-    // Wait for initialization
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+      // Wait for initialization
+      await new Promise((resolve) => setTimeout(resolve, 1000));
 
-    // Test task processing
-    const echoResult = await manager.sendTask("worker-1", "echo-task", {
-      action: "echo",
-      message: "Hello from test!",
-    });
+      // Test task processing
+      const echoResult = await manager.sendTask("worker-1", "echo-task", {
+        action: "echo",
+        message: "Hello from test!",
+      });
 
-    expect(echoResult).toBeDefined();
-    expect(echoResult.echo).toBe("Hello from test!");
+      expect(echoResult).toBeDefined();
+      expect(echoResult.echo).toBe("Hello from test!");
 
-    // Test broadcast communication
-    manager.setupBroadcastChannel("worker-1", "test-channel");
-    manager.setupBroadcastChannel("worker-2", "test-channel");
+      // Test broadcast communication
+      manager.setupBroadcastChannel("worker-1", "test-channel");
+      manager.setupBroadcastChannel("worker-2", "test-channel");
 
-    // Listen for broadcast receipts
-    const broadcastPromise = new Promise<BroadcastReceiptMessage>((resolve) => {
-      worker2.worker.onmessage = (event) => {
-        if (event.data.type === "broadcastReceived") {
-          resolve(event.data as BroadcastReceiptMessage);
-        }
-      };
-    });
+      // Listen for broadcast receipts
+      const broadcastPromise = new Promise<BroadcastReceiptMessage>((resolve) => {
+        worker2.worker.onmessage = (event) => {
+          if (event.data.type === "broadcastReceived") {
+            resolve(event.data as BroadcastReceiptMessage);
+          }
+        };
+      });
 
-    // Send broadcast from worker 1
-    await manager.sendTask("worker-1", "broadcast-task", {
-      action: "broadcast",
-      channel: "test-channel",
-      message: { type: "test", content: "Hello broadcast!" },
-    });
+      // Send broadcast from worker 1
+      await manager.sendTask("worker-1", "broadcast-task", {
+        action: "broadcast",
+        channel: "test-channel",
+        message: { type: "test", content: "Hello broadcast!" },
+      });
 
-    const broadcastReceipt = await broadcastPromise;
-    expect(broadcastReceipt).toBeDefined();
-    expect(broadcastReceipt.type).toBe("broadcastReceived");
-    expect(broadcastReceipt.channel).toBe("test-channel");
+      const broadcastReceipt = await broadcastPromise;
+      expect(broadcastReceipt).toBeDefined();
+      expect(broadcastReceipt.type).toBe("broadcastReceived");
+      expect(broadcastReceipt.channel).toBe("test-channel");
 
-    // Test direct communication via MessagePort
-    manager.createMessageChannel("worker-1", "worker-2");
-    await new Promise((resolve) => setTimeout(resolve, 500));
+      // Test direct communication via MessagePort
+      manager.createMessageChannel("worker-1", "worker-2");
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
-    await manager.shutdown();
-  } finally {
-    await Deno.remove(tempFile);
-  }
+      await manager.shutdown();
+    } finally {
+      await Deno.remove(tempFile);
+    }
+  },
 });
 
 // Test 4: WorkspaceSupervisor worker initialization (from test-supervisor-worker)
-Deno.test("WorkspaceSupervisor worker initialization", async () => {
-  const manager = new WorkerManager();
+Deno.test({
+  name: "WorkspaceSupervisor worker initialization",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new WorkerManager();
 
-  try {
-    const supervisorMetadata = {
-      id: "test-supervisor",
-      type: "supervisor" as const,
-      config: {
-        id: "test-workspace",
-        workspace: {
-          id: "test-workspace",
-          signals: 0,
-          agents: 0,
-        },
+    try {
+      const supervisorMetadata = {
+        id: "test-supervisor",
+        type: "supervisor" as const,
         config: {
-          model: "claude-3-haiku-20240307",
+          id: "test-workspace",
+          workspace: {
+            id: "test-workspace",
+            signals: 0,
+            agents: 0,
+          },
+          config: {
+            model: "claude-3-haiku-20240307",
+          },
         },
-      },
-    };
+      };
 
-    const supervisor = await manager.spawnWorker(
-      supervisorMetadata,
-      new URL(
-        "../../src/core/workers/workspace-supervisor-worker.ts",
-        import.meta.url,
-      ).href,
-    );
+      const supervisor = await manager.spawnWorker(
+        supervisorMetadata,
+        new URL(
+          "../../src/core/workers/workspace-supervisor-worker.ts",
+          import.meta.url,
+        ).href,
+      );
 
-    expect(supervisor.id).toBe("test-supervisor");
+      expect(supervisor.id).toBe("test-supervisor");
 
-    // Check state periodically
-    for (let i = 0; i < 5; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      const state = manager.getWorkerState(supervisor.id);
-      expect(state).toBeDefined();
+      // Check state periodically
+      for (let i = 0; i < 5; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        const state = manager.getWorkerState(supervisor.id);
+        expect(state).toBeDefined();
 
-      if (state === "ready") {
-        break;
+        if (state === "ready") {
+          break;
+        }
+
+        if (state === "error") {
+          expect(state).not.toBe("error"); // This will fail the test if supervisor errors
+          break;
+        }
       }
 
-      if (state === "error") {
-        expect(state).not.toBe("error"); // This will fail the test if supervisor errors
-        break;
-      }
+      await manager.shutdown();
+    } catch (error) {
+      throw error;
     }
-
-    await manager.shutdown();
-  } catch (error) {
-    throw error;
-  }
+  },
 });

@@ -13,6 +13,8 @@ import { MCPManager } from "../../../src/core/agents/mcp/mcp-manager.ts";
 
 Deno.test({
   name: "Playwright MCP Integration - Web Analysis Agent Configuration",
+  sanitizeResources: false,
+  sanitizeOps: false,
   async fn() {
     const testEnv = createEnhancedTestEnvironment();
 

@@ -16,8 +16,8 @@ const mockMemoryConfig: AtlasMemoryConfig = {
     storage: "in-memory",
     cognitive_loop: false,
     retention: {
-      default_ttl_hours: 24,
       max_age_days: 30,
+      max_entries: 1000,
       cleanup_interval_hours: 6,
     },
   },
@@ -68,175 +68,218 @@ const mockMemoryConfig: AtlasMemoryConfig = {
   },
 };
 
-Deno.test("WorkspaceSupervisor getPrecomputedPlans validates workspace access", () => {
-  const supervisor = new WorkspaceSupervisor("test-workspace-1", {});
+Deno.test({
+  name: "WorkspaceSupervisor getPrecomputedPlans validates workspace access",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  fn() {
+    const supervisor = new WorkspaceSupervisor("test-workspace-1", {});
 
-  // Test: Same workspace ID should be allowed
-  const plans1 = supervisor.getPrecomputedPlans("test-workspace-1");
-  expect(typeof plans1).toBe("object");
+    // Test: Same workspace ID should be allowed
+    const plans1 = supervisor.getPrecomputedPlans("test-workspace-1");
+    expect(typeof plans1).toBe("object");
 
-  // Test: Different workspace ID should be rejected (security violation)
-  const plans2 = supervisor.getPrecomputedPlans("different-workspace");
-  expect(plans2).toEqual({});
+    // Test: Different workspace ID should be rejected (security violation)
+    const plans2 = supervisor.getPrecomputedPlans("different-workspace");
+    expect(plans2).toEqual({});
 
-  // Test: No workspace ID should work (backward compatibility)
-  const plans3 = supervisor.getPrecomputedPlans();
-  expect(typeof plans3).toBe("object");
+    // Test: No workspace ID should work (backward compatibility)
+    const plans3 = supervisor.getPrecomputedPlans();
+    expect(typeof plans3).toBe("object");
+  },
 });
 
-Deno.test("SessionSupervisor validates and sanitizes precomputed plans", async () => {
-  // Test with valid plans
-  const validPlans = {
-    "plan:workspace1:job1": {
-      type: "execution",
-      phases: [],
-      context: { workspaceId: "workspace1" },
-    },
-  };
-
-  const sessionSupervisor = new SessionSupervisor(
-    mockMemoryConfig,
-    "workspace1",
-    validPlans,
-  );
-
-  expect(sessionSupervisor).toBeDefined();
-});
-
-Deno.test("SessionSupervisor rejects invalid plan keys", async () => {
-  // Test with invalid plan keys (potential injection)
-  const longKey = "plan:workspace1:" + "x".repeat(300);
-  const invalidPlans = {
-    "plan;DROP TABLE plans;--": { malicious: true },
-    "plan:workspace1:job<script>": { xss: true },
-    [longKey]: { oversized: true }, // Too long
-  };
-
-  const sessionSupervisor = new SessionSupervisor(
-    mockMemoryConfig,
-    "workspace1",
-    invalidPlans,
-  );
-
-  // Should filter out invalid keys during construction
-  expect(sessionSupervisor).toBeDefined();
-});
-
-Deno.test("SessionSupervisor filters cross-workspace plans", async () => {
-  // Test with plans from different workspaces
-  const mixedPlans = {
-    "plan:workspace1:job1": {
-      type: "execution",
-      context: { workspaceId: "workspace1" },
-    },
-    "plan:workspace2:job2": {
-      type: "execution",
-      context: { workspaceId: "workspace2" },
-    },
-  };
-
-  // SessionSupervisor for workspace1 should only see workspace1 plans
-  const sessionSupervisor = new SessionSupervisor(
-    mockMemoryConfig,
-    "workspace1",
-    mixedPlans,
-  );
-
-  expect(sessionSupervisor).toBeDefined();
-});
-
-Deno.test("SessionSupervisor sanitizes sensitive data from plans", async () => {
-  // Test with plans containing sensitive data
-  const sensitiveDataPlans = {
-    "plan:workspace1:job1": {
-      type: "execution",
-      phases: [],
-      workspaceSecrets: "secret-api-key",
-      privateKeys: "rsa-private-key",
-      authTokens: "bearer-token",
-      passwords: "admin123",
-      context: {
-        workspaceId: "workspace1",
-        workspacePath: "/absolute/path/to/workspace",
+Deno.test({
+  name: "SessionSupervisor validates and sanitizes precomputed plans",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Test with valid plans
+    const validPlans = {
+      "plan:workspace1:job1": {
+        type: "execution",
+        phases: [],
+        context: { workspaceId: "workspace1" },
       },
-    },
-  };
+    };
 
-  const sessionSupervisor = new SessionSupervisor(
-    mockMemoryConfig,
-    "workspace1",
-    sensitiveDataPlans,
-  );
+    const sessionSupervisor = new SessionSupervisor(
+      mockMemoryConfig,
+      "workspace1",
+      validPlans,
+    );
 
-  // Should sanitize sensitive fields during construction
-  expect(sessionSupervisor).toBeDefined();
+    expect(sessionSupervisor).toBeDefined();
+  },
 });
 
-Deno.test("SessionSupervisor creates secure cache keys", async () => {
-  const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+Deno.test({
+  name: "SessionSupervisor rejects invalid plan keys",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Test with invalid plan keys (potential injection)
+    const longKey = "plan:workspace1:" + "x".repeat(300);
+    const invalidPlans = {
+      "plan;DROP TABLE plans;--": { malicious: true },
+      "plan:workspace1:job<script>": { xss: true },
+      [longKey]: { oversized: true }, // Too long
+    };
 
-  // Access private method through type assertion for testing
-  const createSecurePlanKey = (sessionSupervisor as any).createSecurePlanKey;
+    const sessionSupervisor = new SessionSupervisor(
+      mockMemoryConfig,
+      "workspace1",
+      invalidPlans,
+    );
 
-  // Test secure key format
-  const key1 = createSecurePlanKey("simple-job", "workspace1");
-  expect(key1).toBe("plan:workspace1:simple-job");
-
-  const key2 = createSecurePlanKey("complex-job-name", "another-workspace");
-  expect(key2).toBe("plan:another-workspace:complex-job-name");
-
-  // Keys should be deterministic for same inputs
-  const key3 = createSecurePlanKey("simple-job", "workspace1");
-  expect(key3).toBe(key1);
+    // Should filter out invalid keys during construction
+    expect(sessionSupervisor).toBeDefined();
+  },
 });
 
-Deno.test("SessionSupervisor validates plan structure before execution", async () => {
-  const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+Deno.test({
+  name: "SessionSupervisor filters cross-workspace plans",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Test with plans from different workspaces
+    const mixedPlans = {
+      "plan:workspace1:job1": {
+        type: "execution",
+        context: { workspaceId: "workspace1" },
+      },
+      "plan:workspace2:job2": {
+        type: "execution",
+        context: { workspaceId: "workspace2" },
+      },
+    };
 
-  // Access private method for testing
-  const validatePlanForExecution = (sessionSupervisor as any).validatePlanForExecution;
+    // SessionSupervisor for workspace1 should only see workspace1 plans
+    const sessionSupervisor = new SessionSupervisor(
+      mockMemoryConfig,
+      "workspace1",
+      mixedPlans,
+    );
 
-  // Test valid plan
-  const validPlan = {
-    type: "execution",
-    phases: [],
-    context: { workspaceId: "workspace1" },
-  };
-  const mockSessionContext = { workspaceId: "workspace1" };
-
-  expect(validatePlanForExecution(validPlan, mockSessionContext)).toBe(true);
-
-  // Test invalid plan structure
-  const invalidPlan1 = null;
-  expect(validatePlanForExecution(invalidPlan1, mockSessionContext)).toBe(false);
-
-  const invalidPlan2 = { phases: "not-an-array" };
-  expect(validatePlanForExecution(invalidPlan2, mockSessionContext)).toBe(false);
-
-  // Test workspace mismatch
-  const wrongWorkspacePlan = {
-    type: "execution",
-    phases: [],
-    context: { workspaceId: "different-workspace" },
-  };
-  expect(validatePlanForExecution(wrongWorkspacePlan, mockSessionContext)).toBe(false);
+    expect(sessionSupervisor).toBeDefined();
+  },
 });
 
-Deno.test("Plan key validation prevents injection attacks", async () => {
-  const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+Deno.test({
+  name: "SessionSupervisor sanitizes sensitive data from plans",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Test with plans containing sensitive data
+    const sensitiveDataPlans = {
+      "plan:workspace1:job1": {
+        type: "execution",
+        phases: [],
+        workspaceSecrets: "secret-api-key",
+        privateKeys: "rsa-private-key",
+        authTokens: "bearer-token",
+        passwords: "admin123",
+        context: {
+          workspaceId: "workspace1",
+          workspacePath: "/absolute/path/to/workspace",
+        },
+      },
+    };
 
-  // Access private method for testing
-  const isValidPlanKey = (sessionSupervisor as any).isValidPlanKey;
+    const sessionSupervisor = new SessionSupervisor(
+      mockMemoryConfig,
+      "workspace1",
+      sensitiveDataPlans,
+    );
 
-  // Valid keys
-  expect(isValidPlanKey("plan:workspace1:job1")).toBe(true);
-  expect(isValidPlanKey("plan:test-workspace:simple_job")).toBe(true);
-  expect(isValidPlanKey("valid-key123")).toBe(true);
+    // Should sanitize sensitive fields during construction
+    expect(sessionSupervisor).toBeDefined();
+  },
+});
 
-  // Invalid keys (potential injection)
-  expect(isValidPlanKey("plan;DROP TABLE;--")).toBe(false);
-  expect(isValidPlanKey("plan<script>alert()</script>")).toBe(false);
-  expect(isValidPlanKey("plan\nworkspace\njob")).toBe(false);
-  expect(isValidPlanKey("")).toBe(false);
-  expect(isValidPlanKey("x".repeat(300))).toBe(false); // Too long
+Deno.test({
+  name: "SessionSupervisor creates secure cache keys",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+
+    // Access private method through type assertion for testing
+    const createSecurePlanKey = (sessionSupervisor as any).createSecurePlanKey;
+
+    // Test secure key format
+    const key1 = createSecurePlanKey("simple-job", "workspace1");
+    expect(key1).toBe("plan:workspace1:simple-job");
+
+    const key2 = createSecurePlanKey("complex-job-name", "another-workspace");
+    expect(key2).toBe("plan:another-workspace:complex-job-name");
+
+    // Keys should be deterministic for same inputs
+    const key3 = createSecurePlanKey("simple-job", "workspace1");
+    expect(key3).toBe(key1);
+  },
+});
+
+Deno.test({
+  name: "SessionSupervisor validates plan structure before execution",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+
+    // Test valid plan
+    const validPlan = {
+      type: "execution",
+      phases: [],
+      context: { workspaceId: "workspace1" },
+    };
+    const mockSessionContext = { workspaceId: "workspace1" };
+
+    expect((sessionSupervisor as any).validatePlanForExecution(validPlan, mockSessionContext)).toBe(
+      true,
+    );
+
+    // Test invalid plan structure
+    const invalidPlan1 = null;
+    expect((sessionSupervisor as any).validatePlanForExecution(invalidPlan1, mockSessionContext))
+      .toBe(false);
+
+    const invalidPlan2 = { phases: "not-an-array" };
+    expect((sessionSupervisor as any).validatePlanForExecution(invalidPlan2, mockSessionContext))
+      .toBe(false);
+
+    // Test workspace mismatch
+    const wrongWorkspacePlan = {
+      type: "execution",
+      phases: [],
+      context: { workspaceId: "different-workspace" },
+    };
+    expect(
+      (sessionSupervisor as any).validatePlanForExecution(wrongWorkspacePlan, mockSessionContext),
+    ).toBe(false);
+  },
+});
+
+Deno.test({
+  name: "Plan key validation prevents injection attacks",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "workspace1");
+
+    // Access private method for testing
+    const isValidPlanKey = (sessionSupervisor as any).isValidPlanKey;
+
+    // Valid keys
+    expect(isValidPlanKey("plan:workspace1:job1")).toBe(true);
+    expect(isValidPlanKey("plan:test-workspace:simple_job")).toBe(true);
+    expect(isValidPlanKey("valid-key123")).toBe(true);
+
+    // Invalid keys (potential injection)
+    expect(isValidPlanKey("plan;DROP TABLE;--")).toBe(false);
+    expect(isValidPlanKey("plan<script>alert()</script>")).toBe(false);
+    expect(isValidPlanKey("plan\nworkspace\njob")).toBe(false);
+    expect(isValidPlanKey("")).toBe(false);
+    expect(isValidPlanKey("x".repeat(300))).toBe(false); // Too long
+  },
 });

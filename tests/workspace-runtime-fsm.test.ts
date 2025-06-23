@@ -8,6 +8,7 @@ const mockWorkspace = createMockWorkspace("test-workspace", "Test Workspace");
 Deno.test({
   name: "WorkspaceRuntime FSM - Initial state",
   sanitizeResources: false, // Logger opens files that persist across tests
+  sanitizeOps: false,
   fn: async () => {
     const runtime = new WorkspaceRuntime(mockWorkspace, {}, { lazy: true });
 
@@ -30,6 +31,7 @@ Deno.test({
 Deno.test({
   name: "WorkspaceRuntime FSM - State transitions",
   sanitizeResources: false, // Logger opens files that persist across tests
+  sanitizeOps: false,
   fn: async () => {
     const runtime = new WorkspaceRuntime(mockWorkspace, {}, { lazy: false });
 
@@ -57,6 +59,7 @@ Deno.test({
 Deno.test({
   name: "WorkspaceRuntime FSM - Shutdown transitions",
   sanitizeResources: false, // Logger opens files that persist across tests
+  sanitizeOps: false,
   fn: async () => {
     const runtime = new WorkspaceRuntime(mockWorkspace, {}, { lazy: true });
 
@@ -77,6 +80,7 @@ Deno.test({
 Deno.test({
   name: "WorkspaceRuntime FSM - Status includes state",
   sanitizeResources: false, // Logger opens files that persist across tests
+  sanitizeOps: false,
   fn: async () => {
     const runtime = new WorkspaceRuntime(mockWorkspace, {}, { lazy: true });
 

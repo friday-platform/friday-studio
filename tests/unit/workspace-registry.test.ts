@@ -22,13 +22,20 @@ async function createTestEnvironment() {
 
   // Create a new registry manager with isolated HOME
   const originalHome = Deno.env.get("HOME");
+  const originalTestMode = Deno.env.get("DENO_TEST");
   Deno.env.set("HOME", testDir);
+  Deno.env.set("DENO_TEST", "true"); // Prevent auto-importing workspaces
 
   const cleanup = async () => {
     if (originalHome) {
       Deno.env.set("HOME", originalHome);
     } else {
       Deno.env.delete("HOME");
+    }
+    if (originalTestMode) {
+      Deno.env.set("DENO_TEST", originalTestMode);
+    } else {
+      Deno.env.delete("DENO_TEST");
     }
     try {
       await Deno.remove(testDir, { recursive: true });

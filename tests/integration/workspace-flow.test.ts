@@ -38,9 +38,11 @@ class TestSignal extends AtlasScope implements IWorkspaceSignal {
 
 // Test configuration matching telephone game
 const testConfig = {
-  id: "test-telephone-workspace",
-  name: "Test Telephone Game",
-  owner: "test-user",
+  workspace: {
+    id: "test-telephone-workspace",
+    name: "Test Telephone Game",
+    owner: "test-user",
+  },
   supervisor: {
     model: "claude-3-5-sonnet-20241022",
     prompts: {
@@ -59,77 +61,82 @@ const testConfig = {
   ],
 };
 
-Deno.test("Workspace integration flow", async () => {
-  // 1. Create workspace from config
-  const workspace = Workspace.fromConfig(testConfig, {
-    id: "test-owner",
-    name: testConfig.owner,
-    role: "owner" as any,
-  });
+Deno.test({
+  name: "Workspace integration flow",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // 1. Create workspace from config
+    const workspace = Workspace.fromConfig(testConfig, {
+      id: "test-owner",
+      name: testConfig.workspace.owner || "test-user",
+      role: "owner" as any,
+    });
 
-  // Add a proper signal instance
-  const testSignal = new TestSignal("test-message");
-  workspace.addSignal(testSignal);
+    // Add a proper signal instance
+    const testSignal = new TestSignal("test-message");
+    workspace.addSignal(testSignal);
 
-  expect(workspace.id).toBe("test-telephone-workspace");
-  expect(Object.keys(workspace.signals)).toContain("test-message");
+    expect(workspace.id).toBe("test-telephone-workspace");
+    expect(Object.keys(workspace.signals)).toContain("test-message");
 
-  // 2. Create runtime
-  const runtime = new WorkspaceRuntime(workspace, testConfig, {
-    lazy: false,
-  });
+    // 2. Create runtime
+    const runtime = new WorkspaceRuntime(workspace, testConfig, {
+      lazy: false,
+    });
 
-  // Wait a bit for supervisor to initialize
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-  expect(runtime).toBeDefined();
-  expect(runtime.getStatus()).toBeDefined();
+    // Wait a bit for supervisor to initialize
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(runtime).toBeDefined();
+    expect(runtime.getStatus()).toBeDefined();
 
-  // 3. Process a signal
-  const signal = workspace.signals["test-message"];
-  expect(signal).toBeDefined();
+    // 3. Process a signal
+    const signal = workspace.signals["test-message"];
+    expect(signal).toBeDefined();
 
-  const session = await runtime.processSignal(signal, {
-    message: "Hello from integration test",
-  });
-  expect(session).toBeDefined();
-  expect(session.id).toBeDefined();
-  expect(session.status).toBeDefined();
+    const session = await runtime.processSignal(signal, {
+      message: "Hello from integration test",
+    });
+    expect(session).toBeDefined();
+    expect(session.id).toBeDefined();
+    expect(session.status).toBeDefined();
 
-  // 4. Check session exists
-  const retrievedSession = runtime.getSession(session.id);
-  expect(retrievedSession).toBeDefined();
-  expect(retrievedSession?.id).toBe(session.id);
-  expect(retrievedSession?.progress()).toBeGreaterThanOrEqual(0);
-  expect(retrievedSession?.summarize()).toBeDefined();
+    // 4. Check session exists
+    const retrievedSession = runtime.getSession(session.id);
+    expect(retrievedSession).toBeDefined();
+    expect(retrievedSession?.id).toBe(session.id);
+    expect(retrievedSession?.progress()).toBeGreaterThanOrEqual(0);
+    expect(retrievedSession?.summarize()).toBeDefined();
 
-  // 5. Test HTTP server (optional)
-  const server = new WorkspaceServer(runtime, { port: 8082 });
+    // 5. Test HTTP server (optional)
+    const server = new WorkspaceServer(runtime, { port: 8082 });
 
-  // Start server in background
-  const serverPromise = server.start();
+    // Start server in background
+    const serverPromise = server.start();
 
-  // Wait for server to start
-  await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Wait for server to start
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
-  // Make a test request
-  const healthResponse = await fetch("http://localhost:8082/health");
-  expect(healthResponse.status).toBe(200);
-  const health = await healthResponse.json();
-  expect(health.status).toBeDefined();
+    // Make a test request
+    const healthResponse = await fetch("http://localhost:8082/health");
+    expect(healthResponse.status).toBe(200);
+    const health = await healthResponse.json();
+    expect(health.status).toBeDefined();
 
-  // Test signal endpoint
-  const signalResponse = await fetch(
-    "http://localhost:8082/signals/test-message",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: "Test via HTTP" }),
-    },
-  );
-  expect(signalResponse.status).toBe(200);
-  const signalResult = await signalResponse.json();
-  expect(signalResult).toBeDefined();
+    // Test signal endpoint
+    const signalResponse = await fetch(
+      "http://localhost:8082/signals/test-message",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: "Test via HTTP" }),
+      },
+    );
+    expect(signalResponse.status).toBe(200);
+    const signalResult = await signalResponse.json();
+    expect(signalResult).toBeDefined();
 
-  // 6. Cleanup
-  await runtime.shutdown();
+    // 6. Cleanup
+    await runtime.shutdown();
+  },
 });

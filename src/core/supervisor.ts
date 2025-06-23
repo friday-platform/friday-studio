@@ -477,7 +477,7 @@ You have access to the full workspace context and configuration. Create structur
       const workspaceMcpServers = this.config?.workspaceMcpServers;
 
       if (workspaceMcpServers) {
-        this.log(`Using passed MCP server configuration`, {
+        this.log(`Using passed MCP server configuration`, "info", {
           mcpServerCount: Object.keys(workspaceMcpServers).length,
           mcpServerIds: Object.keys(workspaceMcpServers),
         });

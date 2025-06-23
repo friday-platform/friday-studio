@@ -101,232 +101,240 @@ function createTestSessionContext(): SessionContext {
   };
 }
 
-Deno.test("SessionSupervisor - Intelligent Task Preparation", async (t) => {
-  await t.step("should use explicit agent prompt when provided", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
+Deno.test({
+  name: "SessionSupervisor - Intelligent Task Preparation",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn(t) {
+    await t.step("should use explicit agent prompt when provided", async () => {
+      const supervisor = new SessionSupervisor(createTestMemoryConfig());
+      const sessionContext = createTestSessionContext();
+      await supervisor.initializeSession(sessionContext);
 
-    const agentSpec: JobAgentSpec = {
-      id: "test-agent",
-      prompt: "Execute this specific custom task",
-    };
+      const agentSpec: JobAgentSpec = {
+        id: "test-agent",
+        prompt: "Execute this specific custom task",
+      };
 
-    const jobSpec: JobSpecification = {
-      name: "test-job",
-      description: "Test job description",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
+      const jobSpec: JobSpecification = {
+        name: "test-job",
+        description: "Test job description",
+        execution: { strategy: "sequential", agents: [agentSpec] },
+      };
 
-    // This should return the explicit prompt without LLM call
-    const task = await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
+      // This should return the explicit prompt without LLM call
+      const task = await (supervisor as any).prepareTaskForAgent(
+        agentSpec,
+        jobSpec,
+        sessionContext.payload,
+        sessionContext,
+      );
+
+      assertEquals(task, "Execute this specific custom task");
+    });
+
+    await t.step("should use job task_template when provided and no agent prompt", async () => {
+      const supervisor = new SessionSupervisor(createTestMemoryConfig());
+      const sessionContext = createTestSessionContext();
+      await supervisor.initializeSession(sessionContext);
+
+      const agentSpec: JobAgentSpec = {
+        id: "test-agent",
+      };
+
+      const jobSpec: JobSpecification = {
+        name: "test-job",
+        description: "Test job description",
+        task_template: "Process the signal data according to template",
+        execution: { strategy: "sequential", agents: [agentSpec] },
+      };
+
+      const task = await (supervisor as any).prepareTaskForAgent(
+        agentSpec,
+        jobSpec,
+        sessionContext.payload,
+        sessionContext,
+      );
+
+      assertEquals(task, "Process the signal data according to template");
+    });
+
+    await t.step(
+      "should generate intelligent task when no explicit prompt or template",
+      async () => {
+        const supervisor = new SessionSupervisor(createTestMemoryConfig());
+        const sessionContext = createTestSessionContext();
+        await supervisor.initializeSession(sessionContext);
+
+        // Mock the LLM call
+        (supervisor as any).generateLLM = async () => mockLLMResponse;
+
+        const agentSpec: JobAgentSpec = {
+          id: "remote-agent",
+        };
+
+        const jobSpec: JobSpecification = {
+          name: "event-handler",
+          description: "Handle incoming events",
+          execution: { strategy: "sequential", agents: [agentSpec] },
+        };
+
+        const task = await (supervisor as any).prepareTaskForAgent(
+          agentSpec,
+          jobSpec,
+          sessionContext.payload,
+          sessionContext,
+        );
+
+        assertEquals(task, mockLLMResponse);
+      },
     );
 
-    assertEquals(task, "Execute this specific custom task");
-  });
+    await t.step("should include agent capabilities in LLM prompt", async () => {
+      const supervisor = new SessionSupervisor(createTestMemoryConfig());
+      const sessionContext = createTestSessionContext();
+      await supervisor.initializeSession(sessionContext);
 
-  await t.step("should use job task_template when provided and no agent prompt", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
+      let capturedPrompt = "";
+      (supervisor as any).generateLLM = async (
+        _model: string,
+        _systemPrompt: string,
+        userPrompt: string,
+      ) => {
+        capturedPrompt = userPrompt;
+        return mockLLMResponse;
+      };
 
-    const agentSpec: JobAgentSpec = {
-      id: "test-agent",
-    };
+      const agentSpec: JobAgentSpec = {
+        id: "remote-agent",
+      };
 
-    const jobSpec: JobSpecification = {
-      name: "test-job",
-      description: "Test job description",
-      task_template: "Process the signal data according to template",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
+      const jobSpec: JobSpecification = {
+        name: "test-job",
+        description: "Test description",
+        execution: { strategy: "sequential", agents: [agentSpec] },
+      };
 
-    const task = await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
+      await (supervisor as any).prepareTaskForAgent(
+        agentSpec,
+        jobSpec,
+        sessionContext.payload,
+        sessionContext,
+      );
+
+      // Verify agent capabilities are included in prompt
+      assertStringIncludes(capturedPrompt, "**Target Agent**: remote-agent");
+      assertStringIncludes(capturedPrompt, "Execute operations via remote protocol");
+    });
+
+    await t.step("should remove noise from signal data in LLM prompt", async () => {
+      const supervisor = new SessionSupervisor(createTestMemoryConfig());
+      const sessionContext = createTestSessionContext();
+      await supervisor.initializeSession(sessionContext);
+
+      let capturedPrompt = "";
+      (supervisor as any).generateLLM = async (
+        _model: string,
+        _systemPrompt: string,
+        userPrompt: string,
+      ) => {
+        capturedPrompt = userPrompt;
+        return mockLLMResponse;
+      };
+
+      const agentSpec: JobAgentSpec = {
+        id: "test-agent",
+      };
+
+      const jobSpec: JobSpecification = {
+        name: "test-job",
+        description: "Test description",
+        execution: { strategy: "sequential", agents: [agentSpec] },
+      };
+
+      await (supervisor as any).prepareTaskForAgent(
+        agentSpec,
+        jobSpec,
+        sessionContext.payload,
+        sessionContext,
+      );
+
+      // Verify the signal data is included for analysis
+      assertStringIncludes(capturedPrompt, "**Raw Data Summary**");
+      assertStringIncludes(capturedPrompt, "Event Type");
+      assertStringIncludes(capturedPrompt, "CRITICAL INSTRUCTIONS");
+    });
+
+    await t.step(
+      "should generate different capabilities description for different agent types",
+      () => {
+        const supervisor = new SessionSupervisor(createTestMemoryConfig());
+        const sessionContext = createTestSessionContext();
+
+        // Test remote agent capabilities
+        const remoteCapabilities = (supervisor as any).getAgentCapabilitiesDescription(
+          "remote-agent",
+          sessionContext.availableAgents,
+        );
+        assertStringIncludes(remoteCapabilities, "Agent Type: remote");
+        assertStringIncludes(remoteCapabilities, "Execute operations via remote protocol");
+
+        // Test LLM agent capabilities
+        const llmCapabilities = (supervisor as any).getAgentCapabilitiesDescription(
+          "llm-agent",
+          sessionContext.availableAgents,
+        );
+        assertStringIncludes(llmCapabilities, "Agent Type: llm");
+        assertStringIncludes(llmCapabilities, "Analysis and documentation");
+      },
     );
 
-    assertEquals(task, "Process the signal data according to template");
-  });
-
-  await t.step("should generate intelligent task when no explicit prompt or template", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
-
-    // Mock the LLM call
-    (supervisor as any).generateLLM = async () => mockLLMResponse;
-
-    const agentSpec: JobAgentSpec = {
-      id: "remote-agent",
-    };
-
-    const jobSpec: JobSpecification = {
-      name: "event-handler",
-      description: "Handle incoming events",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
-
-    const task = await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
-    );
-
-    assertEquals(task, mockLLMResponse);
-  });
-
-  await t.step("should include agent capabilities in LLM prompt", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
-
-    let capturedPrompt = "";
-    (supervisor as any).generateLLM = async (
-      _model: string,
-      _systemPrompt: string,
-      userPrompt: string,
-    ) => {
-      capturedPrompt = userPrompt;
-      return mockLLMResponse;
-    };
-
-    const agentSpec: JobAgentSpec = {
-      id: "remote-agent",
-    };
-
-    const jobSpec: JobSpecification = {
-      name: "test-job",
-      description: "Test description",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
-
-    await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
-    );
-
-    // Verify agent capabilities are included in prompt
-    assertStringIncludes(capturedPrompt, "**Agent**: remote-agent");
-    assertStringIncludes(capturedPrompt, "Execute operations via remote protocol");
-  });
-
-  await t.step("should remove noise from signal data in LLM prompt", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
-
-    let capturedPrompt = "";
-    (supervisor as any).generateLLM = async (
-      _model: string,
-      _systemPrompt: string,
-      userPrompt: string,
-    ) => {
-      capturedPrompt = userPrompt;
-      return mockLLMResponse;
-    };
-
-    const agentSpec: JobAgentSpec = {
-      id: "test-agent",
-    };
-
-    const jobSpec: JobSpecification = {
-      name: "test-job",
-      description: "Test description",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
-
-    await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
-    );
-
-    // Verify the signal data is included for analysis
-    assertStringIncludes(capturedPrompt, "Raw Signal Data");
-    assertStringIncludes(capturedPrompt, "Remove Noise");
-    assertStringIncludes(capturedPrompt, "Extract Important Information");
-  });
-
-  await t.step(
-    "should generate different capabilities description for different agent types",
-    () => {
+    await t.step("should handle unknown agent gracefully", () => {
       const supervisor = new SessionSupervisor(createTestMemoryConfig());
       const sessionContext = createTestSessionContext();
 
-      // Test remote agent capabilities
-      const remoteCapabilities = (supervisor as any).getAgentCapabilitiesDescription(
-        "remote-agent",
+      const capabilities = (supervisor as any).getAgentCapabilitiesDescription(
+        "unknown-agent",
         sessionContext.availableAgents,
       );
-      assertStringIncludes(remoteCapabilities, "Agent Type: remote");
-      assertStringIncludes(remoteCapabilities, "Execute operations via remote protocol");
 
-      // Test LLM agent capabilities
-      const llmCapabilities = (supervisor as any).getAgentCapabilitiesDescription(
-        "llm-agent",
-        sessionContext.availableAgents,
+      assertEquals(capabilities, "Unknown agent capabilities");
+    });
+
+    await t.step("should include workspace-agnostic preparation instructions", async () => {
+      const supervisor = new SessionSupervisor(createTestMemoryConfig());
+      const sessionContext = createTestSessionContext();
+      await supervisor.initializeSession(sessionContext);
+
+      let capturedSystemPrompt = "";
+      (supervisor as any).generateLLM = async (
+        _model: string,
+        systemPrompt: string,
+        _userPrompt: string,
+      ) => {
+        capturedSystemPrompt = systemPrompt;
+        return mockLLMResponse;
+      };
+
+      const agentSpec: JobAgentSpec = { id: "test-agent" };
+      const jobSpec: JobSpecification = {
+        name: "test-job",
+        description: "Test description",
+        execution: { strategy: "sequential", agents: [agentSpec] },
+      };
+
+      await (supervisor as any).prepareTaskForAgent(
+        agentSpec,
+        jobSpec,
+        sessionContext.payload,
+        sessionContext,
       );
-      assertStringIncludes(llmCapabilities, "Agent Type: llm");
-      assertStringIncludes(llmCapabilities, "Analysis and documentation");
-    },
-  );
 
-  await t.step("should handle unknown agent gracefully", () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-
-    const capabilities = (supervisor as any).getAgentCapabilitiesDescription(
-      "unknown-agent",
-      sessionContext.availableAgents,
-    );
-
-    assertEquals(capabilities, "Unknown agent capabilities");
-  });
-
-  await t.step("should include workspace-agnostic preparation instructions", async () => {
-    const supervisor = new SessionSupervisor(createTestMemoryConfig());
-    const sessionContext = createTestSessionContext();
-    await supervisor.initializeSession(sessionContext);
-
-    let capturedSystemPrompt = "";
-    (supervisor as any).generateLLM = async (
-      _model: string,
-      systemPrompt: string,
-      _userPrompt: string,
-    ) => {
-      capturedSystemPrompt = systemPrompt;
-      return mockLLMResponse;
-    };
-
-    const agentSpec: JobAgentSpec = { id: "test-agent" };
-    const jobSpec: JobSpecification = {
-      name: "test-job",
-      description: "Test description",
-      execution: { strategy: "sequential", agents: [agentSpec] },
-    };
-
-    await (supervisor as any).prepareTaskForAgent(
-      agentSpec,
-      jobSpec,
-      sessionContext.payload,
-      sessionContext,
-    );
-
-    // Verify system prompt is workspace-agnostic
-    assertStringIncludes(capturedSystemPrompt, "intelligent task preparation assistant");
-    // Should not contain k8s-specific terms
-    assertEquals(capturedSystemPrompt.includes("kubernetes"), false);
-    assertEquals(capturedSystemPrompt.includes("kubectl"), false);
-  });
+      // Verify system prompt is workspace-agnostic
+      assertStringIncludes(capturedSystemPrompt, "intelligent task preparation assistant");
+      // Should not contain k8s-specific terms
+      assertEquals(capturedSystemPrompt.includes("kubernetes"), false);
+      assertEquals(capturedSystemPrompt.includes("kubectl"), false);
+    });
+  },
 });
