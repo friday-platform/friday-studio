@@ -213,7 +213,7 @@ class AgentExecutionWorker {
         this.workerId = (payload.worker_id as string) || this.workerId;
         this.sessionId = envelope.source.sessionId;
         this.workspaceId = envelope.source.workspaceId;
-        this.traceHeaders = envelope.traceHeaders;
+        this.traceHeaders = envelope.traceHeaders as Record<string, string> | undefined;
         this.isInitialized = true;
         this.startTime = Date.now();
 
@@ -273,7 +273,7 @@ class AgentExecutionWorker {
         }
 
         const validation = validateAgentExecutePayload(envelope.payload);
-        if (!validation.success) {
+        if (validation.success === false) {
           throw new Error(`Invalid agent execute payload: ${validation.error.message}`);
         }
 

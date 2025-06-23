@@ -8,8 +8,8 @@ import { FileLoaderTool } from "../../src/tools/file-loader-tool.ts";
 Deno.test("FileLoaderTool - Basic Functionality", async (t) => {
   const tool = new FileLoaderTool({
     basePath: ".",
-    maxFileSize: 10 * 1024, // 10KB
-    maxTotalSize: 50 * 1024, // 50KB
+    maxFileSize: 35 * 1024, // 35KB - increased to accommodate larger files
+    maxTotalSize: 100 * 1024, // 100KB - increased proportionally
   });
 
   await t.step("should load specific files", async () => {

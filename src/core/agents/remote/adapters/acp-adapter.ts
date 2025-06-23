@@ -39,7 +39,7 @@ export interface ACPAdapterConfig extends BaseRemoteAdapterConfig {
  * Full implementation using openapi-fetch with generated types for maximum compatibility
  */
 export class ACPAdapter extends BaseRemoteAdapter {
-  protected override config: ACPAdapterConfig;
+  declare protected config: ACPAdapterConfig;
   private client: ACPClient;
 
   constructor(config: ACPAdapterConfig) {

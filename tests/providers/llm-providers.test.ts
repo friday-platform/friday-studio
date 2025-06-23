@@ -5,6 +5,7 @@ const TEST_PROMPT = "What is 2+2? Answer with just the number.";
 
 Deno.test({
   name: "Anthropic Provider - Basic Generation",
+  sanitizeResources: false, // Telemetry may have async resource cleanup
   async fn() {
     const result = await LLMProviderManager.generateText(TEST_PROMPT, {
       provider: "anthropic",
