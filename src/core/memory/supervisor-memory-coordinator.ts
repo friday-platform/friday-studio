@@ -7,6 +7,7 @@
 
 import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../types/core.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
+import { extractSearchTerms } from "../../utils/prompt-tokenizer.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 
 export interface SupervisorMemoryContext {
@@ -42,55 +43,72 @@ export class SupervisorMemoryCoordinator {
   }
 
   // WorkspaceSupervisor Memory Operations
-  analyzeSignalWithMemory(signal: IWorkspaceSignal): {
+  async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
     relevantMemories: any[];
     analysisContext: string;
     suggestedAgents: string[];
-  } {
-    // Query relevant memories for signal analysis
-    const signalContent = JSON.stringify(signal);
-    const relevantMemories = this.workspaceMemory.queryMemories({
-      content: signalContent,
-      memoryType: CoALAMemoryType.SEMANTIC,
-      minRelevance: 0.3,
-      limit: 10,
-    });
+  }> {
+    // Extract searchable content from signal
+    const signalContent = extractSearchTerms(signal);
 
-    // Look for procedural memories (workflows, patterns)
-    const proceduralMemories = this.workspaceMemory.queryMemories({
-      memoryType: CoALAMemoryType.PROCEDURAL,
-      tags: ["workflow", "pattern"],
-      minRelevance: 0.4,
-      limit: 5,
-    });
+    // Use enhanced memory retrieval with vector search for better relevance
+    const memoryResults = await this.workspaceMemory.getRelevantMemoriesForPrompt(
+      signalContent,
+      {
+        includeWorking: false, // Don't include working memory for signal analysis
+        includeEpisodic: true, // Include past experiences
+        includeSemantic: true, // Include knowledge and concepts
+        includeProcedural: true, // Include workflows and patterns
+        limit: 15,
+        minSimilarity: 0.3,
+        tags: undefined, // Search all tags
+      },
+    );
 
-    // Combine and analyze
-    const allRelevantMemories = [...relevantMemories, ...proceduralMemories];
+    // Separate memories by type for targeted analysis
+    const semanticMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.SEMANTIC
+    );
+    const proceduralMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.PROCEDURAL
+    );
+    const episodicMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.EPISODIC
+    );
+
+    // Prioritize procedural memories for workflow patterns
+    const prioritizedMemories = [
+      ...proceduralMemories.slice(0, 5), // Top procedural memories first
+      ...semanticMemories.slice(0, 5), // Then semantic knowledge
+      ...episodicMemories.slice(0, 5), // Finally past experiences
+    ];
 
     // Extract agent suggestions from memory patterns
-    const suggestedAgents = this.extractAgentSuggestions(allRelevantMemories);
+    const suggestedAgents = this.extractAgentSuggestions(prioritizedMemories);
 
     // Create analysis context
-    const analysisContext = this.createAnalysisContext(allRelevantMemories, signal);
+    const analysisContext = this.createAnalysisContext(prioritizedMemories, signal);
 
     // Remember this signal analysis for future reference
     this.workspaceMemory.rememberWithMetadata(
       `signal-analysis-${signal.id || Date.now()}`,
       {
         signal: signalContent,
-        relevantMemories: allRelevantMemories.map((m) => m.id),
+        relevantMemories: prioritizedMemories.map((m) => m.id),
         suggestedAgents,
         analysisResult: analysisContext,
+        vectorSearchUsed: true,
+        searchTerms: memoryResults.processedPrompt.tokens,
       },
       {
         memoryType: CoALAMemoryType.EPISODIC,
-        tags: ["signal-analysis", "workspace-decision"],
-        relevanceScore: 0.6,
+        tags: ["signal-analysis", "workspace-decision", "vector-enhanced"],
+        relevanceScore: 0.7, // Higher relevance since using vector search
       },
     );
 
     return {
-      relevantMemories: allRelevantMemories,
+      relevantMemories: prioritizedMemories,
       analysisContext,
       suggestedAgents,
     };
@@ -152,30 +170,55 @@ export class SupervisorMemoryCoordinator {
   }
 
   // SessionSupervisor Memory Operations
-  createExecutionPlanWithMemory(
+  async createExecutionPlanWithMemory(
     sessionMemory: CoALAMemoryManager,
     sessionContext: any,
-  ): {
+  ): Promise<{
     executionPlan: any;
     memoryGuidance: string[];
     agentMemoryContexts: Map<string, any>;
-  } {
-    // Query session memories for execution planning
-    const contextualMemories = sessionMemory.queryMemories({
-      memoryType: CoALAMemoryType.CONTEXTUAL,
-      minRelevance: 0.4,
-    });
+  }> {
+    // Extract planning context from session
+    const planningContext = extractSearchTerms(sessionContext);
 
-    const proceduralMemories = sessionMemory.queryMemories({
-      memoryType: CoALAMemoryType.PROCEDURAL,
-      tags: ["workflow", "strategy"],
-      minRelevance: 0.3,
-    });
+    // Query session memories for execution planning using vector search
+    const memoryResults = await sessionMemory.getRelevantMemoriesForPrompt(
+      planningContext,
+      {
+        includeWorking: true, // Include working memory for current session state
+        includeEpisodic: true, // Include past experiences
+        includeSemantic: false, // Skip semantic for execution planning (focus on concrete)
+        includeProcedural: true, // Include workflows and strategies
+        limit: 12,
+        minSimilarity: 0.3,
+        tags: undefined, // Search all tags
+      },
+    );
+
+    // Separate by memory source and type for targeted processing
+    const contextualMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.CONTEXTUAL
+    );
+    const workingMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.WORKING
+    );
+    const proceduralMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.PROCEDURAL
+    );
+    const episodicMemories = memoryResults.memories.filter((m) =>
+      m.memoryType === CoALAMemoryType.EPISODIC
+    );
+
+    // Combine all relevant memories, prioritizing current context
+    const allRelevantMemories = [
+      ...workingMemories, // Current session state first
+      ...proceduralMemories, // Then applicable workflows
+      ...contextualMemories, // Then inherited context
+      ...episodicMemories, // Finally past experiences
+    ];
 
     // Create execution plan based on memory guidance
-    const memoryGuidance = this.extractExecutionGuidance(
-      [...contextualMemories, ...proceduralMemories],
-    );
+    const memoryGuidance = this.extractExecutionGuidance(allRelevantMemories);
 
     // Create agent-specific memory contexts
     const agentMemoryContexts = new Map<string, any>();
@@ -183,13 +226,15 @@ export class SupervisorMemoryCoordinator {
 
     for (const agentId of suggestedAgents) {
       const agentMemories = this.filteringPolicy.filterForAgent(
-        contextualMemories,
+        allRelevantMemories,
         agentId,
       );
 
       agentMemoryContexts.set(agentId, {
         relevantMemories: agentMemories,
         guidance: this.createAgentGuidance(agentMemories, agentId),
+        vectorSearchUsed: true,
+        searchTerms: memoryResults.processedPrompt.tokens,
       });
     }
 

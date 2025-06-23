@@ -10,7 +10,7 @@
  */
 
 import { parseArgs } from "@std/cli";
-import { join } from "@std/path";
+import { join as _join } from "@std/path";
 import { AtlasMemoryLoader } from "./utils/memory-loader.ts";
 import { AtlasMemoryOperations } from "./utils/memory-operations.ts";
 import { MemoryManagerTUI } from "./src/tui.ts";
@@ -174,7 +174,7 @@ async function exportMemory(operations: AtlasMemoryOperations) {
   console.log(jsonData);
 }
 
-async function validateMemory(operations: AtlasMemoryOperations) {
+function validateMemory(operations: AtlasMemoryOperations) {
   console.log(`\nValidating Memory Data:`);
   console.log(`──────────────────────`);
 

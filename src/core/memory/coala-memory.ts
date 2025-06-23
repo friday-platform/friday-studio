@@ -17,6 +17,20 @@ import type {
 import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
 import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../../storage/knowledge-graph-local.ts";
+import type {
+  IEmbeddingProvider,
+  IVectorSearchStorageAdapter,
+  VectorEmbedding,
+  VectorSearchConfig,
+  VectorSearchQuery,
+} from "../../types/vector-search.ts";
+import { VectorSearchLocalStorageAdapter } from "../../storage/vector-search-local.ts";
+import { createEmbeddingProvider } from "../embedding/mock-embedding-provider.ts";
+import {
+  extractSearchTerms,
+  type ProcessedPrompt,
+  tokenizePrompt,
+} from "../../utils/prompt-tokenizer.ts";
 
 export interface CoALAMemoryEntry {
   id: string;
@@ -66,11 +80,20 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
   private knowledgeGraph?: KnowledgeGraphManager;
+  private vectorSearch?: IVectorSearchStorageAdapter;
+  private embeddingProvider?: IEmbeddingProvider;
+  private vectorSearchConfig: VectorSearchConfig | null = null;
+  private vectorIndexedTypes = new Set<CoALAMemoryType>([
+    CoALAMemoryType.EPISODIC,
+    CoALAMemoryType.SEMANTIC,
+    CoALAMemoryType.PROCEDURAL,
+  ]);
 
   constructor(
     scope: IAtlasScope,
     storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
+    vectorSearchConfig?: Partial<VectorSearchConfig>,
   ) {
     this.scope = scope;
 
@@ -96,6 +119,8 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     if (this.store.constructor.name !== "InMemoryStorageAdapter") {
       this.loadFromStorage();
     }
+    // Initialize vector search if enabled
+    this.initializeVectorSearch(vectorSearchConfig);
 
     if (enableCognitiveLoop) {
       this.startCognitiveLoop();
@@ -159,6 +184,14 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
 
     this.updateAssociations(memory);
+
+    // Index in vector search if enabled and memory type is indexed
+    if (this.vectorSearch && this.vectorIndexedTypes.has(metadata.memoryType)) {
+      this.indexMemoryInVectorSearch(memory).catch((error) => {
+        console.warn(`Failed to index memory ${key} in vector search:`, error);
+      });
+    }
+
     this.commitToStorage();
   }
 
@@ -261,6 +294,14 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       if (typeMap) {
         typeMap.delete(memory.id);
       }
+
+      // Remove from vector index if applicable
+      if (this.vectorSearch && this.vectorIndexedTypes.has(memory.memoryType)) {
+        const vectorId = `${memory.memoryType}_${memory.id}`;
+        this.vectorSearch.deleteEmbeddings([vectorId]).catch((error) => {
+          console.warn(`Failed to remove pruned memory ${memory.id} from vector search:`, error);
+        });
+      }
     }
 
     this.commitToStorage();
@@ -316,6 +357,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       const typeMap = this.memoriesByType.get(memory.memoryType);
       if (typeMap) {
         typeMap.delete(key);
+      }
+
+      // Remove from vector index if applicable
+      if (this.vectorSearch && this.vectorIndexedTypes.has(memory.memoryType)) {
+        const vectorId = `${memory.memoryType}_${memory.id}`;
+        this.vectorSearch.deleteEmbeddings([vectorId]).catch((error) => {
+          console.warn(`Failed to remove memory ${key} from vector search:`, error);
+        });
       }
     }
     this.commitToStorage();
@@ -897,6 +946,691 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       relevanceScore: summary.successRate,
       confidence: 0.9,
     });
+  }
+
+  // === VECTOR SEARCH METHODS ===
+
+  /**
+   * Initialize vector search capabilities
+   */
+  private initializeVectorSearch(config?: Partial<VectorSearchConfig>): void {
+    try {
+      // Initialize embedding provider
+      this.embeddingProvider = createEmbeddingProvider({
+        provider: "mock",
+        dimension: 384,
+      });
+
+      // Initialize vector storage
+      const basePath = this.getVectorSearchBasePath();
+      this.vectorSearch = new VectorSearchLocalStorageAdapter(basePath);
+
+      // Set up configuration
+      this.vectorSearchConfig = {
+        embeddingProvider: this.embeddingProvider,
+        storageAdapter: this.vectorSearch,
+        enabledMemoryTypes: Array.from(this.vectorIndexedTypes).map((t) => t.toString()),
+        autoIndexOnWrite: true,
+        batchSize: 10,
+        similarityThreshold: 0.7,
+        ...config,
+      };
+
+      console.log(
+        "Vector search initialized for memory types:",
+        Array.from(this.vectorIndexedTypes),
+      );
+    } catch (error) {
+      console.warn("Failed to initialize vector search:", error);
+    }
+  }
+
+  private getVectorSearchBasePath(): string {
+    if (this.store instanceof CoALALocalFileStorageAdapter) {
+      return `${(this.store as any).basePath || "./.atlas/memory"}/vectors`;
+    }
+    return "./.atlas/memory/vectors";
+  }
+
+  /**
+   * Index a memory entry in vector search
+   */
+  private async indexMemoryInVectorSearch(memory: CoALAMemoryEntry): Promise<void> {
+    if (
+      !this.vectorSearch || !this.embeddingProvider ||
+      !this.vectorIndexedTypes.has(memory.memoryType)
+    ) {
+      return;
+    }
+
+    try {
+      // Convert memory content to searchable text
+      const textContent = this.extractTextFromMemory(memory);
+      if (!textContent || textContent.trim().length === 0) {
+        return;
+      }
+
+      // Generate embedding
+      const vector = await this.embeddingProvider.generateEmbedding(textContent);
+
+      // Create vector embedding
+      const embedding: VectorEmbedding = {
+        id: `${memory.memoryType}_${memory.id}`,
+        vector,
+        metadata: {
+          memoryId: memory.id,
+          memoryType: memory.memoryType,
+          content: textContent,
+          timestamp: memory.timestamp,
+          sourceScope: memory.sourceScope,
+          tags: memory.tags,
+        },
+      };
+
+      // Store in vector index
+      await this.vectorSearch.upsertEmbeddings([embedding]);
+    } catch (error) {
+      console.error(`Failed to index memory ${memory.id} in vector search:`, error);
+    }
+  }
+
+  /**
+   * Extract searchable text from memory content
+   */
+  private extractTextFromMemory(memory: CoALAMemoryEntry): string {
+    if (typeof memory.content === "string") {
+      return memory.content;
+    }
+
+    if (typeof memory.content === "object" && memory.content !== null) {
+      // Try to extract meaningful text from objects
+      const textFields = ["text", "content", "description", "statement", "summary", "title"];
+
+      for (const field of textFields) {
+        if (memory.content[field] && typeof memory.content[field] === "string") {
+          return memory.content[field];
+        }
+      }
+
+      // Fallback to JSON string with some cleanup
+      return JSON.stringify(memory.content)
+        .replace(/[{}[\]"]/g, " ")
+        .replace(/,/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+
+    return String(memory.content);
+  }
+
+  /**
+   * Search memories using vector similarity
+   */
+  async searchMemoriesByVector(query: string, options?: {
+    memoryTypes?: CoALAMemoryType[];
+    tags?: string[];
+    limit?: number;
+    minSimilarity?: number;
+  }): Promise<Array<CoALAMemoryEntry & { similarity: number }>> {
+    if (!this.vectorSearch || !this.embeddingProvider) {
+      console.warn("Vector search not available");
+      return [];
+    }
+
+    try {
+      // Generate query embedding
+      const queryVector = await this.embeddingProvider.generateEmbedding(query);
+
+      // Search vector index
+      const searchQuery: VectorSearchQuery = {
+        query,
+        vector: queryVector,
+        memoryTypes: options?.memoryTypes?.map((t) => t.toString()),
+        tags: options?.tags,
+        limit: options?.limit || 10,
+        minSimilarity: options?.minSimilarity || 0.5,
+        includeMetadata: true,
+      };
+
+      const results = await this.vectorSearch.search(searchQuery);
+
+      // Convert results back to memory entries with similarity scores
+      const memoryResults: Array<CoALAMemoryEntry & { similarity: number }> = [];
+
+      for (const result of results) {
+        const memory = this.memories.get(result.memoryId);
+        if (memory) {
+          memoryResults.push({
+            ...memory,
+            similarity: result.similarity,
+          });
+        }
+      }
+
+      return memoryResults;
+    } catch (error) {
+      console.error("Vector search failed:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Enhanced memory retrieval for prompt enhancement using vector search
+   * Automatically tokenizes the prompt and searches relevant memory types
+   */
+  async getRelevantMemoriesForPrompt(
+    promptText: string,
+    options?: {
+      includeWorking?: boolean;
+      includeEpisodic?: boolean;
+      includeSemantic?: boolean;
+      includeProcedural?: boolean;
+      limit?: number;
+      minSimilarity?: number;
+      maxAge?: number;
+      tags?: string[];
+    },
+  ): Promise<{
+    memories: Array<CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }>;
+    processedPrompt: ProcessedPrompt;
+  }> {
+    const {
+      includeWorking = true,
+      includeEpisodic = true,
+      includeSemantic = true,
+      includeProcedural = true,
+      limit = 10,
+      minSimilarity = 0.4,
+      maxAge,
+      tags,
+    } = options || {};
+
+    // Process the prompt for better search terms
+    const processedPrompt = tokenizePrompt(promptText, {
+      removeStopWords: true,
+      minWordLength: 2,
+      maxTokens: 50,
+      includeTechnicalTerms: true,
+    });
+
+    const allMemories: Array<
+      CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }
+    > = [];
+
+    // Get WORKING memories using traditional search (unchanged)
+    if (includeWorking) {
+      const workingMemories = this.queryMemories({
+        memoryType: CoALAMemoryType.WORKING,
+        content: processedPrompt.processed,
+        limit: Math.ceil(limit / 4), // Allocate portion of limit to working memory
+        maxAge,
+        tags,
+      });
+
+      allMemories.push(...workingMemories.map((memory) => ({
+        ...memory,
+        source: "working" as const,
+      })));
+    }
+
+    // Get vector-indexed memories (EPISODIC, SEMANTIC, PROCEDURAL)
+    if (
+      this.vectorSearch && this.embeddingProvider &&
+      (includeEpisodic || includeSemantic || includeProcedural)
+    ) {
+      const vectorMemoryTypes: CoALAMemoryType[] = [];
+
+      if (includeEpisodic) vectorMemoryTypes.push(CoALAMemoryType.EPISODIC);
+      if (includeSemantic) vectorMemoryTypes.push(CoALAMemoryType.SEMANTIC);
+      if (includeProcedural) vectorMemoryTypes.push(CoALAMemoryType.PROCEDURAL);
+
+      // Use the processed prompt text for vector search
+      const searchText = processedPrompt.processed || promptText;
+
+      try {
+        const vectorResults = await this.searchMemoriesByVector(searchText, {
+          memoryTypes: vectorMemoryTypes,
+          limit: limit - allMemories.length, // Use remaining limit
+          minSimilarity,
+          tags,
+        });
+
+        // Filter by age if specified
+        const filteredVectorResults = maxAge
+          ? vectorResults.filter((memory) => {
+            const age = Date.now() - memory.timestamp.getTime();
+            return age <= maxAge;
+          })
+          : vectorResults;
+
+        allMemories.push(...filteredVectorResults.map((memory) => ({
+          ...memory,
+          source: "vector" as const,
+        })));
+      } catch (error) {
+        console.warn("Vector search failed, falling back to text search:", error);
+
+        // Fallback to traditional text search for vector-indexed types
+        const fallbackMemories = this.queryMemories({
+          content: processedPrompt.processed,
+          memoryType: undefined, // Search all types
+          limit: limit - allMemories.length,
+          maxAge,
+          tags,
+        }).filter((memory) => vectorMemoryTypes.includes(memory.memoryType));
+
+        allMemories.push(...fallbackMemories.map((memory) => ({
+          ...memory,
+          source: "vector" as const,
+        })));
+      }
+    }
+
+    // Sort by relevance (similarity for vector results, relevanceScore for others)
+    allMemories.sort((a, b) => {
+      const aScore = a.similarity || a.relevanceScore;
+      const bScore = b.similarity || b.relevanceScore;
+      return bScore - aScore;
+    });
+
+    return {
+      memories: allMemories.slice(0, limit),
+      processedPrompt,
+    };
+  }
+
+  /**
+   * Enhanced version of queryMemories that uses vector search for non-WORKING memory types
+   * while maintaining backward compatibility
+   */
+  async queryMemoriesEnhanced(query: CoALAMemoryQuery): Promise<CoALAMemoryEntry[]> {
+    // For WORKING memory or when no content query, use traditional search
+    if (
+      query.memoryType === CoALAMemoryType.WORKING ||
+      !query.content ||
+      !this.vectorSearch ||
+      !this.embeddingProvider
+    ) {
+      return this.queryMemories(query);
+    }
+
+    // For vector-indexed memory types with content query, use hybrid approach
+    const vectorIndexedTypes = [
+      CoALAMemoryType.EPISODIC,
+      CoALAMemoryType.SEMANTIC,
+      CoALAMemoryType.PROCEDURAL,
+    ];
+
+    const shouldUseVectorSearch = !query.memoryType ||
+      vectorIndexedTypes.includes(query.memoryType);
+
+    if (shouldUseVectorSearch) {
+      try {
+        // Process the search content
+        const processedQuery = tokenizePrompt(query.content, {
+          removeStopWords: true,
+          minWordLength: 2,
+          includeTechnicalTerms: true,
+        });
+
+        // Use vector search
+        const vectorResults = await this.searchMemoriesByVector(
+          processedQuery.processed || query.content,
+          {
+            memoryTypes: query.memoryType ? [query.memoryType] : vectorIndexedTypes,
+            tags: query.tags,
+            limit: query.limit || 20,
+            minSimilarity: 0.3, // Lower threshold for query compatibility
+          },
+        );
+
+        // Apply additional filters from the original query
+        let filteredResults = vectorResults.map((result) => {
+          const { similarity, ...memory } = result;
+          return memory;
+        });
+
+        if (query.minRelevance) {
+          filteredResults = filteredResults.filter((m) => m.relevanceScore >= query.minRelevance!);
+        }
+
+        if (query.maxAge) {
+          const cutoff = new Date(Date.now() - query.maxAge);
+          filteredResults = filteredResults.filter((m) => m.timestamp >= cutoff);
+        }
+
+        if (query.sourceScope) {
+          filteredResults = filteredResults.filter((m) => m.sourceScope === query.sourceScope);
+        }
+
+        return query.limit ? filteredResults.slice(0, query.limit) : filteredResults;
+      } catch (error) {
+        console.warn(
+          "Vector search failed in queryMemoriesEnhanced, falling back to traditional search:",
+          error,
+        );
+        return this.queryMemories(query);
+      }
+    }
+
+    // Fallback to traditional search
+    return this.queryMemories(query);
+  }
+
+  /**
+   * Create enriched context string for prompt enhancement using vector search
+   * This is the main method used to enhance prompts with relevant memory
+   */
+  async enhancePromptWithMemory(
+    originalPrompt: string,
+    options?: {
+      includeWorking?: boolean;
+      includeEpisodic?: boolean;
+      includeSemantic?: boolean;
+      includeProcedural?: boolean;
+      maxMemories?: number;
+      minSimilarity?: number;
+      contextFormat?: "detailed" | "summary" | "bullets";
+    },
+  ): Promise<{
+    enhancedPrompt: string;
+    memoriesUsed: number;
+    memoryContext: string;
+    processedPrompt: ProcessedPrompt;
+  }> {
+    const {
+      includeWorking = true,
+      includeEpisodic = true,
+      includeSemantic = true,
+      includeProcedural = true,
+      maxMemories = 8,
+      minSimilarity = 0.4,
+      contextFormat = "summary",
+    } = options || {};
+
+    // Get relevant memories using vector search
+    const memoryResults = await this.getRelevantMemoriesForPrompt(
+      originalPrompt,
+      {
+        includeWorking,
+        includeEpisodic,
+        includeSemantic,
+        includeProcedural,
+        limit: maxMemories,
+        minSimilarity,
+      },
+    );
+
+    if (memoryResults.memories.length === 0) {
+      return {
+        enhancedPrompt: originalPrompt,
+        memoriesUsed: 0,
+        memoryContext: "",
+        processedPrompt: memoryResults.processedPrompt,
+      };
+    }
+
+    // Format memory context based on requested format
+    const memoryContext = this.formatMemoryContext(
+      memoryResults.memories,
+      contextFormat,
+    );
+
+    // Create enhanced prompt with memory context
+    const enhancedPrompt = this.buildEnhancedPrompt(
+      originalPrompt,
+      memoryContext,
+      memoryResults.memories.length,
+    );
+
+    return {
+      enhancedPrompt,
+      memoriesUsed: memoryResults.memories.length,
+      memoryContext,
+      processedPrompt: memoryResults.processedPrompt,
+    };
+  }
+
+  /**
+   * Format memory context for prompt enhancement
+   */
+  private formatMemoryContext(
+    memories: Array<CoALAMemoryEntry & { similarity?: number; source: "working" | "vector" }>,
+    format: "detailed" | "summary" | "bullets",
+  ): string {
+    if (memories.length === 0) return "";
+
+    const memoryTypeGroups = {
+      working: memories.filter((m) => m.memoryType === CoALAMemoryType.WORKING),
+      episodic: memories.filter((m) => m.memoryType === CoALAMemoryType.EPISODIC),
+      semantic: memories.filter((m) => m.memoryType === CoALAMemoryType.SEMANTIC),
+      procedural: memories.filter((m) => m.memoryType === CoALAMemoryType.PROCEDURAL),
+    };
+
+    let context = "";
+
+    switch (format) {
+      case "detailed":
+        context = this.formatDetailedContext(memoryTypeGroups);
+        break;
+      case "summary":
+        context = this.formatSummaryContext(memoryTypeGroups);
+        break;
+      case "bullets":
+        context = this.formatBulletContext(memoryTypeGroups);
+        break;
+    }
+
+    return context;
+  }
+
+  private formatDetailedContext(memoryTypeGroups: Record<string, any[]>): string {
+    let context = "\n## RELEVANT MEMORY CONTEXT\n\n";
+
+    if (memoryTypeGroups.working.length > 0) {
+      context += "### Current Working Context:\n";
+      memoryTypeGroups.working.forEach((memory, index) => {
+        context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
+      });
+      context += "\n";
+    }
+
+    if (memoryTypeGroups.procedural.length > 0) {
+      context += "### Relevant Procedures & Workflows:\n";
+      memoryTypeGroups.procedural.forEach((memory, index) => {
+        context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
+        if (memory.similarity) {
+          context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
+        }
+      });
+      context += "\n";
+    }
+
+    if (memoryTypeGroups.semantic.length > 0) {
+      context += "### Relevant Knowledge:\n";
+      memoryTypeGroups.semantic.forEach((memory, index) => {
+        context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
+        if (memory.similarity) {
+          context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
+        }
+      });
+      context += "\n";
+    }
+
+    if (memoryTypeGroups.episodic.length > 0) {
+      context += "### Past Experiences:\n";
+      memoryTypeGroups.episodic.forEach((memory, index) => {
+        context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
+        if (memory.similarity) {
+          context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
+        }
+      });
+    }
+
+    return context;
+  }
+
+  private formatSummaryContext(memoryTypeGroups: Record<string, any[]>): string {
+    const contextParts: string[] = [];
+
+    if (memoryTypeGroups.working.length > 0) {
+      contextParts.push(
+        `Current context: ${
+          memoryTypeGroups.working.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+        }`,
+      );
+    }
+
+    if (memoryTypeGroups.procedural.length > 0) {
+      contextParts.push(
+        `Relevant procedures: ${
+          memoryTypeGroups.procedural.map((m) => this.extractMemoryContent(m.content, 100)).join(
+            "; ",
+          )
+        }`,
+      );
+    }
+
+    if (memoryTypeGroups.semantic.length > 0) {
+      contextParts.push(
+        `Related knowledge: ${
+          memoryTypeGroups.semantic.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+        }`,
+      );
+    }
+
+    if (memoryTypeGroups.episodic.length > 0) {
+      contextParts.push(
+        `Past experiences: ${
+          memoryTypeGroups.episodic.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+        }`,
+      );
+    }
+
+    return contextParts.length > 0 ? `\n[Memory Context: ${contextParts.join(" | ")}]\n\n` : "";
+  }
+
+  private formatBulletContext(memoryTypeGroups: Record<string, any[]>): string {
+    const bullets: string[] = [];
+
+    memoryTypeGroups.working.forEach((m) => {
+      bullets.push(`• [Working] ${this.extractMemoryContent(m.content, 150)}`);
+    });
+
+    memoryTypeGroups.procedural.forEach((m) => {
+      bullets.push(`• [Procedure] ${this.extractMemoryContent(m.content, 150)}`);
+    });
+
+    memoryTypeGroups.semantic.forEach((m) => {
+      bullets.push(`• [Knowledge] ${this.extractMemoryContent(m.content, 150)}`);
+    });
+
+    memoryTypeGroups.episodic.forEach((m) => {
+      bullets.push(`• [Experience] ${this.extractMemoryContent(m.content, 150)}`);
+    });
+
+    return bullets.length > 0 ? `\n## Relevant Memory:\n${bullets.join("\n")}\n\n` : "";
+  }
+
+  private extractMemoryContent(content: any, maxLength?: number): string {
+    let text = "";
+
+    if (typeof content === "string") {
+      text = content;
+    } else if (typeof content === "object" && content !== null) {
+      // Extract meaningful fields
+      const textFields = ["title", "description", "summary", "content", "text", "statement"];
+
+      for (const field of textFields) {
+        if (content[field] && typeof content[field] === "string") {
+          text = content[field];
+          break;
+        }
+      }
+
+      if (!text) {
+        text = JSON.stringify(content);
+      }
+    } else {
+      text = String(content);
+    }
+
+    // Clean and truncate if needed
+    text = text.replace(/\s+/g, " ").trim();
+
+    if (maxLength && text.length > maxLength) {
+      text = text.substring(0, maxLength - 3) + "...";
+    }
+
+    return text;
+  }
+
+  private buildEnhancedPrompt(
+    originalPrompt: string,
+    memoryContext: string,
+    memoryCount: number,
+  ): string {
+    if (!memoryContext || memoryCount === 0) {
+      return originalPrompt;
+    }
+
+    // Insert memory context before the original prompt
+    return `${memoryContext}## USER REQUEST\n\n${originalPrompt}`;
+  }
+
+  /**
+   * Get vector search statistics
+   */
+  async getVectorSearchStats(): Promise<unknown> {
+    if (!this.vectorSearch) {
+      return null;
+    }
+
+    try {
+      return await this.vectorSearch.getStats();
+    } catch (error) {
+      console.error("Failed to get vector search stats:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Rebuild vector index for all indexed memory types
+   */
+  async rebuildVectorIndex(): Promise<void> {
+    if (!this.vectorSearch) {
+      console.warn("Vector search not available");
+      return;
+    }
+
+    try {
+      // Clear existing index
+      await this.vectorSearch.clear();
+
+      // Reindex all memories of indexed types
+      const memoriesToIndex: CoALAMemoryEntry[] = [];
+
+      for (const memoryType of this.vectorIndexedTypes) {
+        const typeMemories = Array.from(this.memoriesByType.get(memoryType)?.values() || []);
+        memoriesToIndex.push(...typeMemories);
+      }
+
+      console.log(`Rebuilding vector index for ${memoriesToIndex.length} memories`);
+
+      // Index in batches
+      const batchSize = this.vectorSearchConfig?.batchSize || 10;
+      for (let i = 0; i < memoriesToIndex.length; i += batchSize) {
+        const batch = memoriesToIndex.slice(i, i + batchSize);
+
+        for (const memory of batch) {
+          await this.indexMemoryInVectorSearch(memory);
+        }
+      }
+
+      console.log("Vector index rebuild completed");
+    } catch (error) {
+      console.error("Failed to rebuild vector index:", error);
+    }
   }
 
   // Cleanup

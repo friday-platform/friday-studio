@@ -9,7 +9,9 @@ import {
   type MemoryOperations,
   type MemoryStorage,
   MemoryType,
+  type VectorSearchResult,
 } from "../types/memory-types.ts";
+import { CoALAMemoryManager } from "../../../src/core/memory/coala-memory.ts";
 
 export class AtlasMemoryOperations implements MemoryOperations {
   private storage: MemoryStorage;
@@ -18,7 +20,9 @@ export class AtlasMemoryOperations implements MemoryOperations {
     [MemoryType.EPISODIC]: {},
     [MemoryType.SEMANTIC]: {},
     [MemoryType.PROCEDURAL]: {},
+    [MemoryType.VECTOR_SEARCH]: {}, // Not used for storage, just for type compatibility
   };
+  private coalaMemoryManager?: CoALAMemoryManager;
 
   constructor(storage: MemoryStorage) {
     this.storage = storage;
@@ -28,10 +32,10 @@ export class AtlasMemoryOperations implements MemoryOperations {
     this.data = await this.storage.loadAll();
   }
 
-  async create(
+  create(
     type: MemoryType,
     key: string,
-    content: any,
+    content: unknown,
     metadata?: Partial<MemoryEntry>,
   ): Promise<void> {
     const now = new Date();
@@ -53,20 +57,21 @@ export class AtlasMemoryOperations implements MemoryOperations {
     };
 
     this.data[type][key] = entry;
+    return Promise.resolve();
   }
 
-  async read(type: MemoryType, key: string): Promise<MemoryEntry | null> {
+  read(type: MemoryType, key: string): Promise<MemoryEntry | null> {
     const entry = this.data[type][key];
     if (entry) {
       // Update access patterns
       entry.accessCount++;
       entry.lastAccessed = new Date();
-      return entry;
+      return Promise.resolve(entry);
     }
-    return null;
+    return Promise.resolve(null);
   }
 
-  async update(
+  update(
     type: MemoryType,
     key: string,
     updates: Partial<MemoryEntry>,
@@ -79,19 +84,23 @@ export class AtlasMemoryOperations implements MemoryOperations {
     // Update entry while preserving type safety
     Object.assign(entry, updates);
     entry.lastAccessed = new Date();
+    return Promise.resolve();
   }
 
-  async delete(type: MemoryType, key: string): Promise<void> {
+  delete(type: MemoryType, key: string): Promise<void> {
     if (!this.data[type][key]) {
       throw new Error(`Memory entry '${key}' not found in ${type} memory`);
     }
 
     delete this.data[type][key];
+    return Promise.resolve();
   }
 
-  async list(type: MemoryType): Promise<MemoryEntry[]> {
-    return Object.values(this.data[type]).sort((a, b) =>
-      b.lastAccessed.getTime() - a.lastAccessed.getTime()
+  list(type: MemoryType): Promise<MemoryEntry[]> {
+    return Promise.resolve(
+      Object.values(this.data[type]).sort((a, b) =>
+        b.lastAccessed.getTime() - a.lastAccessed.getTime()
+      ),
     );
   }
 
@@ -127,8 +136,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
     });
   }
 
-  async save(): Promise<void> {
-    await this.storage.saveAll(this.data);
+  save(): Promise<void> {
+    return this.storage.saveAll(this.data);
   }
 
   async reload(): Promise<void> {
@@ -152,11 +161,18 @@ export class AtlasMemoryOperations implements MemoryOperations {
     mostRecent?: Date;
     oldestEntry?: Date;
   }> {
-    const stats: Record<MemoryType, any> = {
+    const stats: Record<MemoryType, {
+      count: number;
+      totalRelevance: number;
+      avgRelevance: number;
+      mostRecent?: Date;
+      oldestEntry?: Date;
+    }> = {
       [MemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [MemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [MemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [MemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [MemoryType.VECTOR_SEARCH]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
     };
 
     for (const [memoryType, entries] of Object.entries(this.data)) {
@@ -217,8 +233,70 @@ export class AtlasMemoryOperations implements MemoryOperations {
     return errors;
   }
 
-  async exportToJson(): Promise<string> {
-    return JSON.stringify(this.data, null, 2);
+  async vectorSearch(query: string): Promise<VectorSearchResult[]> {
+    // Initialize CoALA memory manager if not already done
+    if (!this.coalaMemoryManager) {
+      const mockScope = {
+        id: "memory-manager-scope",
+      } as any;
+
+      this.coalaMemoryManager = new CoALAMemoryManager(
+        mockScope,
+        undefined, // Use default storage
+        false, // Disable cognitive loop
+        {
+          autoIndexOnWrite: true,
+          batchSize: 10,
+          similarityThreshold: 0.3,
+        },
+      );
+    }
+
+    try {
+      // Perform vector search across all indexed memory types
+      const results = await this.coalaMemoryManager.getRelevantMemoriesForPrompt(
+        query,
+        {
+          includeWorking: false, // WORKING memory doesn't use vector search
+          includeEpisodic: true,
+          includeSemantic: true,
+          includeProcedural: true,
+          maxMemories: 20,
+          minSimilarity: 0.2,
+          contextFormat: "detailed",
+        },
+      );
+
+      // Convert CoALA results to VectorSearchResult format
+      const vectorResults: VectorSearchResult[] = results.memories.map((memory) => ({
+        id: memory.id,
+        content: memory.content,
+        timestamp: memory.timestamp,
+        accessCount: memory.accessCount,
+        lastAccessed: memory.lastAccessed,
+        memoryType: memory.memoryType as MemoryType, // Convert CoALA type to MemoryType
+        relevanceScore: memory.relevanceScore,
+        sourceScope: memory.sourceScope,
+        associations: memory.associations,
+        tags: memory.tags,
+        confidence: memory.confidence,
+        decayRate: memory.decayRate,
+        similarity: memory.similarity || 0,
+        matchedContent: typeof memory.content === "string"
+          ? memory.content.substring(0, 200) + "..."
+          : JSON.stringify(memory.content).substring(0, 200) + "...",
+      }));
+
+      // Sort by similarity score (highest first)
+      return vectorResults.sort((a, b) => b.similarity - a.similarity);
+    } catch (error) {
+      console.error("Vector search failed:", error);
+      return [];
+    }
+  }
+
+  exportToJson(): Promise<string> {
+    return Promise.resolve(JSON.stringify(this.data, null, 2));
   }
 
   async importFromJson(jsonData: string): Promise<void> {
