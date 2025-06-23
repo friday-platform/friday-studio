@@ -222,11 +222,12 @@ export abstract class BaseWorker<
           const { taskId, data } = input;
           return await this.processTask(taskId, data);
         }),
-        performCleanup: fromPromise(async () => {
+        performCleanup: fromPromise(async ({ input }) => {
           await this.cleanup();
 
-          // Close all channels and ports
-          this.context.ports.forEach((port) => port.close());
+          // Close all channels and ports from actor context
+          const actorContext = this.actor.getSnapshot().context;
+          actorContext.ports.forEach((port: MessagePort) => port.close());
         }),
       },
     });
@@ -308,9 +309,15 @@ export abstract class BaseWorker<
   }
 
   protected sendDirect(peerId: string, message: any): void {
-    const port = this.context.ports.get(peerId);
+    // Get the port from the actor's context, not this.context
+    const actorContext = this.actor.getSnapshot().context;
+    const port = actorContext.ports.get(peerId);
     if (port) {
       port.postMessage(message);
+    } else {
+      this.logger.warn(`No port found for peer ${peerId}`, {
+        availablePeers: Array.from(actorContext.ports.keys()),
+      });
     }
   }
 

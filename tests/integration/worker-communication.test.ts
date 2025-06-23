@@ -8,10 +8,10 @@
 import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
 import { expect } from "@std/expect";
 
-// Test-specific message type for broadcast receipts
-interface BroadcastReceiptMessage {
-  type: "broadcastReceived";
-  channel: string;
+// Test-specific message type for direct message receipts
+interface DirectMessageReceipt {
+  type: "directMessageReceived";
+  peerId: string;
   data: any;
 }
 
@@ -112,34 +112,35 @@ Deno.test({
         super("test-worker", "test");
       }
       
-      protected async initialize(config) {
+      protected override async initialize(config) {
         this.log("Test worker initialized with:", config);
       }
       
-      protected async processTask(taskId, data) {
+      protected override async processTask(taskId, data) {
         this.log("Processing task:", taskId, data);
         
         if (data.action === 'echo') {
           return { echo: data.message };
         }
         
-        if (data.action === 'broadcast') {
-          this.broadcast(data.channel, data.message);
-          return { status: 'broadcast sent' };
+        if (data.action === 'sendDirect') {
+          // Send direct message to peer
+          this.sendDirect(data.peerId, data.message);
+          return { status: 'direct message sent' };
         }
         
         throw new Error(\`Unknown action: \${data.action}\`);
       }
       
-      protected async cleanup() {
+      protected override async cleanup() {
         this.log("Cleaning up test worker");
       }
       
-      protected handleBroadcast(channel, data) {
-        this.log(\`Received broadcast on \${channel}:\`, data);
+      protected override handleDirectMessage(peerId, data) {
+        this.log(\`Received direct message from \${peerId}:\`, data);
         self.postMessage({
-          type: 'broadcastReceived',
-          channel,
+          type: 'directMessageReceived',
+          peerId,
           data
         });
       }
@@ -175,34 +176,39 @@ Deno.test({
       expect(echoResult).toBeDefined();
       expect(echoResult.echo).toBe("Hello from test!");
 
-      // Test broadcast communication
-      manager.setupBroadcastChannel("worker-1", "test-channel");
-      manager.setupBroadcastChannel("worker-2", "test-channel");
+      // Test direct communication via MessagePort (BroadcastChannel is disabled in workers)
+      // Create a message channel between the two workers
+      manager.createMessageChannel("worker-1", "worker-2");
 
-      // Listen for broadcast receipts
-      const broadcastPromise = new Promise<BroadcastReceiptMessage>((resolve) => {
+      // Give workers time to set up the message ports
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Listen for direct messages on worker2
+      const directMessagePromise = new Promise<any>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Timeout waiting for direct message"));
+        }, 5000); // 5 second timeout
+
         worker2.worker.onmessage = (event) => {
-          if (event.data.type === "broadcastReceived") {
-            resolve(event.data as BroadcastReceiptMessage);
+          console.log("Worker2 received message:", event.data);
+          if (event.data.type === "directMessageReceived") {
+            clearTimeout(timeout);
+            resolve(event.data);
           }
         };
       });
 
-      // Send broadcast from worker 1
-      await manager.sendTask("worker-1", "broadcast-task", {
-        action: "broadcast",
-        channel: "test-channel",
-        message: { type: "test", content: "Hello broadcast!" },
+      // Send a direct message from worker 1 to worker 2
+      await manager.sendTask("worker-1", "send-direct", {
+        action: "sendDirect",
+        peerId: "worker-2",
+        message: { type: "test", content: "Hello direct!" },
       });
 
-      const broadcastReceipt = await broadcastPromise;
-      expect(broadcastReceipt).toBeDefined();
-      expect(broadcastReceipt.type).toBe("broadcastReceived");
-      expect(broadcastReceipt.channel).toBe("test-channel");
-
-      // Test direct communication via MessagePort
-      manager.createMessageChannel("worker-1", "worker-2");
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const directMessage = await directMessagePromise;
+      expect(directMessage).toBeDefined();
+      expect(directMessage.type).toBe("directMessageReceived");
+      expect(directMessage.data.content).toBe("Hello direct!");
 
       await manager.shutdown();
     } finally {
