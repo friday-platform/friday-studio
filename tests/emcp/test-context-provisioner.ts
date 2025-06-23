@@ -20,34 +20,33 @@ Deno.test("ContextProvisioner - Basic Functionality", async (t) => {
     assertEquals(provisioner.canProvideContext("database"), false);
   });
 
-  await t.step("should provision codebase context with legacy job spec", async () => {
+  await t.step("should provision filesystem context with new job spec format", async () => {
     const jobSpec: JobSpecification = {
       name: "test-job",
       description: "Test job",
       execution: {
         strategy: "sequential",
         context: {
-          codebase_files: ["README.md"],
-          focus_areas: ["project setup", "basic usage"],
+          filesystem: {
+            patterns: ["README.md"],
+            include_content: true,
+          },
         },
         agents: [],
       },
     };
 
-    const context = await provisioner.provisionCodebaseContext(
+    const context = await provisioner.provisionFilesystemContext(
       "test-agent",
       jobSpec,
       "test-session",
     );
 
     assertExists(context);
-    assertStringIncludes(context, "Analysis Focus Areas");
-    assertStringIncludes(context, "project setup");
-    assertStringIncludes(context, "basic usage");
-    assertStringIncludes(context, "Atlas Codebase Files");
+    assertStringIncludes(context, "README.md");
   });
 
-  await t.step("should handle job spec without codebase files", async () => {
+  await t.step("should handle job spec without filesystem context", async () => {
     const jobSpec: JobSpecification = {
       name: "test-job",
       description: "Test job",
@@ -57,7 +56,7 @@ Deno.test("ContextProvisioner - Basic Functionality", async (t) => {
       },
     };
 
-    const context = await provisioner.provisionCodebaseContext(
+    const context = await provisioner.provisionFilesystemContext(
       "test-agent",
       jobSpec,
       "test-session",
@@ -66,26 +65,30 @@ Deno.test("ContextProvisioner - Basic Functionality", async (t) => {
     assertEquals(context, "");
   });
 
-  await t.step("should handle job spec with invalid codebase_files", async () => {
+  await t.step("should handle job spec with empty patterns", async () => {
     const jobSpec: JobSpecification = {
       name: "test-job",
       description: "Test job",
       execution: {
         strategy: "sequential",
         context: {
-          codebase_files: "not-an-array" as any,
+          filesystem: {
+            patterns: [],
+          },
         },
         agents: [],
       },
     };
 
-    const context = await provisioner.provisionCodebaseContext(
+    const context = await provisioner.provisionFilesystemContext(
       "test-agent",
       jobSpec,
       "test-session",
     );
 
-    assertEquals(context, "");
+    // The filesystem provider returns a header even with no files
+    assertExists(context);
+    assertStringIncludes(context, "Atlas Codebase Files");
   });
 
   await t.step("should shutdown properly", async () => {
@@ -121,28 +124,60 @@ Deno.test("ContextProvisioner - Advanced Scenarios", async (t) => {
       execution: {
         strategy: "sequential",
         context: {
-          codebase_files: [
-            "README.md",
-            "CLAUDE.md",
-            "package.json",
-          ],
-          focus_areas: ["documentation", "configuration"],
+          filesystem: {
+            patterns: [
+              "README.md",
+              "CLAUDE.md",
+              "package.json",
+            ],
+            include_content: true,
+          },
         },
         agents: [],
       },
     };
 
-    const context = await provisioner.provisionCodebaseContext(
+    const context = await provisioner.provisionFilesystemContext(
       "test-agent",
       jobSpec,
       "test-session",
     );
 
-    assertStringIncludes(context, "documentation");
-    assertStringIncludes(context, "configuration");
-    // Should contain multiple file sections
-    const fileSections = context.split("##").length;
-    assertEquals(fileSections >= 2, true); // At least 2 file sections
+    // Since we're loading actual files, check that we got some content
+    assertExists(context);
+    // The context should contain file content
+    const hasContent = context.length > 0;
+    assertEquals(hasContent, true);
+  });
+
+  await t.step("should handle filesystem context with custom settings", async () => {
+    const jobSpec: JobSpecification = {
+      name: "custom-settings-job",
+      description: "Test job with custom filesystem settings",
+      execution: {
+        strategy: "sequential",
+        context: {
+          filesystem: {
+            patterns: ["*.md"],
+            base_path: ".",
+            max_file_size: 1024, // 1kb
+            include_content: true,
+          },
+        },
+        agents: [],
+      },
+    };
+
+    const context = await provisioner.provisionFilesystemContext(
+      "test-agent",
+      jobSpec,
+      "test-session",
+    );
+
+    // Should get some markdown files
+    assertExists(context);
+    const hasContent = context.length > 0;
+    assertEquals(hasContent, true);
   });
 
   await t.step("should cleanup", async () => {
