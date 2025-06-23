@@ -29,6 +29,13 @@ Deno.test("WorkspaceServer - detached mode initialization", async () => {
   const tempDir = await Deno.makeTempDir();
   const logFile = join(tempDir, "test-workspace.log");
 
+  // Temporarily disable test mode to allow file logging
+  const originalTestMode = Deno.env.get("DENO_TESTING");
+  Deno.env.delete("DENO_TESTING");
+
+  // Reset logger AFTER changing env var to ensure clean state
+  AtlasLogger.resetInstance();
+
   try {
     // Set environment variables for detached mode
     Deno.env.set("ATLAS_DETACHED", "true");
@@ -45,8 +52,18 @@ Deno.test("WorkspaceServer - detached mode initialization", async () => {
     // Start server non-blocking
     const { finished } = await server.startNonBlocking();
 
+    // Wait for logs to be written
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
     // Verify log file was created
-    const logContent = await Deno.readTextFile(logFile);
+    let logContent: string;
+    try {
+      logContent = await Deno.readTextFile(logFile);
+    } catch (e) {
+      // If file doesn't exist, log error and fail test
+      console.error("Log file not found:", logFile);
+      throw new Error(`Log file not created: ${logFile}`);
+    }
     const lines = logContent.trim().split("\n");
 
     // Should have startup message
@@ -70,6 +87,11 @@ Deno.test("WorkspaceServer - detached mode initialization", async () => {
     Deno.env.delete("ATLAS_WORKSPACE_NAME");
     Deno.env.delete("ATLAS_LOG_FILE");
 
+    // Restore test mode
+    if (originalTestMode) {
+      Deno.env.set("DENO_TESTING", originalTestMode);
+    }
+
     // Clean up logger
     AtlasLogger.getInstance().close();
 
@@ -81,6 +103,13 @@ Deno.test("WorkspaceServer - detached mode initialization", async () => {
 Deno.test("WorkspaceServer - health endpoint in detached mode", async () => {
   const tempDir = await Deno.makeTempDir();
   const logFile = join(tempDir, "test-workspace-health.log");
+
+  // Temporarily disable test mode to allow file logging
+  const originalTestMode = Deno.env.get("DENO_TESTING");
+  Deno.env.delete("DENO_TESTING");
+
+  // Reset logger AFTER changing env var to ensure clean state
+  AtlasLogger.resetInstance();
 
   try {
     // Set environment variables for detached mode
@@ -101,24 +130,12 @@ Deno.test("WorkspaceServer - health endpoint in detached mode", async () => {
     // Wait a bit for server to start
     await new Promise((resolve) => setTimeout(resolve, 100));
 
-    // Extract port from server instance - the server object should have the port
-    // For testing, we'll use port 8765 explicitly
-    await server.shutdown();
-
-    // Close the logger to clean up file handles
-    AtlasLogger.getInstance().close();
-
-    // Start with a known port for testing
-    const testPort = 8765;
-    const server2 = new WorkspaceServer(runtime, {
-      port: testPort,
-      hostname: "127.0.0.1",
-    });
-
-    const { finished: finished2 } = await server2.startNonBlocking();
+    // Get the actual port from the server
+    // The server's Deno.serve instance is stored as this.server
+    const actualPort = (server as any).server?.addr?.port || 8080;
 
     // Test health endpoint
-    const response = await fetch(`http://127.0.0.1:${testPort}/api/health`);
+    const response = await fetch(`http://127.0.0.1:${actualPort}/api/health`);
     assertEquals(response.status, 200);
 
     const health = await response.json();
@@ -132,13 +149,19 @@ Deno.test("WorkspaceServer - health endpoint in detached mode", async () => {
     assertExists(health.version);
 
     // Shutdown
-    await server2.shutdown();
+    await server.shutdown();
   } finally {
     // Clean up
     Deno.env.delete("ATLAS_DETACHED");
     Deno.env.delete("ATLAS_WORKSPACE_ID");
     Deno.env.delete("ATLAS_WORKSPACE_NAME");
     Deno.env.delete("ATLAS_LOG_FILE");
+
+    // Restore test mode
+    if (originalTestMode) {
+      Deno.env.set("DENO_TESTING", originalTestMode);
+    }
+
     AtlasLogger.getInstance().close();
     await Deno.remove(tempDir, { recursive: true });
   }

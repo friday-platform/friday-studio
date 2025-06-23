@@ -6,6 +6,13 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
   const tempDir = await Deno.makeTempDir();
   const logFile = join(tempDir, "test-detached.log");
 
+  // Temporarily disable test mode to allow file logging
+  const originalTestMode = Deno.env.get("DENO_TESTING");
+  Deno.env.delete("DENO_TESTING");
+
+  // Reset logger AFTER changing env var to ensure clean state
+  AtlasLogger.resetInstance();
+
   try {
     await t.step("should write logs to file in detached mode", async () => {
       // Get a fresh logger instance
@@ -71,6 +78,12 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
   } finally {
     // Cleanup
     AtlasLogger.getInstance().close();
+
+    // Restore test mode
+    if (originalTestMode) {
+      Deno.env.set("DENO_TESTING", originalTestMode);
+    }
+
     await Deno.remove(tempDir, { recursive: true });
   }
 });
@@ -78,6 +91,13 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
 Deno.test("AtlasLogger - normal mode after detached", async () => {
   const tempDir = await Deno.makeTempDir();
   const detachedLog = join(tempDir, "detached.log");
+
+  // Temporarily disable test mode to allow file logging
+  const originalTestMode = Deno.env.get("DENO_TESTING");
+  Deno.env.delete("DENO_TESTING");
+
+  // Reset logger AFTER changing env var to ensure clean state
+  AtlasLogger.resetInstance();
 
   try {
     const logger = AtlasLogger.getInstance();
@@ -99,6 +119,12 @@ Deno.test("AtlasLogger - normal mode after detached", async () => {
     assertEquals(detachedLines.length, 2);
   } finally {
     AtlasLogger.getInstance().close();
+
+    // Restore test mode
+    if (originalTestMode) {
+      Deno.env.set("DENO_TESTING", originalTestMode);
+    }
+
     await Deno.remove(tempDir, { recursive: true });
   }
 });

@@ -47,6 +47,16 @@ export class AtlasLogger {
     return AtlasLogger.instance;
   }
 
+  /**
+   * Reset the singleton instance - used for testing
+   */
+  static resetInstance(): void {
+    if (AtlasLogger.instance) {
+      AtlasLogger.instance.close();
+      AtlasLogger.instance = undefined as any;
+    }
+  }
+
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 

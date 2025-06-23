@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { AtlasLogger, logger } from "../utils/logger.ts";
+import { AtlasLogger } from "../utils/logger.ts";
 import { getWorkspaceRegistry } from "./workspace-registry.ts";
 
 export interface WorkspaceServerOptions {
@@ -247,7 +247,7 @@ export class WorkspaceServer {
       const route = provider.getRoutePattern();
       const method = route.method.toLowerCase();
 
-      logger.info(
+      AtlasLogger.getInstance().info(
         `Registering HTTP signal route: ${route.method} ${route.path} -> ${signalId}`,
         { signalId, path: route.path, method: route.method },
       );
@@ -291,7 +291,7 @@ export class WorkspaceServer {
         );
       });
     } catch (error) {
-      logger.error(`Failed to register HTTP signal route for ${signalId}`, {
+      AtlasLogger.getInstance().error(`Failed to register HTTP signal route for ${signalId}`, {
         signalId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -303,7 +303,7 @@ export class WorkspaceServer {
     const method = (signal.method || "POST").toLowerCase();
     const path = signal.endpoint;
 
-    logger.info(
+    AtlasLogger.getInstance().info(
       `Registering HTTP webhook route: ${method.toUpperCase()} ${path} -> ${signalId}`,
     );
 
@@ -553,11 +553,14 @@ export class WorkspaceServer {
         }
         this.isShuttingDown = true;
 
-        logger.info(`Server [${serverId}] received ${signal}, shutting down gracefully`, {
-          workspaceId,
-          serverId,
-          signal,
-        });
+        AtlasLogger.getInstance().info(
+          `Server [${serverId}] received ${signal}, shutting down gracefully`,
+          {
+            workspaceId,
+            serverId,
+            signal,
+          },
+        );
 
         // Update registry status to stopping
         await registry.updateStatus(workspaceId, "stopping");
@@ -576,7 +579,7 @@ export class WorkspaceServer {
             port: undefined,
           });
         } catch (error) {
-          logger.error("Error during shutdown", {
+          AtlasLogger.getInstance().error("Error during shutdown", {
             error: error instanceof Error ? error.message : String(error),
           });
           await registry.updateStatus(workspaceId, "crashed");
@@ -602,7 +605,7 @@ export class WorkspaceServer {
         }
         this.isShuttingDown = true;
 
-        logger.info(`Server [${serverId}] shutting down gracefully`, {
+        AtlasLogger.getInstance().info(`Server [${serverId}] shutting down gracefully`, {
           workspaceId: (this.runtime as any).workspace?.id,
           serverId,
         });
@@ -635,10 +638,10 @@ export class WorkspaceServer {
       }
     }
 
-    const port = this.options.port || 8080;
+    const port = this.options.port ?? 8080; // Use nullish coalescing to allow port 0
     const hostname = this.options.hostname || "localhost";
 
-    logger.info(`Starting server on http://${hostname}:${port}`, {
+    AtlasLogger.getInstance().info(`Starting server on http://${hostname}:${port}`, {
       hostname,
       port,
       workspaceId: (this.runtime as any).workspace?.id,
@@ -649,7 +652,7 @@ export class WorkspaceServer {
       port,
       hostname,
       onListen: ({ hostname, port }) => {
-        logger.info(`Server running on http://${hostname}:${port}`, {
+        AtlasLogger.getInstance().info(`Server running on http://${hostname}:${port}`, {
           hostname,
           port,
           workspaceId: (this.runtime as any).workspace?.id,
@@ -676,10 +679,10 @@ export class WorkspaceServer {
       }
     }
 
-    const port = this.options.port || 8080;
+    const port = this.options.port ?? 8080; // Use nullish coalescing to allow port 0
     const hostname = this.options.hostname || "localhost";
 
-    logger.info(`Starting server on http://${hostname}:${port}`, {
+    AtlasLogger.getInstance().info(`Starting server on http://${hostname}:${port}`, {
       hostname,
       port,
       workspaceId: (this.runtime as any).workspace?.id,
@@ -695,7 +698,7 @@ export class WorkspaceServer {
       port,
       hostname,
       onListen: ({ hostname, port }) => {
-        logger.info(`Server running on http://${hostname}:${port}`, {
+        AtlasLogger.getInstance().info(`Server running on http://${hostname}:${port}`, {
           hostname,
           port,
           workspaceId: (this.runtime as any).workspace?.id,
