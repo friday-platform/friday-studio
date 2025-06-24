@@ -22,6 +22,7 @@ export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
     type: z.literal("stdio"),
     command: z.string(),
     args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
   }).strict(),
 ]);
 
@@ -121,31 +122,68 @@ export class MCPManager {
         }
 
         case "stdio": {
-          const { command, args } = validatedConfig.transport;
+          const { command, args, env } = validatedConfig.transport;
+
+          // Process environment variables and resolve "auto" values
+          const processedEnv: Record<string, string> = {};
+          if (env) {
+            for (const [key, value] of Object.entries(env)) {
+              if (value === "auto" || value === "from_environment") {
+                // Read the actual environment variable
+                const envValue = Deno.env.get(key);
+                if (envValue) {
+                  processedEnv[key] = envValue;
+                  logger.debug(`Using environment variable for MCP server: ${key}`, {
+                    operation: "mcp_env_setup",
+                    serverId: config.id,
+                    envVar: key,
+                  });
+                } else {
+                  logger.warn(`Environment variable not found: ${key}`, {
+                    operation: "mcp_env_setup",
+                    serverId: config.id,
+                    envVar: key,
+                  });
+                }
+              } else {
+                processedEnv[key] = String(value);
+              }
+            }
+          }
+
           mcpClient = await createMCPClient({
             transport: new StdioMCPTransport({
               command,
               args: args || [],
+              env: processedEnv,
             }),
           });
           break;
         }
       }
 
+      // Verify the connection is actually working before marking as connected
+      const isConnected = await this.verifyConnection(
+        mcpClient,
+        config.id,
+        validatedConfig.transport.type,
+      );
+
       this.clients.set(config.id, {
         client: mcpClient,
         config: validatedConfig,
-        connected: true,
+        connected: isConnected,
       });
 
       // Add success telemetry attributes
       span?.setAttribute("mcp.registration_success", true);
-      span?.setAttribute("mcp.client_connected", true);
+      span?.setAttribute("mcp.client_connected", isConnected);
 
-      logger.info(`MCP server registered successfully: ${config.id}`, {
+      logger.info(`MCP server registered: ${config.id} (connected: ${isConnected})`, {
         operation: "mcp_server_registration",
         serverId: config.id,
         transport: validatedConfig.transport.type,
+        connected: isConnected,
         success: true,
       });
     } catch (error) {
@@ -203,13 +241,46 @@ export class MCPManager {
 
     for (const serverId of serverIds) {
       const wrapper = this.clients.get(serverId);
-      if (!wrapper || !wrapper.connected) {
-        logger.warn(`MCP server not available: ${serverId}`, {
+      if (!wrapper) {
+        logger.warn(`MCP server not found in registry: ${serverId}`, {
           operation: "mcp_tools_retrieval",
           serverId,
           available: false,
         });
         continue;
+      }
+
+      // If not connected, try to re-verify connection once
+      if (!wrapper.connected) {
+        logger.debug(`MCP server not connected, attempting re-verification: ${serverId}`, {
+          operation: "mcp_tools_retrieval",
+          serverId,
+          reconnecting: true,
+        });
+
+        const isNowConnected = await this.verifyConnection(
+          wrapper.client,
+          serverId,
+          wrapper.config.transport.type,
+        );
+
+        // Update connection status
+        wrapper.connected = isNowConnected;
+
+        if (!isNowConnected) {
+          logger.warn(`MCP server not available after re-verification: ${serverId}`, {
+            operation: "mcp_tools_retrieval",
+            serverId,
+            available: false,
+          });
+          continue;
+        } else {
+          logger.info(`MCP server reconnected successfully: ${serverId}`, {
+            operation: "mcp_tools_retrieval",
+            serverId,
+            reconnected: true,
+          });
+        }
       }
 
       availableServersCount++;
@@ -471,5 +542,117 @@ export class MCPManager {
    */
   listServers(): string[] {
     return Array.from(this.clients.keys());
+  }
+
+  /**
+   * Verify that an MCP client is actually connected and can communicate
+   */
+  private async verifyConnection(
+    client: MCPClient,
+    serverId: string,
+    transportType: string,
+  ): Promise<boolean> {
+    try {
+      // For stdio transports, give the process time to start up
+      if (transportType === "stdio") {
+        logger.debug(`Waiting for stdio MCP server to initialize: ${serverId}`, {
+          operation: "mcp_connection_verification",
+          serverId,
+          transportType,
+        });
+
+        // Wait up to 5 seconds for stdio process to be ready
+        const maxRetries = 10;
+        const retryDelay = 500; // 500ms between retries
+
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            // Try to get tools as a connection test
+            const tools = await Promise.race([
+              client.tools(),
+              new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Connection verification timeout")), 2000)
+              ),
+            ]);
+
+            logger.info(`MCP server connection verified: ${serverId}`, {
+              operation: "mcp_connection_verification",
+              serverId,
+              transportType,
+              attempt,
+              success: true,
+            });
+
+            return true;
+          } catch (error) {
+            logger.debug(
+              `MCP server connection attempt ${attempt}/${maxRetries} failed: ${serverId}`,
+              {
+                operation: "mcp_connection_verification",
+                serverId,
+                transportType,
+                attempt,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            );
+
+            if (attempt < maxRetries) {
+              await new Promise((resolve) => setTimeout(resolve, retryDelay));
+            }
+          }
+        }
+
+        logger.warn(
+          `MCP server connection verification failed after ${maxRetries} attempts: ${serverId}`,
+          {
+            operation: "mcp_connection_verification",
+            serverId,
+            transportType,
+            success: false,
+          },
+        );
+
+        return false;
+      } else {
+        // For SSE and other transports, try immediate verification
+        try {
+          await Promise.race([
+            client.tools(),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error("Connection verification timeout")), 3000)
+            ),
+          ]);
+
+          logger.info(`MCP server connection verified: ${serverId}`, {
+            operation: "mcp_connection_verification",
+            serverId,
+            transportType,
+            success: true,
+          });
+
+          return true;
+        } catch (error) {
+          logger.warn(`MCP server connection verification failed: ${serverId}`, {
+            operation: "mcp_connection_verification",
+            serverId,
+            transportType,
+            error: error instanceof Error ? error.message : String(error),
+            success: false,
+          });
+
+          return false;
+        }
+      }
+    } catch (error) {
+      logger.error(`MCP server connection verification error: ${serverId}`, {
+        operation: "mcp_connection_verification",
+        serverId,
+        transportType,
+        error: error instanceof Error ? error.message : String(error),
+        success: false,
+      });
+
+      return false;
+    }
   }
 }
