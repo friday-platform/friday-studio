@@ -3,7 +3,7 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { Badge } from "@inkjs/ui";
 import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
-import { Tab, TabGroup, useTabNavigation } from "../components/tabs.tsx";
+import { useTabNavigation } from "../components/tabs.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/SplashScreen.tsx";
 import {
   WorkspaceConfigAssistant,

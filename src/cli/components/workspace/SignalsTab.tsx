@@ -6,6 +6,7 @@ import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
+import { Select, TextInput } from "@inkjs/ui";
 
 interface SignalsTabProps {
   config: NewWorkspaceConfig;
@@ -27,6 +28,19 @@ interface PropertyInfo {
   required: boolean;
   items?: PropertyInfo;
   properties?: PropertyInfo[];
+  enum?: string[];
+  default?: unknown;
+}
+
+interface FormData {
+  [key: string]: string;
+}
+
+interface SignalFormProps {
+  signal: Record<string, unknown>;
+  signalName: string;
+  onSubmit: (data: Record<string, unknown>) => void;
+  onCancel: () => void;
 }
 
 // Helper function to validate and parse signal schema
@@ -76,6 +90,8 @@ const parseProperty = (
       type: (prop.type as string) || "unknown",
       description: prop.description as string | undefined,
       required: isRequired,
+      enum: prop.enum as string[] | undefined,
+      default: prop.default,
     };
   }
 };
@@ -124,6 +140,18 @@ const PropertyDoc = ({
       {property.description && (
         <Box marginLeft={level * 2}>
           <Text color="yellow">{property.description}</Text>
+        </Box>
+      )}
+
+      {property.enum && (
+        <Box marginLeft={level * 2}>
+          <Text color="cyan">Options: {property.enum.join(", ")}</Text>
+        </Box>
+      )}
+
+      {property.default !== undefined && (
+        <Box marginLeft={level * 2}>
+          <Text color="gray">Default: {String(property.default)}</Text>
         </Box>
       )}
 
@@ -336,19 +364,236 @@ const SpecializedProviderDetails = ({
   );
 };
 
+// Signal Form Component
+const SignalForm = ({ signal, signalName, onSubmit, onCancel }: SignalFormProps) => {
+  const [formData, setFormData] = useState<FormData>({});
+  const [currentField, setCurrentField] = useState(0);
+  const [formFields, setFormFields] = useState<PropertyInfo[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    // Parse schema to get form fields
+    const validatedSchema = validateSignalSchema((signal as any).schema);
+    if (validatedSchema) {
+      const properties = Object.entries(validatedSchema.properties).map(([name, prop]) =>
+        parseProperty(name, prop as Record<string, unknown>, validatedSchema.required || [])
+      );
+      setFormFields(properties);
+
+      // Initialize form data with defaults or empty strings
+      const initialData: FormData = {};
+      properties.forEach((prop) => {
+        if (prop.enum && prop.default !== undefined) {
+          initialData[prop.name] = String(prop.default);
+        } else if (prop.enum && prop.enum.length > 0) {
+          initialData[prop.name] = prop.enum[0]; // Default to first enum value
+        } else {
+          initialData[prop.name] = "";
+        }
+      });
+      setFormData(initialData);
+    }
+  }, [signal]);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError("");
+
+    try {
+      // Convert form data to proper types based on schema
+      const processedData: Record<string, unknown> = {};
+
+      formFields.forEach((field) => {
+        const value = formData[field.name];
+        if (value.trim() === "" && !field.required) {
+          return; // Skip empty optional fields
+        }
+
+        switch (field.type) {
+          case "number":
+            processedData[field.name] = parseFloat(value);
+            break;
+          case "boolean":
+            processedData[field.name] = value.toLowerCase() === "true";
+            break;
+          case "object":
+            try {
+              processedData[field.name] = JSON.parse(value || "{}");
+            } catch {
+              throw new Error(`Invalid JSON for field ${field.name}`);
+            }
+            break;
+          case "array":
+            try {
+              processedData[field.name] = JSON.parse(value || "[]");
+            } catch {
+              throw new Error(`Invalid JSON array for field ${field.name}`);
+            }
+            break;
+          default:
+            processedData[field.name] = value;
+        }
+      });
+
+      // Validate required fields
+      const missingRequired = formFields
+        .filter((field) => field.required && !processedData.hasOwnProperty(field.name))
+        .map((field) => field.name);
+
+      if (missingRequired.length > 0) {
+        throw new Error(`Required fields missing: ${missingRequired.join(", ")}`);
+      }
+
+      await onSubmit(processedData);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setSubmitting(false);
+    }
+  };
+
+  useInput((inputChar, key) => {
+    if (submitting) return;
+
+    if (key.tab) {
+      setCurrentField((prev) => (prev + 1) % (formFields.length + 2)); // +2 for submit/cancel buttons
+    } else if (key.upArrow) {
+      setCurrentField((prev) => Math.max(0, prev - 1));
+    } else if (key.downArrow) {
+      setCurrentField((prev) => Math.min(formFields.length + 1, prev + 1));
+    } else if (key.return) {
+      if (currentField === formFields.length) {
+        handleSubmit();
+      } else if (currentField === formFields.length + 1) {
+        onCancel();
+      }
+    } else if (key.escape) {
+      onCancel();
+    }
+  });
+
+  if (formFields.length === 0) {
+    return (
+      <Box flexDirection="column" padding={2}>
+        <Text color="red">No schema defined for this signal. Cannot create form.</Text>
+        <Box marginTop={1}>
+          <Text color="gray">Press ESC to cancel</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" padding={2} borderStyle="round" borderColor="cyan">
+      <Box marginBottom={1}>
+        <Text bold color="cyan">Send Signal: {signalName}</Text>
+      </Box>
+
+      {error && (
+        <Box marginBottom={1}>
+          <Text color="red">Error: {error}</Text>
+        </Box>
+      )}
+
+      {/* Form Fields */}
+      {formFields.map((field, index) => (
+        <Box key={field.name} marginBottom={1} flexDirection="column">
+          <Box>
+            <Text color={currentField === index ? "cyan" : "white"}>
+              {currentField === index ? "❯ " : "  "}
+              {field.name}
+              {field.required && <Text color="red">*</Text>}
+              <Text dimColor>({field.enum ? "enum" : field.type})</Text>
+            </Text>
+          </Box>
+          {field.description && (
+            <Box marginLeft={2}>
+              <Text color="gray">{field.description}</Text>
+            </Box>
+          )}
+          <Box marginLeft={2}>
+            {currentField === index
+              ? (
+                field.enum
+                  ? (
+                    <Select
+                      options={field.enum.map((value) => ({
+                        label: value,
+                        value: value,
+                      }))}
+                      onChange={(value) => {
+                        setFormData((prev) => ({ ...prev, [field.name]: value }));
+                        setCurrentField((prev) => Math.min(formFields.length + 1, prev + 1));
+                      }}
+                      isDisabled={false}
+                    />
+                  )
+                  : (
+                    <TextInput
+                      placeholder={field.type === "object"
+                        ? "{}"
+                        : field.type === "array"
+                        ? "[]"
+                        : `Enter ${field.name}`}
+                      onSubmit={(value) => {
+                        setFormData((prev) => ({ ...prev, [field.name]: value }));
+                        setCurrentField((prev) => Math.min(formFields.length + 1, prev + 1));
+                      }}
+                    />
+                  )
+              )
+              : <Text dimColor>{formData[field.name] || `<enter ${field.name}>`}</Text>}
+          </Box>
+        </Box>
+      ))}
+
+      {/* Action Buttons */}
+      <Box marginTop={1} flexDirection="row" gap={4}>
+        <Box>
+          <Text
+            color={currentField === formFields.length ? "cyan" : "green"}
+            bold={currentField === formFields.length}
+          >
+            {currentField === formFields.length ? "❯ " : "  "}
+            {submitting ? "Sending..." : "Send Signal"}
+          </Text>
+        </Box>
+        <Box>
+          <Text
+            color={currentField === formFields.length + 1 ? "cyan" : "red"}
+            bold={currentField === formFields.length + 1}
+          >
+            {currentField === formFields.length + 1 ? "❯ " : "  "}
+            Cancel
+          </Text>
+        </Box>
+      </Box>
+
+      <Box marginTop={2}>
+        <Text color="gray">
+          Use Tab/Arrow keys to navigate, Enter to select, ESC to cancel
+        </Text>
+      </Box>
+    </Box>
+  );
+};
+
 export const SignalsTab = ({ config }: SignalsTabProps) => {
   const [scrollOffset, setScrollOffset] = useState(0);
+  const [showForm, setShowForm] = useState(false);
+  const [submissionResult, setSubmissionResult] = useState<string>("");
 
   const signals = config.signals ? Object.entries(config.signals) : [];
 
-  // Use active focus to switch between sidebar and main area
+  // Use active focus to switch between sidebar, main area, and form
   const { activeArea } = useActiveFocus({
-    areas: ["sidebar", "main"],
+    areas: showForm ? ["form"] : ["sidebar", "main"],
     initialArea: 0,
   });
 
-  const isSidebarActive = activeArea === 0;
-  const isMainActive = activeArea === 1;
+  const isSidebarActive = activeArea === 0 && !showForm;
+  const isMainActive = activeArea === 1 && !showForm;
+  const isFormActive = showForm;
 
   // Use tab navigation for signals with arrow key support when sidebar is active
   const { activeTab: selectedSignalIndex } = useTabNavigation({
@@ -363,8 +608,53 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
     ? config.signals[selectedSignal]
     : null;
 
+  // Signal submission function
+  const handleSignalSubmit = async (data: Record<string, unknown>) => {
+    if (!selectedSignal) return;
+
+    try {
+      const port = 8080; // Default workspace server port
+      const response = await fetch(
+        `http://localhost:${port}/signals/${selectedSignal}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(data),
+        },
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to trigger signal: ${response.status} ${response.statusText}. ${errorText}`,
+        );
+      }
+
+      setSubmissionResult(`Signal '${selectedSignal}' triggered successfully!`);
+      setShowForm(false);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("Connection refused")) {
+        setSubmissionResult(
+          `Cannot connect to workspace server on port 8080. Is it running? Use 'atlas workspace serve' to start it.`,
+        );
+      } else {
+        setSubmissionResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      setShowForm(false);
+    }
+  };
+
+  const handleFormCancel = () => {
+    setShowForm(false);
+  };
+
   // Handle keyboard navigation for scrolling when main area is active
   useInput((inputChar, key) => {
+    if (showForm) {
+      // Form handles its own input
+      return;
+    }
+
     if (isMainActive) {
       const scrollAmount = key.shift ? 10 : 1; // 10x faster scrolling with Shift
 
@@ -372,6 +662,10 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
         setScrollOffset((prev) => Math.min(0, prev + scrollAmount)); // Max value 0 (can't scroll up past top)
       } else if (key.downArrow || inputChar === "j") {
         setScrollOffset((prev) => prev - scrollAmount); // No limit (can scroll down indefinitely)
+      } else if (inputChar === "s" && selectedSignalData && (selectedSignalData as any).schema) {
+        // Press 's' to show signal form
+        setShowForm(true);
+        setSubmissionResult("");
       }
 
       // Handle vim keys with shift modifier for fast scrolling
@@ -390,6 +684,18 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
       <Box flexDirection="column" padding={2}>
         <Text color="gray">No signals configured</Text>
       </Box>
+    );
+  }
+
+  // Show form overlay if form is active
+  if (showForm && selectedSignalData && selectedSignal) {
+    return (
+      <SignalForm
+        signal={selectedSignalData as Record<string, unknown>}
+        signalName={selectedSignal}
+        onSubmit={handleSignalSubmit}
+        onCancel={handleFormCancel}
+      />
     );
   }
 
@@ -441,6 +747,29 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
                 <Text dimColor>Provider:</Text>
                 <Text>{(selectedSignalData as any).provider || "Unknown"}</Text>
               </Box>
+
+              {/* Show submission result if available */}
+              {submissionResult && (
+                <Box
+                  marginBottom={2}
+                  padding={1}
+                  borderStyle="round"
+                  borderColor={submissionResult.includes("Error") ? "red" : "green"}
+                >
+                  <Text color={submissionResult.includes("Error") ? "red" : "green"}>
+                    {submissionResult}
+                  </Text>
+                </Box>
+              )}
+
+              {/* Show form availability hint */}
+              {(selectedSignalData as any).schema && (
+                <Box marginBottom={1}>
+                  <Text color="cyan">
+                    ⌨️ Press 's' to send this signal
+                  </Text>
+                </Box>
+              )}
 
               {/* Provider-Specific Details */}
               {(() => {
