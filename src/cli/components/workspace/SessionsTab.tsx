@@ -41,7 +41,8 @@ interface SessionDetails {
 
 export const SessionsTab = ({ config }: SessionsTabProps) => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
-  const [selectedSessionDetails, setSelectedSessionDetails] = useState<SessionDetails | null>(null);
+  const [selectedSessionDetails, setSelectedSessionDetails] =
+    useState<SessionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -63,7 +64,8 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
     isActive: isSidebarActive,
   });
 
-  const selectedSession = sessions.length > 0 ? sessions[selectedSessionIndex] : null;
+  const selectedSession =
+    sessions.length > 0 ? sessions[selectedSessionIndex] : null;
 
   // Fetch sessions list
   useEffect(() => {
@@ -74,7 +76,10 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         const response = await fetch(`http://localhost:${port}/sessions`);
 
         if (!response.ok) {
-          if (response.status === 404 || response.statusText.includes("Connection refused")) {
+          if (
+            response.status === 404 ||
+            response.statusText.includes("Connection refused")
+          ) {
             setSessions([]);
             setError("");
             return;
@@ -87,7 +92,10 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         setSessions(sessionsData);
         setError("");
       } catch (err) {
-        if (err instanceof Error && err.message.includes("Connection refused")) {
+        if (
+          err instanceof Error &&
+          err.message.includes("Connection refused")
+        ) {
           setSessions([]);
           setError("");
         } else {
@@ -115,10 +123,14 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
 
       try {
         const port = 8080;
-        const response = await fetch(`http://localhost:${port}/sessions/${selectedSession.id}`);
+        const response = await fetch(
+          `http://localhost:${port}/sessions/${selectedSession.id}`
+        );
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch session details: ${response.statusText}`);
+          throw new Error(
+            `Failed to fetch session details: ${response.statusText}`
+          );
         }
 
         const sessionDetails = await response.json();
@@ -215,59 +227,59 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         borderColor="gray"
         borderDimColor
       >
-        {selectedSessionDetails
-          ? (
-            <Box
-              flexDirection="column"
-              marginTop={scrollOffset}
-              flexGrow={1}
-              flexShrink={0}
-            >
-              {/* Session Header */}
-              <Box marginBottom={2}>
-                <Text bold>Session Details</Text>
-              </Box>
+        {selectedSessionDetails ? (
+          <Box
+            flexDirection="column"
+            marginTop={scrollOffset}
+            flexGrow={1}
+            flexShrink={0}
+          >
+            {/* Session Header */}
+            <Box marginBottom={2}>
+              <Text bold>Session Details</Text>
+            </Box>
 
-              <Box flexDirection="column" marginBottom={2}>
-                <Box marginBottom={1}>
-                  <Text dimColor>ID:</Text>
-                  <Text>{selectedSessionDetails.id}</Text>
-                </Box>
-                <Box marginBottom={1}>
-                  <Text dimColor>Workspace:</Text>
-                  <Text>{selectedSessionDetails.workspaceName || "Unknown"}</Text>
-                </Box>
-                <Box marginBottom={1}>
-                  <Text dimColor>Signal:</Text>
-                  <Text>{selectedSessionDetails.signal || "manual"}</Text>
-                </Box>
-                <Box marginBottom={1}>
-                  <Text dimColor>Status:</Text>
-                  <StatusBadge status={selectedSessionDetails.status} />
-                </Box>
-                <Box marginBottom={1}>
-                  <Text dimColor>Started At:</Text>
-                  <Text>{formatTime(selectedSessionDetails.startedAt)}</Text>
-                </Box>
-                {selectedSessionDetails.completedAt && (
-                  <Box marginBottom={1}>
-                    <Text dimColor>Completed At:</Text>
-                    <Text>{formatTime(selectedSessionDetails.completedAt)}</Text>
-                  </Box>
-                )}
-                <Box marginBottom={1}>
-                  <Text dimColor>Duration:</Text>
-                  <Text>
-                    {formatDuration(
-                      selectedSessionDetails.startedAt,
-                      selectedSessionDetails.completedAt,
-                    )}
-                  </Text>
-                </Box>
+            <Box flexDirection="column" marginBottom={2}>
+              <Box marginBottom={1}>
+                <Text dimColor>ID:</Text>
+                <Text>{selectedSessionDetails.id}</Text>
               </Box>
+              <Box marginBottom={1}>
+                <Text dimColor>Workspace:</Text>
+                <Text>{selectedSessionDetails.workspaceName || "Unknown"}</Text>
+              </Box>
+              <Box marginBottom={1}>
+                <Text dimColor>Signal:</Text>
+                <Text>{selectedSessionDetails.signal || "manual"}</Text>
+              </Box>
+              <Box marginBottom={1}>
+                <Text dimColor>Status:</Text>
+                <StatusBadge status={selectedSessionDetails.status} />
+              </Box>
+              <Box marginBottom={1}>
+                <Text dimColor>Started At:</Text>
+                <Text>{formatTime(selectedSessionDetails.startedAt)}</Text>
+              </Box>
+              {selectedSessionDetails.completedAt && (
+                <Box marginBottom={1}>
+                  <Text dimColor>Completed At:</Text>
+                  <Text>{formatTime(selectedSessionDetails.completedAt)}</Text>
+                </Box>
+              )}
+              <Box marginBottom={1}>
+                <Text dimColor>Duration:</Text>
+                <Text>
+                  {formatDuration(
+                    selectedSessionDetails.startedAt,
+                    selectedSessionDetails.completedAt
+                  )}
+                </Text>
+              </Box>
+            </Box>
 
-              {/* Agents Section */}
-              {selectedSessionDetails.agents && selectedSessionDetails.agents.length > 0 && (
+            {/* Agents Section */}
+            {selectedSessionDetails.agents &&
+              selectedSessionDetails.agents.length > 0 && (
                 <Box flexDirection="column" marginBottom={2}>
                   <Box marginBottom={1}>
                     <Text bold>Agents Executed:</Text>
@@ -279,7 +291,11 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                         <Text dimColor>({agent.status})</Text>
                       </Box>
                       {agent.output && (
-                        <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+                        <Box
+                          flexDirection="column"
+                          marginLeft={2}
+                          marginBottom={1}
+                        >
                           <Text dimColor>Output:</Text>
                           <Box marginLeft={2}>
                             <Text>{agent.output}</Text>
@@ -287,7 +303,11 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                         </Box>
                       )}
                       {agent.error && (
-                        <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+                        <Box
+                          flexDirection="column"
+                          marginLeft={2}
+                          marginBottom={1}
+                        >
                           <Text dimColor>Error:</Text>
                           <Box marginLeft={2}>
                             <Text dimColor>{agent.error}</Text>
@@ -298,18 +318,17 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                   ))}
                 </Box>
               )}
-            </Box>
-          )
-          : (
-            <Box
-              flexDirection="column"
-              alignItems="center"
-              justifyContent="center"
-              height="100%"
-            >
-              <Text dimColor>Select a session to view details</Text>
-            </Box>
-          )}
+          </Box>
+        ) : (
+          <Box
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            height="100%"
+          >
+            <Text dimColor>Select a session to view details</Text>
+          </Box>
+        )}
       </Box>
     </Box>
   );
