@@ -594,7 +594,10 @@ tool that developers love to use both interactively and in automation.
   - [x] session get - Get session details with JSON support and Ink rendering
   - [x] session cancel - Cancel running sessions with confirmation prompts
   - [x] ps command - Alias for session list
-- [ ] Migrate signal commands (list, trigger, history)
+- [x] Migrate signal commands (list, trigger, history)
+  - [x] signal list - List configured signals with JSON support and Ink rendering
+  - [x] signal trigger - Trigger signals with interactive data prompt and progress indicator
+  - [x] signal history - Show signal history (placeholder implementation)
 - [x] Migrate agent commands (list, describe, test)
   - [x] agent list - List workspace agents with JSON support and Ink rendering
   - [x] agent describe - Show agent details with JSON support and Ink rendering
@@ -635,7 +638,10 @@ tool that developers love to use both interactively and in automation.
 - [x] Implement --json flag for session commands
   - [x] session list - JSON output with session array and count
   - [x] session get - JSON output with full session details
-- [ ] Implement --json flag for signal commands
+- [x] Implement --json flag for signal commands
+  - [x] signal list - JSON output with workspace info and signal array
+  - [x] signal trigger - JSON output with trigger result and session ID
+  - [x] signal history - JSON output with placeholder data
 - [x] Implement --json flag for agent commands
   - [x] agent list - JSON output with workspace info and agent array
   - [x] agent describe - JSON output with full agent configuration
