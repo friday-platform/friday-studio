@@ -14,6 +14,7 @@ interface WorkspaceSupervisorConfig {
     workspaceSignals?: Record<string, unknown>;
     jobs?: Record<string, unknown>;
     memoryConfig?: AtlasMemoryConfig;
+    workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
   };
   memoryConfig?: AtlasMemoryConfig;
   model?: string;
@@ -198,6 +199,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
                 jobSpec: sessionContext.jobSpec, // Pass job specification to session
                 constraints: sessionContext.constraints,
                 additionalPrompts: sessionContext.additionalPrompts,
+                workspaceMcpServers: this.config?.config?.workspaceMcpServers, // Pass MCP servers to session
                 traceHeaders: sessionTraceHeaders, // Pass trace context to session
               },
             });

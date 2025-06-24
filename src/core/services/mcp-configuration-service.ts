@@ -54,6 +54,7 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
   constructor(
     private workspaceId: string,
     private sessionId?: string,
+    private mcpServerConfigs?: Record<string, any>, // Direct MCP server configurations for worker contexts
   ) {}
 
   /**
@@ -76,16 +77,54 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
     });
 
     for (const serverId of requestedServerIds) {
-      // Get base configuration from registry
-      const baseConfig = MCPServerRegistry.getServerConfig(serverId);
-      if (!baseConfig) {
-        logger.warn(`MCP server not found in registry: ${serverId}`, {
+      // Get base configuration from direct configs or registry (dual-mode resolution)
+      let baseConfig: MCPServerConfig | undefined;
+
+      if (this.mcpServerConfigs && this.mcpServerConfigs[serverId]) {
+        // Use direct configuration if available (for worker contexts)
+        baseConfig = {
+          ...this.mcpServerConfigs[serverId],
+          id: serverId, // Ensure the config has the correct id field
+        } as MCPServerConfig;
+        logger.debug(`Using direct MCP server config for: ${serverId}`, {
           operation: "mcp_config_resolution",
           agentId,
           serverId,
-          available: false,
+          source: "direct",
           workspaceId: this.workspaceId,
         });
+      } else {
+        // Fallback to registry for non-worker contexts
+        baseConfig = MCPServerRegistry.getServerConfig(serverId);
+        if (baseConfig) {
+          logger.debug(`Using registry MCP server config for: ${serverId}`, {
+            operation: "mcp_config_resolution",
+            agentId,
+            serverId,
+            source: "registry",
+            workspaceId: this.workspaceId,
+          });
+        }
+      }
+
+      if (!baseConfig) {
+        if (!MCPServerRegistry.isInitialized()) {
+          logger.warn(`MCP Server Registry not initialized`, {
+            operation: "mcp_config_resolution",
+            agentId,
+            serverId,
+            available: false,
+            workspaceId: this.workspaceId,
+          });
+        } else {
+          logger.warn(`MCP server not found in registry: ${serverId}`, {
+            operation: "mcp_config_resolution",
+            agentId,
+            serverId,
+            available: false,
+            workspaceId: this.workspaceId,
+          });
+        }
         continue;
       }
 
@@ -153,13 +192,47 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
     serverIds: string[],
     sessionContext: SessionContext,
   ): Promise<void> {
-    const configs = MCPServerRegistry.getServerConfigs(serverIds);
+    // Use direct configurations if available (for worker contexts), otherwise fall back to registry
+    let configs: MCPServerConfig[] = [];
+
+    if (this.mcpServerConfigs) {
+      // Use direct configurations from workspace
+      for (const serverId of serverIds) {
+        if (this.mcpServerConfigs[serverId]) {
+          configs.push({
+            ...this.mcpServerConfigs[serverId],
+            id: serverId, // Ensure the config has the correct id field
+          } as MCPServerConfig);
+        }
+      }
+      logger.debug(`Using direct MCP server configs for session initialization`, {
+        operation: "mcp_session_initialization",
+        sessionContext,
+        requestedServerIds: serverIds,
+        resolvedCount: configs.length,
+        source: "direct",
+        workspaceId: this.workspaceId,
+      });
+    } else {
+      // Fallback to registry for non-worker contexts
+      configs = MCPServerRegistry.getServerConfigs(serverIds);
+      logger.debug(`Using registry MCP server configs for session initialization`, {
+        operation: "mcp_session_initialization",
+        sessionContext,
+        requestedServerIds: serverIds,
+        resolvedCount: configs.length,
+        source: "registry",
+        workspaceId: this.workspaceId,
+      });
+    }
 
     if (configs.length === 0) {
       logger.warn(`No MCP server configs found for session initialization`, {
         operation: "mcp_session_initialization",
         sessionContext,
         requestedServerIds: serverIds,
+        hasDirectConfigs: !!this.mcpServerConfigs,
+        registryInitialized: MCPServerRegistry.isInitialized(),
         workspaceId: this.workspaceId,
       });
       return;
