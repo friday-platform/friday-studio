@@ -1,15 +1,14 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
-import { Table } from "../../../cli/components/Table.tsx";
 import * as p from "@clack/prompts";
+import { Box, render, Text } from "ink";
+import React from "react";
 import { z } from "zod/v4";
-import yargs from "yargs";
+import { Table } from "../../../cli/components/Table.tsx";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "list";
 export const desc = "List library items";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .option("type", {
       alias: "t",
@@ -102,7 +101,9 @@ export async function handler(argv: any) {
     render(<LibraryListDisplay items={items} />);
   } catch (error) {
     spinner.stop("Failed to fetch library items");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -150,9 +151,7 @@ const LibraryListDisplay: React.FC<LibraryListDisplayProps> = ({ items }) => {
       />
 
       <Box marginTop={1}>
-        <Text dimColor>
-          Use 'atlas library get &lt;id&gt;' to view details
-        </Text>
+        <Text dimColor>Use 'atlas library get &lt;id&gt;' to view details</Text>
       </Box>
     </Box>
   );

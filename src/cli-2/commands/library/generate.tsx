@@ -5,11 +5,12 @@ import * as p from "@clack/prompts";
 import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
 import yargs from "yargs";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "generate <template> <data-file>";
 export const desc = "Generate content from template";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .positional("template", {
       describe: "Template ID to use",
@@ -62,11 +63,13 @@ export function builder(y: ReturnType<typeof yargs>) {
 const GenerationResultSchema = z.object({
   content: z.string(),
   id: z.string().optional(),
-  metadata: z.object({
-    template_id: z.string(),
-    generated_at: z.string(),
-    input_data_hash: z.string().optional(),
-  }).optional(),
+  metadata: z
+    .object({
+      template_id: z.string(),
+      generated_at: z.string(),
+      input_data_hash: z.string().optional(),
+    })
+    .optional(),
 });
 
 type GenerationResult = z.infer<typeof GenerationResultSchema>;
@@ -145,7 +148,9 @@ export async function handler(argv: any) {
     }
   } catch (error) {
     spinner.stop("Generation failed");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -155,11 +160,16 @@ interface GenerationResultDisplayProps {
   stored: boolean;
 }
 
-const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({ result, stored }) => {
+const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({
+  result,
+  stored,
+}) => {
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text bold color="green">✓ Content Generated</Text>
+        <Text bold color="green">
+          ✓ Content Generated
+        </Text>
       </Box>
 
       {stored && result.id && (
@@ -189,7 +199,12 @@ const GenerationResultDisplay: React.FC<GenerationResultDisplayProps> = ({ resul
         <Text bold>Generated Content:</Text>
       </Box>
 
-      <Box paddingLeft={2} paddingY={1} borderStyle="single" borderColor="green">
+      <Box
+        paddingLeft={2}
+        paddingY={1}
+        borderStyle="single"
+        borderColor="green"
+      >
         <Text>{result.content}</Text>
       </Box>
 

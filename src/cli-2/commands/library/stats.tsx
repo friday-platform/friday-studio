@@ -1,14 +1,13 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
 import * as p from "@clack/prompts";
+import { Box, render, Text } from "ink";
+import React from "react";
 import { z } from "zod/v4";
-import yargs from "yargs";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "stats";
 export const desc = "Show library statistics";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .option("json", {
       type: "boolean",
@@ -29,16 +28,22 @@ const LibraryStatsSchema = z.object({
   total_size_bytes: z.number(),
   types: z.record(z.number()),
   tags: z.record(z.number()).optional(),
-  recent_activity: z.array(z.object({
-    date: z.string(),
-    items_added: z.number(),
-    size_added_bytes: z.number(),
-  })).optional(),
-  storage_stats: z.object({
-    used_bytes: z.number(),
-    limit_bytes: z.number().optional(),
-    percentage_used: z.number().optional(),
-  }).optional(),
+  recent_activity: z
+    .array(
+      z.object({
+        date: z.string(),
+        items_added: z.number(),
+        size_added_bytes: z.number(),
+      }),
+    )
+    .optional(),
+  storage_stats: z
+    .object({
+      used_bytes: z.number(),
+      limit_bytes: z.number().optional(),
+      percentage_used: z.number().optional(),
+    })
+    .optional(),
 });
 
 type LibraryStats = z.infer<typeof LibraryStatsSchema>;
@@ -69,7 +74,9 @@ export async function handler(argv: any) {
     render(<StatsDisplay stats={stats} />);
   } catch (error) {
     spinner.stop("Failed to fetch statistics");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -112,7 +119,9 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
               <Text>/ {formatBytes(stats.storage_stats.limit_bytes)}</Text>
             )}
             {stats.storage_stats.percentage_used !== undefined && (
-              <Text>({formatPercentage(stats.storage_stats.percentage_used)})</Text>
+              <Text>
+                ({formatPercentage(stats.storage_stats.percentage_used)})
+              </Text>
             )}
           </Text>
         </Box>
@@ -127,7 +136,9 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
             .sort(([, a], [, b]) => b - a)
             .map(([type, count]) => (
               <Box key={type} marginLeft={2}>
-                <Text>• {type}: {count.toLocaleString()} items</Text>
+                <Text>
+                  • {type}: {count.toLocaleString()} items
+                </Text>
               </Box>
             ))}
         </>
@@ -143,7 +154,9 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
             .slice(0, 10)
             .map(([tag, count]) => (
               <Box key={tag} marginLeft={2}>
-                <Text>• {tag}: {count.toLocaleString()} items</Text>
+                <Text>
+                  • {tag}: {count.toLocaleString()} items
+                </Text>
               </Box>
             ))}
         </>
@@ -157,8 +170,8 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
           {stats.recent_activity.slice(0, 7).map((activity) => (
             <Box key={activity.date} marginLeft={2}>
               <Text>
-                • {activity.date}: {activity.items_added}{" "}
-                items added ({formatBytes(activity.size_added_bytes)})
+                • {activity.date}: {activity.items_added} items added (
+                {formatBytes(activity.size_added_bytes)})
               </Text>
             </Box>
           ))}
@@ -166,9 +179,7 @@ const StatsDisplay: React.FC<StatsDisplayProps> = ({ stats }) => {
       )}
 
       <Box marginTop={1}>
-        <Text dimColor>
-          Use 'atlas library list' to view all items
-        </Text>
+        <Text dimColor>Use 'atlas library list' to view all items</Text>
       </Box>
     </Box>
   );

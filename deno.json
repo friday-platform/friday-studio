@@ -47,6 +47,7 @@
     "@std/yaml": "jsr:@std/yaml@^1.0.7",
     "fullscreen-ink": "npm:fullscreen-ink@^0.0.2",
     "ink": "npm:ink@^5.0.1",
+    "js-levenshtein": "npm:js-levenshtein@^1.1.6",
     "lint-staged": "npm:lint-staged@^16.1.2",
     "openapi-fetch": "npm:openapi-fetch@^0.14.0",
     "openapi-typescript": "npm:openapi-typescript@^7.8.0",

@@ -6,12 +6,13 @@ import * as serve from "./workspace/serve.ts";
 import * as stop from "./workspace/stop.ts";
 import * as restart from "./workspace/restart.ts";
 import * as remove from "./workspace/remove.ts";
+import { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "workspace <action>";
 export const desc = "Manage Atlas workspaces";
 export const aliases = ["work", "w"];
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .command([init, list, status, serve, stop, restart, remove])
     .demandCommand(1, "You need to specify a workspace action")

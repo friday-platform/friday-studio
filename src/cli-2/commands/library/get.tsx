@@ -4,11 +4,12 @@ import { Box, Text } from "ink";
 import * as p from "@clack/prompts";
 import { z } from "zod/v4";
 import yargs from "yargs";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "get <id>";
 export const desc = "Get library item details";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .positional("id", {
       describe: "Library item ID",
@@ -43,12 +44,14 @@ const LibraryItemDetailSchema = z.object({
     tags: z.array(z.string()),
     size_bytes: z.number(),
     description: z.string().optional(),
-    metadata: z.object({
-      format: z.string(),
-      engine: z.string().optional(),
-      template_id: z.string().optional(),
-      created_by: z.string().optional(),
-    }).optional(),
+    metadata: z
+      .object({
+        format: z.string(),
+        engine: z.string().optional(),
+        template_id: z.string().optional(),
+        created_by: z.string().optional(),
+      })
+      .optional(),
   }),
   content: z.string().optional(),
 });
@@ -85,7 +88,9 @@ export async function handler(argv: any) {
 
         if (matchingItem) {
           // Try again with the full ID
-          response = await fetch(`${serverUrl}/library/${matchingItem.id}?${params}`);
+          response = await fetch(
+            `${serverUrl}/library/${matchingItem.id}?${params}`,
+          );
         }
       }
     }
@@ -105,10 +110,17 @@ export async function handler(argv: any) {
       return;
     }
 
-    render(<ItemDetailDisplay itemDetail={itemDetail} includeContent={argv.content} />);
+    render(
+      <ItemDetailDisplay
+        itemDetail={itemDetail}
+        includeContent={argv.content}
+      />,
+    );
   } catch (error) {
     spinner.stop("Failed to fetch item");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -118,7 +130,10 @@ interface ItemDetailDisplayProps {
   includeContent: boolean;
 }
 
-const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({ itemDetail, includeContent }) => {
+const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({
+  itemDetail,
+  includeContent,
+}) => {
   const { item } = itemDetail;
 
   const formatBytes = (bytes: number): string => {
@@ -206,7 +221,12 @@ const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({ itemDetail, inclu
           <Box marginTop={1} marginBottom={1}>
             <Text bold>Content:</Text>
           </Box>
-          <Box paddingLeft={2} paddingY={1} borderStyle="single" borderColor="gray">
+          <Box
+            paddingLeft={2}
+            paddingY={1}
+            borderStyle="single"
+            borderColor="gray"
+          >
             <Text>{itemDetail.content}</Text>
           </Box>
         </>
@@ -214,9 +234,7 @@ const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({ itemDetail, inclu
 
       {!includeContent && (
         <Box marginTop={1}>
-          <Text dimColor>
-            Use --content flag to include item content
-          </Text>
+          <Text dimColor>Use --content flag to include item content</Text>
         </Box>
       )}
     </Box>

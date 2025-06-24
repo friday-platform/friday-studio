@@ -1,15 +1,14 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
-import { Table } from "../../../cli/components/Table.tsx";
 import * as p from "@clack/prompts";
+import { Box, render, Text } from "ink";
+import React from "react";
 import { z } from "zod/v4";
-import yargs from "yargs";
+import { Table } from "../../../cli/components/Table.tsx";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "search <query>";
 export const desc = "Search library content";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .positional("query", {
       describe: "Search query",
@@ -45,16 +44,18 @@ export function builder(y: ReturnType<typeof yargs>) {
 
 // Schema for search response
 const SearchResultSchema = z.object({
-  items: z.array(z.object({
-    id: z.string(),
-    type: z.string(),
-    name: z.string(),
-    created_at: z.string(),
-    tags: z.array(z.string()),
-    size_bytes: z.number(),
-    description: z.string().optional(),
-    relevance_score: z.number().optional(),
-  })),
+  items: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      name: z.string(),
+      created_at: z.string(),
+      tags: z.array(z.string()),
+      size_bytes: z.number(),
+      description: z.string().optional(),
+      relevance_score: z.number().optional(),
+    }),
+  ),
   total_results: z.number().optional(),
   query: z.string().optional(),
 });
@@ -105,7 +106,9 @@ export async function handler(argv: any) {
     render(<SearchResultsDisplay result={result} query={argv.query} />);
   } catch (error) {
     spinner.stop("Search failed");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -115,7 +118,10 @@ interface SearchResultsDisplayProps {
   query: string;
 }
 
-const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, query }) => {
+const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({
+  result,
+  query,
+}) => {
   const formatBytes = (bytes: number): string => {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -131,7 +137,9 @@ const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, que
   return (
     <Box flexDirection="column">
       <Box marginBottom={1}>
-        <Text bold>Search Results for "{query}" ({result.items.length} items)</Text>
+        <Text bold>
+          Search Results for "{query}" ({result.items.length} items)
+        </Text>
       </Box>
 
       <Table
@@ -154,9 +162,7 @@ const SearchResultsDisplay: React.FC<SearchResultsDisplayProps> = ({ result, que
       />
 
       <Box marginTop={1}>
-        <Text dimColor>
-          Use 'atlas library get &lt;id&gt;' to view details
-        </Text>
+        <Text dimColor>Use 'atlas library get &lt;id&gt;' to view details</Text>
       </Box>
     </Box>
   );

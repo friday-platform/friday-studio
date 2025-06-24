@@ -1,14 +1,12 @@
-import React from "react";
 import { render } from "ink";
-import { Text } from "ink";
 import { LogViewer } from "../../cli/components/LogViewer.tsx";
-import yargs from "yargs";
+import { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "logs <session-id>";
 export const desc = "View session logs";
 export const aliases = ["log"];
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .positional("session-id", {
       describe: "Session ID to view logs for",

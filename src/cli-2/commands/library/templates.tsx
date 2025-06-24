@@ -1,15 +1,14 @@
-import React from "react";
-import { render } from "ink";
-import { Box, Text } from "ink";
-import { Table } from "../../../cli/components/Table.tsx";
 import * as p from "@clack/prompts";
+import { Box, render, Text } from "ink";
+import React from "react";
 import { z } from "zod/v4";
-import yargs from "yargs";
+import { Table } from "../../../cli/components/Table.tsx";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 export const command = "templates";
 export const desc = "List available templates";
 
-export function builder(y: ReturnType<typeof yargs>) {
+export function builder(y: YargsInstance) {
   return y
     .option("workspace", {
       alias: "w",
@@ -43,10 +42,14 @@ const TemplateSchema = z.object({
   engine: z.string(),
   description: z.string().optional(),
   category: z.string().optional(),
-  examples: z.array(z.object({
-    name: z.string(),
-    description: z.string().optional(),
-  })).optional(),
+  examples: z
+    .array(
+      z.object({
+        name: z.string(),
+        description: z.string().optional(),
+      }),
+    )
+    .optional(),
 });
 
 type Template = z.infer<typeof TemplateSchema>;
@@ -76,7 +79,9 @@ export async function handler(argv: any) {
     spinner.stop("Templates fetched");
 
     if (argv.json) {
-      console.log(JSON.stringify({ templates, count: templates.length }, null, 2));
+      console.log(
+        JSON.stringify({ templates, count: templates.length }, null, 2),
+      );
       return;
     }
 
@@ -88,7 +93,9 @@ export async function handler(argv: any) {
     render(<TemplatesDisplay templates={templates} />);
   } catch (error) {
     spinner.stop("Failed to fetch templates");
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exit(1);
   }
 }
@@ -140,7 +147,9 @@ const TemplatesDisplay: React.FC<TemplatesDisplayProps> = ({ templates }) => {
           <Text bold>By Category:</Text>
           {Object.entries(categorized).map(([category, items]) => (
             <Box key={category} marginLeft={2}>
-              <Text>• {category}: {items.length} templates</Text>
+              <Text>
+                • {category}: {items.length} templates
+              </Text>
             </Box>
           ))}
         </Box>

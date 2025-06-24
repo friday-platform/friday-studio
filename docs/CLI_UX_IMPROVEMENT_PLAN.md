@@ -113,21 +113,17 @@ export const command = "workspace <action>";
 export const desc = "Manage Atlas workspaces";
 export const aliases = ["work", "w"];
 
-export function builder(yargs: any) {
+export function builder(yargs: YargsInstance) {
   return yargs
     .command([init, serve, status, list])
     .demandCommand(1, "You need to specify a workspace action");
-}
-
-export function handler(argv: any) {
-  // This won't be called if a subcommand matches
 }
 
 // src/cli/commands/workspace/init.ts
 export const command = "init [name]";
 export const desc = "Initialize a new workspace";
 
-export function builder(yargs: any) {
+export function builder(yargs: YargsInstance) {
   return yargs.positional("name", {
     describe: "Workspace name",
     type: "string",
@@ -653,9 +649,9 @@ integration:
 
 #### 1.3 Improve Command Aliases
 
-- [ ] Document all shorthands in help text
-- [ ] Add typo correction suggestions
-- [ ] Create power-user documentation
+- [x] Document all shorthands in help text (aliases shown in help output)
+- [x] Add typo correction suggestions (using Levenshtein distance)
+- [x] Create power-user documentation (CLI_POWER_USER_GUIDE.md)
 
 ### Phase 2: Output & Interactivity
 
@@ -704,8 +700,8 @@ integration:
 
 #### 3.2 Intelligent Error Messages
 
-- [ ] Implement Levenshtein distance for suggestions
-- [ ] Add actionable error messages
+- [x] Implement Levenshtein distance for suggestions (completed with 1.3)
+- [x] Add actionable error messages (suggests similar commands)
 - [ ] Create error message guidelines
 - [ ] Add common troubleshooting tips
 

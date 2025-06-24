@@ -1,5 +1,7 @@
 import yargs from "yargs";
 import { commands } from "./cli-2/commands/index.ts";
+import { customFailHandler } from "./cli-2/utils/fail-handler.ts";
+import { addExamples, customHelp } from "./cli-2/utils/help-formatter.ts";
 
 // Check for --version or -v flag before yargs processes commands
 if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
@@ -10,7 +12,7 @@ if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
 }
 
 // Build the CLI
-const argv = await yargs(Deno.args)
+const cli = yargs(Deno.args)
   .scriptName("atlas")
   .usage("$0 <command> [options]")
   .command(commands)
@@ -20,4 +22,11 @@ const argv = await yargs(Deno.args)
   .demandCommand(1, "You need to specify a command")
   .recommendCommands()
   .strict()
-  .parseAsync();
+  .fail(customFailHandler)
+  .showHelpOnFail(false); // We'll handle this in our custom fail handler
+
+// Add examples
+addExamples(cli);
+
+// Parse the commands
+const argv = await cli.parseAsync();
