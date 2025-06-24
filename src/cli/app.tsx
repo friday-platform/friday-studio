@@ -10,6 +10,7 @@ import { LogsCommand } from "./commands/logs.tsx";
 import { SessionCommand } from "./commands/session.tsx";
 import { SignalCommand } from "./commands/signal.tsx";
 import { WorkspaceCommand } from "./commands/workspace.tsx";
+import TUICommand from "./commands/tui.tsx";
 import { getWorkspaceRegistry } from "../core/workspace-registry.ts";
 
 interface AppProps {
@@ -84,8 +85,8 @@ export default function App({ command, subcommand, args, flags }: AppProps) {
     case "define":
       return <DefineCommand args={args} subcommand={subcommand} flags={flags} />;
 
-    // case "tui":
-    //   return <TUICommand workspaceSlug={flags.workspace as string} />;
+    case "tui":
+      return <TUICommand workspaceSlug={flags.workspace as string} />;
 
     default:
       return (
