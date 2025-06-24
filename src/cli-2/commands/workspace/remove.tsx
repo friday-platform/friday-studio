@@ -1,9 +1,11 @@
-import * as p from "@clack/prompts";
+import React from "react";
+import { render } from "ink";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
-import { confirmAction } from "../../utils/confirm.ts";
+import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
 interface RemoveArgs {
   workspace?: string;
@@ -80,7 +82,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
 
       // Stop the workspace
       const processManager = new WorkspaceProcessManager();
-      const s = p.spinner();
+      const s = spinner();
       s.start(`Stopping workspace '${workspace.name}'...`);
 
       try {
@@ -123,7 +125,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     }
 
     // Remove from registry
-    const s = p.spinner();
+    const s = spinner();
     s.start(`Removing workspace '${workspace.name}' from registry...`);
 
     try {
@@ -132,7 +134,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
 
       // Delete files if requested
       if (argv.deleteFiles) {
-        const deleteSpinner = p.spinner();
+        const deleteSpinner = spinner();
         deleteSpinner.start(`Deleting workspace files at ${workspace.path}...`);
 
         try {

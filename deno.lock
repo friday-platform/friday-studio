@@ -1626,7 +1626,6 @@
       "npm:@ai-sdk/anthropic@^1.0.2",
       "npm:@ai-sdk/google@^1.0.14",
       "npm:@ai-sdk/openai@^1.0.8",
-      "npm:@clack/prompts@0.11",
       "npm:@inkjs/ui@2",
       "npm:@modelcontextprotocol/sdk@^1.12.1",
       "npm:@opentelemetry/api@^1.9.0",

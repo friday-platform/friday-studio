@@ -1,6 +1,6 @@
 import * as list from "./agent/list.tsx";
 import * as describe from "./agent/describe.tsx";
-import * as test from "./agent/test.ts";
+import * as test from "./agent/test.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
 

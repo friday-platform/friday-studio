@@ -1,12 +1,13 @@
 import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { findAvailablePort } from "../../../utils/port-finder.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ServeArgs {
   workspace?: string;
@@ -29,7 +30,7 @@ export const examples = [
 ];
 
 export function builder(y: YargsInstance) {
-  return yargs
+  return y
     .positional("workspace", {
       type: "string",
       describe: "Workspace ID or name (defaults to current directory)",
@@ -122,7 +123,7 @@ async function startDetached(workspacePath: string, argv: ServeArgs): Promise<vo
   const registry = getWorkspaceRegistry();
 
   // Show spinner while starting
-  const s = p.spinner();
+  const s = spinner();
   s.start("Starting workspace in background...");
 
   try {

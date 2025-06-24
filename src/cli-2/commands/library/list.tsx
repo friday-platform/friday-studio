@@ -1,9 +1,9 @@
-import * as p from "@clack/prompts";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
 import { Table } from "../../../cli/components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
 export const command = "list";
 export const desc = "List library items";
@@ -62,10 +62,10 @@ const LibraryItemSchema = z.object({
 type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   try {
-    spinner.start("Fetching library items...");
+    s.start("Fetching library items...");
 
     // Build query parameters
     const params = new URLSearchParams();
@@ -86,7 +86,7 @@ export async function handler(argv: any) {
     const data = await response.json();
     const items = z.array(LibraryItemSchema).parse(data);
 
-    spinner.stop("Library items fetched");
+    s.stop("Library items fetched");
 
     if (argv.json) {
       console.log(JSON.stringify({ items, count: items.length }, null, 2));
@@ -100,7 +100,7 @@ export async function handler(argv: any) {
 
     render(<LibraryListDisplay items={items} />);
   } catch (error) {
-    spinner.stop("Failed to fetch library items");
+    s.stop("Failed to fetch library items");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

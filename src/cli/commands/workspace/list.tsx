@@ -78,13 +78,30 @@ export function WorkspaceList({
       : str + " ".repeat(width - str.length);
   };
 
-  // Replace /Users/X/ with ~/ for better readability on macOS
-  const formatPath = (path: string) => {
-    const homeDir = Deno.env.get("HOME");
-    if (homeDir && path.startsWith(homeDir)) {
-      return path.replace(homeDir, "~");
+  // Format uptime from startedAt timestamp
+  const formatUptime = (workspace: WorkspaceEntry): string => {
+    if (workspace.status !== WSStatus.RUNNING || !workspace.startedAt) {
+      return "-";
     }
-    return path;
+
+    const start = new Date(workspace.startedAt).getTime();
+    const now = Date.now();
+    const ms = now - start;
+
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+
+    if (days > 0) {
+      return `${days}d ${hours % 24}h`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes % 60}m`;
+    } else if (minutes > 0) {
+      return `${minutes}m`;
+    } else {
+      return `${seconds}s`;
+    }
   };
 
   return (
@@ -102,14 +119,15 @@ export function WorkspaceList({
       <Box>
         <Text bold color="white">
           {padRight("ID", 15)}
-          {padRight("NAME", 40)}
+          {padRight("NAME", 50)}
           {padRight("STATUS", 10)}
-          {padRight("PATH", 45)}
+          {padRight("PORT", 8)}
+          {padRight("UPTIME", 10)}
         </Text>
       </Box>
       <Box>
         <Text color="gray">
-          {"─".repeat(110)}
+          {"─".repeat(93)}
         </Text>
       </Box>
 
@@ -121,13 +139,17 @@ export function WorkspaceList({
           ? "red"
           : "gray";
 
+        const portDisplay = workspace.port ? workspace.port.toString() : "-";
+        const uptimeDisplay = formatUptime(workspace);
+
         return (
           <Box key={i}>
             <Text>
               <Text color="blue">{padRight(workspace.id, 15)}</Text>
-              <Text color="yellow">{padRight(workspace.name, 40)}</Text>
+              <Text color="yellow">{padRight(workspace.name, 50)}</Text>
               <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
-              <Text color="gray">{padRight(formatPath(workspace.path), 45)}</Text>
+              <Text color="cyan">{padRight(portDisplay, 8)}</Text>
+              <Text color="green">{padRight(uptimeDisplay, 10)}</Text>
             </Text>
           </Box>
         );

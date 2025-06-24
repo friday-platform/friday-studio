@@ -1,8 +1,10 @@
-import * as p from "@clack/prompts";
+import React from "react";
+import { render } from "ink";
 import { exists } from "@std/fs";
 import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { errorOutput, infoOutput, warningOutput } from "../../utils/output.ts";
+import { isCancel, spinner, text } from "../../utils/prompts.tsx";
 
 interface TestArgs {
   name: string;
@@ -54,7 +56,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     // Get message either from flag or prompt
     let message = argv.message;
     if (!message) {
-      message = await p.text({
+      message = await text({
         message: `Enter message to send to ${argv.name}:`,
         placeholder: "Hello, agent!",
         validate: (value) => {
@@ -64,14 +66,14 @@ export const handler = async (argv: TestArgs): Promise<void> => {
         },
       }) as string;
 
-      if (p.isCancel(message)) {
+      if (isCancel(message)) {
         infoOutput("Agent test cancelled");
         Deno.exit(0);
       }
     }
 
     // Show spinner while testing
-    const s = p.spinner();
+    const s = spinner();
     s.start(`Testing agent '${argv.name}'...`);
 
     // TODO: Implement actual agent testing when runtime is available

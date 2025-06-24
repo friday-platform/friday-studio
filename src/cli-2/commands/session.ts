@@ -1,7 +1,7 @@
 import yargs from "yargs";
 import * as list from "./session/list.tsx";
 import * as get from "./session/get.tsx";
-import * as cancel from "./session/cancel.ts";
+import * as cancel from "./session/cancel.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
 

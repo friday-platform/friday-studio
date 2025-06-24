@@ -1,8 +1,10 @@
-import * as p from "@clack/prompts";
+import React from "react";
+import { render } from "ink";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
 interface StopArgs {
   workspace?: string;
@@ -72,7 +74,7 @@ async function stopSingleWorkspace(idOrName?: string): Promise<void> {
   }
 
   // Show spinner while stopping
-  const s = p.spinner();
+  const s = spinner();
   s.start(`Stopping workspace '${workspace.name}'...`);
 
   try {
@@ -98,7 +100,7 @@ async function stopAllWorkspaces(): Promise<void> {
   infoOutput(`Found ${runningWorkspaces.length} running workspace(s).`);
 
   for (const workspace of runningWorkspaces) {
-    const s = p.spinner();
+    const s = spinner();
     s.start(`Stopping workspace '${workspace.name}'...`);
 
     try {

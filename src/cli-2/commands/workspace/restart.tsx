@@ -1,8 +1,13 @@
-import * as p from "@clack/prompts";
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
+import React from "react";
+import { render } from "ink";
+import {
+  WorkspaceEntry,
+  WorkspaceStatus as WSStatus,
+} from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
 interface RestartArgs {
   workspace?: string;
@@ -48,7 +53,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     const registry = getWorkspaceRegistry();
     await registry.initialize();
 
-    let workspace;
+    let workspace: WorkspaceEntry | undefined;
     if (argv.workspace) {
       // Find by ID or name
       workspace = (await registry.findById(argv.workspace)) ||
@@ -70,8 +75,11 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     const processManager = new WorkspaceProcessManager();
 
     // Stop if running
-    if (workspace.status === WSStatus.RUNNING || workspace.status === WSStatus.STARTING) {
-      const s = p.spinner();
+    if (
+      workspace.status === WSStatus.RUNNING ||
+      workspace.status === WSStatus.STARTING
+    ) {
+      const s = spinner();
       s.start(`Stopping workspace '${workspace.name}'...`);
 
       try {
@@ -94,7 +102,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
 
     if (argv.detached) {
       // Start in detached mode
-      const s = p.spinner();
+      const s = spinner();
       s.start("Starting workspace in background...");
 
       try {
@@ -120,7 +128,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
       }
     } else {
       // Start in foreground - import serve handler
-      const { handler: serveHandler } = await import("./serve.ts");
+      const { handler: serveHandler } = await import("./serve.tsx");
 
       // Call serve with the workspace path and options
       await serveHandler({

@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
@@ -55,10 +55,10 @@ const TemplateSchema = z.object({
 type Template = z.infer<typeof TemplateSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   try {
-    spinner.start("Fetching templates...");
+    s.start("Fetching templates...");
 
     // Build query parameters
     const params = new URLSearchParams();
@@ -76,7 +76,7 @@ export async function handler(argv: any) {
     const data = await response.json();
     const templates = z.array(TemplateSchema).parse(data);
 
-    spinner.stop("Templates fetched");
+    s.stop("Templates fetched");
 
     if (argv.json) {
       console.log(
@@ -92,7 +92,7 @@ export async function handler(argv: any) {
 
     render(<TemplatesDisplay templates={templates} />);
   } catch (error) {
-    spinner.stop("Failed to fetch templates");
+    s.stop("Failed to fetch templates");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

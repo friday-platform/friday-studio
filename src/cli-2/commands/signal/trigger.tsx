@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceEntry } from "../../../core/workspace-registry-types.ts";
@@ -298,17 +298,17 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
     }
   } else if (!args.json) {
     // Interactive mode - prompt for data
-    const wantsData = await p.confirm({
+    const wantsData = await confirm({
       message: "Do you want to provide data for this signal?",
-      initialValue: false,
+      defaultValue: false,
     });
 
-    if (p.isCancel(wantsData)) {
+    if (isCancel(wantsData)) {
       throw new Error("Signal trigger cancelled");
     }
 
     if (wantsData) {
-      const dataStr = await p.text({
+      const dataStr = await text({
         message: "Enter JSON data:",
         placeholder: '{"message": "Hello"}',
         validate: (value) => {
@@ -323,7 +323,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
         },
       }) as string;
 
-      if (p.isCancel(dataStr)) {
+      if (isCancel(dataStr)) {
         throw new Error("Signal trigger cancelled");
       }
 
@@ -372,7 +372,7 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
 
     // Show what we're about to do
     if (!argv.json) {
-      const s = p.spinner();
+      const s = spinner();
       s.start(
         `Triggering signal '${argv.name}' on ${validWorkspaces.length} workspace(s)...`,
       );

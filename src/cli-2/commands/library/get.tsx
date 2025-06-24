@@ -1,7 +1,7 @@
 import React from "react";
 import { render } from "ink";
 import { Box, Text } from "ink";
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import yargs from "yargs";
 import { YargsInstance } from "../../utils/yargs.ts";
@@ -59,7 +59,7 @@ const LibraryItemDetailSchema = z.object({
 type LibraryItemDetail = z.infer<typeof LibraryItemDetailSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   if (!argv.id) {
     console.error("Error: Item ID is required");
@@ -67,7 +67,7 @@ export async function handler(argv: any) {
   }
 
   try {
-    spinner.start(`Fetching item ${argv.id}...`);
+    s.start(`Fetching item ${argv.id}...`);
 
     // Build query parameters
     const params = new URLSearchParams();
@@ -103,7 +103,7 @@ export async function handler(argv: any) {
     const data = await response.json();
     const itemDetail = LibraryItemDetailSchema.parse(data);
 
-    spinner.stop("Item fetched successfully");
+    s.stop("Item fetched successfully");
 
     if (argv.json) {
       console.log(JSON.stringify(itemDetail, null, 2));
@@ -117,7 +117,7 @@ export async function handler(argv: any) {
       />,
     );
   } catch (error) {
-    spinner.stop("Failed to fetch item");
+    s.stop("Failed to fetch item");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

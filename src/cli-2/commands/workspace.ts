@@ -1,10 +1,10 @@
-import * as init from "./workspace/init.ts";
+import * as init from "./workspace/init.tsx";
 import * as list from "./workspace/list.tsx";
 import * as status from "./workspace/status.tsx";
-import * as serve from "./workspace/serve.ts";
-import * as stop from "./workspace/stop.ts";
-import * as restart from "./workspace/restart.ts";
-import * as remove from "./workspace/remove.ts";
+import * as serve from "./workspace/serve.tsx";
+import * as stop from "./workspace/stop.tsx";
+import * as restart from "./workspace/restart.tsx";
+import * as remove from "./workspace/remove.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
 

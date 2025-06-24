@@ -1,6 +1,8 @@
-import * as p from "@clack/prompts";
-import { confirmAction } from "../../utils/confirm.ts";
+import React from "react";
+import { render } from "ink";
+import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
 interface CancelArgs {
   id: string;
@@ -78,7 +80,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
     }
 
     // Show spinner while cancelling
-    const s = p.spinner();
+    const s = spinner();
     s.start(`Cancelling session '${argv.id}'...`);
 
     try {

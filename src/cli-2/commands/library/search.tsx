@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
@@ -63,7 +63,7 @@ const SearchResultSchema = z.object({
 type SearchResult = z.infer<typeof SearchResultSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   if (!argv.query) {
     console.error("Error: Search query is required");
@@ -71,7 +71,7 @@ export async function handler(argv: any) {
   }
 
   try {
-    spinner.start(`Searching for "${argv.query}"...`);
+    s.start(`Searching for "${argv.query}"...`);
 
     // Build query parameters
     const params = new URLSearchParams();
@@ -91,7 +91,7 @@ export async function handler(argv: any) {
     const data = await response.json();
     const result = SearchResultSchema.parse(data);
 
-    spinner.stop(`Found ${result.items.length} results`);
+    s.stop(`Found ${result.items.length} results`);
 
     if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
@@ -105,7 +105,7 @@ export async function handler(argv: any) {
 
     render(<SearchResultsDisplay result={result} query={argv.query} />);
   } catch (error) {
-    spinner.stop("Search failed");
+    s.stop("Search failed");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

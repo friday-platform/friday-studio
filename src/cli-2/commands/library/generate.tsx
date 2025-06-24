@@ -1,7 +1,7 @@
 import React from "react";
 import { render } from "ink";
 import { Box, Text } from "ink";
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
 import yargs from "yargs";
@@ -75,7 +75,7 @@ const GenerationResultSchema = z.object({
 type GenerationResult = z.infer<typeof GenerationResultSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   if (!argv.template || !argv.dataFile) {
     console.error("Error: Template ID and data file are required");
@@ -89,7 +89,7 @@ export async function handler(argv: any) {
   }
 
   try {
-    spinner.start("Reading data file...");
+    s.start("Reading data file...");
 
     // Read and parse data file
     let data;
@@ -104,7 +104,7 @@ export async function handler(argv: any) {
       );
     }
 
-    spinner.message("Generating content...");
+    s.message("Generating content...");
 
     // Prepare request body
     const requestBody = {
@@ -132,7 +132,7 @@ export async function handler(argv: any) {
 
     const result = GenerationResultSchema.parse(await response.json());
 
-    spinner.stop("Content generated successfully");
+    s.stop("Content generated successfully");
 
     // Handle output
     if (argv.output) {
@@ -147,7 +147,7 @@ export async function handler(argv: any) {
       render(<GenerationResultDisplay result={result} stored={argv.store} />);
     }
   } catch (error) {
-    spinner.stop("Generation failed");
+    s.stop("Generation failed");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

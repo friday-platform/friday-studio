@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
@@ -49,10 +49,10 @@ const LibraryStatsSchema = z.object({
 type LibraryStats = z.infer<typeof LibraryStatsSchema>;
 
 export async function handler(argv: any) {
-  const spinner = p.spinner();
+  const s = spinner();
 
   try {
-    spinner.start("Fetching library statistics...");
+    s.start("Fetching library statistics...");
 
     const serverUrl = `http://localhost:${argv.port}`;
     const response = await fetch(`${serverUrl}/library/stats`);
@@ -64,7 +64,7 @@ export async function handler(argv: any) {
 
     const stats = LibraryStatsSchema.parse(await response.json());
 
-    spinner.stop("Statistics fetched");
+    s.stop("Statistics fetched");
 
     if (argv.json) {
       console.log(JSON.stringify(stats, null, 2));
@@ -73,7 +73,7 @@ export async function handler(argv: any) {
 
     render(<StatsDisplay stats={stats} />);
   } catch (error) {
-    spinner.stop("Failed to fetch statistics");
+    s.stop("Failed to fetch statistics");
     console.error(
       `Error: ${error instanceof Error ? error.message : String(error)}`,
     );

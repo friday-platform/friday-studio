@@ -1,5 +1,5 @@
 import * as list from "./signal/list.tsx";
-import * as trigger from "./signal/trigger.ts";
+import * as trigger from "./signal/trigger.tsx";
 import * as history from "./signal/history.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";

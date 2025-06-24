@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { cancel, confirm, isCancel } from "./prompts.tsx";
 
 /**
  * Prompt for confirmation on destructive actions
@@ -17,16 +17,16 @@ export async function confirmAction(
     return true;
   }
 
-  const confirmed = await p.confirm({
+  const confirmed = await confirm({
     message,
-    initialValue: options?.defaultValue ?? false,
+    defaultValue: options?.defaultValue ?? false,
   });
 
   // Handle cancellation
-  if (p.isCancel(confirmed)) {
-    p.cancel("Operation cancelled");
+  if (isCancel(confirmed)) {
+    cancel("Operation cancelled");
     return false;
   }
 
-  return confirmed;
+  return confirmed as boolean;
 }

@@ -35,7 +35,6 @@
     "test-mcp-echo": "deno run --allow-all tests/mocks/echo-mcp-server.ts"
   },
   "imports": {
-    "@clack/prompts": "npm:@clack/prompts@^0.11.0",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",
