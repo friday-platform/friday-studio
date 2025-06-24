@@ -2,6 +2,7 @@ import * as versionCmd from "./version.ts";
 import * as workspaceCmd from "./workspace.ts";
 import * as sessionCmd from "./session.ts";
 import * as psCmd from "./ps.ts";
+import * as agentCmd from "./agent.ts";
 
 // Export all commands as an array
 export const commands = [
@@ -9,4 +10,5 @@ export const commands = [
   workspaceCmd,
   sessionCmd,
   psCmd,
+  agentCmd,
 ];

@@ -595,7 +595,10 @@ tool that developers love to use both interactively and in automation.
   - [x] session cancel - Cancel running sessions with confirmation prompts
   - [x] ps command - Alias for session list
 - [ ] Migrate signal commands (list, trigger, history)
-- [ ] Migrate agent commands (list, describe, test)
+- [x] Migrate agent commands (list, describe, test)
+  - [x] agent list - List workspace agents with JSON support and Ink rendering
+  - [x] agent describe - Show agent details with JSON support and Ink rendering
+  - [x] agent test - Test agents with interactive prompts (placeholder implementation)
 - [ ] Migrate library commands
 - [ ] Migrate special commands (logs, tui, define)
 - [ ] Update all command aliases and shorthands
@@ -633,7 +636,10 @@ tool that developers love to use both interactively and in automation.
   - [x] session list - JSON output with session array and count
   - [x] session get - JSON output with full session details
 - [ ] Implement --json flag for signal commands
-- [ ] Implement --json flag for agent commands
+- [x] Implement --json flag for agent commands
+  - [x] agent list - JSON output with workspace info and agent array
+  - [x] agent describe - JSON output with full agent configuration
+  - [x] agent test - JSON output with test result placeholder
 - [ ] Define stable JSON schemas
 - [ ] Add --format flag for yaml/csv
 
