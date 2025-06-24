@@ -132,7 +132,7 @@ export const WorkspaceStatus = {
 
 ### 1.2 Docker-Style Name Generator
 
-Create `src/core/workspace-names.ts`:
+Create `src/core/utils/id-generator.ts`:
 
 ```typescript
 // Docker-style name generation inspired by moby/moby
@@ -509,7 +509,7 @@ import {
   WorkspaceRegistrySchema,
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
-import { generateUniqueWorkspaceName } from "./workspace-names.ts";
+import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
 
 export class WorkspaceRegistryManager {
   private registryPath: string;

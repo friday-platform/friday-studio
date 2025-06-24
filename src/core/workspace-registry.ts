@@ -9,7 +9,7 @@ import {
   WorkspaceRegistrySchema,
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
-import { generateUniqueWorkspaceName } from "./workspace-names.ts";
+import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
 import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
 
 export class WorkspaceRegistryManager {

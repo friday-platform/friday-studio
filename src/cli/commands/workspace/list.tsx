@@ -78,6 +78,15 @@ export function WorkspaceList({
       : str + " ".repeat(width - str.length);
   };
 
+  // Replace /Users/X/ with ~/ for better readability on macOS
+  const formatPath = (path: string) => {
+    const homeDir = Deno.env.get("HOME");
+    if (homeDir && path.startsWith(homeDir)) {
+      return path.replace(homeDir, "~");
+    }
+    return path;
+  };
+
   return (
     <Box flexDirection="column">
       <Box>
@@ -92,18 +101,15 @@ export function WorkspaceList({
       {/* Table Header */}
       <Box>
         <Text bold color="white">
-          {padRight("REGISTRY ID", 20)}
-          {padRight("NAME", 25)}
+          {padRight("ID", 15)}
+          {padRight("NAME", 40)}
           {padRight("STATUS", 10)}
-          {padRight("PATH", 40)}
+          {padRight("PATH", 45)}
         </Text>
       </Box>
       <Box>
         <Text color="gray">
-          {"─".repeat(20)}
-          {"─".repeat(25)}
-          {"─".repeat(10)}
-          {"─".repeat(40)}
+          {"─".repeat(110)}
         </Text>
       </Box>
 
@@ -118,10 +124,10 @@ export function WorkspaceList({
         return (
           <Box key={i}>
             <Text>
-              <Text color="blue">{padRight(workspace.id, 20)}</Text>
-              <Text color="yellow">{padRight(workspace.name, 25)}</Text>
+              <Text color="blue">{padRight(workspace.id, 15)}</Text>
+              <Text color="yellow">{padRight(workspace.name, 40)}</Text>
               <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
-              <Text color="gray">{padRight(workspace.path, 40)}</Text>
+              <Text color="gray">{padRight(formatPath(workspace.path), 45)}</Text>
             </Text>
           </Box>
         );
