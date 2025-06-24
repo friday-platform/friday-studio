@@ -2,6 +2,7 @@ import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -20,18 +21,21 @@ export const command = "list";
 export const desc = "List configured signals";
 export const aliases = ["ls"];
 
-export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output signal list as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
-};
+export function builder(y: YargsInstance) {
+  return y
+    .option("json", {
+      type: "boolean",
+      describe: "Output signal list as JSON",
+      default: false,
+    })
+    .option("workspace", {
+      type: "string",
+      alias: "w",
+      describe: "Workspace ID or name",
+    })
+    .example("$0 signal list", "List all configured signals")
+    .example("$0 signal list --json", "Export signal configuration as JSON");
+}
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {

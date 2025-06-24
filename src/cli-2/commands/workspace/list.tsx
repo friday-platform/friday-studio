@@ -2,6 +2,7 @@ import { render } from "ink";
 import { WorkspaceList as WorkspaceListComponent } from "../../../cli/commands/workspace/list.tsx";
 import { WorkspaceEntry } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -11,13 +12,16 @@ export const command = "list";
 export const desc = "List all registered workspaces";
 export const aliases = ["ls"];
 
-export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output workspace list as JSON",
-    default: false,
-  },
-};
+export function builder(y: YargsInstance) {
+  return y
+    .option("json", {
+      type: "boolean",
+      describe: "Output workspace list as JSON",
+      default: false,
+    })
+    .example("$0 workspace list", "List all registered workspaces")
+    .example("$0 workspace list --json", "Export workspace list as JSON");
+}
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {

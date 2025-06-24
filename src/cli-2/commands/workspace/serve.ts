@@ -21,39 +21,51 @@ export const command = "serve [workspace]";
 export const desc = "Start the workspace server";
 export const aliases = ["start"];
 
-export const builder = {
-  workspace: {
-    type: "string" as const,
-    describe: "Workspace ID or name (defaults to current directory)",
-  },
-  port: {
-    type: "number" as const,
-    alias: "p",
-    describe: "Port to run the server on",
-  },
-  detached: {
-    type: "boolean" as const,
-    alias: "d",
-    describe: "Run server in background (detached mode)",
-    default: false,
-  },
-  lazy: {
-    type: "boolean" as const,
-    describe: "Start in lazy mode (agents loaded on demand)",
-    default: false,
-  },
-  logLevel: {
-    type: "string" as const,
-    describe: "Logging level (debug, info, warn, error)",
-    choices: ["debug", "info", "warn", "error"],
-  },
-  force: {
-    type: "boolean" as const,
-    alias: "f",
-    describe: "Force start even if already running",
-    default: false,
-  },
-};
+export const examples = [
+  ["$0 workspace serve", "Start server in current workspace directory"],
+  ["$0 workspace serve --detached", "Start server in background mode"],
+  ["$0 workspace serve --port 3000", "Start server on specific port"],
+  ["$0 work serve my-agent -d", "Start workspace 'my-agent' in detached mode"],
+];
+
+export function builder(y: YargsInstance) {
+  return yargs
+    .positional("workspace", {
+      type: "string",
+      describe: "Workspace ID or name (defaults to current directory)",
+    })
+    .option("port", {
+      type: "number",
+      alias: "p",
+      describe: "Port to run the server on",
+    })
+    .option("detached", {
+      type: "boolean",
+      alias: "d",
+      describe: "Run server in background (detached mode)",
+      default: false,
+    })
+    .option("lazy", {
+      type: "boolean",
+      describe: "Start in lazy mode (agents loaded on demand)",
+      default: false,
+    })
+    .option("logLevel", {
+      type: "string",
+      describe: "Logging level (debug, info, warn, error)",
+      choices: ["debug", "info", "warn", "error"],
+    })
+    .option("force", {
+      type: "boolean",
+      alias: "f",
+      describe: "Force start even if already running",
+      default: false,
+    })
+    .example("$0 workspace serve", "Start server in current workspace directory")
+    .example("$0 workspace serve --detached", "Start server in background mode")
+    .example("$0 workspace serve --port 3000", "Start server on specific port")
+    .example("$0 work serve my-agent -d", "Start workspace 'my-agent' in detached mode");
+}
 
 export const handler = async (argv: ServeArgs): Promise<void> => {
   try {

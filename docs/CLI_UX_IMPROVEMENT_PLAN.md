@@ -693,21 +693,31 @@ integration:
 
 #### 3.1 Contextual Help System
 
-- [ ] Add examples to all command help
-- [ ] Implement resource-specific help
-- [ ] Add "see also" sections
+- [x] Add examples to main help output (8 practical examples)
+- [x] Add examples to each command help
+  - [x] Added examples to workspace, session, signal, agent, library commands
+  - [x] Added examples to key subcommands (init, serve, trigger, list)
+  - [x] Examples show in --help output for both command groups and individual commands
+- [x] Implement resource-specific help
+  - [x] Created comprehensive resource-help.ts with detailed documentation
+  - [x] Added overview, concepts, common tasks, troubleshooting for each resource
+  - [x] Integrated epilogue help into all main command groups
+  - [x] Added "See Also" sections linking related commands
 - [ ] Create getting started guide
 
 #### 3.2 Intelligent Error Messages
 
 - [x] Implement Levenshtein distance for suggestions (completed with 1.3)
 - [x] Add actionable error messages (suggests similar commands)
+- [x] Custom fail handler with contextual suggestions
+- [x] Detect both main command and subcommand typos
 - [ ] Create error message guidelines
 - [ ] Add common troubleshooting tips
 
 #### 3.3 Enhanced Examples
 
-- [ ] Add examples to each command
+- [x] Create comprehensive Power User Guide (CLI_POWER_USER_GUIDE.md)
+- [ X] Add examples to each command help
 - [ ] Create cookbook of common workflows
 - [ ] Add interactive tutorials
 

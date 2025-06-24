@@ -1,5 +1,7 @@
 import { Box, render, Text } from "ink";
+
 import { StatusBadge } from "../../../cli/components/StatusBadge.tsx";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -21,23 +23,31 @@ export const command = "list";
 export const desc = "List active sessions";
 export const aliases = ["ls"];
 
-export const builder = {
-  json: {
-    type: "boolean" as const,
-    describe: "Output session list as JSON",
-    default: false,
-  },
-  workspace: {
-    type: "string" as const,
-    describe: "Filter sessions by workspace name",
-  },
-  port: {
-    type: "number" as const,
-    alias: "p",
-    describe: "Port of the workspace server",
-    default: 8080,
-  },
-};
+export function builder(y: YargsInstance) {
+  return y
+    .option("json", {
+      type: "boolean",
+      describe: "Output session list as JSON",
+      default: false,
+    })
+    .option("workspace", {
+      type: "string",
+      describe: "Filter sessions by workspace name",
+    })
+    .option("port", {
+      type: "number",
+      alias: "p",
+      describe: "Port of the workspace server",
+      default: 8080,
+    })
+    .example("$0 session list", "List all active sessions")
+    .example("$0 session list --json", "Output session list as JSON")
+    .example(
+      "$0 session list --workspace my-agent",
+      "Filter sessions by workspace",
+    )
+    .example("$0 ps", "Use the 'ps' alias to list sessions");
+}
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {

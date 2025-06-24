@@ -3,6 +3,7 @@ import { exists } from "@std/fs";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface TriggerArgs {
   name: string;
@@ -16,34 +17,41 @@ export const command = "trigger <name>";
 export const desc = "Trigger a signal manually";
 export const aliases = ["fire", "send"];
 
-export const builder = {
-  name: {
-    type: "string" as const,
-    describe: "Signal name to trigger",
-    demandOption: true,
-  },
-  data: {
-    type: "string" as const,
-    alias: "d",
-    describe: "JSON payload data for the signal",
-  },
-  port: {
-    type: "number" as const,
-    alias: "p",
-    describe: "Port of the workspace server",
-    default: 8080,
-  },
-  workspace: {
-    type: "string" as const,
-    alias: "w",
-    describe: "Workspace ID or name",
-  },
-  json: {
-    type: "boolean" as const,
-    describe: "Output trigger result as JSON",
-    default: false,
-  },
-};
+export function builder(y: YargsInstance) {
+  return y
+    .positional("name", {
+      type: "string",
+      describe: "Signal name to trigger",
+      demandOption: true,
+    })
+    .option("data", {
+      type: "string",
+      alias: "d",
+      describe: "JSON payload data for the signal",
+    })
+    .option("port", {
+      type: "number",
+      alias: "p",
+      describe: "Port of the workspace server",
+      default: 8080,
+    })
+    .option("workspace", {
+      type: "string",
+      alias: "w",
+      describe: "Workspace ID or name",
+    })
+    .option("json", {
+      type: "boolean",
+      describe: "Output trigger result as JSON",
+      default: false,
+    })
+    .example("$0 signal trigger manual", "Trigger 'manual' signal interactively")
+    .example('$0 signal trigger webhook --data \'{"user":"john"}\'', "Trigger with JSON data")
+    .example("$0 sig fire deploy --workspace prod", "Trigger in specific workspace")
+    .example("$0 signal trigger test --json", "Trigger and output result as JSON")
+    .help()
+    .alias("help", "h");
+}
 
 export const handler = async (argv: TriggerArgs): Promise<void> => {
   try {

@@ -2,6 +2,7 @@ import * as p from "@clack/prompts";
 import { ensureDir, exists } from "@std/fs";
 import { join, resolve } from "@std/path";
 import * as yaml from "@std/yaml";
+import { YargsInstance } from "../../utils/yargs.ts";
 
 interface InitArgs {
   name?: string;
@@ -11,17 +12,24 @@ interface InitArgs {
 export const command = "init [name] [path]";
 export const desc = "Initialize a new Atlas workspace";
 
-export const builder = {
-  name: {
-    type: "string" as const,
-    describe: "Workspace name",
-  },
-  path: {
-    type: "string" as const,
-    describe: "Directory path for the workspace",
-    default: ".",
-  },
-};
+export function builder(y: YargsInstance) {
+  return y
+    .positional("name", {
+      type: "string",
+      describe: "Workspace name",
+    })
+    .positional("path", {
+      type: "string",
+      describe: "Directory path for the workspace",
+      default: ".",
+    })
+    .example("$0 workspace init", "Initialize workspace interactively in current directory")
+    .example("$0 workspace init my-agent", "Create workspace named 'my-agent'")
+    .example("$0 workspace init my-agent ~/projects", "Create workspace in specific directory")
+    .example("$0 work init", "Short alias for workspace init")
+    .help()
+    .alias("help", "h");
+}
 
 export const handler = async (argv: InitArgs): Promise<void> => {
   try {

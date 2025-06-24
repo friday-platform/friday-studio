@@ -1,10 +1,19 @@
 import { render } from "ink";
 import { LogViewer } from "../../cli/components/LogViewer.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
+import { formatResourceHelp } from "../utils/resource-help.ts";
 
 export const command = "logs <session-id>";
 export const desc = "View session logs";
 export const aliases = ["log"];
+
+export const examples = [
+  ["$0 logs sess_abc123", "View logs for a specific session"],
+  ["$0 logs sess_abc123 --no-follow", "View logs without following"],
+  ["$0 logs sess_abc123 --tail 50", "Show last 50 lines"],
+  ["$0 log sess_abc123 --level error", "Show only error logs"],
+  ["$0 logs sess_abc123 --agent llm-agent", "Filter by agent name"],
+];
 
 export function builder(y: YargsInstance) {
   return y
@@ -39,7 +48,10 @@ export function builder(y: YargsInstance) {
       type: "boolean",
       description: "Don't follow log output",
       default: false,
-    });
+    })
+    .example("$0 logs sess_abc123", "View logs for a session")
+    .example("$0 logs sess_abc123 --level error", "Show only errors")
+    .epilogue(formatResourceHelp("logs"));
 }
 
 export async function handler(argv: any) {
