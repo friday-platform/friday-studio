@@ -5,6 +5,7 @@ import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
 import { useTabNavigation } from "../components/tabs.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/SplashScreen.tsx";
+import { Tab, TabGroup } from "../components/TabComponents.tsx";
 import {
   WorkspaceConfigAssistant,
   type WorkspaceContext,
