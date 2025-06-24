@@ -1,8 +1,5 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
-import { Box, Text } from "ink";
 import { exists } from "@std/fs";
+import { Box, render, Text } from "ink";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 interface HistoryArgs {
@@ -66,7 +63,9 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
       Deno.exit(0);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
@@ -98,7 +97,7 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
     };
   } else {
     // Check current directory for workspace.yml
-    if (!await exists("workspace.yml")) {
+    if (!(await exists("workspace.yml"))) {
       throw new Error(
         "No workspace specified and not in a workspace directory. " +
           "Use --workspace flag or run from a workspace directory.",
@@ -106,8 +105,8 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
     }
 
     // Try to find in registry or register
-    const currentWorkspace = await registry.getCurrentWorkspace() ||
-      await registry.findOrRegister(Deno.cwd());
+    const currentWorkspace = (await registry.getCurrentWorkspace()) ||
+      (await registry.findOrRegister(Deno.cwd()));
 
     return {
       path: currentWorkspace.path,

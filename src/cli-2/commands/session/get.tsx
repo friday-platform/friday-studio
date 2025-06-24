@@ -1,7 +1,4 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
-import { Box, Text } from "ink";
+import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/StatusBadge.tsx";
 
 interface GetArgs {
@@ -49,7 +46,9 @@ export const builder = {
 export const handler = async (argv: GetArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
-    const response = await fetch(`http://localhost:${port}/sessions/${argv.id}`);
+    const response = await fetch(
+      `http://localhost:${port}/sessions/${argv.id}`,
+    );
 
     if (!response.ok) {
       if (response.status === 404) {
@@ -58,7 +57,7 @@ export const handler = async (argv: GetArgs): Promise<void> => {
       throw new Error(`Failed to fetch session: ${response.statusText}`);
     }
 
-    const session = await response.json() as SessionDetail;
+    const session = (await response.json()) as SessionDetail;
 
     if (argv.json) {
       // JSON output for scripting
@@ -70,7 +69,9 @@ export const handler = async (argv: GetArgs): Promise<void> => {
       Deno.exit(0);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
@@ -79,7 +80,9 @@ export const handler = async (argv: GetArgs): Promise<void> => {
 function SessionDetailCommand({ session }: { session: SessionDetail }) {
   return (
     <Box flexDirection="column">
-      <Text bold color="cyan">Session Details</Text>
+      <Text bold color="cyan">
+        Session Details
+      </Text>
       <Text>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
       <Text>
         ID: <Text color="white">{session.id}</Text>
@@ -131,7 +134,9 @@ function SessionDetailCommand({ session }: { session: SessionDetail }) {
       {session.error && (
         <>
           <Text></Text>
-          <Text bold color="red">Error:</Text>
+          <Text bold color="red">
+            Error:
+          </Text>
           <Box marginLeft={1}>
             <Text color="red">{session.error}</Text>
           </Box>

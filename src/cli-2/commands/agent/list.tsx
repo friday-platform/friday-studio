@@ -1,10 +1,7 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
-import { Box, Text } from "ink";
 import { exists } from "@std/fs";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { Box, render, Text } from "ink";
 import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -53,27 +50,33 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     if (argv.json) {
       // JSON output for scripting
-      console.log(JSON.stringify(
-        {
-          workspace: {
-            id: workspace.id,
-            name: workspace.name,
-            path: workspace.path,
+      console.log(
+        JSON.stringify(
+          {
+            workspace: {
+              id: workspace.id,
+              name: workspace.name,
+              path: workspace.path,
+            },
+            agents: agents,
+            count: agents.length,
           },
-          agents: agents,
-          count: agents.length,
-        },
-        null,
-        2,
-      ));
+          null,
+          2,
+        ),
+      );
     } else {
       // Render with Ink
-      render(<AgentListCommand agents={agents} workspaceName={workspace.name} />);
+      render(
+        <AgentListCommand agents={agents} workspaceName={workspace.name} />,
+      );
       // Exit immediately after rendering
       Deno.exit(0);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
@@ -89,8 +92,8 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find by ID or name in registry
-    const workspace = await registry.findById(workspaceId) ||
-      await registry.findByName(workspaceId);
+    const workspace = (await registry.findById(workspaceId)) ||
+      (await registry.findByName(workspaceId));
 
     if (!workspace) {
       throw new Error(
@@ -135,7 +138,9 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 }
 
 // Helper function to load workspace configuration
-async function loadWorkspaceConfig(workspacePath: string): Promise<NewWorkspaceConfig> {
+async function loadWorkspaceConfig(
+  workspacePath: string,
+): Promise<NewWorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
@@ -148,7 +153,13 @@ async function loadWorkspaceConfig(workspacePath: string): Promise<NewWorkspaceC
 }
 
 // Component that renders the agent list
-function AgentListCommand({ agents, workspaceName }: { agents: Agent[]; workspaceName: string }) {
+function AgentListCommand({
+  agents,
+  workspaceName,
+}: {
+  agents: Agent[];
+  workspaceName: string;
+}) {
   return (
     <Box flexDirection="column">
       <Text bold color="cyan">
@@ -161,19 +172,29 @@ function AgentListCommand({ agents, workspaceName }: { agents: Agent[]; workspac
         <>
           <Box>
             <Box width={25}>
-              <Text bold color="cyan">AGENT</Text>
+              <Text bold color="cyan">
+                AGENT
+              </Text>
             </Box>
             <Box width={10}>
-              <Text bold color="cyan">TYPE</Text>
+              <Text bold color="cyan">
+                TYPE
+              </Text>
             </Box>
             <Box width={30}>
-              <Text bold color="cyan">MODEL</Text>
+              <Text bold color="cyan">
+                MODEL
+              </Text>
             </Box>
             <Box width={10}>
-              <Text bold color="cyan">STATUS</Text>
+              <Text bold color="cyan">
+                STATUS
+              </Text>
             </Box>
             <Box width={45}>
-              <Text bold color="cyan">PURPOSE</Text>
+              <Text bold color="cyan">
+                PURPOSE
+              </Text>
             </Box>
           </Box>
           <Text>

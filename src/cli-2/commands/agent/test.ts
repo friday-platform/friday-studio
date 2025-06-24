@@ -1,7 +1,7 @@
 import * as p from "@clack/prompts";
 import { exists } from "@std/fs";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { errorOutput, infoOutput, warningOutput } from "../../utils/output.ts";
 
 interface TestArgs {

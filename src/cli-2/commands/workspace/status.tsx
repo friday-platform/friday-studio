@@ -1,14 +1,12 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
+import { render } from "ink";
+import { WorkspaceStatusDisplay } from "../../../cli/commands/workspace/status.tsx";
 import {
   WorkspaceEntry,
   WorkspaceStatus as WSStatus,
 } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceStatusDisplay } from "../../../cli/commands/workspace/status.tsx";
 import { WorkspaceHealthData } from "../../types/health.ts";
 
 interface StatusArgs {
@@ -104,7 +102,9 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
       if (workspace.status === WSStatus.RUNNING && workspace.port) {
         try {
-          const response = await fetch(`http://localhost:${workspace.port}/api/health`);
+          const response = await fetch(
+            `http://localhost:${workspace.port}/api/health`,
+          );
           if (response.ok) {
             serverRunning = true;
             healthData = await response.json();
@@ -128,34 +128,37 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
         const signalCount = Object.keys(config.signals || {}).length;
         const jobCount = Object.keys(config.jobs || {}).length;
 
-        console.log(JSON.stringify(
-          {
-            id: workspace.id,
-            name: workspace.name,
-            workspaceId: config.workspace?.id,
-            description: workspace.metadata?.description || config.workspace?.description,
-            path: workspace.path,
-            configPath: workspace.configPath,
-            status: workspace.status,
-            serverRunning,
-            port: workspace.port || port,
-            pid: workspace.pid,
-            detached: healthData?.detached || false,
-            sessions: healthData?.sessions || 0,
-            uptime: healthData?.uptime,
-            memory: healthData?.memory,
-            agents: agentCount,
-            signals: signalCount,
-            jobs: jobCount,
-            atlasVersion: workspace.metadata?.atlasVersion,
-            createdAt: workspace.createdAt,
-            lastSeen: workspace.lastSeen,
-            startedAt: workspace.startedAt,
-            stoppedAt: workspace.stoppedAt,
-          },
-          null,
-          2,
-        ));
+        console.log(
+          JSON.stringify(
+            {
+              id: workspace.id,
+              name: workspace.name,
+              workspaceId: config.workspace?.id,
+              description: workspace.metadata?.description ||
+                config.workspace?.description,
+              path: workspace.path,
+              configPath: workspace.configPath,
+              status: workspace.status,
+              serverRunning,
+              port: workspace.port || port,
+              pid: workspace.pid,
+              detached: healthData?.detached || false,
+              sessions: healthData?.sessions || 0,
+              uptime: healthData?.uptime,
+              memory: healthData?.memory,
+              agents: agentCount,
+              signals: signalCount,
+              jobs: jobCount,
+              atlasVersion: workspace.metadata?.atlasVersion,
+              createdAt: workspace.createdAt,
+              lastSeen: workspace.lastSeen,
+              startedAt: workspace.startedAt,
+              stoppedAt: workspace.stoppedAt,
+            },
+            null,
+            2,
+          ),
+        );
       } else {
         // Render with Ink
         render(<WorkspaceStatusCommand data={statusData} />);
@@ -166,13 +169,17 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
       Deno.chdir(originalCwd);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
 
 // Component that wraps the existing WorkspaceStatusDisplay
-function WorkspaceStatusCommand({ data }: {
+function WorkspaceStatusCommand({
+  data,
+}: {
   data: {
     workspace: WorkspaceEntry;
     config: WorkspaceConfig;

@@ -1,7 +1,4 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
-import { Box, Text } from "ink";
+import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/StatusBadge.tsx";
 
 interface ListArgs {
@@ -61,14 +58,16 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     if (argv.json) {
       // JSON output for scripting
-      console.log(JSON.stringify(
-        {
-          sessions: filteredSessions.map(formatSessionForJson),
-          count: filteredSessions.length,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            sessions: filteredSessions.map(formatSessionForJson),
+            count: filteredSessions.length,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       // Render with Ink
       render(<SessionListCommand sessions={filteredSessions} />);
@@ -76,7 +75,10 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       Deno.exit(0);
     }
   } catch (error) {
-    if (error instanceof Error && error.message.includes("Connection refused")) {
+    if (
+      error instanceof Error &&
+      error.message.includes("Connection refused")
+    ) {
       // No server running
       if (argv.json) {
         console.log(JSON.stringify({ sessions: [], count: 0 }, null, 2));
@@ -86,7 +88,9 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         );
       }
     } else {
-      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
     Deno.exit(1);
   }
@@ -114,12 +118,24 @@ function SessionListCommand({ sessions }: { sessions: Session[] }) {
   return (
     <Box flexDirection="column">
       <Box>
-        <Text bold color="cyan">SESSION ID</Text>
-        <Text bold color="cyan">WORKSPACE</Text>
-        <Text bold color="cyan">SIGNAL</Text>
-        <Text bold color="cyan">STATUS</Text>
-        <Text bold color="cyan">STARTED</Text>
-        <Text bold color="cyan">DURATION</Text>
+        <Text bold color="cyan">
+          SESSION ID
+        </Text>
+        <Text bold color="cyan">
+          WORKSPACE
+        </Text>
+        <Text bold color="cyan">
+          SIGNAL
+        </Text>
+        <Text bold color="cyan">
+          STATUS
+        </Text>
+        <Text bold color="cyan">
+          STARTED
+        </Text>
+        <Text bold color="cyan">
+          DURATION
+        </Text>
       </Box>
       <Text>
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -142,7 +158,9 @@ function SessionListCommand({ sessions }: { sessions: Session[] }) {
             <Text>{formatTime(session.startedAt)}</Text>
           </Box>
           <Box width={11} justifyContent="flex-end">
-            <Text>{formatDuration(session.startedAt, session.completedAt)}</Text>
+            <Text>
+              {formatDuration(session.startedAt, session.completedAt)}
+            </Text>
           </Box>
         </Box>
       ))}

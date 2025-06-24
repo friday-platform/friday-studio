@@ -4,8 +4,9 @@ import * as sessionCmd from "./session.ts";
 import * as psCmd from "./ps.ts";
 import * as agentCmd from "./agent.ts";
 import * as signalCmd from "./signal.ts";
+import * as libraryCmd from "./library/index.ts";
+import * as logsCmd from "./logs.tsx";
 
-// Export all commands as an array
 export const commands = [
   versionCmd,
   workspaceCmd,
@@ -13,4 +14,6 @@ export const commands = [
   psCmd,
   agentCmd,
   signalCmd,
+  libraryCmd,
+  logsCmd,
 ];

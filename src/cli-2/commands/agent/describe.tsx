@@ -1,14 +1,11 @@
-import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
-import { Box, Text } from "ink";
 import { exists } from "@std/fs";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { Box, render, Text } from "ink";
 import {
   ConfigLoader,
   type NewWorkspaceConfig,
   type WorkspaceAgentConfig,
 } from "../../../core/config-loader.ts";
+import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 interface DescribeArgs {
   name: string;
@@ -75,7 +72,9 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
       Deno.exit(0);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
@@ -91,8 +90,8 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find by ID or name in registry
-    const workspace = await registry.findById(workspaceId) ||
-      await registry.findByName(workspaceId);
+    const workspace = (await registry.findById(workspaceId)) ||
+      (await registry.findByName(workspaceId));
 
     if (!workspace) {
       throw new Error(
@@ -137,7 +136,9 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 }
 
 // Helper function to load workspace configuration
-async function loadWorkspaceConfig(workspacePath: string): Promise<NewWorkspaceConfig> {
+async function loadWorkspaceConfig(
+  workspacePath: string,
+): Promise<NewWorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);

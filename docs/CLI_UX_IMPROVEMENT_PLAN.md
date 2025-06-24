@@ -624,12 +624,24 @@ integration:
   - [x] agent list - List workspace agents with JSON support and Ink rendering
   - [x] agent describe - Show agent details with JSON support and Ink rendering
   - [x] agent test - Test agents with interactive prompts (placeholder implementation)
-- [ ] Migrate library commands
-- [ ] Migrate special commands (logs, tui, define)
-  - [ ] logs - View session logs with real-time streaming
-  - [ ] tui - Launch terminal user interface
-  - [ ] define - Define workspace from natural language
-- [ ] Update all command aliases and shorthands
+- [x] Migrate library commands
+  - [x] library list - List library items with JSON support and Ink rendering
+  - [x] library search - Search library content with JSON support
+  - [x] library get - Get item details with content option and JSON support
+  - [x] library templates - List available templates with JSON support
+  - [x] library generate - Generate content from templates with store option
+  - [x] library stats - Show library statistics with JSON support
+- [x] Migrate logs commands (not in original plan but needed)
+  - [x] logs - View session logs with follow, tail, and filter options
+  - [x] log alias - Alias for logs command
+- [x] Update all command aliases and shorthands
+  - [x] workspace → work, w
+  - [x] session → sesh, sess
+  - [x] signal → sig
+  - [x] agent → ag
+  - [x] library → lib (new)
+  - [x] logs → log
+  - [x] ps command for session list
 
 #### 1.2 Add Destructive Action Safeguards
 
