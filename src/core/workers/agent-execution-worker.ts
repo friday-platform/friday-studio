@@ -507,10 +507,14 @@ class AgentExecutionWorker {
 
     // Initialize MCP servers if specified - CLEAN ENCAPSULATION ✅
     if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
+      // Get MCP server configurations from environment
+      const workspaceMcpServerConfigs = (request.environment as any)?.mcp_server_configs;
+
       // Use configuration service instead of direct workspace config access
       const mcpConfigService = new WorkspaceMCPConfigurationService(
         this.workspaceId!,
         this.sessionId,
+        workspaceMcpServerConfigs, // Pass configurations directly to worker service
       );
 
       // Get properly resolved and filtered server configurations
@@ -522,8 +526,14 @@ class AgentExecutionWorker {
 
       if (mcpServerConfigs.length > 0) {
         this.log(`Initializing ${mcpServerConfigs.length} MCP servers for agent`, "debug");
+        // Ensure all configs have an id field set (some might come from direct workspace configs)
+        const configsWithIds = mcpServerConfigs.map((config, index) => ({
+          ...config,
+          id: config.id || mcp_servers[index], // Use the requested server name if id is missing
+        }));
+
         await mcpConfigService.initializeServersForSession(
-          mcpServerConfigs.map((c) => c.id),
+          configsWithIds.map((c) => c.id),
           { sessionId: this.sessionId!, agentId: request.agent_id, workspaceId: this.workspaceId },
         );
       }
@@ -672,14 +682,14 @@ class AgentExecutionWorker {
       );
       throw error;
     } finally {
-      // Clean up MCP resources
+      // Note: MCP resources are shared across agents in the same workspace
+      // Do not dispose them after each agent execution as they may be needed for other agents
+      // Only dispose on worker termination or critical errors
       if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
-        try {
-          await LLMProviderManager.disposeMCPResources();
-          this.log(`MCP resources cleaned up for ${request.agent_id}`, "debug");
-        } catch (cleanupError) {
-          this.log(`MCP cleanup warning for ${request.agent_id}: ${cleanupError}`, "warn");
-        }
+        this.log(
+          `Agent ${request.agent_id} execution completed, keeping MCP resources available for workspace`,
+          "debug",
+        );
       }
     }
   }

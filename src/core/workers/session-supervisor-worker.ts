@@ -37,6 +37,7 @@ interface InitializeData {
     session?: string;
     evaluation?: string;
   };
+  workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
 }
 
 interface ExecuteSessionData {
@@ -118,6 +119,7 @@ class SessionSupervisorWorker extends BaseWorker {
           traceHeaders,
           jobSpec,
           additionalPrompts,
+          workspaceMcpServers,
         } = initData;
 
         return await AtlasTelemetry.withWorkerSpan(
@@ -141,6 +143,9 @@ class SessionSupervisorWorker extends BaseWorker {
               constraints: intent?.constraints,
               additionalPrompts,
             };
+
+            // Pass MCP servers to SessionSupervisor
+            this.supervisor!.setWorkspaceMcpServers(workspaceMcpServers);
 
             await this.supervisor!.initializeSession(sessionContext);
 

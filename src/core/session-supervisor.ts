@@ -234,6 +234,7 @@ export class SessionSupervisor extends BaseAgent {
   private knowledgeGraph?: KnowledgeGraphManager;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private streamingMemory?: StreamingMemoryManager;
+  private workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
   private contextProvisioner?: ContextProvisioner;
 
@@ -324,9 +325,42 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     return this.sessionContext;
   }
 
+  // Set workspace MCP servers received from session worker
+  setWorkspaceMcpServers(mcpServers?: Record<string, any>): void {
+    this.workspaceMcpServers = mcpServers;
+    this.log(
+      `Set workspace MCP servers: ${mcpServers ? Object.keys(mcpServers).join(", ") : "none"}`,
+    );
+  }
+
+  // Get MCP server configurations for specific agent using workspace MCP servers
+  getMcpServerConfigsForAgent(agentId: string, requestedServerIds: string[]): any[] {
+    if (!this.workspaceMcpServers) {
+      this.log(`No workspace MCP servers available when requesting configs for agent ${agentId}`);
+      return [];
+    }
+
+    const configs: any[] = [];
+    for (const serverId of requestedServerIds) {
+      if (this.workspaceMcpServers[serverId]) {
+        // Add server ID to the config if it's missing
+        const config = { ...this.workspaceMcpServers[serverId], id: serverId };
+        configs.push(config);
+      } else {
+        this.log(`MCP server ${serverId} not found in workspace servers for agent ${agentId}`);
+      }
+    }
+
+    this.log(
+      `Retrieved ${configs.length} MCP server configs for agent ${agentId} from workspace servers`,
+    );
+    return configs;
+  }
+
   // Initialize AgentSupervisor for supervised execution
   initializeAgentSupervisor(agentSupervisorConfig: any): void {
     this.agentSupervisor = new AgentSupervisor(agentSupervisorConfig, this.id);
+    this.agentSupervisor.setSessionSupervisor(this); // Set reference for MCP registry access
     this.log("AgentSupervisor initialized for supervised agent execution");
   }
 
@@ -424,6 +458,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
             (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
           ]) || SupervisionLevel.MINIMAL,
         cacheEnabled: (supervisionConfig as any).cache_enabled !== false,
+        workspaceMcpServers: this.workspaceMcpServers,
         prompts: agentSupervisorConfig.prompts,
       });
 

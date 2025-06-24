@@ -50,6 +50,7 @@ interface AgentSupervisorConfig {
   workspaceId?: string;
   supervisionLevel?: SupervisionLevel;
   cacheEnabled?: boolean;
+  workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
   prompts?: {
     system?: string;
     user?: string;
@@ -94,6 +95,8 @@ export interface AgentEnvironment {
     parameters: Record<string, string | number | boolean>;
     prompts: Record<string, string>;
     tools: string[];
+    mcp_servers?: string[]; // MCP server names
+    mcp_server_configs?: Record<string, any>; // MCP server configurations
     endpoint?: string;
     protocol?: string;
     auth?: {
@@ -112,6 +115,8 @@ export interface AgentEnvironment {
     safety_checks: string[];
     output_validation: boolean;
   };
+  // MCP server configurations for worker access
+  mcp_server_configs?: Record<string, any>;
 }
 
 // Agent worker instance
@@ -187,6 +192,7 @@ export class AgentSupervisor extends BaseAgent {
   private supervisionLevel: SupervisionLevel;
   private supervisionConfig: SupervisionConfig;
   private cacheEnabled: boolean;
+  private sessionSupervisor?: any; // Reference to SessionSupervisor for MCP registry access
   private workerStats: Map<
     string,
     {
@@ -235,6 +241,11 @@ export class AgentSupervisor extends BaseAgent {
         Never load agents directly - always analyze, prepare, and supervise.`,
       user: "",
     };
+  }
+
+  // Set reference to SessionSupervisor for MCP registry access
+  setSessionSupervisor(sessionSupervisor: any): void {
+    this.sessionSupervisor = sessionSupervisor;
   }
 
   name(): string {
@@ -530,6 +541,8 @@ Focus on safety, efficiency, and reliability.`;
         tools: analysis.optimization_suggestions.tool_selections.length > 0
           ? analysis.optimization_suggestions.tool_selections
           : (agent.config as LLMAgentConfig).tools || [],
+        mcp_servers: this.prepareAgentMcpServerNames(agent),
+        mcp_server_configs: this.prepareAgentMcpServerConfigs(agent),
       },
       monitoring_config: {
         log_level: analysis.safety_assessment.risk_level === "high" ? "debug" : "info",
@@ -574,7 +587,105 @@ Focus on safety, efficiency, and reliability.`;
       environment.agent_config.parameters.version = tempestConfig.version;
     }
 
+    // Add MCP server configurations for worker access
+    environment.mcp_server_configs = this.prepareAgentMcpServerConfigs(agent);
+
     return environment;
+  }
+
+  // Get MCP server names for agent based on agent configuration
+  private prepareAgentMcpServerNames(agent: AgentMetadata): string[] | undefined {
+    // Only provide MCP servers to LLM agents that have mcp_servers configured
+    if (agent.type !== "llm") {
+      return undefined;
+    }
+
+    const llmConfig = agent.config as LLMAgentConfig;
+    const agentMcpServerNames = llmConfig.mcp_servers;
+
+    if (
+      !agentMcpServerNames || !Array.isArray(agentMcpServerNames) ||
+      agentMcpServerNames.length === 0
+    ) {
+      return undefined;
+    }
+
+    const workspaceMcpServers = this.supervisorConfig.workspaceMcpServers;
+    if (!workspaceMcpServers) {
+      this.log(
+        `Agent ${agent.id} requests MCP servers ${
+          agentMcpServerNames.join(", ")
+        } but no workspace MCP servers available`,
+        "warn",
+      );
+      return undefined;
+    }
+
+    // Filter to only include server names that are actually configured in workspace
+    const availableServerNames: string[] = [];
+    for (const serverName of agentMcpServerNames) {
+      if (workspaceMcpServers[serverName]) {
+        availableServerNames.push(serverName);
+        this.log(`Providing MCP server ${serverName} to agent ${agent.id}`);
+      } else {
+        this.log(
+          `Agent ${agent.id} requests MCP server ${serverName} but it's not configured in workspace`,
+          "warn",
+        );
+      }
+    }
+
+    return availableServerNames.length > 0 ? availableServerNames : undefined;
+  }
+
+  // Get MCP server configurations for agent from registry via SessionSupervisor
+  private prepareAgentMcpServerConfigs(agent: AgentMetadata): Record<string, any> | undefined {
+    // Only provide MCP servers to LLM agents that have mcp_servers configured
+    if (agent.type !== "llm") {
+      return undefined;
+    }
+
+    const llmConfig = agent.config as LLMAgentConfig;
+    const agentMcpServerNames = llmConfig.mcp_servers;
+
+    if (
+      !agentMcpServerNames || !Array.isArray(agentMcpServerNames) ||
+      agentMcpServerNames.length === 0
+    ) {
+      return undefined;
+    }
+
+    // Get the configurations from the registry via SessionSupervisor
+    if (
+      !this.sessionSupervisor ||
+      typeof this.sessionSupervisor.getMcpServerConfigsForAgent !== "function"
+    ) {
+      this.log(
+        `SessionSupervisor not available or missing getMcpServerConfigsForAgent method for agent ${agent.id}`,
+        "warn",
+      );
+      return undefined;
+    }
+
+    const configs = this.sessionSupervisor.getMcpServerConfigsForAgent(
+      agent.id,
+      agentMcpServerNames,
+    );
+
+    if (!configs || configs.length === 0) {
+      this.log(`No MCP server configs retrieved from registry for agent ${agent.id}`, "warn");
+      return undefined;
+    }
+
+    // Convert array of configs to object keyed by server ID
+    const configsObj: Record<string, any> = {};
+    for (const config of configs) {
+      configsObj[config.id] = config;
+    }
+
+    this.log(`Prepared ${configs.length} MCP server configs for agent ${agent.id}`);
+
+    return configsObj;
   }
 
   // Load agent safely in web worker with envelope communication
