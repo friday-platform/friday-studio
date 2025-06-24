@@ -1,3 +1,4 @@
+import yargs from "yargs";
 import * as init from "./workspace/init.ts";
 import * as list from "./workspace/list.tsx";
 import * as status from "./workspace/status.tsx";
@@ -10,16 +11,10 @@ export const command = "workspace <action>";
 export const desc = "Manage Atlas workspaces";
 export const aliases = ["work", "w"];
 
-// deno-lint-ignore no-explicit-any
-export function builder(yargs: any) {
-  return yargs
+export function builder(y: ReturnType<typeof yargs>) {
+  return y
     .command([init, list, status, serve, stop, restart, remove])
     .demandCommand(1, "You need to specify a workspace action")
     .help()
     .strict();
-}
-
-// deno-lint-ignore no-explicit-any
-export function handler(_argv: any) {
-  // This won't be called if a subcommand matches
 }

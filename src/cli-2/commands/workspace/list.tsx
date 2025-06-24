@@ -1,9 +1,7 @@
 import { render } from "ink";
-// deno-lint-ignore no-unused-vars
-import React from "react";
+import { WorkspaceList as WorkspaceListComponent } from "../../../cli/commands/workspace/list.tsx";
 import { WorkspaceEntry } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceList as WorkspaceListComponent } from "../../../cli/commands/workspace/list.tsx";
 
 interface ListArgs {
   json?: boolean;
@@ -30,14 +28,16 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
     if (argv.json) {
       // JSON output for scripting
-      console.log(JSON.stringify(
-        {
-          workspaces: workspaces.map(formatWorkspaceForJson),
-          count: workspaces.length,
-        },
-        null,
-        2,
-      ));
+      console.log(
+        JSON.stringify(
+          {
+            workspaces: workspaces.map(formatWorkspaceForJson),
+            count: workspaces.length,
+          },
+          null,
+          2,
+        ),
+      );
     } else {
       // Render with Ink
       render(<WorkspaceListCommand workspaces={workspaces} />);
@@ -45,7 +45,9 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       Deno.exit(0);
     }
   } catch (error) {
-    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
     Deno.exit(1);
   }
 };
@@ -68,6 +70,10 @@ function formatWorkspaceForJson(workspace: WorkspaceEntry) {
 }
 
 // Component that wraps the existing WorkspaceList component
-function WorkspaceListCommand({ workspaces }: { workspaces: WorkspaceEntry[] }) {
+function WorkspaceListCommand({
+  workspaces,
+}: {
+  workspaces: WorkspaceEntry[];
+}) {
   return <WorkspaceListComponent registeredWorkspaces={workspaces} />;
 }
