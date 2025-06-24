@@ -4,8 +4,7 @@
 
 This document outlines the plan to extend the `atlas signal trigger` command to support emitting
 signals to multiple running workspaces. With the new multi-workspace background process
-architecture, the current implementation that only targets a single workspace on a hardcoded port is
-insufficient.
+architecture, we need a clean implementation that can target multiple workspaces efficiently.
 
 ## Current State Analysis
 
@@ -30,11 +29,11 @@ From `workspace-registry.ts` analysis:
 
 ## Design Goals
 
-1. **Broadcast by Default**: When no workspace is specified, trigger the signal on all running
-   workspaces
+1. **Smart Defaults**: When no workspace is specified, trigger on current workspace if running,
+   otherwise all workspaces
 2. **Flexible Filtering**: Support filtering to specific workspaces via CLI flags
 3. **Port Discovery**: Automatically use the correct port for each workspace from the registry
-4. **Error Resilience**: Handle partial failures gracefully when some workspaces are unavailable
+4. **Parallel Execution**: Always trigger signals in parallel for performance
 5. **Clear Feedback**: Show which workspaces received the signal and which failed
 
 ## Implementation Plan
@@ -58,27 +57,11 @@ export const builder = {
     describe: "Trigger signal on all running workspaces",
     default: false,
   },
-  port: {
-    type: "number" as const,
-    alias: "p",
-    describe: "Port of the workspace server (deprecated - use workspace filtering instead)",
-    deprecated: true,
-  },
   exclude: {
     type: "string" as const,
     alias: "x",
     describe: "Workspace ID(s) or name(s) to exclude (comma-separated)",
     coerce: (value: string) => value ? value.split(",").map((v) => v.trim()) : [],
-  },
-  parallel: {
-    type: "boolean" as const,
-    describe: "Send signals in parallel (default: true)",
-    default: true,
-  },
-  continueOnError: {
-    type: "boolean" as const,
-    describe: "Continue triggering remaining workspaces if one fails",
-    default: true,
   },
 };
 ```
@@ -118,10 +101,6 @@ async function resolveTargetWorkspaces(args: TriggerArgs): Promise<TargetWorkspa
         console.warn(`Workspace '${identifier}' not found in registry`);
       }
     }
-  } else if (args.port) {
-    // Legacy: single workspace by port
-    console.warn("Using --port is deprecated. Use --workspace or --all instead.");
-    // Handle legacy port-based triggering
   } else {
     // Default: current workspace or all running
     const currentWorkspace = await registry.getCurrentWorkspace();
@@ -239,29 +218,11 @@ async function triggerSignalOnMultipleWorkspaces(
   workspaces: TargetWorkspace[],
   signalName: string,
   payload: Record<string, unknown>,
-  parallel: boolean = true,
-  continueOnError: boolean = true,
 ): Promise<TriggerResult[]> {
-  if (parallel) {
-    // Trigger all workspaces in parallel
-    return await Promise.all(
-      workspaces.map((w) => triggerSignalOnWorkspace(w, signalName, payload)),
-    );
-  } else {
-    // Trigger sequentially
-    const results: TriggerResult[] = [];
-
-    for (const workspace of workspaces) {
-      const result = await triggerSignalOnWorkspace(workspace, signalName, payload);
-      results.push(result);
-
-      if (!result.success && !continueOnError) {
-        break;
-      }
-    }
-
-    return results;
-  }
+  // Always trigger all workspaces in parallel for performance
+  return await Promise.all(
+    workspaces.map((w) => triggerSignalOnWorkspace(w, signalName, payload)),
+  );
 }
 ```
 
@@ -357,12 +318,12 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
     const validWorkspaces = targetWorkspaces.filter((w) => validationResults.get(w.id));
     const invalidWorkspaces = targetWorkspaces.filter((w) => !validationResults.get(w.id));
 
-    if (invalidWorkspaces.length > 0 && !argv.continueOnError) {
-      errorOutput(
+    if (invalidWorkspaces.length > 0) {
+      // Just warn about invalid workspaces, don't fail
+      console.warn(
         `Signal '${argv.name}' not found in ${invalidWorkspaces.length} workspace(s):\n` +
           invalidWorkspaces.map((w) => `  - ${w.name} (${w.id})`).join("\n"),
       );
-      Deno.exit(1);
     }
 
     if (validWorkspaces.length === 0) {
@@ -385,8 +346,6 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
         validWorkspaces,
         argv.name,
         payload,
-        argv.parallel,
-        argv.continueOnError,
       );
 
       s.stop();
@@ -399,16 +358,13 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
         validWorkspaces,
         argv.name,
         payload,
-        argv.parallel,
-        argv.continueOnError,
       );
 
       formatTriggerResults(results, argv.name, true);
     }
 
-    // Exit with appropriate code
-    const hasFailures = results.some((r) => !r.success);
-    Deno.exit(hasFailures && !argv.continueOnError ? 1 : 0);
+    // Exit with appropriate code (always exit 0 - partial success is still success)
+    Deno.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));
     Deno.exit(1);
@@ -437,33 +393,33 @@ atlas signal trigger manual --all --data '{"user": "admin", "action": "refresh"}
 ### Advanced Usage
 
 ```bash
-# Sequential triggering with stop-on-error
-atlas signal trigger critical-update --all --no-parallel --no-continue-on-error
-
 # JSON output for scripting
 atlas signal trigger health-check --all --json | jq '.results[] | select(.success == false)'
 
 # Target multiple specific workspaces
 atlas signal trigger refresh --workspace happy_einstein,fervent_turing,zen_bardeen
+
+# Exclude specific workspaces
+atlas signal trigger deploy --all --exclude dev,test
 ```
 
-## Migration Considerations
+## Key Changes from Previous Design
 
-1. **Backward Compatibility**: The `--port` flag will be deprecated but still functional
-2. **Default Behavior Change**: When no workspace is specified, the new behavior will attempt to use
-   the current workspace first, then fall back to all running workspaces
-3. **Warning Messages**: Clear deprecation warnings for `--port` usage
+1. **No Backwards Compatibility**: Clean implementation without legacy `--port` support
+2. **Simplified Flags**: Removed `--parallel` and `--continue-on-error` flags for simplicity
+3. **Smart Defaults**: Current workspace takes precedence, then falls back to all workspaces
+4. **Always Parallel**: All signals are sent in parallel for optimal performance
 
 ## Error Handling
 
-1. **Partial Failures**: By default, continue triggering remaining workspaces even if some fail
+1. **Partial Success**: Partial failures are considered successful - exit code 0
 2. **Connection Errors**: Distinguish between "workspace not running" and "signal not found"
-3. **Timeout Protection**: Each workspace trigger has its own timeout to prevent hanging
-4. **Health Check Integration**: Optionally update workspace status in registry if connection fails
+3. **Timeout Protection**: Each workspace trigger has its own timeout (5s) to prevent hanging
+4. **Invalid Signals**: Warn about workspaces missing the signal but continue with valid ones
 
 ## Performance Considerations
 
-1. **Parallel by Default**: Send signals to all workspaces concurrently for better performance
+1. **Always Parallel**: All signals sent concurrently for optimal performance
 2. **Lazy Loading**: Only load workspace configurations when needed for validation
 3. **Timeout Limits**: 5-second timeout per workspace to prevent long waits
 4. **Registry Caching**: Leverage registry's existing caching mechanisms
@@ -476,27 +432,449 @@ atlas signal trigger refresh --workspace happy_einstein,fervent_turing,zen_barde
 
 ## Testing Strategy
 
-1. **Unit Tests**: Test workspace resolution, filtering, and result formatting
-2. **Integration Tests**: Test with multiple mock workspace servers
-3. **Error Scenarios**: Test partial failures, timeouts, and invalid signals
-4. **Performance Tests**: Verify parallel triggering with many workspaces
+### Integration Tests
+
+Integration tests will create actual workspaces, start them as background processes, and test signal
+triggering across multiple workspaces. Tests will be located in
+`tests/integration/multi-workspace-signal.test.ts`.
+
+#### Test 1: Basic Multi-Workspace Signal Triggering
+
+```typescript
+Deno.test({
+  name: "triggers signal on multiple running workspaces",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Create 3 test workspaces with different configurations
+    const testDir = await Deno.makeTempDir();
+    const workspaces = await createTestWorkspaces(testDir, [
+      { name: "workspace-alpha", port: 9001 },
+      { name: "workspace-beta", port: 9002 },
+      { name: "workspace-gamma", port: 9003 },
+    ]);
+
+    // Start all workspaces
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      // Create a registry and register all workspaces
+      const registry = getWorkspaceRegistry();
+      await registry.initialize();
+
+      for (const ws of workspaces) {
+        await registry.add({
+          id: ws.id,
+          name: ws.name,
+          path: ws.path,
+          port: ws.port,
+          pid: ws.pid,
+          status: WorkspaceStatus.RUNNING,
+        });
+      }
+
+      // Trigger signal on all workspaces
+      const trigger = new SignalTriggerCommand();
+      const results = await trigger.triggerOnMultipleWorkspaces(
+        workspaces,
+        "test-signal",
+        { message: "Hello from test" },
+      );
+
+      // Verify all workspaces received the signal
+      expect(results.length).toBe(3);
+      expect(results.every((r) => r.success)).toBe(true);
+      expect(results.every((r) => r.sessionId)).toBe(true);
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+#### Test 2: Workspace Filtering and Exclusions
+
+```typescript
+Deno.test({
+  name: "filters workspaces by name and applies exclusions",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+    const workspaces = await createTestWorkspaces(testDir, [
+      { name: "prod-api", port: 9004, tags: ["production"] },
+      { name: "prod-web", port: 9005, tags: ["production"] },
+      { name: "dev-api", port: 9006, tags: ["development"] },
+      { name: "staging-api", port: 9007, tags: ["staging"] },
+    ]);
+
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      // Test 1: Target specific workspaces by name pattern
+      const prodResults = await triggerWithArgs({
+        name: "deploy",
+        workspace: ["prod-api", "prod-web"],
+      });
+
+      expect(prodResults.length).toBe(2);
+      expect(prodResults.every((r) => r.workspace.name.startsWith("prod"))).toBe(true);
+
+      // Test 2: Exclude specific workspaces
+      const nonDevResults = await triggerWithArgs({
+        name: "health-check",
+        all: true,
+        exclude: ["dev-api"],
+      });
+
+      expect(nonDevResults.length).toBe(3);
+      expect(nonDevResults.some((r) => r.workspace.name === "dev-api")).toBe(false);
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+#### Test 3: Partial Failures and Error Handling
+
+```typescript
+Deno.test({
+  name: "handles partial failures gracefully",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+
+    // Create workspaces with different signal configurations
+    const workspaces = [
+      await createWorkspaceWithSignals(testDir, "ws-valid", 9008, ["deploy", "test"]),
+      await createWorkspaceWithSignals(testDir, "ws-partial", 9009, ["deploy"]),
+      await createWorkspaceWithSignals(testDir, "ws-none", 9010, []),
+    ];
+
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      // Trigger a signal that only exists in some workspaces
+      const results = await triggerWithArgs({
+        name: "test",
+        all: true,
+      });
+
+      // Should warn about workspaces missing the signal
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("Signal 'test' not found in 2 workspace(s)"),
+      );
+
+      // But should still trigger on valid workspace
+      expect(results.some((r) => r.success && r.workspace.name === "ws-valid")).toBe(true);
+
+      // Exit code should be 0 (partial success is success)
+      expect(process.exitCode).toBe(0);
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+#### Test 4: Connection Timeouts and Unreachable Workspaces
+
+```typescript
+Deno.test({
+  name: "handles connection timeouts for slow/unreachable workspaces",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+
+    // Create workspaces with different response behaviors
+    const workspaces = [
+      await createWorkspace(testDir, "fast-ws", 9011),
+      await createSlowWorkspace(testDir, "slow-ws", 9012, 10000), // 10s delay
+      await createWorkspace(testDir, "normal-ws", 9013),
+    ];
+
+    // Only start fast and normal workspaces
+    const servers = await startWorkspaceServers([workspaces[0], workspaces[2]]);
+
+    // Register all workspaces including the "slow" one
+    const registry = getWorkspaceRegistry();
+    for (const ws of workspaces) {
+      await registry.add({
+        ...ws,
+        status: WorkspaceStatus.RUNNING,
+      });
+    }
+
+    try {
+      const start = Date.now();
+      const results = await triggerWithArgs({
+        name: "test-signal",
+        all: true,
+      });
+      const elapsed = Date.now() - start;
+
+      // Should timeout after 5 seconds, not wait for slow workspace
+      expect(elapsed).toBeLessThan(6000);
+
+      // Fast and normal workspaces should succeed
+      expect(results.filter((r) => r.success).length).toBe(2);
+
+      // Slow workspace should fail with timeout
+      const slowResult = results.find((r) => r.workspace.name === "slow-ws");
+      expect(slowResult?.success).toBe(false);
+      expect(slowResult?.error).toContain("timeout");
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+#### Test 5: Current Workspace Priority
+
+```typescript
+Deno.test({
+  name: "prioritizes current workspace when no target specified",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+    const originalCwd = Deno.cwd();
+
+    // Create multiple workspaces
+    const workspaces = await createTestWorkspaces(testDir, [
+      { name: "current-ws", port: 9014 },
+      { name: "other-ws-1", port: 9015 },
+      { name: "other-ws-2", port: 9016 },
+    ]);
+
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      // Change to current-ws directory
+      Deno.chdir(workspaces[0].path);
+
+      // Trigger without specifying workspace
+      const results = await triggerWithArgs({
+        name: "test-signal",
+        // No --all or --workspace flags
+      });
+
+      // Should only trigger on current workspace
+      expect(results.length).toBe(1);
+      expect(results[0].workspace.name).toBe("current-ws");
+      expect(results[0].success).toBe(true);
+    } finally {
+      Deno.chdir(originalCwd);
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+#### Test 6: JSON Output Format
+
+```typescript
+Deno.test({
+  name: "outputs results in JSON format for scripting",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+    const workspaces = await createTestWorkspaces(testDir, [
+      { name: "ws-success", port: 9017 },
+      { name: "ws-failure", port: 9018 }, // Will be configured to fail
+    ]);
+
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      // Capture stdout
+      const output = await captureStdout(async () => {
+        await triggerWithArgs({
+          name: "test-signal",
+          all: true,
+          json: true,
+        });
+      });
+
+      // Parse JSON output
+      const result = JSON.parse(output);
+
+      // Verify JSON structure
+      expect(result.signal).toBe("test-signal");
+      expect(result.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(result.summary.total).toBe(2);
+      expect(result.summary.successful).toBeGreaterThanOrEqual(1);
+      expect(result.results).toBeInstanceOf(Array);
+      expect(result.results[0]).toHaveProperty("workspaceId");
+      expect(result.results[0]).toHaveProperty("workspaceName");
+      expect(result.results[0]).toHaveProperty("port");
+      expect(result.results[0]).toHaveProperty("success");
+      expect(result.results[0]).toHaveProperty("durationMs");
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+### Test Utilities
+
+```typescript
+// Helper functions for tests
+async function createTestWorkspaces(
+  baseDir: string,
+  configs: WorkspaceConfig[],
+): Promise<TestWorkspace[]> {
+  const workspaces = [];
+  for (const config of configs) {
+    const wsDir = path.join(baseDir, config.name);
+    await Deno.mkdir(wsDir, { recursive: true });
+
+    // Create workspace.yml
+    await Deno.writeTextFile(
+      path.join(wsDir, "workspace.yml"),
+      generateWorkspaceYaml(config),
+    );
+
+    // Create atlas.yml
+    await Deno.writeTextFile(
+      path.join(wsDir, "atlas.yml"),
+      generateAtlasYaml(),
+    );
+
+    workspaces.push({
+      id: crypto.randomUUID(),
+      name: config.name,
+      path: wsDir,
+      port: config.port,
+      config,
+    });
+  }
+  return workspaces;
+}
+
+async function startWorkspaceServers(workspaces: TestWorkspace[]): Promise<WorkspaceServer[]> {
+  const servers = [];
+  for (const ws of workspaces) {
+    const runtime = await createWorkspaceRuntime(ws);
+    const server = new WorkspaceServer(runtime, { port: ws.port });
+
+    // Start server in background
+    server.start();
+
+    // Wait for server to be ready
+    await waitForServerReady(ws.port);
+
+    servers.push(server);
+  }
+  return servers;
+}
+
+async function cleanupWorkspaces(servers: WorkspaceServer[], testDir: string) {
+  // Shutdown all servers
+  await Promise.all(servers.map((s) => s.shutdown()));
+
+  // Clean up test directory
+  await Deno.remove(testDir, { recursive: true });
+}
+```
+
+### Performance Benchmarks
+
+```typescript
+Deno.test({
+  name: "performance: triggers 10 workspaces in parallel under 1 second",
+  async fn() {
+    const testDir = await Deno.makeTempDir();
+
+    // Create 10 workspaces
+    const configs = Array.from({ length: 10 }, (_, i) => ({
+      name: `perf-ws-${i}`,
+      port: 9100 + i,
+    }));
+
+    const workspaces = await createTestWorkspaces(testDir, configs);
+    const servers = await startWorkspaceServers(workspaces);
+
+    try {
+      const start = performance.now();
+
+      const results = await triggerWithArgs({
+        name: "test-signal",
+        all: true,
+      });
+
+      const elapsed = performance.now() - start;
+
+      // All should succeed
+      expect(results.every((r) => r.success)).toBe(true);
+      expect(results.length).toBe(10);
+
+      // Should complete in under 1 second (parallel execution)
+      expect(elapsed).toBeLessThan(1000);
+
+      // Log performance metrics
+      console.log(`Triggered ${results.length} workspaces in ${elapsed.toFixed(2)}ms`);
+      console.log(`Average per workspace: ${(elapsed / results.length).toFixed(2)}ms`);
+    } finally {
+      await cleanupWorkspaces(servers, testDir);
+    }
+  },
+});
+```
+
+## Implementation Status
+
+### Task List
+
+#### Phase 1: CLI Interface Changes ✅ COMPLETED
+
+- [x] Update `TriggerArgs` interface to support arrays
+- [x] Add `--all/-a` flag for all workspaces
+- [x] Add `--exclude/-x` flag for exclusions
+- [x] Update `--workspace/-w` to accept comma-separated values
+- [x] Add coerce functions for comma-separated parsing
+- [x] Update CLI examples with new usage patterns
+- [x] Fix type errors in initial implementation
+
+#### Phase 2: Core Logic Refactoring ✅ COMPLETED
+
+- [x] Add `TargetWorkspace` interface
+- [x] Add `TriggerResult` interface
+- [x] Implement `resolveTargetWorkspaces()` function
+- [x] Implement `validateSignalInWorkspaces()` function
+- [x] Implement `triggerSignalOnWorkspace()` with 5s timeout
+- [x] Implement `triggerSignalOnMultipleWorkspaces()` for parallel execution
+- [x] Implement `formatTriggerResults()` for output formatting
+- [x] Implement `getSignalPayload()` for data handling
+- [x] Replace old handler with multi-workspace handler
+- [x] Remove deprecated helper functions
+- [x] Fix workspace status enum usage
+- [x] Ensure all linting and type checks pass
+
+#### Phase 3: Testing & Documentation ✅ COMPLETED
+
+- [x] Create integration test file `tests/integration/signal-trigger-multi-workspace.test.ts`
+- [x] Implement workspace setup and configuration tests
+- [x] Implement workspace resolution logic tests
+- [x] Implement parallel execution pattern tests
+- [x] Implement timeout handling tests
+- [x] Implement result formatting tests
+- [x] Create manual test script for real-world testing
+- [x] Verify all tests pass without type errors or leaks
+- [x] Document test approach and patterns
 
 ## Implementation Timeline
 
-1. **Phase 1**: Core multi-workspace support (2-3 days)
+1. **Phase 1**: Core multi-workspace support (1-2 days) ✅ COMPLETED
    - Workspace resolution logic
    - Multi-workspace triggering
    - Basic output formatting
 
-2. **Phase 2**: Enhanced features (1-2 days)
-   - Parallel/sequential control
+2. **Phase 2**: Enhanced features (1 day) ✅ COMPLETED
    - Advanced filtering (exclusions)
    - JSON output format
-
-3. **Phase 3**: Polish and testing (1 day)
    - Error handling improvements
+
+3. **Phase 3**: Polish and testing (1 day) ✅ COMPLETED
    - Performance optimization
    - Documentation updates
+   - Integration testing
 
 ## Success Metrics
 
