@@ -20,8 +20,9 @@
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16",
-    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
-    "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli-2.tsx\"",
+    "atlas-old": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file \"$(git rev-parse --show-toplevel)/src/cli-2.tsx\"",
     "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --env-file",
@@ -64,7 +65,9 @@
     "hono/pretty-json": "jsr:@hono/hono@^4.6.9/pretty-json",
     "hono/http-exception": "jsr:@hono/hono@^4.6.9/http-exception",
     "hono/streaming": "jsr:@hono/hono@^4.6.9/streaming",
-    "eventsource-parser": "npm:eventsource-parser@^3.0.1"
+    "eventsource-parser": "npm:eventsource-parser@^3.0.1",
+    "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts",
+    "@clack/prompts": "npm:@clack/prompts@^0.8.2"
   },
   "fmt": {
     "lineWidth": 100
