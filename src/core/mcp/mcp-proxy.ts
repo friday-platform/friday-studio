@@ -40,7 +40,12 @@ export interface MCPProxyDependencies {
   platformMCPServer?: any;
   workspaceMCPServers: Map<string, any>;
   remoteManager?: {
-    callRemote(remote: string, workspace: string | undefined, tool: string, args: any): Promise<any>;
+    callRemote(
+      remote: string,
+      workspace: string | undefined,
+      tool: string,
+      args: any,
+    ): Promise<any>;
   };
 }
 

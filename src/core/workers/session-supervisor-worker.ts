@@ -21,6 +21,7 @@ interface SessionConfig {
   signal?: IWorkspaceSignal;
   payload?: Record<string, unknown>;
   precomputedPlans?: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
+  supervisorDefaults?: any; // Supervisor configuration defaults
 }
 
 interface InitializeData {
@@ -37,7 +38,7 @@ interface InitializeData {
     session?: string;
     evaluation?: string;
   };
-  workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
+  workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Workspace tools configuration
 }
 
 interface ExecuteSessionData {
@@ -87,6 +88,7 @@ class SessionSupervisorWorker extends BaseWorker {
       config.memoryConfig,
       config.workspaceId,
       config.precomputedPlans,
+      config.supervisorDefaults,
     );
     this.log("SessionSupervisor created successfully");
 
@@ -119,7 +121,7 @@ class SessionSupervisorWorker extends BaseWorker {
           traceHeaders,
           jobSpec,
           additionalPrompts,
-          workspaceMcpServers,
+          workspaceTools,
         } = initData;
 
         return await AtlasTelemetry.withWorkerSpan(
@@ -144,8 +146,8 @@ class SessionSupervisorWorker extends BaseWorker {
               additionalPrompts,
             };
 
-            // Pass MCP servers to SessionSupervisor
-            this.supervisor!.setWorkspaceMcpServers(workspaceMcpServers);
+            // Pass workspace tools to SessionSupervisor
+            this.supervisor!.setWorkspaceTools(workspaceTools);
 
             await this.supervisor!.initializeSession(sessionContext);
 

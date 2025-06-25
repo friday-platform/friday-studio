@@ -183,15 +183,44 @@ function AgentDetailCommand({ agent }: { agent: AgentDetail }) {
         </Text>
       )}
 
-      {agent.tools && agent.tools.length > 0 && (
+      {agent.tools && (
         <>
           <Text></Text>
           <Text bold>Tools:</Text>
-          {agent.tools.map((tool, i) => (
-            <Box key={i} marginLeft={1}>
-              <Text>• {tool}</Text>
-            </Box>
-          ))}
+          {Array.isArray(agent.tools)
+            ? agent.tools.map((tool, i) => (
+              <Box key={i} marginLeft={1}>
+                <Text>• {tool}</Text>
+              </Box>
+            ))
+            : (
+              <>
+                {agent.tools.mcp && agent.tools.mcp.length > 0 && (
+                  <>
+                    <Box marginLeft={1}>
+                      <Text color="cyan">MCP Servers:</Text>
+                    </Box>
+                    {agent.tools.mcp.map((tool, i) => (
+                      <Box key={`mcp-${i}`} marginLeft={2}>
+                        <Text>• {tool}</Text>
+                      </Box>
+                    ))}
+                  </>
+                )}
+                {agent.tools.workspace && agent.tools.workspace.length > 0 && (
+                  <>
+                    <Box marginLeft={1}>
+                      <Text color="cyan">Workspace Tools:</Text>
+                    </Box>
+                    {agent.tools.workspace.map((tool, i) => (
+                      <Box key={`workspace-${i}`} marginLeft={2}>
+                        <Text>• {tool}</Text>
+                      </Box>
+                    ))}
+                  </>
+                )}
+              </>
+            )}
         </>
       )}
 

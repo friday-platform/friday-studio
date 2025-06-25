@@ -4,6 +4,7 @@ import { spinner } from "../../utils/prompts.tsx";
 import { ConfigLoader } from "../../../core/config-loader.ts";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { WorkspaceRuntimeRegistry } from "../../../core/workspace-runtime-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { findAvailablePort } from "../../../utils/port-finder.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
@@ -106,7 +107,6 @@ export const handler = async (argv: ServeArgs): Promise<void> => {
       Deno.exit(1);
     }
 
-    // Handle detached mode
     if (argv.detached) {
       await startDetached(targetPath, argv);
     } else {
@@ -277,6 +277,13 @@ async function startForeground(workspacePath: string, argv: ServeArgs): Promise<
     lazy: argv.lazy || false,
   });
 
+  // Register runtime with the runtime registry for MCP access
+  const runtimeRegistry = WorkspaceRuntimeRegistry.getInstance();
+  runtimeRegistry.register(workspace.id, runtime, workspace, {
+    name: mergedConfig.workspace.workspace.name,
+    description: mergedConfig.workspace.workspace.description,
+  });
+
   const hostname = mergedConfig.atlas.runtime?.server?.host || "localhost";
   const server = new WorkspaceServer(runtime, {
     port: actualPort,
@@ -287,6 +294,10 @@ async function startForeground(workspacePath: string, argv: ServeArgs): Promise<
   const shutdown = async () => {
     infoOutput("\nShutting down workspace server...");
     await registry.updateStatus(workspaceEntry.id, WSStatus.STOPPING);
+
+    // Unregister from runtime registry
+    runtimeRegistry.unregister(workspace.id);
+
     await server.shutdown();
     await registry.updateStatus(workspaceEntry.id, WSStatus.STOPPED);
     successOutput(`Workspace '${workspaceEntry.name}' stopped successfully.`);
@@ -300,7 +311,7 @@ async function startForeground(workspacePath: string, argv: ServeArgs): Promise<
     `Starting workspace '${workspaceEntry.name}' (${workspaceEntry.id}) on http://${hostname}:${actualPort}...`,
   );
 
-  // Start the server
+  // Start the HTTP server
   const { finished } = await server.startNonBlocking();
 
   // Update status to running

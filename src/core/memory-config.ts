@@ -43,6 +43,20 @@ export interface AtlasMemoryConfig {
     cognitive_loop: boolean;
     retention: MemoryRetentionConfig;
   };
+  streaming?: {
+    enabled: boolean;
+    queue_max_size: number;
+    batch_size: number;
+    flush_interval_ms: number;
+    background_processing: boolean;
+    persistence_enabled: boolean;
+    error_retry_attempts: number;
+    priority_processing: boolean;
+    dual_write_enabled: boolean;
+    legacy_batch_enabled: boolean;
+    stream_everything: boolean;
+    performance_tracking: boolean;
+  };
   agent: MemoryConfiguration;
   session: MemoryConfiguration;
   workspace: MemoryConfiguration;

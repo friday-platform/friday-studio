@@ -1,13 +1,30 @@
 version: "1.0"
 
-# Telephone Game Workspace Configuration Overrides
-# This file overrides platform atlas.yml settings specifically for the telephone workspace
+# Atlas Platform Workspace - "Everything is a workspace" model
+workspace:
+  id: "atlas-platform"
+  name: "Atlas Platform"
+  description: "Platform workspace with global management capabilities"
 
-platform:
-  name: "Atlas"
-  version: "1.0.0"
+# Platform MCP server configuration
+server:
+  mcp:
+    enabled: true
+    discoverable:
+      capabilities:
+        - "workspace.*"
+      jobs: []
 
-# No workspace-specific agents (inherit from platform)
+# Platform tools and federation policies
+tools:
+  mcp:
+    client_config:
+      timeout: 30000
+    policies:
+      type: "allowlist"
+      allowed: ["filesystem-mcp", "memory-mcp"]
+
+# No platform-specific agents for this example
 agents: {}
 
 # Use default supervisors (inherit from platform)

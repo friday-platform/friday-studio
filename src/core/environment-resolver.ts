@@ -128,7 +128,7 @@ export class EnvironmentResolver {
 
     const envFile = await this.loadEnvFile(config.from_env_file);
     const key = config.key || Object.keys(envFile)[0]; // Use first key if not specified
-    
+
     if (!key) {
       throw new Error("No key specified for env file resolution");
     }
@@ -195,7 +195,7 @@ export class EnvironmentResolver {
    */
   static validate(config: EnvironmentVariable): boolean {
     if (typeof config === "string") return true;
-    
+
     // At least one source must be specified
     const hasSources = [
       config.value,
@@ -203,7 +203,7 @@ export class EnvironmentResolver {
       config.from_env_file,
       config.from_file,
       config.default,
-    ].some(source => source !== undefined);
+    ].some((source) => source !== undefined);
 
     return hasSources;
   }

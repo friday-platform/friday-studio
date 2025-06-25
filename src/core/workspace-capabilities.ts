@@ -218,7 +218,7 @@ export class WorkspaceCapabilityRegistry {
    */
   static filterCapabilitiesForAgent(filter: CapabilityFilter): WorkspaceCapability[] {
     this.initialize();
-    
+
     const grantedCapabilities: WorkspaceCapability[] = [];
     const allTools = [
       ...(filter.agentConfig.default_tools || []),
@@ -290,7 +290,7 @@ export class WorkspaceCapabilityRegistry {
     ...args: any[]
   ): Promise<any> {
     this.initialize();
-    
+
     const capability = this.capabilities.get(capabilityId);
     if (!capability) {
       throw new Error(`Unknown capability: ${capabilityId}`);
@@ -304,7 +304,7 @@ export class WorkspaceCapabilityRegistry {
    */
   static getDocumentation(): string {
     this.initialize();
-    
+
     const categories = new Map<string, WorkspaceCapability[]>();
     for (const capability of this.capabilities.values()) {
       if (!categories.has(capability.category)) {
@@ -318,7 +318,7 @@ export class WorkspaceCapabilityRegistry {
 
     for (const [category, caps] of categories) {
       doc += `## ${category.charAt(0).toUpperCase() + category.slice(1)} Capabilities\n\n`;
-      
+
       for (const cap of caps) {
         doc += `### ${cap.name} (\`${cap.id}\`)\n`;
         doc += `${cap.description}\n\n`;

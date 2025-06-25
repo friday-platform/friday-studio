@@ -225,7 +225,8 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Linear issue management agent using MCP tools for creating and updating Linear issues"
-    mcp_servers: ["linear"]
+    tools:
+      mcp: ["linear"]
     max_steps: 3
     tool_choice: "auto"
 

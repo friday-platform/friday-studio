@@ -51,7 +51,8 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Interactive file operations using official MCP filesystem tools"
-    mcp_servers: ["filesystem-mcp"]
+    tools:
+      mcp: ["filesystem-mcp"]
     max_steps: 3
     prompts:
       system: |
@@ -86,7 +87,8 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Complete filesystem assistant with MCP tools and EMCP context"
-    mcp_servers: ["filesystem-mcp"]
+    tools:
+      mcp: ["filesystem-mcp"]
     max_steps: 5
     prompts:
       system: |

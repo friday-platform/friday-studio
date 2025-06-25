@@ -1,11 +1,12 @@
 version: "1.0"
 
-# Atlas Platform Configuration
-# This file contains platform-managed supervisor logic and built-in agents
+# Atlas Platform Configuration as a Workspace
+# Everything is a workspace - this is the platform workspace with global management capabilities
 
-platform:
-  name: "Atlas"
+workspace:
+  name: "Atlas Platform"
   version: "1.0.0"
+  description: "Global Atlas platform workspace providing built-in agents and federation capabilities"
 
 # Platform-managed agents (available to all workspaces)
 agents:

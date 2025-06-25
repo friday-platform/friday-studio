@@ -474,7 +474,8 @@ You have access to the full workspace context and configuration. Create structur
       this.log("Initializing MCP Server Registry...");
 
       // Use MCP server configuration passed from workspace runtime
-      const workspaceMcpServers = this.config?.workspaceMcpServers;
+      const workspaceTools = this.config?.workspaceTools;
+      const workspaceMcpServers = workspaceTools?.mcp?.servers;
 
       if (workspaceMcpServers) {
         this.log(`Using passed MCP server configuration`, "info", {

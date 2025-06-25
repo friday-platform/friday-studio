@@ -2,21 +2,28 @@
 
 ## WTF is Atlas?
 
-Atlas is fundamentally a **Distributed Multi-Agent Runtime** - think of it as an operating system specifically designed for AI agents. But what does that actually mean?
+Atlas is fundamentally a **Distributed Multi-Agent Runtime** - think of it as an operating system
+specifically designed for AI agents. But what does that actually mean?
 
 ### The Core Problem Atlas Solves
 
-The AI agent ecosystem is fragmenting across multiple competing protocols (MCP, ACP, REST, GraphQL, gRPC) that are unstable and inconsistently implemented. Organizations need to build sophisticated multi-agent workflows but can't afford to rebuild every time a protocol changes or a new one emerges.
+The AI agent ecosystem is fragmenting across multiple competing protocols (MCP, ACP, REST, GraphQL,
+gRPC) that are unstable and inconsistently implemented. Organizations need to build sophisticated
+multi-agent workflows but can't afford to rebuild every time a protocol changes or a new one
+emerges.
 
 ### Atlas as Multi-Agent Runtime
 
 Atlas provides the foundational infrastructure that AI agents need to operate at scale:
 
-**Process Management**: Spawns, schedules, and manages agent lifecycles across distributed infrastructure
+**Process Management**: Spawns, schedules, and manages agent lifecycles across distributed
+infrastructure
 
-**Memory Management**: Provides hierarchical, semantic memory systems (workspace → session → agent) with episodic, procedural, and semantic memory types
+**Memory Management**: Provides hierarchical, semantic memory systems (workspace → session → agent)
+with episodic, procedural, and semantic memory types
 
-**Inter-Process Communication**: Enables agent-to-agent communication via multiple protocols, with protocol translation and abstraction
+**Inter-Process Communication**: Enables agent-to-agent communication via multiple protocols, with
+protocol translation and abstraction
 
 **Resource Management**: Manages compute, LLM tokens, rate limits, costs, and model capabilities
 
@@ -26,7 +33,8 @@ Atlas provides the foundational infrastructure that AI agents need to operate at
 
 **Service Discovery**: Agents can dynamically discover and compose other agents and services
 
-**Protocol Abstraction**: Multiple ways to access the same underlying capabilities - MCP, ACP, REST, etc.
+**Protocol Abstraction**: Multiple ways to access the same underlying capabilities - MCP, ACP, REST,
+etc.
 
 ### Why "Operating System" is Accurate
 
@@ -55,6 +63,7 @@ Unlike general-purpose distributed systems, Atlas is designed specifically for A
 ### The Protocol Abstraction Layer
 
 Atlas accepts the fundamental reality that:
+
 1. **Multiple protocols will coexist** (MCP, ACP, REST, GraphQL, gRPC, WebSockets)
 2. **Protocols are unstable** and evolve rapidly
 3. **Implementation quality varies** across the ecosystem
@@ -64,26 +73,30 @@ Atlas provides stability by exposing consistent capabilities regardless of under
 ```yaml
 # Same Atlas job, multiple access methods
 server:
-  mcp: {enabled: true}     # Model Context Protocol
-  acp: {enabled: true}     # Agent Communication Protocol  
-  rest: {enabled: true}    # Traditional REST APIs
-  graphql: {enabled: false} # Future: GraphQL introspection
-  grpc: {enabled: false}   # Future: High-performance gRPC
+  mcp: { enabled: true } # Model Context Protocol
+  acp: { enabled: true } # Agent Communication Protocol
+  rest: { enabled: true } # Traditional REST APIs
+  graphql: { enabled: false } # Future: GraphQL introspection
+  grpc: { enabled: false } # Future: High-performance gRPC
 ```
 
 ### Alternative Framings Considered
 
-**"Universal Protocol Adapter"**: Too reductive - misses the runtime, memory, and orchestration aspects
+**"Universal Protocol Adapter"**: Too reductive - misses the runtime, memory, and orchestration
+aspects
 
-**"Agent Mesh"**: Captures the distributed, interconnected nature but misses the foundational OS-like capabilities
+**"Agent Mesh"**: Captures the distributed, interconnected nature but misses the foundational
+OS-like capabilities
 
 **"AI Agent Infrastructure"**: Accurate but generic - doesn't convey the runtime semantics
 
-**"Multi-Agent System Platform"**: Academic precision but lacks the systems architecture implications
+**"Multi-Agent System Platform"**: Academic precision but lacks the systems architecture
+implications
 
 ### The Matryoshka Architecture
 
-Atlas enables recursive agent composition - agents can discover, orchestrate, and contain other agents through standard protocols. This creates a "matryoshka doll" architecture where:
+Atlas enables recursive agent composition - agents can discover, orchestrate, and contain other
+agents through standard protocols. This creates a "matryoshka doll" architecture where:
 
 ```
 External Agent (Claude Desktop)
@@ -113,9 +126,11 @@ Atlas (Platform)
 │   │   │   ├── Agent (Individual executor)
 ```
 
-**Key Innovation**: `atlas.yml` is not separate platform configuration - it **IS** a workspace. Specifically, it's the **default workspace with global management capabilities**.
+**Key Innovation**: `atlas.yml` is not separate platform configuration - it **IS** a workspace.
+Specifically, it's the **default workspace with global management capabilities**.
 
 This means:
+
 - **Unified configuration model**: Same structure for platform and workspaces
 - **No special cases**: Everything uses workspace semantics
 - **Natural hierarchy**: Global workspace can manage child workspaces
@@ -126,27 +141,34 @@ This means:
 Because everything is a workspace, we get natural **hierarchical MCP servers**:
 
 **Platform MCP Server** (`atlas.yml` workspace):
+
 ```typescript
 // Global management capabilities
-atlas_create_workspace(config)
-atlas_list_workspaces()
-atlas_orchestrate_cross_workspace(plan)
+workspace_list();
+workspace_describe(workspaceId);
+workspace_create(config);
+workspace_delete(workspaceId);
 
-// Plus whatever jobs the platform workspace defines
-atlas_analyze_global_metrics()
-atlas_audit_all_workspaces()
+// Plus any jobs defined in the platform workspace
+// (jobs are exposed as direct tools based on discoverable configuration)
 ```
 
 **Workspace MCP Server** (individual `workspace.yml`):
+
 ```typescript
 // Workspace-specific capabilities
-atlas_trigger_job(jobName, payload)
-atlas_get_job_status(sessionId)
-atlas_list_available_jobs()
+workspace_jobs_list();
+workspace_jobs_trigger(jobName, payload);
+workspace_jobs_describe(jobName);
+workspace_sessions_list();
+workspace_sessions_describe(sessionId);
+workspace_sessions_cancel(sessionId);
+workspace_signals_list();
+workspace_agents_list();
+workspace_agents_describe(agentId);
 
-// Jobs defined in this workspace
-atlas_telephone_game(message)
-atlas_analyze_codebase(repo)
+// Jobs defined in this workspace exposed as direct tools
+// (based on server.mcp.discoverable.jobs configuration)
 ```
 
 **Job Discovery Control**: Each workspace controls what jobs are discoverable via MCP:
@@ -155,7 +177,8 @@ atlas_analyze_codebase(repo)
 server:
   mcp:
     enabled: true
-    discoverable_jobs: ["analyze-code", "generate-report"]  # Only these exposed
+    discoverable:
+      jobs: ["analyze-code", "generate-report"] # Only these exposed as direct tools
 ```
 
 ### Configuration Architecture
@@ -168,22 +191,22 @@ tools:
   mcp:
     client_config:
       timeout: 30000
-      retry_policy: {max_attempts: 3}
-      connection_pool: {max_connections: 10}
-    
+      retry_policy: { max_attempts: 3 }
+      connection_pool: { max_connections: 10 }
+
     servers:
       # MCP servers the platform uses
       global-filesystem-mcp:
         command: "filesystem-mcp"
         args: ["/"]
-      
+
     policies:
       # What child workspaces are allowed to use
       type: "allowlist"
       allowed:
         - id: "filesystem-mcp"
           restrictions:
-            args: ["/workspace/*"]  # Restrict to workspace paths
+            args: ["/workspace/*"] # Restrict to workspace paths
         - id: "github-mcp"
         - id: "slack-mcp"
       denied:
@@ -195,12 +218,12 @@ tools:
 tools:
   mcp:
     servers:
-      filesystem-mcp:        # ✅ Allowed by platform policy
+      filesystem-mcp: # ✅ Allowed by platform policy
         command: "filesystem-mcp"
         args: ["/workspace"]
-      github-mcp:           # ✅ Allowed by platform policy
+      github-mcp: # ✅ Allowed by platform policy
         command: "github-mcp"
-        auth: {credential_id: "workspace-github"}
+        auth: { credential_id: "workspace-github" }
       # shell-mcp would be rejected by platform validation
 ```
 
@@ -215,12 +238,15 @@ The configuration structure maintains semantic clarity:
 
 ### User Experience & Discovery
 
-**Configuration Discoverability**: Users cannot see what MCP tools are globally available just by reading their `workspace.yml`. They must either:
+**Configuration Discoverability**: Users cannot see what MCP tools are globally available just by
+reading their `workspace.yml`. They must either:
+
 1. Read `atlas.yml` platform configuration
 2. Use trial-and-error validation
 3. Use the planned conversational interface
 
 **Design Decision**: This is acceptable because:
+
 - **Separation of concerns**: Users focus on workspace config, platform admins handle governance
 - **Conversational interface**: Will provide runtime discovery and validation
 - **Future LSP support**: Will enable IDE-based discovery and validation
@@ -228,14 +254,17 @@ The configuration structure maintains semantic clarity:
 ### Benefits of the Unified Model
 
 1. **Architectural Consistency**: One configuration pattern, one execution model, one security model
-2. **Natural Governance**: Platform workspace controls child workspace capabilities through standard tool policies
-3. **Recursive Composition**: Workspaces can orchestrate other workspaces using the same MCP interface
+2. **Natural Governance**: Platform workspace controls child workspace capabilities through standard
+   tool policies
+3. **Recursive Composition**: Workspaces can orchestrate other workspaces using the same MCP
+   interface
 4. **Simplified Implementation**: No special platform-vs-workspace code paths
 5. **Clear Mental Model**: "Everything is a workspace" is easy to understand and reason about
 
 ### Next Steps
 
 The foundation is now established for:
+
 - **Server configuration**: How workspaces expose themselves via different protocols
 - **Cross-workspace orchestration**: Workspaces discovering and calling each other
 - **Enterprise governance**: Platform control over child workspace capabilities
@@ -250,18 +279,21 @@ The foundation is now established for:
 Atlas uses **HTTPS APIs** instead of custom protocols for distributed addressing:
 
 **Local Atlas:**
+
 ```
 https://localhost:8080/api/workspace.create
 https://localhost:8080/api/job.trigger
 ```
 
 **Distributed Atlas:**
+
 ```
 https://company.atlas.tempest.cloud/api/workspace.create
 https://partner.company.com/atlas/api/job.trigger
 ```
 
 This provides:
+
 - **Web-native security**: CORS, same-origin policy, standard certificates
 - **Universal tooling**: Works with curl, browser dev tools, standard HTTP clients
 - **No browser warnings**: HTTPS is trusted everywhere
@@ -273,14 +305,14 @@ Following Eric's CLI **noun-verb structure**, MCP tools use consistent naming:
 
 ```typescript
 // Correct: noun-verb pattern
-workspace.create
-job.trigger
-session.list
-agent.describe
+workspace_create;
+job_trigger;
+session_list;
+agent_describe;
 
-// Wrong: verb-noun pattern  
-create.workspace
-trigger.job
+// Wrong: verb-noun pattern
+create_workspace;
+trigger_job;
 ```
 
 ### Remote Management System
@@ -288,6 +320,7 @@ trigger.job
 Atlas uses a **git-like remote system** for managing multiple Atlas instances:
 
 **Remote Configuration:**
+
 ```bash
 # Add Atlas instances as remotes
 atlas remote add company https://atlas.company.com
@@ -302,6 +335,7 @@ atlas remote list
 ```
 
 **Command Usage:**
+
 ```bash
 # Use default remote (stateful)
 atlas remote use company
@@ -313,52 +347,60 @@ atlas job trigger analyze-code --remote local
 ```
 
 **Cross-Remote Orchestration:**
+
 ```yaml
 # workspace.yml - Workspaces can orchestrate across Atlas instances
 tools:
   mcp:
     servers:
       partner-analytics:
-        transport: {type: "atlas-proxy", remote: "partner", workspace: "analytics"}
+        transport: { type: "atlas-proxy", remote: "partner", workspace: "analytics" }
       local-testing:
-        transport: {type: "atlas-proxy", remote: "local", workspace: "test-env"}
+        transport: { type: "atlas-proxy", remote: "local", workspace: "test-env" }
 ```
 
 ## Atlas Deployment Models
 
 ### Local Atlas
+
 **Use Case**: Individual developers, personal projects, learning
 
 **Installation & Usage:**
+
 ```bash
 deno install atlas
 atlas workspace create my-project
 ```
 
 **Characteristics:**
+
 - **Single user**: No multi-tenancy
 - **Local storage**: Files, SQLite, in-memory
-- **No authentication**: Trusted local environment  
+- **No authentication**: Trusted local environment
 - **Simple networking**: localhost only
 - **Resource limits**: Local machine constraints
 - **Security model**: Process isolation, file permissions
 
 ### Self-Hosted Atlas
+
 **Use Case**: Teams, organizations, on-premises requirements
 
 **Deployment:**
+
 ```bash
 docker run atlas-server --config /etc/atlas/atlas.yml
 kubectl apply -f atlas-deployment.yml
 ```
 
 **Usage:**
+
 ```bash
 atlas remote add company https://atlas.company.com
 atlas workspace create --remote company
 ```
 
 **Characteristics:**
+
 - **Multi-tenant**: Multiple teams/projects
 - **Distributed storage**: PostgreSQL, Redis, S3
 - **Enterprise auth**: RBAC, SSO, audit logs
@@ -367,9 +409,11 @@ atlas workspace create --remote company
 - **Self-managed**: You handle ops, updates, security
 
 ### Tempest Atlas Managed Service
+
 **Use Case**: Organizations wanting Atlas without operational overhead
 
 **Onboarding:**
+
 ```bash
 curl -X POST https://api.tempest.cloud/v1/atlas/instances \
   -H "Authorization: Bearer $TEMPEST_TOKEN" \
@@ -377,12 +421,14 @@ curl -X POST https://api.tempest.cloud/v1/atlas/instances \
 ```
 
 **Usage:**
+
 ```bash
 atlas remote add managed https://company.atlas.tempest.cloud
 atlas workspace create --remote managed
 ```
 
 **Characteristics:**
+
 - **Fully managed**: Tempest handles ops, updates, scaling
 - **Enterprise-grade**: SLA, support, compliance (SOC2, HIPAA)
 - **Global deployment**: Multi-region, edge locations
@@ -397,14 +443,14 @@ atlas workspace create --remote managed
 workspace:
   id: "local-default"
 server:
-  mcp: {enabled: true}
-  
-# Self-Hosted Atlas (atlas.yml)  
+  mcp: { enabled: true }
+
+# Self-Hosted Atlas (atlas.yml)
 workspace:
   id: "company-platform"
 server:
-  mcp: {enabled: true}
-  auth: {provider: "oauth2"}
+  mcp: { enabled: true }
+  auth: { provider: "oauth2" }
 tools:
   mcp:
     policies:
@@ -413,10 +459,10 @@ tools:
 
 # Tempest Managed (atlas.yml)
 workspace:
-  id: "tempest-managed-platform"  
+  id: "tempest-managed-platform"
 server:
-  mcp: {enabled: true}
-  auth: {provider: "tempest-sso"}
+  mcp: { enabled: true }
+  auth: { provider: "tempest-sso" }
 tools:
   mcp:
     policies:
@@ -425,11 +471,13 @@ tools:
 ```
 
 ### Migration Path
+
 1. **Start Local**: Learn, prototype, develop
-2. **Scale Self-Hosted**: Team adoption, custom requirements  
+2. **Scale Self-Hosted**: Team adoption, custom requirements
 3. **Upgrade Managed**: Enterprise scale, reduced ops burden
 
-Each deployment model uses the same APIs and configuration patterns - only the remote targets change.
+Each deployment model uses the same APIs and configuration patterns - only the remote targets
+change.
 
 ## Benefits of the Unified Remote Model
 
@@ -446,18 +494,21 @@ Each deployment model uses the same APIs and configuration patterns - only the r
 
 ### Platform vs Workspace Capabilities
 
-Atlas distinguishes between **platform capabilities** (Atlas native functionality) and **workspace capabilities** (user-defined jobs, signals, agents). This separation provides clear security boundaries and discovery semantics.
+Atlas distinguishes between **platform capabilities** (Atlas native functionality) and **workspace
+capabilities** (user-defined jobs, signals, agents). This separation provides clear security
+boundaries and discovery semantics.
 
 ### Platform Capabilities (Always Available)
 
 Platform capabilities operate on the Atlas instance itself and are always accessible:
 
 **Workspace Management:**
+
 ```typescript
-workspace.list()                    // List all workspaces
-workspace.describe(workspaceId)     // Get workspace details
-workspace.create(config)            // ✅ Create new workspaces
-workspace.delete(workspaceId)       // ✅ Delete workspaces
+workspace_list(); // List all workspaces
+workspace_describe(workspaceId); // Get workspace details
+workspace_create(config); // ✅ Create new workspaces
+workspace_delete(workspaceId); // ✅ Delete workspaces
 ```
 
 ### Workspace Capabilities (Require Workspace Context)
@@ -465,53 +516,61 @@ workspace.delete(workspaceId)       // ✅ Delete workspaces
 Workspace capabilities operate on user-defined resources within a specific workspace:
 
 **Jobs (User-Defined Workflows):**
+
 ```typescript
-workspace.jobs.list(workspaceId)                          // List jobs defined in workspace.yml
-workspace.jobs.describe(workspaceId, jobName)             // Get job configuration and metadata  
-workspace.jobs.trigger(workspaceId, jobName, payload)     // Execute a job
-// ❌ No workspace.jobs.create() - jobs are configuration-driven only
+workspace_jobs_list(workspaceId); // List jobs defined in workspace.yml
+workspace_jobs_describe(workspaceId, jobName); // Get job configuration and metadata
+workspace_jobs_trigger(workspaceId, jobName, payload); // Execute a job
+// ❌ No workspace_jobs_create() - jobs are configuration-driven only
 ```
 
 **Signals (User-Defined Triggers):**
+
 ```typescript
-workspace.signals.list(workspaceId)                       // List signals defined in workspace.yml
-workspace.signals.describe(workspaceId, signalName)       // Get signal configuration
-workspace.signals.trigger(workspaceId, signalName, payload) // Trigger a signal
-// ❌ No workspace.signals.create() - signals are configuration-driven only
+workspace_signals_list(workspaceId); // List signals defined in workspace.yml
+workspace_signals_describe(workspaceId, signalName); // Get signal configuration
+workspace_signals_trigger(workspaceId, signalName, payload); // Trigger a signal
+// ❌ No workspace_signals_create() - signals are configuration-driven only
 ```
 
 **Agents (User-Defined Executors):**
+
 ```typescript
-workspace.agents.list(workspaceId)                        // List agents defined in workspace.yml
-workspace.agents.describe(workspaceId, agentId)           // Get agent capabilities and metadata
-// ❌ No workspace.agents.create() - agents are configuration-driven only
-// ❌ No workspace.agents.execute() - agents only execute through jobs
+workspace_agents_list(workspaceId); // List agents defined in workspace.yml
+workspace_agents_describe(workspaceId, agentId); // Get agent capabilities and metadata
+// ❌ No workspace_agents_create() - agents are configuration-driven only
+// ❌ No workspace_agents_execute() - agents only execute through jobs
 ```
 
 **Sessions (Runtime Execution Instances):**
+
 ```typescript
-workspace.sessions.list(workspaceId)                      // List active/completed sessions
-workspace.sessions.describe(workspaceId, sessionId)       // Get session status and results
-workspace.sessions.cancel(workspaceId, sessionId)         // Cancel running session
-// ❌ No workspace.sessions.create() - sessions created by triggering jobs
+workspace_sessions_list(workspaceId); // List active/completed sessions
+workspace_sessions_describe(workspaceId, sessionId); // Get session status and results
+workspace_sessions_cancel(workspaceId, sessionId); // Cancel running session
+// ❌ No workspace_sessions_create() - sessions created by triggering jobs
 ```
 
 ### Design Principles
 
-**Configuration-Driven Approach**: Jobs, signals, and agents are defined in `workspace.yml` configuration files, not created dynamically via MCP calls. This ensures:
+**Configuration-Driven Approach**: Jobs, signals, and agents are defined in `workspace.yml`
+configuration files, not created dynamically via MCP calls. This ensures:
+
 - **Version control**: All definitions are tracked in configuration
 - **Review process**: Changes go through standard code review
 - **Consistency**: No runtime drift from intended configuration
 - **Security**: Prevents dynamic creation of potentially unsafe workflows
 
 **Rich Introspection**: Every resource type supports `list()` and `describe()` operations to enable:
+
 - **Service discovery**: External systems can discover available capabilities
 - **Documentation**: Detailed metadata about what each resource does
 - **Debugging**: Full visibility into configuration and state
 
 **Clear Scope Boundaries**: Platform operations vs workspace operations have different:
+
 - **Permission models**: Platform access vs workspace access
-- **Discovery semantics**: Global resources vs workspace-scoped resources  
+- **Discovery semantics**: Global resources vs workspace-scoped resources
 - **Security boundaries**: Cross-workspace isolation maintained
 
 ### Capability Discovery Flow
@@ -520,27 +579,28 @@ External MCP clients follow a natural discovery pattern:
 
 ```typescript
 // 1. Discover available workspaces
-const workspaces = await mcp.call("workspace.list");
+const workspaces = await mcp.call("workspace_list");
 
 // 2. Explore a specific workspace
-const jobs = await mcp.call("workspace.jobs.list", {workspaceId: "dev-team"});
-const signals = await mcp.call("workspace.signals.list", {workspaceId: "dev-team"});
+const jobs = await mcp.call("workspace_jobs_list", { workspaceId: "dev-team" });
+const signals = await mcp.call("workspace_signals_list", { workspaceId: "dev-team" });
 
 // 3. Get detailed information
-const jobDetails = await mcp.call("workspace.jobs.describe", {
-  workspaceId: "dev-team", 
-  jobName: "analyze-codebase"
+const jobDetails = await mcp.call("workspace_jobs_describe", {
+  workspaceId: "dev-team",
+  jobName: "analyze-codebase",
 });
 
 // 4. Execute capabilities
-const session = await mcp.call("workspace.jobs.trigger", {
+const session = await mcp.call("workspace_jobs_trigger", {
   workspaceId: "dev-team",
-  jobName: "analyze-codebase", 
-  payload: {repo: "atlas"}
+  jobName: "analyze-codebase",
+  payload: { repo: "atlas" },
 });
 ```
 
-This provides a **self-documenting API** where external systems can discover and use Atlas capabilities without prior knowledge of specific workspace configurations.
+This provides a **self-documenting API** where external systems can discover and use Atlas
+capabilities without prior knowledge of specific workspace configurations.
 
 ---
 
@@ -548,7 +608,8 @@ This provides a **self-documenting API** where external systems can discover and
 
 ### Platform Server Configuration (atlas.yml)
 
-The Atlas platform workspace configures the **global MCP server** that exposes platform capabilities:
+The Atlas platform workspace configures the **global MCP server** that exposes platform
+capabilities:
 
 ```yaml
 # atlas.yml - Platform workspace configuration
@@ -560,42 +621,43 @@ workspace:
 server:
   mcp:
     enabled: true
-    transport: {type: "stdio"}
+    transport: { type: "stdio" }
     discoverable:
       # Platform capabilities exposed via MCP
       capabilities:
-        - "workspace.list"
-        - "workspace.describe" 
-        - "workspace.create"
-        - "workspace.delete"
-      
+        - "workspace_list"
+        - "workspace_describe"
+        - "workspace_create"
+        - "workspace_delete"
+
       # Platform-specific jobs (if any defined in this workspace)
-      jobs: []  # Platform workspace typically has no user-defined jobs
-    
+      jobs: [] # Platform workspace typically has no user-defined jobs
+
     # Security and access control for platform server
     auth:
       required: true
       providers: ["oauth2", "api-key"]
-    
+
     rate_limits:
       requests_per_hour: 1000
       burst_limit: 100
-    
+
     cors:
-      allowed_origins: ["*"]  # Or specific domains
+      allowed_origins: ["*"] # Or specific domains
       allowed_methods: ["POST"]
 
 # Platform tools and policies (as defined earlier)
 tools:
   mcp:
-    client_config: {...}
-    servers: {...}
-    policies: {...}
+    client_config: { ... }
+    servers: { ... }
+    policies: { ... }
 ```
 
 ### Workspace Server Configuration (workspace.yml)
 
-Each workspace configures its own **workspace MCP server** that exposes workspace-specific capabilities:
+Each workspace configures its own **workspace MCP server** that exposes workspace-specific
+capabilities:
 
 ```yaml
 # workspace.yml - Individual workspace configuration
@@ -607,52 +669,52 @@ workspace:
 server:
   mcp:
     enabled: true
-    transport: {type: "stdio"}
+    transport: { type: "stdio" }
     discoverable:
       # Workspace capabilities always available
       capabilities:
-        - "workspace.jobs.list"
-        - "workspace.jobs.describe"
-        - "workspace.jobs.trigger"
-        - "workspace.signals.list"
-        - "workspace.signals.describe" 
-        - "workspace.signals.trigger"
-        - "workspace.agents.list"
-        - "workspace.agents.describe"
-        - "workspace.sessions.list"
-        - "workspace.sessions.describe"
-        - "workspace.sessions.cancel"
-      
+        - "workspace_jobs_list"
+        - "workspace_jobs_describe"
+        - "workspace_jobs_trigger"
+        - "workspace_signals_list"
+        - "workspace_signals_describe"
+        - "workspace_signals_trigger"
+        - "workspace_agents_list"
+        - "workspace_agents_describe"
+        - "workspace_sessions_list"
+        - "workspace_sessions_describe"
+        - "workspace_sessions_cancel"
+
       # User-defined jobs exposed via MCP (subset of all jobs)
       jobs:
         - "analyze-codebase"
         - "generate-report"
-        - "public-*"          # Glob pattern: all jobs starting with "public-"
-        - "*-api"             # Glob pattern: all jobs ending with "-api"
-        # "internal-cleanup" not listed = not discoverable via MCP
-    
+        - "public-*" # Glob pattern: all jobs starting with "public-"
+        - "*-api" # Glob pattern: all jobs ending with "-api"
+    # "internal-cleanup" not listed = not discoverable via MCP
+
     # Workspace-level security
     auth:
-      required: false  # Could inherit from platform or override
+      required: false # Could inherit from platform or override
       providers: ["workspace-token"]
-    
+
     rate_limits:
       requests_per_hour: 500
       concurrent_sessions: 5
 
 # Jobs, signals, agents defined in workspace
 jobs:
-  analyze-codebase: {...}
-  generate-report: {...}
-  internal-cleanup: {...}  # Not in discoverable.jobs = internal only
+  analyze-codebase: { ... }
+  generate-report: { ... }
+  internal-cleanup: { ... } # Not in discoverable.jobs = internal only
 
 signals:
-  webhook-handler: {...}
-  scheduled-task: {...}
+  webhook-handler: { ... }
+  scheduled-task: { ... }
 
 agents:
-  code-analyzer: {...}
-  report-generator: {...}
+  code-analyzer: { ... }
+  report-generator: { ... }
 ```
 
 ### Multi-Protocol Server Support
@@ -664,19 +726,19 @@ Both platform and workspace servers can support multiple protocols:
 server:
   mcp:
     enabled: true
-    discoverable: {...}
-  
+    discoverable: { ... }
+
   acp:
     enabled: true
-    discoverable_agents: ["*"]  # Or specific agent list
-  
+    discoverable_agents: ["*"] # Or specific agent list
+
   rest:
     enabled: true
     prefix: "/api/v1"
     swagger: true
-  
+
   graphql:
-    enabled: false  # Future expansion
+    enabled: false # Future expansion
 ```
 
 ### Server Hierarchy and Discovery
@@ -698,6 +760,7 @@ server:
 ### Client Connection Patterns
 
 **Connecting to Platform Server:**
+
 ```bash
 # Configure remote pointing to platform
 atlas remote add company https://company.atlas.tempest.cloud
@@ -708,6 +771,7 @@ atlas workspace create my-new-workspace --remote company
 ```
 
 **Connecting to Workspace Server:**
+
 ```bash
 # Configure remote pointing to specific workspace
 atlas remote add dev-workspace https://company.atlas.tempest.cloud/workspace/dev-team
@@ -718,6 +782,7 @@ atlas workspace jobs trigger analyze-codebase --remote dev-workspace
 ```
 
 **MCP Client Configuration:**
+
 ```json
 {
   "servers": {
@@ -726,7 +791,7 @@ atlas workspace jobs trigger analyze-codebase --remote dev-workspace
       "args": ["--target", "https://company.atlas.tempest.cloud"]
     },
     "dev-workspace": {
-      "command": "atlas-mcp-client", 
+      "command": "atlas-mcp-client",
       "args": ["--target", "https://company.atlas.tempest.cloud/workspace/dev-team"]
     }
   }
@@ -735,7 +800,8 @@ atlas workspace jobs trigger analyze-codebase --remote dev-workspace
 
 ### Environment Variable Configuration
 
-Atlas provides flexible credential management for MCP servers through comprehensive environment configuration:
+Atlas provides flexible credential management for MCP servers through comprehensive environment
+configuration:
 
 ```yaml
 # workspace.yml
@@ -749,37 +815,38 @@ tools:
           GITHUB_PERSONAL_ACCESS_TOKEN:
             from_env: "GITHUB_TOKEN"
             required: true
-          
+
           # Literal value
           DEBUG_MODE:
             value: "true"
-          
+
           # Environment variable with default fallback
           API_BASE_URL:
             from_env: "GITHUB_API_URL"
             default: "https://api.github.com"
-          
+
           # Read from .env file (Docker-style)
           DATABASE_URL:
             from_env_file: ".env"
             key: "DATABASE_URL"
             required: true
-          
+
           # File-based credential (raw file contents)
           SECRET_KEY:
             from_file: "/run/secrets/secret_key"
-          
+
           # Multiple fallback sources
           OPENAI_API_KEY:
-            from_env_file: ".env"           # Try .env file first
+            from_env_file: ".env" # Try .env file first
             key: "OPENAI_API_KEY"
-            from_env: "OPENAI_API_KEY"      # Then environment
-            from_file: "~/.openai/key"      # Then file
-            default: ""                     # Finally default
+            from_env: "OPENAI_API_KEY" # Then environment
+            from_file: "~/.openai/key" # Then file
+            default: "" # Finally default
             required: false
 ```
 
 **Configuration Options:**
+
 - **`value`**: Literal string value
 - **`from_env`**: Reference to environment variable
 - **`from_env_file`**: Key from `.env` style file with `KEY=value` pairs
@@ -788,6 +855,7 @@ tools:
 - **`required`**: Validation - fail if not provided and required
 
 **Evaluation Order:**
+
 1. `from_env_file` (if specified)
 2. `from_env` (if specified or fallback)
 3. `from_file` (if specified or fallback)
@@ -795,6 +863,7 @@ tools:
 5. Fail if `required: true` and no value found
 
 **Use Cases:**
+
 - **Environment variables**: Standard `GITHUB_TOKEN=xxx` pattern
 - **Docker secrets**: Files mounted at `/run/secrets/`
 - **Credential files**: `~/.atlas/credentials` or similar
@@ -804,23 +873,25 @@ tools:
 ### Configuration Inheritance and Overrides
 
 **Platform Defaults:**
+
 ```yaml
 # atlas.yml - Set platform-wide defaults
 server:
   defaults:
     mcp:
-      auth: {required: true, providers: ["oauth2"]}
-      rate_limits: {requests_per_hour: 1000}
-      cors: {allowed_origins: ["*.company.com"]}
+      auth: { required: true, providers: ["oauth2"] }
+      rate_limits: { requests_per_hour: 1000 }
+      cors: { allowed_origins: ["*.company.com"] }
 ```
 
 **Workspace Overrides:**
+
 ```yaml
 # workspace.yml - Can override platform defaults
 server:
   mcp:
-    auth: {required: false}  # Override: no auth required for this workspace
-    rate_limits: {requests_per_hour: 2000}  # Override: higher limits
+    auth: { required: false } # Override: no auth required for this workspace
+    rate_limits: { requests_per_hour: 2000 } # Override: higher limits
     # cors inherits from platform defaults
 ```
 
@@ -829,34 +900,38 @@ server:
 Atlas supports **glob patterns** for flexible discovery configuration while maintaining security:
 
 **Job Discovery Patterns:**
+
 ```yaml
 server:
   mcp:
     discoverable:
       jobs:
-        - "public-*"         # All jobs starting with "public-"
-        - "*-api"            # All jobs ending with "-api"
+        - "public-*" # All jobs starting with "public-"
+        - "*-api" # All jobs ending with "-api"
         - "analyze-codebase" # Explicit job names still supported
 ```
 
 **Capability Filtering:**
+
 ```yaml
 server:
   mcp:
     discoverable:
       capabilities:
-        - "workspace.jobs.*"    # All job-related operations
-        - "workspace.*.list"    # All list operations
-        - "workspace.sessions.describe" # Explicit capabilities still supported
+        - "workspace_jobs_*" # All job-related operations
+        - "workspace_*_list" # All list operations
+        - "workspace_sessions_describe" # Explicit capabilities still supported
 ```
 
 **Security Boundaries:**
+
 - **✅ Discovery patterns**: Safe for controlling what's visible/discoverable
 - **❌ Execution patterns**: NO glob support for operations like `trigger()`, `delete()`, etc.
 - **Workspace-scoped**: Patterns only apply within individual workspaces
 - **No cross-workspace globs**: All operations require explicit workspace IDs
 
 **Benefits:**
+
 - **Flexible exposure control**: Group jobs/capabilities by naming convention
 - **Future-proof**: New jobs matching patterns automatically discoverable
 - **Reduced configuration**: Less maintenance when adding new jobs
@@ -867,7 +942,8 @@ server:
 1. **Clear Separation**: Platform operations vs workspace operations
 2. **Security Isolation**: Different authentication and permissions per level
 3. **Scalability**: Workspace servers can be distributed/federated
-4. **Discoverability**: Platform server provides workspace discovery, workspace servers provide capability discovery
+4. **Discoverability**: Platform server provides workspace discovery, workspace servers provide
+   capability discovery
 5. **Flexibility**: Each workspace can customize its server configuration with glob patterns
 6. **Standard Patterns**: Both levels use identical configuration structure
 
@@ -877,9 +953,11 @@ server:
 
 ### Component Access Patterns
 
-Atlas enables recursive composition where workspaces, jobs, and agents can access each other's capabilities through well-defined patterns:
+Atlas enables recursive composition where workspaces, jobs, and agents can access each other's
+capabilities through well-defined patterns:
 
 #### 1. Workspace → Platform Capabilities
+
 Workspaces access Atlas platform capabilities via MCP proxy configuration:
 
 ```yaml
@@ -888,12 +966,13 @@ tools:
   mcp:
     servers:
       atlas-platform:
-        transport: {type: "atlas-proxy", target: "platform"}
+        transport: { type: "atlas-proxy", target: "platform" }
         # Provides access to:
-        # - workspace.create(), workspace.list(), workspace.delete()
+        # - workspace_create(), workspace_list(), workspace_delete()
 ```
 
 #### 2. Job → Other Jobs (Same Workspace)
+
 Jobs orchestrate other jobs within the same workspace using built-in capabilities:
 
 ```yaml
@@ -905,14 +984,15 @@ jobs:
         - id: "coordinator-agent"
           tools:
             workspace:
-              - "workspace.jobs.trigger"  # Built-in workspace capability
-              - "workspace.jobs.list"
-    
+              - "workspace_jobs_trigger" # Built-in workspace capability
+              - "workspace_jobs_list"
+
   target-job:
-    # Can be triggered by orchestrator-job
+# Can be triggered by orchestrator-job
 ```
 
 #### 3. Job → Other Workspaces
+
 Jobs access other workspaces through federation and MCP proxy:
 
 ```yaml
@@ -921,34 +1001,35 @@ tools:
   mcp:
     servers:
       qa-workspace:
-        transport: {type: "atlas-proxy", workspace: "qa-team"}
+        transport: { type: "atlas-proxy", workspace: "qa-team" }
         # Access controlled by federation.sharing policies
-      
+
 jobs:
   deploy-with-testing:
     execution:
       agents:
         - id: "deploy-agent"
           tools:
-            mcp: ["qa-workspace"]  # References tools.mcp.servers.qa-workspace
-            workspace: ["workspace.jobs.trigger"]  # Built-in capabilities
+            mcp: ["qa-workspace"] # References tools.mcp.servers.qa-workspace
+            workspace: ["workspace_jobs_trigger"] # Built-in capabilities
 ```
 
 ### Built-in Workspace Capabilities
 
 #### Ambient Availability vs Tool Assignment
 
-Workspace capabilities are **ambiently available** in the execution environment but **not automatically assigned** to agents:
+Workspace capabilities are **ambiently available** in the execution environment but **not
+automatically assigned** to agents:
 
 ```typescript
 // Always available in workspace execution environment
 interface WorkspaceExecutionEnvironment {
   workspace: {
-    jobs: { trigger, list, describe },
-    sessions: { list, describe, cancel },
-    memory: { recall, store },
-    signals: { list, trigger }
-  }
+    jobs: { trigger; list; describe };
+    sessions: { list; describe; cancel };
+    memory: { recall; store };
+    signals: { list; trigger };
+  };
 }
 
 // Agents only get explicitly granted capabilities
@@ -967,18 +1048,18 @@ jobs:
       agents:
         - id: "transform-agent"
           # Gets NO workspace tools by default
-          
+
   orchestrator-job:
-    execution:  
+    execution:
       agents:
         - id: "coordinator-agent"
           tools:
             workspace:
-              - "workspace.jobs.trigger"     # Explicitly granted
-              - "workspace.jobs.list"
-              - "workspace.sessions.describe"
-            mcp: ["github-mcp"]              # MCP server access
-            # Does NOT get workspace.memory.*, etc.
+              - "workspace_jobs_trigger" # Explicitly granted
+              - "workspace_jobs_list"
+              - "workspace_sessions_describe"
+            mcp: ["github-mcp"] # MCP server access
+            # Does NOT get workspace_memory_*, etc.
 ```
 
 #### Agent Default Tools
@@ -989,14 +1070,14 @@ agents:
   coordinator-agent:
     type: "llm"
     default_tools:
-      - "workspace.jobs.*"      # All job operations
-      - "workspace.sessions.*"  # All session operations
+      - "workspace_jobs_*" # All job operations
+      - "workspace_sessions_*" # All session operations
     tools:
-      mcp: ["github-mcp", "filesystem-mcp"]  # References tools.mcp.servers.*
-      
+      mcp: ["github-mcp", "filesystem-mcp"] # References tools.mcp.servers.*
+
   simple-agent:
-    type: "llm"  
-    default_tools: []  # No default workspace tools - security by default
+    type: "llm"
+    default_tools: [] # No default workspace tools - security by default
     # No tools.mcp = no MCP server access
 ```
 
@@ -1014,24 +1095,24 @@ federation:
     dev-team:
       workspaces: ["qa-team", "staging"]
       scopes: "standard"
-    
+
     qa-team:
-      workspaces: "production"  # Single workspace supported
+      workspaces: "production" # Single workspace supported
       scopes: "deploy_only"
-    
+
     # Complex: per-workspace grants with overrides
     analytics:
       grants:
         - workspace: "dev-team"
           scopes: "read_only"
         - workspace: "qa-team"
-          scopes: ["jobs.trigger", "sessions.list"]  # Inline override
+          scopes: ["jobs.trigger", "sessions.list"] # Inline override
 
   scope_sets:
     standard: ["jobs.list", "jobs.describe", "jobs.trigger", "sessions.list"]
     read_only: ["jobs.list", "jobs.describe", "sessions.list"]
     deploy_only: ["jobs.trigger"]
-    admin: ["jobs.*", "sessions.*", "workspace.describe"]
+    admin: ["jobs.*", "sessions.*", "workspace_describe"]
 ```
 
 #### Scope System (OAuth-Aligned)
@@ -1039,12 +1120,14 @@ federation:
 Atlas uses OAuth-style scopes for granular access control:
 
 **Scope Patterns:**
+
 - **Specific**: `jobs.trigger`, `sessions.list`
 - **Wildcard**: `jobs.*`, `sessions.*`
 - **Predefined Sets**: Reference common combinations via `scope_sets`
 - **Inline Overrides**: Define scopes directly in sharing configuration
 
 **Security Model:**
+
 - **Default deny**: No cross-workspace access unless explicitly configured
 - **Workspace-scoped**: All operations require explicit workspace context
 - **Capability-based**: Fine-grained control over what operations are allowed
@@ -1052,11 +1135,13 @@ Atlas uses OAuth-style scopes for granular access control:
 ### Local vs Remote Performance
 
 #### Local Operations (Same Atlas Instance)
+
 - **Direct function calls**: No MCP overhead for workspace-internal operations
 - **Shared memory space**: Faster execution, lower latency
 - **Built-in capabilities**: Available in agent execution context
 
 #### Remote Operations (Different Atlas Instances)
+
 - **MCP proxy required**: Network calls through configured remotes
 - **Authentication needed**: Standard HTTP/OAuth flows
 - **Explicit configuration**: Must configure in `tools.mcp.servers`
@@ -1069,16 +1154,16 @@ jobs:
       agents:
         - id: "coordinator"
           tools:
-            workspace: ["workspace.jobs.trigger"]  # Direct, fast
+            workspace: ["workspace_jobs_trigger"] # Direct, fast
 
-# Remote job orchestration  
+# Remote job orchestration
 jobs:
   remote-orchestrator:
     execution:
       agents:
         - id: "coordinator"
           tools:
-            mcp: ["partner-workspace"]  # Uses partner_workspace MCP server (network call)
+            mcp: ["partner-workspace"] # Uses partner_workspace MCP server (network call)
 ```
 
 ### Discovery and Introspection
@@ -1087,27 +1172,30 @@ Workspaces can discover each other's capabilities through platform APIs:
 
 ```typescript
 // Available to agents with appropriate tools
-const workspaces = await workspace.platform.list();
-const jobs = await workspace.jobs.list(targetWorkspaceId);
-const jobDetails = await workspace.jobs.describe(targetWorkspaceId, jobName);
+const workspaces = await workspace_platform_list();
+const jobs = await workspace_jobs_list(targetWorkspaceId);
+const jobDetails = await workspace_jobs_describe(targetWorkspaceId, jobName);
 
 // Execute with federation permission checks
-const session = await workspace.jobs.trigger(targetWorkspaceId, jobName, payload);
+const session = await workspace_jobs_trigger(targetWorkspaceId, jobName, payload);
 ```
 
 ### Security and Isolation
 
 **Workspace Boundaries:**
+
 - Each workspace operates in isolated context
 - Cross-workspace access requires explicit federation configuration
 - All operations are audited and attributed
 
 **Agent Capabilities:**
+
 - Agents start with zero workspace tools
 - Must be explicitly granted capabilities per job
 - Cannot access capabilities outside their granted scope
 
 **Federation Controls:**
+
 - Platform workspace controls all cross-workspace sharing
 - Granular scope-based permissions
 - Support for both simple and complex sharing patterns
@@ -1125,4 +1213,4 @@ const session = await workspace.jobs.trigger(targetWorkspaceId, jobName, payload
 
 ## Implementation Roadmap
 
-*[Continue with implementation planning...]*
+_[Continue with implementation planning...]_

@@ -5,9 +5,11 @@ workspace:
   name: "Web Page Analysis with Playwright MCP"
   description: "Comprehensive web page analysis using Playwright MCP server for browser automation and content extraction"
 
-# MCP server configurations
-mcp_servers:
-  playwright:
+# Tools configuration
+tools:
+  mcp:
+    servers:
+      playwright:
     transport:
       type: "stdio"
       command: "npx"
@@ -34,7 +36,8 @@ agents:
     provider: "anthropic"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Comprehensive web page analysis using browser automation tools"
-    mcp_servers: ["playwright"]
+    tools:
+      mcp: ["playwright"]
     max_steps: 5
     tool_choice: "auto"
     prompts:

@@ -701,6 +701,7 @@ export class WorkerManager {
         workspace: config.workspace,
         config: config.config || {},
         model: options.model || config.config?.model,
+        memoryConfig: config.memoryConfig,
       },
     };
 
