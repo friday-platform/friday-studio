@@ -12,7 +12,7 @@ export function builder(yargs: YargsInstance) {
   return yargs
     .example("$0", "Launch interactive Atlas interface")
     .epilogue(
-      "The interactive interface provides a user-friendly way to manage workspaces",
+      "The interactive interface provides a user-friendly way to manage workspaces"
     );
 }
 
@@ -98,7 +98,7 @@ interface CommandDefinition {
   usage: string;
   handler: (
     args: string[],
-    context: CommandContext,
+    context: CommandContext
   ) => Promise<ConversationEntry[]>;
 }
 
@@ -131,7 +131,7 @@ const handleHelpCommand = (): Promise<ConversationEntry[]> => {
 
 const handleExitCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): Promise<ConversationEntry[]> => {
   // Add goodbye message before exiting
   setTimeout(() => {
@@ -154,8 +154,7 @@ const handleListCommand = (args: string[]): Promise<ConversationEntry[]> => {
     {
       id: "list-output",
       type: "command_output",
-      content:
-        `List command executed - showing ${resourceType} resources (placeholder implementation)`,
+      content: `List command executed - showing ${resourceType} resources (placeholder implementation)`,
       timestamp: new Date(),
     },
   ]);
@@ -167,7 +166,8 @@ const handleInitCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "init-error",
         type: "error",
-        content: "init command requires a workspace name. Usage: /init <workspace-name>",
+        content:
+          "init command requires a workspace name. Usage: /init <workspace-name>",
         timestamp: new Date(),
       },
     ]);
@@ -251,7 +251,8 @@ const handleLogsCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "logs-error",
         type: "error",
-        content: "logs command requires a session ID. Usage: /logs <session-id>",
+        content:
+          "logs command requires a session ID. Usage: /logs <session-id>",
         timestamp: new Date(),
       },
     ]);
@@ -457,12 +458,12 @@ export default function InteractiveCommand() {
       <Box flexDirection="row" alignItems="center">
         <Box flexDirection="column">
           <Text>╭───╮</Text>
-          <Text>│&nbsp;⁖&nbsp;│</Text>
+          <Text>│&nbsp;∆&nbsp;│</Text>
           <Text>╰───╯</Text>
         </Box>
 
         <Box flexDirection="column">
-          <Text bold>Atlas.</Text>
+          <Text bold>&nbsp;Atlas.&nbsp;</Text>
         </Box>
 
         <Box flexDirection="column">
@@ -471,7 +472,7 @@ export default function InteractiveCommand() {
       </Box>
 
       <Box flexDirection="column" paddingLeft={2}>
-        <Text dimColor>φ /help for help</Text>
+        <Text dimColor>⊕ /help for help</Text>
         <Text dimColor>∶ {Deno.cwd()}</Text>
       </Box>
 
@@ -500,7 +501,8 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
     },
     {
       command: "/list",
-      description: "View workspaces, sessions, signals, agents, and library items",
+      description:
+        "View workspaces, sessions, signals, agents, and library items",
     },
     { command: "/init", description: "Initialize a new workspace" },
     { command: "/sessions", description: "View available workspace sessions" },
@@ -519,7 +521,8 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   ];
 
   // Get all available suggestions (commands only)
-  const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
+  const getAllSuggestions = () =>
+    getAllSuggestionsWithDescriptions().map((item) => item.command);
 
   // Get filtered suggestions based on current input
   const getFilteredSuggestions = () => {
@@ -536,12 +539,16 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
     if (showSuggestions) {
       if (key.upArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev <= 0 ? filteredSuggestions.length - 1 : prev - 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev <= 0 ? filteredSuggestions.length - 1 : prev - 1
+        );
         return;
       }
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev >= filteredSuggestions.length - 1 ? 0 : prev + 1
+        );
         return;
       }
       if (key.return && selectedSuggestionIndex >= 0) {
@@ -604,7 +611,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>↬</Text>
+        <Text dimColor>→ </Text>
         <TextInput
           suggestions={getAllSuggestions()}
           placeholder="Type / for commands"
