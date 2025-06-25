@@ -34,6 +34,117 @@ export class ConfigValidationError extends Error {
 // Zod schemas for validation
 const AgentTypeSchema = z.enum(["tempest", "llm", "remote"]);
 
+// Environment variable configuration schema
+const EnvironmentVariableSchema = z.union([
+  z.string(), // Direct value
+  z.object({
+    value: z.string().optional(),
+    from_env: z.string().optional(),
+    from_env_file: z.string().optional(),
+    key: z.string().optional(), // For from_env_file
+    from_file: z.string().optional(),
+    default: z.string().optional(),
+    required: z.boolean().default(false),
+  })
+]);
+
+// Scope configuration for federation
+const ScopeSchema = z.union([
+  z.string(), // Reference to scope_sets
+  z.array(z.string()), // Inline scope list
+]);
+
+// Federation sharing configuration
+const FederationSharingSchema = z.object({
+  workspaces: z.union([z.string(), z.array(z.string())]).optional(),
+  scopes: ScopeSchema.optional(),
+  grants: z.array(z.object({
+    workspace: z.string(),
+    scopes: ScopeSchema,
+  })).optional(),
+});
+
+// Federation configuration schema
+const FederationConfigSchema = z.object({
+  sharing: z.record(z.string(), FederationSharingSchema).optional(),
+  scope_sets: z.record(z.string(), z.array(z.string())).optional(),
+});
+
+// MCP server configuration schema with environment variables
+const MCPServerConfigSchema = z.object({
+  transport: MCPTransportConfigSchema,
+  auth: MCPAuthConfigSchema.optional(),
+  tools: MCPToolsConfigSchema.optional(),
+  timeout_ms: z.number().positive().default(30000),
+  env: z.record(z.string(), EnvironmentVariableSchema).optional(),
+});
+
+// Server configuration schema
+const ServerConfigSchema = z.object({
+  mcp: z.object({
+    enabled: z.boolean().default(false),
+    transport: MCPTransportConfigSchema.optional(),
+    discoverable: z.object({
+      capabilities: z.array(z.string()).optional(),
+      jobs: z.array(z.string()).optional(),
+    }).optional(),
+    auth: z.object({
+      required: z.boolean().default(false),
+      providers: z.array(z.string()).optional(),
+    }).optional(),
+    rate_limits: z.object({
+      requests_per_hour: z.number().positive().optional(),
+      concurrent_sessions: z.number().positive().optional(),
+    }).optional(),
+  }).optional(),
+  acp: z.object({
+    enabled: z.boolean().default(false),
+    discoverable_agents: z.array(z.string()).optional(),
+  }).optional(),
+  rest: z.object({
+    enabled: z.boolean().default(false),
+    prefix: z.string().default("/api/v1"),
+    swagger: z.boolean().default(false),
+  }).optional(),
+});
+
+// MCP client tools configuration
+const MCPToolsConfigSchema2 = z.object({
+  client_config: z.object({
+    timeout: z.number().positive().default(30000),
+    retry_policy: z.object({
+      max_attempts: z.number().positive().default(3),
+    }).optional(),
+    connection_pool: z.object({
+      max_connections: z.number().positive().default(10),
+    }).optional(),
+  }).optional(),
+  servers: z.record(z.string(), MCPServerConfigSchema).optional(),
+  policies: z.object({
+    type: z.enum(["allowlist", "denylist"]).default("allowlist"),
+    allowed: z.array(z.union([
+      z.string(),
+      z.object({
+        id: z.string(),
+        restrictions: z.record(z.string(), z.any()).optional(),
+      })
+    ])).optional(),
+    denied: z.array(z.string()).optional(),
+  }).optional(),
+});
+
+// Tools configuration schema
+const ToolsConfigSchema = z.object({
+  mcp: MCPToolsConfigSchema2.optional(),
+});
+
+// Workspace identification schema
+const WorkspaceIdentitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+});
+
 const AuthConfigSchema = z
   .object({
     type: z.enum(["bearer", "api_key", "basic", "none"]),
@@ -77,7 +188,7 @@ const MCPConfigSchema = z.object({
   denied_tools: z.array(z.string()).optional(),
 });
 
-// Comprehensive MCP server configuration schema for workspace-level MCP servers
+// Legacy MCP server configuration schema (keeping for backward compatibility)
 const WorkspaceMCPServerConfigSchema = z.object({
   id: z.string().optional(), // ID is derived from key, but can be overridden
   transport: MCPTransportConfigSchema,
@@ -111,12 +222,20 @@ const WorkspaceAgentConfigSchema = z
     provider: z.enum(["anthropic", "openai", "google"]).optional(),
     model: z.string().optional(),
     purpose: z.string(),
-    tools: z.array(z.string()).optional(),
+    // Built-in workspace tools (ambient capabilities)
+    tools: z.union([
+      z.array(z.string()), // Simple array format: ["workspace.jobs.trigger", "workspace.memory.recall"] 
+      z.object({
+        mcp: z.array(z.string()).optional(), // MCP servers: ["server-id"] -> tools.mcp.servers.server-id
+        workspace: z.array(z.string()).optional(), // Workspace capabilities
+      }),
+    ]).optional(),
+    default_tools: z.array(z.string()).optional(), // Default tools for this agent type
     prompts: z.record(z.string(), z.string()).optional(),
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().positive().optional(),
-    // MCP integration (only for LLM agents)
-    mcp_servers: z.array(z.string()).optional(), // References to MCP servers (LLM agents only)
+    // MCP integration (only for LLM agents) - DEPRECATED, use tools.mcp instead
+    mcp_servers: z.array(z.string()).optional(), // Legacy: References to MCP servers (LLM agents only)
     max_steps: z.number().positive().optional(), // For multi-step tool calling (LLM agents only)
     tool_choice: z
       .union([
@@ -291,8 +410,10 @@ const JobExecutionSchema = z.object({
       z.object({
         id: z.string(),
         task: z.string().optional(),
-        inputSource: z.string().optional(),
+        input_source: z.enum(["signal", "previous", "combined", "filesystem_context"]).optional(),
         dependencies: z.array(z.string()).optional(),
+        // Tools granted to this agent for this job
+        tools: z.array(z.string()).optional(),
       }),
     ]),
   ),
@@ -359,15 +480,26 @@ const WorkspaceSignalConfigSchema = z.object({
 
 export const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
-  workspace: z.object({
+  
+  // Workspace identity
+  workspace: WorkspaceIdentitySchema.extend({
     id: z.string().uuid("Workspace ID must be a valid UUID"),
     name: z.string().min(1, "Workspace name cannot be empty"),
-    description: z.string(),
   }),
-  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(), // MCP servers configuration
-  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(), // Top-level jobs section
-  signals: z.record(z.string(), WorkspaceSignalConfigSchema),
+  
+  // Server configuration (how this workspace exposes itself)
+  server: ServerConfigSchema.optional(),
+  
+  // Tools configuration (MCP client config and servers)
+  tools: ToolsConfigSchema.optional(),
+  
+  // Workspace capabilities (jobs, signals, agents)
+  jobs: z.record(z.string(), JobSpecificationSchema).optional(),
+  signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
+  agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
+  
+  // Legacy MCP servers configuration (keeping for backward compatibility)
+  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 const SupervisorConfigSchema = z.object({
@@ -379,18 +511,44 @@ const SupervisorConfigSchema = z.object({
     .catchall(z.string()),
 });
 
+// New unified AtlasConfigSchema - atlas.yml IS a workspace with platform capabilities
 const AtlasConfigSchema = z.object({
   version: z.string(),
+  
+  // Workspace identity (atlas.yml IS a workspace)
+  workspace: WorkspaceIdentitySchema.extend({
+    id: z.string().default("atlas-platform"),
+    name: z.string().default("Atlas Platform"),
+  }),
+  
+  // Server configuration (how this platform workspace exposes itself)
+  server: ServerConfigSchema.optional(),
+  
+  // Tools configuration (MCP client config, servers, and policies for child workspaces)
+  tools: ToolsConfigSchema.optional(),
+  
+  // Federation configuration (cross-workspace sharing and policies)
+  federation: FederationConfigSchema.optional(),
+  
+  // Platform capabilities as jobs, signals, and agents (same as workspace.yml)
+  jobs: z.record(z.string(), JobSpecificationSchema).optional(),
+  signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
+  agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
+  
+  // Legacy platform configuration (keeping for backward compatibility)
   platform: z.object({
     name: z.string(),
     version: z.string(),
-  }),
-  agents: z.record(z.string(), WorkspaceAgentConfigSchema),
+  }).optional(),
+  
+  // Supervisor configuration (platform-level defaults)
   supervisors: z.object({
     workspace: SupervisorConfigSchema,
     session: SupervisorConfigSchema,
     agent: SupervisorConfigSchema,
-  }),
+  }).optional(),
+  
+  // Runtime configuration (platform-specific settings)
   runtime: z
     .object({
       server: z
@@ -427,6 +585,15 @@ export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
 export type TriggerSpecification = z.infer<typeof TriggerSpecificationSchema>;
+
+// New architectural foundation types
+export type EnvironmentVariable = z.infer<typeof EnvironmentVariableSchema>;
+export type FederationConfig = z.infer<typeof FederationConfigSchema>;
+export type FederationSharing = z.infer<typeof FederationSharingSchema>;
+export type ServerConfig = z.infer<typeof ServerConfigSchema>;
+export type ToolsConfig = z.infer<typeof ToolsConfigSchema>;
+export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
+export type WorkspaceIdentity = z.infer<typeof WorkspaceIdentitySchema>;
 
 // Merged configuration that combines both
 export interface MergedConfig {
@@ -771,6 +938,11 @@ export class ConfigLoader {
   private createDefaultAtlasConfig(): AtlasConfig {
     const defaultConfig: AtlasConfig = {
       version: "1.0",
+      workspace: {
+        id: "atlas-platform",
+        name: "Atlas Platform",
+        description: "Default Atlas platform workspace with global management capabilities",
+      },
       platform: {
         name: "Atlas",
         version: "1.0.0",

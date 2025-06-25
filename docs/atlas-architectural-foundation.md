@@ -904,8 +904,9 @@ jobs:
       agents:
         - id: "coordinator-agent"
           tools:
-            - "workspace.jobs.trigger"  # Built-in workspace capability
-            - "workspace.jobs.list"
+            workspace:
+              - "workspace.jobs.trigger"  # Built-in workspace capability
+              - "workspace.jobs.list"
     
   target-job:
     # Can be triggered by orchestrator-job
@@ -928,7 +929,9 @@ jobs:
     execution:
       agents:
         - id: "deploy-agent"
-          # Can trigger jobs in qa-workspace if federation allows
+          tools:
+            mcp: ["qa-workspace"]  # References tools.mcp.servers.qa-workspace
+            workspace: ["workspace.jobs.trigger"]  # Built-in capabilities
 ```
 
 ### Built-in Workspace Capabilities
@@ -970,9 +973,11 @@ jobs:
       agents:
         - id: "coordinator-agent"
           tools:
-            - "workspace.jobs.trigger"     # Explicitly granted
-            - "workspace.jobs.list"
-            - "workspace.sessions.describe"
+            workspace:
+              - "workspace.jobs.trigger"     # Explicitly granted
+              - "workspace.jobs.list"
+              - "workspace.sessions.describe"
+            mcp: ["github-mcp"]              # MCP server access
             # Does NOT get workspace.memory.*, etc.
 ```
 
@@ -986,10 +991,13 @@ agents:
     default_tools:
       - "workspace.jobs.*"      # All job operations
       - "workspace.sessions.*"  # All session operations
+    tools:
+      mcp: ["github-mcp", "filesystem-mcp"]  # References tools.mcp.servers.*
       
   simple-agent:
     type: "llm"  
     default_tools: []  # No default workspace tools - security by default
+    # No tools.mcp = no MCP server access
 ```
 
 ### Federation Configuration
@@ -1061,7 +1069,7 @@ jobs:
       agents:
         - id: "coordinator"
           tools:
-            - "workspace.jobs.trigger"  # Direct, fast
+            workspace: ["workspace.jobs.trigger"]  # Direct, fast
 
 # Remote job orchestration  
 jobs:
@@ -1069,7 +1077,8 @@ jobs:
     execution:
       agents:
         - id: "coordinator"
-          # Uses partner_workspace MCP server (network call)
+          tools:
+            mcp: ["partner-workspace"]  # Uses partner_workspace MCP server (network call)
 ```
 
 ### Discovery and Introspection
