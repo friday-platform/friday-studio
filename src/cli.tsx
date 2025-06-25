@@ -149,7 +149,7 @@ const cli = meow(
         type: "string",
       },
     },
-  },
+  }
 );
 
 // Parse command with shorthand support
@@ -281,6 +281,6 @@ if (command === "workspace" && subcommand === "logs") {
       subcommand,
       args,
       flags: cli.flags,
-    }),
+    })
   );
 }

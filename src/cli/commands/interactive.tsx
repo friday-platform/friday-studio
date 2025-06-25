@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { TextInput } from "@inkjs/ui";
 import Help from "../views/help.tsx";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 interface ConversationEntry {
   id: string;
@@ -397,10 +398,11 @@ const validateCommand = (parsed: ParsedCommand): string | null => {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command">("help");
+  const [view, setView] = useState<"help" | "command">("command");
   const [minHeight, setMinHeight] = useState(35);
   const { stdout } = useStdout();
   const { exit } = useApp();
+  const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -431,7 +433,12 @@ export default function InteractiveCommand() {
   });
 
   return (
-    <Box flexDirection="column" padding={1}>
+    <Box
+      flexDirection="column"
+      padding={1}
+      alignItems="flex-start"
+      width={dimensions.paddedWidth}
+    >
       <Box flexDirection="row" alignItems="center">
         <Box flexDirection="column">
           <Text>╭───╮</Text>
@@ -468,6 +475,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
+  const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Get all available suggestions with descriptions
   const getAllSuggestionsWithDescriptions = () => [
@@ -585,7 +593,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   };
 
   return (
-    <Box flexDirection="column" marginTop={1} width="100%">
+    <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
         <Text dimColor>↬ </Text>
         <TextInput
