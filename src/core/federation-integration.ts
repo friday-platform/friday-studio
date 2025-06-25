@@ -25,7 +25,7 @@ export interface FederatedWorkspaceRuntime extends WorkspaceRuntime {
   mcpProxy: MCPProxy;
   platformMCPServer?: PlatformMCPServer;
   workspaceMCPServer?: WorkspaceMCPServer;
-  
+
   // Enhanced runtime methods
   triggerFederatedJob(targetWorkspace: string, jobName: string, payload?: any): Promise<any>;
   listAccessibleWorkspaces(): Promise<string[]>;
@@ -175,7 +175,7 @@ export class FederationIntegration {
     return {
       context,
       capabilities: capabilityFunctions,
-      availableCapabilities: capabilities.map(c => ({
+      availableCapabilities: capabilities.map((c) => ({
         id: c.id,
         name: c.name,
         description: c.description,
@@ -235,7 +235,7 @@ export class FederationIntegration {
     const dependencies = {
       workspaceRuntime: {
         async listJobs() {
-          return Object.keys(this.workspaceConfig.jobs || {}).map(name => ({
+          return Object.keys(this.workspaceConfig.jobs || {}).map((name) => ({
             name,
             description: this.workspaceConfig.jobs![name].description,
           }));
@@ -259,7 +259,7 @@ export class FederationIntegration {
           // This would cancel a session in the runtime
         },
         async listSignals() {
-          return Object.keys(this.workspaceConfig.signals || {}).map(name => ({
+          return Object.keys(this.workspaceConfig.signals || {}).map((name) => ({
             name,
             description: this.workspaceConfig.signals![name].description,
           }));
@@ -268,7 +268,7 @@ export class FederationIntegration {
           // This would trigger a signal in the runtime
         },
         async listAgents() {
-          return Object.keys(this.workspaceConfig.agents || {}).map(id => ({
+          return Object.keys(this.workspaceConfig.agents || {}).map((id) => ({
             id,
             type: this.workspaceConfig.agents![id].type,
             purpose: this.workspaceConfig.agents![id].purpose,

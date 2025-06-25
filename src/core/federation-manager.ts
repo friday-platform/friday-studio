@@ -3,11 +3,7 @@
  * Handles cross-workspace access control and scope resolution
  */
 
-import type { 
-  FederationConfig, 
-  FederationSharing,
-  AtlasConfig 
-} from "./config-loader.ts";
+import type { AtlasConfig, FederationConfig, FederationSharing } from "./config-loader.ts";
 
 export class FederationAccessError extends Error {
   constructor(
@@ -69,21 +65,22 @@ export class FederationManager {
     if (!this.isWorkspaceShared(sharing, targetWorkspace)) {
       return {
         allowed: false,
-        reason: `Target workspace '${targetWorkspace}' is not shared with source workspace '${sourceWorkspace}'`,
+        reason:
+          `Target workspace '${targetWorkspace}' is not shared with source workspace '${sourceWorkspace}'`,
         grantedScopes: [],
       };
     }
 
     // Get applicable scopes for this target workspace
     const scopes = this.getApplicableScopes(sharing, targetWorkspace);
-    
+
     // Check if the capability is allowed by the scopes
     const allowed = this.isScopeAllowed(scopes, capability);
-    
+
     return {
       allowed,
-      reason: allowed 
-        ? `Access granted via scopes: ${scopes.join(", ")}` 
+      reason: allowed
+        ? `Access granted via scopes: ${scopes.join(", ")}`
         : `Capability '${capability}' not allowed by scopes: ${scopes.join(", ")}`,
       grantedScopes: scopes,
     };
@@ -186,7 +183,9 @@ export class FederationManager {
 
     return {
       scopes: [...new Set(resolved)], // Remove duplicates
-      source: scopeArray.some(s => this.federationConfig?.scope_sets?.[s]) ? "predefined" : "inline",
+      source: scopeArray.some((s) => this.federationConfig?.scope_sets?.[s])
+        ? "predefined"
+        : "inline",
     };
   }
 
@@ -194,7 +193,7 @@ export class FederationManager {
    * Check if a specific scope allows a capability
    */
   isScopeAllowed(scopes: string[], capability: string): boolean {
-    return scopes.some(scope => this.matchesScope(scope, capability));
+    return scopes.some((scope) => this.matchesScope(scope, capability));
   }
 
   /**
@@ -207,7 +206,7 @@ export class FederationManager {
   } {
     const sharing = this.federationConfig?.sharing || {};
     const scopeSets = this.federationConfig?.scope_sets || {};
-    
+
     let totalConnections = 0;
     for (const config of Object.values(sharing)) {
       totalConnections += this.getAccessibleWorkspacesFromSharing(config).length;
@@ -236,7 +235,9 @@ export class FederationManager {
         // Check workspace-level scopes
         if (typeof sharing.scopes === "string") {
           if (!federationConfig.scope_sets?.[sharing.scopes]) {
-            errors.push(`Workspace '${workspace}' references undefined scope_set '${sharing.scopes}'`);
+            errors.push(
+              `Workspace '${workspace}' references undefined scope_set '${sharing.scopes}'`,
+            );
           }
         }
 
@@ -245,7 +246,9 @@ export class FederationManager {
           for (const grant of sharing.grants) {
             if (typeof grant.scopes === "string") {
               if (!federationConfig.scope_sets?.[grant.scopes]) {
-                errors.push(`Grant for workspace '${grant.workspace}' references undefined scope_set '${grant.scopes}'`);
+                errors.push(
+                  `Grant for workspace '${grant.workspace}' references undefined scope_set '${grant.scopes}'`,
+                );
               }
             }
           }
@@ -270,7 +273,7 @@ export class FederationManager {
 
     // Check grants
     if (sharing.grants) {
-      return sharing.grants.some(grant => grant.workspace === targetWorkspace);
+      return sharing.grants.some((grant) => grant.workspace === targetWorkspace);
     }
 
     return false;
@@ -279,7 +282,7 @@ export class FederationManager {
   private getApplicableScopes(sharing: FederationSharing, targetWorkspace: string): string[] {
     // Check for workspace-specific grant first
     if (sharing.grants) {
-      const grant = sharing.grants.find(g => g.workspace === targetWorkspace);
+      const grant = sharing.grants.find((g) => g.workspace === targetWorkspace);
       if (grant) {
         return this.resolveScopes(grant.scopes).scopes;
       }

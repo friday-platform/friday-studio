@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "atlas-telephone": {
+      "command": "deno",
+      "args": [
+        "task",
+        "atlas",
+        "workspace",
+        "serve",
+        "--mcp"
+      ],
+      "cwd": "/Users/kenneth/tempest/atlas/examples/workspaces/telephone"
+    }
+  }
+}

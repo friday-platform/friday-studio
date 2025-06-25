@@ -5,6 +5,7 @@
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 import { z } from "zod/v4";
+import { logger } from "../utils/logger.ts";
 import {
   MCPAuthConfigSchema,
   MCPToolsConfigSchema,
@@ -45,7 +46,7 @@ const EnvironmentVariableSchema = z.union([
     from_file: z.string().optional(),
     default: z.string().optional(),
     required: z.boolean().default(false),
-  })
+  }),
 ]);
 
 // Scope configuration for federation
@@ -127,7 +128,7 @@ const MCPToolsConfigSchema2 = z.object({
       z.object({
         id: z.string(),
         restrictions: z.record(z.string(), z.any()).optional(),
-      })
+      }),
     ])).optional(),
     denied: z.array(z.string()).optional(),
   }).optional(),
@@ -224,7 +225,7 @@ const WorkspaceAgentConfigSchema = z
     purpose: z.string(),
     // Built-in workspace tools (ambient capabilities)
     tools: z.union([
-      z.array(z.string()), // Simple array format: ["workspace.jobs.trigger", "workspace.memory.recall"] 
+      z.array(z.string()), // Simple array format: ["workspace.jobs.trigger", "workspace.memory.recall"]
       z.object({
         mcp: z.array(z.string()).optional(), // MCP servers: ["server-id"] -> tools.mcp.servers.server-id
         workspace: z.array(z.string()).optional(), // Workspace capabilities
@@ -480,30 +481,42 @@ const WorkspaceSignalConfigSchema = z.object({
 
 export const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
-  
+
   // Workspace identity
   workspace: WorkspaceIdentitySchema.extend({
     id: z.string().uuid("Workspace ID must be a valid UUID"),
     name: z.string().min(1, "Workspace name cannot be empty"),
   }),
-  
+
   // Server configuration (how this workspace exposes itself)
   server: ServerConfigSchema.optional(),
-  
+
   // Tools configuration (MCP client config and servers)
   tools: ToolsConfigSchema.optional(),
-  
+
   // Workspace capabilities (jobs, signals, agents)
   jobs: z.record(z.string(), JobSpecificationSchema).optional(),
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
-  
+
   // Legacy MCP servers configuration (keeping for backward compatibility)
   mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 const SupervisorConfigSchema = z.object({
   model: z.string(),
+  memory: z.string().optional(),
+  supervision: z.object({
+    level: z.enum(["minimal", "standard", "paranoid"]).default("standard"),
+    cache_enabled: z.boolean().default(true),
+    cache_adapter: z.enum(["memory", "redis", "file"]).default("memory"),
+    cache_ttl_hours: z.number().positive().default(1),
+    parallel_llm_calls: z.boolean().default(true),
+    timeouts: z.object({
+      analysis_ms: z.number().positive().default(10000),
+      validation_ms: z.number().positive().default(8000),
+    }).optional(),
+  }).optional(),
   prompts: z
     .object({
       system: z.string(),
@@ -514,40 +527,156 @@ const SupervisorConfigSchema = z.object({
 // New unified AtlasConfigSchema - atlas.yml IS a workspace with platform capabilities
 const AtlasConfigSchema = z.object({
   version: z.string(),
-  
+
   // Workspace identity (atlas.yml IS a workspace)
   workspace: WorkspaceIdentitySchema.extend({
     id: z.string().default("atlas-platform"),
     name: z.string().default("Atlas Platform"),
   }),
-  
+
   // Server configuration (how this platform workspace exposes itself)
   server: ServerConfigSchema.optional(),
-  
+
   // Tools configuration (MCP client config, servers, and policies for child workspaces)
   tools: ToolsConfigSchema.optional(),
-  
+
   // Federation configuration (cross-workspace sharing and policies)
   federation: FederationConfigSchema.optional(),
-  
+
   // Platform capabilities as jobs, signals, and agents (same as workspace.yml)
   jobs: z.record(z.string(), JobSpecificationSchema).optional(),
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
-  
-  // Legacy platform configuration (keeping for backward compatibility)
-  platform: z.object({
-    name: z.string(),
-    version: z.string(),
+
+  // Memory configuration (required for supervisors)
+  memory: z.object({
+    default: z.object({
+      enabled: z.boolean(),
+      storage: z.string(),
+      cognitive_loop: z.boolean(),
+      retention: z.object({
+        max_age_days: z.number(),
+        max_entries: z.number().optional(),
+        cleanup_interval_hours: z.number(),
+      }),
+    }),
+    streaming: z.object({
+      enabled: z.boolean(),
+      queue_max_size: z.number(),
+      batch_size: z.number(),
+      flush_interval_ms: z.number(),
+      background_processing: z.boolean(),
+      persistence_enabled: z.boolean(),
+      error_retry_attempts: z.number(),
+      priority_processing: z.boolean(),
+      dual_write_enabled: z.boolean(),
+      legacy_batch_enabled: z.boolean(),
+      stream_everything: z.boolean(),
+      performance_tracking: z.boolean(),
+    }).optional(),
+    agent: z.object({
+      enabled: z.boolean(),
+      scope: z.enum(["agent", "session", "workspace"]),
+      include_in_context: z.boolean(),
+      context_limits: z.object({
+        relevant_memories: z.number(),
+        past_successes: z.number(),
+        past_failures: z.number(),
+      }),
+      memory_types: z.record(
+        z.string(),
+        z.object({
+          enabled: z.boolean(),
+          max_age_hours: z.number().optional(),
+          max_age_days: z.number().optional(),
+          max_entries: z.number().optional(),
+        }),
+      ),
+    }),
+    session: z.object({
+      enabled: z.boolean(),
+      scope: z.enum(["agent", "session", "workspace"]),
+      include_in_context: z.boolean(),
+      context_limits: z.object({
+        relevant_memories: z.number(),
+        past_successes: z.number(),
+        past_failures: z.number(),
+      }),
+      memory_types: z.record(
+        z.string(),
+        z.object({
+          enabled: z.boolean(),
+          max_age_hours: z.number().optional(),
+          max_age_days: z.number().optional(),
+          max_entries: z.number().optional(),
+        }),
+      ),
+    }),
+    workspace: z.object({
+      enabled: z.boolean(),
+      scope: z.enum(["agent", "session", "workspace"]),
+      include_in_context: z.boolean(),
+      context_limits: z.object({
+        relevant_memories: z.number(),
+        past_successes: z.number(),
+        past_failures: z.number(),
+      }),
+      memory_types: z.record(
+        z.string(),
+        z.object({
+          enabled: z.boolean(),
+          max_age_hours: z.number().optional(),
+          max_age_days: z.number().optional(),
+          max_entries: z.number().optional(),
+        }),
+      ),
+    }),
   }).optional(),
-  
+
+  // A Priori Planning Configuration
+  planning: z.object({
+    execution: z.object({
+      precomputation: z.enum(["aggressive", "moderate", "minimal", "disabled"]),
+      cache_enabled: z.boolean(),
+      cache_ttl_hours: z.number(),
+      invalidate_on_job_change: z.boolean(),
+      strategy_selection: z.object({
+        simple_jobs: z.string(),
+        complex_jobs: z.string(),
+        optimization_jobs: z.string(),
+        planning_jobs: z.string(),
+      }),
+      strategy_thresholds: z.object({
+        complexity: z.number(),
+        uncertainty: z.number(),
+        optimization: z.number(),
+      }),
+    }),
+    validation: z.object({
+      precomputation: z.enum(["aggressive", "moderate", "minimal", "disabled"]),
+      functional_validators: z.boolean(),
+      smoke_tests: z.boolean(),
+      content_safety: z.boolean(),
+      llm_threshold: z.number(),
+      llm_fallback: z.boolean(),
+      cache_enabled: z.boolean(),
+      cache_ttl_hours: z.number(),
+      fail_fast: z.boolean(),
+      external_services: z.object({
+        openai_moderation: z.boolean(),
+        perspective_api: z.boolean(),
+        deepeval_service: z.string().nullable(),
+      }),
+    }),
+  }).optional(),
+
   // Supervisor configuration (platform-level defaults)
   supervisors: z.object({
     workspace: SupervisorConfigSchema,
     session: SupervisorConfigSchema,
     agent: SupervisorConfigSchema,
-  }).optional(),
-  
+  }),
+
   // Runtime configuration (platform-specific settings)
   runtime: z
     .object({
@@ -600,6 +729,7 @@ export interface MergedConfig {
   atlas: AtlasConfig;
   workspace: NewWorkspaceConfig;
   jobs: Record<string, JobSpecification>;
+  supervisorDefaults: any; // Supervisor defaults from supervisor-defaults.yml
 }
 
 // Helper method to extract AgentSupervisor config from AtlasConfig
@@ -652,8 +782,14 @@ export class ConfigLoader {
   }
 
   async load(): Promise<MergedConfig> {
+    // Load supervisor defaults first
+    const supervisorDefaults = await this.loadSupervisorDefaults();
+
     // Load atlas.yml - platform configuration
     const atlasConfig = await this.loadAtlasConfig();
+
+    // Merge supervisor defaults with atlas config
+    const mergedAtlasConfig = this.mergeSupervisorDefaults(atlasConfig, supervisorDefaults);
 
     // Load workspace.yml - user configuration
     const workspaceConfig = await this.loadWorkspaceConfig();
@@ -662,12 +798,13 @@ export class ConfigLoader {
     const jobs = this.loadJobSpecs(workspaceConfig);
 
     // Validate merged configuration
-    this.validateConfig(atlasConfig, workspaceConfig, jobs);
+    this.validateConfig(mergedAtlasConfig, workspaceConfig, jobs);
 
     return {
-      atlas: atlasConfig,
+      atlas: mergedAtlasConfig,
       workspace: workspaceConfig,
       jobs,
+      supervisorDefaults, // Include supervisor defaults for workers
     };
   }
 
@@ -943,10 +1080,6 @@ export class ConfigLoader {
         name: "Atlas Platform",
         description: "Default Atlas platform workspace with global management capabilities",
       },
-      platform: {
-        name: "Atlas",
-        version: "1.0.0",
-      },
       agents: {},
       supervisors: {
         workspace: {
@@ -1018,5 +1151,66 @@ export class ConfigLoader {
       default:
         throw new Error(`Unknown agent type: ${workspaceAgentConfig.type}`);
     }
+  }
+
+  /**
+   * Load supervisor defaults from supervisor-defaults.yml
+   */
+  private async loadSupervisorDefaults(): Promise<any> {
+    try {
+      const defaultsPath = join(this.workspaceDir, "src", "config", "supervisor-defaults.yml");
+      const content = await Deno.readTextFile(defaultsPath);
+      const supervisorDefaults = parseYaml(content);
+      
+      logger.debug("Loaded supervisor defaults", {
+        path: defaultsPath,
+        hasSupervisors: !!(supervisorDefaults as any)?.supervisors,
+      });
+      
+      return supervisorDefaults;
+    } catch (error) {
+      logger.warn("Failed to load supervisor defaults, using minimal fallback", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      
+      // Minimal fallback - just enough to prevent crashes
+      return {
+        supervisors: {
+          session: {
+            prompts: {}
+          }
+        }
+      };
+    }
+  }
+
+  /**
+   * Merge supervisor defaults with atlas config
+   * Atlas config supervisors override defaults
+   */
+  private mergeSupervisorDefaults(atlasConfig: AtlasConfig, supervisorDefaults: any): AtlasConfig {
+    // If atlas config already has supervisors, use them as-is
+    if (atlasConfig.supervisors) {
+      return atlasConfig;
+    }
+
+    // Otherwise, use defaults
+    return {
+      ...atlasConfig,
+      supervisors: supervisorDefaults.supervisors || {
+        workspace: {
+          model: "claude-3-5-sonnet-20241022",
+          prompts: { system: "You are a WorkspaceSupervisor." }
+        },
+        session: {
+          model: "claude-3-5-sonnet-20241022", 
+          prompts: { system: "You are a SessionSupervisor." }
+        },
+        agent: {
+          model: "claude-3-5-sonnet-20241022",
+          prompts: { system: "You are an AgentSupervisor." }
+        }
+      }
+    };
   }
 }

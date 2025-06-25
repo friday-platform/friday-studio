@@ -3,9 +3,10 @@ version: "1.0"
 # Atlas MCP Test Workspace Configuration
 # Testing MCP filesystem server integration
 
-platform:
-  name: "Atlas"
-  version: "1.0.0"
+workspace:
+  id: "mcp-test"
+  name: "MCP Test Workspace"
+  description: "Testing MCP filesystem server integration"
 
 # No workspace-specific agents (inherit from platform)
 agents: {}

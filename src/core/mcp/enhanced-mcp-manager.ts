@@ -38,7 +38,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
   async registerEnhancedServer(config: EnhancedMCPServerConfig): Promise<void> {
     // Resolve environment variables
     const resolvedConfig = await this.resolveServerEnvironment(config);
-    
+
     // Convert to base config and register
     await this.registerServer(resolvedConfig);
   }
@@ -46,16 +46,20 @@ export class EnhancedMCPManager extends BaseMCPManager {
   /**
    * Resolve all environment variables in server configuration
    */
-  private async resolveServerEnvironment(config: EnhancedMCPServerConfig): Promise<MCPServerConfig> {
+  private async resolveServerEnvironment(
+    config: EnhancedMCPServerConfig,
+  ): Promise<MCPServerConfig> {
     const resolved: MCPServerConfig = {
       id: config.id,
       transport: {
         type: config.transport.type,
       } as any,
-      auth: config.auth ? {
-        type: config.auth.type,
-        header: config.auth.header,
-      } : undefined,
+      auth: config.auth
+        ? {
+          type: config.auth.type,
+          header: config.auth.header,
+        }
+        : undefined,
       tools: config.tools,
       timeout_ms: config.timeout_ms,
       scope: config.scope,
@@ -83,7 +87,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
         resolved.auth!.token_env = "RESOLVED_TOKEN"; // Use a placeholder
         // Set the resolved token in environment for the base manager to find
         Deno.env.set("RESOLVED_TOKEN", tokenResult.value);
-        
+
         logger.debug("Resolved MCP server auth token", {
           operation: "enhanced_mcp_env_resolution",
           serverId: config.id,
@@ -119,7 +123,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
    */
   async registerEnhancedServers(configs: EnhancedMCPServerConfig[]): Promise<void> {
     const results = await Promise.allSettled(
-      configs.map(config => this.registerEnhancedServer(config))
+      configs.map((config) => this.registerEnhancedServer(config)),
     );
 
     const errors = results
@@ -134,13 +138,13 @@ export class EnhancedMCPManager extends BaseMCPManager {
         operation: "enhanced_mcp_bulk_registration",
         failedServers: errors.length,
         totalServers: configs.length,
-        errors: errors.map(e => `${e.serverId}: ${e.error.message || e.error}`),
+        errors: errors.map((e) => `${e.serverId}: ${e.error.message || e.error}`),
       });
 
       throw new Error(
         `Failed to register ${errors.length} MCP servers:\n${
-          errors.map(e => `  ${e.serverId}: ${e.error.message || e.error}`).join("\n")
-        }`
+          errors.map((e) => `  ${e.serverId}: ${e.error.message || e.error}`).join("\n")
+        }`,
       );
     }
 
@@ -171,13 +175,14 @@ export class EnhancedMCPManager extends BaseMCPManager {
         command: legacyConfig.transport.command,
         args: legacyConfig.transport.args,
         // Convert simple env record to EnvironmentVariable format
-        env: legacyConfig.transport.env ? 
-          Object.fromEntries(
+        env: legacyConfig.transport.env
+          ? Object.fromEntries(
             Object.entries(legacyConfig.transport.env).map(([key, value]) => [
               key,
-              { from_env: key, default: value } as EnvironmentVariable
-            ])
-          ) : undefined,
+              { from_env: key, default: value } as EnvironmentVariable,
+            ]),
+          )
+          : undefined,
       };
     } else {
       enhanced.transport = {
@@ -243,7 +248,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
         id: "linear-mcp",
         transport: {
           type: "stdio",
-          command: "npx", 
+          command: "npx",
           args: ["-y", "linear-mcp-server"],
           env: {
             LINEAR_API_KEY: {

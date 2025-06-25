@@ -4,7 +4,6 @@ import { logger } from "../utils/logger.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { Session } from "./session.ts";
 import { WorkerManager } from "./utils/worker-manager.ts";
-import { AtlasConfigLoader } from "./atlas-config-loader.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
 import { AtlasLibrary } from "./library/atlas-library.ts";
@@ -579,6 +578,128 @@ export class WorkspaceRuntime {
   }
 
   /**
+   * List all jobs in the workspace
+   */
+  async listJobs(): Promise<Array<{ name: string; description?: string }>> {
+    const jobs = this.config?.workspace?.jobs || {};
+    return Object.entries(jobs).map(([name, config]) => ({
+      name,
+      description: (config as any)?.description,
+    }));
+  }
+
+  /**
+   * Trigger a job in the workspace
+   */
+  async triggerJob(jobName: string, payload?: any): Promise<{ sessionId: string }> {
+    const jobs = this.config?.workspace?.jobs || {};
+    if (!jobs[jobName]) {
+      throw new Error(`Job '${jobName}' not found`);
+    }
+
+    // Find signal that triggers this job
+    const signals = this.config?.workspace?.signals || {};
+    for (const [signalName, signalConfig] of Object.entries(signals)) {
+      const jobConfig = jobs[jobName];
+      const triggers = (jobConfig as any)?.triggers || [];
+      const hasMatchingTrigger = triggers.some((trigger: any) => trigger.signal === signalName);
+      
+      if (hasMatchingTrigger) {
+        const signal = { id: signalName, name: signalName, ...(signalConfig as object) } as any;
+        const result = await this.processSignal(signal, payload || {});
+        return { sessionId: result.id || crypto.randomUUID() };
+      }
+    }
+
+    throw new Error(`No signal found that triggers job '${jobName}'`);
+  }
+
+  /**
+   * Get detailed information about a job
+   */
+  async describeJob(jobName: string): Promise<any> {
+    const jobs = this.config?.workspace?.jobs || {};
+    if (!jobs[jobName]) {
+      throw new Error(`Job '${jobName}' not found`);
+    }
+    return jobs[jobName];
+  }
+
+  /**
+   * List all sessions in the workspace
+   */
+  async listSessions(): Promise<Array<{ id: string; status: string; startedAt: string }>> {
+    return Array.from(this.sessions.entries()).map(([id, session]) => ({
+      id,
+      status: session.status,
+      startedAt: new Date().toISOString(), // Use current time as fallback
+    }));
+  }
+
+  /**
+   * Get detailed information about a session
+   */
+  async describeSession(sessionId: string): Promise<any> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`Session '${sessionId}' not found`);
+    }
+    return {
+      id: sessionId,
+      status: session.status,
+      startedAt: new Date().toISOString(),
+      summary: session.summarize(),
+    };
+  }
+
+  /**
+   * List all signals in the workspace
+   */
+  async listSignals(): Promise<Array<{ name: string; description?: string }>> {
+    const signals = this.config?.workspace?.signals || {};
+    return Object.entries(signals).map(([name, config]) => ({
+      name,
+      description: (config as any)?.description,
+    }));
+  }
+
+  /**
+   * Trigger a signal in the workspace
+   */
+  async triggerSignal(signalName: string, payload?: any): Promise<void> {
+    const signals = this.config?.workspace?.signals || {};
+    const signalConfig = signals[signalName];
+    if (!signalConfig) {
+      throw new Error(`Signal '${signalName}' not found`);
+    }
+    const signal = { id: signalName, name: signalName, ...(signalConfig as object) } as any;
+    await this.processSignal(signal, payload || {});
+  }
+
+  /**
+   * List all agents in the workspace
+   */
+  async listAgents(): Promise<Array<{ id: string; type: string; purpose?: string }>> {
+    const agents = this.config?.workspace?.agents || {};
+    return Object.entries(agents).map(([id, config]) => ({
+      id,
+      type: (config as any)?.type || "unknown",
+      purpose: (config as any)?.purpose,
+    }));
+  }
+
+  /**
+   * Get detailed information about an agent
+   */
+  async describeAgent(agentId: string): Promise<any> {
+    const agents = this.config?.workspace?.agents || {};
+    if (!agents[agentId]) {
+      throw new Error(`Agent '${agentId}' not found`);
+    }
+    return agents[agentId];
+  }
+
+  /**
    * Shutdown the runtime
    */
   async shutdown(): Promise<void> {
@@ -747,9 +868,7 @@ const workspaceRuntimeMachine = setup({
       const configLoader = new ConfigLoader();
       const mergedConfig = await configLoader.load();
 
-      // Load Atlas configuration for memory settings
-      const atlasConfigLoader = AtlasConfigLoader.getInstance();
-      const atlasConfig = await atlasConfigLoader.loadConfiguration();
+      // Memory configuration is already loaded in mergedConfig.atlas
 
       // Load all agents (platform + user)
       const allAgents: Record<string, RuntimeAgentConfig> = {
@@ -786,14 +905,15 @@ const workspaceRuntimeMachine = setup({
           signals: Object.keys(context.workspace.signals || {}),
           workflows: Object.keys(context.workspace.workflows || {}),
         },
+        // Add memory configuration at top level for WorkspaceSupervisor
+        memoryConfig: mergedConfig.atlas.memory,
         config: {
           ...(context.config?.supervisor || {}),
           // Pass only serializable parts of the merged configuration
           workspaceSignals: mergedConfig.workspace.signals,
-          workspaceMcpServers: mergedConfig.workspace.mcp_servers,
+          workspaceTools: mergedConfig.workspace.tools,
           jobs: mergedConfig.jobs,
-          // Add memory configuration for proper supervisor initialization
-          memoryConfig: atlasConfig.memory,
+          supervisorDefaults: mergedConfig.supervisorDefaults, // Pass supervisor defaults to workers
         },
       };
 

@@ -34,8 +34,7 @@ tools:
           command: "npx"
           args: ["-y", "@modelcontextprotocol/server-filesystem"]
           env:
-            FILESYSTEM_ROOT:
-              value: "/workspace"
+            FILESYSTEM_ROOT: "/workspace"
         tools:
           allowed: ["read_file", "list_directory"]
 
@@ -73,17 +72,17 @@ jobs:
         - id: "mishearing-agent"
           input_source: "signal"
           tools:
-            - "workspace.memory.recall"  # Can access session memory
+            - "workspace.memory.recall" # Can access session memory
         - id: "embellishment-agent"
           input_source: "previous"
           tools:
             - "workspace.memory.recall"
-            - "workspace.memory.store"  # Can store transformation patterns
+            - "workspace.memory.store" # Can store transformation patterns
         - id: "reinterpretation-agent"
           input_source: "previous"
           tools:
             - "workspace.memory.recall"
-            - "workspace.sessions.describe"  # Can check session progress
+            - "workspace.sessions.describe" # Can check session progress
 
 # Agent definitions
 agents:
@@ -92,16 +91,16 @@ agents:
     model: "claude-3-5-haiku-20241022" # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
     default_tools:
-      - "workspace.memory.recall"  # Default memory access for all jobs
+      - "workspace.memory.recall" # Default memory access for all jobs
     tools:
-      mcp: ["filesystem-context"]  # References tools.mcp.servers.filesystem-context
+      mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
 
   embellishment-agent:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative details and context to messages"
     default_tools:
-      - "workspace.memory.*"  # Full memory access for pattern storage
+      - "workspace.memory.*" # Full memory access for pattern storage
     tools:
       mcp: ["filesystem-context"]
 
@@ -111,6 +110,6 @@ agents:
     purpose: "Dramatically transforms and reinterprets messages"
     default_tools:
       - "workspace.memory.recall"
-      - "workspace.sessions.*"  # Can check session status and progress
+      - "workspace.sessions.*" # Can check session status and progress
     tools:
       mcp: ["filesystem-context"]

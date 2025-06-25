@@ -399,7 +399,9 @@ export class WorkspaceServer {
             content: typeof result.content === "string" ? result.content : "[Binary Content]",
           });
         } else {
-          return c.json(result.item);
+          return c.json({
+            item: result.item,
+          });
         }
       } catch (error) {
         return c.json({
