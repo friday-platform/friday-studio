@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { PlatformMCPServer } from "../../src/core/mcp/platform-mcp-server.ts";
 import { WorkspaceRegistryManager } from "../../src/core/workspace-registry.ts";
+import { WorkspaceRuntimeRegistry } from "../../src/core/workspace-runtime-registry.ts";
 import { ConfigLoader } from "../../src/core/config-loader.ts";
 
 Deno.test("MCP Platform Server - Workspace Operations", async (t) => {
@@ -21,9 +22,10 @@ Deno.test("MCP Platform Server - Workspace Operations", async (t) => {
     console.log("Registry has listWorkspaces:", typeof workspaceRegistry.listWorkspaces);
     console.log("Registry prototype methods:", Object.getOwnPropertyNames(Object.getPrototypeOf(workspaceRegistry)));
 
-    // Create MCP server
+    // Create MCP server with runtime registry instead of workspace registry
+    const runtimeRegistry = WorkspaceRuntimeRegistry.getInstance();
     mcpServer = new PlatformMCPServer({
-      workspaceRegistry,
+      runtimeRegistry,
       atlasConfig,
     });
   });

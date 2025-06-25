@@ -231,8 +231,8 @@ Deno.test("Atlas configuration loads platform settings", async () => {
 
     // Test atlas config structure
     expect(mergedConfig.atlas.version).toBe("1.0");
-    expect(mergedConfig.atlas.platform.name).toBe("Atlas");
-    expect(mergedConfig.atlas.platform.version).toBe("1.0.0");
+    expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
+    expect(mergedConfig.atlas.workspace.id).toBe("atlas-platform");
 
     // Test supervisor configurations
     expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
@@ -361,7 +361,7 @@ Deno.test(
       const mergedConfig = await configLoader.load();
 
       // Verify atlas config is loaded
-      expect(mergedConfig.atlas.platform.name).toBe("Atlas");
+      expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
       expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
         "claude-3-5-sonnet-20241022",
       );
