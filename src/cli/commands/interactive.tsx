@@ -38,6 +38,24 @@ const INTRODUCTION_MESSAGES: ConversationEntry[] = [
   },
 ];
 
+import { render } from "ink";
+import { YargsInstance } from "../utils/yargs.ts";
+
+export const command = "$0";
+export const desc = "Launch interactive Atlas interface";
+
+export function builder(yargs: YargsInstance) {
+  return yargs
+    .example("$0", "Launch interactive Atlas interface")
+    .epilogue(
+      "The interactive interface provides a user-friendly way to manage workspaces",
+    );
+}
+
+export async function handler() {
+  render(<InteractiveCommand />);
+}
+
 // Parse command arguments while preserving complex arguments
 interface ParsedCommand {
   command: string;
@@ -422,7 +440,7 @@ const validateCommand = (parsed: ParsedCommand): string | null => {
   return null;
 };
 
-export default function InteractiveCommand() {
+function InteractiveCommand() {
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [_inputValue, _setInputValue] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(-1);
@@ -951,17 +969,31 @@ const CommandInput = ({
 
   // Get all available suggestions with descriptions
   const getAllSuggestionsWithDescriptions = () => [
-    { command: "/help", description: "Show available commands and usage information" },
-    { command: "/list", description: "List available resources (workspaces, sessions, etc.)" },
+    {
+      command: "/help",
+      description: "Show available commands and usage information",
+    },
+    {
+      command: "/list",
+      description: "List available resources (workspaces, sessions, etc.)",
+    },
     { command: "/init", description: "Initialize a new workspace" },
     { command: "/session list", description: "List active workspace sessions" },
-    { command: "/signal list", description: "List configured workspace signals" },
+    {
+      command: "/signal list",
+      description: "List configured workspace signals",
+    },
     { command: "/agent list", description: "List workspace agents" },
-    { command: "/library list", description: "Access workspace library and templates" },
+    {
+      command: "/library list",
+      description: "Access workspace library and templates",
+    },
     { command: "/config show", description: "View workspace configuration" },
     { command: "/logs", description: "View session logs and output" },
     { command: "/exit", description: "Exit the Atlas interactive interface" },
-    ...commandHistory.slice(-5).map((cmd) => ({ command: cmd, description: "Recent command" })),
+    ...commandHistory
+      .slice(-5)
+      .map((cmd) => ({ command: cmd, description: "Recent command" })),
   ];
 
   // Get all available suggestions (commands only)
@@ -971,8 +1003,9 @@ const CommandInput = ({
   const getFilteredSuggestions = () => {
     if (!currentInput.startsWith("/")) return [];
 
-    return getAllSuggestionsWithDescriptions()
-      .filter((item) => item.command.toLowerCase().includes(currentInput.toLowerCase()));
+    return getAllSuggestionsWithDescriptions().filter((item) =>
+      item.command.toLowerCase().includes(currentInput.toLowerCase())
+    );
   };
 
   // Handle keyboard navigation like SplashScreen
