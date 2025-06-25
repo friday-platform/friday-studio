@@ -8,8 +8,7 @@ export default function HelpCommand({ onExit }: { onExit: () => void }) {
     },
     {
       command: "/list",
-      description:
-        "View workspaces, sessions, signals, agents, and library items",
+      description: "View workspaces, sessions, signals, agents, and library items",
     },
     { command: "/init", description: "Initialize a new workspace" },
     { command: "/sessions", description: "View available workspace sessions" },
@@ -44,9 +43,7 @@ export default function HelpCommand({ onExit }: { onExit: () => void }) {
 
       <Box flexDirection="row" marginTop={1}>
         <Box flexDirection="column" marginRight={1}>
-          {commands.map((suggestion) => (
-            <Text key={suggestion.command}>{suggestion.command}</Text>
-          ))}
+          {commands.map((suggestion) => <Text key={suggestion.command}>{suggestion.command}</Text>)}
         </Box>
         <Box flexDirection="column" paddingLeft={1}>
           {commands.map((suggestion) => (

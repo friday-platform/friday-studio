@@ -123,7 +123,10 @@ Deno.test("MCP Registry Sharing - Full Integration Flow", async (t) => {
 
     // Test filtering for specific agent
     const agentMcpServers = ["test-server"];
-    const filteredConfigs = sessionSupervisor.getMcpServerConfigsForAgent("test-agent", agentMcpServers);
+    const filteredConfigs = sessionSupervisor.getMcpServerConfigsForAgent(
+      "test-agent",
+      agentMcpServers,
+    );
 
     assertEquals(filteredConfigs.length, 1);
     assertEquals(filteredConfigs[0].id, "test-server");
@@ -157,8 +160,8 @@ Deno.test("MCP Registry Sharing - Full Integration Flow", async (t) => {
     // Mock SessionSupervisor with MCP config method
     const mockSessionSupervisor = {
       getMcpServerConfigsForAgent: (agentId: string, serverIds: string[]) => {
-        return serverIds.map(id => ({ id, ...workspaceMcpServers[id] }));
-      }
+        return serverIds.map((id) => ({ id, ...workspaceMcpServers[id] }));
+      },
     };
 
     agentSupervisor.setSessionSupervisor(mockSessionSupervisor);
@@ -228,10 +231,10 @@ Deno.test("MCP Registry Sharing - Error Cases", async (t) => {
 
   await t.step("SessionSupervisor should handle missing workspace MCP servers", () => {
     const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "test-workspace");
-    
+
     // Don't set workspace MCP servers
     const configs = sessionSupervisor.getMcpServerConfigsForAgent("test-agent", ["test-server"]);
-    
+
     assertEquals(configs.length, 0);
   });
 
@@ -282,12 +285,15 @@ Deno.test("MCP Registry Sharing - Configuration Passing", async (t) => {
     const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "test-workspace");
     sessionSupervisor.setWorkspaceMcpServers(workspaceMcpServers);
 
-    const configs = sessionSupervisor.getMcpServerConfigsForAgent("multi-agent", ["linear", "github"]);
+    const configs = sessionSupervisor.getMcpServerConfigsForAgent("multi-agent", [
+      "linear",
+      "github",
+    ]);
     assertEquals(configs.length, 2);
-    
-    const linearConfig = configs.find(c => c.id === "linear");
-    const githubConfig = configs.find(c => c.id === "github");
-    
+
+    const linearConfig = configs.find((c) => c.id === "linear");
+    const githubConfig = configs.find((c) => c.id === "github");
+
     assertExists(linearConfig);
     assertExists(githubConfig);
     assertEquals(linearConfig.tools.allowed, ["linear_create_issue"]);

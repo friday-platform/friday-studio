@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
 import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { formatLog, WorkspaceLogReader } from "../../commands/workspace/logs/log-reader.ts";
+import { formatLog, WorkspaceLogReader } from "../../utils/log-reader.ts";
 import type { LogEntry } from "../../../utils/logger.ts";
 
 interface LogsTabProps {

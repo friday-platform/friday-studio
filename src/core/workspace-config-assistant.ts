@@ -9,7 +9,7 @@ import { NaturalLanguageConditionParser } from "./conditions/natural-language-pa
 import { logger } from "../utils/logger.ts";
 import { generateObject } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { z } from "zod/v4";
+import { z } from "zod";
 
 // Schema for job definition from natural language
 const JobDefinitionSchema = z.object({
@@ -65,7 +65,7 @@ export interface WorkspaceContext {
 
 export class WorkspaceConfigAssistant {
   private conditionParser: NaturalLanguageConditionParser;
-  private anthropic;
+  private anthropic: ReturnType<typeof createAnthropic>;
 
   constructor() {
     this.conditionParser = new NaturalLanguageConditionParser();
@@ -139,12 +139,13 @@ For trigger conditions, use natural language that can be parsed later:
 Workspace context: ${context.workspaceId}`;
 
     try {
-      const result = await generateObject({
+      const result = await generateObject<JobDefinition>({
         model: this.anthropic("claude-3-5-sonnet-20241022"),
-        schema: JobDefinitionSchema,
         system: systemPrompt,
         prompt: userPrompt,
         temperature: 0.1,
+        output: "object",
+        schema: JobDefinitionSchema,
       });
 
       const job = result.object;

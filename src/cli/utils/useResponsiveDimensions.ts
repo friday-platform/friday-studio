@@ -23,7 +23,7 @@ export interface ResponsiveDimensionsOptions {
  * @returns Object containing responsive dimensions
  */
 export const useResponsiveDimensions = (
-  options: ResponsiveDimensionsOptions = {}
+  options: ResponsiveDimensionsOptions = {},
 ): ResponsiveDimensions => {
   const { minHeight = 24, padding = 0 } = options;
   const { stdout } = useStdout();
@@ -33,7 +33,7 @@ export const useResponsiveDimensions = (
   const terminalWidth = stdout.columns || 80;
   const actualTerminalHeight = stdout.rows || 24;
   const terminalHeight = Math.max(minHeight, actualTerminalHeight);
-  
+
   // Calculate dimensions with padding
   const paddedWidth = Math.max(0, terminalWidth - (padding * 2));
   const paddedHeight = Math.max(0, terminalHeight - (padding * 2));

@@ -56,9 +56,9 @@ Deno.test("MCP Configuration Service - Dual Mode Resolution", async (t) => {
 
     // Create service with direct configs (worker mode)
     const service = new WorkspaceMCPConfigurationService(
-      "test-workspace", 
+      "test-workspace",
       "test-session",
-      directConfigs
+      directConfigs,
     );
 
     // Should get config from direct configs, not registry
@@ -82,8 +82,8 @@ Deno.test("MCP Configuration Service - Dual Mode Resolution", async (t) => {
 
     const service = new WorkspaceMCPConfigurationService(
       "test-workspace",
-      "test-session", 
-      directConfigs
+      "test-session",
+      directConfigs,
     );
 
     const configs = service.getServerConfigsForAgent("test-agent", ["no-id-server"]);
@@ -122,11 +122,11 @@ Deno.test("MCP Configuration Service - Agent Environment Preparation", async (t)
     const service = new WorkspaceMCPConfigurationService(
       "test-workspace",
       "test-session",
-      directConfigs
+      directConfigs,
     );
 
     const configs = service.getServerConfigsForAgent("test-agent", ["env-server"]);
-    
+
     // Should be suitable for agent environment
     assertEquals(configs.length, 1);
     assertExists(configs[0].id);

@@ -1,13 +1,9 @@
 import { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
 import { Select, TextInput } from "@inkjs/ui";
-import {
-  getWorkspaceStatus,
-  WorkspaceList,
-  WorkspaceStatus,
-} from "../commands/workspace.tsx";
+// import { getWorkspaceStatus, WorkspaceList, WorkspaceStatus } from "../commands/workspace.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
-import DefineCommand from "../commands/define.tsx";
+// import DefineCommand from "../commands/define.tsx";
 import { ErrorAlert } from "./ErrorAlert.tsx";
 
 interface Workspace {
@@ -17,8 +13,17 @@ interface Workspace {
   slug: string;
 }
 
+export interface AvailableWorkspace {
+  name: string;
+  path: string;
+  description?: string;
+}
+
 interface SplashScreenProps {
-  onWorkspaceSelect: (workspace: Workspace) => void;
+  availableWorkspaces?: AvailableWorkspace[];
+  workspacesLoading?: boolean;
+  selectedWorkspaceIndex?: number;
+  onWorkspaceSelect: (workspace: Workspace | AvailableWorkspace) => void;
   onMinHeightChange?: (height: number) => void;
 }
 
@@ -42,8 +47,7 @@ export const SplashScreen = ({
   const workspaceListHeight = Math.min(workspaces.length, 10); // Max 10 visible workspaces
   const spacingHeight = 8; // Margins and spacing around elements
 
-  const requiredContentHeight =
-    asciiArtHeight +
+  const requiredContentHeight = asciiArtHeight +
     titleHeight +
     inputHeight +
     workspaceHeaderHeight +
@@ -143,7 +147,7 @@ export const SplashScreen = ({
         case "/load":
           if (!args[1]) {
             showAlert(
-              "/load requires a workspace name. Usage: /load <workspace-name>"
+              "/load requires a workspace name. Usage: /load <workspace-name>",
             );
             return;
           }
@@ -152,7 +156,7 @@ export const SplashScreen = ({
 
         default:
           showAlert(
-            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`
+            `Unknown command: ${args[0]}. Available commands: /init, /exit, /quit, /load, /help`,
           );
       }
     } catch (error) {
@@ -273,7 +277,7 @@ export const SplashScreen = ({
       const selectedWorkspace = workspaces.find(
         (w) =>
           w.name.toLowerCase() === workspaceName.toLowerCase() ||
-          w.id === workspaceName
+          w.id === workspaceName,
       );
 
       if (!selectedWorkspace) {
@@ -383,7 +387,7 @@ export const SplashScreen = ({
           onChange={(selectedWorkspaceId) => {
             // Handle workspace selection
             const selectedWorkspace = workspaces.find(
-              (w) => w.id === selectedWorkspaceId
+              (w) => w.id === selectedWorkspaceId,
             );
             if (selectedWorkspace) {
               onWorkspaceSelect(selectedWorkspace);
@@ -400,7 +404,7 @@ export const SplashScreen = ({
           marginTop={2}
           paddingX={2}
           width={contentWidth}
-          maxHeight={Math.floor((minHeight - requiredContentHeight) * 0.3)}
+          height={Math.floor((minHeight - requiredContentHeight) * 0.3)}
           borderStyle="round"
           borderColor="gray"
           flexShrink={0}
@@ -410,7 +414,7 @@ export const SplashScreen = ({
               Command Output:
             </Text>
           </Box>
-          <Box flexDirection="column" overflowY="auto">
+          <Box flexDirection="column">
             {output.slice(-8).map((entry, index) => (
               <Box key={index} flexDirection="column">
                 {entry}

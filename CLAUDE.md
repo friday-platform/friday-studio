@@ -10,6 +10,14 @@ through human/AI collaboration. Atlas enables engineers to create workspaces whe
 collaborate seamlessly with specialized, autonomous agents in a secure, auditable, and scalable
 environment.
 
+## CLI Development Guidelines
+
+When developing CLI commands:
+
+1. **Command File Structure**: Prefer flat command files (e.g., `src/cli/commands/version.ts`) over
+   subdirectories with index.ts files (e.g., `src/cli/commands/version/index.ts`). This reduces file
+   nesting and improves code organization clarity.
+
 ## Claude Code execution guidelines
 
 0. **MANDATORY SESSION START**: At the beginning of EVERY session, read and update

@@ -55,23 +55,23 @@ Deno.test("MCP End-to-End Integration", async (t) => {
     // 5. Verify complete configuration chain
     assertEquals(agentConfigs.length, 1);
     assertEquals(agentConfigs[0].id, "linear");
-    
+
     // Type-safe access to stdio transport properties
     const transport = agentConfigs[0].transport;
     if (transport.type === "stdio") {
       assertEquals(transport.command, "npx");
       assertEquals(transport.env?.LINEAR_API_KEY, "auto");
-      
+
       // 6. Verify environment variable support
       assertExists(transport.env);
       assertEquals(transport.env.LINEAR_API_KEY, "auto");
     }
-    
+
     assertEquals(agentConfigs[0].tools.allowed.includes("linear_create_issue"), true);
 
     // 7. Verify proper tool naming (Linear MCP convention)
     const allowedTools = agentConfigs[0].tools.allowed;
-    assertEquals(allowedTools.every(tool => tool.startsWith("linear_")), true);
+    assertEquals(allowedTools.every((tool) => tool.startsWith("linear_")), true);
   });
 
   // Cleanup
@@ -94,7 +94,7 @@ Deno.test("MCP Configuration Validation", async (t) => {
 
     const configServiceWithDirect = new WorkspaceMCPConfigurationService(
       "workspace",
-      "session", 
+      "session",
       directConfigs,
     );
     assertExists(configServiceWithDirect);
@@ -137,7 +137,7 @@ Deno.test("MCP Configuration Validation", async (t) => {
       tools: {
         allowed: [
           "linear_create_issue",
-          "linear_update_issue", 
+          "linear_update_issue",
           "linear_get_issue",
           "linear_search_issues",
           "linear_add_comment",
@@ -150,10 +150,10 @@ Deno.test("MCP Configuration Validation", async (t) => {
     assertEquals(linearConfig.transport.command, "npx");
     assertEquals(linearConfig.transport.args, ["-y", "linear-mcp-server"]);
     assertEquals(linearConfig.transport.env?.LINEAR_API_KEY, "auto");
-    
+
     // Verify Linear tool naming convention
     const tools = linearConfig.tools.allowed;
-    assertEquals(tools.every(tool => tool.startsWith("linear_")), true);
+    assertEquals(tools.every((tool) => tool.startsWith("linear_")), true);
     assertEquals(tools.includes("linear_create_issue"), true);
     assertEquals(tools.includes("linear_update_issue"), true);
   });

@@ -1,8 +1,24 @@
-import { useEffect, useState } from "react";
-import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { TextInput } from "@inkjs/ui";
-import Help from "../views/help.tsx";
+import { Box, render, Text, useApp, useInput, useStdout } from "ink";
+import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { YargsInstance } from "../utils/yargs.ts";
+import Help from "../views/help.tsx";
+
+export const command = "$0";
+export const desc = "Launch interactive Atlas interface";
+
+export function builder(yargs: YargsInstance) {
+  return yargs
+    .example("$0", "Launch interactive Atlas interface")
+    .epilogue(
+      "The interactive interface provides a user-friendly way to manage workspaces",
+    );
+}
+
+export function handler() {
+  render(<InteractiveCommand />);
+}
 
 interface ConversationEntry {
   id: string;
@@ -82,7 +98,7 @@ interface CommandDefinition {
   usage: string;
   handler: (
     args: string[],
-    context: CommandContext
+    context: CommandContext,
   ) => Promise<ConversationEntry[]>;
 }
 
@@ -115,7 +131,7 @@ const handleHelpCommand = (): Promise<ConversationEntry[]> => {
 
 const handleExitCommand = (
   _args: string[],
-  context: CommandContext
+  context: CommandContext,
 ): Promise<ConversationEntry[]> => {
   // Add goodbye message before exiting
   setTimeout(() => {
@@ -138,7 +154,8 @@ const handleListCommand = (args: string[]): Promise<ConversationEntry[]> => {
     {
       id: "list-output",
       type: "command_output",
-      content: `List command executed - showing ${resourceType} resources (placeholder implementation)`,
+      content:
+        `List command executed - showing ${resourceType} resources (placeholder implementation)`,
       timestamp: new Date(),
     },
   ]);
@@ -150,8 +167,7 @@ const handleInitCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "init-error",
         type: "error",
-        content:
-          "init command requires a workspace name. Usage: /init <workspace-name>",
+        content: "init command requires a workspace name. Usage: /init <workspace-name>",
         timestamp: new Date(),
       },
     ]);
@@ -235,8 +251,7 @@ const handleLogsCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "logs-error",
         type: "error",
-        content:
-          "logs command requires a session ID. Usage: /logs <session-id>",
+        content: "logs command requires a session ID. Usage: /logs <session-id>",
         timestamp: new Date(),
       },
     ]);
@@ -399,7 +414,7 @@ const validateCommand = (parsed: ParsedCommand): string | null => {
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
   const [view, setView] = useState<"help" | "command">("command");
-  const [minHeight, setMinHeight] = useState(35);
+  const [_minHeight, setMinHeight] = useState(35);
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
@@ -447,11 +462,11 @@ export default function InteractiveCommand() {
         </Box>
 
         <Box flexDirection="column">
-          <Text bold> Atlas.</Text>
+          <Text bold>Atlas.</Text>
         </Box>
 
         <Box flexDirection="column">
-          <Text dimColor> Made by Tempest.</Text>
+          <Text dimColor>Made by Tempest.</Text>
         </Box>
       </Box>
 
@@ -485,8 +500,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
     },
     {
       command: "/list",
-      description:
-        "View workspaces, sessions, signals, agents, and library items",
+      description: "View workspaces, sessions, signals, agents, and library items",
     },
     { command: "/init", description: "Initialize a new workspace" },
     { command: "/sessions", description: "View available workspace sessions" },
@@ -505,8 +519,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   ];
 
   // Get all available suggestions (commands only)
-  const getAllSuggestions = () =>
-    getAllSuggestionsWithDescriptions().map((item) => item.command);
+  const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
 
   // Get filtered suggestions based on current input
   const getFilteredSuggestions = () => {
@@ -523,16 +536,12 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
     if (showSuggestions) {
       if (key.upArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) =>
-          prev <= 0 ? filteredSuggestions.length - 1 : prev - 1
-        );
+        setSelectedSuggestionIndex((prev) => prev <= 0 ? filteredSuggestions.length - 1 : prev - 1);
         return;
       }
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) =>
-          prev >= filteredSuggestions.length - 1 ? 0 : prev + 1
-        );
+        setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
         return;
       }
       if (key.return && selectedSuggestionIndex >= 0) {
@@ -595,7 +604,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>↬ </Text>
+        <Text dimColor>↬</Text>
         <TextInput
           suggestions={getAllSuggestions()}
           placeholder="Type / for commands"
