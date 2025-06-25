@@ -11,8 +11,8 @@ server:
     enabled: true
     discoverable:
       capabilities:
-        - "workspace.jobs.*"
-        - "workspace.sessions.*"
+        - "workspace_jobs_*"
+        - "workspace_sessions_*"
       jobs:
         - "telephone"
         - "public-*"
@@ -76,13 +76,13 @@ jobs:
         - id: "embellishment-agent"
           input_source: "previous"
           tools:
-            - "workspace.memory.recall"
-            - "workspace.memory.store" # Can store transformation patterns
+            - "workspace_memory_recall"
+            - "workspace_memory_store" # Can store transformation patterns
         - id: "reinterpretation-agent"
           input_source: "previous"
           tools:
-            - "workspace.memory.recall"
-            - "workspace.sessions.describe" # Can check session progress
+            - "workspace_memory_recall"
+            - "workspace_sessions_describe" # Can check session progress
 
 # Agent definitions
 agents:
