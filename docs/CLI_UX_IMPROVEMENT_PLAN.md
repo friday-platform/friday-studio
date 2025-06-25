@@ -585,7 +585,7 @@ integration:
 ### Phase 0: Framework Migration
 
 - [x] Set up Yargs dependency in deno.json
-- [x] Create new CLI entry point (src/cli-2.tsx) with Yargs
+- [x] Create new CLI entry point (src/cli.tsx) with Yargs
 - [x] Implement parallel CLI structure (cli.tsx and cli-2.tsx)
 - [x] Create command organization pattern without commandDir
 - [x] Implement version command using Yargs pattern
