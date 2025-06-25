@@ -6,6 +6,7 @@ import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
 import yargs from "yargs";
 import { YargsInstance } from "../../utils/yargs.ts";
+import process from "node:process";
 
 export const command = "generate <template> <data-file>";
 export const desc = "Generate content from template";
@@ -104,7 +105,7 @@ export async function handler(argv: any) {
       );
     }
 
-    s.message("Generating content...");
+    // s.message("Generating content..."); // Spinner doesn't have message method
 
     // Prepare request body
     const requestBody = {

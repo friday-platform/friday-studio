@@ -22,7 +22,7 @@ export const ErrorAlert = ({ message, visible, onDismiss }: ErrorAlertProps) => 
   );
 
   return (
-    <Box position="absolute" top={0} left={0} right={0} bottom={0}>
+    <Box position="absolute">
       <Box flexDirection="column" height="100%">
         <Box flexDirection="column" borderStyle="single" borderColor="red">
           <Text wrap="wrap" backgroundColor="black" color="black">

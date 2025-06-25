@@ -3,6 +3,7 @@ import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
+import process from "node:process";
 
 export const command = "stats";
 export const desc = "Show library statistics";
@@ -26,8 +27,8 @@ export function builder(y: YargsInstance) {
 const LibraryStatsSchema = z.object({
   total_items: z.number(),
   total_size_bytes: z.number(),
-  types: z.record(z.number()),
-  tags: z.record(z.number()).optional(),
+  types: z.record(z.string(), z.number()),
+  tags: z.record(z.string(), z.number()).optional(),
   recent_activity: z
     .array(
       z.object({

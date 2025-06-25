@@ -2,8 +2,9 @@ import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
-import { Table } from "../../../cli/components/Table.tsx";
+import { Table } from "../../components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
+import process from "node:process";
 
 export const command = "templates";
 export const desc = "List available templates";

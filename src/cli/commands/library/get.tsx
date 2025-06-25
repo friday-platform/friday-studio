@@ -5,6 +5,7 @@ import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import yargs from "yargs";
 import { YargsInstance } from "../../utils/yargs.ts";
+import process from "node:process";
 
 export const command = "get <id>";
 export const desc = "Get library item details";

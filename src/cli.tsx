@@ -1,7 +1,7 @@
 import yargs from "yargs";
 import { commands } from "./cli/commands/index.ts";
 import { customFailHandler } from "./cli/utils/fail-handler.ts";
-import { addExamples, customHelp } from "./cli/utils/help-formatter.ts";
+import { addExamples } from "./cli/utils/help-formatter.ts";
 
 // Check for --version or -v flag before yargs processes commands
 if (Deno.args.includes("--version") || Deno.args.includes("-v")) {

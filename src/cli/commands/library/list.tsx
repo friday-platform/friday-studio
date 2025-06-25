@@ -4,6 +4,7 @@ import { z } from "zod/v4";
 import { Table } from "../../../cli/components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { spinner } from "../../utils/prompts.tsx";
+import process from "node:process";
 
 export const command = "list";
 export const desc = "List library items";

@@ -4,6 +4,7 @@ import { Badge } from "@inkjs/ui";
 import * as yaml from "@std/yaml";
 import { exists } from "@std/fs";
 import { useTabNavigation } from "../components/tabs.tsx";
+import { Tab, TabGroup } from "../components/TabComponents.tsx";
 import { type AvailableWorkspace, SplashScreen } from "../components/SplashScreen.tsx";
 import {
   WorkspaceConfigAssistant,
@@ -215,7 +216,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     initializeWorkspace();
     loadWorkspaceContext();
     return () => {
-      if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
+      if (serverProcessRef.current) {
         try {
           serverProcessRef.current.kill();
         } catch (error) {
@@ -1320,7 +1321,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
 
     if (key.ctrl && inputChar === "c") {
-      if (serverProcessRef.current && serverProcessRef.current.status !== "exited") {
+      if (serverProcessRef.current) {
         try {
           serverProcessRef.current.kill();
         } catch (error) {
@@ -2253,18 +2254,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       {showPopover && (
         <Box
           position="absolute"
-          top={0}
-          left={0}
-          right={0}
-          bottom={0}
           padding={1}
           flexDirection="column"
-          backgroundColor="black"
         >
           <Box
             borderStyle="double"
             borderColor="cyan"
-            backgroundColor="black"
             padding={1}
             flexDirection="column"
             height="100%"
@@ -2281,7 +2276,6 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
               flexDirection="column"
               padding={1}
               marginTop={1}
-              backgroundColor="black"
             >
               <Text color="white" wrap="wrap">
                 {popoverContent}

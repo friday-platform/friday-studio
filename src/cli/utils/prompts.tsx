@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Box, render, Text, useApp, useInput } from "ink";
 import { Alert, ConfirmInput, MultiSelect, Spinner, StatusMessage, TextInput } from "@inkjs/ui";
+import process from "node:process";
 
 // Types for our prompt utilities
 export interface PromptOptions {
