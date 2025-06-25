@@ -55,7 +55,7 @@ When working with Ink-based TUI components (src/cli/commands/tui.tsx and related
    interface directly to the function parameters. Use
    `export const Component = ({ prop1, prop2 }: Props) => { ... }` instead of
    `export const Component: React.FC<Props> = ({ prop1, prop2 }) => { ... }`
-5. **Testing Changes**: Always test TUI changes by running `deno task atlas tui` to ensure the
+5. **Testing Changes**: Always test changes by running `deno task atlas` to ensure the
    interface works correctly
 
 ## Known Issues
@@ -171,7 +171,7 @@ server.registerTool(
     return {
       /* response */
     };
-  },
+  }
 );
 ```
 

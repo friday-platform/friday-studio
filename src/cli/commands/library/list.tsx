@@ -1,7 +1,6 @@
-import { Box, render, Text } from "ink";
-import React from "react";
-import { z } from "zod/v4";
-import { Table } from "../../../cli/components/Table.tsx";
+import { render } from "ink";
+import { LibraryListComponent } from "../../modules/library/library-list-component.tsx";
+import { fetchLibraryItems } from "../../modules/library/fetcher.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { spinner } from "../../utils/prompts.tsx";
 import process from "node:process";
@@ -59,18 +58,6 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for library item
-const LibraryItemSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  name: z.string(),
-  created_at: z.string(),
-  tags: z.array(z.string()),
-  size_bytes: z.number(),
-  description: z.string().optional(),
-});
-
-type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
 export async function handler(argv: ListArgs) {
   const s = spinner();
@@ -78,25 +65,23 @@ export async function handler(argv: ListArgs) {
   try {
     s.start("Fetching library items...");
 
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (argv.type) params.append("type", argv.type);
-    if (argv.tags) params.append("tags", argv.tags);
-    if (argv.since) params.append("since", argv.since);
-    if (argv.limit) params.append("limit", argv.limit.toString());
-    if (argv.workspace) params.append("workspace", "true");
+    const result = await fetchLibraryItems({
+      type: argv.type,
+      tags: argv.tags,
+      since: argv.since,
+      limit: argv.limit,
+      workspace: argv.workspace,
+      port: argv.port,
+    });
 
-    const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/library?${params}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    if (!result.success) {
+      s.stop("Failed to fetch library items");
+      console.error(`Error: ${result.error}`);
+      process.exit(1);
+      return;
     }
 
-    const data = await response.json();
-    const items = z.array(LibraryItemSchema).parse(data);
-
+    const items = result.items;
     s.stop("Library items fetched");
 
     if (argv.json) {
@@ -109,7 +94,7 @@ export async function handler(argv: ListArgs) {
       return;
     }
 
-    render(<LibraryListDisplay items={items} />);
+    render(<LibraryListComponent items={items} />);
   } catch (error) {
     s.stop("Failed to fetch library items");
     console.error(
@@ -119,51 +104,3 @@ export async function handler(argv: ListArgs) {
   }
 }
 
-interface LibraryListDisplayProps {
-  items: LibraryItem[];
-}
-
-const LibraryListDisplay: React.FC<LibraryListDisplayProps> = ({ items }) => {
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return "0 B";
-    const k = 1024;
-    const sizes = ["B", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-  };
-
-  const formatDate = (dateString: string): string => {
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  return (
-    <Box flexDirection="column">
-      <Box marginBottom={1}>
-        <Text bold>Library Items ({items.length})</Text>
-      </Box>
-
-      <Table
-        columns={[
-          { key: "ID", label: "ID", width: 10 },
-          { key: "Type", label: "Type", width: 12 },
-          { key: "Name", label: "Name", width: 25 },
-          { key: "Size", label: "Size", width: 10 },
-          { key: "Created", label: "Created", width: 12 },
-          { key: "Tags", label: "Tags", width: 20 },
-        ]}
-        data={items.map((item) => ({
-          ID: item.id.slice(0, 8),
-          Type: item.type,
-          Name: item.name,
-          Size: formatBytes(item.size_bytes),
-          Created: formatDate(item.created_at),
-          Tags: item.tags.join(", ") || "none",
-        }))}
-      />
-
-      <Box marginTop={1}>
-        <Text dimColor>Use 'atlas library get &lt;id&gt;' to view details</Text>
-      </Box>
-    </Box>
-  );
-};
