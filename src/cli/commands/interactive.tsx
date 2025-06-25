@@ -27,8 +27,7 @@ const INTRODUCTION_MESSAGES: ConversationEntry[] = [
   {
     id: "intro-2",
     type: "intro",
-    content:
-      "Type /help to see available commands. All commands must start with /",
+    content: "Type /help to see available commands. All commands must start with /",
     timestamp: new Date(),
   },
   {
@@ -110,7 +109,7 @@ interface CommandDefinition {
   usage: string;
   handler: (
     args: string[],
-    context: CommandContext
+    context: CommandContext,
   ) => Promise<ConversationEntry[]>;
 }
 
@@ -143,7 +142,7 @@ const handleHelpCommand = (): Promise<ConversationEntry[]> => {
 
 const handleExitCommand = (
   _args: string[],
-  context: CommandContext
+  context: CommandContext,
 ): Promise<ConversationEntry[]> => {
   // Add goodbye message before exiting
   setTimeout(() => {
@@ -166,7 +165,8 @@ const handleListCommand = (args: string[]): Promise<ConversationEntry[]> => {
     {
       id: "list-output",
       type: "command_output",
-      content: `List command executed - showing ${resourceType} resources (placeholder implementation)`,
+      content:
+        `List command executed - showing ${resourceType} resources (placeholder implementation)`,
       timestamp: new Date(),
     },
   ]);
@@ -178,8 +178,7 @@ const handleInitCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "init-error",
         type: "error",
-        content:
-          "init command requires a workspace name. Usage: /init <workspace-name>",
+        content: "init command requires a workspace name. Usage: /init <workspace-name>",
         timestamp: new Date(),
       },
     ]);
@@ -263,8 +262,7 @@ const handleLogsCommand = (args: string[]): Promise<ConversationEntry[]> => {
       {
         id: "logs-error",
         type: "error",
-        content:
-          "logs command requires a session ID. Usage: /logs <session-id>",
+        content: "logs command requires a session ID. Usage: /logs <session-id>",
         timestamp: new Date(),
       },
     ]);
@@ -479,8 +477,7 @@ export default function InteractiveCommand() {
       const errorEntry: ConversationEntry = {
         id: `error-${Date.now()}`,
         type: "error",
-        content:
-          "Commands must start with /. Type /help for available commands.",
+        content: "Commands must start with /. Type /help for available commands.",
         timestamp: new Date(),
       };
       addConversationEntry(errorEntry);
@@ -565,7 +562,8 @@ export default function InteractiveCommand() {
         const copyEntry: ConversationEntry = {
           id: `copy-${Date.now()}`,
           type: "system",
-          content: `Command "${selectedEntry.content}" added to suggestions. Focus input and check suggestions.`,
+          content:
+            `Command "${selectedEntry.content}" added to suggestions. Focus input and check suggestions.`,
           timestamp: new Date(),
         };
         addConversationEntry(copyEntry);
@@ -625,10 +623,7 @@ export default function InteractiveCommand() {
       if (!inputFocused && conversation.length > 0) {
         const pageSize = Math.max(1, Math.floor(availableHeight / 2));
         setSelectedIndex((prev) => {
-          const newIndex =
-            prev === -1
-              ? conversation.length - 1
-              : Math.max(0, prev - pageSize);
+          const newIndex = prev === -1 ? conversation.length - 1 : Math.max(0, prev - pageSize);
           return newIndex;
         });
         setInputFocused(false);
@@ -637,10 +632,7 @@ export default function InteractiveCommand() {
       if (!inputFocused && conversation.length > 0) {
         const pageSize = Math.max(1, Math.floor(availableHeight / 2));
         setSelectedIndex((prev) => {
-          const newIndex =
-            prev === -1
-              ? 0
-              : Math.min(conversation.length - 1, prev + pageSize);
+          const newIndex = prev === -1 ? 0 : Math.min(conversation.length - 1, prev + pageSize);
           return newIndex;
         });
         setInputFocused(false);
@@ -658,11 +650,11 @@ export default function InteractiveCommand() {
         </Box>
 
         <Box flexDirection="column">
-          <Text bold> Atlas.</Text>
+          <Text bold>Atlas.</Text>
         </Box>
 
         <Box flexDirection="column">
-          <Text dimColor> Made by Tempest.</Text>
+          <Text dimColor>Made by Tempest.</Text>
         </Box>
       </Box>
 
@@ -843,11 +835,9 @@ const ConversationHistory = ({
       {entries.length > 0 && (
         <Box marginTop={1} paddingX={2}>
           <Text color="gray" dimColor>
-            Conversation: {entries.filter((e) => e.type === "user").length}{" "}
-            commands •{" "}
-            {entries.filter((e) => e.type === "command_output").length}{" "}
-            responses • {entries.filter((e) => e.type === "error").length}{" "}
-            errors
+            Conversation: {entries.filter((e) => e.type === "user").length} commands •{" "}
+            {entries.filter((e) => e.type === "command_output").length} responses •{" "}
+            {entries.filter((e) => e.type === "error").length} errors
           </Text>
         </Box>
       )}
@@ -913,9 +903,7 @@ const ConversationEntry = ({
         backgroundColor={isSelected ? "white" : undefined}
         wrap="wrap"
       >
-        {isSelected
-          ? `▶ [${entryNumber}/${totalEntries}] `
-          : `  ${getEntryIcon(entry.type)} `}
+        {isSelected ? `▶ [${entryNumber}/${totalEntries}] ` : `  ${getEntryIcon(entry.type)} `}
         <Text color={isSelected ? "black" : "gray"}>[{timestamp}]</Text>
         <Text color={isSelected ? "black" : getEntryColor(entry.type)}>
           {entry.content}
@@ -923,17 +911,17 @@ const ConversationEntry = ({
         {isSelected &&
           entry.type === "user" &&
           entry.content.startsWith("/") && (
-            <Text color={isSelected ? "black" : "gray"}>
-              [Press Enter to copy command]
-            </Text>
-          )}
+          <Text color={isSelected ? "black" : "gray"}>
+            [Press Enter to copy command]
+          </Text>
+        )}
         {isSelected &&
           entry.type === "command_output" &&
           entry.content.includes("placeholder") && (
-            <Text color={isSelected ? "black" : "gray"}>
-              [Placeholder response]
-            </Text>
-          )}
+          <Text color={isSelected ? "black" : "gray"}>
+            [Placeholder response]
+          </Text>
+        )}
       </Text>
     </Box>
   );
@@ -954,7 +942,7 @@ const CommandInput = ({
   commandHistory,
 }: CommandInputProps) => {
   const [validationMessage, setValidationMessage] = useState<string | null>(
-    null
+    null,
   );
   const [isValid, setIsValid] = useState(true);
   const [currentInput, setCurrentInput] = useState("");
@@ -973,11 +961,11 @@ const CommandInput = ({
     { command: "/config show", description: "View workspace configuration" },
     { command: "/logs", description: "View session logs and output" },
     { command: "/exit", description: "Exit the Atlas interactive interface" },
-    ...commandHistory.slice(-5).map(cmd => ({ command: cmd, description: "Recent command" })),
+    ...commandHistory.slice(-5).map((cmd) => ({ command: cmd, description: "Recent command" })),
   ];
 
   // Get all available suggestions (commands only)
-  const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map(item => item.command);
+  const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
 
   // Get filtered suggestions based on current input
   const getFilteredSuggestions = () => {
@@ -1003,16 +991,12 @@ const CommandInput = ({
     if (showSuggestions && !focused) {
       if (key.upArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) =>
-          prev <= 0 ? filteredSuggestions.length - 1 : prev - 1
-        );
+        setSelectedSuggestionIndex((prev) => prev <= 0 ? filteredSuggestions.length - 1 : prev - 1);
         return;
       }
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) =>
-          prev >= filteredSuggestions.length - 1 ? 0 : prev + 1
-        );
+        setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
         return;
       }
       if (key.return && selectedSuggestionIndex >= 0) {
@@ -1089,7 +1073,7 @@ const CommandInput = ({
   return (
     <Box flexDirection="column" marginTop={1} width="100%">
       <Box borderStyle="round" paddingX={1}>
-        <Text dimColor>⋗ </Text>
+        <Text dimColor>⋗</Text>
         <TextInput
           suggestions={getAllSuggestions()}
           placeholder="Type / for commands"

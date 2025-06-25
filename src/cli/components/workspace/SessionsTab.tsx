@@ -41,8 +41,7 @@ interface SessionDetails {
 
 export const SessionsTab = ({ config }: SessionsTabProps) => {
   const [sessions, setSessions] = useState<SessionData[]>([]);
-  const [selectedSessionDetails, setSelectedSessionDetails] =
-    useState<SessionDetails | null>(null);
+  const [selectedSessionDetails, setSelectedSessionDetails] = useState<SessionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const [scrollOffset, setScrollOffset] = useState(0);
@@ -64,8 +63,7 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
     isActive: isSidebarActive,
   });
 
-  const selectedSession =
-    sessions.length > 0 ? sessions[selectedSessionIndex] : null;
+  const selectedSession = sessions.length > 0 ? sessions[selectedSessionIndex] : null;
 
   // Fetch sessions list
   useEffect(() => {
@@ -124,12 +122,12 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
       try {
         const port = 8080;
         const response = await fetch(
-          `http://localhost:${port}/sessions/${selectedSession.id}`
+          `http://localhost:${port}/sessions/${selectedSession.id}`,
         );
 
         if (!response.ok) {
           throw new Error(
-            `Failed to fetch session details: ${response.statusText}`
+            `Failed to fetch session details: ${response.statusText}`,
           );
         }
 
@@ -227,59 +225,60 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         borderColor="gray"
         borderDimColor
       >
-        {selectedSessionDetails ? (
-          <Box
-            flexDirection="column"
-            marginTop={scrollOffset}
-            flexGrow={1}
-            flexShrink={0}
-          >
-            {/* Session Header */}
-            <Box marginBottom={2}>
-              <Text bold>Session Details</Text>
-            </Box>
+        {selectedSessionDetails
+          ? (
+            <Box
+              flexDirection="column"
+              marginTop={scrollOffset}
+              flexGrow={1}
+              flexShrink={0}
+            >
+              {/* Session Header */}
+              <Box marginBottom={2}>
+                <Text bold>Session Details</Text>
+              </Box>
 
-            <Box flexDirection="column" marginBottom={2}>
-              <Box marginBottom={1}>
-                <Text dimColor>ID:</Text>
-                <Text>{selectedSessionDetails.id}</Text>
-              </Box>
-              <Box marginBottom={1}>
-                <Text dimColor>Workspace:</Text>
-                <Text>{selectedSessionDetails.workspaceName || "Unknown"}</Text>
-              </Box>
-              <Box marginBottom={1}>
-                <Text dimColor>Signal:</Text>
-                <Text>{selectedSessionDetails.signal || "manual"}</Text>
-              </Box>
-              <Box marginBottom={1}>
-                <Text dimColor>Status:</Text>
-                <StatusBadge status={selectedSessionDetails.status} />
-              </Box>
-              <Box marginBottom={1}>
-                <Text dimColor>Started At:</Text>
-                <Text>{formatTime(selectedSessionDetails.startedAt)}</Text>
-              </Box>
-              {selectedSessionDetails.completedAt && (
+              <Box flexDirection="column" marginBottom={2}>
                 <Box marginBottom={1}>
-                  <Text dimColor>Completed At:</Text>
-                  <Text>{formatTime(selectedSessionDetails.completedAt)}</Text>
+                  <Text dimColor>ID:</Text>
+                  <Text>{selectedSessionDetails.id}</Text>
                 </Box>
-              )}
-              <Box marginBottom={1}>
-                <Text dimColor>Duration:</Text>
-                <Text>
-                  {formatDuration(
-                    selectedSessionDetails.startedAt,
-                    selectedSessionDetails.completedAt
-                  )}
-                </Text>
+                <Box marginBottom={1}>
+                  <Text dimColor>Workspace:</Text>
+                  <Text>{selectedSessionDetails.workspaceName || "Unknown"}</Text>
+                </Box>
+                <Box marginBottom={1}>
+                  <Text dimColor>Signal:</Text>
+                  <Text>{selectedSessionDetails.signal || "manual"}</Text>
+                </Box>
+                <Box marginBottom={1}>
+                  <Text dimColor>Status:</Text>
+                  <StatusBadge status={selectedSessionDetails.status} />
+                </Box>
+                <Box marginBottom={1}>
+                  <Text dimColor>Started At:</Text>
+                  <Text>{formatTime(selectedSessionDetails.startedAt)}</Text>
+                </Box>
+                {selectedSessionDetails.completedAt && (
+                  <Box marginBottom={1}>
+                    <Text dimColor>Completed At:</Text>
+                    <Text>{formatTime(selectedSessionDetails.completedAt)}</Text>
+                  </Box>
+                )}
+                <Box marginBottom={1}>
+                  <Text dimColor>Duration:</Text>
+                  <Text>
+                    {formatDuration(
+                      selectedSessionDetails.startedAt,
+                      selectedSessionDetails.completedAt,
+                    )}
+                  </Text>
+                </Box>
               </Box>
-            </Box>
 
-            {/* Agents Section */}
-            {selectedSessionDetails.agents &&
-              selectedSessionDetails.agents.length > 0 && (
+              {/* Agents Section */}
+              {selectedSessionDetails.agents &&
+                selectedSessionDetails.agents.length > 0 && (
                 <Box flexDirection="column" marginBottom={2}>
                   <Box marginBottom={1}>
                     <Text bold>Agents Executed:</Text>
@@ -318,17 +317,18 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                   ))}
                 </Box>
               )}
-          </Box>
-        ) : (
-          <Box
-            flexDirection="column"
-            alignItems="center"
-            justifyContent="center"
-            height="100%"
-          >
-            <Text dimColor>Select a session to view details</Text>
-          </Box>
-        )}
+            </Box>
+          )
+          : (
+            <Box
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              height="100%"
+            >
+              <Text dimColor>Select a session to view details</Text>
+            </Box>
+          )}
       </Box>
     </Box>
   );

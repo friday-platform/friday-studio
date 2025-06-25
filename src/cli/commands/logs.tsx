@@ -1,30 +1,80 @@
-import React from "react";
-import { Text } from "ink";
-import { LogViewer } from "../components/LogViewer.tsx";
+import { render } from "ink";
+import { LogViewer } from "../../cli/components/LogViewer.tsx";
+import { YargsInstance } from "../utils/yargs.ts";
+import { formatResourceHelp } from "../utils/resource-help.ts";
 
-export interface LogsCommandProps {
-  sessionId?: string;
-  flags: any;
+export const command = "logs <session-id>";
+export const desc = "View session logs";
+export const aliases = ["log"];
+
+export const examples = [
+  ["$0 logs sess_abc123", "View logs for a specific session"],
+  ["$0 logs sess_abc123 --no-follow", "View logs without following"],
+  ["$0 logs sess_abc123 --tail 50", "Show last 50 lines"],
+  ["$0 log sess_abc123 --level error", "Show only error logs"],
+  ["$0 logs sess_abc123 --agent llm-agent", "Filter by agent name"],
+];
+
+export function builder(y: YargsInstance) {
+  return y
+    .positional("session-id", {
+      describe: "Session ID to view logs for",
+      type: "string",
+    })
+    .option("follow", {
+      alias: "f",
+      type: "boolean",
+      description: "Follow log output",
+      default: true,
+    })
+    .option("tail", {
+      alias: "t",
+      type: "number",
+      description: "Number of lines to show from the end",
+      default: 100,
+    })
+    .option("agent", {
+      alias: "a",
+      type: "string",
+      description: "Filter logs by agent name",
+    })
+    .option("level", {
+      alias: "l",
+      type: "string",
+      description: "Filter logs by level",
+      choices: ["debug", "info", "warn", "error"],
+    })
+    .option("no-follow", {
+      type: "boolean",
+      description: "Don't follow log output",
+      default: false,
+    })
+    .example("$0 logs sess_abc123", "View logs for a session")
+    .example("$0 logs sess_abc123 --level error", "Show only errors")
+    .epilogue(formatResourceHelp("logs"));
 }
 
-export function LogsCommand({ sessionId, flags }: LogsCommandProps) {
+export async function handler(argv: any) {
+  const sessionId = argv.sessionId;
+
   if (!sessionId) {
-    return (
-      <Text color="red">
-        Session ID required. Usage: atlas logs &lt;session-id&gt;
-      </Text>
-    );
+    console.error("Error: Session ID is required");
+    console.error("Usage: atlas logs <session-id>");
+    process.exit(1);
   }
 
-  return (
+  // Handle --no-follow flag
+  const follow = argv.noFollow ? false : argv.follow;
+
+  render(
     <LogViewer
       sessionId={sessionId}
-      follow={flags.follow !== false} // Default to true
-      tail={flags.tail || 100}
+      follow={follow}
+      tail={argv.tail}
       filter={{
-        agent: flags.agent,
-        level: flags.level,
+        agent: argv.agent,
+        level: argv.level,
       }}
-    />
+    />,
   );
 }

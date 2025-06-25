@@ -7,7 +7,6 @@ import * as signalCmd from "./signal.ts";
 import * as libraryCmd from "./library/index.ts";
 import * as logsCmd from "./logs.tsx";
 import * as tuiCmd from "./tui.tsx";
-import * as interactiveCmd from "./interactive.tsx";
 
 export const commands = [
   versionCmd,
@@ -19,5 +18,4 @@ export const commands = [
   libraryCmd,
   logsCmd,
   tuiCmd,
-  interactiveCmd,
 ];

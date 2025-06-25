@@ -1,56 +1,82 @@
-import { Box, Text } from "ink";
-import { useEffect, useState } from "react";
+import { Box, render, Text } from "ink";
 import {
   WorkspaceEntry,
   WorkspaceStatus as WSStatus,
 } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceCommandProps } from "./utils.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
-export function WorkspaceListCommand({}: WorkspaceCommandProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
-  const [error, setError] = useState<string>("");
-  const [data, setData] = useState<{ registeredWorkspaces: WorkspaceEntry[] }>({
-    registeredWorkspaces: [],
-  });
-
-  useEffect(() => {
-    const execute = async () => {
-      try {
-        await handleList();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStatus("error");
-      }
-    };
-
-    execute();
-  }, []);
-
-  async function handleList() {
-    // Get workspaces from registry
-    const registry = getWorkspaceRegistry();
-    const registeredWorkspaces = await registry.listAll();
-
-    setData({ registeredWorkspaces });
-    setStatus("ready");
-  }
-
-  if (status === "loading") {
-    return <Text>Loading...</Text>;
-  }
-
-  if (status === "error") {
-    return <Text color="red">Error: {error}</Text>;
-  }
-
-  return <WorkspaceList registeredWorkspaces={data.registeredWorkspaces} />;
+interface ListArgs {
+  json?: boolean;
 }
 
-// Shared component for rendering workspace list
-export function WorkspaceList({
+export const command = "list";
+export const desc = "List all registered workspaces";
+export const aliases = ["ls"];
+
+export function builder(y: YargsInstance) {
+  return y
+    .option("json", {
+      type: "boolean",
+      describe: "Output workspace list as JSON",
+      default: false,
+    })
+    .example("$0 workspace list", "List all registered workspaces")
+    .example("$0 workspace list --json", "Export workspace list as JSON");
+}
+
+export const handler = async (argv: ListArgs): Promise<void> => {
+  try {
+    // Get workspaces from registry
+    const registry = getWorkspaceRegistry();
+    await registry.initialize();
+    const workspaces = await registry.listAll();
+
+    if (argv.json) {
+      // JSON output for scripting
+      console.log(
+        JSON.stringify(
+          {
+            workspaces: workspaces.map(formatWorkspaceForJson),
+            count: workspaces.length,
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      // Render with Ink
+      render(<WorkspaceList registeredWorkspaces={workspaces} />);
+      // Exit immediately after rendering
+      Deno.exit(0);
+    }
+  } catch (error) {
+    console.error(
+      `Error: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    Deno.exit(1);
+  }
+};
+
+function formatWorkspaceForJson(workspace: WorkspaceEntry) {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    path: workspace.path,
+    status: workspace.status,
+    port: workspace.port,
+    pid: workspace.pid,
+    configPath: workspace.configPath,
+    metadata: workspace.metadata,
+    createdAt: workspace.createdAt,
+    lastSeen: workspace.lastSeen,
+    startedAt: workspace.startedAt,
+    stoppedAt: workspace.stoppedAt,
+  };
+}
+
+// Component for rendering workspace list
+function WorkspaceList({
   registeredWorkspaces,
 }: {
   registeredWorkspaces: WorkspaceEntry[];

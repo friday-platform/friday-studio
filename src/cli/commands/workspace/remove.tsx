@@ -1,95 +1,162 @@
-import { Box, Text } from "ink";
-import { useEffect, useState } from "react";
-import {
-  WorkspaceEntry,
-  WorkspaceStatus as WSStatus,
-} from "../../../core/workspace-registry-types.ts";
+import React from "react";
+import { render } from "ink";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceCommandProps } from "./utils.ts";
+import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
+import { confirmAction } from "../../utils/confirm.tsx";
+import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
-export function WorkspaceRemoveCommand({ args, flags }: WorkspaceCommandProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState<string>("");
-  const [data, setData] = useState<
-    {
-      workspace: WorkspaceEntry;
-      force: boolean;
-    } | null
-  >(null);
+interface RemoveArgs {
+  workspace?: string;
+  force?: boolean;
+  yes?: boolean;
+  deleteFiles?: boolean;
+}
 
-  useEffect(() => {
-    const execute = async () => {
-      try {
-        const idOrName = args[0];
-        const force = flags.force === true;
-        await handleRemove(idOrName, force);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStatus("error");
-      }
-    };
+export const command = "remove [workspace]";
+export const desc = "Remove a workspace from the registry";
+export const aliases = ["rm", "delete"];
 
-    execute();
-  }, []);
+export const builder = {
+  workspace: {
+    type: "string" as const,
+    describe: "Workspace ID or name (defaults to current directory)",
+  },
+  force: {
+    type: "boolean" as const,
+    alias: "f",
+    describe: "Force removal without confirmation",
+    default: false,
+  },
+  yes: {
+    type: "boolean" as const,
+    alias: "y",
+    describe: "Skip confirmation prompts",
+    default: false,
+  },
+  deleteFiles: {
+    type: "boolean" as const,
+    describe: "Also delete workspace files from disk (DANGEROUS)",
+    default: false,
+  },
+};
 
-  async function handleRemove(idOrName?: string, force = false) {
+export const handler = async (argv: RemoveArgs): Promise<void> => {
+  try {
     const registry = getWorkspaceRegistry();
+    await registry.initialize();
 
-    if (!idOrName) {
-      throw new Error(
-        "Workspace ID or name is required. Usage: atlas workspace remove <id|name> [--force]",
-      );
+    let workspace;
+    if (argv.workspace) {
+      // Find by ID or name
+      workspace = (await registry.findById(argv.workspace)) ||
+        (await registry.findByName(argv.workspace));
+    } else {
+      // Use current directory
+      workspace = await registry.getCurrentWorkspace();
     }
-
-    // Find the workspace
-    const workspace = (await registry.findById(idOrName)) ||
-      (await registry.findByName(idOrName));
 
     if (!workspace) {
-      throw new Error(
-        `Workspace '${idOrName}' not found. Use 'atlas workspace list' to see registered workspaces.`,
+      errorOutput(
+        argv.workspace
+          ? `Workspace '${argv.workspace}' not found. Use 'atlas workspace list' to see available workspaces.`
+          : "No workspace found in current directory.",
       );
+      Deno.exit(1);
     }
 
-    // Check if it's running
-    if (workspace.status === WSStatus.RUNNING && !force) {
-      throw new Error(
-        `Cannot remove running workspace '${workspace.name}' (${workspace.id}). ` +
-          `Stop it first with 'atlas workspace stop ${workspace.id}' or use --force flag.`,
+    // Check if workspace is running
+    if (workspace.status === WSStatus.RUNNING || workspace.status === WSStatus.STARTING) {
+      warningOutput(`Workspace '${workspace.name}' is currently running.`);
+
+      const confirmStop = await confirmAction(
+        "Do you want to stop it before removal?",
+        { force: argv.force, yes: argv.yes, defaultValue: true },
       );
+
+      if (!confirmStop) {
+        infoOutput("Removal cancelled.");
+        Deno.exit(0);
+      }
+
+      // Stop the workspace
+      const processManager = new WorkspaceProcessManager();
+      const s = spinner();
+      s.start(`Stopping workspace '${workspace.name}'...`);
+
+      try {
+        await processManager.stop(workspace.id);
+        s.stop("Workspace stopped");
+      } catch (err) {
+        s.stop("Failed to stop workspace");
+        errorOutput(
+          `Error stopping workspace: ${err instanceof Error ? err.message : String(err)}`,
+        );
+
+        const forceRemove = await confirmAction(
+          "Failed to stop workspace. Remove anyway?",
+          { force: argv.force, yes: argv.yes, defaultValue: false },
+        );
+
+        if (!forceRemove) {
+          infoOutput("Removal cancelled.");
+          Deno.exit(0);
+        }
+      }
     }
 
-    // If running and force flag is set, attempt to stop it first
-    if (workspace.status === WSStatus.RUNNING && force) {
-      // In future, we would stop the process here
-      // For now, just update status
-      await registry.updateStatus(workspace.id, WSStatus.STOPPED);
+    // Confirm removal
+    let confirmMessage = `Are you sure you want to remove workspace '${workspace.name}'?`;
+    if (argv.deleteFiles) {
+      confirmMessage =
+        `Are you sure you want to remove workspace '${workspace.name}' AND delete all files at ${workspace.path}? This action cannot be undone!`;
+    }
+
+    const confirmed = await confirmAction(confirmMessage, {
+      force: argv.force,
+      yes: argv.yes,
+      defaultValue: false,
+    });
+
+    if (!confirmed) {
+      infoOutput("Removal cancelled.");
+      Deno.exit(0);
     }
 
     // Remove from registry
-    await registry.unregister(workspace.id);
+    const s = spinner();
+    s.start(`Removing workspace '${workspace.name}' from registry...`);
 
-    setData({
-      workspace,
-      force,
-    });
-    setStatus("ready");
+    try {
+      await registry.unregister(workspace.id);
+      s.stop(`Workspace '${workspace.name}' removed from registry`);
+
+      // Delete files if requested
+      if (argv.deleteFiles) {
+        const deleteSpinner = spinner();
+        deleteSpinner.start(`Deleting workspace files at ${workspace.path}...`);
+
+        try {
+          await Deno.remove(workspace.path, { recursive: true });
+          deleteSpinner.stop("Workspace files deleted");
+        } catch (err) {
+          deleteSpinner.stop("Failed to delete workspace files");
+          warningOutput(
+            `Failed to delete files: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
+      successOutput("Workspace removed successfully.");
+    } catch (err) {
+      s.stop("Failed to remove workspace");
+      throw err;
+    }
+
+    Deno.exit(0);
+  } catch (error) {
+    errorOutput(error instanceof Error ? error.message : String(error));
+    Deno.exit(1);
   }
-
-  if (status === "loading") {
-    return <Text>Loading...</Text>;
-  }
-
-  if (status === "error") {
-    return <Text color="red">Error: {error}</Text>;
-  }
-
-  return (
-    <Box flexDirection="column">
-      <Text color="green">✓ Workspace removed from registry</Text>
-      <Text>Name: {data.workspace.name}</Text>
-      <Text>ID: {data.workspace.id}</Text>
-      <Text>Path: {data.workspace.path}</Text>
-    </Box>
-  );
-}
+};

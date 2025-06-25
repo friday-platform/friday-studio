@@ -1,76 +1,117 @@
-import { Box, Text, useApp } from "ink";
-import { useEffect, useState } from "react";
+import React from "react";
+import { render } from "ink";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
-import { WorkspaceCommandProps } from "./utils.ts";
+import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
+import { spinner } from "../../utils/prompts.tsx";
 
-interface StopState {
-  status: "loading" | "stopping" | "success" | "error";
-  message: string;
-  workspaceName?: string;
+interface StopArgs {
+  workspace?: string;
+  all?: boolean;
 }
 
-export function WorkspaceStopCommand({ args, flags }: WorkspaceCommandProps) {
-  const [state, setState] = useState<StopState>({
-    status: "loading",
-    message: "Preparing to stop workspace...",
-  });
-  const { exit } = useApp();
+export const command = "stop [workspace]";
+export const desc = "Stop a running workspace server";
 
-  useEffect(() => {
-    const stopWorkspace = async () => {
-      try {
-        const workspaceIdOrName = args[0];
-        if (!workspaceIdOrName) {
-          throw new Error("Workspace ID or name required");
-        }
+export const builder = {
+  workspace: {
+    type: "string" as const,
+    describe: "Workspace ID or name (defaults to current directory)",
+  },
+  all: {
+    type: "boolean" as const,
+    describe: "Stop all running workspaces",
+    default: false,
+  },
+};
 
-        const registry = getWorkspaceRegistry();
-        await registry.initialize();
+export const handler = async (argv: StopArgs): Promise<void> => {
+  try {
+    const registry = getWorkspaceRegistry();
+    await registry.initialize();
 
-        // Find workspace by ID or name
-        const workspace = await registry.findById(workspaceIdOrName) ||
-          await registry.findByName(workspaceIdOrName);
+    if (argv.all) {
+      await stopAllWorkspaces();
+    } else {
+      await stopSingleWorkspace(argv.workspace);
+    }
 
-        if (!workspace) {
-          throw new Error(`Workspace '${workspaceIdOrName}' not found`);
-        }
+    Deno.exit(0);
+  } catch (error) {
+    errorOutput(error instanceof Error ? error.message : String(error));
+    Deno.exit(1);
+  }
+};
 
-        setState({
-          status: "stopping",
-          message: `Stopping workspace '${workspace.name}'...`,
-          workspaceName: workspace.name,
-        });
+async function stopSingleWorkspace(idOrName?: string): Promise<void> {
+  const registry = getWorkspaceRegistry();
+  const processManager = new WorkspaceProcessManager();
 
-        const processManager = new WorkspaceProcessManager();
-        await processManager.stop(workspace.id, flags.force === true);
+  let workspace;
+  if (idOrName) {
+    // Find by ID or name
+    workspace = (await registry.findById(idOrName)) ||
+      (await registry.findByName(idOrName));
+  } else {
+    // Use current directory
+    workspace = await registry.getCurrentWorkspace();
+  }
 
-        setState({
-          status: "success",
-          message: `Workspace '${workspace.name}' stopped successfully`,
-          workspaceName: workspace.name,
-        });
+  if (!workspace) {
+    errorOutput(
+      idOrName
+        ? `Workspace '${idOrName}' not found. Use 'atlas workspace list' to see available workspaces.`
+        : "No workspace found in current directory.",
+    );
+    Deno.exit(1);
+  }
 
-        // Exit after a brief delay to show success message
-        setTimeout(() => exit(), 500);
-      } catch (error) {
-        setState({
-          status: "error",
-          message: error instanceof Error ? error.message : String(error),
-        });
-        setTimeout(() => exit(), 500);
-      }
-    };
+  // Check if workspace is running
+  if (workspace.status !== WSStatus.RUNNING && workspace.status !== WSStatus.STARTING) {
+    infoOutput(`Workspace '${workspace.name}' is not running (status: ${workspace.status}).`);
+    return;
+  }
 
-    stopWorkspace();
-  }, [args, flags, exit]);
+  // Show spinner while stopping
+  const s = spinner();
+  s.start(`Stopping workspace '${workspace.name}'...`);
 
-  return (
-    <Box flexDirection="column">
-      {state.status === "loading" && <Text color="yellow">{state.message}</Text>}
-      {state.status === "stopping" && <Text color="yellow">{state.message}</Text>}
-      {state.status === "success" && <Text color="green">✓ {state.message}</Text>}
-      {state.status === "error" && <Text color="red">Error: {state.message}</Text>}
-    </Box>
-  );
+  try {
+    await processManager.stop(workspace.id);
+    s.stop(`Workspace '${workspace.name}' stopped successfully`);
+  } catch (err) {
+    s.stop("Error stopping workspace");
+    throw err;
+  }
+}
+
+async function stopAllWorkspaces(): Promise<void> {
+  const registry = getWorkspaceRegistry();
+  const processManager = new WorkspaceProcessManager();
+
+  const runningWorkspaces = await registry.getRunning();
+
+  if (runningWorkspaces.length === 0) {
+    infoOutput("No running workspaces found.");
+    return;
+  }
+
+  infoOutput(`Found ${runningWorkspaces.length} running workspace(s).`);
+
+  for (const workspace of runningWorkspaces) {
+    const s = spinner();
+    s.start(`Stopping workspace '${workspace.name}'...`);
+
+    try {
+      await processManager.stop(workspace.id);
+      s.stop(`✓ Stopped '${workspace.name}'`);
+    } catch (err) {
+      s.stop(
+        `✗ Error stopping '${workspace.name}': ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  successOutput("All workspaces stopped.");
 }
