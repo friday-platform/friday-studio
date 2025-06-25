@@ -144,7 +144,7 @@ function WorkspaceList({
       {/* Table Header */}
       <Box>
         <Text bold color="white">
-          {padRight("ID", 15)}
+          {padRight("ID", 30)}
           {padRight("NAME", 50)}
           {padRight("STATUS", 10)}
           {padRight("PORT", 8)}
@@ -152,9 +152,7 @@ function WorkspaceList({
         </Text>
       </Box>
       <Box>
-        <Text color="gray">
-          {"─".repeat(93)}
-        </Text>
+        <Text color="gray">{"─".repeat(108)}</Text>
       </Box>
 
       {/* Table Rows */}
@@ -171,7 +169,7 @@ function WorkspaceList({
         return (
           <Box key={i}>
             <Text>
-              <Text color="blue">{padRight(workspace.id, 15)}</Text>
+              <Text color="blue">{padRight(workspace.id, 30)}</Text>
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>
               <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
               <Text color="cyan">{padRight(portDisplay, 8)}</Text>
