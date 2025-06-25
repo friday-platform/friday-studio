@@ -1,20 +1,16 @@
 import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
-import { ConfigLoader } from "../../../core/config-loader.ts";
+import {
+  ConfigLoader,
+  NewWorkspaceConfig,
+  type WorkspaceSignalConfig,
+} from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
   json?: boolean;
   workspace?: string;
-}
-
-interface Signal {
-  id: string;
-  provider: string;
-  agents: string;
-  strategy: string;
-  description: string;
 }
 
 export const command = "list";
@@ -43,16 +39,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       argv.workspace,
     );
 
-    const signals: Signal[] = Object.entries(
-      (config.signals as Record<string, any>) || {},
-    ).map(([id, signal]) => ({
-      id,
-      provider: signal.provider || "cli",
-      agents: signal.mappings?.[0]?.agents?.join(", ") || "",
-      strategy: signal.mappings?.[0]?.strategy || "sequential",
-      description: signal.description || "",
-    }));
-
     if (argv.json) {
       // JSON output for scripting
       console.log(
@@ -63,8 +49,8 @@ export const handler = async (argv: ListArgs): Promise<void> => {
               name: workspace.name,
               path: workspace.path,
             },
-            signals: signals,
-            count: signals.length,
+            signals: config.signals || {},
+            count: Object.keys(config.signals || {}).length,
           },
           null,
           2,
@@ -73,7 +59,10 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     } else {
       // Render with Ink
       render(
-        <SignalListCommand signals={signals} workspaceName={workspace.name} />,
+        <SignalListCommand
+          signalEntries={Object.entries(config.signals || {})}
+          workspaceName={workspace.name}
+        />,
       );
       // Exit immediately after rendering
       Deno.exit(0);
@@ -89,13 +78,13 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 // Helper function to resolve workspace and load config
 async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   workspace: { path: string; id: string; name: string };
-  config: Record<string, unknown>;
+  config: NewWorkspaceConfig;
 }> {
   const registry = getWorkspaceRegistry();
   await registry.initialize();
 
   let workspacePath = Deno.cwd();
-  let workspace;
+  let workspaceInfo: { path: string; id: string; name: string };
 
   if (workspaceId) {
     // Find workspace by ID or name in the registry
@@ -109,7 +98,7 @@ async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
     }
 
     workspacePath = targetWorkspace.path;
-    workspace = {
+    workspaceInfo = {
       path: targetWorkspace.path,
       id: targetWorkspace.id,
       name: targetWorkspace.name,
@@ -127,7 +116,7 @@ async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
     const currentWorkspace = (await registry.getCurrentWorkspace()) ||
       (await registry.findOrRegister(Deno.cwd()));
 
-    workspace = {
+    workspaceInfo = {
       path: currentWorkspace.path,
       id: currentWorkspace.id,
       name: currentWorkspace.name,
@@ -140,7 +129,7 @@ async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
     Deno.chdir(workspacePath);
     const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
-    return { workspace, config: mergedConfig.workspace };
+    return { workspace: workspaceInfo, config: mergedConfig.workspace };
   } finally {
     Deno.chdir(originalCwd);
   }
@@ -148,10 +137,10 @@ async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 
 // Component that renders the signal list
 function SignalListCommand({
-  signals,
+  signalEntries,
   workspaceName,
 }: {
-  signals: Signal[];
+  signalEntries: Array<[string, WorkspaceSignalConfig]>;
   workspaceName: string;
 }) {
   return (
@@ -162,7 +151,7 @@ function SignalListCommand({
       <Text color="gray">
         ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
       </Text>
-      {signals.length === 0 ? <Text color="gray">No signals configured</Text> : (
+      {signalEntries.length === 0 ? <Text color="gray">No signals configured</Text> : (
         <>
           <Box>
             <Box width={20}>
@@ -170,45 +159,29 @@ function SignalListCommand({
                 SIGNAL
               </Text>
             </Box>
-            <Box width={10}>
+            <Box width={15}>
               <Text bold color="cyan">
                 PROVIDER
               </Text>
             </Box>
-            <Box width={40}>
-              <Text bold color="cyan">
-                AGENTS
-              </Text>
-            </Box>
-            <Box width={12}>
-              <Text bold color="cyan">
-                STRATEGY
-              </Text>
-            </Box>
-            <Box width={30}>
+            <Box width={50}>
               <Text bold color="cyan">
                 DESCRIPTION
               </Text>
             </Box>
           </Box>
           <Text>
-            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+            ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
           </Text>
-          {signals.map((signal) => (
-            <Box key={signal.id}>
+          {signalEntries.map(([id, signal]) => (
+            <Box key={id}>
               <Box width={20}>
-                <Text>{signal.id}</Text>
+                <Text>{id}</Text>
               </Box>
-              <Box width={10}>
+              <Box width={15}>
                 <Text>{signal.provider}</Text>
               </Box>
-              <Box width={40}>
-                <Text>{signal.agents || "-"}</Text>
-              </Box>
-              <Box width={12}>
-                <Text>{signal.strategy}</Text>
-              </Box>
-              <Box width={30}>
+              <Box width={50}>
                 <Text>{signal.description || "-"}</Text>
               </Box>
             </Box>
