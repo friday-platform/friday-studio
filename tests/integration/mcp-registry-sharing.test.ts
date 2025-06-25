@@ -119,7 +119,7 @@ Deno.test("MCP Registry Sharing - Full Integration Flow", async (t) => {
     };
 
     const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "test-workspace");
-    sessionSupervisor.setWorkspaceMcpServers(workspaceMcpServers);
+    sessionSupervisor.setWorkspaceTools({ mcp: { servers: workspaceMcpServers } });
 
     // Test filtering for specific agent
     const agentMcpServers = ["test-server"];
@@ -261,7 +261,7 @@ Deno.test("MCP Registry Sharing - Configuration Passing", async (t) => {
     };
 
     const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "test-workspace");
-    sessionSupervisor.setWorkspaceMcpServers(workspaceMcpServers);
+    sessionSupervisor.setWorkspaceTools({ mcp: { servers: workspaceMcpServers } });
 
     const configs = sessionSupervisor.getMcpServerConfigsForAgent("linear-agent", ["linear"]);
     assertEquals(configs.length, 1);
@@ -283,7 +283,7 @@ Deno.test("MCP Registry Sharing - Configuration Passing", async (t) => {
     };
 
     const sessionSupervisor = new SessionSupervisor(mockMemoryConfig, "test-workspace");
-    sessionSupervisor.setWorkspaceMcpServers(workspaceMcpServers);
+    sessionSupervisor.setWorkspaceTools({ mcp: { servers: workspaceMcpServers } });
 
     const configs = sessionSupervisor.getMcpServerConfigsForAgent("multi-agent", [
       "linear",

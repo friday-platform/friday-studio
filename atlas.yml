@@ -4,6 +4,7 @@ version: "1.0"
 # Everything is a workspace - this is the platform workspace with global management capabilities
 
 workspace:
+  id: "atlas-platform"
   name: "Atlas Platform"
   version: "1.0.0"
   description: "Global Atlas platform workspace providing built-in agents and federation capabilities"
