@@ -78,52 +78,22 @@ jobs:
   # Linear Integration
   # -------------------------
 
-  linear-cluster-issue-triage:
-    name: "linear-cluster-issue-triage"
-    description: "Automated cluster issue triage from Linear tickets with k8s coordinator and Linear update"
+  linear-devops-task:
+    name: "linear-devops-task"
+    description: "DevOps and infrastructure task automation from Linear issues. Handles Kubernetes operations, deployments, scaling, troubleshooting, and infrastructure management based on Linear tickets."
     triggers:
       - signal: "linear-webhook"
         condition: |
-          data.action === "create" &&
+          (data.action === "create" || data.action === "update") &&
           data.data.type === "Issue" &&
-          (data.data.labels?.some(l => ["k8s", "cluster", "devops", "deployment", "pod"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
-           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress"].some(keyword =>
+          (data.data.labels?.some(l => ["k8s", "kubernetes", "cluster", "devops", "deployment", "pod", "infrastructure", "scale", "restart"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
+           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress", "scale", "restart", "logs", "kubectl"].some(keyword =>
              data.data.title.toLowerCase().includes(keyword) ||
              data.data.description?.toLowerCase().includes(keyword)))
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "k8s-main-agent"
-        - id: "linear-writer"
-
-  linear-devops-automation:
-    name: "linear-devops-automation"
-    description: "Automated DevOps task execution from Linear issue updates with k8s coordinator and Linear update"
-    triggers:
-      - signal: "linear-webhook"
-        condition: |
-          (data.action === "update" || data.action === "create") &&
-          data.data.type === "Comment" &&
-          data.data.body &&
-          ["kubectl", "restart", "scale", "logs", "describe", "get pods", "get services"].some(cmd =>
-            data.data.body.toLowerCase().includes(cmd))
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "k8s-main-agent"
-        - id: "linear-writer"
-
-  linear-incident-resolution:
-    name: "linear-incident-resolution"
-    description: "Automated incident resolution workflow for assigned cluster issues with k8s coordinator and Linear update"
-    triggers:
-      - signal: "linear-webhook"
-        condition: |
-          data.action === "update" &&
-          data.data.type === "Issue" &&
-          data.data.assignee?.email?.includes("atlas") &&
-          data.data.state.name === "In Progress" &&
-          data.data.priority <= 2
+    success_criteria:
+      k8s_operation_completed: "Kubernetes operation executed successfully with valid kubectl response"
+      linear_issue_updated: "Linear issue status updated with operation results and proper state transition"
+      workflow_completion: "Both agents completed their tasks without critical errors"
     execution:
       strategy: "sequential"
       agents:
@@ -133,9 +103,9 @@ jobs:
 # =============================================================================
 # AGENT CONFIGURATION
 # =============================================================================
-# Multi-agent architecture for Kubernetes management:
-# - k8s-main-agent: Primary AI agent for K8s operations via ACP protocol
-# - local-assistant: LLM agent for documentation, Linear integration, and support
+# Clear separation of responsibilities:
+# - k8s-main-agent: Kubernetes cluster operations worker (kubectl, deployments, scaling, monitoring)
+# - linear-writer: Linear issue management specialist (creates/updates issues, manages status)
 # =============================================================================
 
 agents:
@@ -143,7 +113,7 @@ agents:
     type: "remote"
     protocol: "acp"
     endpoint: "http://localhost:8085"
-    purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, cluster operations, and Linear issue automation"
+    purpose: "Kubernetes cluster operations worker. Handles kubectl commands, deployment management, scaling, troubleshooting, log retrieval, and cluster monitoring. Does NOT handle Linear issue management."
 
     # ACP Protocol Configuration
     acp:
@@ -161,26 +131,10 @@ agents:
         timeout_ms: 120000
         half_open_max_calls: 2
 
-    # DevOps Safety Context
-    context:
-      linear_integration: true
-      automation_mode: "devops_worker"
-      safe_operations:
-        - "kubectl get"
-        - "kubectl describe"
-        - "kubectl logs"
-        - "kubectl restart deployment"
-        - "kubectl scale deployment"
-        - "kubectl rollout status"
-      requires_approval:
-        - "kubectl delete"
-        - "kubectl apply"
-        - "kubectl patch"
-
   linear-writer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Linear issue management agent using MCP tools for creating and updating Linear issues"
+    purpose: "Linear issue management specialist. Responsible for ALL Linear operations: creating issues, updating status, adding comments, managing assignments and priorities. Uses MCP tools to interact with Linear API."
     mcp_servers: ["linear"]
     max_steps: 3
     tool_choice: "auto"
