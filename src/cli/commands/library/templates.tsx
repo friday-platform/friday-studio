@@ -6,6 +6,13 @@ import { Table } from "../../components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import process from "node:process";
 
+interface TemplatesArgs {
+  workspace: boolean;
+  platform: boolean;
+  json: boolean;
+  port: number;
+}
+
 export const command = "templates";
 export const desc = "List available templates";
 
@@ -55,7 +62,7 @@ const TemplateSchema = z.object({
 
 type Template = z.infer<typeof TemplateSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: TemplatesArgs) {
   const s = spinner();
 
   try {

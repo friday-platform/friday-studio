@@ -1,3 +1,4 @@
+// deno-lint-ignore-file
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { Badge } from "@inkjs/ui";
@@ -144,14 +145,18 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       const port = serverStatus.port || 8080;
 
       // Load library items
-      const itemsResponse = await fetch(`http://localhost:${port}/library?limit=50`);
+      const itemsResponse = await fetch(
+        `http://localhost:${port}/library?limit=50`,
+      );
       if (itemsResponse.ok) {
         const items = await itemsResponse.json();
         setLibraryItems(items);
       }
 
       // Load templates
-      const templatesResponse = await fetch(`http://localhost:${port}/library/templates`);
+      const templatesResponse = await fetch(
+        `http://localhost:${port}/library/templates`,
+      );
       if (templatesResponse.ok) {
         const templates = await templatesResponse.json();
         setLibraryTemplates(templates);
@@ -179,29 +184,29 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       // Build workspace context
       const context: WorkspaceContext = {
         workspaceId: serverStatus.workspace,
-        availableSignals: Object.entries(mergedConfig.workspace.signals || {}).map((
-          [id, config]: [string, any],
-        ) => ({
+        availableSignals: Object.entries(
+          mergedConfig.workspace.signals || {},
+        ).map(([id, config]: [string, any]) => ({
           id,
           provider: config.provider || "unknown",
           description: config.description,
           payloadShape: config.payloadShape,
         })),
-        availableAgents: Object.entries(mergedConfig.workspace.agents || {}).map((
-          [id, config]: [string, any],
-        ) => ({
+        availableAgents: Object.entries(
+          mergedConfig.workspace.agents || {},
+        ).map(([id, config]: [string, any]) => ({
           id,
           type: config.type || "unknown",
           purpose: config.purpose,
           capabilities: config.capabilities || [],
         })),
-        existingJobs: Object.entries(mergedConfig.jobs || {}).map((
-          [name, config]: [string, any],
-        ) => ({
-          name,
-          description: config.description,
-          triggers: config.triggers || [],
-        })),
+        existingJobs: Object.entries(mergedConfig.jobs || {}).map(
+          ([name, config]: [string, any]) => ({
+            name,
+            description: config.description,
+            triggers: config.triggers || [],
+          }),
+        ),
       };
 
       setWorkspaceContext(context);
@@ -312,7 +317,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const [libraryItems, setLibraryItems] = useState<any[]>([]);
   const [libraryTemplates, setLibraryTemplates] = useState<any[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
-  const [libraryMode, setLibraryMode] = useState<"items" | "templates">("items");
+  const [libraryMode, setLibraryMode] = useState<"items" | "templates">(
+    "items",
+  );
 
   // Function to scan for available workspaces
   const scanAvailableWorkspaces = async (): Promise<AvailableWorkspace[]> => {
@@ -429,7 +436,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       // Check if workspace exists
       if (!(await exists(workspaceYmlPath))) {
-        throw new Error(`Workspace '${workspaceName}' not found in examples/workspaces/`);
+        throw new Error(
+          `Workspace '${workspaceName}' not found in examples/workspaces/`,
+        );
       }
 
       // Change to workspace directory and load
@@ -479,10 +488,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         workspace?: { name?: string };
       };
 
-      addLog(
-        "command",
-        `Found existing server on port ${port}, connecting...`,
-      );
+      addLog("command", `Found existing server on port ${port}, connecting...`);
 
       // Use server info if available, otherwise fall back to local config
       const workspaceName = serverInfo?.workspace?.name || config.workspace?.name;
@@ -494,7 +500,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         workspace: workspaceName,
       });
 
-      addLog("command", `Connected to ${workspaceName || "workspace"} server (${serverState})`);
+      addLog(
+        "command",
+        `Connected to ${workspaceName || "workspace"} server (${serverState})`,
+      );
       addLog("command", "TUI ready - server was already running");
 
       if (serverInfo?.activeSessions) {
@@ -665,7 +674,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       // Check if server is already running before starting a new one
       addLog("command", "Checking for existing workspace server...");
-      const { running: serverExists, serverInfo } = await checkExistingServer(8080);
+      const { running: serverExists, serverInfo } = await checkExistingServer(
+        8080,
+      );
 
       if (serverExists) {
         // Connect to existing server
@@ -683,7 +694,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
   const executeConfigCommand = async (args: string[]) => {
     if (!workspaceContext) {
-      addLog("error", "Workspace context not loaded. Switch to Workspace Config tab first.");
+      addLog(
+        "error",
+        "Workspace context not loaded. Switch to Workspace Config tab first.",
+      );
       return;
     }
 
@@ -694,7 +708,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         if (args.length < 3) {
           setConfigMode("create-job");
           goToTab(2); // Switch to workspace config tab
-          addLog("command", "Switched to job creation mode. Describe your job in the input.");
+          addLog(
+            "command",
+            "Switched to job creation mode. Describe your job in the input.",
+          );
           return;
         }
 
@@ -732,7 +749,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       default:
         setConfigMode("overview");
         goToTab(2); // Switch to workspace config tab
-        addLog("command", "Available config commands: create-job, validate, confirmations");
+        addLog(
+          "command",
+          "Available config commands: create-job, validate, confirmations",
+        );
     }
   };
 
@@ -746,7 +766,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     try {
       addLog("command", `Creating job from: "${description}"`);
 
-      const result = await configAssistant.parseJobDescription(description, workspaceContext);
+      const result = await configAssistant.parseJobDescription(
+        description,
+        workspaceContext,
+      );
 
       if (result.conditionsNeedConfirmation.length > 0) {
         addLog(
@@ -756,7 +779,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         setConfigMode("confirmations");
       } else {
         addLog("command", `Job "${result.job.name}" created successfully!`);
-        addLog("command", `Job definition:\n${JSON.stringify(result.job, null, 2)}`);
+        addLog(
+          "command",
+          `Job definition:\n${JSON.stringify(result.job, null, 2)}`,
+        );
       }
     } catch (error) {
       addLog("error", `Failed to create job: ${error}`);
@@ -800,7 +826,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     }
   };
 
-  const confirmConditionParsing = (confirmationId: string, approved: boolean) => {
+  const confirmConditionParsing = (
+    confirmationId: string,
+    approved: boolean,
+  ) => {
     try {
       configAssistant.confirmConditionParsing(confirmationId, approved);
       addLog(
@@ -813,7 +842,10 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         goToTab(2);
       }
     } catch (error) {
-      addLog("error", `Failed to ${approved ? "approve" : "reject"} condition: ${error}`);
+      addLog(
+        "error",
+        `Failed to ${approved ? "approve" : "reject"} condition: ${error}`,
+      );
     }
   };
 
@@ -1457,7 +1489,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
           // Special handling for job creation mode in workspace config tab
           if (
-            activeTab === 2 && configMode === "create-job" && !input.startsWith("/") &&
+            activeTab === 2 &&
+            configMode === "create-job" &&
+            !input.startsWith("/") &&
             !isProcessingJob
           ) {
             createJobFromDescription(input.trim());
@@ -1603,10 +1637,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
               await writer.close();
               await process.status;
 
-              addLog(
-                "command",
-                `Copied to clipboard: ${textToCopy}`,
-              );
+              addLog("command", `Copied to clipboard: ${textToCopy}`);
             } catch (error) {
               addLog("error", `Failed to copy to clipboard: ${error}`);
             }
@@ -1616,10 +1647,13 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       }
     } else if (inputChar === "t" && !inputFocused && activeTab === 3) {
       // Toggle between items and templates in library tab
-      setLibraryMode((prev) => prev === "items" ? "templates" : "items");
+      setLibraryMode((prev) => (prev === "items" ? "templates" : "items"));
       setSelectedLibraryIndex(0);
       setLibraryScroll(0);
-      addLog("command", `Switched to library ${libraryMode === "items" ? "templates" : "items"}`);
+      addLog(
+        "command",
+        `Switched to library ${libraryMode === "items" ? "templates" : "items"}`,
+      );
     } else if (inputChar === "r" && !inputFocused && activeTab === 3) {
       // Refresh library data
       addLog("command", "Refreshing library data...");
@@ -1816,14 +1850,18 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const renderWorkspaceConfigTab = () => (
     <Box flexDirection="column" height={availableHeight} overflow="hidden">
       <Box marginBottom={1}>
-        <Text color="cyan" bold>⚙️ Workspace Configuration Assistant</Text>
+        <Text color="cyan" bold>
+          ⚙️ Workspace Configuration Assistant
+        </Text>
       </Box>
 
       {!workspaceContext
         ? (
           <Box flexDirection="column">
             <Text color="yellow">Loading workspace context...</Text>
-            <Text dimColor>Analyzing signals, agents, and jobs in current workspace</Text>
+            <Text dimColor>
+              Analyzing signals, agents, and jobs in current workspace
+            </Text>
           </Box>
         )
         : (
@@ -1836,9 +1874,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         )}
 
       <Box marginTop={1} borderTop borderColor="gray" paddingTop={1}>
-        <Text dimColor>
-          Press Tab to focus input, type config commands:
-        </Text>
+        <Text dimColor>Press Tab to focus input, type config commands:</Text>
       </Box>
       <Box>
         <Text dimColor>
@@ -1857,20 +1893,28 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       <Box marginBottom={1}>
         <Text>Signals: {workspaceContext?.availableSignals.length || 0}</Text>
       </Box>
-      {workspaceContext?.availableSignals.slice(0, 3).map((signal: any, i: number) => (
-        <Box key={i} marginLeft={2}>
-          <Text dimColor>• {signal.id} ({signal.provider})</Text>
-        </Box>
-      ))}
+      {workspaceContext?.availableSignals
+        .slice(0, 3)
+        .map((signal: any, i: number) => (
+          <Box key={i} marginLeft={2}>
+            <Text dimColor>
+              • {signal.id} ({signal.provider})
+            </Text>
+          </Box>
+        ))}
 
       <Box marginBottom={1} marginTop={1}>
         <Text>Agents: {workspaceContext?.availableAgents.length || 0}</Text>
       </Box>
-      {workspaceContext?.availableAgents.slice(0, 3).map((agent: any, i: number) => (
-        <Box key={i} marginLeft={2}>
-          <Text dimColor>• {agent.id} ({agent.type})</Text>
-        </Box>
-      ))}
+      {workspaceContext?.availableAgents
+        .slice(0, 3)
+        .map((agent: any, i: number) => (
+          <Box key={i} marginLeft={2}>
+            <Text dimColor>
+              • {agent.id} ({agent.type})
+            </Text>
+          </Box>
+        ))}
 
       <Box marginBottom={1} marginTop={1}>
         <Text>Jobs: {workspaceContext?.existingJobs.length || 0}</Text>
@@ -1883,9 +1927,15 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       <Box marginTop={2}>
         <Text color="green">✨ Use natural language to create jobs:</Text>
-        <Text dimColor>"/config create-job" - Create new job from description</Text>
-        <Text dimColor>"/config validate" - Validate workspace configuration</Text>
-        <Text dimColor>"/config confirmations" - Manage condition confirmations</Text>
+        <Text dimColor>
+          "/config create-job" - Create new job from description
+        </Text>
+        <Text dimColor>
+          "/config validate" - Validate workspace configuration
+        </Text>
+        <Text dimColor>
+          "/config confirmations" - Manage condition confirmations
+        </Text>
       </Box>
     </Box>
   );
@@ -1908,8 +1958,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         )
         : (
           <Box>
-            <Text dimColor>Type your job description in the input below and press Enter.</Text>
-            <Text dimColor>Example: "Monitor Kubernetes pods and alert when they fail"</Text>
+            <Text dimColor>
+              Type your job description in the input below and press Enter.
+            </Text>
+            <Text dimColor>
+              Example: "Monitor Kubernetes pods and alert when they fail"
+            </Text>
           </Box>
         )}
     </Box>
@@ -1974,12 +2028,20 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
             <Box flexDirection="column">
               <Text>Found {confirmations.length} confirmation(s) pending:</Text>
               {confirmations.slice(0, 3).map((conf: any, i: number) => (
-                <Box key={i} marginTop={1} marginLeft={2} borderStyle="single" padding={1}>
+                <Box
+                  key={i}
+                  marginTop={1}
+                  marginLeft={2}
+                  borderStyle="single"
+                  padding={1}
+                >
                   <Text bold>Confirmation {i + 1}</Text>
                   <Text>
                     Original: <Text color="cyan">"{conf.originalText}"</Text>
                   </Text>
-                  <Text>Confidence: {(conf.parsed.confidence * 100).toFixed(0)}%</Text>
+                  <Text>
+                    Confidence: {(conf.parsed.confidence * 100).toFixed(0)}%
+                  </Text>
                   <Text dimColor>Use: /config confirm {conf.id}</Text>
                 </Box>
               ))}
@@ -1992,9 +2054,14 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
   const renderLibraryTab = () => (
     <Box flexDirection="column" height={availableHeight} overflow="hidden">
       <Box marginBottom={1} flexDirection="row">
-        <Text color="cyan" bold>📚 Library</Text>
+        <Text color="cyan" bold>
+          📚 Library
+        </Text>
         <Text color="gray">|</Text>
-        <Text color={libraryMode === "items" ? "white" : "gray"} bold={libraryMode === "items"}>
+        <Text
+          color={libraryMode === "items" ? "white" : "gray"}
+          bold={libraryMode === "items"}
+        >
           Items ({libraryItems.length})
         </Text>
         <Text color="gray">|</Text>
@@ -2016,7 +2083,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
         ? (
           <Box flexDirection="column">
             <Text color="yellow">Loading library data...</Text>
-            <Text dimColor>Fetching items and templates from workspace library</Text>
+            <Text dimColor>
+              Fetching items and templates from workspace library
+            </Text>
           </Box>
         )
         : (
@@ -2043,12 +2112,17 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       return (
         <Box flexDirection="column">
           <Text color="yellow">No library items found</Text>
-          <Text dimColor>Items will appear here as agents generate reports and artifacts</Text>
+          <Text dimColor>
+            Items will appear here as agents generate reports and artifacts
+          </Text>
         </Box>
       );
     }
 
-    const visibleItems = libraryItems.slice(libraryScroll, libraryScroll + availableHeight - 6);
+    const visibleItems = libraryItems.slice(
+      libraryScroll,
+      libraryScroll + availableHeight - 6,
+    );
 
     return (
       <Box flexDirection="column">
@@ -2062,7 +2136,11 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
             const k = 1024;
             const sizes = ["B", "KB", "MB", "GB"];
             const sizeIndex = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(1)) + " " + sizes[sizeIndex];
+            return (
+              parseFloat((bytes / Math.pow(k, sizeIndex)).toFixed(1)) +
+              " " +
+              sizes[sizeIndex]
+            );
           };
 
           const typeColor = item.type === "report"
@@ -2084,7 +2162,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                   {item.type.toUpperCase()}
                 </Text>
                 <Text color={isSelected ? "black" : "white"}>{item.name}</Text>
-                <Text color={isSelected ? "black" : "gray"}>({formatBytes(item.size_bytes)})</Text>
+                <Text color={isSelected ? "black" : "gray"}>
+                  ({formatBytes(item.size_bytes)})
+                </Text>
               </Text>
               {isSelected && (
                 <Box marginLeft={4}>
@@ -2115,7 +2195,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
       return (
         <Box flexDirection="column">
           <Text color="yellow">No templates found</Text>
-          <Text dimColor>Templates are defined in atlas.yml and workspace.yml</Text>
+          <Text dimColor>
+            Templates are defined in atlas.yml and workspace.yml
+          </Text>
         </Box>
       );
     }
@@ -2147,8 +2229,12 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
                 <Text color={isSelected ? "black" : engineColor} bold>
                   {template.engine.toUpperCase()}
                 </Text>
-                <Text color={isSelected ? "black" : "white"}>{template.name || template.id}</Text>
-                <Text color={isSelected ? "black" : "gray"}>({template.format})</Text>
+                <Text color={isSelected ? "black" : "white"}>
+                  {template.name || template.id}
+                </Text>
+                <Text color={isSelected ? "black" : "gray"}>
+                  ({template.format})
+                </Text>
               </Text>
               {isSelected && (
                 <Box marginLeft={4}>
@@ -2252,11 +2338,7 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       {/* Full-screen content preview */}
       {showPopover && (
-        <Box
-          position="absolute"
-          padding={1}
-          flexDirection="column"
-        >
+        <Box position="absolute" padding={1} flexDirection="column">
           <Box
             borderStyle="double"
             borderColor="cyan"

@@ -1,5 +1,3 @@
-import React from "react";
-import { render } from "ink";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";

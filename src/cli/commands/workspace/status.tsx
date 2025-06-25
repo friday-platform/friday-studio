@@ -1,4 +1,3 @@
-import React from "react";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
 import { Box, render, Text } from "ink";
@@ -188,12 +187,14 @@ function WorkspaceStatusCommand({
     healthData: WorkspaceHealthData | null;
   };
 }) {
-  const { workspace, config, serverRunning, port, healthData } = data;
+  const { workspace, config: _config, serverRunning, port, healthData } = data;
 
   return (
     <Box flexDirection="column" paddingY={1}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">Workspace Status</Text>
+        <Text bold color="cyan">
+          Workspace Status
+        </Text>
       </Box>
 
       <Box flexDirection="column" gap={1}>
@@ -214,7 +215,9 @@ function WorkspaceStatusCommand({
 
         <Box>
           <Text bold>Status:</Text>
-          <Text color={workspace.status === WSStatus.RUNNING ? "green" : "yellow"}>
+          <Text
+            color={workspace.status === WSStatus.RUNNING ? "green" : "yellow"}
+          >
             {workspace.status}
           </Text>
         </Box>

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { ResponsiveContainer } from "../components/ResponsiveContainer.tsx";
 import { SplashScreen } from "../components/SplashScreen.tsx";
 import { WorkspaceView } from "../components/WorkspaceView.tsx";
-import { Box, Text, useStdout } from "ink";
 
 type ViewMode = "splash" | "workspace";
 

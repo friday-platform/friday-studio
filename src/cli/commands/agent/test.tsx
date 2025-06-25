@@ -1,5 +1,3 @@
-import React from "react";
-import { render } from "ink";
 import { exists } from "@std/fs";
 import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";

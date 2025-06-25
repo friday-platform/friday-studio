@@ -5,6 +5,11 @@ import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
 import process from "node:process";
 
+interface StatsArgs {
+  json: boolean;
+  port: number;
+}
+
 export const command = "stats";
 export const desc = "Show library statistics";
 
@@ -49,7 +54,7 @@ const LibraryStatsSchema = z.object({
 
 type LibraryStats = z.infer<typeof LibraryStatsSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: StatsArgs) {
   const s = spinner();
 
   try {

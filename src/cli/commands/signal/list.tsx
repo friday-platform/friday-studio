@@ -43,7 +43,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       argv.workspace,
     );
 
-    // deno-lint-ignore no-explicit-any
     const signals: Signal[] = Object.entries(
       (config.signals as Record<string, any>) || {},
     ).map(([id, signal]) => ({

@@ -4,9 +4,20 @@ import { Box, Text } from "ink";
 import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
-import yargs from "yargs";
 import { YargsInstance } from "../../utils/yargs.ts";
 import process from "node:process";
+
+interface GenerateArgs {
+  template: string;
+  dataFile: string;
+  store: boolean;
+  name?: string;
+  description?: string;
+  tags?: string;
+  output?: string;
+  json: boolean;
+  port: number;
+}
 
 export const command = "generate <template> <data-file>";
 export const desc = "Generate content from template";
@@ -75,7 +86,7 @@ const GenerationResultSchema = z.object({
 
 type GenerationResult = z.infer<typeof GenerationResultSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: GenerateArgs) {
   const s = spinner();
 
   if (!argv.template || !argv.dataFile) {

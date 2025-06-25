@@ -3,9 +3,15 @@ import { render } from "ink";
 import { Box, Text } from "ink";
 import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
-import yargs from "yargs";
 import { YargsInstance } from "../../utils/yargs.ts";
 import process from "node:process";
+
+interface GetArgs {
+  id: string;
+  content: boolean;
+  json: boolean;
+  port: number;
+}
 
 export const command = "get <id>";
 export const desc = "Get library item details";
@@ -59,7 +65,7 @@ const LibraryItemDetailSchema = z.object({
 
 type LibraryItemDetail = z.infer<typeof LibraryItemDetailSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: GetArgs) {
   const s = spinner();
 
   if (!argv.id) {
@@ -85,7 +91,7 @@ export async function handler(argv: any) {
       const listResponse = await fetch(`${serverUrl}/library`);
       if (listResponse.ok) {
         const items = await listResponse.json();
-        const matchingItem = items.find((item: any) => item.id.startsWith(argv.id));
+        const matchingItem = items.find((item: { id: string }) => item.id.startsWith(argv.id));
 
         if (matchingItem) {
           // Try again with the full ID

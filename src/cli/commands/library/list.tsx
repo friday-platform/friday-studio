@@ -6,6 +6,16 @@ import { YargsInstance } from "../../utils/yargs.ts";
 import { spinner } from "../../utils/prompts.tsx";
 import process from "node:process";
 
+interface ListArgs {
+  type?: string;
+  tags?: string;
+  since?: string;
+  limit: number;
+  workspace?: string;
+  json: boolean;
+  port: number;
+}
+
 export const command = "list";
 export const desc = "List library items";
 
@@ -62,7 +72,7 @@ const LibraryItemSchema = z.object({
 
 type LibraryItem = z.infer<typeof LibraryItemSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: ListArgs) {
   const s = spinner();
 
   try {

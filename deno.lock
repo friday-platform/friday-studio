@@ -24,6 +24,7 @@
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
     "npm:@types/node@*": "22.15.15",
     "npm:@types/react@^18.3.3": "18.3.23",
+    "npm:@types/yargs@^17.0.33": "17.0.33",
     "npm:ai@^4.0.7": "4.3.16_react@18.3.1_zod@3.25.67",
     "npm:eventsource-parser@^3.0.1": "3.0.2",
     "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@18.3.23_react@18.3.1",
@@ -36,6 +37,7 @@
     "npm:openapi-typescript@^7.8.0": "7.8.0_typescript@5.8.3",
     "npm:react@^18.3.1": "18.3.1",
     "npm:xstate@^5.18.0": "5.20.0",
+    "npm:yargs@18": "18.0.0",
     "npm:zod@^3.25.62": "3.25.67"
   },
   "jsr": {
@@ -262,6 +264,15 @@
         "csstype"
       ]
     },
+    "@types/yargs-parser@21.0.3": {
+      "integrity": "sha512-I4q9QU9MQv4oEOz4tAHJtNz1cwuLxn2F3xcc2iV5WdqLPpUnj30aUuxt1mAxYTG+oe8CZMV/+6rU4S4gRDzqtQ=="
+    },
+    "@types/yargs@17.0.33": {
+      "integrity": "sha512-WpxBCKWPLr4xSsHgz511rFJAM+wS28w2zEO1QDNY5zM/S8ok70NNfztH0xwhqKyaK0OHCbN98LDAZuy1ctxDkA==",
+      "dependencies": [
+        "@types/yargs-parser"
+      ]
+    },
     "accepts@2.0.0": {
       "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
       "dependencies": [
@@ -395,6 +406,14 @@
         "string-width"
       ]
     },
+    "cliui@9.0.1": {
+      "integrity": "sha512-k7ndgKhwoQveBL+/1tqGJYNz097I7WOvwbmmU2AR5+magtbjPWQTS1C5vzGkBC8Ym8UWRzfKUzUUqFLypY4Q+w==",
+      "dependencies": [
+        "string-width",
+        "strip-ansi",
+        "wrap-ansi"
+      ]
+    },
     "code-excerpt@4.0.0": {
       "integrity": "sha512-xxodCmBen3iy2i0WtAK8FlFNrRzjUqjRsMfho58xT/wvZU1YTM3fCnRjcy1gJPMepaRlgm/0e6w8SpWHpn3/cA==",
       "dependencies": [
@@ -499,6 +518,9 @@
     "es-toolkit@1.39.4": {
       "integrity": "sha512-hHqQ0yJERMNrJUyYHnf02qDuIxjRnnJlx1CFdR9Ia6tw6jPA7kXmb+tWzc7trJDHwMsc393hZ/m2XMxYXGAfqQ=="
     },
+    "escalade@3.2.0": {
+      "integrity": "sha512-WUj2qlxaQtO4g6Pq5c29GTcWGDyd8itL8zTlipgECz3JesAiiOKotd8JU6otB3PACgG6xkJUyVhboMS+bje/jA=="
+    },
     "escape-html@1.0.3": {
       "integrity": "sha512-NiSupZ4OeuGwr68lGIeym/ksIZMJodUGOSCZ/FSnTxcrekbvqrgdUxlJOMpijaKZVjAJrWrGs/6Jy8OMuyj9ow=="
     },
@@ -602,6 +624,9 @@
     },
     "function-bind@1.1.2": {
       "integrity": "sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA=="
+    },
+    "get-caller-file@2.0.5": {
+      "integrity": "sha512-DyFP3BM/3YHTQOCUL/w0OZHR0lpKeGrxotcHWcqNEdnltqFwXVfhEBQ94eIo34AfQpo0rGki4cyIiftY06h2Fg=="
     },
     "get-east-asian-width@1.3.0": {
       "integrity": "sha512-vpeMIQKxczTD/0s2CdEWHcb0eeJe6TFjxb+J5xgX7hScxqrGuyjmv4c1D4A/gelKfyox0gJJwIHF+fLjeaM8kQ=="
@@ -913,7 +938,7 @@
         "parse-json",
         "supports-color",
         "typescript",
-        "yargs-parser"
+        "yargs-parser@21.1.1"
       ],
       "bin": true
     },
@@ -1257,6 +1282,9 @@
     "xstate@5.20.0": {
       "integrity": "sha512-lFQ0fLwVa0OMZnjNP8zUkt2fwIS85ZBNPvxE41APVYhYj0++aTssgmsnTAiBHdKYbgnd6+L8DRTZ9jPZAFPuyw=="
     },
+    "y18n@5.0.8": {
+      "integrity": "sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA=="
+    },
     "yaml-ast-parser@0.0.43": {
       "integrity": "sha512-2PTINUwsRqSd+s8XxKaJWQlUuEMHJQyEuh2edBbW8KNJz0SJPwUSD2zRWqezFEdN7IzAgeuYHFUCF7o8zRdZ0A=="
     },
@@ -1266,6 +1294,20 @@
     },
     "yargs-parser@21.1.1": {
       "integrity": "sha512-tVpsJW7DdjecAiFpbIB1e3qxIQsE6NoPc5/eTdrbbIC4h0LVsWhnoa3g+m2HclBIujHzsxZ4VJVA+GUuc2/LBw=="
+    },
+    "yargs-parser@22.0.0": {
+      "integrity": "sha512-rwu/ClNdSMpkSrUb+d6BRsSkLUq1fmfsY6TOpYzTwvwkg1/NRG85KBy3kq++A8LKQwX6lsu+aWad+2khvuXrqw=="
+    },
+    "yargs@18.0.0": {
+      "integrity": "sha512-4UEqdc2RYGHZc7Doyqkrqiln3p9X2DZVxaGbwhn2pi7MrRagKaOcIKe8L3OxYcbhXLgLFUS3zAYuQjKBQgmuNg==",
+      "dependencies": [
+        "cliui",
+        "escalade",
+        "get-caller-file",
+        "string-width",
+        "y18n",
+        "yargs-parser@22.0.0"
+      ]
     },
     "yoga-layout@3.2.1": {
       "integrity": "sha512-0LPOt3AxKqMdFBZA3HBAt/t/8vIKq7VaQYbuA8WxCgung+p9TVyKRYdpvCb80HcdTN2NkbIKbhNwKUfm3tQywQ=="
@@ -1602,6 +1644,7 @@
     "https://deno.land/x/yargs@v18.0.0-deno/build/lib/validation.js": "af040834cb9201d4238bbeb8f673eb2ebaff9611857270524a7c86dfcf2ca51b",
     "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yargs-factory.js": "d36113035eca884055c867535e39e815cd771fa49be08ee85154e8e31e2bed61",
     "https://deno.land/x/yargs@v18.0.0-deno/build/lib/yerror.js": "9729aaa8bce1a0d00c57f470efb2ad76ad2988661bb48f3769e496a3435b4462",
+    "https://deno.land/x/yargs@v18.0.0-deno/deno-types.ts": "62f5c61899c6da491890c8c84fd9580cfbfa2a83f5a70f6dc74727bbfb148623",
     "https://deno.land/x/yargs@v18.0.0-deno/deno.ts": "f3df0bfd08ba367ec36dc59ef6cab1a391ace49ad44387ec5fe5d76289af08af",
     "https://deno.land/x/yargs@v18.0.0-deno/lib/platform-shims/deno.ts": "4c341ecb157f96b06de8e7cc0a96f5002877275cd4c9e7dc7089a767df07933d",
     "https://deno.land/x/yargs_parser@v20.2.4-deno/build/lib/string-utils.js": "12fc056b23703bc370aae5b179dc5abee53fca277abc30eaf76f78d2546d6413",

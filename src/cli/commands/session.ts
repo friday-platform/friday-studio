@@ -1,4 +1,3 @@
-import yargs from "yargs";
 import * as list from "./session/list.tsx";
 import * as get from "./session/get.tsx";
 import * as cancel from "./session/cancel.tsx";

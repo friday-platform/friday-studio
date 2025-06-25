@@ -25,9 +25,15 @@ export function builder(y: YargsInstance) {
       describe: "Directory path for the workspace",
       default: ".",
     })
-    .example("$0 workspace init", "Initialize workspace interactively in current directory")
+    .example(
+      "$0 workspace init",
+      "Initialize workspace interactively in current directory",
+    )
     .example("$0 workspace init my-agent", "Create workspace named 'my-agent'")
-    .example("$0 workspace init my-agent ~/projects", "Create workspace in specific directory")
+    .example(
+      "$0 workspace init my-agent ~/projects",
+      "Create workspace in specific directory",
+    )
     .example("$0 work init", "Short alias for workspace init")
     .help()
     .alias("help", "h");
@@ -40,9 +46,13 @@ interface WorkspaceConfig {
   signals: string[];
 }
 
-const WorkspaceInitFlow = (
-  { initialName, targetPath }: { initialName?: string; targetPath: string },
-) => {
+const WorkspaceInitFlow = ({
+  initialName,
+  targetPath,
+}: {
+  initialName?: string;
+  targetPath: string;
+}) => {
   const { exit } = useApp();
   const [step, setStep] = useState(initialName ? "description" : "name");
   const [config, setConfig] = useState<Partial<WorkspaceConfig>>({
@@ -168,7 +178,10 @@ const WorkspaceInitFlow = (
 
       // Write workspace.yml
       const yamlContent = yaml.stringify(workspaceConfig);
-      await Deno.writeTextFile(join(workspacePath, "workspace.yml"), yamlContent);
+      await Deno.writeTextFile(
+        join(workspacePath, "workspace.yml"),
+        yamlContent,
+      );
 
       // Create .env file if LLM agent selected
       if (config.agents && config.agents.includes("llm")) {
@@ -222,7 +235,9 @@ const WorkspaceInitFlow = (
   return (
     <Box flexDirection="column" gap={1}>
       <Box paddingY={1}>
-        <Text bold color="cyan">┌ Atlas Workspace Setup</Text>
+        <Text bold color="cyan">
+          ┌ Atlas Workspace Setup
+        </Text>
       </Box>
 
       {error && (
@@ -234,16 +249,15 @@ const WorkspaceInitFlow = (
       {step === "name" && (
         <Box flexDirection="column" gap={1}>
           <Text>What is your workspace name?</Text>
-          <TextInput
-            placeholder="my-workspace"
-            onSubmit={handleNameSubmit}
-          />
+          <TextInput placeholder="my-workspace" onSubmit={handleNameSubmit} />
         </Box>
       )}
 
       {step === "overwrite" && (
         <Box flexDirection="column" gap={1}>
-          <Text>Directory "{config.name}" already exists. Continue anyway?</Text>
+          <Text>
+            Directory "{config.name}" already exists. Continue anyway?
+          </Text>
           <ConfirmInput
             defaultChoice="cancel"
             onConfirm={() => handleOverwrite(true)}
@@ -326,8 +340,7 @@ const WorkspaceInitFlow = (
   );
 };
 
-export const handler = async (argv: InitArgs): Promise<void> => {
+export function handler(argv: InitArgs): void {
   const targetPath = resolve(argv.path || ".");
-
   render(<WorkspaceInitFlow initialName={argv.name} targetPath={targetPath} />);
-};
+}

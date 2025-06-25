@@ -1,5 +1,3 @@
-import React from "react";
-import { render } from "ink";
 import {
   WorkspaceEntry,
   WorkspaceStatus as WSStatus,

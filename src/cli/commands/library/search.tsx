@@ -6,6 +6,15 @@ import { Table } from "../../../cli/components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import process from "node:process";
 
+interface SearchArgs {
+  query: string;
+  type?: string;
+  tags?: string;
+  limit: number;
+  json: boolean;
+  port: number;
+}
+
 export const command = "search <query>";
 export const desc = "Search library content";
 
@@ -63,7 +72,7 @@ const SearchResultSchema = z.object({
 
 type SearchResult = z.infer<typeof SearchResultSchema>;
 
-export async function handler(argv: any) {
+export async function handler(argv: SearchArgs) {
   const s = spinner();
 
   if (!argv.query) {
