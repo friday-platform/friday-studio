@@ -5,6 +5,7 @@ import { exists } from "@std/fs";
 import { join, resolve } from "@std/path";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { createAndRegisterWorkspace } from "../../modules/workspaces/creator.ts";
+import { checkDaemonRunning } from "../../utils/daemon-client.ts";
 
 interface InitArgs {
   name?: string;
@@ -164,7 +165,7 @@ const WorkspaceInitFlow = ({
               ? "Add your ANTHROPIC_API_KEY to .env"
               : "Configure your agents"}
           </Text>
-          <Text>3. Run 'atlas workspace serve' to start</Text>
+          <Text>3. Run 'atlas daemon start' to start Atlas daemon</Text>
         </Box>
       </Box>
     );

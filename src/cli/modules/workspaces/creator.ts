@@ -1,7 +1,8 @@
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import * as yaml from "@std/yaml";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { checkDaemonRunning, getDaemonClient } from "../../utils/daemon-client.ts";
+import { generateUniqueWorkspaceName } from "../../../core/utils/id-generator.ts";
 
 interface WorkspaceCreationOptions {
   name: string;
@@ -21,11 +22,10 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
   // Ensure directory exists
   await ensureDir(path);
 
-  // Build workspace config object (like init.tsx)
+  // Build workspace config object (without ID - daemon will generate one)
   const workspaceConfig = {
     version: "1.0",
     workspace: {
-      id: crypto.randomUUID(),
       name: name,
       description: description || `Atlas workspace: ${name}`,
     },
@@ -118,14 +118,38 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
   // Create jobs directory
   await ensureDir(join(path, "jobs"));
 
-  // Register in workspace registry (the missing piece!)
-  const registry = getWorkspaceRegistry();
-  await registry.initialize();
-  const registeredWorkspace = await registry.findOrRegister(path);
+  // Register workspace with daemon if it's running, otherwise create locally
+  let workspaceId: string;
+  let workspaceName: string;
+
+  if (await checkDaemonRunning()) {
+    try {
+      const client = getDaemonClient();
+      const registeredWorkspace = await client.createWorkspace({
+        name: name,
+        description: description || `Atlas workspace: ${name}`,
+        config: workspaceConfig,
+      });
+      workspaceId = registeredWorkspace.id;
+      workspaceName = registeredWorkspace.name;
+    } catch (error) {
+      // Fallback to local creation if daemon registration fails
+      console.warn("Failed to register with daemon, creating workspace locally");
+      workspaceId = generateUniqueWorkspaceName();
+      workspaceName = name;
+    }
+  } else {
+    // Create workspace locally (daemon not running)
+    workspaceId = generateUniqueWorkspaceName();
+    workspaceName = name;
+    console.info(
+      "Daemon not running - workspace created locally. Use 'atlas daemon start' to register it.",
+    );
+  }
 
   return {
-    id: registeredWorkspace.id,
-    name: registeredWorkspace.name,
-    path: registeredWorkspace.path,
+    id: workspaceId,
+    name: workspaceName,
+    path: path,
   };
 }

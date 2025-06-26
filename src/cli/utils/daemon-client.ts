@@ -198,6 +198,68 @@ export class DaemonClient {
   }
 
   /**
+   * List agents in a workspace
+   */
+  async listAgents(workspaceId: string): Promise<
+    Array<{
+      id: string;
+      type: string;
+      purpose?: string;
+    }>
+  > {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
+    return response;
+  }
+
+  /**
+   * Describe a specific agent in a workspace
+   */
+  async describeAgent(workspaceId: string, agentId: string): Promise<any> {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
+    return response;
+  }
+
+  /**
+   * List signals in a workspace
+   */
+  async listSignals(workspaceId: string): Promise<
+    Array<{
+      name: string;
+      description?: string;
+    }>
+  > {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
+    return response;
+  }
+
+  /**
+   * List jobs in a workspace
+   */
+  async listJobs(workspaceId: string): Promise<
+    Array<{
+      name: string;
+      description?: string;
+    }>
+  > {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
+    return response;
+  }
+
+  /**
+   * List sessions in a specific workspace
+   */
+  async listWorkspaceSessions(workspaceId: string): Promise<
+    Array<{
+      id: string;
+      status: string;
+      startedAt: string;
+    }>
+  > {
+    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
+    return response;
+  }
+
+  /**
    * Shutdown the daemon
    */
   async shutdown(): Promise<{ message: string }> {

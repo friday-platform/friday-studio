@@ -6,7 +6,7 @@ import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
-import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
+import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry } from "../../core/workspace-registry-types.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
@@ -14,7 +14,7 @@ import { processAgentsFromConfig } from "../modules/agents/processor.ts";
 import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchLibraryItems } from "../modules/library/fetcher.ts";
 import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
-import { fetchSessions } from "../modules/sessions/fetcher.ts";
+import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 
@@ -28,6 +28,22 @@ export function builder(yargs: YargsInstance) {
       "The interactive interface provides a user-friendly way to manage workspaces",
     );
 }
+
+// Helper function to get workspace by ID using daemon API or fallback
+const getWorkspaceById = async (workspaceId: string) => {
+  if (await checkDaemonRunning()) {
+    try {
+      const client = getDaemonClient();
+      return await client.getWorkspace(workspaceId);
+    } catch (error) {
+      console.warn("Daemon API call failed, workspace not found:", error);
+      return null;
+    }
+  } else {
+    console.warn("Daemon not running, cannot resolve workspace");
+    return null;
+  }
+};
 
 // Custom theme with yellow highlights for Select components
 const customTheme = extendTheme(defaultTheme, {
@@ -402,7 +418,7 @@ export default function InteractiveCommand() {
     setShowWorkspacesWorkspaceSelection(false);
 
     try {
-      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      const workspace = await getWorkspaceById(workspaceId);
       if (workspace) {
         setSelectedWorkspace(workspace.name);
       }
@@ -434,7 +450,7 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      const workspace = await getWorkspaceById(workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
@@ -491,7 +507,7 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      const workspace = await getWorkspaceById(workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
@@ -543,7 +559,7 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      const workspace = await getWorkspaceById(workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
@@ -616,7 +632,7 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      const workspace = await getWorkspaceById(workspaceId);
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
@@ -1037,10 +1053,25 @@ const WorkspaceSelection = ({
   useEffect(() => {
     const loadWorkspaces = async () => {
       try {
-        const registry = getWorkspaceRegistry();
-        await registry.initialize();
-        const workspaceList = await registry.listAll();
-        setWorkspaces(workspaceList);
+        if (await checkDaemonRunning()) {
+          const client = getDaemonClient();
+          const workspaceList = await client.listWorkspaces();
+          // Convert daemon API format to WorkspaceEntry format for compatibility
+          const compatibleWorkspaces = workspaceList.map((w) => ({
+            id: w.id,
+            name: w.name,
+            description: w.description,
+            path: w.path,
+            status: w.status,
+            createdAt: w.createdAt,
+            lastSeen: w.lastSeen,
+            hasActiveRuntime: w.hasActiveRuntime,
+          }));
+          setWorkspaces(compatibleWorkspaces);
+        } else {
+          setWorkspaces([]);
+          setError("Daemon not running. Use 'atlas daemon start' to enable workspace management.");
+        }
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

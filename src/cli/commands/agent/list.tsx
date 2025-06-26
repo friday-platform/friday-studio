@@ -1,7 +1,11 @@
 import { render } from "ink";
 import { AgentListComponent } from "../../modules/agents/agent-list-component.tsx";
-import { processAgentsFromConfig } from "../../modules/agents/processor.ts";
-import { loadWorkspaceConfig, resolveWorkspaceOnly } from "../../modules/workspaces/resolver.ts";
+import {
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -27,9 +31,62 @@ export const builder = {
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
-    const workspace = await resolveWorkspaceOnly(argv.workspace);
-    const config = await loadWorkspaceConfig(workspace.path);
-    const agents = processAgentsFromConfig(config);
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
+    }
+
+    const client = getDaemonClient();
+
+    // Determine target workspace
+    let workspaceId: string;
+    let workspaceName: string;
+
+    if (argv.workspace) {
+      // Use specified workspace - try to find by ID or name
+      try {
+        const workspace = await client.getWorkspace(argv.workspace);
+        workspaceId = workspace.id;
+        workspaceName = workspace.name;
+      } catch (error) {
+        // Try to find by name if ID lookup failed
+        const allWorkspaces = await client.listWorkspaces();
+        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
+        if (foundWorkspace) {
+          workspaceId = foundWorkspace.id;
+          workspaceName = foundWorkspace.name;
+        } else {
+          throw new Error(`Workspace '${argv.workspace}' not found`);
+        }
+      }
+    } else {
+      // Use current workspace (detect from current directory)
+      try {
+        const configLoader = new ConfigLoader();
+        const config = await configLoader.load();
+        const currentWorkspaceName = config.workspace.workspace.name;
+
+        // Find workspace by name in daemon
+        const allWorkspaces = await client.listWorkspaces();
+        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+        if (currentWorkspace) {
+          workspaceId = currentWorkspace.id;
+          workspaceName = currentWorkspace.name;
+        } else {
+          throw new Error(
+            `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
+          );
+        }
+      } catch (error) {
+        throw new Error(
+          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
+      }
+    }
+
+    // Get agents from daemon
+    const agents = await client.listAgents(workspaceId);
 
     if (argv.json) {
       // JSON output for scripting
@@ -37,21 +94,26 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         JSON.stringify(
           {
             workspace: {
-              id: workspace.id,
-              name: workspace.name,
-              path: workspace.path,
+              id: workspaceId,
+              name: workspaceName,
             },
             agents: agents,
             count: agents.length,
+            timestamp: new Date().toISOString(),
           },
           null,
           2,
         ),
       );
     } else {
+      if (agents.length === 0) {
+        console.log(`No agents found in workspace: ${workspaceName}`);
+        return;
+      }
+
       // Render with Ink
       render(
-        <AgentListComponent agents={agents} workspaceName={workspace.name} />,
+        <AgentListComponent agents={agents} workspaceName={workspaceName} />,
       );
       // Exit immediately after rendering
       Deno.exit(0);

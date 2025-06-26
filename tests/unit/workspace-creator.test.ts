@@ -1,11 +1,11 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { createWorkspace } from "./workspace-creator.ts";
+import { createAndRegisterWorkspace } from "../../src/cli/modules/workspaces/creator.ts";
 
 Deno.test("createWorkspace - creates workspace in current directory", async () => {
   const testPath = "./test-workspace-current";
 
   try {
-    await createWorkspace({
+    await createAndRegisterWorkspace({
       name: "Test Workspace Current",
       path: testPath,
     });
@@ -33,7 +33,7 @@ Deno.test("createWorkspace - creates workspace in nested directory", async () =>
   const testPath = "./test-workspaces/nested/deep/workspace";
 
   try {
-    await createWorkspace({
+    await createAndRegisterWorkspace({
       name: "Nested Test Workspace",
       path: testPath,
       description: "A test workspace in nested directories",
@@ -61,7 +61,7 @@ Deno.test("createWorkspace - creates workspace with absolute path", async () => 
   const testPath = `${Deno.cwd()}/test-workspace-absolute`;
 
   try {
-    await createWorkspace({
+    await createAndRegisterWorkspace({
       name: "Absolute Path Workspace",
       path: testPath,
     });
@@ -89,7 +89,7 @@ Deno.test("createWorkspace - handles special characters in name", async () => {
   const testPath = "./test-workspace-special";
 
   try {
-    await createWorkspace({
+    await createAndRegisterWorkspace({
       name: "My Workspace & Co. (v2.0)",
       path: testPath,
     });
