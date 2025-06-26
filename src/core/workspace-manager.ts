@@ -62,7 +62,7 @@ export class WorkspaceManager {
     this.kvPath = join(atlasDir, "registry.db");
   }
 
-  async initialize(): Promise<void> {
+  async initialize(options?: { skipAutoImport?: boolean }): Promise<void> {
     // Ensure .atlas directory exists
     const atlasDir = join(this.kvPath, "..");
     await Deno.mkdir(atlasDir, { recursive: true });
@@ -77,11 +77,11 @@ export class WorkspaceManager {
       await this.kv.set(["registry", "lastUpdated"], new Date().toISOString());
     }
 
-    // Auto-import existing workspaces on every run (skip in tests)
+    // Auto-import existing workspaces unless explicitly skipped (skip in tests and signal processing)
     const isTestMode = Deno.env.get("DENO_TEST") === "true" ||
       await exists(join(this.kvPath, "..", ".test-mode"));
 
-    if (!isTestMode) {
+    if (!isTestMode && !options?.skipAutoImport) {
       try {
         const imported = await this.importExistingWorkspaces();
         if (imported > 0) {

@@ -290,6 +290,93 @@ export class AtlasDaemon {
       return c.json({ error: `Session not found: ${sessionId}` }, 404);
     });
 
+    // List agents in a workspace
+    this.app.get("/api/workspaces/:workspaceId/agents", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        // Get workspace runtime to access agent configuration
+        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+        const agents = await runtime.listAgents();
+        return c.json(agents);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list agents: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
+    });
+
+    // Describe specific agent in a workspace
+    this.app.get("/api/workspaces/:workspaceId/agents/:agentId", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+      const agentId = c.req.param("agentId");
+
+      try {
+        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+        const agent = await runtime.describeAgent(agentId);
+        return c.json(agent);
+      } catch (error) {
+        return c.json({
+          error: `Failed to describe agent: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // List signals in a workspace
+    this.app.get("/api/workspaces/:workspaceId/signals", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+        const signals = await runtime.listSignals();
+        return c.json(signals);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list signals: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // List jobs in a workspace
+    this.app.get("/api/workspaces/:workspaceId/jobs", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
+        const jobs = await runtime.listJobs();
+        return c.json(jobs);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list jobs: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
+    });
+
+    // Get workspace sessions
+    this.app.get("/api/workspaces/:workspaceId/sessions", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        const runtime = this.runtimes.get(workspaceId);
+        if (!runtime) {
+          return c.json([]); // No runtime = no sessions
+        }
+
+        const sessions = await runtime.listSessions();
+        return c.json(sessions);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list workspace sessions: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
     // Daemon management routes
     this.app.get("/api/daemon/status", (c) => {
       return c.json({
@@ -350,10 +437,9 @@ export class AtlasDaemon {
         }
       }
 
-      // Find workspace in registry
+      // Find workspace in registry (manager already initialized at daemon startup)
       logger.debug(`Looking up workspace in registry: ${workspaceId}`);
       const manager = getWorkspaceManager();
-      await manager.initialize();
 
       const workspace = await manager.findById(workspaceId) ||
         await manager.findByName(workspaceId);
@@ -579,6 +665,11 @@ export class AtlasDaemon {
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
 
+    // Initialize WorkspaceManager singleton at daemon startup (with auto-import)
+    AtlasLogger.getInstance().info("Initializing WorkspaceManager...");
+    const manager = getWorkspaceManager();
+    await manager.initialize();
+
     AtlasLogger.getInstance().info(`Starting Atlas daemon on http://${hostname}:${port}`, {
       hostname,
       port,
@@ -603,6 +694,11 @@ export class AtlasDaemon {
   async startNonBlocking(): Promise<{ finished: Promise<void> }> {
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
+
+    // Initialize WorkspaceManager singleton at daemon startup (with auto-import)
+    AtlasLogger.getInstance().info("Initializing WorkspaceManager...");
+    const manager = getWorkspaceManager();
+    await manager.initialize();
 
     AtlasLogger.getInstance().info(`Starting Atlas daemon on http://${hostname}:${port}`, {
       hostname,
