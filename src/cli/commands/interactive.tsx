@@ -1,11 +1,18 @@
-import { Select, TextInput, ThemeProvider, extendTheme, defaultTheme, Spinner } from "@inkjs/ui";
+import {
+  defaultTheme,
+  extendTheme,
+  Select,
+  Spinner,
+  TextInput,
+  ThemeProvider,
+} from "@inkjs/ui";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
-import { WorkspaceList } from "../views/WorkspaceList.tsx";
+import { InitView } from "../views/InitView.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
 import { WorkspaceEntry } from "../../core/workspace-registry-types.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
@@ -13,7 +20,10 @@ import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
 import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchLibraryItems } from "../modules/library/fetcher.ts";
+import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
+import { fetchSessions } from "../modules/sessions/fetcher.ts";
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
+import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -26,18 +36,18 @@ export function builder(yargs: YargsInstance) {
     );
 }
 
-// Custom theme with yellow highlights for Select components  
+// Custom theme with yellow highlights for Select components
 const customTheme = extendTheme(defaultTheme, {
   components: {
     Select: {
       styles: {
-        focusIndicator: () => ({ color: 'yellow' }),
-        label: ({isFocused, isSelected}) => ({
-          color: isSelected ? 'yellow' : isFocused ? 'yellow' : undefined
-        })
-      }
-    }
-  }
+        focusIndicator: () => ({ color: "yellow" }),
+        label: ({ isFocused, isSelected }) => ({
+          color: isSelected ? "yellow" : isFocused ? "yellow" : undefined,
+        }),
+      },
+    },
+  },
 });
 
 export function handler() {
@@ -128,64 +138,91 @@ interface CommandDefinition {
 
 // Command handlers
 
-const handleWorkspacesCommand = (): OutputEntry[] => {
-  // This returns empty because parent component handles it directly
+const handleWorkspacesCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
+  // Switch to workspace selection mode
+  context.addEntry({
+    id: `workspaces-trigger-${Date.now()}`,
+    component: <Text>Select a workspace:</Text>,
+  });
   return [];
 };
 
-const handleSignalsCommand = (args: string[], context: CommandContext): OutputEntry[] => {
+const handleSignalsCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
     id: `signals-trigger-${Date.now()}`,
-    component: <Text>Select a workspace to view its signals:</Text>
+    component: <Text>Select a workspace to view its signals:</Text>,
   });
   return [];
 };
 
-const handleAgentsCommand = (args: string[], context: CommandContext): OutputEntry[] => {
+const handleAgentsCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
     id: `agents-trigger-${Date.now()}`,
-    component: <Text>Select a workspace to view its agents:</Text>
+    component: <Text>Select a workspace to view its agents:</Text>,
   });
   return [];
 };
 
-const handleLibraryCommand = (args: string[], context: CommandContext): OutputEntry[] => {
+const handleLibraryCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
     id: `library-trigger-${Date.now()}`,
-    component: <Text>Select a workspace to view its library:</Text>
+    component: <Text>Select a workspace to view its library:</Text>,
   });
   return [];
 };
 
-const handleInitCommand = (args: string[]): OutputEntry[] => {
-  if (args.length === 0) {
-    return [
-      {
-        id: `init-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            init command requires a workspace name. Usage: /init
-            &lt;workspace-name&gt;
-          </Text>
-        ),
-      },
-    ];
-  }
+const handleSessionsCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
+  // Switch to workspace selection mode
+  context.addEntry({
+    id: `sessions-trigger-${Date.now()}`,
+    component: <Text>Select a workspace to view its sessions:</Text>,
+  });
+  return [];
+};
 
-  const workspaceName = args[0];
-  return [
-    {
-      id: `init-output-${Date.now()}`,
-      component: (
-        <Text>
-          Initializing workspace: {workspaceName} (placeholder implementation)
-        </Text>
-      ),
-    },
-  ];
+const handleVersionCommand = (_args: string[]): OutputEntry[] => {
+  const versionInfo = getVersionInfo();
+  const versionLines = formatVersionDisplay(versionInfo);
+
+  return versionLines.map((line, index) => ({
+    id: `version-line-${Date.now()}-${index}`,
+    component: <Text>{line}</Text>,
+  }));
+};
+
+const handleClearCommand = (
+  _args: string[],
+  context: CommandContext
+): OutputEntry[] => {
+  // Clear the output buffer by setting it to empty
+  context.addEntry({
+    id: `clear-${Date.now()}`,
+    component: <Text dimColor>Output cleared</Text>,
+  });
+  return [];
+};
+
+const handleInitCommand = (_args: string[]): OutputEntry[] => {
+  // Init command switches to its own view, no output entries needed
+  return [];
 };
 
 const handleSessionCommand = (args: string[]): OutputEntry[] => {
@@ -224,7 +261,6 @@ const handleAgentCommand = (args: string[]): OutputEntry[] => {
   ];
 };
 
-
 const handleConfigCommand = (args: string[]): OutputEntry[] => {
   const subcommand = args[0] || "show";
   return [
@@ -232,33 +268,6 @@ const handleConfigCommand = (args: string[]): OutputEntry[] => {
       id: `config-output-${Date.now()}`,
       component: (
         <Text>Config {subcommand} executed (placeholder implementation)</Text>
-      ),
-    },
-  ];
-};
-
-const handleLogsCommand = (args: string[]): OutputEntry[] => {
-  const sessionId = args[0];
-  if (!sessionId) {
-    return [
-      {
-        id: `logs-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            logs command requires a session ID. Usage: /logs &lt;session-id&gt;
-          </Text>
-        ),
-      },
-    ];
-  }
-
-  return [
-    {
-      id: `logs-output-${Date.now()}`,
-      component: (
-        <Text>
-          Showing logs for session: {sessionId} (placeholder implementation)
-        </Text>
       ),
     },
   ];
@@ -298,10 +307,31 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleLibraryCommand,
   },
 
+  sessions: {
+    name: "sessions",
+    description: "View workspace sessions",
+    usage: "/sessions",
+    handler: handleSessionsCommand,
+  },
+
+  version: {
+    name: "version",
+    description: "Show Atlas version information",
+    usage: "/version",
+    handler: handleVersionCommand,
+  },
+
+  clear: {
+    name: "clear",
+    description: "Clear the output buffer",
+    usage: "/clear",
+    handler: handleClearCommand,
+  },
+
   init: {
     name: "init",
     description: "Initialize a new workspace",
-    usage: "/init <workspace-name>",
+    usage: "/init",
     handler: handleInitCommand,
   },
 
@@ -326,19 +356,11 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleAgentCommand,
   },
 
-
   config: {
     name: "config",
     description: "View and manage workspace configuration",
     usage: "/config [show|validate] [args...]",
     handler: handleConfigCommand,
-  },
-
-  logs: {
-    name: "logs",
-    description: "View session logs and output",
-    usage: "/logs <session-id>",
-    handler: handleLogsCommand,
   },
 };
 
@@ -348,18 +370,29 @@ interface OutputEntry {
   component: React.ReactElement;
 }
 
-
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command">("command");
+  const [view, setView] = useState<"help" | "command" | "init">("command");
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [showWorkspaceSelection, setShowWorkspaceSelection] = useState(false);
-  const [loadingSignals, setLoadingSignals] = useState(false);
-  const [showAgentWorkspaceSelection, setShowAgentWorkspaceSelection] = useState(false);
-  const [loadingAgents, setLoadingAgents] = useState(false);
-  const [showLibraryWorkspaceSelection, setShowLibraryWorkspaceSelection] = useState(false);
-  const [loadingLibrary, setLoadingLibrary] = useState(false);
+  const [
+    showWorkspacesWorkspaceSelection,
+    setShowWorkspacesWorkspaceSelection,
+  ] = useState(false);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
+    null
+  );
+  const [_loadingSignals, setLoadingSignals] = useState(false);
+  const [showAgentWorkspaceSelection, setShowAgentWorkspaceSelection] =
+    useState(false);
+  const [_loadingAgents, setLoadingAgents] = useState(false);
+  const [showLibraryWorkspaceSelection, setShowLibraryWorkspaceSelection] =
+    useState(false);
+  const [_loadingLibrary, setLoadingLibrary] = useState(false);
+  const [showSessionsWorkspaceSelection, setShowSessionsWorkspaceSelection] =
+    useState(false);
+  const [_loadingSessions, setLoadingSessions] = useState(false);
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
@@ -382,11 +415,33 @@ export default function InteractiveCommand() {
     setOutputBuffer((prev) => [...prev, entry]);
   };
 
+  // Handle workspace selection for workspaces command
+  const handleWorkspaceSelectForWorkspaces = async (workspaceId: string) => {
+    setShowWorkspacesWorkspaceSelection(false);
+
+    try {
+      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      if (workspace) {
+        setSelectedWorkspace(workspace.name);
+      }
+    } catch (error) {
+      addOutputEntry({
+        id: `workspace-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Error selecting workspace:{" "}
+            {error instanceof Error ? error.message : String(error)}
+          </Text>
+        ),
+      });
+    }
+  };
+
   // Handle workspace selection for signals
   const handleWorkspaceSelect = async (workspaceId: string) => {
     setShowWorkspaceSelection(false);
     setLoadingSignals(true);
-    
+
     // Add loading entry
     addOutputEntry({
       id: `loading-${Date.now()}`,
@@ -402,30 +457,36 @@ export default function InteractiveCommand() {
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
-      
+
       const config = await loadWorkspaceConfigNoCwd(workspace.path);
       const signalEntries = Object.entries(config.signals || {});
-      
+
       // Remove loading entry and add signals table
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `spacer-${Date.now()}-1`,
         component: <Newline />,
       });
       addOutputEntry({
         id: `signals-table-${Date.now()}`,
-        component: <SignalListComponent signalEntries={signalEntries} workspaceName={workspace.name} />,
+        component: (
+          <SignalListComponent
+            signalEntries={signalEntries}
+            workspaceName={workspace.name}
+          />
+        ),
       });
     } catch (error) {
       // Remove loading entry and add error
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `error-${Date.now()}`,
         component: (
           <Text color="red">
-            Error loading signals: {error instanceof Error ? error.message : String(error)}
+            Error loading signals:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -438,7 +499,7 @@ export default function InteractiveCommand() {
   const handleWorkspaceSelectForAgents = async (workspaceId: string) => {
     setShowAgentWorkspaceSelection(false);
     setLoadingAgents(true);
-    
+
     // Add loading entry
     addOutputEntry({
       id: `loading-${Date.now()}`,
@@ -454,30 +515,33 @@ export default function InteractiveCommand() {
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
-      
+
       const config = await loadWorkspaceConfigNoCwd(workspace.path);
       const agents = processAgentsFromConfig(config);
-      
+
       // Remove loading entry and add agents table
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `spacer-${Date.now()}-1`,
         component: <Newline />,
       });
       addOutputEntry({
         id: `agents-table-${Date.now()}`,
-        component: <AgentListComponent agents={agents} workspaceName={workspace.name} />,
+        component: (
+          <AgentListComponent agents={agents} workspaceName={workspace.name} />
+        ),
       });
     } catch (error) {
       // Remove loading entry and add error
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `error-${Date.now()}`,
         component: (
           <Text color="red">
-            Error loading agents: {error instanceof Error ? error.message : String(error)}
+            Error loading agents:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -490,7 +554,7 @@ export default function InteractiveCommand() {
   const handleWorkspaceSelectForLibrary = async (workspaceId: string) => {
     setShowLibraryWorkspaceSelection(false);
     setLoadingLibrary(true);
-    
+
     // Add loading entry
     addOutputEntry({
       id: `loading-${Date.now()}`,
@@ -506,15 +570,15 @@ export default function InteractiveCommand() {
       if (!workspace) {
         throw new Error(`Workspace ${workspaceId} not found`);
       }
-      
+
       const result = await fetchLibraryItems({
         workspace: workspace.path,
         port: 8080,
       });
-      
+
       // Remove loading entry
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `spacer-${Date.now()}-1`,
         component: <Newline />,
@@ -522,34 +586,113 @@ export default function InteractiveCommand() {
 
       if (!result.success) {
         // Show non-error message for API failures
+        const errorResult = result as { error: string };
         addOutputEntry({
           id: `library-unavailable-${Date.now()}`,
           component: (
             <Text dimColor>
-              Cannot fetch library items: {result.error}
+              Cannot fetch library items: {errorResult.error}
             </Text>
           ),
         });
       } else {
         addOutputEntry({
           id: `library-table-${Date.now()}`,
-          component: <LibraryListComponent items={result.items} workspaceName={workspace.name} />,
+          component: (
+            <LibraryListComponent
+              items={result.items}
+              workspaceName={workspace.name}
+            />
+          ),
         });
       }
     } catch (error) {
       // Remove loading entry and add error
       setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
-      
+
       addOutputEntry({
         id: `error-${Date.now()}`,
         component: (
           <Text dimColor>
-            Cannot fetch library items: {error instanceof Error ? error.message : String(error)}
+            Cannot fetch library items:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
     } finally {
       setLoadingLibrary(false);
+    }
+  };
+
+  // Handle workspace selection for sessions
+  const handleWorkspaceSelectForSessions = async (workspaceId: string) => {
+    setShowSessionsWorkspaceSelection(false);
+    setLoadingSessions(true);
+
+    // Add loading entry
+    addOutputEntry({
+      id: `loading-${Date.now()}`,
+      component: (
+        <Box>
+          <Spinner label="Loading sessions..." />
+        </Box>
+      ),
+    });
+
+    try {
+      const workspace = await getWorkspaceRegistry().findById(workspaceId);
+      if (!workspace) {
+        throw new Error(`Workspace ${workspaceId} not found`);
+      }
+
+      const result = await fetchSessions({
+        workspace: workspace.name,
+        port: 8080,
+      });
+
+      // Remove loading entry
+      setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
+
+      addOutputEntry({
+        id: `spacer-${Date.now()}-1`,
+        component: <Newline />,
+      });
+
+      if (!result.success) {
+        // Show non-error message for API failures
+        const errorResult = result as { error: string };
+        addOutputEntry({
+          id: `sessions-unavailable-${Date.now()}`,
+          component: (
+            <Text dimColor>Cannot fetch sessions: {errorResult.error}</Text>
+          ),
+        });
+      } else {
+        addOutputEntry({
+          id: `sessions-table-${Date.now()}`,
+          component: (
+            <SessionListComponent
+              sessions={result.filteredSessions}
+              workspaceName={workspace.name}
+            />
+          ),
+        });
+      }
+    } catch (error) {
+      // Remove loading entry and add error
+      setOutputBuffer((prev) => prev.slice(0, -1)); // Remove last entry (loading)
+
+      addOutputEntry({
+        id: `error-${Date.now()}`,
+        component: (
+          <Text dimColor>
+            Cannot fetch sessions:{" "}
+            {error instanceof Error ? error.message : String(error)}
+          </Text>
+        ),
+      });
+    } finally {
+      setLoadingSessions(false);
     }
   };
 
@@ -581,24 +724,13 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "init") {
+      setView("init");
+      return;
+    }
+
     if (parsed.command === "workspaces") {
-      // Add components to output buffer
-      addOutputEntry({
-        id: `spacer-${Date.now()}-1`,
-        component: <Newline />,
-      });
-      addOutputEntry({
-        id: `workspaces-header-${Date.now()}`,
-        component: <Text>Here are the available Workspaces in Atlas</Text>,
-      });
-      addOutputEntry({
-        id: `spacer-${Date.now()}-2`,
-        component: <Newline />,
-      });
-      addOutputEntry({
-        id: `workspaces-component-${Date.now()}`,
-        component: <WorkspaceList />,
-      });
+      setShowWorkspacesWorkspaceSelection(true);
       return;
     }
 
@@ -614,6 +746,16 @@ export default function InteractiveCommand() {
 
     if (parsed.command === "library") {
       setShowLibraryWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "sessions") {
+      setShowSessionsWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "clear") {
+      setOutputBuffer([]);
       return;
     }
 
@@ -680,43 +822,59 @@ export default function InteractiveCommand() {
         <>
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
-            <Box flexDirection="column" marginY={1}>
+            <Box flexDirection="column" marginY={1} paddingX={1}>
               {outputBuffer.map((entry) => (
                 <Box key={entry.id}>{entry.component}</Box>
               ))}
             </Box>
           )}
-          {showWorkspaceSelection ? (
-            <WorkspaceSelection 
-              onEscape={() => setShowWorkspaceSelection(false)} 
+
+          {showWorkspacesWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => setShowWorkspacesWorkspaceSelection(false)}
+              onWorkspaceSelect={handleWorkspaceSelectForWorkspaces}
+            />
+          ) : showWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => setShowWorkspaceSelection(false)}
               onWorkspaceSelect={handleWorkspaceSelect}
             />
           ) : showAgentWorkspaceSelection ? (
-            <WorkspaceSelection 
-              onEscape={() => setShowAgentWorkspaceSelection(false)} 
+            <WorkspaceSelection
+              onEscape={() => setShowAgentWorkspaceSelection(false)}
               onWorkspaceSelect={handleWorkspaceSelectForAgents}
             />
           ) : showLibraryWorkspaceSelection ? (
-            <WorkspaceSelection 
-              onEscape={() => setShowLibraryWorkspaceSelection(false)} 
+            <WorkspaceSelection
+              onEscape={() => setShowLibraryWorkspaceSelection(false)}
               onWorkspaceSelect={handleWorkspaceSelectForLibrary}
             />
+          ) : showSessionsWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => setShowSessionsWorkspaceSelection(false)}
+              onWorkspaceSelect={handleWorkspaceSelectForSessions}
+            />
           ) : (
-            <CommandInput onSubmit={handleCommand} />
+            <CommandInput
+              onSubmit={handleCommand}
+              selectedWorkspace={selectedWorkspace}
+            />
           )}
         </>
       )}
 
       {view === "help" && <Help onExit={() => setView("command")} />}
+      {view === "init" && <InitView onExit={() => setView("command")} />}
     </Box>
   );
 }
 // Command Input Component
 interface CommandInputProps {
   onSubmit: (command: string) => void;
+  selectedWorkspace?: string | null;
 }
 
-const CommandInput = ({ onSubmit }: CommandInputProps) => {
+const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
@@ -740,15 +898,16 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
       description: "View available workspace signals",
     },
     {
-      command: "/agents", 
-      description: "View workspace agents"
+      command: "/agents",
+      description: "View workspace agents",
     },
     {
       command: "/library",
-      description: "View workspace library"
+      description: "View workspace library",
     },
     { command: "/config", description: "Atlas configuration settings" },
-    { command: "/logs", description: "View workspace logs" },
+    { command: "/version", description: "Show Atlas version information" },
+    { command: "/clear", description: "Clear the output buffer" },
     { command: "/exit", description: "Exit the Atlas interactive interface" },
   ];
 
@@ -835,7 +994,7 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Text dimColor>→ </Text>
+        <Text dimColor>→&nbsp;</Text>
         <TextInput
           key={inputKey}
           suggestions={getAllSuggestions()}
@@ -845,32 +1004,42 @@ const CommandInput = ({ onSubmit }: CommandInputProps) => {
         />
       </Box>
 
-      {/* Show suggestions below */}
-      {showSuggestions && (
-        <Box flexDirection="row" marginTop={1} paddingX={2}>
-          <Box flexDirection="column" marginRight={1}>
-            {getFilteredSuggestions().map((suggestion, index) => (
-              <Text
-                key={suggestion.command}
-                color={index === selectedSuggestionIndex ? "yellow" : ""}
-              >
-                {suggestion.command}
-              </Text>
-            ))}
-          </Box>
-          <Box flexDirection="column" paddingLeft={1}>
-            {getFilteredSuggestions().map((suggestion, index) => (
-              <Text
-                key={`${suggestion.command}-desc`}
-                color={index === selectedSuggestionIndex ? "yellow" : ""}
-                dimColor={index !== selectedSuggestionIndex}
-              >
-                {suggestion.description}
-              </Text>
-            ))}
-          </Box>
+      {/* Always show row with conditional contents */}
+      <Box flexDirection="row" justifyContent="space-between">
+        {/* Left side: suggestions (always present box) */}
+        <Box flexDirection="row" paddingX={2}>
+          {showSuggestions && (
+            <>
+              <Box flexDirection="column" marginRight={1}>
+                {getFilteredSuggestions().map((suggestion, index) => (
+                  <Text
+                    key={suggestion.command}
+                    color={index === selectedSuggestionIndex ? "yellow" : ""}
+                  >
+                    {suggestion.command}
+                  </Text>
+                ))}
+              </Box>
+              <Box flexDirection="column" paddingLeft={1}>
+                {getFilteredSuggestions().map((suggestion, index) => (
+                  <Text
+                    key={`${suggestion.command}-desc`}
+                    color={index === selectedSuggestionIndex ? "yellow" : ""}
+                    dimColor={index !== selectedSuggestionIndex}
+                  >
+                    {suggestion.description}
+                  </Text>
+                ))}
+              </Box>
+            </>
+          )}
         </Box>
-      )}
+
+        {/* Right side: workspace name (always present box) */}
+        <Box>
+          {selectedWorkspace && <Text color="yellow">{selectedWorkspace}</Text>}
+        </Box>
+      </Box>
     </Box>
   );
 };
@@ -881,7 +1050,10 @@ interface WorkspaceSelectionProps {
   onWorkspaceSelect: (workspaceId: string) => void;
 }
 
-const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSelectionProps) => {
+const WorkspaceSelection = ({
+  onEscape,
+  onWorkspaceSelect,
+}: WorkspaceSelectionProps) => {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -905,7 +1077,7 @@ const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSelectionP
   }, []);
 
   // Handle escape key
-  useInput((input, key) => {
+  useInput((_input, key) => {
     if (key.escape) {
       onEscape();
       return;
@@ -955,10 +1127,7 @@ const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSelectionP
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select
-          options={options}
-          onChange={handleSelect}
-        />
+        <Select options={options} onChange={handleSelect} />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>
@@ -966,4 +1135,3 @@ const WorkspaceSelection = ({ onEscape, onWorkspaceSelect }: WorkspaceSelectionP
     </Box>
   );
 };
-

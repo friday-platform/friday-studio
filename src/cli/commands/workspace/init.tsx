@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { Box, render, Text, useApp } from "ink";
 import { ConfirmInput, MultiSelect, Spinner, TextInput } from "@inkjs/ui";
-import { ensureDir, exists } from "@std/fs";
+import { exists } from "@std/fs";
 import { join, resolve } from "@std/path";
-import * as yaml from "@std/yaml";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { createAndRegisterWorkspace } from "../../modules/workspaces/creator.ts";
 
 interface InitArgs {
   name?: string;
@@ -121,76 +121,14 @@ const WorkspaceInitFlow = ({
 
     try {
       const workspacePath = join(targetPath, config.name!);
-      await ensureDir(workspacePath);
-
-      // Create workspace.yml
-      const workspaceConfig = {
-        workspace: {
-          name: config.name,
-          description: config.description || `Atlas workspace: ${config.name}`,
-        },
-        signals: {} as Record<string, unknown>,
-        jobs: {} as Record<string, unknown>,
-      };
-
-      // Add configured signals
-      if (config.signals && config.signals.length > 0) {
-        for (const signal of config.signals) {
-          if (signal === "cli") {
-            workspaceConfig.signals["manual-trigger"] = {
-              provider: "cli",
-              description: "Manual signal trigger from CLI",
-            };
-          } else if (signal === "http") {
-            workspaceConfig.signals["webhook"] = {
-              provider: "http",
-              description: "HTTP webhook trigger",
-              config: {
-                port: 8080,
-                path: "/webhook",
-              },
-            };
-          } else if (signal === "schedule") {
-            workspaceConfig.signals["scheduled"] = {
-              provider: "schedule",
-              description: "Scheduled trigger",
-              config: {
-                cron: "0 0 * * *",
-              },
-            };
-          }
-        }
-      }
-
-      // Add sample job based on selected agents
-      if (config.agents && config.agents.length > 0) {
-        workspaceConfig.jobs["example-job"] = {
-          description: "Example job for workspace initialization",
-          agents: config.agents,
-          mappings: [
-            {
-              signal: Object.keys(workspaceConfig.signals)[0] || "manual-trigger",
-              conditions: [],
-            },
-          ],
-        };
-      }
-
-      // Write workspace.yml
-      const yamlContent = yaml.stringify(workspaceConfig);
-      await Deno.writeTextFile(
-        join(workspacePath, "workspace.yml"),
-        yamlContent,
-      );
-
-      // Create .env file if LLM agent selected
-      if (config.agents && config.agents.includes("llm")) {
-        const envContent = "# Add your Anthropic API key here\nANTHROPIC_API_KEY=\n";
-        await Deno.writeTextFile(join(workspacePath, ".env"), envContent);
-      }
-
-      // Create jobs directory
-      await ensureDir(join(workspacePath, "jobs"));
+      
+      await createAndRegisterWorkspace({
+        name: config.name!,
+        path: workspacePath,
+        description: config.description,
+        agents: config.agents,
+        signals: config.signals,
+      });
 
       setStep("success");
     } catch (err) {
