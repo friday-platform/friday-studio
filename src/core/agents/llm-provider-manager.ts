@@ -620,8 +620,8 @@ export class LLMProviderManager {
         model: config.model,
         toolCount: Object.keys(allTools).length,
         mcpServerCount: options.mcpServers?.length || 0,
-        maxSteps: options.maxSteps || 1,
-        toolChoice: options.toolChoice,
+        maxSteps: options.maxSteps || 5,
+        toolChoice: options.toolChoice || "auto",
         ...options.operationContext,
       });
 
@@ -630,8 +630,8 @@ export class LLMProviderManager {
         model: client(config.model),
         messages,
         tools: Object.keys(allTools).length > 0 ? allTools : undefined,
-        toolChoice: options.toolChoice,
-        maxSteps: options.maxSteps || 1,
+        toolChoice: options.toolChoice || "auto",
+        maxSteps: options.maxSteps || 5,
         maxTokens: config.maxTokens,
         temperature: config.temperature,
         abortSignal: controller.signal,
