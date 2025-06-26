@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/denoland/deno/main/cli/schemas/config-file.v1.json",
   "version": "1.0.0",
-  "exports": "./mod.ts",
+  "workspace": ["./apps/*", "./packages/*"],
   "compilerOptions": {
     "lib": [
       "deno.window",
