@@ -19,7 +19,7 @@ echo "✅ Deno found: $(deno --version | head -1)"
 
 # Install Atlas CLI globally via Deno
 echo "📦 Installing Atlas CLI..."
-deno install --global --allow-read --allow-write --allow-net -f -n atlas src/cli.tsx
+deno install --global --allow-read --allow-write --allow-net --allow-env --allow-run --unstable-broadcast-channel --unstable-worker-options --unstable-kv --config deno.json -f -n atlas src/cli.tsx
 
 echo ""
 echo "✅ Atlas installed successfully!"
