@@ -2,7 +2,9 @@
 
 ## Overview
 
-This plan outlines the migration of the configuration loading system from `src/core/config-loader.ts` into the monorepo structure, introducing an adapter pattern to decouple configuration loading logic from filesystem operations.
+This plan outlines the migration of the configuration loading system from
+`src/core/config-loader.ts` into the monorepo structure, introducing an adapter pattern to decouple
+configuration loading logic from filesystem operations.
 
 ## Goals
 
@@ -16,6 +18,7 @@ This plan outlines the migration of the configuration loading system from `src/c
 ## Current State Analysis
 
 ### ConfigLoader Responsibilities
+
 - Loading `atlas.yml` and `workspace.yml` files
 - Parsing YAML configuration
 - Validating configurations with Zod schemas
@@ -24,6 +27,7 @@ This plan outlines the migration of the configuration loading system from `src/c
 - Managing configuration paths (workspace-local vs git root)
 
 ### Usage Locations
+
 - `src/core/atlas-daemon.ts` - Line 732: `new ConfigLoader(workspace.path)`
 - `src/core/workspace-manager.ts` - Configuration caching and validation
 - `src/core/workspace-runtime.ts` - Runtime configuration
@@ -33,7 +37,9 @@ This plan outlines the migration of the configuration loading system from `src/c
 ### Phase 1: Extract Schemas and Types to `@atlas/config`
 
 #### 1.1 Move Zod Schemas and Infer Types
+
 Create `packages/config/src/schemas.ts`:
+
 ```typescript
 import { z } from "zod/v4";
 
@@ -59,7 +65,9 @@ export interface MergedConfig {
 ```
 
 #### 1.2 Move Validation Logic
+
 Create `packages/config/src/validation.ts`:
+
 ```typescript
 import { z } from "zod/v4";
 
@@ -92,27 +100,31 @@ export function formatZodError(error: z.ZodError, filename: string): string {
 ### Phase 2: Create Configuration Adapter in `@atlas/storage`
 
 #### 2.1 Define Adapter Interface
+
 Create `packages/storage/src/adapters/config-adapter.ts`:
+
 ```typescript
 export interface ConfigurationAdapter {
   // Core loading methods
   loadYamlFile(path: string): Promise<unknown>;
   fileExists(path: string): Promise<boolean>;
-  
+
   // Path resolution
   resolveAtlasConfigPath(workspaceDir: string): Promise<string>;
   resolveWorkspaceConfigPath(workspaceDir: string): Promise<string>;
-  
+
   // Job loading
   loadJobFiles(jobsDir: string): Promise<Map<string, unknown>>;
-  
+
   // Supervisor defaults
   loadSupervisorDefaults(): Promise<unknown>;
 }
 ```
 
 #### 2.2 Implement Filesystem Adapter
+
 Create `packages/storage/src/adapters/filesystem-config-adapter.ts`:
+
 ```typescript
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
@@ -167,7 +179,7 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
 
   async loadJobFiles(jobsDir: string): Promise<Map<string, unknown>> {
     const jobs = new Map<string, unknown>();
-    
+
     try {
       for await (const entry of Deno.readDir(jobsDir)) {
         if (entry.isFile && (entry.name.endsWith(".yml") || entry.name.endsWith(".yaml"))) {
@@ -179,7 +191,7 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
     } catch {
       // Jobs directory doesn't exist
     }
-    
+
     return jobs;
   }
 
@@ -194,11 +206,11 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
       args: ["rev-parse", "--show-toplevel"],
       stdout: "piped",
     }).outputSync();
-    
+
     if (!gitRoot.success) {
       throw new Error("Not in a git repository");
     }
-    
+
     return new TextDecoder().decode(gitRoot.stdout).trim();
   }
 }
@@ -207,50 +219,43 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
 ### Phase 3: Refactor ConfigLoader in `@atlas/config`
 
 #### 3.1 Move and Refactor ConfigLoader
+
 Create `packages/config/src/config-loader.ts`:
+
 ```typescript
 import type { ConfigurationAdapter } from "@atlas/storage";
-import { 
-  AtlasConfig, 
-  WorkspaceConfig, 
-  MergedConfig,
-  JobSpecification 
-} from "./types.ts";
-import { 
-  AtlasConfigSchema, 
-  WorkspaceConfigSchema,
-  JobSpecificationSchema 
-} from "./schemas.ts";
+import { AtlasConfig, JobSpecification, MergedConfig, WorkspaceConfig } from "./types.ts";
+import { AtlasConfigSchema, JobSpecificationSchema, WorkspaceConfigSchema } from "./schemas.ts";
 import { ConfigValidationError, formatZodError } from "./validation.ts";
 
 export class ConfigLoader {
   constructor(
     private adapter: ConfigurationAdapter,
-    private workspaceDir: string = "."
+    private workspaceDir: string = ".",
   ) {}
 
   async load(): Promise<MergedConfig> {
     // Load supervisor defaults
     const supervisorDefaults = await this.adapter.loadSupervisorDefaults();
-    
+
     // Load atlas.yml
     const atlasConfig = await this.loadAtlasConfig();
-    
+
     // Merge supervisor defaults
     const mergedAtlasConfig = this.mergeSupervisorDefaults(
-      atlasConfig, 
-      supervisorDefaults
+      atlasConfig,
+      supervisorDefaults,
     );
-    
+
     // Load workspace.yml
     const workspaceConfig = await this.loadWorkspaceConfig();
-    
+
     // Load job specifications
     const jobs = await this.loadJobSpecs(workspaceConfig);
-    
+
     // Validate configuration
     this.validateConfig(mergedAtlasConfig, workspaceConfig, jobs);
-    
+
     return {
       atlas: mergedAtlasConfig,
       workspace: workspaceConfig,
@@ -261,7 +266,7 @@ export class ConfigLoader {
 
   private async loadAtlasConfig(): Promise<AtlasConfig> {
     const atlasPath = await this.adapter.resolveAtlasConfigPath(this.workspaceDir);
-    
+
     try {
       const rawConfig = await this.adapter.loadYamlFile(atlasPath);
       return AtlasConfigSchema.parse(rawConfig);
@@ -275,7 +280,7 @@ export class ConfigLoader {
 
   private async loadWorkspaceConfig(): Promise<WorkspaceConfig> {
     const workspacePath = await this.adapter.resolveWorkspaceConfigPath(this.workspaceDir);
-    
+
     try {
       const rawConfig = await this.adapter.loadYamlFile(workspacePath);
       return WorkspaceConfigSchema.parse(rawConfig);
@@ -285,26 +290,26 @@ export class ConfigLoader {
   }
 
   private async loadJobSpecs(
-    workspaceConfig: WorkspaceConfig
+    workspaceConfig: WorkspaceConfig,
   ): Promise<Record<string, JobSpecification>> {
     const jobs: Record<string, JobSpecification> = {};
-    
+
     // Load inline jobs from workspace config
     if (workspaceConfig.jobs) {
       Object.entries(workspaceConfig.jobs).forEach(([name, spec]) => {
         jobs[name] = this.normalizeJobSpec(name, spec);
       });
     }
-    
+
     // Load jobs from files
     const jobsDir = join(this.workspaceDir, "jobs");
     const jobFiles = await this.adapter.loadJobFiles(jobsDir);
-    
+
     for (const [name, rawSpec] of jobFiles) {
       const spec = JobSpecificationSchema.parse(rawSpec);
       jobs[name] = this.normalizeJobSpec(name, spec);
     }
-    
+
     return jobs;
   }
 
@@ -315,7 +320,9 @@ export class ConfigLoader {
 ### Phase 4: Update All Usage Sites
 
 #### 4.1 Export from Package
+
 Create `packages/config/src/index.ts`:
+
 ```typescript
 export * from "./schemas.ts";
 export * from "./validation.ts";
@@ -323,6 +330,7 @@ export { ConfigLoader } from "./config-loader.ts";
 ```
 
 #### 4.2 Update atlas-daemon.ts
+
 ```typescript
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -333,6 +341,7 @@ const configLoader = new ConfigLoader(adapter, workspace.path);
 ```
 
 #### 4.3 Update workspace-manager.ts
+
 ```typescript
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
@@ -341,6 +350,7 @@ import { FilesystemConfigAdapter } from "@atlas/storage";
 ```
 
 #### 4.4 Update workspace-runtime.ts
+
 ```typescript
 import type { MergedConfig } from "@atlas/config";
 // Update imports as needed
@@ -349,31 +359,37 @@ import type { MergedConfig } from "@atlas/config";
 ## Implementation Steps
 
 ### Step 1: Package Setup
+
 1. Ensure `packages/config` and `packages/storage` directories exist
 2. Update their `mod.ts` files with proper exports
 
 ### Step 2: Type Migration
+
 1. Copy all type definitions from `config-loader.ts` to `packages/config/src/types.ts`
 2. Copy all Zod schemas to `packages/config/src/schemas.ts`
 3. Extract validation utilities to `packages/config/src/validation.ts`
 
 ### Step 3: Adapter Implementation
+
 1. Create the `ConfigurationAdapter` interface in `packages/storage`
 2. Implement `FilesystemConfigAdapter` with all filesystem operations
 3. Add tests for the adapter
 
 ### Step 4: ConfigLoader Refactoring
+
 1. Copy `ConfigLoader` class to `packages/config/src/config-loader.ts`
 2. Refactor to use the adapter pattern
 3. Remove all direct filesystem operations
 4. Update imports to use package references
 
 ### Step 5: Integration
+
 1. Update `src/core/config-loader.ts` to re-export from `@atlas/config`
 2. Test that existing code continues to work
 3. Gradually update import statements across the codebase
 
 ### Step 6: Cleanup
+
 1. Remove `src/core/config-loader.ts`
 2. Update documentation
 3. Add migration notes to CLAUDE.md
@@ -393,6 +409,7 @@ import type { MergedConfig } from "@atlas/config";
 ### `packages/config/tests/` - Unit Tests
 
 #### `config-loader.test.ts`
+
 ```typescript
 import { expect } from "@std/expect";
 import { ConfigLoader } from "../src/config-loader.ts";
@@ -401,43 +418,43 @@ import type { ConfigurationAdapter } from "@atlas/storage";
 // Mock adapter for testing
 class MockConfigAdapter implements ConfigurationAdapter {
   private files = new Map<string, unknown>();
-  
+
   constructor(files: Record<string, unknown>) {
     Object.entries(files).forEach(([path, content]) => {
       this.files.set(path, content);
     });
   }
-  
+
   async loadYamlFile(path: string): Promise<unknown> {
     if (!this.files.has(path)) {
       throw new Error(`NotFound: ${path}`);
     }
     return this.files.get(path);
   }
-  
+
   async fileExists(path: string): Promise<boolean> {
     return this.files.has(path);
   }
-  
+
   async resolveAtlasConfigPath(workspaceDir: string): Promise<string> {
     return `${workspaceDir}/atlas.yml`;
   }
-  
+
   async resolveWorkspaceConfigPath(workspaceDir: string): Promise<string> {
     return `${workspaceDir}/workspace.yml`;
   }
-  
+
   async loadJobFiles(jobsDir: string): Promise<Map<string, unknown>> {
     return new Map();
   }
-  
+
   async loadSupervisorDefaults(): Promise<unknown> {
     return {
       supervisors: {
         workspace: { model: "test", prompts: { system: "test" } },
         session: { model: "test", prompts: { system: "test" } },
-        agent: { model: "test", prompts: { system: "test" } }
-      }
+        agent: { model: "test", prompts: { system: "test" } },
+      },
     };
   }
 }
@@ -450,20 +467,20 @@ Deno.test("ConfigLoader - loads valid configuration", async () => {
       supervisors: {
         workspace: { model: "claude-3-5-sonnet", prompts: { system: "workspace" } },
         session: { model: "claude-3-5-sonnet", prompts: { system: "session" } },
-        agent: { model: "claude-3-5-sonnet", prompts: { system: "agent" } }
-      }
+        agent: { model: "claude-3-5-sonnet", prompts: { system: "agent" } },
+      },
     },
     "/test/workspace.yml": {
       version: "1.0",
       workspace: { name: "test-workspace" },
       agents: {},
-      signals: {}
-    }
+      signals: {},
+    },
   });
-  
+
   const loader = new ConfigLoader(mockAdapter, "/test");
   const config = await loader.load();
-  
+
   expect(config.atlas).toBeDefined();
   expect(config.workspace).toBeDefined();
   expect(config.workspace.workspace.name).toBe("test-workspace");
@@ -475,13 +492,13 @@ Deno.test("ConfigLoader - handles missing atlas.yml gracefully", async () => {
       version: "1.0",
       workspace: { name: "test-workspace" },
       agents: {},
-      signals: {}
-    }
+      signals: {},
+    },
   });
-  
+
   const loader = new ConfigLoader(mockAdapter, "/test");
   const config = await loader.load();
-  
+
   // Should create default atlas config
   expect(config.atlas.workspace.id).toBe("atlas-platform");
   expect(config.atlas.workspace.name).toBe("Atlas Platform");
@@ -489,32 +506,33 @@ Deno.test("ConfigLoader - handles missing atlas.yml gracefully", async () => {
 
 Deno.test("ConfigLoader - validates workspace configuration", async () => {
   const mockAdapter = new MockConfigAdapter({
-    "/test/atlas.yml": { /* valid atlas config */ },
+    "/test/atlas.yml": {/* valid atlas config */},
     "/test/workspace.yml": {
       version: "1.0",
       // Missing required 'workspace' field
-      agents: {}
-    }
+      agents: {},
+    },
   });
-  
+
   const loader = new ConfigLoader(mockAdapter, "/test");
-  
+
   await expect(loader.load()).rejects.toThrow("Configuration validation failed");
 });
 ```
 
 #### `validation.test.ts`
+
 ```typescript
 import { expect } from "@std/expect";
 import { z } from "zod/v4";
-import { formatZodError, ConfigValidationError } from "../src/validation.ts";
+import { ConfigValidationError, formatZodError } from "../src/validation.ts";
 
 Deno.test("formatZodError - formats validation errors correctly", () => {
   const schema = z.object({
     name: z.string(),
-    age: z.number()
+    age: z.number(),
   });
-  
+
   try {
     schema.parse({ name: 123, age: "invalid" });
   } catch (error) {
@@ -532,9 +550,9 @@ Deno.test("ConfigValidationError - includes all error details", () => {
     "Invalid configuration",
     "test.yml",
     "agents.test-agent",
-    { type: "invalid" }
+    { type: "invalid" },
   );
-  
+
   expect(error.name).toBe("ConfigValidationError");
   expect(error.file).toBe("test.yml");
   expect(error.field).toBe("agents.test-agent");
@@ -545,6 +563,7 @@ Deno.test("ConfigValidationError - includes all error details", () => {
 ### `packages/storage/tests/` - Unit Tests
 
 #### `filesystem-config-adapter.test.ts`
+
 ```typescript
 import { expect } from "@std/expect";
 import { FilesystemConfigAdapter } from "../src/adapters/filesystem-config-adapter.ts";
@@ -556,9 +575,9 @@ const tempDir = await Deno.makeTempDir();
 Deno.test("FilesystemConfigAdapter - loads YAML files", async () => {
   const adapter = new FilesystemConfigAdapter();
   const testFile = join(tempDir, "test.yml");
-  
+
   await Deno.writeTextFile(testFile, "name: test\nvalue: 123");
-  
+
   const content = await adapter.loadYamlFile(testFile);
   expect(content).toEqual({ name: "test", value: 123 });
 });
@@ -567,23 +586,23 @@ Deno.test("FilesystemConfigAdapter - checks file existence", async () => {
   const adapter = new FilesystemConfigAdapter();
   const existingFile = join(tempDir, "exists.yml");
   const missingFile = join(tempDir, "missing.yml");
-  
+
   await Deno.writeTextFile(existingFile, "test");
-  
+
   expect(await adapter.fileExists(existingFile)).toBe(true);
   expect(await adapter.fileExists(missingFile)).toBe(false);
 });
 
 Deno.test("FilesystemConfigAdapter - resolves atlas.yml path correctly", async () => {
   const adapter = new FilesystemConfigAdapter();
-  
+
   // Test CWD resolution
   const cwdAtlas = join(tempDir, "atlas.yml");
   await Deno.writeTextFile(cwdAtlas, "version: 1.0");
-  
+
   const resolvedPath = await adapter.resolveAtlasConfigPath(tempDir);
   expect(resolvedPath).toBe(cwdAtlas);
-  
+
   // Clean up for next test
   await Deno.remove(cwdAtlas);
 });
@@ -591,14 +610,14 @@ Deno.test("FilesystemConfigAdapter - resolves atlas.yml path correctly", async (
 Deno.test("FilesystemConfigAdapter - loads job files from directory", async () => {
   const adapter = new FilesystemConfigAdapter();
   const jobsDir = join(tempDir, "jobs");
-  
+
   await Deno.mkdir(jobsDir);
   await Deno.writeTextFile(join(jobsDir, "job1.yml"), "name: job1\ntask: test");
   await Deno.writeTextFile(join(jobsDir, "job2.yaml"), "name: job2\ntask: test");
   await Deno.writeTextFile(join(jobsDir, "not-yaml.txt"), "ignored");
-  
+
   const jobs = await adapter.loadJobFiles(jobsDir);
-  
+
   expect(jobs.size).toBe(2);
   expect(jobs.has("job1")).toBe(true);
   expect(jobs.has("job2")).toBe(true);
@@ -612,7 +631,9 @@ globalThis.addEventListener("unload", () => {
 ```
 
 ### Integration Test Updates
+
 Update `tests/integration/configuration-architecture.test.ts`:
+
 ```typescript
 import { expect } from "@std/expect";
 import { ConfigLoader } from "@atlas/config";
@@ -620,23 +641,23 @@ import { FilesystemConfigAdapter } from "@atlas/storage";
 
 Deno.test("Configuration architecture - platform vs workspace separation", async () => {
   const tempDir = await Deno.makeTempDir();
-  
+
   // Write test configurations
   await Deno.writeTextFile(join(tempDir, "atlas.yml"), validAtlasConfig);
   await Deno.writeTextFile(join(tempDir, "workspace.yml"), validWorkspaceConfig);
-  
+
   const adapter = new FilesystemConfigAdapter();
   const loader = new ConfigLoader(adapter, tempDir);
   const config = await loader.load();
-  
+
   // Test platform configuration
   expect(config.atlas.agents).toBeDefined();
   expect(config.atlas.agents["memory-agent"]).toBeDefined();
-  
+
   // Test workspace configuration
   expect(config.workspace.signals).toBeDefined();
   expect(config.workspace.agents).toBeDefined();
-  
+
   // Cleanup
   await Deno.remove(tempDir, { recursive: true });
 });

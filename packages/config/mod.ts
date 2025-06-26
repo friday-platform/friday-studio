@@ -1,8 +1,8 @@
 /**
  * @module @atlas/config
- * 
+ *
  * Configuration management package for Atlas
- * 
+ *
  * This package provides:
  * - Configuration schemas
  * - Default configurations
