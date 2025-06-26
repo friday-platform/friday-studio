@@ -430,6 +430,7 @@ jobs:
           git tag -f nightly HEAD
           git push origin nightly --force
 
+
       - name: Update Homebrew tap for nightly
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -442,6 +443,172 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/tempestteam/homebrew-tap/dispatches" \
             -d "{\"event_type\":\"atlas-release\",\"client_payload\":{\"tag\":\"$VERSION\",\"channel\":\"nightly\"}}"
+
+  upload-sandbox:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+          echo "Generated checksums:"
+          cat checksums.txt
+
+      - name: Authenticate to Google Cloud (Sandbox)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to sandbox GCS
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Change to dist directory where artifacts are
+          cd ./dist
+          
+          # Upload all artifacts to sandbox bucket with nightly/ prefix (flat structure)
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
+          
+          echo "Uploaded nightly artifacts to sandbox GCS bucket"
+
+  upload-production:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+          echo "Generated checksums:"
+          cat checksums.txt
+
+      - name: Authenticate to Google Cloud (Production)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to production GCS
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Change to dist directory where artifacts are
+          cd ./dist
+          
+          # Upload all artifacts to production bucket with nightly/ prefix (flat structure)
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/nightly/
+          fi
+          gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
+          
+          echo "Uploaded nightly artifacts to production GCS bucket"
+
+  cleanup-sandbox:
+    needs: [check-changes, upload-sandbox]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Sandbox)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old nightly artifacts (sandbox)
+        run: |
+          # Cleanup: Keep only last 7 nightly versions
+          echo "Cleaning up old nightly versions in sandbox (keeping last 7)..."
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
+          
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.zip | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/checksums-nightly-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
+          
+          echo "Sandbox nightly cleanup completed"
+
+  cleanup-production:
+    needs: [check-changes, upload-production]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Production)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old nightly artifacts (production)
+        run: |
+          # Cleanup: Keep only last 7 nightly versions
+          echo "Cleaning up old nightly versions in production (keeping last 7)..."
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
+          
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/atlas_nightly-*.zip | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/checksums-nightly-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
+          
+          echo "Production nightly cleanup completed"
 
   cleanup:
     needs: [check-changes, release]
