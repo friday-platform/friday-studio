@@ -75,7 +75,7 @@ export async function handler(argv: ListArgs) {
 
     if (!result.success) {
       s.stop("Failed to fetch library items");
-      console.error(`Error: ${result.error}`);
+      console.error(`Error: ${(result as any).error || "Unknown error"}`);
       process.exit(1);
       return;
     }

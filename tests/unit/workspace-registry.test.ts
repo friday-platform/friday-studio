@@ -19,7 +19,6 @@ async function createTestWorkspace(
   const workspaceConfig = config || {
     version: "1.0",
     workspace: {
-      id: crypto.randomUUID(),
       name: `Test ${name}`,
       description: `Test workspace ${name}`,
     },

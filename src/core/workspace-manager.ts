@@ -120,12 +120,50 @@ export class WorkspaceManager {
     const existingIds = new Set((await this.listAllPersisted()).map((w) => w.id));
     const id = generateUniqueWorkspaceName(existingIds);
 
+    // Load and cache workspace configuration
+    const absolutePath = await Deno.realPath(workspacePath);
+    const configPath = join(absolutePath, "workspace.yml");
+
+    let config: Record<string, any> | undefined;
+    let configHash: string | undefined;
+
+    try {
+      // Load configuration using absolute path
+      const { ConfigLoader } = await import("./config-loader.ts");
+      const configLoader = new ConfigLoader(absolutePath);
+      const loadedConfig = await configLoader.load();
+
+      // Cache the full merged config
+      config = JSON.parse(JSON.stringify(loadedConfig)); // Deep clone to avoid mutations
+
+      // Generate config hash for change detection
+      const configJson = JSON.stringify(config, Object.keys(config).sort());
+      const encoder = new TextEncoder();
+      const data = encoder.encode(configJson);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      logger.debug("Workspace config loaded and cached", {
+        workspaceId: id,
+        configHash: configHash.substring(0, 8) + "...",
+      });
+    } catch (error) {
+      logger.warn("Failed to load workspace config during registration", {
+        workspacePath: absolutePath,
+        error: error.message,
+      });
+      // Continue registration without config cache - will be loaded on-demand if needed
+    }
+
     // Create new entry
     const entry: WorkspaceEntry = {
       id,
       name: options?.name || basename(workspacePath),
-      path: await Deno.realPath(workspacePath),
-      configPath: join(workspacePath, "workspace.yml"),
+      path: absolutePath,
+      configPath,
+      config,
+      configHash,
       status: WorkspaceStatus.STOPPED,
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
@@ -405,11 +443,10 @@ export class WorkspaceManager {
     const workspacePath = join(Deno.cwd(), config.name);
     await Deno.mkdir(workspacePath, { recursive: true });
 
-    // Create basic workspace.yml file
+    // Create basic workspace.yml file (no ID - it's generated during registration)
     const workspaceConfig = {
       version: "1.0.0",
       workspace: {
-        id: crypto.randomUUID(),
         name: config.name,
         description: config.description,
       },
@@ -434,6 +471,58 @@ export class WorkspaceManager {
       id: entry.id,
       name: entry.name,
     };
+  }
+
+  /**
+   * Refresh cached config for a workspace
+   */
+  async refreshWorkspaceConfig(id: string): Promise<void> {
+    if (!this.kv) await this.initialize();
+
+    const workspace = await this.findById(id);
+    if (!workspace) {
+      throw new Error(`Workspace ${id} not found`);
+    }
+
+    try {
+      // Load configuration using absolute path
+      const { ConfigLoader } = await import("./config-loader.ts");
+      const configLoader = new ConfigLoader(workspace.path);
+      const loadedConfig = await configLoader.load();
+
+      // Cache the full merged config
+      const config = JSON.parse(JSON.stringify(loadedConfig)); // Deep clone
+
+      // Generate new config hash
+      const configJson = JSON.stringify(config, Object.keys(config).sort());
+      const encoder = new TextEncoder();
+      const data = encoder.encode(configJson);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      // Update workspace entry
+      const updatedWorkspace = { ...workspace, config, configHash };
+
+      // Atomic update
+      const result = await this.kv!.atomic()
+        .set(["workspaces", id], updatedWorkspace)
+        .set(["registry", "lastUpdated"], new Date().toISOString())
+        .commit();
+
+      if (!result.ok) {
+        throw new Error(`Failed to update workspace ${id} config cache`);
+      }
+
+      logger.info("Workspace config cache refreshed", {
+        id,
+        oldHash: workspace.configHash?.substring(0, 8) + "...",
+        newHash: configHash.substring(0, 8) + "...",
+      });
+    } catch (error) {
+      logger.error("Failed to refresh workspace config", { id, error: error.message });
+      throw error;
+    }
   }
 
   /**

@@ -41,9 +41,7 @@ export const handler = async (_argv: McpServeArgs): Promise<void> => {
 
     // Import platform MCP server and dependencies
     const { PlatformMCPServer } = await import("../../../core/mcp/platform-mcp-server.ts");
-    const { WorkspaceRuntimeRegistry } = await import(
-      "../../../core/workspace-runtime-registry.ts"
-    );
+    const { getWorkspaceManager } = await import("../../../core/workspace-manager.ts");
     const { ConfigLoader } = await import("../../../core/config-loader.ts");
 
     // Load Atlas configuration
@@ -51,14 +49,15 @@ export const handler = async (_argv: McpServeArgs): Promise<void> => {
     const mergedConfig = await configLoader.load();
     const atlasConfig = mergedConfig.atlas;
 
-    // Get workspace runtime registry (tracks active workspace runtimes)
-    const runtimeRegistry = WorkspaceRuntimeRegistry.getInstance();
+    // Get workspace manager (tracks workspace registrations)
+    const workspaceManager = getWorkspaceManager();
+    await workspaceManager.initialize();
 
-    infoOutput(`Found ${runtimeRegistry.getActiveCount()} active workspace(s)`);
+    const workspaces = await workspaceManager.listAllPersisted();
+    infoOutput(`Found ${workspaces.length} registered workspace(s)`);
 
     // Create MCP server with platform-level capabilities
     const mcpServer = new PlatformMCPServer({
-      runtimeRegistry,
       atlasConfig,
     });
 

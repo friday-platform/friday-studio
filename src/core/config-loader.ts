@@ -141,7 +141,7 @@ const ToolsConfigSchema = z.object({
 
 // Workspace identification schema
 const WorkspaceIdentitySchema = z.object({
-  id: z.string(),
+  id: z.string().optional(), // ID is generated automatically, not required in config
   name: z.string(),
   description: z.string().optional(),
 });
@@ -482,11 +482,10 @@ const WorkspaceSignalConfigSchema = z.object({
 export const NewWorkspaceConfigSchema = z.object({
   version: z.string(),
 
-  // Workspace identity
+  // Workspace identity (ID is generated automatically, not in config)
   workspace: WorkspaceIdentitySchema.extend({
-    id: z.string().uuid("Workspace ID must be a valid UUID"),
     name: z.string().min(1, "Workspace name cannot be empty"),
-  }),
+  }), // ID is optional - generated automatically if not provided
 
   // Server configuration (how this workspace exposes itself)
   server: ServerConfigSchema.optional(),

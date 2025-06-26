@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "a8c4d759-2e5b-4f3c-9a1d-8c7b3e6f2a9d"
   name: "k8s-assistant"
   description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
 

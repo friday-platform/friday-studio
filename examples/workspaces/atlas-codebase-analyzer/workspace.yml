@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "f47ac10b-58cc-4372-a567-0e02b2c3d479"
   name: "Atlas Codebase Analyzer"
   description: "Autonomous Atlas codebase analysis using enhanced EMCP filesystem capabilities"
 

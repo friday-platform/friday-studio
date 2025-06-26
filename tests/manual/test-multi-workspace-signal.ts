@@ -17,7 +17,6 @@ async function createTestWorkspace(baseDir: string, name: string, port: number) 
   const workspaceYaml = `version: "1.0"
 
 workspace:
-  id: "${crypto.randomUUID()}"
   name: "${name}"
   description: "Test workspace for multi-workspace signal testing"
 

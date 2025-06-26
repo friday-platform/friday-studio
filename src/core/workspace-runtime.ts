@@ -864,10 +864,24 @@ const workspaceRuntimeMachine = setup({
         workspaceId: context.workspace.id,
       });
 
-      // Load merged configuration (atlas.yml + workspace.yml)
-      const { ConfigLoader } = await import("./config-loader.ts");
-      const configLoader = new ConfigLoader();
-      const mergedConfig = await configLoader.load();
+      // Use pre-loaded configuration or load as fallback
+      let mergedConfig: any;
+
+      if (context.config) {
+        // Use pre-loaded configuration (preferred - no I/O)
+        mergedConfig = context.config;
+        await logger.debug("Using pre-loaded configuration", {
+          workspaceId: context.workspace.id,
+        });
+      } else {
+        // Fallback: load configuration (should only happen for legacy cases)
+        await logger.warn("No pre-loaded config found, falling back to loading from disk", {
+          workspaceId: context.workspace.id,
+        });
+        const { ConfigLoader } = await import("./config-loader.ts");
+        const configLoader = new ConfigLoader();
+        mergedConfig = await configLoader.load();
+      }
 
       // Memory configuration is already loaded in mergedConfig.atlas
 

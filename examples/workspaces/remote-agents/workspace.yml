@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "7821d138-71a6-434c-bc64-10addcf33534"
   name: "remote-acp-demo"
   description: "Demonstration of Atlas remote agent capabilities using local ACP server"
 

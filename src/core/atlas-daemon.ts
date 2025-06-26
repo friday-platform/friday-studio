@@ -136,6 +136,23 @@ export class AtlasDaemon {
       }
     });
 
+    // Refresh workspace config cache
+    this.app.post("/api/workspaces/:workspaceId/refresh-config", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        const manager = getWorkspaceManager();
+        await manager.refreshWorkspaceConfig(workspaceId);
+        return c.json({ message: `Workspace ${workspaceId} config cache refreshed` });
+      } catch (error) {
+        return c.json({
+          error: `Failed to refresh config: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
     // Trigger signal on specific workspace
     this.app.post("/api/workspaces/:workspaceId/signals/:signalId", async (c) => {
       const workspaceId = c.req.param("workspaceId");
@@ -362,11 +379,26 @@ export class AtlasDaemon {
         throw new Error(`Workspace path does not exist: ${workspace.path}`);
       }
 
-      // Load workspace configuration using absolute path
-      const configLoader = new ConfigLoader(workspace.path);
-      logger.debug(`Loading workspace configuration from: ${workspace.path}`);
-      const mergedConfig = await configLoader.load();
-      logger.debug(`Configuration loaded successfully`);
+      // Use cached configuration from workspace registry
+      let mergedConfig: any;
+
+      if (workspace.config) {
+        // Use pre-cached configuration (preferred - no I/O at signal time)
+        mergedConfig = workspace.config;
+        logger.debug(`Using cached workspace configuration`, {
+          workspaceId: workspace.id,
+          configHash: workspace.configHash?.substring(0, 8) + "...",
+        });
+      } else {
+        // Fallback: load configuration (should only happen for legacy registrations)
+        logger.warn(`No cached config found, falling back to live loading`, {
+          workspaceId: workspace.id,
+          path: workspace.path,
+        });
+        const configLoader = new ConfigLoader(workspace.path);
+        mergedConfig = await configLoader.load();
+        logger.debug(`Configuration loaded from disk as fallback`);
+      }
 
       logger.debug(`Creating Workspace object from config...`);
       const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
