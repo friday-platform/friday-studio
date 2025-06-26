@@ -283,7 +283,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
         for (const key of sampleKeys) {
           const entry = await this.get(key);
           if (entry) {
-            totalAge += now - entry.timestamp;
+            totalAge += Date.now() - entry.timestamp;
             validSamples++;
           }
         }
