@@ -112,14 +112,14 @@ agents:
   k8s-main-agent:
     type: "remote"
     protocol: "acp"
-    endpoint: "http://localhost:8085"
+    endpoint: "http://localhost:8080"
     purpose: "Kubernetes cluster operations worker. Handles kubectl commands, deployment management, scaling, troubleshooting, log retrieval, and cluster monitoring. Does NOT handle Linear issue management."
 
     # ACP Protocol Configuration
     acp:
-      agent_name: "standalone-coordinator"
+      agent_name: "k8s-deployment-manager"
       default_mode: "sync"
-      timeout_ms: 120000 # 2-minute timeout for complex operations
+      timeout_ms: 180000 # 2-minute timeout for complex operations
       max_retries: 2
       health_check_interval: 30000 # Health check every 30 seconds
 
@@ -146,30 +146,40 @@ agents:
 
         Your primary responsibilities:
         1. Create new Linear issues with proper descriptions and metadata
-        2. Update existing issues with status changes and progress notes
-        3. Set issue states using Linear state UUIDs (NOT human-readable names)
-        4. Manage issue assignments and priorities
+        2. Add detailed comments to issues with progress updates and results
+        3. Manage issue assignments and priorities when needed
+        4. Format all communications clearly with proper markdown
 
-        IMPORTANT: When updating issue states, you MUST use Linear state UUIDs, not human-readable names.
-        Common Linear state UUIDs (use these exact values):
-        - Backlog: Use the actual UUID from Linear API (query available states first)
-        - Todo: Use the actual UUID from Linear API (query available states first)
-        - In Progress: Use the actual UUID from Linear API (query available states first)
-        - Done: Use the actual UUID from Linear API (query available states first)
+        FOCUS: Your main job is to provide excellent communication through comments.
+        Always add comprehensive, helpful comments when operations are performed.
 
-        When working with Linear:
-        - Always use the Linear MCP tools to interact with the Linear API
-        - ALWAYS query available states first using linear_search_issues or similar tools to get valid state UUIDs
-        - Format issue descriptions clearly with proper markdown
+        Linear interaction rules:
+        - Always use Linear MCP tools to interact with the Linear API
+        - Format issue comments clearly with proper markdown
         - Include relevant context and actionable information
-        - Set appropriate priorities and labels based on content
-        - When updating issue status, use the actual UUID value, not human-readable names like "In Progress"
+        - Add detailed progress updates and results from operations
+        - Provide clear summaries of what was accomplished
 
-        For testing purposes, when you receive a webhook signal:
-        1. Create or update the issue with a clear description
-        2. Query available states to get the correct UUID for "In Progress" state
-        3. Set the issue status using the UUID (not "In Progress" string)
-        4. Provide a summary of actions taken
+        Comment workflow:
+        When work starts:
+        - Add comment indicating work is starting and what will be done
+        
+        When work completes:
+        - Add detailed completion comment with comprehensive results
+        - Include technical details, logs, or findings
+        - Summarize what was accomplished and next steps if relevant
+        - Use clear formatting with emojis and markdown for readability
+        
+        When operations fail:
+        - Add comment with error details and troubleshooting information
+        - Explain what went wrong and suggest next steps
+
+        Required workflow for webhook signals:
+        1. Add comment indicating automation is processing the request
+        2. After k8s operations complete, add final detailed comment with results
+        3. Ensure comments are comprehensive and helpful for the team
+        
+        Focus on providing excellent communication and documentation through comments.
 
 # =============================================================================
 # SIGNAL CONFIGURATION
