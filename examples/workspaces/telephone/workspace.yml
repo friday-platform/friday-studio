@@ -37,6 +37,30 @@ tools:
         tools:
           allowed: ["read_file", "list_directory"]
 
+      atlas-platform:
+        transport:
+          type: "stdio"
+          command: "deno"
+          args: [
+            "run",
+            "--allow-all",
+            "--unstable-broadcast-channel",
+            "--unstable-worker-options",
+            "--env-file",
+            "/Users/kenneth/tempest/atlas/src/cli.tsx",
+            "mcp",
+            "serve",
+          ]
+          env:
+            ATLAS_DAEMON_URL: "http://localhost:8080"
+        tools:
+          allowed: [
+            "workspace_list",
+            "workspace_create",
+            "workspace_describe",
+            "workspace_delete",
+          ]
+
 # Signal definitions
 signals:
   telephone-message:
@@ -71,17 +95,21 @@ jobs:
         - id: "mishearing-agent"
           input_source: "signal"
           tools:
-            - "workspace.memory.recall" # Can access session memory
+            workspace:
+              - "workspace_memory_recall" # Can access session memory
         - id: "embellishment-agent"
           input_source: "previous"
           tools:
-            - "workspace_memory_recall"
-            - "workspace_memory_store" # Can store transformation patterns
+            workspace:
+              - "workspace_memory_recall"
+              - "workspace_memory_store" # Can store transformation patterns
+            mcp: ["atlas-platform"] # Can access workspace capabilities via daemon API
         - id: "reinterpretation-agent"
           input_source: "previous"
           tools:
-            - "workspace_memory_recall"
-            - "workspace_sessions_describe" # Can check session progress
+            workspace:
+              - "workspace_memory_recall"
+            mcp: ["atlas-platform"] # Can access workspace capabilities via daemon API
 
 # Agent definitions
 agents:
@@ -89,8 +117,6 @@ agents:
     type: "llm"
     model: "claude-3-5-haiku-20241022" # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
-    default_tools:
-      - "workspace_memory_recall" # Default memory access for all jobs
     tools:
       mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
 
@@ -98,17 +124,12 @@ agents:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative details and context to messages"
-    default_tools:
-      - "workspace_memory_*" # Full memory access for pattern storage
     tools:
-      mcp: ["filesystem-context"]
+      mcp: ["filesystem-context", "atlas-platform"]
 
   reinterpretation-agent:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Dramatically transforms and reinterprets messages"
-    default_tools:
-      - "workspace.memory.recall"
-      - "workspace.sessions.*" # Can check session status and progress
     tools:
-      mcp: ["filesystem-context"]
+      mcp: ["filesystem-context", "atlas-platform"]
