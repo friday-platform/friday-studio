@@ -1,7 +1,6 @@
 # Atlas
 
 AI agent orchestration platform that transforms software delivery through human/AI collaboration.
-Test automation pipeline.
 
 ## Overview
 
@@ -10,17 +9,20 @@ autonomous agents in a secure, auditable, and scalable environment.
 
 ### Key Features
 
+- **Daemon Architecture** - Central daemon manages all workspace lifecycles
 - **Hierarchical Supervision** - Intelligent supervisors coordinate agent execution
 - **Worker Isolation** - Each agent runs in isolated Deno Web Workers
 - **Session Management** - Track and manage concurrent agent workflows
 - **Configurable Signals** - Trigger workflows via CLI, webhooks, or schedules
 - **Beautiful CLI** - Full-featured Ink-based terminal UI with tables and colors
 - **Memory & Context** - Hierarchical memory management across sessions
+- **Config Caching** - Secure, performant workspace configuration management
 
 ## Getting Started
 
 ### Prerequisites
 
+- [Deno](https://deno.land/) 1.40+ installed
 - Anthropic API key (for Claude) - [Get one here](https://console.anthropic.com/)
 
 ### Installation
@@ -49,69 +51,64 @@ atlas --help
 atlas --version  # Shows channel-specific version info
 ```
 
-**Channel Details:**
+#### Option 2: Direct Binary
 
-- **Stable**: Official releases (1.0.0, 1.1.0) - maximum stability
-- **Nightly**: Daily builds (nightly-YYYYMMDD) - nightly releases
-- **Edge**: Every commit (edge-YYYYMMDD-HHMMSS-gitsha) - bleeding edge, unstable
+Download from [releases](https://github.com/tempestteam/atlas/releases) and add to PATH.
 
-⚠️ **Note**: Only one channel can be installed at a time. To switch channels:
+#### Option 3: From Source
 
 ```bash
-brew uninstall tempest-atlas  # or tempest-atlas-nightly, tempest-atlas-edge
-HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly
-```
-
-**Prerequisites**: You need GitHub CLI (`gh`) installed and authenticated to access the private
-repository.
-
-#### Option 2: From Source
-
-```bash
-# Requires Deno v2.0+
-git clone https://github.com/tempestteam/atlas.git
+git clone https://github.com/tempestteam/atlas
 cd atlas
-deno install
+deno task atlas --version
 ```
 
-### Running Examples
+### Quick Start
 
-All examples include helper scripts with OpenTelemetry integration enabled:
-
-- **`start-server.sh`** - Starts the workspace server with proper flags
-- **`trigger-signal.sh`** - Triggers the example workflow
-- Both scripts include `OTEL_DENO=true` and `--unstable-otel` for telemetry
-
-### Quick Start - Terminal UI (TUI)
-
-The fastest way to get started is with Atlas's built-in terminal interface:
-
-1. **Navigate to example workspace**
+1. **Set up environment**
 
 ```bash
+# Add your Anthropic API key
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+# Optional: Configure custom model defaults
+export ATLAS_DEFAULT_MODEL="claude-3-5-sonnet-20241022"
+```
+
+2. **Start the Atlas daemon**
+
+```bash
+# Start daemon in background
+atlas daemon start
+
+# Check daemon status
+atlas daemon status
+```
+
+3. **Initialize a workspace**
+
+```bash
+# Create new workspace
+mkdir my-workspace && cd my-workspace
+atlas init
+
+# Or try an example workspace
 cd examples/workspaces/telephone
 ```
 
-2. **Configure API key**
+4. **Launch Atlas TUI**
 
 ```bash
-# Edit .env file with your actual Anthropic API key
-ANTHROPIC_API_KEY=sk-ant-api03-...
-```
-
-3. **Launch Atlas TUI**
-
-```bash
-# If installed via Homebrew
+# Interactive terminal interface
 atlas tui
 
-# If running from source
-deno task atlas tui
+# Or use interactive mode
+atlas
 ```
 
 This launches an interactive terminal interface that:
 
-- ✅ **Auto-starts** the workspace server
+- ✅ **Auto-detects** registered workspaces
 - ✅ **Real-time logs** in dual-panel layout
 - ✅ **Vi-style navigation** (j/k/gg/G/Ctrl+D/U)
 - ✅ **Slash commands** for all Atlas operations
@@ -139,107 +136,58 @@ help                                    # Show all commands
 /ps                                    # List sessions (shorthand)
 ```
 
-### Alternative: Manual Command Line
-
-If you prefer manual control or separate terminals:
-
-1. **Start workspace server (Terminal 1)**
-
-```bash
-./start-server.sh
-# Server starts on http://localhost:8080 with OpenTelemetry enabled
-```
-
-2. **Trigger a signal (Terminal 2)**
-
-```bash
-./trigger-signal.sh
-# Runs the telephone game: mishearing → embellishment → reinterpretation
-```
-
-3. **Alternative: Use curl directly**
-
-```bash
-curl -X POST http://localhost:8080/signals/telephone-message \
-  -H "Content-Type: application/json" \
-  -d '{"message": "The cat sat on the mat"}'
-```
-
-4. **Monitor execution**
-
-```bash
-# List active sessions (Homebrew install)
-atlas ps
-
-# Stream session logs (Homebrew install)
-atlas logs <session-id>
-
-# If running from source, use:
-# deno task atlas ps
-# deno task atlas logs <session-id>
-```
-
 ## CLI Commands
 
-### Terminal UI
+### Daemon Management
 
 ```bash
-atlas tui                       # Launch interactive terminal interface
-# Features: auto-server startup, dual-panel logs, vi navigation, slash commands
+atlas daemon start                 # Start Atlas daemon
+atlas daemon stop                  # Stop Atlas daemon  
+atlas daemon status                # Check daemon status
+atlas daemon restart               # Restart daemon
+```
+
+### Interactive Interface
+
+```bash
+atlas                              # Launch interactive mode
+atlas tui                          # Launch terminal UI
+# Features: workspace detection, dual-panel logs, vi navigation, slash commands
 ```
 
 ### Workspace Management
 
 ```bash
-atlas workspace init [name]     # Initialize workspace in current directory
-atlas workspace serve           # Start workspace server
-atlas workspace list            # List all workspaces  
-atlas workspace status          # Show current workspace status
+atlas init [name]                  # Initialize workspace in current directory
+atlas ps                           # List all active sessions across workspaces
+atlas config validate              # Validate workspace configuration
 ```
 
 ### Session Monitoring
 
 ```bash
-atlas session list              # List all active sessions
-atlas ps                        # Shorthand for session list
-atlas session get <id>          # Show session details
-atlas session cancel <id>       # Cancel running session
-atlas logs <session-id>         # Stream session logs with colors
+atlas ps                           # List all active sessions
+atlas logs <session-id>            # Stream session logs with colors
 ```
 
 ### Signal Management
 
 ```bash
-atlas signal list               # List configured signals
-atlas signal trigger <name> --data '{...}'  # Trigger a signal
-atlas signal history            # Show trigger history
-```
-
-### Agent Management
-
-```bash
-atlas agent list                # List all agents
-atlas agent describe <name>     # Show agent details
-atlas agent test <name> -m "text"  # Test agent directly
+atlas signal trigger <name>        # Trigger a signal in current workspace
+atlas signal trigger <name> --workspace <id>  # Trigger in specific workspace
+atlas signal trigger <name> --data '{"key":"value"}'  # Trigger with payload
 ```
 
 ## Workspace Configuration
 
-Workspaces are configured via `workspace.yml`:
+Workspaces are configured via `workspace.yml` (workspace ID is auto-generated):
 
 ```yaml
 version: "1.0"
+
 workspace:
-  id: "${WORKSPACE_ID}"
   name: "My Workspace"
   description: "AI agent workspace"
-
-supervisor:
-  model: "claude-4-sonnet-20250514"
-  prompts:
-    system: "You are the WorkspaceSupervisor..."
-    intent: "Coordinate agents to achieve..."
-    evaluation: "Mark complete when..."
 
 agents:
   my-agent:
@@ -264,141 +212,112 @@ jobs:
       agents:
         - id: "my-agent"
           input_source: "signal"
-
-runtime:
-  server:
-    port: 8080
-    host: "localhost"
-```
-
-## Creating Custom Agents
-
-```typescript
-// agents/my-agent.ts
-import { BaseAgent } from "atlas/core/agents/base-agent.ts";
-import { AgentRegistry } from "atlas/core/agent-registry.ts";
-
-export class MyAgent extends BaseAgent {
-  name() {
-    return "MyAgent";
-  }
-  purpose() {
-    return "Performs specific task";
-  }
-
-  async *invokeStream(message: string) {
-    // Your agent logic here
-    const response = await this.generateLLM(
-      "claude-4-sonnet-20250514",
-      this.prompts.system,
-      message,
-    );
-    yield response;
-  }
-}
-
-// Register the agent
-AgentRegistry.register("my", MyAgent);
 ```
 
 ## Architecture
 
+Atlas uses a modern daemon-based architecture:
+
 ```
-┌─────────────────────────────────────────────┐
-│            Workspace Server (HTTP)           │
-├─────────────────────────────────────────────┤
-│            WorkspaceRuntime (FSM)           │
-├─────────────────────────────────────────────┤
-│         WorkspaceSupervisor (Worker)        │
-│                     ↓                       │
-│  ┌────────────────────────────────────┐    │
-│  │    SessionSupervisor (Worker)      │    │
-│  │              ↓                     │    │
-│  │  ┌─────────┐ ┌─────────┐ ┌─────────┐  │
-│  │  │ Agent 1 │ │ Agent 2 │ │ Agent 3 │  │
-│  │  │(Worker) │ │(Worker) │ │(Worker) │  │
-│  │  └─────────┘ └─────────┘ └─────────┘  │
-│  └────────────────────────────────────┘    │
-└─────────────────────────────────────────────┘
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Atlas CLI     │───▶│  Atlas Daemon   │───▶│ Workspace Mgr   │
+│  (Commands)     │    │   (HTTP API)    │    │ (KV Storage)    │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+                                │
+                                ▼
+                       ┌─────────────────┐
+                       │ Workspace       │
+                       │ Runtime         │
+                       │ (Web Workers)   │
+                       └─────────────────┘
 ```
 
-### Key Components
+### Key Benefits
 
-- **WorkspaceServer** - HTTP server for signals and monitoring
-- **WorkspaceRuntime** - Orchestrates supervisor and sessions
-- **WorkspaceSupervisor** - AI-powered coordinator with global view
-- **SessionSupervisor** - Manages individual signal processing sessions
-- **Agents** - Isolated workers that execute specific tasks
-- **BroadcastChannels** - Inter-worker communication
+- **Config Caching**: Workspace configurations loaded once and cached with SHA-256 hashing
+- **No File I/O at Signal Time**: Secure and performant signal processing
+- **Unified API**: All CLI commands route through daemon API
+- **Persistent State**: Workspace registrations survive daemon restarts
+- **Auto-Discovery**: Automatic workspace detection and import
 
 ## Examples
 
-### Telephone Game
+Explore example workspaces in `examples/workspaces/`:
 
-Demonstrates agent chaining where messages transform through multiple agents:
+- **[telephone](examples/workspaces/telephone/)** - Multi-agent telephone game with provider
+  diversity
+- **[k8s-assistant](examples/workspaces/k8s-assistant/)** - Kubernetes management with real-time
+  monitoring
+- **[playwright-mcp](examples/workspaces/playwright-mcp/)** - Web automation via MCP integration
+- **[multi-purpose-dev](examples/workspaces/multi-purpose-dev/)** - Comprehensive development
+  workspace
 
-```bash
-cd examples/workspaces/telephone
-# Add your ANTHROPIC_API_KEY to .env file first
-deno task atlas workspace serve          # Terminal 1
-curl -X POST http://localhost:8080/telephone -d '{"message": "The cat sat on the mat"}' # Terminal 2
-```
+Each workspace includes:
 
-**What happens:**
-
-1. **Mishearing Agent** - Introduces phonetic errors and mishearing
-2. **Embellishment Agent** - Adds creative details and context
-3. **Reinterpretation Agent** - Dramatically transforms the meaning
-
-Your message gets hilariously transformed through this chain!
-
-**Sample Configuration:**
-
-```yaml
-# workspace.yml
-jobs:
-  telephone:
-    triggers:
-      - signal: "telephone-message"
-        condition: {
-          "and": [{ "var": "message" }, { ">": [{ "length": { "var": "message" } }, 0] }],
-        }
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "mishearing-agent"
-          input_source: "signal"
-        - id: "embellishment-agent"
-          input_source: "previous"
-        - id: "reinterpretation-agent"
-          input_source: "previous"
-```
-
-### More Examples Coming Soon
-
-- Code Review Assistant
-- Documentation Generator
-- Test Suite Runner
-- Deployment Pipeline
+- Complete `workspace.yml` configuration
+- Agent definitions and prompts
+- Signal and job specifications
+- Setup and usage instructions
 
 ## Development
 
-### Running Tests
+### Running from Source
 
 ```bash
-deno test src/cli/tests/
+# Start daemon
+deno task atlas daemon start
+
+# Run interactive mode
+deno task atlas
+
+# Run specific commands
+deno task atlas ps
+deno task atlas signal trigger test
 ```
 
-### Code Style
+### Testing
 
 ```bash
+# Run all tests
+deno test --allow-all
+
+# Run with type checking
+deno check src/cli.tsx && deno test --allow-all
+
+# Format code
 deno fmt
-deno lint
 ```
+
+### Architecture Documentation
+
+See [`CLAUDE.md`](CLAUDE.md) for comprehensive development guidelines and architecture details.
 
 ## Troubleshooting
 
-- **"No workspace.yml found"** - Ensure you're in a workspace directory
-- **"Cannot connect to server"** - Run `atlas workspace serve` first
-- **"Agent not found"** - Check agent paths in workspace.yml
-- **API errors** - Verify your Anthropic API key in .env
+### Common Issues
+
+1. **Daemon not running**: Use `atlas daemon start` to start the daemon
+2. **Workspace not found**: Use `atlas` to see registered workspaces
+3. **Signal failures**: Check workspace configuration with `atlas config validate`
+4. **Permission errors**: Ensure proper file permissions in workspace directory
+
+### Debug Mode
+
+```bash
+# Enable verbose logging
+ATLAS_LOG_LEVEL=debug atlas daemon start
+
+# Check daemon logs
+atlas daemon logs
+```
+
+### Getting Help
+
+- Use `atlas --help` for command reference
+- Use `help` command in interactive TUI
+- Check [`CLAUDE.md`](CLAUDE.md) for development guidelines
+- View example workspaces for configuration patterns
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
