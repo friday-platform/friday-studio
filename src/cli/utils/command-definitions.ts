@@ -33,6 +33,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "View workspace agents",
   },
   {
+    command: "/job",
+    description: "View workspace jobs",
+  },
+  {
     command: "/library",
     description: "View workspace library",
   },

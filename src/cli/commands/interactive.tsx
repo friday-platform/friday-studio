@@ -20,10 +20,12 @@ import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { SignalSelection } from "../components/signal-selection.tsx";
 import { SessionSelection } from "../components/session-selection.tsx";
 import { AgentSelection } from "../components/agent-selection.tsx";
+import { JobSelection } from "../components/job-selection.tsx";
 import { SignalDetails } from "../components/signal-details.tsx";
 import { SignalActionSelection } from "../components/signal-action-selection.tsx";
 import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
+import { AgentDetails } from "../components/agent-details.tsx";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
@@ -418,6 +420,7 @@ export default function InteractiveCommand() {
   const [showSignalSelection, setShowSignalSelection] = useState(false);
   const [showSessionSelection, setShowSessionSelection] = useState(false);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
+  const [showJobSelection, setShowJobSelection] = useState(false);
   const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
   const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
   const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
@@ -431,6 +434,7 @@ export default function InteractiveCommand() {
     | "signals-select"
     | "agents-select"
     | "sessions-select"
+    | "jobs-select"
     | null
   >(null);
   const { stdout } = useStdout();
@@ -681,6 +685,10 @@ export default function InteractiveCommand() {
         setCurrentSelectionWorkspace(workspaceId);
         setShowSessionSelection(true);
         break;
+      case "jobs-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowJobSelection(true);
+        break;
       case "signals-list":
         await handleWorkspaceSelectForSignalsList(workspaceId);
         break;
@@ -834,11 +842,39 @@ export default function InteractiveCommand() {
   // Handle agent selection
   const handleAgentSelect = (agentId: string) => {
     setShowAgentSelection(false);
-    setCurrentSelectionWorkspace(null);
+
+    const workspaceId = currentSelectionWorkspace;
+    if (!workspaceId) {
+      addOutputEntry({
+        id: `agent-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      return;
+    }
+
+    // Add agent details to output buffer
     addOutputEntry({
-      id: `agent-selected-${Date.now()}`,
-      component: <Text>Selected agent: {agentId}</Text>,
+      id: `agent-details-${Date.now()}`,
+      component: <AgentDetails workspaceId={workspaceId} agentId={agentId} />,
     });
+
+    // Clear workspace selection context
+    setCurrentSelectionWorkspace(null);
+  };
+
+  // Handle job selection
+  const handleJobSelect = (jobName: string) => {
+    setShowJobSelection(false);
+
+    // Add job selection to output buffer
+    addOutputEntry({
+      id: `job-selected-${Date.now()}`,
+      component: <Text>Selected job: {jobName}</Text>,
+    });
+
+    // Clear workspace selection context
+    setCurrentSelectionWorkspace(null);
   };
 
   // Handle workspace selection for sessions
@@ -974,6 +1010,18 @@ export default function InteractiveCommand() {
 
     if (parsed.command === "agent" && parsed.args.length === 0) {
       setWorkspaceSelectionContext("agents-select");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "agents") {
+      setWorkspaceSelectionContext("agents-select");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "job") {
+      setWorkspaceSelectionContext("jobs-select");
       setShowAgentWorkspaceSelection(true);
       return;
     }
@@ -1151,6 +1199,17 @@ export default function InteractiveCommand() {
                   setCurrentSelectionWorkspace(null);
                 }}
                 onAgentSelect={handleAgentSelect}
+              />
+            )
+            : showJobSelection && currentSelectionWorkspace
+            ? (
+              <JobSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowJobSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onJobSelect={handleJobSelect}
               />
             )
             : showSignalActionSelection && currentSelectedSignal

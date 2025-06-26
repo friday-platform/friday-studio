@@ -4,49 +4,40 @@ import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
 
-interface AgentSelectionProps {
+interface JobSelectionProps {
   workspaceId: string;
   onEscape: () => void;
-  onAgentSelect: (agentId: string) => void;
+  onJobSelect: (jobName: string) => void;
 }
 
-interface AgentEntry {
-  id: string;
+interface JobEntry {
   name: string;
-  type?: string;
-  purpose?: string;
+  description?: string;
 }
 
-export const AgentSelection = ({
+export const JobSelection = ({
   workspaceId,
   onEscape,
-  onAgentSelect,
-}: AgentSelectionProps) => {
-  const [agents, setAgents] = useState<AgentEntry[]>([]);
+  onJobSelect,
+}: JobSelectionProps) => {
+  const [jobs, setJobs] = useState<JobEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   useEffect(() => {
-    const loadAgents = async () => {
+    const loadJobs = async () => {
       try {
         if (await checkDaemonRunning()) {
           const client = getDaemonClient();
 
-          // Use daemon API to get agents directly
-          const agentList = await client.listAgents(workspaceId);
+          // Use daemon API to get jobs directly
+          const jobList = await client.listJobs(workspaceId);
 
-          const agents = agentList.map((agent) => ({
-            id: agent.id,
-            name: agent.id, // Use ID as name since daemon API doesn't include name
-            type: agent.type,
-            purpose: agent.purpose,
-          }));
-
-          setAgents(agents);
+          setJobs(jobList);
         } else {
-          setAgents([]);
-          setError("Daemon not running. Use 'atlas daemon start' to enable agent management.");
+          setJobs([]);
+          setError("Daemon not running. Use 'atlas daemon start' to enable job management.");
         }
         setError("");
       } catch (err) {
@@ -55,7 +46,7 @@ export const AgentSelection = ({
         setLoading(false);
       }
     };
-    loadAgents();
+    loadJobs();
   }, [workspaceId]);
 
   // Handle escape key
@@ -70,7 +61,7 @@ export const AgentSelection = ({
     return (
       <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
         <Box borderStyle="round" borderColor="gray" paddingX={1}>
-          <Text dimColor>Loading agents...</Text>
+          <Text dimColor>Loading jobs...</Text>
         </Box>
       </Box>
     );
@@ -86,25 +77,25 @@ export const AgentSelection = ({
     );
   }
 
-  if (!agents || agents.length === 0) {
+  if (!jobs || jobs.length === 0) {
     return (
       <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
         <Box borderStyle="round" borderColor="gray" paddingX={1}>
-          <Text color="yellow">No agents found</Text>
+          <Text color="yellow">No jobs found</Text>
         </Box>
       </Box>
     );
   }
 
-  // Create options for Select component with unique keys
-  const options = agents.map((agent, index) => ({
-    key: `agent-${agent.id}-${index}`,
-    label: agent.type ? `${agent.name} (${agent.type})` : agent.name,
-    value: agent.id,
+  // Create options for Select component
+  const options = jobs.map((job) => ({
+    key: `job-${job.name}`,
+    label: job.description ? `${job.name} - ${job.description}` : job.name,
+    value: job.name,
   }));
 
   const handleSelect = (value: string) => {
-    onAgentSelect(value);
+    onJobSelect(value);
   };
 
   return (
