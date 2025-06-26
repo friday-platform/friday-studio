@@ -1,5 +1,6 @@
 import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
 import { ConfigLoader } from "../../../core/config-loader.ts";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceEntry } from "../../../core/workspace-registry-types.ts";
 import { errorOutput, infoOutput } from "../../utils/output.ts";
@@ -155,7 +156,8 @@ async function validateSignalInWorkspaces(
       const originalCwd = Deno.cwd();
       Deno.chdir(workspace.path);
 
-      const configLoader = new ConfigLoader();
+      const adapter = new FileSystemConfigurationAdapter();
+      const configLoader = new ConfigLoader(adapter);
       const config = await configLoader.load();
       const signals = config.workspace.signals as Record<string, unknown>;
 

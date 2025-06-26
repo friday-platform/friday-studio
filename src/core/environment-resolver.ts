@@ -5,7 +5,7 @@
 
 import { z } from "zod/v4";
 import { parse as parseEnvFile } from "@std/dotenv";
-import type { EnvironmentVariable } from "./config-loader.ts";
+import type { EnvironmentVariable } from "@atlas/types";
 
 export class EnvironmentResolutionError extends Error {
   constructor(

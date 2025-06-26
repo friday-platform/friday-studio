@@ -97,7 +97,7 @@ Deno.test("WorkspaceRuntimeRegistry", async (t) => {
   await t.step("setup", () => {
     // Get fresh registry instance for each test
     registry = WorkspaceRuntimeRegistry.getInstance();
-    
+
     // Clear any existing registrations from other tests
     const workspaceIds = registry.getWorkspaceIds();
     for (const id of workspaceIds) {
@@ -157,7 +157,9 @@ Deno.test("WorkspaceRuntimeRegistry", async (t) => {
   });
 
   await t.step("should process signal through runtime", async () => {
-    const result = await registry.processSignal("test-workspace-1", "test-signal", { data: "test" });
+    const result = await registry.processSignal("test-workspace-1", "test-signal", {
+      data: "test",
+    });
 
     assertEquals(typeof result.sessionId, "string");
     assertEquals(result.sessionId.startsWith("session-"), true);

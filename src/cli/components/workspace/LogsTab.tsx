@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { formatLog, WorkspaceLogReader } from "../../utils/log-reader.ts";
 import type { LogEntry } from "../../../utils/logger.ts";
 
 interface LogsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }
 
 export const LogsTab = ({ config }: LogsTabProps) => {
@@ -127,7 +127,14 @@ export const LogsTab = ({ config }: LogsTabProps) => {
   return (
     <Box flexDirection="column" height="100%" width="100%">
       {/* Toolbar */}
-      <Box paddingX={2} paddingY={1} flexShrink={0} borderBottom borderColor="gray" borderDimColor>
+      <Box
+        paddingX={2}
+        paddingY={1}
+        flexShrink={0}
+        borderBottom
+        borderColor="gray"
+        borderDimColor
+      >
         <Box flexDirection="row" gap={2}>
           {/* Log Level Segment Controller */}
           <Box
@@ -174,11 +181,7 @@ export const LogsTab = ({ config }: LogsTabProps) => {
 
       {/* Scrollable logs container */}
       <Box flexGrow={1} overflow="hidden">
-        <Box
-          flexDirection="column"
-          flexGrow={1}
-          marginTop={scrollOffset}
-        >
+        <Box flexDirection="column" flexGrow={1} marginTop={scrollOffset}>
           {logs.map((log, index) => (
             <Box key={index} flexShrink={0}>
               <Text>{log}</Text>

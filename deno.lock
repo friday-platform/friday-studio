@@ -36,6 +36,8 @@
     "npm:openapi-fetch@0.14": "0.14.0",
     "npm:openapi-typescript@^7.8.0": "7.8.0_typescript@5.8.3",
     "npm:react@^18.3.1": "18.3.1",
+    "npm:xdg-portable@10.6.0": "10.6.0",
+    "npm:xdg-portable@^10.6.0": "10.6.0",
     "npm:xstate@^5.18.0": "5.20.0",
     "npm:yargs@18": "18.0.0",
     "npm:zod@^3.25.62": "3.25.67"
@@ -615,6 +617,11 @@
     "fresh@2.0.0": {
       "integrity": "sha512-Rx/WycZ60HOaqLKAi6cHRKKI7zxWbJ31MhntmtwMoaTeF7XFH9hhBp8vITaMidfljRQ6eYWCKkaTK+ykVJHP2A=="
     },
+    "fsevents@2.3.3": {
+      "integrity": "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==",
+      "os": ["darwin"],
+      "scripts": true
+    },
     "fullscreen-ink@0.0.2_@types+react@18.3.23_react@18.3.1": {
       "integrity": "sha512-5AiV01q8EfOvG2BrYlmNQtUxDSEBf4p8EN+3R0GRvdDKSh2sphUE+7UKTMMq4qMWq1XuhcJB7TGR8O+UD5VyQw==",
       "dependencies": [
@@ -941,6 +948,12 @@
         "yargs-parser@21.1.1"
       ],
       "bin": true
+    },
+    "os-paths@7.4.0": {
+      "integrity": "sha512-Ux1J4NUqC6tZayBqLN1kUlDAEvLiQlli/53sSddU4IN+h+3xxnv2HmRSMpVSvr1hvJzotfMs3ERvETGK+f4OwA==",
+      "optionalDependencies": [
+        "fsevents"
+      ]
     },
     "parse-json@8.3.0": {
       "integrity": "sha512-ybiGyvspI+fAoRQbIPRddCcSTV9/LsJbf0e/S85VLowVGzRmokfneg2kwVW/KU5rOXrPSbF1qAKPMgNTqqROQQ==",
@@ -1278,6 +1291,15 @@
     },
     "ws@8.18.2": {
       "integrity": "sha512-DMricUmwGZUVr++AEAe2uiVM7UoO9MAVZMDu05UQOaUII0lp+zOzLLU4Xqh/JvTqklB1T4uELaaPBKyjE1r4fQ=="
+    },
+    "xdg-portable@10.6.0": {
+      "integrity": "sha512-xrcqhWDvtZ7WLmt8G4f3hHy37iK7D2idtosRgkeiSPZEPmBShp0VfmRBLWAPC6zLF48APJ21yfea+RfQMF4/Aw==",
+      "dependencies": [
+        "os-paths"
+      ],
+      "optionalDependencies": [
+        "fsevents"
+      ]
     },
     "xstate@5.20.0": {
       "integrity": "sha512-lFQ0fLwVa0OMZnjNP8zUkt2fwIS85ZBNPvxE41APVYhYj0++aTssgmsnTAiBHdKYbgnd6+L8DRTZ9jPZAFPuyw=="

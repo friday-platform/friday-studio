@@ -1,10 +1,8 @@
 import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
-import {
-  ConfigLoader,
-  type NewWorkspaceConfig,
-  type WorkspaceAgentConfig,
-} from "../../../core/config-loader.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
+import type { WorkspaceAgentConfig, WorkspaceConfig } from "@atlas/types";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 interface DescribeArgs {
@@ -138,11 +136,12 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 // Helper function to load workspace configuration
 async function loadWorkspaceConfig(
   workspacePath: string,
-): Promise<NewWorkspaceConfig> {
+): Promise<WorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     return mergedConfig.workspace;
   } finally {
@@ -188,11 +187,13 @@ function AgentDetailCommand({ agent }: { agent: AgentDetail }) {
           <Text></Text>
           <Text bold>Tools:</Text>
           {Array.isArray(agent.tools)
-            ? agent.tools.map((tool, i) => (
-              <Box key={i} marginLeft={1}>
-                <Text>• {tool}</Text>
-              </Box>
-            ))
+            ? (
+              agent.tools.map((tool, i) => (
+                <Box key={i} marginLeft={1}>
+                  <Text>• {tool}</Text>
+                </Box>
+              ))
+            )
             : (
               <>
                 {agent.tools.mcp && agent.tools.mcp.length > 0 && (

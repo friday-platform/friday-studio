@@ -1,0 +1,13 @@
+{
+  "name": "@atlas/storage",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./config": "./config/mod.ts"
+  },
+  "tasks": {
+    "test": "deno test --allow-all tests/",
+    "test:watch": "deno test --allow-all --watch tests/",
+    "test:coverage": "deno test --allow-all --coverage=coverage tests/ && deno coverage coverage/"
+  }
+}

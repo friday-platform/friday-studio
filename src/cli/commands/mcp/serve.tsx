@@ -45,9 +45,11 @@ export const handler = async (_argv: McpServeArgs): Promise<void> => {
       "../../../core/workspace-runtime-registry.ts"
     );
     const { ConfigLoader } = await import("../../../core/config-loader.ts");
+    const { FileSystemConfigurationAdapter } = await import("@atlas/storage");
 
     // Load Atlas configuration
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     const atlasConfig = mergedConfig.atlas;
 

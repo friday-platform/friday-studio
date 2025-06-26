@@ -66,8 +66,13 @@
     "hono/http-exception": "jsr:@hono/hono@^4.6.9/http-exception",
     "hono/streaming": "jsr:@hono/hono@^4.6.9/streaming",
     "eventsource-parser": "npm:eventsource-parser@^3.0.1",
-    "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts"
+    "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts",
+    "@atlas/storage": "./packages/storage/mod.ts",
+    "@atlas/types": "./packages/types/mod.ts"
   },
+  "workspace": [
+    "packages/*"
+  ],
   "fmt": {
     "lineWidth": 100
   },

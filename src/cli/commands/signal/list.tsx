@@ -1,10 +1,8 @@
 import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
-import {
-  ConfigLoader,
-  NewWorkspaceConfig,
-  type WorkspaceSignalConfig,
-} from "../../../core/config-loader.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig, WorkspaceSignalConfig } from "@atlas/types";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
@@ -78,7 +76,7 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 // Helper function to resolve workspace and load config
 async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   workspace: { path: string; id: string; name: string };
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }> {
   const registry = getWorkspaceRegistry();
   await registry.initialize();
@@ -127,7 +125,8 @@ async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     return { workspace: workspaceInfo, config: mergedConfig.workspace };
   } finally {

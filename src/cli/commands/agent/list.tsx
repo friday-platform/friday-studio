@@ -1,6 +1,8 @@
 import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
-import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 interface ListArgs {
@@ -140,11 +142,12 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 // Helper function to load workspace configuration
 async function loadWorkspaceConfig(
   workspacePath: string,
-): Promise<NewWorkspaceConfig> {
+): Promise<WorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     return mergedConfig.workspace;
   } finally {

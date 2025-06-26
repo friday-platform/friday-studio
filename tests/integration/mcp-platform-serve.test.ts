@@ -44,7 +44,7 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     });
 
     mcpProcess = command.spawn();
-    
+
     // Set up stream readers/writers
     processStdout = mcpProcess.stdout.getReader();
     processStderr = mcpProcess.stderr.getReader();
@@ -98,11 +98,11 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     );
 
     assertExists(response);
-    
+
     // Parse JSON-RPC response
     const lines = response.trim().split("\n");
     const responseObj = JSON.parse(lines[0]);
-    
+
     assertEquals(responseObj.jsonrpc, "2.0");
     assertEquals(responseObj.id, 1);
     assertExists(responseObj.result);
@@ -140,15 +140,15 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     );
 
     const responseObj = JSON.parse(response.trim().split("\n")[0]);
-    
+
     assertEquals(responseObj.jsonrpc, "2.0");
     assertEquals(responseObj.id, 2);
     assertExists(responseObj.result);
     assertExists(responseObj.result.tools);
-    
+
     const tools = responseObj.result.tools;
     const toolNames = tools.map((tool: any) => tool.name);
-    
+
     expect(toolNames).toContain("workspace_list");
     expect(toolNames).toContain("workspace_describe");
     expect(toolNames).toContain("workspace_trigger_job");
@@ -190,7 +190,7 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     );
 
     const responseObj = JSON.parse(response.trim().split("\n")[0]);
-    
+
     assertEquals(responseObj.jsonrpc, "2.0");
     assertEquals(responseObj.id, 3);
     assertExists(responseObj.result);
@@ -198,7 +198,7 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     assertEquals(Array.isArray(responseObj.result.content), true);
     assertEquals(responseObj.result.content.length, 1);
     assertEquals(responseObj.result.content[0].type, "text");
-    
+
     // Parse the workspace list response
     const workspaceData = JSON.parse(responseObj.result.content[0].text);
     assertExists(workspaceData.workspaces);
@@ -206,7 +206,7 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     assertEquals(workspaceData.total, workspaceData.workspaces.length);
     assertEquals(workspaceData.source, "active_runtimes");
     assertExists(workspaceData.timestamp);
-    
+
     // Initially should be empty since no workspaces are running
     assertEquals(workspaceData.total, 0);
   });
@@ -246,10 +246,10 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     );
 
     const responseObj = JSON.parse(response.trim().split("\n")[0]);
-    
+
     assertEquals(responseObj.jsonrpc, "2.0");
     assertEquals(responseObj.id, 4);
-    
+
     // Should return an error for nonexistent workspace
     assertExists(responseObj.error);
     expect(responseObj.error.message).toContain("not found");
@@ -285,7 +285,7 @@ Deno.test("MCP Platform Serve Command - CLI Integration", async (t) => {
     );
 
     const responseObj = JSON.parse(response.trim().split("\n")[0]);
-    
+
     assertEquals(responseObj.jsonrpc, "2.0");
     assertEquals(responseObj.id, 5);
     assertExists(responseObj.result);

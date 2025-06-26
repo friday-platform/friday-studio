@@ -3,10 +3,9 @@
  * Extends Sara's MCP manager with comprehensive credential management
  */
 
-import { MCPManager as BaseMCPManager } from "../agents/mcp/mcp-manager.ts";
-import type { MCPServerConfig } from "../agents/mcp/mcp-manager.ts";
+import { MCPManager as BaseMCPManager, type MCPServerConfig } from "../agents/mcp/mcp-manager.ts";
 import { EnvironmentResolver } from "../environment-resolver.ts";
-import type { EnvironmentVariable } from "../config-loader.ts";
+import type { EnvironmentVariable } from "@atlas/types";
 import { logger } from "../../utils/logger.ts";
 
 export interface EnhancedMCPServerConfig extends Omit<MCPServerConfig, "transport"> {

@@ -178,7 +178,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
     try {
       // Load workspace configuration
       const { ConfigLoader } = await import("../../core/config-loader.ts");
-      const configLoader = new ConfigLoader();
+      const { FileSystemConfigurationAdapter } = await import("@atlas/storage");
+      const adapter = new FileSystemConfigurationAdapter();
+      const configLoader = new ConfigLoader(adapter);
       const mergedConfig = await configLoader.load();
 
       // Build workspace context
@@ -802,7 +804,9 @@ const TUICommand: React.FC<TUICommandProps> = ({ flags = {} }) => {
 
       // Load current workspace config
       const { ConfigLoader } = await import("../../core/config-loader.ts");
-      const configLoader = new ConfigLoader();
+      const { FileSystemConfigurationAdapter } = await import("@atlas/storage");
+      const adapter = new FileSystemConfigurationAdapter();
+      const configLoader = new ConfigLoader(adapter);
       const mergedConfig = await configLoader.load();
 
       const validation = await configAssistant.validateWorkspaceConfig(

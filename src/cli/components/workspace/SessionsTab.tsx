@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { StatusBadge } from "../StatusBadge.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
 
 interface SessionsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }
 
 interface SessionData {

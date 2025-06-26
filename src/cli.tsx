@@ -29,4 +29,4 @@ const cli = yargs(Deno.args)
 addExamples(cli);
 
 // Parse the commands
-const argv = await cli.parseAsync();
+await cli.parseAsync();

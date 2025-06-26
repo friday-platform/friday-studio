@@ -1,5 +1,7 @@
 import { exists } from "@std/fs";
-import { ConfigLoader, type NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { errorOutput, infoOutput, warningOutput } from "../../utils/output.ts";
 import { isCancel, spinner, text } from "../../utils/prompts.tsx";
@@ -54,7 +56,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     // Get message either from flag or prompt
     let message = argv.message;
     if (!message) {
-      message = await text({
+      message = (await text({
         message: `Enter message to send to ${argv.name}:`,
         placeholder: "Hello, agent!",
         validate: (value) => {
@@ -62,7 +64,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
             return "Message cannot be empty";
           }
         },
-      }) as string;
+      })) as string;
 
       if (isCancel(message)) {
         infoOutput("Agent test cancelled");
@@ -98,7 +100,9 @@ export const handler = async (argv: TestArgs): Promise<void> => {
       infoOutput("Use 'atlas signal trigger' to test agents in a workflow");
       infoOutput(`\nTo test '${argv.name}', you can:`);
       infoOutput(`1. Configure a signal that uses this agent`);
-      infoOutput(`2. Run: atlas signal trigger <signal-name> --data '{"message": "${message}"}'`);
+      infoOutput(
+        `2. Run: atlas signal trigger <signal-name> --data '{"message": "${message}"}'`,
+      );
     }
 
     Deno.exit(0);
@@ -119,8 +123,8 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find by ID or name in registry
-    const workspace = await registry.findById(workspaceId) ||
-      await registry.findByName(workspaceId);
+    const workspace = (await registry.findById(workspaceId)) ||
+      (await registry.findByName(workspaceId));
 
     if (!workspace) {
       throw new Error(
@@ -165,11 +169,14 @@ async function resolveWorkspace(workspaceId?: string): Promise<{
 }
 
 // Helper function to load workspace configuration
-async function loadWorkspaceConfig(workspacePath: string): Promise<NewWorkspaceConfig> {
+async function loadWorkspaceConfig(
+  workspacePath: string,
+): Promise<WorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     return mergedConfig.workspace;
   } finally {

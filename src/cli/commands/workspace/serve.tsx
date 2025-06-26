@@ -2,6 +2,7 @@ import { load } from "@std/dotenv";
 import { exists } from "@std/fs";
 import { spinner } from "../../utils/prompts.tsx";
 import { ConfigLoader } from "../../../core/config-loader.ts";
+import { FileSystemConfigurationAdapter } from "@atlas/storage";
 import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { WorkspaceRuntimeRegistry } from "../../../core/workspace-runtime-registry.ts";
@@ -166,7 +167,8 @@ async function startForeground(workspacePath: string, argv: ServeArgs): Promise<
   await load({ export: true });
 
   // Load configuration
-  const configLoader = new ConfigLoader();
+  const adapter = new FileSystemConfigurationAdapter();
+  const configLoader = new ConfigLoader(adapter);
   const mergedConfig = await configLoader.load();
 
   // Register or update workspace in registry

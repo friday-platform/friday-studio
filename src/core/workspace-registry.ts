@@ -10,7 +10,8 @@ import {
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
+import { WorkspaceConfigSchema } from "./config-loader.ts";
 
 export class WorkspaceRegistryManager {
   private registryPath: string;
@@ -498,10 +499,10 @@ export class WorkspaceRegistryManager {
   // MCP Interface Methods
   async listWorkspaces(): Promise<Array<{ id: string; name: string; description?: string }>> {
     const workspaces = await this.listAll();
-    return workspaces.map(w => ({
+    return workspaces.map((w) => ({
       id: w.id,
       name: w.name,
-      description: w.metadata?.description
+      description: w.metadata?.description,
     }));
   }
 
@@ -513,10 +514,10 @@ export class WorkspaceRegistryManager {
   }): Promise<{ id: string; name: string }> {
     // Create a new workspace directory in the current working directory
     const workspacePath = join(Deno.cwd(), config.name);
-    
+
     // Create directory if it doesn't exist
     await ensureDir(workspacePath);
-    
+
     // Create basic workspace.yml file
     const workspaceConfig = {
       workspace: {
@@ -524,21 +525,21 @@ export class WorkspaceRegistryManager {
         description: config.description,
       },
       jobs: {},
-      ...(config.config || {})
+      ...(config.config || {}),
     };
-    
+
     const workspaceYmlPath = join(workspacePath, "workspace.yml");
     await Deno.writeTextFile(workspaceYmlPath, yaml.stringify(workspaceConfig));
-    
+
     // Register the workspace
     const entry = await this.register(workspacePath, {
       name: config.name,
-      description: config.description
+      description: config.description,
     });
-    
+
     return {
       id: entry.id,
-      name: entry.name
+      name: entry.name,
     };
   }
 
@@ -592,12 +593,12 @@ export class WorkspaceRegistryManager {
       status: workspace.status,
       createdAt: workspace.createdAt,
       lastSeen: workspace.lastSeen,
-      metadata: workspace.metadata
+      metadata: workspace.metadata,
     };
   }
 
   // Convenience method to get workspace configuration by slug
-  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<NewWorkspaceConfig | null> {
+  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<WorkspaceConfig | null> {
     if (!this.registry) await this.initialize();
 
     // Find workspace by ID or name
@@ -616,7 +617,7 @@ export class WorkspaceRegistryManager {
       const rawConfig = yaml.parse(workspaceContent);
 
       // Validate with Zod schema
-      const config = NewWorkspaceConfigSchema.parse(rawConfig);
+      const config = WorkspaceConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof z.ZodError) {

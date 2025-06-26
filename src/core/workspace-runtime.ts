@@ -603,7 +603,7 @@ export class WorkspaceRuntime {
       const jobConfig = jobs[jobName];
       const triggers = (jobConfig as any)?.triggers || [];
       const hasMatchingTrigger = triggers.some((trigger: any) => trigger.signal === signalName);
-      
+
       if (hasMatchingTrigger) {
         const signal = { id: signalName, name: signalName, ...(signalConfig as object) } as any;
         const result = await this.processSignal(signal, payload || {});
@@ -865,7 +865,9 @@ const workspaceRuntimeMachine = setup({
 
       // Load merged configuration (atlas.yml + workspace.yml)
       const { ConfigLoader } = await import("./config-loader.ts");
-      const configLoader = new ConfigLoader();
+      const { FileSystemConfigurationAdapter } = await import("../../packages/storage/mod.ts");
+      const adapter = new FileSystemConfigurationAdapter();
+      const configLoader = new ConfigLoader(adapter);
       const mergedConfig = await configLoader.load();
 
       // Memory configuration is already loaded in mergedConfig.atlas
