@@ -494,6 +494,7 @@ export class WorkspaceRegistryManager {
 
     return imported;
   }
+
   // Convenience method to get workspace configuration by slug
   async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<NewWorkspaceConfig | null> {
     if (!this.registry) await this.initialize();

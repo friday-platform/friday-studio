@@ -32,7 +32,7 @@ export function builder(yargs: YargsInstance) {
   return yargs
     .example("$0", "Launch interactive Atlas interface")
     .epilogue(
-      "The interactive interface provides a user-friendly way to manage workspaces",
+      "The interactive interface provides a user-friendly way to manage workspaces"
     );
 }
 
@@ -133,7 +133,6 @@ interface CommandDefinition {
   name: string;
   description: string;
   usage: string;
-<<<<<<< HEAD
   handler: (args: string[], context: CommandContext) => OutputEntry[];
 }
 
@@ -271,7 +270,6 @@ const handleConfigCommand = (args: string[]): OutputEntry[] => {
         <Text>Config {subcommand} executed (placeholder implementation)</Text>
       ),
     },
-<<<<<<< HEAD
   ];
 };
 
@@ -914,7 +912,8 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
   ];
 
   // Get all available suggestions (commands only)
-  const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
+  const getAllSuggestions = () =>
+    getAllSuggestionsWithDescriptions().map((item) => item.command);
 
   // Get filtered suggestions based on current input
   const getFilteredSuggestions = () => {
@@ -931,12 +930,16 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
     if (showSuggestions) {
       if (key.upArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev <= 0 ? filteredSuggestions.length - 1 : prev - 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev <= 0 ? filteredSuggestions.length - 1 : prev - 1
+        );
         return;
       }
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
-        setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
+        setSelectedSuggestionIndex((prev) =>
+          prev >= filteredSuggestions.length - 1 ? 0 : prev + 1
+        );
         return;
       }
       if (key.return && selectedSuggestionIndex >= 0) {
