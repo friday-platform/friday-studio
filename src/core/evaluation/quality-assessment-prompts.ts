@@ -212,7 +212,7 @@ Never provide assessment without this complete JSON structure.`;
 
 ## SESSION CONTEXT
 **Signal ID**: ${sessionContext.signal.id}
-**Signal Type**: ${sessionContext.signal.type || "unknown"}
+**Signal Type**: ${(sessionContext.signal as any).type || "unknown"}
 **Workspace**: ${sessionContext.workspaceId}
 **Session Objectives**: ${this.formatObjectives(sessionContext)}
 **Execution Strategy**: ${executionPlan.adaptationStrategy}

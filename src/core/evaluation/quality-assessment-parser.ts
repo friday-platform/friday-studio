@@ -448,7 +448,7 @@ export class QualityAssessmentParser {
 
     // Check for unexpected agent evaluations
     for (const evaluatedId of evaluatedAgentIds) {
-      if (!expectedAgentSet.has(evaluatedId)) {
+      if (!expectedAgentSet.has(evaluatedId as string)) {
         warnings.push(`Evaluation provided for unexpected agent: ${evaluatedId}`);
       }
     }
@@ -628,6 +628,8 @@ export class QualityAssessmentParser {
       validationWarnings: validation.warnings.length,
       isValid: validation.isValid,
     });
+    
+    return Promise.resolve();
   }
 
   /**
@@ -642,7 +644,7 @@ export class QualityAssessmentParser {
     if (assessment.confidence >= CONFIDENCE_LEVELS.HIGH.min) {
       return {
         isComplete: assessment.sessionSuccess,
-        nextAction: assessment.nextAction === "complete" ? undefined : assessment.nextAction,
+        nextAction: assessment.nextAction === "complete" ? "continue" : assessment.nextAction,
         feedback: this.formatAssessmentFeedback(assessment),
       };
     }
@@ -652,7 +654,7 @@ export class QualityAssessmentParser {
       const criticalIssues = assessment.qualityIssues.filter((i) => i.severity === "critical");
       return {
         isComplete: assessment.sessionSuccess && criticalIssues.length === 0,
-        nextAction: criticalIssues.length > 0 ? "retry" : assessment.nextAction,
+        nextAction: criticalIssues.length > 0 ? "retry" : (assessment.nextAction === "complete" ? "continue" : assessment.nextAction),
         feedback: this.formatAssessmentFeedback(assessment),
       };
     }

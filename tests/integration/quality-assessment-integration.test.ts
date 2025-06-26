@@ -326,7 +326,7 @@ function createMockSessionContext(overrides: Partial<SessionContext> = {}): Sess
   return {
     sessionId: "test-session-123",
     workspaceId: "test-workspace",
-    signal: { id: "test-signal", type: "manual", payload: { test: "data" } },
+    signal: { id: "test-signal", payload: { test: "data" } } as any,
     payload: { test: "data" },
     availableAgents: [
       {
@@ -415,7 +415,7 @@ Deno.test("Quality Assessment Integration", async (t) => {
     const evaluation = await supervisor.evaluateProgress(results);
 
     assertEquals(evaluation.isComplete, true);
-    assertEquals(evaluation.nextAction, undefined); // "complete" becomes undefined
+    assertEquals(evaluation.nextAction, "continue"); // "complete" becomes "continue"
     assertExists(evaluation.feedback);
     assertEquals(evaluation.feedback?.includes("Assessment (90% confidence)"), true);
   });
@@ -557,7 +557,7 @@ Deno.test("Quality Assessment Integration", async (t) => {
   await t.step("should preserve advanced reasoning path when available", async () => {
     const supervisor = createMockSessionSupervisor();
     const sessionContext = createMockSessionContext({
-      signal: { id: "critical-alert", type: "alert", payload: { severity: "critical" } },
+      signal: { id: "critical-alert", payload: { severity: "critical" } } as any,
     });
     const executionPlan = createMockExecutionPlan();
 

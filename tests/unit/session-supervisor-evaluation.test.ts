@@ -102,7 +102,7 @@ function createMockSessionContext(overrides: Partial<SessionContext> = {}): Sess
   return {
     sessionId: "test-session-123",
     workspaceId: "test-workspace",
-    signal: { id: "test-signal", type: "manual", payload: { test: "data" } },
+    signal: { id: "test-signal", payload: { test: "data" } } as any,
     payload: { test: "data" },
     availableAgents: [
       {
@@ -348,7 +348,7 @@ Deno.test("SessionSupervisor - evaluateProgress - Current Functionality", async 
   await t.step("should use quality critical detection", async () => {
     const supervisor = createMockSessionSupervisor();
     const sessionContext = createMockSessionContext({
-      signal: { id: "critical-error-signal", type: "alert" },
+      signal: { id: "critical-error-signal" } as any,
       payload: { severity: "critical", message: "Production failure detected" },
     });
     const executionPlan = createMockExecutionPlan();
@@ -432,7 +432,12 @@ Deno.test("SessionSupervisor - evaluateProgress - Edge Cases", async (t) => {
     const supervisor = createMockSessionSupervisor();
     const sessionContext = createMockSessionContext();
     const executionPlan = createMockExecutionPlan({
-      phases: [{ agents: [] }], // No agents in plan
+      phases: [{ 
+        id: "phase-1", 
+        name: "Empty Phase", 
+        executionStrategy: "sequential" as const, 
+        agents: [] 
+      }], // No agents in plan
     });
 
     (supervisor as any).sessionContext = sessionContext;

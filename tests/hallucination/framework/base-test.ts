@@ -60,17 +60,17 @@ const CanaryTrapSchema = z.object({
 const TestScenarioSchema = z.object({
   id: z.string(),
   description: z.string(),
-  input: z.record(z.unknown()),
-  context: z.record(z.unknown()),
+  input: z.record(z.string(), z.unknown()),
+  context: z.record(z.string(), z.unknown()),
   canaryTraps: z.array(CanaryTrapSchema).optional(),
   constraints: z.array(z.string()),
-  metadata: z.record(z.unknown()).optional()
+  metadata: z.record(z.string(), z.unknown()).optional()
 });
 
 const ExpectedBehaviorSchema = z.object({
   primaryOutcome: z.string(),
   forbiddenOutcomes: z.array(z.string()),
-  qualityThresholds: z.record(z.number()),
+  qualityThresholds: z.record(z.string(), z.number()),
   consistencyRequirements: z.array(z.string()),
   safetyRequirements: z.array(z.string()).optional()
 });
@@ -79,7 +79,7 @@ const HallucinationDetectorConfigSchema = z.object({
   type: z.nativeEnum(HallucinationDetectorType),
   confidenceThreshold: z.number().min(0).max(1),
   validationRules: z.array(z.string()),
-  customLogic: z.function().optional()
+  customLogic: z.function(z.tuple([]), z.unknown()).optional()
 });
 
 // Core Interfaces
