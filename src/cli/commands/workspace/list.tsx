@@ -1,9 +1,11 @@
 import { Box, render, Text } from "ink";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
 import {
-  WorkspaceEntry,
-  WorkspaceStatus as WSStatus,
-} from "../../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+  type WorkspaceInfo,
+} from "../../utils/daemon-client.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
@@ -27,10 +29,14 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
-    // Get workspaces from registry
-    const registry = getWorkspaceRegistry();
-    await registry.initialize();
-    const workspaces = await registry.listAll();
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
+    }
+
+    // Get workspaces from daemon API
+    const client = getDaemonClient();
+    const workspaces = await client.listWorkspaces();
 
     if (argv.json) {
       // JSON output for scripting
@@ -58,20 +64,16 @@ export const handler = async (argv: ListArgs): Promise<void> => {
   }
 };
 
-function formatWorkspaceForJson(workspace: WorkspaceEntry) {
+function formatWorkspaceForJson(workspace: WorkspaceInfo) {
   return {
     id: workspace.id,
     name: workspace.name,
-    path: workspace.path,
+    description: workspace.description,
     status: workspace.status,
-    port: workspace.port,
-    pid: workspace.pid,
-    configPath: workspace.configPath,
-    metadata: workspace.metadata,
+    path: workspace.path,
+    hasActiveRuntime: workspace.hasActiveRuntime,
     createdAt: workspace.createdAt,
     lastSeen: workspace.lastSeen,
-    startedAt: workspace.startedAt,
-    stoppedAt: workspace.stoppedAt,
   };
 }
 
@@ -79,7 +81,7 @@ function formatWorkspaceForJson(workspace: WorkspaceEntry) {
 function WorkspaceList({
   registeredWorkspaces,
 }: {
-  registeredWorkspaces: WorkspaceEntry[];
+  registeredWorkspaces: WorkspaceInfo[];
 }) {
   const hasRegistered = registeredWorkspaces && registeredWorkspaces.length > 0;
 
@@ -104,29 +106,14 @@ function WorkspaceList({
       : str + " ".repeat(width - str.length);
   };
 
-  // Format uptime from startedAt timestamp
-  const formatUptime = (workspace: WorkspaceEntry): string => {
-    if (workspace.status !== WSStatus.RUNNING || !workspace.startedAt) {
-      return "-";
-    }
-
-    const start = new Date(workspace.startedAt).getTime();
-    const now = Date.now();
-    const ms = now - start;
-
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-
-    if (days > 0) {
-      return `${days}d ${hours % 24}h`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes % 60}m`;
-    } else if (minutes > 0) {
-      return `${minutes}m`;
+  // Format runtime status
+  const formatRuntimeStatus = (workspace: WorkspaceInfo): string => {
+    if (workspace.hasActiveRuntime) {
+      return "Active";
+    } else if (workspace.status === "RUNNING") {
+      return "Running";
     } else {
-      return `${seconds}s`;
+      return "-";
     }
   };
 
@@ -147,8 +134,8 @@ function WorkspaceList({
           {padRight("ID", 30)}
           {padRight("NAME", 50)}
           {padRight("STATUS", 10)}
-          {padRight("PORT", 8)}
-          {padRight("UPTIME", 10)}
+          {padRight("RUNTIME", 10)}
+          {padRight("LAST SEEN", 12)}
         </Text>
       </Box>
       <Box>
@@ -157,14 +144,18 @@ function WorkspaceList({
 
       {/* Table Rows */}
       {registeredWorkspaces.map((workspace, i) => {
-        const statusColor = workspace.status === WSStatus.RUNNING
+        const statusColor = workspace.status === "RUNNING"
           ? "green"
-          : workspace.status === WSStatus.CRASHED
+          : workspace.status === "CRASHED"
           ? "red"
           : "gray";
 
-        const portDisplay = workspace.port ? workspace.port.toString() : "-";
-        const uptimeDisplay = formatUptime(workspace);
+        const runtimeDisplay = formatRuntimeStatus(workspace);
+        const runtimeColor = workspace.hasActiveRuntime ? "green" : "gray";
+
+        // Format last seen time
+        const lastSeenDate = new Date(workspace.lastSeen);
+        const lastSeenDisplay = lastSeenDate.toLocaleDateString();
 
         return (
           <Box key={i}>
@@ -172,8 +163,8 @@ function WorkspaceList({
               <Text color="blue">{padRight(workspace.id, 30)}</Text>
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>
               <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
-              <Text color="cyan">{padRight(portDisplay, 8)}</Text>
-              <Text color="green">{padRight(uptimeDisplay, 10)}</Text>
+              <Text color={runtimeColor}>{padRight(runtimeDisplay, 10)}</Text>
+              <Text color="cyan">{padRight(lastSeenDisplay, 12)}</Text>
             </Text>
           </Box>
         );

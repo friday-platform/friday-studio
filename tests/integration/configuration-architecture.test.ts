@@ -8,7 +8,6 @@
 import { expect } from "@std/expect";
 import { join } from "@std/path";
 import { ConfigLoader } from "../../src/core/config-loader.ts";
-import { FileSystemConfigurationAdapter } from "../../packages/storage/mod.ts";
 
 // Test fixtures
 const validAtlasConfig = `version: "1.0"
@@ -227,8 +226,7 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
 
     // Test atlas config structure
@@ -294,8 +292,7 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
     const workspaceConfig = mergedConfig.workspace;
 
@@ -360,8 +357,7 @@ Deno.test(
       tempDir = await createTestEnvironment();
       Deno.chdir(tempDir);
 
-      const adapter = new FileSystemConfigurationAdapter(tempDir);
-      const configLoader = new ConfigLoader(adapter);
+      const configLoader = new ConfigLoader();
       const mergedConfig = await configLoader.load();
 
       // Verify atlas config is loaded
@@ -439,8 +435,7 @@ Deno.test("Agent type configurations validate correctly", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
 
     // Test workspace agents of different types
@@ -505,8 +500,7 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
 
     // Test that job triggers are loaded from workspace.yml
@@ -548,8 +542,7 @@ Deno.test("Remote agent protocol validation", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
     const mergedConfig = await configLoader.load();
 
     // Test workspace remote agent
@@ -623,8 +616,7 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
 
     // Test that validation catches missing protocol
     let errorCaught = false;
@@ -693,8 +685,7 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const adapter = new FileSystemConfigurationAdapter(tempDir);
-    const configLoader = new ConfigLoader(adapter);
+    const configLoader = new ConfigLoader();
 
     // Test that validation catches errors
     let errorCaught = false;

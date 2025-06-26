@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { z } from "zod/v4";
-import type { WorkspaceConfig } from "@atlas/types";
+import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
@@ -9,7 +9,7 @@ import { SidebarWrapper } from "../SidebarWrapper.tsx";
 import { Select, TextInput } from "@inkjs/ui";
 
 interface SignalsTabProps {
-  config: WorkspaceConfig;
+  config: NewWorkspaceConfig;
 }
 
 // Schema validation for signal schemas
@@ -365,12 +365,7 @@ const SpecializedProviderDetails = ({
 };
 
 // Signal Form Component
-const SignalForm = ({
-  signal,
-  signalName,
-  onSubmit,
-  onCancel,
-}: SignalFormProps) => {
+const SignalForm = ({ signal, signalName, onSubmit, onCancel }: SignalFormProps) => {
   const [formData, setFormData] = useState<FormData>({});
   const [currentField, setCurrentField] = useState(0);
   const [formFields, setFormFields] = useState<PropertyInfo[]>([]);
@@ -381,13 +376,8 @@ const SignalForm = ({
     // Parse schema to get form fields
     const validatedSchema = validateSignalSchema((signal as any).schema);
     if (validatedSchema) {
-      const properties = Object.entries(validatedSchema.properties).map(
-        ([name, prop]) =>
-          parseProperty(
-            name,
-            prop as Record<string, unknown>,
-            validatedSchema.required || [],
-          ),
+      const properties = Object.entries(validatedSchema.properties).map(([name, prop]) =>
+        parseProperty(name, prop as Record<string, unknown>, validatedSchema.required || [])
       );
       setFormFields(properties);
 
@@ -448,15 +438,11 @@ const SignalForm = ({
 
       // Validate required fields
       const missingRequired = formFields
-        .filter(
-          (field) => field.required && !processedData.hasOwnProperty(field.name),
-        )
+        .filter((field) => field.required && !processedData.hasOwnProperty(field.name))
         .map((field) => field.name);
 
       if (missingRequired.length > 0) {
-        throw new Error(
-          `Required fields missing: ${missingRequired.join(", ")}`,
-        );
+        throw new Error(`Required fields missing: ${missingRequired.join(", ")}`);
       }
 
       await onSubmit(processedData);
@@ -489,9 +475,7 @@ const SignalForm = ({
   if (formFields.length === 0) {
     return (
       <Box flexDirection="column" padding={2}>
-        <Text color="red">
-          No schema defined for this signal. Cannot create form.
-        </Text>
+        <Text color="red">No schema defined for this signal. Cannot create form.</Text>
         <Box marginTop={1}>
           <Text color="gray">Press ESC to cancel</Text>
         </Box>
@@ -500,16 +484,9 @@ const SignalForm = ({
   }
 
   return (
-    <Box
-      flexDirection="column"
-      padding={2}
-      borderStyle="round"
-      borderColor="cyan"
-    >
+    <Box flexDirection="column" padding={2} borderStyle="round" borderColor="cyan">
       <Box marginBottom={1}>
-        <Text bold color="cyan">
-          Send Signal: {signalName}
-        </Text>
+        <Text bold color="cyan">Send Signal: {signalName}</Text>
       </Box>
 
       {error && (
@@ -565,11 +542,7 @@ const SignalForm = ({
                     />
                   )
               )
-              : (
-                <Text dimColor>
-                  {formData[field.name] || `<enter ${field.name}>`}
-                </Text>
-              )}
+              : <Text dimColor>{formData[field.name] || `<enter ${field.name}>`}</Text>}
           </Box>
         </Box>
       ))}
@@ -665,9 +638,7 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
           `Cannot connect to workspace server on port 8080. Is it running? Use 'atlas workspace serve' to start it.`,
         );
       } else {
-        setSubmissionResult(
-          `Error: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        setSubmissionResult(`Error: ${err instanceof Error ? err.message : String(err)}`);
       }
       setShowForm(false);
     }
@@ -691,11 +662,7 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
         setScrollOffset((prev) => Math.min(0, prev + scrollAmount)); // Max value 0 (can't scroll up past top)
       } else if (key.downArrow || inputChar === "j") {
         setScrollOffset((prev) => prev - scrollAmount); // No limit (can scroll down indefinitely)
-      } else if (
-        inputChar === "s" &&
-        selectedSignalData &&
-        (selectedSignalData as any).schema
-      ) {
+      } else if (inputChar === "s" && selectedSignalData && (selectedSignalData as any).schema) {
         // Press 's' to show signal form
         setShowForm(true);
         setSubmissionResult("");
@@ -789,9 +756,7 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
                   borderStyle="round"
                   borderColor={submissionResult.includes("Error") ? "red" : "green"}
                 >
-                  <Text
-                    color={submissionResult.includes("Error") ? "red" : "green"}
-                  >
+                  <Text color={submissionResult.includes("Error") ? "red" : "green"}>
                     {submissionResult}
                   </Text>
                 </Box>
@@ -800,7 +765,9 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
               {/* Show form availability hint */}
               {(selectedSignalData as any).schema && (
                 <Box marginBottom={1}>
-                  <Text color="cyan">⌨️ Press 's' to send this signal</Text>
+                  <Text color="cyan">
+                    ⌨️ Press 's' to send this signal
+                  </Text>
                 </Box>
               )}
 

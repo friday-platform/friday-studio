@@ -6,7 +6,7 @@ interface WorkspaceOptions {
 
 export async function createWorkspace(options: WorkspaceOptions): Promise<void> {
   const { name, path, description = "A new Atlas workspace" } = options;
-  
+
   const id = crypto.randomUUID();
   const workspaceYml = `version: "1.0"
 
@@ -45,7 +45,7 @@ agents:
 
   // Ensure directory exists before writing file
   await Deno.mkdir(path, { recursive: true });
-  
+
   const workspacePath = `${path}/workspace.yml`;
   await Deno.writeTextFile(workspacePath, workspaceYml);
 }

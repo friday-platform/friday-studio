@@ -8,27 +8,49 @@ import { z } from "zod/v4";
 import { logger } from "../../../utils/logger.ts";
 import { AtlasTelemetry } from "../../../utils/telemetry.ts";
 import type { Span } from "@opentelemetry/api";
-import {
-  MCPAuthConfig,
-  MCPAuthConfigSchema,
-  MCPServerConfigSchema,
-  MCPToolsConfig,
-  MCPToolsConfigSchema,
-  MCPTransportConfig,
-  MCPTransportConfigSchema,
-} from "@atlas/types";
 
 // ai doesn't export the MCPClient type, so we need to infer it.
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
 
-// Extended MCP server config schema with additional fields for this module
-const MCPServerConfigSchemaExtended = MCPServerConfigSchema.extend({
+// Zod schemas for type-safe configuration
+export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("sse"),
+    url: z.string().url(),
+  }).strict(),
+  z.object({
+    type: z.literal("stdio"),
+    command: z.string(),
+    args: z.array(z.string()).optional(),
+    env: z.record(z.string(), z.string()).optional(),
+  }).strict(),
+]);
+
+export const MCPAuthConfigSchema = z.object({
+  type: z.enum(["bearer", "api_key"]),
+  token_env: z.string().optional(),
+  header: z.string().optional(),
+});
+
+export const MCPToolsConfigSchema = z.object({
+  allowed: z.array(z.string()).optional(),
+  denied: z.array(z.string()).optional(),
+});
+
+export const MCPServerConfigSchema = z.object({
   id: z.string(),
+  transport: MCPTransportConfigSchema,
+  auth: MCPAuthConfigSchema.optional(),
+  tools: MCPToolsConfigSchema.optional(),
+  timeout_ms: z.number().positive().optional().default(30000),
   scope: z.enum(["platform", "workspace", "merged"]).optional(),
 });
 
-// Type for the extended schema
-export type MCPServerConfig = z.infer<typeof MCPServerConfigSchemaExtended>;
+// Infer TypeScript types from Zod schemas
+export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
+export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
+export type MCPToolsConfig = z.infer<typeof MCPToolsConfigSchema>;
+export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 interface MCPClientWrapper {
   client: MCPClient;
@@ -67,8 +89,8 @@ export class MCPManager {
     span: Span | null,
   ): Promise<void> {
     try {
-      // Validate configuration with extended Zod schema
-      const validatedConfig = MCPServerConfigSchemaExtended.parse(config);
+      // Validate configuration with Zod schema
+      const validatedConfig = MCPServerConfigSchema.parse(config);
 
       // Add telemetry attributes
       span?.setAttribute("mcp.transport_type", validatedConfig.transport.type);

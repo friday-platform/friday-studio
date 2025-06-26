@@ -1,8 +1,10 @@
 import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
-import { ConfigLoader } from "../../../core/config-loader.ts";
-import { FileSystemConfigurationAdapter } from "@atlas/storage";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceEntry } from "../../../core/workspace-registry-types.ts";
+import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
+import {
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
 import { errorOutput, infoOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
@@ -87,208 +89,6 @@ export function builder(y: YargsInstance) {
     .alias("help", "h");
 }
 
-// Core multi-workspace functions
-
-async function resolveTargetWorkspaces(args: TriggerArgs): Promise<TargetWorkspace[]> {
-  const registry = getWorkspaceRegistry();
-  await registry.initialize();
-
-  let targetWorkspaces: WorkspaceEntry[] = [];
-
-  if (args.all) {
-    // Get all running workspaces
-    targetWorkspaces = await registry.getRunning();
-  } else if (args.workspace && args.workspace.length > 0) {
-    // Get specific workspaces by ID or name
-    const workspaceIds = Array.isArray(args.workspace) ? args.workspace : [args.workspace];
-
-    for (const identifier of workspaceIds) {
-      const workspace = await registry.findById(identifier) ||
-        await registry.findByName(identifier);
-
-      if (workspace && workspace.status === "running") {
-        targetWorkspaces.push(workspace);
-      } else if (workspace) {
-        console.warn(`Workspace '${identifier}' is not running (status: ${workspace.status})`);
-      } else {
-        console.warn(`Workspace '${identifier}' not found in registry`);
-      }
-    }
-  } else {
-    // Default: current workspace or all running
-    const currentWorkspace = await registry.getCurrentWorkspace();
-    if (currentWorkspace && currentWorkspace.status === "running") {
-      targetWorkspaces = [currentWorkspace];
-    } else {
-      // No current workspace or it's not running - trigger on all
-      targetWorkspaces = await registry.getRunning();
-    }
-  }
-
-  // Apply exclusions
-  if (args.exclude && args.exclude.length > 0) {
-    const excludeList = Array.isArray(args.exclude) ? args.exclude : [args.exclude];
-    const excludeSet = new Set(excludeList);
-    targetWorkspaces = targetWorkspaces.filter((w) =>
-      !excludeSet.has(w.id) && !excludeSet.has(w.name)
-    );
-  }
-
-  // Validate and map to target format
-  return targetWorkspaces
-    .filter((w) => w.port) // Must have a port
-    .map((w) => ({
-      id: w.id,
-      name: w.name,
-      port: w.port!,
-      path: w.path,
-    }));
-}
-
-async function validateSignalInWorkspaces(
-  signalName: string,
-  workspaces: TargetWorkspace[],
-): Promise<Map<string, boolean>> {
-  const validationResults = new Map<string, boolean>();
-
-  for (const workspace of workspaces) {
-    try {
-      const originalCwd = Deno.cwd();
-      Deno.chdir(workspace.path);
-
-      const adapter = new FileSystemConfigurationAdapter();
-      const configLoader = new ConfigLoader(adapter);
-      const config = await configLoader.load();
-      const signals = config.workspace.signals as Record<string, unknown>;
-
-      validationResults.set(workspace.id, !!(signals && signals[signalName]));
-
-      Deno.chdir(originalCwd);
-    } catch {
-      validationResults.set(workspace.id, false);
-    }
-  }
-
-  return validationResults;
-}
-
-async function triggerSignalOnWorkspace(
-  workspace: TargetWorkspace,
-  signalName: string,
-  payload: Record<string, unknown>,
-): Promise<TriggerResult> {
-  const startTime = Date.now();
-
-  try {
-    const response = await fetch(
-      `http://localhost:${workspace.port}/signals/${signalName}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(5000), // 5 second timeout per workspace
-      },
-    );
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`${response.status} ${response.statusText}: ${errorText}`);
-    }
-
-    const result = await response.json();
-
-    return {
-      workspace,
-      success: true,
-      sessionId: result.sessionId,
-      duration: Date.now() - startTime,
-    };
-  } catch (error) {
-    return {
-      workspace,
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-      duration: Date.now() - startTime,
-    };
-  }
-}
-
-async function triggerSignalOnMultipleWorkspaces(
-  workspaces: TargetWorkspace[],
-  signalName: string,
-  payload: Record<string, unknown>,
-): Promise<TriggerResult[]> {
-  // Always trigger all workspaces in parallel for performance
-  return await Promise.all(
-    workspaces.map((w) => triggerSignalOnWorkspace(w, signalName, payload)),
-  );
-}
-
-function formatTriggerResults(
-  results: TriggerResult[],
-  signalName: string,
-  json: boolean,
-): void {
-  const successful = results.filter((r) => r.success);
-  const failed = results.filter((r) => !r.success);
-
-  if (json) {
-    const output = {
-      signal: signalName,
-      timestamp: new Date().toISOString(),
-      summary: {
-        total: results.length,
-        successful: successful.length,
-        failed: failed.length,
-      },
-      results: results.map((r) => ({
-        workspaceId: r.workspace.id,
-        workspaceName: r.workspace.name,
-        port: r.workspace.port,
-        success: r.success,
-        sessionId: r.sessionId,
-        error: r.error,
-        durationMs: r.duration,
-      })),
-    };
-
-    console.log(JSON.stringify(output, null, 2));
-  } else {
-    // Human-readable output
-    console.log(`\n✨ Signal '${signalName}' triggered on ${results.length} workspace(s)\n`);
-
-    if (successful.length > 0) {
-      console.log(`✅ Successful (${successful.length}):`);
-      for (const result of successful) {
-        console.log(`   • ${result.workspace.name} (${result.workspace.id})`);
-        console.log(`     Port: ${result.workspace.port}, Session: ${result.sessionId}`);
-        console.log(`     Duration: ${result.duration}ms`);
-      }
-    }
-
-    if (failed.length > 0) {
-      console.log(`\n❌ Failed (${failed.length}):`);
-      for (const result of failed) {
-        console.log(`   • ${result.workspace.name} (${result.workspace.id})`);
-        console.log(`     Port: ${result.workspace.port}`);
-        console.log(`     Error: ${result.error}`);
-      }
-    }
-
-    // Monitoring hints
-    if (successful.length > 0) {
-      console.log("\n📊 Monitor sessions:");
-      console.log("   • All workspaces: atlas ps");
-      for (const result of successful.slice(0, 3)) { // Show first 3
-        console.log(`   • ${result.workspace.name}: atlas logs ${result.sessionId}`);
-      }
-      if (successful.length > 3) {
-        console.log(`   • ... and ${successful.length - 3} more`);
-      }
-    }
-  }
-}
-
 async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unknown>> {
   let payload: Record<string, unknown> = {};
 
@@ -338,70 +138,127 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
 
 export const handler = async (argv: TriggerArgs): Promise<void> => {
   try {
-    // Resolve target workspaces
-    const targetWorkspaces = await resolveTargetWorkspaces(argv);
-
-    if (targetWorkspaces.length === 0) {
-      errorOutput("No running workspaces found to trigger signal on.");
-      if (!argv.all && argv.workspace) {
-        infoOutput(
-          "Specified workspaces may not be running. Use 'atlas workspace list' to check status.",
-        );
-      }
-      Deno.exit(1);
-    }
-
-    // Validate signal exists in workspaces
-    const validationResults = await validateSignalInWorkspaces(argv.name, targetWorkspaces);
-    const validWorkspaces = targetWorkspaces.filter((w) => validationResults.get(w.id));
-    const invalidWorkspaces = targetWorkspaces.filter((w) => !validationResults.get(w.id));
-
-    if (invalidWorkspaces.length > 0) {
-      // Just warn about invalid workspaces, don't fail
-      console.warn(
-        `Signal '${argv.name}' not found in ${invalidWorkspaces.length} workspace(s):\n` +
-          invalidWorkspaces.map((w) => `  - ${w.name} (${w.id})`).join("\n"),
-      );
-    }
-
-    if (validWorkspaces.length === 0) {
-      errorOutput(`Signal '${argv.name}' not found in any target workspace.`);
-      Deno.exit(1);
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
     }
 
     // Get payload data
     const payload = await getSignalPayload(argv);
 
-    // Show what we're about to do
-    if (!argv.json) {
-      const s = spinner();
-      s.start(
-        `Triggering signal '${argv.name}' on ${validWorkspaces.length} workspace(s)...`,
-      );
+    const client = getDaemonClient();
 
-      // Trigger signals
-      const results = await triggerSignalOnMultipleWorkspaces(
-        validWorkspaces,
-        argv.name,
-        payload,
-      );
+    // Determine target workspace(s)
+    let targetWorkspaces: Array<{ id: string; name: string }> = [];
 
-      s.stop();
+    if (argv.workspace) {
+      // Use specific workspace(s)
+      const workspaceIds = Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace];
 
-      // Format and display results
-      formatTriggerResults(results, argv.name, false);
+      for (const workspaceId of workspaceIds) {
+        try {
+          const workspace = await client.getWorkspace(workspaceId);
+          targetWorkspaces.push({ id: workspace.id, name: workspace.name });
+        } catch (error) {
+          // Try to find by name if ID lookup failed
+          const allWorkspaces = await client.listWorkspaces();
+          const foundWorkspace = allWorkspaces.find((w) => w.name === workspaceId);
+          if (foundWorkspace) {
+            targetWorkspaces.push({ id: foundWorkspace.id, name: foundWorkspace.name });
+          } else {
+            console.warn(`Workspace '${workspaceId}' not found`);
+          }
+        }
+      }
     } else {
-      // JSON mode - no spinner
-      const results = await triggerSignalOnMultipleWorkspaces(
-        validWorkspaces,
-        argv.name,
-        payload,
-      );
+      // Use current workspace or error if no workspace specified
+      const currentWorkspaceName = await getCurrentWorkspaceName();
 
-      formatTriggerResults(results, argv.name, true);
+      if (!currentWorkspaceName) {
+        errorOutput(
+          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
+        Deno.exit(1);
+      }
+
+      // Find workspace by name in daemon
+      const allWorkspaces = await client.listWorkspaces();
+      const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+      if (currentWorkspace) {
+        targetWorkspaces.push({ id: currentWorkspace.id, name: currentWorkspace.name });
+      } else {
+        errorOutput(
+          `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
+        );
+        Deno.exit(1);
+      }
     }
 
-    // Exit with appropriate code (always exit 0 - partial success is still success)
+    if (targetWorkspaces.length === 0) {
+      errorOutput("No target workspaces found.");
+      Deno.exit(1);
+    }
+
+    // Trigger signal on each workspace
+    const results = [];
+
+    for (const workspace of targetWorkspaces) {
+      try {
+        const result = await client.triggerSignal(workspace.id, argv.name, payload);
+        results.push({
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          success: true,
+          result,
+        });
+      } catch (error) {
+        results.push({
+          workspaceId: workspace.id,
+          workspaceName: workspace.name,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Output results
+    if (argv.json) {
+      console.log(JSON.stringify(
+        {
+          signal: argv.name,
+          timestamp: new Date().toISOString(),
+          results,
+        },
+        null,
+        2,
+      ));
+    } else {
+      console.log(`\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`);
+
+      const successful = results.filter((r) => r.success);
+      const failed = results.filter((r) => !r.success);
+
+      if (successful.length > 0) {
+        console.log(`✅ Successful (${successful.length}):`);
+        for (const result of successful) {
+          console.log(`   • ${result.workspaceName} (${result.workspaceId})`);
+          console.log(`     Status: ${result.result?.status || "processing"}`);
+        }
+      }
+
+      if (failed.length > 0) {
+        console.log(`\n❌ Failed (${failed.length}):`);
+        for (const result of failed) {
+          console.log(`   • ${result.workspaceName} (${result.workspaceId})`);
+          console.log(`     Error: ${result.error}`);
+        }
+      }
+
+      if (successful.length > 0) {
+        console.log("\n📊 Monitor sessions with: atlas ps");
+      }
+    }
     Deno.exit(0);
   } catch (error) {
     errorOutput(error instanceof Error ? error.message : String(error));

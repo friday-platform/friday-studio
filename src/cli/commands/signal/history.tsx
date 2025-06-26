@@ -1,6 +1,10 @@
-import { exists } from "@std/fs";
 import { Box, render, Text } from "ink";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import {
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
 
 interface HistoryArgs {
   json?: boolean;
@@ -39,15 +43,71 @@ export const builder = {
 
 export const handler = async (argv: HistoryArgs): Promise<void> => {
   try {
-    const workspace = await resolveWorkspace(argv.workspace);
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
+    }
 
-    // TODO: Implement actual signal history retrieval
-    // For now, show placeholder message
+    const client = getDaemonClient();
+
+    // Determine target workspace
+    let workspaceId: string;
+    let workspaceName: string;
+    let workspacePath: string;
+
+    if (argv.workspace) {
+      // Use specified workspace - try to find by ID or name
+      try {
+        const workspace = await client.getWorkspace(argv.workspace);
+        workspaceId = workspace.id;
+        workspaceName = workspace.name;
+        workspacePath = workspace.path;
+      } catch (error) {
+        // Try to find by name if ID lookup failed
+        const allWorkspaces = await client.listWorkspaces();
+        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
+        if (foundWorkspace) {
+          workspaceId = foundWorkspace.id;
+          workspaceName = foundWorkspace.name;
+          workspacePath = foundWorkspace.path;
+        } else {
+          throw new Error(`Workspace '${argv.workspace}' not found`);
+        }
+      }
+    } else {
+      // Use current workspace (detect from current directory)
+      try {
+        const configLoader = new ConfigLoader();
+        const config = await configLoader.load();
+        const currentWorkspaceName = config.workspace.workspace.name;
+
+        // Find workspace by name in daemon
+        const allWorkspaces = await client.listWorkspaces();
+        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+        if (currentWorkspace) {
+          workspaceId = currentWorkspace.id;
+          workspaceName = currentWorkspace.name;
+          workspacePath = currentWorkspace.path;
+        } else {
+          throw new Error(
+            `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
+          );
+        }
+      } catch (error) {
+        throw new Error(
+          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
+      }
+    }
+
+    // TODO: Implement actual signal history retrieval from daemon API
+    // For now, show placeholder message but use daemon-resolved workspace info
     const historyData = {
       workspace: {
-        id: workspace.id,
-        name: workspace.name,
-        path: workspace.path,
+        id: workspaceId,
+        name: workspaceName,
+        path: workspacePath,
       },
       filter: argv.signal,
       limit: argv.limit,
@@ -69,52 +129,6 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
     Deno.exit(1);
   }
 };
-
-// Helper function to resolve workspace
-async function resolveWorkspace(workspaceId?: string): Promise<{
-  path: string;
-  id: string;
-  name: string;
-}> {
-  const registry = getWorkspaceRegistry();
-  await registry.initialize();
-
-  if (workspaceId) {
-    // Find workspace by ID or name in the registry
-    const targetWorkspace = (await registry.findById(workspaceId)) ||
-      (await registry.findByName(workspaceId));
-
-    if (!targetWorkspace) {
-      throw new Error(
-        `Workspace '${workspaceId}' not found in registry. Use 'atlas workspace list' to see registered workspaces.`,
-      );
-    }
-
-    return {
-      path: targetWorkspace.path,
-      id: targetWorkspace.id,
-      name: targetWorkspace.name,
-    };
-  } else {
-    // Check current directory for workspace.yml
-    if (!(await exists("workspace.yml"))) {
-      throw new Error(
-        "No workspace specified and not in a workspace directory. " +
-          "Use --workspace flag or run from a workspace directory.",
-      );
-    }
-
-    // Try to find in registry or register
-    const currentWorkspace = (await registry.getCurrentWorkspace()) ||
-      (await registry.findOrRegister(Deno.cwd()));
-
-    return {
-      path: currentWorkspace.path,
-      id: currentWorkspace.id,
-      name: currentWorkspace.name,
-    };
-  }
-}
 
 // Component that renders the signal history
 interface HistoryData {

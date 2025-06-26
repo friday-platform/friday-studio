@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import type { WorkspaceConfig } from "@atlas/types";
+import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
 
 interface AgentsTabProps {
-  config: WorkspaceConfig;
+  config: NewWorkspaceConfig;
 }
 
 interface AgentData {
@@ -33,8 +33,8 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
     return Object.entries(config.jobs)
       .filter(([, job]) => {
         const jobData = job as any;
-        return jobData.execution?.agents?.some(
-          (agent: any) => (typeof agent === "string" ? agent : agent.id) === agentId,
+        return jobData.execution?.agents?.some((agent: any) =>
+          (typeof agent === "string" ? agent : agent.id) === agentId
         );
       })
       .map(([jobId, job]) => ({
@@ -94,7 +94,7 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
 
   const selectedAgent = agents.length > 0 ? agents[selectedAgentIndex][0] : null;
   const selectedAgentData = selectedAgent && config.agents
-    ? (config.agents[selectedAgent] as AgentData)
+    ? config.agents[selectedAgent] as AgentData
     : null;
 
   // Handle keyboard navigation for scrolling when main area is active
@@ -198,8 +198,7 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                   <Box marginBottom={1}>
                     <Text bold>LLM Configuration:</Text>
                   </Box>
-                  {selectedAgentData.mcp_servers &&
-                    selectedAgentData.mcp_servers.length > 0 && (
+                  {selectedAgentData.mcp_servers && selectedAgentData.mcp_servers.length > 0 && (
                     <Box flexDirection="column" marginBottom={1}>
                       <Text dimColor>MCP Servers:</Text>
                       {selectedAgentData.mcp_servers.map((server) => (
@@ -248,40 +247,26 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
               )}
 
               {/* Prompts Section */}
-              {selectedAgentData.prompts &&
-                Object.keys(selectedAgentData.prompts).length > 0 && (
+              {selectedAgentData.prompts && Object.keys(selectedAgentData.prompts).length > 0 && (
                 <Box flexDirection="column" marginBottom={2}>
                   <Box marginBottom={1}>
                     <Text bold>Prompts:</Text>
                   </Box>
-                  {Object.entries(selectedAgentData.prompts).map(
-                    ([promptType, prompt]) => (
-                      <Box
-                        key={promptType}
-                        flexDirection="column"
-                        marginBottom={2}
-                      >
-                        <Box marginBottom={1}>
-                          <Text dimColor>{promptType}:</Text>
-                        </Box>
-                        <Box marginLeft={2} flexDirection="column">
-                          {prompt
-                            .split("\n")
-                            .slice(0, 10)
-                            .map((line, index) => (
-                              <Text key={index} dimColor>
-                                {line}
-                              </Text>
-                            ))}
-                          {prompt.split("\n").length > 10 && (
-                            <Text dimColor>
-                              ... ({prompt.split("\n").length - 10} more lines)
-                            </Text>
-                          )}
-                        </Box>
+                  {Object.entries(selectedAgentData.prompts).map(([promptType, prompt]) => (
+                    <Box key={promptType} flexDirection="column" marginBottom={2}>
+                      <Box marginBottom={1}>
+                        <Text dimColor>{promptType}:</Text>
                       </Box>
-                    ),
-                  )}
+                      <Box marginLeft={2} flexDirection="column">
+                        {prompt.split("\n").slice(0, 10).map((line, index) => (
+                          <Text key={index} dimColor>{line}</Text>
+                        ))}
+                        {prompt.split("\n").length > 10 && (
+                          <Text dimColor>... ({prompt.split("\n").length - 10} more lines)</Text>
+                        )}
+                      </Box>
+                    </Box>
+                  ))}
                 </Box>
               )}
 
@@ -372,17 +357,10 @@ export const AgentsTab = ({ config }: AgentsTabProps) => {
                       {
                         ...selectedAgentData,
                         prompts: selectedAgentData.prompts
-                          ? Object.keys(selectedAgentData.prompts).reduce(
-                            (acc, key) => ({
-                              ...acc,
-                              [key]: `${
-                                selectedAgentData.prompts![
-                                  key
-                                ].substring(0, 50)
-                              }...`,
-                            }),
-                            {},
-                          )
+                          ? Object.keys(selectedAgentData.prompts).reduce((acc, key) => ({
+                            ...acc,
+                            [key]: `${selectedAgentData.prompts![key].substring(0, 50)}...`,
+                          }), {})
                           : undefined,
                       },
                       null,

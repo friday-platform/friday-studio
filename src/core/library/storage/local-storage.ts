@@ -8,7 +8,7 @@ import {
 } from "../types.ts";
 import { exists } from "@std/fs";
 import * as path from "@std/path";
-import { crypto } from "https://deno.land/std@0.224.0/crypto/mod.ts";
+import { crypto } from "https://deno.land/std@0.218.0/crypto/mod.ts";
 
 /**
  * Local filesystem storage for library items

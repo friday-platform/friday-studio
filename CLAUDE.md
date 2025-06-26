@@ -198,7 +198,7 @@ The Atlas CLI provides workspace management capabilities:
 ```bash
 atlas                    # Interactive interface
 atlas init               # Initialize workspace in current directory
-atlas daemon start       # Start Atlas daemon (replaces workspace serve)
+atlas daemon start       # Start Atlas daemon
 atlas ps                 # List all active sessions
 atlas signal trigger     # Manually trigger a signal
 atlas config validate    # Validate workspace configuration

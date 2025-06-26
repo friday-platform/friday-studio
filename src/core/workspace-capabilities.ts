@@ -3,7 +3,7 @@
  * Manages ambient workspace capabilities that are available to agents
  */
 
-import type { WorkspaceAgentConfig } from "@atlas/types";
+import type { WorkspaceAgentConfig } from "./config-loader.ts";
 
 export interface WorkspaceCapability {
   id: string;
@@ -222,7 +222,7 @@ export class WorkspaceCapabilityRegistry {
     const grantedCapabilities: WorkspaceCapability[] = [];
     const allTools = [
       ...(filter.agentConfig.default_tools || []),
-      ...(filter.agentConfig.tools || []),
+      ...(Array.isArray(filter.agentConfig.tools) ? filter.agentConfig.tools : []),
       ...filter.grantedTools,
     ];
 

@@ -1,8 +1,12 @@
 import { render } from "ink";
 import { LibraryListComponent } from "../../modules/library/library-list-component.tsx";
-import { fetchLibraryItems } from "../../modules/library/fetcher.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { spinner } from "../../utils/prompts.tsx";
+import {
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
 import process from "node:process";
 
 interface ListArgs {
@@ -58,34 +62,33 @@ export function builder(y: YargsInstance) {
     });
 }
 
-
 export async function handler(argv: ListArgs) {
   const s = spinner();
 
   try {
-    s.start("Fetching library items...");
-
-    const result = await fetchLibraryItems({
-      type: argv.type,
-      tags: argv.tags,
-      since: argv.since,
-      limit: argv.limit,
-      workspace: argv.workspace,
-      port: argv.port,
-    });
-
-    if (!result.success) {
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
       s.stop("Failed to fetch library items");
-      console.error(`Error: ${result.error}`);
-      process.exit(1);
-      return;
+      throw createDaemonNotRunningError();
     }
 
+    s.start("Fetching library items...");
+
+    const client = getDaemonClient();
+    const query: any = {};
+
+    if (argv.type) query.type = argv.type;
+    if (argv.tags) query.tags = argv.tags.split(",").map((tag) => tag.trim());
+    if (argv.since) query.since = argv.since;
+    if (argv.limit) query.limit = argv.limit;
+
+    const result = await client.listLibraryItems(query);
     const items = result.items;
+
     s.stop("Library items fetched");
 
     if (argv.json) {
-      console.log(JSON.stringify({ items, count: items.length }, null, 2));
+      console.log(JSON.stringify({ items, count: items.length, total: result.total }, null, 2));
       return;
     }
 
@@ -94,7 +97,20 @@ export async function handler(argv: ListArgs) {
       return;
     }
 
-    render(<LibraryListComponent items={items} />);
+    // Convert to format expected by component
+    const componentItems = items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      description: item.description,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+      tags: item.tags,
+      size_bytes: item.size_bytes,
+      metadata: item.metadata,
+    }));
+
+    render(<LibraryListComponent items={componentItems} />);
   } catch (error) {
     s.stop("Failed to fetch library items");
     console.error(
@@ -103,4 +119,3 @@ export async function handler(argv: ListArgs) {
     process.exit(1);
   }
 }
-

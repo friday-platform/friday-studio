@@ -19,13 +19,13 @@ export interface SessionFetchError {
 
 export type SessionFetchResponse = SessionFetchResult | SessionFetchError;
 
-// Fetch sessions from server API
+// Fetch sessions from daemon API
 export async function fetchSessions(
   options: SessionFetchOptions = {},
 ): Promise<SessionFetchResponse> {
   try {
     const port = options.port || 8080;
-    const response = await fetch(`http://localhost:${port}/sessions`, {
+    const response = await fetch(`http://localhost:${port}/api/sessions`, {
       signal: AbortSignal.timeout(5000), // 5 second timeout
     });
 
@@ -37,8 +37,7 @@ export async function fetchSessions(
       };
     }
 
-    const result = await response.json();
-    const sessions = (result.sessions || []) as Session[];
+    const sessions = (await response.json()) as Session[];
 
     // Filter by workspace if specified
     const filteredSessions = options.workspace

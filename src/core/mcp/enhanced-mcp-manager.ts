@@ -3,9 +3,10 @@
  * Extends Sara's MCP manager with comprehensive credential management
  */
 
-import { MCPManager as BaseMCPManager, type MCPServerConfig } from "../agents/mcp/mcp-manager.ts";
+import { MCPManager as BaseMCPManager } from "../agents/mcp/mcp-manager.ts";
+import type { MCPServerConfig } from "../agents/mcp/mcp-manager.ts";
 import { EnvironmentResolver } from "../environment-resolver.ts";
-import type { EnvironmentVariable } from "@atlas/types";
+import type { EnvironmentVariable } from "../config-loader.ts";
 import { logger } from "../../utils/logger.ts";
 
 export interface EnhancedMCPServerConfig extends Omit<MCPServerConfig, "transport"> {
@@ -213,6 +214,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
     return {
       github: {
         id: "github-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",
@@ -233,6 +235,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
 
       filesystem: {
         id: "filesystem-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",
@@ -245,6 +248,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
 
       linear: {
         id: "linear-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",

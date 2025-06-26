@@ -26,6 +26,10 @@ export const WorkspaceEntrySchema = z.object({
   path: z.string(),
   configPath: z.string(),
 
+  // Cached Configuration (loaded once at registration time)
+  config: z.record(z.string(), z.any()).optional(), // Full workspace config
+  configHash: z.string().optional(), // SHA-256 hash for change detection
+
   // Runtime state
   status: WorkspaceStatusSchema,
   pid: z.number().optional(),

@@ -1,48 +1,48 @@
 import { basename, join } from "@std/path";
-import { ensureDir, exists } from "@std/fs";
+import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
 import { z } from "zod/v4";
 import {
   WorkspaceEntry,
   WorkspaceEntrySchema,
-  WorkspaceRegistry,
-  WorkspaceRegistrySchema,
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import type { WorkspaceConfig } from "@atlas/types";
-import { WorkspaceConfigSchema } from "./config-loader.ts";
+import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
 
+/**
+ * Deno KV-based Workspace Registry Manager
+ * Replaces the JSON file-based registry with atomic operations and real-time updates
+ */
 export class WorkspaceRegistryManager {
-  private registryPath: string;
-  private registry: WorkspaceRegistry | null = null;
+  private kv: Deno.Kv | null = null;
+  private kvPath: string;
+  private readonly REGISTRY_VERSION = "2.0.0";
 
   constructor() {
     const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
     const atlasDir = join(homeDir, ".atlas");
-    this.registryPath = join(atlasDir, "registry.json");
+    this.kvPath = join(atlasDir, "registry.db");
   }
 
   async initialize(): Promise<void> {
     // Ensure .atlas directory exists
-    const atlasDir = join(this.registryPath, "..");
-    await ensureDir(atlasDir);
+    const atlasDir = join(this.kvPath, "..");
+    await Deno.mkdir(atlasDir, { recursive: true });
 
-    // Load or create registry
-    if (await exists(this.registryPath)) {
-      await this.load();
-    } else {
-      this.registry = {
-        version: "1.0.0",
-        workspaces: [],
-        lastUpdated: new Date().toISOString(),
-      };
-      await this.save();
+    // Open Deno KV database
+    this.kv = await Deno.openKv(this.kvPath);
+
+    // Initialize registry metadata if not exists
+    const versionCheck = await this.kv.get(["registry", "version"]);
+    if (!versionCheck.value) {
+      await this.kv.set(["registry", "version"], this.REGISTRY_VERSION);
+      await this.kv.set(["registry", "lastUpdated"], new Date().toISOString());
     }
 
     // Auto-import existing workspaces on every run (skip in tests)
     const isTestMode = Deno.env.get("DENO_TEST") === "true" ||
-      await exists(join(atlasDir, ".test-mode"));
+      await exists(join(this.kvPath, "..", ".test-mode"));
 
     if (!isTestMode) {
       try {
@@ -58,34 +58,9 @@ export class WorkspaceRegistryManager {
     }
   }
 
-  private async load(): Promise<void> {
-    const content = await Deno.readTextFile(this.registryPath);
-    const data = JSON.parse(content);
-
-    // Validate with Zod
-    try {
-      this.registry = WorkspaceRegistrySchema.parse(data);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        throw new Error(`Invalid registry format: ${error.message}`);
-      }
-      throw error;
-    }
-  }
-
-  private async save(): Promise<void> {
-    if (!this.registry) throw new Error("Registry not initialized");
-
-    this.registry.lastUpdated = new Date().toISOString();
-
-    // Validate before saving
-    const validatedRegistry = WorkspaceRegistrySchema.parse(this.registry);
-    const content = JSON.stringify(validatedRegistry, null, 2);
-
-    // Atomic write with temp file
-    const tempPath = `${this.registryPath}.tmp`;
-    await Deno.writeTextFile(tempPath, content);
-    await Deno.rename(tempPath, this.registryPath);
+  private async updateLastUpdated(): Promise<void> {
+    if (!this.kv) throw new Error("Registry not initialized");
+    await this.kv.set(["registry", "lastUpdated"], new Date().toISOString());
   }
 
   // Core operations
@@ -97,7 +72,7 @@ export class WorkspaceRegistryManager {
       tags?: string[];
     },
   ): Promise<WorkspaceEntry> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
     // Check if already registered
     const existing = await this.findByPathUnsafe(workspacePath);
@@ -106,7 +81,7 @@ export class WorkspaceRegistryManager {
     }
 
     // Generate unique Docker-style ID
-    const existingIds = new Set(this.registry!.workspaces.map((w) => w.id));
+    const existingIds = new Set((await this.listAll()).map((w) => w.id));
     const id = generateUniqueWorkspaceName(existingIds);
 
     // Create new entry
@@ -128,17 +103,30 @@ export class WorkspaceRegistryManager {
     // Validate entry with Zod
     const validatedEntry = WorkspaceEntrySchema.parse(entry);
 
-    this.registry!.workspaces.push(validatedEntry);
-    await this.save();
+    // Atomic operation to store workspace
+    const result = await this.kv!.atomic()
+      .set(["workspaces", validatedEntry.id], validatedEntry)
+      .set(["registry", "lastUpdated"], new Date().toISOString())
+      .commit();
+
+    if (!result.ok) {
+      throw new Error("Failed to register workspace in KV store");
+    }
 
     return validatedEntry;
   }
 
   async unregister(id: string): Promise<void> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
-    this.registry!.workspaces = this.registry!.workspaces.filter((w) => w.id !== id);
-    await this.save();
+    const result = await this.kv!.atomic()
+      .delete(["workspaces", id])
+      .set(["registry", "lastUpdated"], new Date().toISOString())
+      .commit();
+
+    if (!result.ok) {
+      throw new Error(`Failed to unregister workspace ${id}`);
+    }
   }
 
   async updateStatus(
@@ -146,13 +134,15 @@ export class WorkspaceRegistryManager {
     status: WorkspaceStatus,
     updates?: Partial<WorkspaceEntry>,
   ): Promise<void> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
-    const workspace = this.registry!.workspaces.find((w) => w.id === id);
-    if (!workspace) {
+    // Get current workspace entry
+    const current = await this.kv!.get<WorkspaceEntry>(["workspaces", id]);
+    if (!current.value) {
       throw new Error(`Workspace ${id} not found`);
     }
 
+    const workspace = { ...current.value };
     workspace.status = status;
     workspace.lastSeen = new Date().toISOString();
 
@@ -170,47 +160,66 @@ export class WorkspaceRegistryManager {
       workspace.port = undefined;
     }
 
-    await this.save();
+    // Atomic update
+    const result = await this.kv!.atomic()
+      .check(current) // Ensure no concurrent updates
+      .set(["workspaces", id], workspace)
+      .set(["registry", "lastUpdated"], new Date().toISOString())
+      .commit();
+
+    if (!result.ok) {
+      throw new Error(`Failed to update workspace ${id} status`);
+    }
   }
 
   // Query operations with lazy health checks
   async findById(id: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
-    const workspace = this.registry!.workspaces.find((w) => w.id === id);
-    return workspace ? await this.checkAndUpdateHealth(workspace) : null;
+    const result = await this.kv!.get<WorkspaceEntry>(["workspaces", id]);
+    return result.value ? await this.checkAndUpdateHealth(result.value) : null;
   }
 
   async findByName(name: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
-    const workspace = this.registry!.workspaces.find((w) => w.name === name);
+    const workspaces = await this.listAll();
+    const workspace = workspaces.find((w) => w.name === name);
     return workspace ? await this.checkAndUpdateHealth(workspace) : null;
   }
 
   async findByPath(path: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
     const normalizedPath = await Deno.realPath(path).catch(() => path);
-    const workspace = this.registry!.workspaces.find((w) => w.path === normalizedPath);
+    const workspaces = await this.listAll();
+    const workspace = workspaces.find((w) => w.path === normalizedPath);
     return workspace ? await this.checkAndUpdateHealth(workspace) : null;
   }
 
   // Internal version without health check for use within locked operations
   private async findByPathUnsafe(path: string): Promise<WorkspaceEntry | null> {
     const normalizedPath = await Deno.realPath(path).catch(() => path);
-    return this.registry!.workspaces.find((w) => w.path === normalizedPath) || null;
+    const workspaces = await this.listAll();
+    return workspaces.find((w) => w.path === normalizedPath) || null;
   }
 
   async listAll(): Promise<WorkspaceEntry[]> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
+
+    const workspaces: WorkspaceEntry[] = [];
+    const iter = this.kv!.list<WorkspaceEntry>({ prefix: ["workspaces"] });
+
+    for await (const entry of iter) {
+      workspaces.push(entry.value);
+    }
 
     // Check health of all workspaces
-    const workspaces = await Promise.all(
-      this.registry!.workspaces.map((w) => this.checkAndUpdateHealth(w)),
+    const healthCheckedWorkspaces = await Promise.all(
+      workspaces.map((w) => this.checkAndUpdateHealth(w)),
     );
 
-    return workspaces;
+    return healthCheckedWorkspaces;
   }
 
   async getRunning(): Promise<WorkspaceEntry[]> {
@@ -250,7 +259,11 @@ export class WorkspaceRegistryManager {
             pid: undefined,
             port: undefined,
           });
+          // Update the returned workspace object to reflect the changes
           workspace.status = newStatus;
+          workspace.pid = undefined;
+          workspace.port = undefined;
+          workspace.stoppedAt = new Date().toISOString();
         } else if (useHttpCheck && workspace.port && workspace.status === WorkspaceStatus.RUNNING) {
           // Process exists, optionally check HTTP health for more accuracy
           try {
@@ -315,12 +328,13 @@ export class WorkspaceRegistryManager {
 
   // Cleanup methods
   async cleanup(): Promise<number> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
+    const workspaces = await this.listAll();
     let cleaned = 0;
     const toRemove: string[] = [];
 
-    for (const workspace of this.registry!.workspaces) {
+    for (const workspace of workspaces) {
       // Check if workspace directory still exists
       const exists = await Deno.stat(workspace.path).catch(() => null);
 
@@ -330,29 +344,73 @@ export class WorkspaceRegistryManager {
       }
     }
 
-    // Remove non-existent workspaces
-    for (const id of toRemove) {
-      await this.unregister(id);
+    // Remove non-existent workspaces using atomic transaction
+    if (toRemove.length > 0) {
+      let atomic = this.kv!.atomic();
+      for (const id of toRemove) {
+        atomic = atomic.delete(["workspaces", id]);
+      }
+      atomic = atomic.set(["registry", "lastUpdated"], new Date().toISOString());
+
+      const result = await atomic.commit();
+      if (!result.ok) {
+        throw new Error("Failed to cleanup workspaces");
+      }
     }
 
     return cleaned;
   }
 
   async vacuum(): Promise<void> {
-    if (!this.registry) await this.initialize();
+    if (!this.kv) await this.initialize();
 
-    // Remove old stopped workspaces
+    const workspaces = await this.listAll();
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - 30); // 30 days
 
-    this.registry!.workspaces = this.registry!.workspaces.filter((w) => {
-      if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
-        return new Date(w.stoppedAt) > cutoff;
+    const toRemove = workspaces
+      .filter((w) => {
+        if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
+          return new Date(w.stoppedAt) <= cutoff;
+        }
+        return false;
+      })
+      .map((w) => w.id);
+
+    if (toRemove.length > 0) {
+      let atomic = this.kv!.atomic();
+      for (const id of toRemove) {
+        atomic = atomic.delete(["workspaces", id]);
       }
-      return true;
+      atomic = atomic.set(["registry", "lastUpdated"], new Date().toISOString());
+
+      const result = await atomic.commit();
+      if (!result.ok) {
+        throw new Error("Failed to vacuum workspaces");
+      }
+    }
+  }
+
+  // Watch for real-time updates (new capability with Deno KV)
+  watchWorkspaces(): ReadableStream<WorkspaceEntry[]> {
+    if (!this.kv) throw new Error("Registry not initialized");
+
+    const stream = new ReadableStream<WorkspaceEntry[]>({
+      start: async (controller) => {
+        // Send initial state
+        controller.enqueue(await this.listAll());
+
+        // Watch for changes
+        const watcher = this.kv!.watch([["workspaces"]]);
+
+        for await (const entries of watcher) {
+          // On any workspace change, send updated list
+          controller.enqueue(await this.listAll());
+        }
+      },
     });
 
-    await this.save();
+    return stream;
   }
 
   // Migration methods
@@ -512,11 +570,13 @@ export class WorkspaceRegistryManager {
     template?: string;
     config?: Record<string, unknown>;
   }): Promise<{ id: string; name: string }> {
+    if (!this.kv) await this.initialize();
+
     // Create a new workspace directory in the current working directory
     const workspacePath = join(Deno.cwd(), config.name);
 
     // Create directory if it doesn't exist
-    await ensureDir(workspacePath);
+    await Deno.mkdir(workspacePath, { recursive: true });
 
     // Create basic workspace.yml file
     const workspaceConfig = {
@@ -598,8 +658,8 @@ export class WorkspaceRegistryManager {
   }
 
   // Convenience method to get workspace configuration by slug
-  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<WorkspaceConfig | null> {
-    if (!this.registry) await this.initialize();
+  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<NewWorkspaceConfig | null> {
+    if (!this.kv) await this.initialize();
 
     // Find workspace by ID or name
     let workspace = await this.findById(workspaceSlug);
@@ -617,7 +677,7 @@ export class WorkspaceRegistryManager {
       const rawConfig = yaml.parse(workspaceContent);
 
       // Validate with Zod schema
-      const config = WorkspaceConfigSchema.parse(rawConfig);
+      const config = NewWorkspaceConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -626,6 +686,14 @@ export class WorkspaceRegistryManager {
         console.error(`Failed to load workspace config for ${workspaceSlug}:`, error);
       }
       return null;
+    }
+  }
+
+  // Close KV database connection
+  async close(): Promise<void> {
+    if (this.kv) {
+      this.kv.close();
+      this.kv = null;
     }
   }
 }
@@ -638,4 +706,23 @@ export function getWorkspaceRegistry(): WorkspaceRegistryManager {
     _workspaceRegistry = new WorkspaceRegistryManager();
   }
   return _workspaceRegistry;
+}
+
+// Reset singleton (useful for tests and cleanup)
+export function resetWorkspaceRegistry(): void {
+  if (_workspaceRegistry) {
+    // Close existing connection if open
+    _workspaceRegistry.close().catch(() => {}); // Silent cleanup
+    _workspaceRegistry = null;
+  }
+}
+
+// Graceful shutdown handler - automatically clean up on process exit
+if (typeof Deno !== "undefined") {
+  Deno.addSignalListener("SIGINT", () => {
+    resetWorkspaceRegistry();
+  });
+  Deno.addSignalListener("SIGTERM", () => {
+    resetWorkspaceRegistry();
+  });
 }

@@ -13,9 +13,6 @@ import {
   StreamingMemoryManager,
 } from "./memory/streaming/streaming-memory-manager.ts";
 import { ContextProvisioner } from "./context/context-provisioner.ts";
-import { QualityAssessmentPrompts } from "./evaluation/quality-assessment-prompts.ts";
-import { QualityAssessmentParser } from "./evaluation/quality-assessment-parser.ts";
-import { QualityAssessment } from "./interfaces/quality-assessment.ts";
 import { parse } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 
 // Job specification types
@@ -1745,187 +1742,102 @@ Respond with a structured plan.`;
       throw new Error("Session context or execution plan not available");
     }
 
-    // First check: Have all agents from execution plan actually executed?
-    const totalAgentsInPlan = this.executionPlan!.phases.reduce(
-      (sum, phase) => sum + phase.agents.length,
-      0,
-    );
-    const agentsExecuted = results.length;
+    const evaluationPrompt = `Evaluate the execution progress:
 
-    // If not all agents have executed, session cannot be complete regardless of LLM response
-    if (agentsExecuted < totalAgentsInPlan) {
-      return {
-        isComplete: false,
-        nextAction: "continue",
-        feedback:
-          `${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent.`,
-      };
+Original Signal: ${this.sessionContext!.signal.id}
+Payload: ${JSON.stringify(this.sessionContext!.payload)}
+
+Execution Plan:
+- Total agents to execute: ${
+      this.executionPlan!.phases.reduce(
+        (sum, phase) => sum + phase.agents.length,
+        0,
+      )
+    }
+- Agents executed so far: ${results.length}
+
+Execution Results:
+${
+      results
+        .map(
+          (r) =>
+            `Agent: ${r.agentId}\n   Task: ${r.task}\n   Input: ${
+              JSON.stringify(
+                r.input,
+              ).slice(0, 100)
+            }...\n   Output: ${
+              JSON.stringify(r.output).slice(
+                0,
+                200,
+              )
+            }...\n   Duration: ${r.duration}ms`,
+        )
+        .join("\n\n")
     }
 
-    // All agents have executed - perform structured quality assessment
+Success Criteria:
+${this.executionPlan!.successCriteria.join("\n")}
+
+Determine:
+1. Have ALL success criteria been met? (NOT just some)
+2. Is the session goal FULLY achieved?
+3. Should we continue to the next agent, or is the session complete?
+
+IMPORTANT: The session is ONLY complete when ALL planned agents have executed successfully.
+
+${this.sessionContext?.additionalPrompts?.evaluation || ""}
+
+Provide a brief evaluation.`;
+
     try {
-      return await this.performStructuredQualityAssessment(results);
-    } catch (error) {
-      this.log(`Structured assessment failed: ${error}`);
-      // Fallback to conservative assessment
-      return await this.performFallbackAssessment(results);
-    }
-  }
-
-  /**
-   * Perform structured quality assessment using enhanced LLM prompts
-   */
-  private async performStructuredQualityAssessment(
-    results: AgentResult[],
-  ): Promise<{
-    isComplete: boolean;
-    nextAction?: "continue" | "retry" | "adapt" | "escalate";
-    feedback?: string;
-  }> {
-    if (!this.sessionContext || !this.executionPlan) {
-      throw new Error("Session context or execution plan not available");
-    }
-
-    // Generate enhanced evaluation prompt
-    const systemPrompt = QualityAssessmentPrompts.generateSystemPrompt();
-    const evaluationPrompt = QualityAssessmentPrompts.generateEvaluationPrompt(
-      this.sessionContext,
-      this.executionPlan,
-      results,
-    );
-
-    // Get LLM response with structured prompt
-    const response = await this.generateLLM(
-      "claude-3-5-sonnet-20241022",
-      systemPrompt,
-      evaluationPrompt,
-      true,
-      {
-        operation: "structured_quality_assessment",
-        sessionId: this.sessionContext.sessionId,
-        agentsExecuted: results.length,
-        totalAgentsPlanned: this.executionPlan.phases.reduce(
-          (sum, phase) => sum + phase.agents.length,
-          0,
-        ),
-      },
-    );
-
-    // Parse and validate the structured assessment
-    const expectedAgentIds = results.map((r) => r.agentId);
-    const validation = await QualityAssessmentParser.parseQualityAssessment(
-      response,
-      expectedAgentIds,
-      this.sessionContext.sessionId,
-    );
-
-    if (!validation.isValid || !validation.parsedAssessment) {
-      this.log(`⚠️ SECURITY: Assessment validation failed: ${validation.errors.join(", ")}`);
-      this.log(`⚠️ SECURITY: Rejecting potentially malicious or corrupt LLM response`);
-
-      // Check for agent mismatch specifically
-      const hasMismatch = validation.errors.some((error) =>
-        error.includes("Missing evaluation for expected agent") ||
-        error.includes("unexpected agent")
+      const response = await this.generateLLM(
+        "claude-3-5-sonnet-20241022",
+        this.prompts.system,
+        evaluationPrompt,
+        true,
+        {
+          operation: "evaluate_progress",
+          sessionId: this.sessionContext?.sessionId,
+          agentsExecuted: results.length,
+        },
       );
 
-      if (hasMismatch) {
-        this.log(
-          `🚨 AGENT MISMATCH: LLM assessed wrong agents - this indicates serious assessment failure`,
-        );
-      }
-
-      // Fallback to conservative assessment with clear error indication
-      throw new Error(
-        `Assessment validation failed: ${validation.errors[0]} | SECURITY: Response rejected`,
+      // First check: Have all agents from execution plan actually executed?
+      const totalAgentsInPlan = this.executionPlan!.phases.reduce(
+        (sum, phase) => sum + phase.agents.length,
+        0,
       );
-    }
+      const agentsExecuted = results.length;
 
-    // Log validation warnings for monitoring
-    if (validation.warnings.length > 0) {
-      this.log(`Assessment warnings: ${validation.warnings.join(", ")}`);
-    }
-
-    // Make final decision based on validated assessment
-    const decision = QualityAssessmentParser.makeCompletionDecision(validation.parsedAssessment);
-
-    // Log assessment metrics for monitoring
-    await this.logAssessmentMetrics(validation.parsedAssessment, results);
-
-    return decision;
-  }
-
-  /**
-   * Fallback assessment when structured evaluation fails
-   */
-  private async performFallbackAssessment(results: AgentResult[]): Promise<{
-    isComplete: boolean;
-    nextAction?: "continue" | "retry" | "adapt" | "escalate";
-    feedback?: string;
-  }> {
-    this.log("🔄 FALLBACK: Performing fallback assessment due to structured evaluation failure");
-    this.log("⚠️ ALERT: Manual review recommended - structured assessment unavailable");
-
-    // Basic output validation
-    const hasEmptyOutputs = results.some((r) =>
-      !r.output ||
-      Object.keys(r.output).length === 0 ||
-      Object.values(r.output).every((v) => v === null || v === undefined || v === "")
-    );
-
-    // Check for obvious error patterns in outputs
-    const hasErrorPatterns = results.some((r) => {
-      try {
-        const outputStr = JSON.stringify(r.output || {}).toLowerCase();
-        return outputStr.includes("error:") ||
-          outputStr.includes("failed to") ||
-          outputStr.includes("exception") ||
-          outputStr.includes("timeout");
-      } catch (error) {
-        // Handle circular references or other JSON serialization errors
-        this.log(`Error serializing output for error pattern detection: ${error.message}`);
-        return false; // Assume no error patterns if we can't serialize
+      // If not all agents have executed, session cannot be complete regardless of LLM response
+      if (agentsExecuted < totalAgentsInPlan) {
+        return {
+          isComplete: false,
+          nextAction: "continue",
+          feedback:
+            `${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent. LLM evaluation: ${response}`,
+        };
       }
-    });
 
-    if (hasEmptyOutputs || hasErrorPatterns) {
+      // All agents have executed - now check for quality/success via LLM
+      const lowerResponse = response.toLowerCase();
+      const hasFailures = lowerResponse.includes("failed") ||
+        lowerResponse.includes("error") ||
+        lowerResponse.includes("unsuccessful");
+
       return {
-        isComplete: false,
-        nextAction: "retry",
-        feedback:
-          "Fallback assessment: Detected empty outputs or error patterns. Recommending retry.",
+        isComplete: !hasFailures,
+        nextAction: hasFailures ? "retry" : undefined,
+        feedback: response,
+      };
+    } catch (error) {
+      this.log(`Error evaluating progress: ${error}`);
+      // Default to complete if all phases executed
+      return {
+        isComplete: results.length >= this.sessionContext!.availableAgents.length,
+        feedback: "Evaluation completed based on execution count",
       };
     }
-
-    // Conservative success when all agents produced non-empty outputs
-    return {
-      isComplete: true,
-      feedback:
-        "Fallback assessment: All agents produced outputs. Manual review recommended for quality validation.",
-    };
-  }
-
-  /**
-   * Log assessment metrics for monitoring and improvement
-   */
-  private async logAssessmentMetrics(
-    assessment: QualityAssessment,
-    results: AgentResult[],
-  ): Promise<void> {
-    const metrics = {
-      sessionId: this.sessionContext?.sessionId,
-      assessmentConfidence: assessment.confidence,
-      agentsEvaluated: assessment.agentEvaluations.length,
-      agentsExecuted: results.length,
-      criticalIssues: assessment.qualityIssues.filter((i) => i.severity === "critical").length,
-      majorIssues: assessment.qualityIssues.filter((i) => i.severity === "major").length,
-      minorIssues: assessment.qualityIssues.filter((i) => i.severity === "minor").length,
-      overallSuccess: assessment.sessionSuccess,
-      evaluationMethod: "structured_llm",
-      timestamp: new Date().toISOString(),
-    };
-
-    this.log(`Quality assessment metrics: ${JSON.stringify(metrics)}`);
   }
 
   // Get execution summary for WorkspaceSupervisor

@@ -75,14 +75,10 @@ atlas <command> [subcommand] [args] [flags]
 Workspace lifecycle management.
 
 ```bash
-atlas workspace serve              # Start workspace server
 atlas workspace status             # Show workspace status
 atlas workspace list               # List available workspaces
 atlas workspace init [name]        # Initialize new workspace
 atlas workspace validate           # Validate workspace configuration
-
-# Aliases
-atlas work serve                   # Same as workspace serve
 ```
 
 ### `session` | `sesh` | `sess`
@@ -183,7 +179,7 @@ atlas tui --workspace <name>       # Start TUI with specific workspace loaded
 # Initialize and start a workspace
 atlas workspace init my-project
 cd my-project
-atlas workspace serve
+atlas daemon start
 
 # Check status
 atlas workspace status
@@ -247,7 +243,7 @@ Activated when workspace is loaded:
 
 - **Dual-Tab Interface**:
   - **Conversation Tab**: User commands, CLI responses, and system messages
-  - **Server Output Tab**: Real-time workspace server logs with performance indicators
+  - **Server Output Tab**: Real-time daemon logs with performance indicators
 
 - **Advanced Navigation**:
   - `j/k` or arrow keys: Navigate logs
@@ -310,7 +306,7 @@ help                     # Show help information
 
 ### Signal Integration
 
-- Direct HTTP API calls to running workspace server
+- Direct HTTP API calls to Atlas daemon
 - Real-time signal triggering with JSON payload validation
 - Automatic server port detection and routing
 
@@ -337,8 +333,8 @@ interface ServerStatus {
 
 ### Server Integration
 
-- **Smart Connection**: Automatically detects existing workspace servers via `/health` endpoint
-- **Process Management**: Spawns workspace server as child process only when needed
+- **Smart Connection**: Automatically detects existing Atlas daemon via `/health` endpoint
+- **Process Management**: Connects to Atlas daemon for workspace management
 - **Output Streaming**: Real-time log capture with ANSI escape sequence cleaning
 - **Health Monitoring**: Automatic server status detection and port discovery
 - **Signal Handling**: Clean shutdown with Ctrl+C
@@ -365,7 +361,7 @@ interface ServerStatus {
 1. Change working directory to workspace path
 2. Verify `workspace.yml` exists
 3. Exit splash screen mode
-4. Start workspace server process
+4. Connect to Atlas daemon
 5. Initialize normal TUI mode
 
 ---

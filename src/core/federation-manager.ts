@@ -3,7 +3,7 @@
  * Handles cross-workspace access control and scope resolution
  */
 
-import type { AtlasConfig, FederationConfig, FederationSharing } from "@atlas/types";
+import type { AtlasConfig, FederationConfig, FederationSharing } from "./config-loader.ts";
 
 export class FederationAccessError extends Error {
   constructor(

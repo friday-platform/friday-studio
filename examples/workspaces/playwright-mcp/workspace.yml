@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "7821d138-71a6-434c-bc64-10addcf33533"
   name: "playwright-mcp-example"
   description: "Example workspace demonstrating Playwright MCP integration with Atlas"
 
