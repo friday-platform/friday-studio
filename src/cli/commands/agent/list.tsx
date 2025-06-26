@@ -111,9 +111,18 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         return;
       }
 
+      // Transform agent data to match expected interface
+      const transformedAgents = agents.map((agent) => ({
+        name: agent.id, // Use ID as name
+        type: agent.type,
+        model: "N/A", // Default model if not provided
+        status: "unknown", // Default status
+        purpose: agent.purpose || "No purpose specified",
+      }));
+
       // Render with Ink
       render(
-        <AgentListComponent agents={agents} workspaceName={workspaceName} />,
+        <AgentListComponent agents={transformedAgents} workspaceName={workspaceName} />,
       );
       // Exit immediately after rendering
       Deno.exit(0);

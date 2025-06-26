@@ -1,13 +1,13 @@
 import { exists } from "@std/fs";
-import { ConfigLoader, NewWorkspaceConfig } from "../../../core/config-loader.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { ConfigLoader, WorkspaceConfig } from "../../../core/config-loader.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 
 // Helper function to resolve workspace and load config
 export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   workspace: { path: string; id: string; name: string };
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }> {
-  const registry = getWorkspaceRegistry();
+  const registry = getWorkspaceManager();
   await registry.initialize();
 
   let workspacePath = Deno.cwd();
@@ -41,7 +41,7 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 
     // Try to find in registry or register
     const currentWorkspace = (await registry.getCurrentWorkspace()) ||
-      (await registry.findOrRegister(Deno.cwd()));
+      (await registry.findOrRegisterWorkspace(Deno.cwd()));
 
     workspaceInfo = {
       path: currentWorkspace.path,
@@ -65,9 +65,9 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 // Alternative resolver that doesn't change directories (for interactive use)
 export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promise<{
   workspace: { path: string; id: string; name: string };
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }> {
-  const registry = getWorkspaceRegistry();
+  const registry = getWorkspaceManager();
   await registry.initialize();
   const targetWorkspace = await registry.findById(workspaceId);
 
@@ -94,7 +94,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
   id: string;
   name: string;
 }> {
-  const registry = getWorkspaceRegistry();
+  const registry = getWorkspaceManager();
   await registry.initialize();
 
   if (workspaceId) {
@@ -129,7 +129,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
     // Fallback to checking for workspace.yml in current directory
     if (await exists("workspace.yml")) {
       // Register this workspace if not already registered
-      const workspace = await registry.findOrRegister(Deno.cwd());
+      const workspace = await registry.findOrRegisterWorkspace(Deno.cwd());
       return {
         path: workspace.path,
         id: workspace.id,
@@ -145,7 +145,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
 }
 
 // Load workspace config with directory change (for CLI)
-export async function loadWorkspaceConfig(workspacePath: string): Promise<NewWorkspaceConfig> {
+export async function loadWorkspaceConfig(workspacePath: string): Promise<WorkspaceConfig> {
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
@@ -158,7 +158,7 @@ export async function loadWorkspaceConfig(workspacePath: string): Promise<NewWor
 }
 
 // Load workspace config without directory change (for interactive)
-export async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<NewWorkspaceConfig> {
+export async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<WorkspaceConfig> {
   const configLoader = new ConfigLoader(workspacePath);
   const mergedConfig = await configLoader.load();
   return mergedConfig.workspace;

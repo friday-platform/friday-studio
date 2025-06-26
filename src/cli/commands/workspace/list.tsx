@@ -1,5 +1,5 @@
 import { Box, render, Text } from "ink";
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,

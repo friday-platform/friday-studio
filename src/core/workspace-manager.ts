@@ -13,16 +13,17 @@ import * as yaml from "@std/yaml";
 import { z } from "zod/v4";
 import { logger } from "../utils/logger.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
+import { WorkspaceConfig, WorkspaceConfigSchema } from "./config-loader.ts";
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { IWorkspace } from "../types/core.ts";
 import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
 
-// Re-export types from workspace-registry-types for compatibility
+// Re-export types from workspace-registry-types for unified API
 export {
   type WorkspaceEntry,
   WorkspaceEntrySchema,
   WorkspaceStatus,
+  type WorkspaceStatus as WorkspaceStatusType,
 } from "./workspace-registry-types.ts";
 
 import {
@@ -119,7 +120,7 @@ export class WorkspaceManager {
     const absolutePath = await Deno.realPath(workspacePath);
     const configPath = join(absolutePath, "workspace.yml");
 
-    let config: Record<string, any> | undefined;
+    let config: WorkspaceConfig | undefined;
     let configHash: string | undefined;
 
     try {
@@ -128,8 +129,8 @@ export class WorkspaceManager {
       const configLoader = new ConfigLoader(absolutePath);
       const loadedConfig = await configLoader.load();
 
-      // Cache the full merged config
-      config = JSON.parse(JSON.stringify(loadedConfig)); // Deep clone to avoid mutations
+      // Cache the workspace config from merged config
+      config = loadedConfig.workspace; // Extract workspace portion from MergedConfig
 
       // Generate config hash for change detection
       const configJson = JSON.stringify(config, Object.keys(config).sort());
@@ -417,8 +418,8 @@ export class WorkspaceManager {
       const configLoader = new ConfigLoader(workspace.path);
       const loadedConfig = await configLoader.load();
 
-      // Cache the full merged config
-      const config = JSON.parse(JSON.stringify(loadedConfig)); // Deep clone
+      // Cache the workspace config from merged config
+      const config = loadedConfig.workspace; // Extract workspace portion from MergedConfig
 
       // Generate new config hash
       const configJson = JSON.stringify(config, Object.keys(config).sort());
@@ -529,6 +530,170 @@ export class WorkspaceManager {
         }
         : undefined,
     };
+  }
+
+  /**
+   * Get workspace configuration by slug (ID or name)
+   */
+  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<WorkspaceConfig | null> {
+    if (!this.registry) await this.initialize();
+
+    // Find workspace by ID or name
+    let workspace = await this.findById(workspaceSlug);
+    if (!workspace) {
+      workspace = await this.findByName(workspaceSlug);
+    }
+
+    if (!workspace) {
+      return null;
+    }
+
+    try {
+      // Read and parse the workspace.yml file
+      const workspaceContent = await Deno.readTextFile(workspace.configPath);
+      const rawConfig = yaml.parse(workspaceContent);
+
+      // Validate with Zod schema
+      const config = WorkspaceConfigSchema.parse(rawConfig);
+      return config;
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        logger.error(`Invalid workspace configuration for ${workspaceSlug}`, {
+          error: error.issues,
+        });
+      } else {
+        logger.error(`Failed to load workspace config for ${workspaceSlug}`, { error });
+      }
+      return null;
+    }
+  }
+
+  /**
+   * Get the current workspace (for current directory)
+   */
+  async getCurrentWorkspace(): Promise<WorkspaceEntry | null> {
+    const cwd = Deno.cwd();
+    return await this.findByPath(cwd);
+  }
+
+  /**
+   * Find or register a workspace
+   */
+  async findOrRegisterWorkspace(
+    path: string,
+    options?: {
+      name?: string;
+      description?: string;
+    },
+  ): Promise<WorkspaceEntry> {
+    const existing = await this.findByPath(path);
+    if (existing) return existing;
+
+    return await this.registerWorkspace(path, options);
+  }
+
+  /**
+   * Get running workspaces
+   */
+  async getRunningWorkspaces(): Promise<WorkspaceEntry[]> {
+    const all = await this.listAllPersisted();
+    return all.filter((w) => w.status === WorkspaceStatus.RUNNING);
+  }
+
+  /**
+   * Cleanup stale workspace entries
+   */
+  async cleanupWorkspaces(): Promise<number> {
+    if (!this.registry) await this.initialize();
+
+    const workspaces = await this.listAllPersisted();
+    let cleaned = 0;
+    const toRemove: string[] = [];
+
+    for (const workspace of workspaces) {
+      // Check if workspace directory still exists
+      const exists = await Deno.stat(workspace.path).catch(() => null);
+
+      if (!exists) {
+        toRemove.push(workspace.id);
+        cleaned++;
+      }
+    }
+
+    // Remove non-existent workspaces
+    for (const id of toRemove) {
+      await this.unregisterWorkspace(id);
+    }
+
+    logger.info(`Cleaned up ${cleaned} stale workspace entries`);
+    return cleaned;
+  }
+
+  /**
+   * Vacuum old stopped workspaces
+   */
+  async vacuumWorkspaces(): Promise<void> {
+    if (!this.registry) await this.initialize();
+
+    const workspaces = await this.listAllPersisted();
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - 30); // 30 days
+
+    const toRemove = workspaces
+      .filter((w) => {
+        if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
+          return new Date(w.stoppedAt) <= cutoff;
+        }
+        return false;
+      })
+      .map((w) => w.id);
+
+    for (const id of toRemove) {
+      await this.unregisterWorkspace(id);
+    }
+
+    logger.info(`Vacuumed ${toRemove.length} old workspace entries`);
+  }
+
+  /**
+   * Watch for workspace changes (real-time updates)
+   */
+  watchWorkspaces(): ReadableStream<WorkspaceEntry[]> {
+    if (!this.registry) throw new Error("Registry not initialized");
+
+    // Simple polling implementation
+    const stream = new ReadableStream<WorkspaceEntry[]>({
+      start: async (controller) => {
+        let isActive = true;
+
+        // Send initial state
+        controller.enqueue(await this.listAllPersisted());
+
+        // Simple polling for updates
+        const interval = setInterval(async () => {
+          if (!isActive) {
+            clearInterval(interval);
+            return;
+          }
+
+          try {
+            controller.enqueue(await this.listAllPersisted());
+          } catch (error) {
+            controller.error(error);
+            isActive = false;
+            clearInterval(interval);
+          }
+        }, 5000); // Poll every 5 seconds
+
+        // Cleanup function
+        return () => {
+          isActive = false;
+          clearInterval(interval);
+        };
+      },
+    });
+
+    return stream;
   }
 
   // ============================================================================

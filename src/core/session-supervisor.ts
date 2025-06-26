@@ -1871,11 +1871,24 @@ Provide a brief evaluation.`;
         0,
       );
 
+      this.logger.debug("Execution summary status calculation", {
+        hasExecutionPlan: !!this.executionPlan,
+        executionResultsLength: this.executionResults.length,
+        totalTasks,
+        phases: this.executionPlan.phases.length,
+        phaseAgentCounts: this.executionPlan.phases.map((p) => p.agents.length),
+      });
+
       if (this.executionResults.length >= totalTasks) {
         status = "completed";
       } else {
         status = "executing";
       }
+    } else {
+      this.logger.debug("Execution summary - no plan or results", {
+        hasExecutionPlan: !!this.executionPlan,
+        executionResultsLength: this.executionResults.length,
+      });
     }
 
     return {
