@@ -3,13 +3,16 @@
  * Provides common interface for different execution patterns
  */
 
+import type { IWorkspaceSignal } from "../../types/core.ts";
+import type { AgentMetadata, JobSpecification } from "../session-supervisor.ts";
+
 export interface ExecutionContext {
   sessionId: string;
   workspaceId: string;
-  signal: any;
-  payload: any;
-  availableAgents: any[];
-  jobSpec?: any;
+  signal: IWorkspaceSignal | Record<string, unknown>;
+  payload: Record<string, unknown>;
+  availableAgents: AgentMetadata[];
+  jobSpec?: JobSpecification;
   constraints?: {
     timeLimit?: number;
     costLimit?: number;
@@ -22,17 +25,17 @@ export interface ExecutionStep {
   agentId?: string;
   condition?: string;
   children?: ExecutionStep[];
-  config?: Record<string, any>;
+  config?: Record<string, unknown>;
   expectedOutputs?: string[];
 }
 
 export interface ExecutionResult {
   stepId: string;
   success: boolean;
-  output: any;
+  output: unknown;
   duration: number;
   error?: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface StrategyExecutionResult {
@@ -61,22 +64,24 @@ export abstract class BaseExecutionStrategy {
   }
 
   // Execute the strategy with given steps
-  abstract execute(steps: ExecutionStep[]): Promise<StrategyExecutionResult>;
+  abstract execute(
+    steps: ExecutionStep[],
+  ): StrategyExecutionResult | Promise<StrategyExecutionResult>;
 
   // Validate that steps are compatible with this strategy
   abstract validateSteps(steps: ExecutionStep[]): { valid: boolean; errors: string[] };
 
   // Get strategy-specific configuration schema
-  abstract getConfigSchema(): Record<string, any>;
+  abstract getConfigSchema(): Record<string, unknown>;
 
   // Helper method to create execution result
   protected createExecutionResult(
     stepId: string,
     success: boolean,
-    output: any,
+    output: unknown,
     duration: number,
     error?: string,
-    metadata?: Record<string, any>,
+    metadata?: Record<string, unknown>,
   ): ExecutionResult {
     return {
       stepId,

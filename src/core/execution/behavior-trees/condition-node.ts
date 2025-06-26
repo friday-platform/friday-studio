@@ -12,7 +12,7 @@ export interface ConditionNodeConfig {
   // Condition to evaluate
   condition: string;
   // Optional: expected value
-  expectedValue?: any;
+  expectedValue?: unknown;
   // Optional: comparison operator
   operator?: "equals" | "not_equals" | "greater" | "less" | "contains" | "regex";
   // Optional: path to value in context (dot notation)
@@ -24,26 +24,26 @@ export class ConditionNode extends BaseNode {
     super(config);
   }
 
-  async execute(context: NodeContext): Promise<NodeStatus> {
+  execute(context: NodeContext): Promise<NodeStatus> {
     const config = this.config as ConditionNodeConfig;
     this.log(`Evaluating condition: ${config.condition}`);
 
     try {
-      const result = await this.evaluateCondition(config, context);
+      const result = this.evaluateCondition(config, context);
       const status = result ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
 
       this.log(`Condition evaluated to: ${result} (${status})`);
-      return status;
+      return Promise.resolve(status);
     } catch (error) {
       this.log(`Condition evaluation failed: ${error}`, "error");
-      return NodeStatus.FAILURE;
+      return Promise.resolve(NodeStatus.FAILURE);
     }
   }
 
-  private async evaluateCondition(
+  private evaluateCondition(
     config: ConditionNodeConfig,
     context: NodeContext,
-  ): Promise<boolean> {
+  ): boolean {
     // Handle simple boolean conditions
     if (config.condition === "true") return true;
     if (config.condition === "false") return false;
@@ -58,21 +58,25 @@ export class ConditionNode extends BaseNode {
     return this.evaluatePredefinedCondition(config.condition, context);
   }
 
-  private getValueFromPath(context: NodeContext, path: string): any {
+  private getValueFromPath(context: NodeContext, path: string): unknown {
     const parts = path.split(".");
-    let current: any = context;
+    let current: unknown = context;
 
     for (const part of parts) {
       if (current === null || current === undefined) {
         return undefined;
       }
-      current = current[part];
+      if (typeof current === "object" && current !== null) {
+        current = (current as Record<string, unknown>)[part];
+      } else {
+        return undefined;
+      }
     }
 
     return current;
   }
 
-  private compareValues(actual: any, expected: any, operator: string): boolean {
+  private compareValues(actual: unknown, expected: unknown, operator: string): boolean {
     switch (operator) {
       case "equals":
         return actual === expected;
@@ -115,40 +119,44 @@ export class ConditionNode extends BaseNode {
         return context.currentInput !== undefined && context.currentInput !== null;
 
       case "is_first_agent":
-        return !context.globalState.hasOwnProperty("previousAgentOutput");
+        return !Object.prototype.hasOwnProperty.call(context.globalState, "previousAgentOutput");
 
-      case "is_error_present":
+      case "is_error_present": {
         const input = context.currentInput;
-        if (typeof input === "string") {
-          return input.toLowerCase().includes("error");
-        }
-        if (typeof input === "object" && input !== null) {
+        if (input && typeof input === "object") {
+          // Check if the input object contains error-related strings
           const inputStr = JSON.stringify(input).toLowerCase();
           return inputStr.includes("error") || inputStr.includes("fail");
         }
         return false;
+      }
 
       // Risk assessment conditions
-      case "risk_score_high":
-        const riskScore = context.globalState.riskScore || 0;
-        return riskScore > 0.8;
+      case "risk_score_high": {
+        const riskScore = context.globalState.riskScore;
+        return typeof riskScore === "number" && riskScore > 0.8;
+      }
 
-      case "risk_score_medium":
-        const riskScore2 = context.globalState.riskScore || 0;
-        return riskScore2 > 0.5 && riskScore2 <= 0.8;
+      case "risk_score_medium": {
+        const riskScore = context.globalState.riskScore;
+        return typeof riskScore === "number" && riskScore > 0.5 && riskScore <= 0.8;
+      }
 
-      case "risk_score_low":
-        const riskScore3 = context.globalState.riskScore || 0;
-        return riskScore3 <= 0.5;
+      case "risk_score_low": {
+        const riskScore = context.globalState.riskScore;
+        return typeof riskScore === "number" ? riskScore <= 0.5 : true; // Default to low risk if not set
+      }
 
       // Data size conditions
-      case "input_large":
+      case "input_large": {
         const inputSize = JSON.stringify(context.currentInput || {}).length;
         return inputSize > 1000;
+      }
 
-      case "input_small":
+      case "input_small": {
         const inputSize2 = JSON.stringify(context.currentInput || {}).length;
         return inputSize2 <= 100;
+      }
 
       default:
         this.log(`Unknown predefined condition: ${condition}`, "warn");

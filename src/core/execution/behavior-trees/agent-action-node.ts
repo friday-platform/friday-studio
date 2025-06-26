@@ -16,7 +16,7 @@ export interface AgentActionNodeConfig {
   // Input source configuration
   inputSource?: "signal" | "previous" | "global" | "custom";
   // Custom input (if inputSource is "custom")
-  customInput?: any;
+  customInput?: Record<string, unknown>;
   // Global state key to store output
   outputKey?: string;
   // Success criteria
@@ -84,11 +84,17 @@ export class AgentActionNode extends BaseNode {
     }
   }
 
-  private determineInput(config: AgentActionNodeConfig, context: NodeContext): any {
+  private determineInput(
+    config: AgentActionNodeConfig,
+    context: NodeContext,
+  ): Record<string, unknown> {
     switch (config.inputSource) {
       case "signal":
         // Use original signal payload
-        return context.globalState.originalPayload || context.currentInput;
+        return (context.globalState.originalPayload || context.currentInput) as Record<
+          string,
+          unknown
+        >;
 
       case "previous":
         // Use output from previous agent
@@ -100,7 +106,7 @@ export class AgentActionNode extends BaseNode {
 
       case "custom":
         // Use custom input specified in config
-        return config.customInput;
+        return config.customInput || {};
 
       default:
         // Default to current input
@@ -109,7 +115,7 @@ export class AgentActionNode extends BaseNode {
   }
 
   private validateOutput(
-    output: any,
+    output: Record<string, unknown>,
     criteria: NonNullable<AgentActionNodeConfig["successCriteria"]>,
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
@@ -147,7 +153,7 @@ export class AgentActionNode extends BaseNode {
           JSON.parse(output);
         }
         // If output is already an object, it's valid JSON-like
-      } catch (error) {
+      } catch (_error) {
         errors.push("Output is not valid JSON");
       }
     }
