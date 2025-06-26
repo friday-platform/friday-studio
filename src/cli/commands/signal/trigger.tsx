@@ -1,5 +1,5 @@
 import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
-import { ConfigLoader } from "../../../core/config-loader.ts";
+import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
 import {
   checkDaemonRunning,
   createDaemonNotRunningError,
@@ -172,26 +172,24 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
       }
     } else {
       // Use current workspace or error if no workspace specified
-      try {
-        const configLoader = new ConfigLoader();
-        const config = await configLoader.load();
-        const currentWorkspaceName = config.workspace.workspace.name;
+      const currentWorkspaceName = await getCurrentWorkspaceName();
 
-        // Find workspace by name in daemon
-        const allWorkspaces = await client.listWorkspaces();
-        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
-
-        if (currentWorkspace) {
-          targetWorkspaces.push({ id: currentWorkspace.id, name: currentWorkspace.name });
-        } else {
-          errorOutput(
-            `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
-          );
-          Deno.exit(1);
-        }
-      } catch (error) {
+      if (!currentWorkspaceName) {
         errorOutput(
           "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
+        Deno.exit(1);
+      }
+
+      // Find workspace by name in daemon
+      const allWorkspaces = await client.listWorkspaces();
+      const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+      if (currentWorkspace) {
+        targetWorkspaces.push({ id: currentWorkspace.id, name: currentWorkspace.name });
+      } else {
+        errorOutput(
+          `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
         );
         Deno.exit(1);
       }

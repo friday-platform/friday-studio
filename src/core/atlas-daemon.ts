@@ -8,6 +8,7 @@ import { WorkspaceStatus } from "./workspace-registry-types.ts";
 import { Workspace } from "./workspace.ts";
 import { ConfigLoader } from "./config-loader.ts";
 import { WorkspaceMemberRole } from "../types/core.ts";
+import { supervisorDefaults } from "../config/supervisor-defaults.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -30,6 +31,8 @@ export class AtlasDaemon {
   private isShuttingDown = false;
   private server: any = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
+  private isInitialized = false;
+  private supervisorDefaults: any = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -40,6 +43,54 @@ export class AtlasDaemon {
     this.app = new Hono();
     this.setupRoutes();
     this.setupSignalHandlers();
+  }
+
+  /**
+   * Initialize the daemon - load supervisor defaults, initialize WorkspaceManager, etc.
+   * Must be called before start()
+   */
+  async initialize(): Promise<void> {
+    if (this.isInitialized) return;
+
+    const logger = AtlasLogger.getInstance();
+    logger.info("Initializing Atlas daemon...");
+
+    // Load supervisor defaults once at startup
+    await this.loadSupervisorDefaults();
+
+    // Initialize WorkspaceManager singleton (with auto-import)
+    logger.info("Initializing WorkspaceManager...");
+    const manager = getWorkspaceManager();
+    await manager.initialize();
+
+    this.isInitialized = true;
+    logger.info("Atlas daemon initialized successfully");
+  }
+
+  /**
+   * Load supervisor defaults (compiled into the application)
+   */
+  private async loadSupervisorDefaults(): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    // Use compiled-in defaults - no file I/O needed
+    this.supervisorDefaults = supervisorDefaults;
+
+    logger.info("Loaded supervisor defaults", {
+      source: "compiled",
+      version: this.supervisorDefaults.version,
+      hasSupervisors: !!(this.supervisorDefaults as any)?.supervisors,
+    });
+  }
+
+  /**
+   * Get cached supervisor defaults
+   */
+  getSupervisorDefaults(): any {
+    if (!this.isInitialized) {
+      throw new Error("Daemon not initialized - call initialize() first");
+    }
+    return this.supervisorDefaults;
   }
 
   private setupRoutes() {
@@ -662,13 +713,11 @@ export class AtlasDaemon {
   }
 
   async start() {
+    // Ensure daemon is initialized
+    await this.initialize();
+
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
-
-    // Initialize WorkspaceManager singleton at daemon startup (with auto-import)
-    AtlasLogger.getInstance().info("Initializing WorkspaceManager...");
-    const manager = getWorkspaceManager();
-    await manager.initialize();
 
     AtlasLogger.getInstance().info(`Starting Atlas daemon on http://${hostname}:${port}`, {
       hostname,
@@ -692,13 +741,11 @@ export class AtlasDaemon {
   }
 
   async startNonBlocking(): Promise<{ finished: Promise<void> }> {
+    // Ensure daemon is initialized
+    await this.initialize();
+
     const port = this.options.port ?? 8080;
     const hostname = this.options.hostname || "localhost";
-
-    // Initialize WorkspaceManager singleton at daemon startup (with auto-import)
-    AtlasLogger.getInstance().info("Initializing WorkspaceManager...");
-    const manager = getWorkspaceManager();
-    await manager.initialize();
 
     AtlasLogger.getInstance().info(`Starting Atlas daemon on http://${hostname}:${port}`, {
       hostname,
