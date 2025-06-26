@@ -8,10 +8,10 @@ delivery through human/AI collaboration.
 - [Quick Start](#quick-start)
 - [Prerequisites](#prerequisites)
 - [Installation](#installation)
+- [Daemon Management](#daemon-management)
 - [Creating Your First Workspace](#creating-your-first-workspace)
 - [Understanding Jobs and Signals](#understanding-jobs-and-signals)
 - [Working with the TUI](#working-with-the-tui)
-- [Natural Language Job Creation](#natural-language-job-creation)
 - [Example Workflows](#example-workflows)
 - [Troubleshooting](#troubleshooting)
 
@@ -20,20 +20,19 @@ delivery through human/AI collaboration.
 Get Atlas running in 5 minutes:
 
 ```bash
-# 1. Clone and install
-git clone <atlas-repo>
-cd atlas
-./install.sh
+# 1. Install Atlas (Homebrew recommended)
+brew tap tempestteam/tap
+HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas
 
 # 2. Set up environment
-echo "ANTHROPIC_API_KEY=your-key-here" > .env
+export ANTHROPIC_API_KEY="your-key-here"
 
-# 3. Create a workspace
-deno task atlas workspace init my-first-workspace
-cd my-first-workspace
+# 3. Start the Atlas daemon
+atlas daemon start
 
-# 4. Start the interactive TUI
-deno task atlas tui
+# 4. Try an example workspace
+cd examples/workspaces/telephone
+atlas tui
 ```
 
 ## 📦 Prerequisites
@@ -49,448 +48,420 @@ deno task atlas tui
 - **Memory**: 4GB RAM minimum, 8GB recommended
 - **Storage**: 2GB free space for Atlas and workspace data
 
-## ⚡ Installation
+## 🔧 Installation
 
-### Option 1: Automated Installation
-
-```bash
-curl -fsSL https://get.atlas.dev/install.sh | sh
-```
-
-### Option 2: Manual Installation
+### Option 1: Homebrew (Recommended)
 
 ```bash
-# Clone the repository
-git clone <atlas-repo-url>
-cd atlas
+# Add the Tempest tap
+brew tap tempestteam/tap
 
-# Install dependencies
-deno cache --reload src/cli.tsx
-
-# Make CLI globally available
-deno install --allow-all --name atlas src/cli.tsx
+# Install Atlas (choose your channel)
+HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas      # Stable
+HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-nightly  # Nightly
+HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-edge     # Edge
 
 # Verify installation
-atlas help
+atlas --version
 ```
 
-### Option 3: Development Setup
+### Option 2: Direct Binary
+
+1. Download the latest release for your platform from
+   [GitHub Releases](https://github.com/tempestteam/atlas/releases)
+2. Extract and add the binary to your PATH
+3. Verify: `atlas --version`
+
+### Option 3: From Source
 
 ```bash
-git clone <atlas-repo-url>
+git clone https://github.com/tempestteam/atlas
 cd atlas
-
-# Use the development task runner
-deno task atlas help
+deno task atlas --version
 ```
+
+### Environment Setup
+
+```bash
+# Required: Anthropic API key
+export ANTHROPIC_API_KEY="your-api-key-here"
+
+# Optional: Default model configuration
+export ATLAS_DEFAULT_MODEL="claude-3-5-sonnet-20241022"
+
+# Optional: Atlas configuration directory
+export ATLAS_HOME="$HOME/.atlas"
+```
+
+## 🤖 Daemon Management
+
+Atlas uses a daemon architecture for centralized workspace management:
+
+```bash
+# Start the Atlas daemon
+atlas daemon start
+
+# Check daemon status
+atlas daemon status
+
+# Stop the daemon
+atlas daemon stop
+
+# Restart the daemon
+atlas daemon restart
+
+# View daemon logs
+atlas daemon logs
+```
+
+The daemon:
+
+- Manages all workspace lifecycles
+- Provides HTTP API for CLI commands
+- Caches workspace configurations securely
+- Persists state across restarts
 
 ## 🏗️ Creating Your First Workspace
 
-### Step 1: Initialize Workspace
+### Initialize a New Workspace
 
 ```bash
-# Create a new workspace
-atlas workspace init my-dev-team
+# Create workspace directory
+mkdir my-workspace && cd my-workspace
 
-# Navigate to workspace directory
-cd my-dev-team
+# Initialize with Atlas
+atlas init
+
+# Or initialize with custom name
+atlas init "My Custom Workspace"
 ```
 
-This creates a basic workspace structure:
-
-```
-my-dev-team/
-├── workspace.yml      # Main configuration
-├── jobs/             # Job definitions
-├── agents/           # Custom agent configurations
-└── .atlas/           # Atlas runtime data
-```
-
-### Step 2: Configure Your Workspace
-
-Edit `workspace.yml`:
+This creates a `workspace.yml` file with basic configuration:
 
 ```yaml
+version: "1.0"
+
 workspace:
-  name: "My Development Team"
-  id: "my-dev-team"
-  description: "AI-powered development workflow automation"
-  version: "1.0.0"
+  name: "My Workspace"
+  description: "AI agent workspace"
 
-# Define available signals (triggers)
+agents:
+  assistant:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "General purpose AI assistant"
+    prompts:
+      system: "You are a helpful AI assistant."
+
 signals:
-  github-webhook:
-    provider: "http-webhook"
-    path: "/github"
-    method: "POST"
-    description: "GitHub webhook events"
+  chat:
+    provider: "cli"
+    description: "Chat with the assistant"
 
-  manual-trigger:
-    provider: "http-webhook"
-    path: "/manual"
-    method: "POST"
-    description: "Manual job triggers"
-
-# Define available agents
-agents:
-  code-reviewer:
-    type: "llm"
-    model: "claude-3-5-sonnet-20241022"
-    purpose: "Code review and analysis"
-    tools: ["filesystem", "git"]
-
-  deployment-manager:
-    type: "llm"
-    model: "claude-3-5-sonnet-20241022"
-    purpose: "Deployment orchestration"
-    tools: ["kubernetes", "docker"]
-
-# Job references (detailed definitions in jobs/ directory)
 jobs:
-  code-review-workflow: "jobs/code-review.yml"
-  deployment-pipeline: "jobs/deployment.yml"
+  chat-job:
+    triggers:
+      - signal: "chat"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "assistant"
+          input_source: "signal"
 ```
 
-### Step 3: Create Your First Job
-
-Create `jobs/code-review.yml`:
-
-```yaml
-name: "code-review-workflow"
-description: "Automated code review process"
-
-# Define when this job triggers
-triggers:
-  - signal: "github-webhook"
-    condition: {
-      "and": [{ "==": [{ "var": "event.action" }, "opened"] }, { "var": "event.pull_request" }],
-    }
-
-# Define execution strategy
-execution:
-  strategy: "sequential"
-  agents:
-    - id: "code-reviewer"
-      role: "primary-reviewer"
-    - id: "deployment-manager"
-      role: "deployment-checker"
-
-# Configure session behavior
-session_prompts:
-  planning: "You are reviewing a GitHub pull request. Focus on code quality, security, and best practices."
-  execution: "Provide detailed feedback and actionable suggestions."
-
-# Resource limits
-resources:
-  estimated_duration_seconds: 300
-  cost_limit: 5.00
-```
-
-## 📡 Understanding Jobs and Signals
-
-### Signals (Triggers)
-
-Signals are events that trigger job execution:
-
-- **HTTP Webhooks**: GitHub, GitLab, external services
-- **CLI Triggers**: Manual job execution
-- **Stream Signals**: Real-time data feeds
-- **Kubernetes Events**: Pod failures, deployments
-
-### Jobs
-
-Jobs define what happens when signals are received:
-
-- **Multi-Agent Coordination**: Sequential, parallel, or conditional execution
-- **Natural Language Configuration**: AI-powered job creation
-- **Resource Management**: Cost and time limits
-- **Session Prompts**: Context-specific instructions
-
-### Agents
-
-Atlas supports three types of agents:
-
-1. **LLM Agents**: Claude, GPT, or other language models
-2. **Tempest Agents**: Pre-built, specialized agents
-3. **Remote Agents**: External HTTP services
-
-## 🖥️ Working with the TUI
-
-### Launch the TUI
-
-```bash
-# Start from workspace directory
-atlas tui
-
-# Or specify workspace
-atlas tui --workspace /path/to/workspace
-```
-
-### TUI Navigation
-
-- **Tab/j/k**: Navigate between interface elements
-- **gg/G**: Jump to top/bottom of logs
-- **Ctrl+D/U**: Page navigation
-- **y**: Copy log entries
-- **Tab**: Switch between conversation and server tabs
-
-### Available Commands
-
-All TUI commands use `/` prefix:
-
-```bash
-# Workspace management
-/workspace status
-/workspace list
-
-# Signal operations  
-/signal list
-/signal trigger github-webhook '{"action":"opened"}'
-
-# Session management
-/session list
-/ps
-
-# Agent information
-/agent list
-/agent describe code-reviewer
-
-# Configuration assistance
-/config create-job "Review pull requests and check deployment readiness"
-/config validate
-/config confirmations
-```
-
-## 🤖 Natural Language Job Creation
-
-Atlas can create jobs from natural language descriptions using AI.
-
-### Using the TUI
-
-```bash
-# In the TUI, use the config command:
-/config create-job "When a GitHub pull request is opened, have the code reviewer check it and then notify Slack"
-```
-
-### Using the CLI
-
-```bash
-atlas job create --description "Monitor Kubernetes pod failures and automatically restart them" --workspace my-ops-team
-```
-
-### Example Job Descriptions
-
-Atlas can understand complex workflows:
-
-- _"When a deployment fails, analyze the logs, check resource usage, and notify the team in Slack
-  with a summary"_
-- _"On every commit to main branch, run tests, build Docker image, and deploy to staging if tests
-  pass"_
-- _"Monitor database performance metrics and alert the DBA team if query times exceed 500ms"_
-
-### Confirmation Workflow
-
-For complex conditions, Atlas will ask for confirmation:
-
-```
-✅ Job created: "deployment-monitor"
-⚠️  The following conditions need confirmation:
-   - Trigger condition: "deployment.status == 'failed'"
-   
-Use `/config confirmations` to review and approve.
-```
-
-## 📚 Example Workflows
-
-### 1. Code Review Automation
-
-```yaml
-# jobs/github-code-review.yml
-name: "github-code-review"
-description: "Comprehensive GitHub PR review"
-
-triggers:
-  - signal: "github-webhook"
-    condition: {
-      "or": [
-        { "==": [{ "var": "event.action" }, "opened"] },
-        { "==": [{ "var": "event.action" }, "synchronize"] },
-      ],
-    }
-
-execution:
-  strategy: "parallel"
-  agents:
-    - id: "security-scanner"
-      role: "security-review"
-    - id: "code-quality-checker"
-      role: "quality-review"
-    - id: "performance-analyzer"
-      role: "performance-review"
-
-session_prompts:
-  planning: "Analyze the pull request for security, quality, and performance issues."
-  execution: "Provide specific, actionable feedback with line numbers and suggestions."
-```
-
-### 2. Incident Response
-
-```yaml
-# jobs/incident-response.yml
-name: "incident-response"
-description: "Automated incident detection and response"
-
-triggers:
-  - signal: "k8s-events"
-    condition: "event.type == 'Warning' && event.reason == 'Failed'"
-
-execution:
-  strategy: "sequential"
-  agents:
-    - id: "incident-detector"
-      role: "triage"
-    - id: "log-analyzer"
-      role: "analysis"
-    - id: "slack-notifier"
-      role: "communication"
-
-resources:
-  estimated_duration_seconds: 120
-  cost_limit: 2.00
-```
-
-### 3. Database Monitoring
-
-```yaml
-# jobs/db-performance-monitor.yml
-name: "db-performance-monitor"
-description: "Database performance monitoring and optimization"
-
-triggers:
-  - signal: "metric-stream"
-    condition: "metric.query_time > 500 && metric.db == 'production'"
-
-execution:
-  strategy: "conditional"
-  agents:
-    - id: "db-analyzer"
-      role: "performance-analysis"
-    - id: "query-optimizer"
-      role: "optimization"
-      condition: "previous_agent.confidence > 0.8"
-```
-
-## 🔧 Troubleshooting
-
-### Common Issues
-
-#### 1. "No workspace found"
-
-```bash
-# Solution: Initialize or navigate to workspace
-atlas workspace init my-workspace
-# OR
-cd path/to/existing/workspace
-```
-
-#### 2. "ANTHROPIC_API_KEY not set"
-
-```bash
-# Solution: Set your API key
-echo "ANTHROPIC_API_KEY=your-key-here" > .env
-export ANTHROPIC_API_KEY=your-key-here
-```
-
-#### 3. "Permission denied" errors
-
-```bash
-# Solution: Install with proper permissions
-deno install --allow-all --name atlas src/cli.tsx
-```
-
-#### 4. "Agent not found"
-
-Check your `workspace.yml` agent configuration:
-
-```yaml
-agents:
-  my-agent:
-    type: "llm" # Must be: llm, tempest, or remote
-    model: "claude-3-5-sonnet-20241022" # Required for LLM agents
-```
-
-#### 5. TUI not starting
-
-```bash
-# Check TypeScript compilation
-deno check src/cli.tsx
-
-# Run with debug flags
-deno task atlas tui --trace-leaks
-```
-
-### Debug Commands
+### Validate Configuration
 
 ```bash
 # Check workspace configuration
-atlas workspace validate
+atlas config validate
 
-# View detailed logs
-atlas logs <session-id> --verbose
-
-# Test signal configuration
-atlas signal test github-webhook
-
-# Check agent connectivity
-atlas agent test code-reviewer
+# See workspace info
+atlas
 ```
 
-### Log Locations
+## 🎯 Understanding Jobs and Signals
 
-- **Workspace logs**: `~/.atlas/logs/workspaces/`
-- **Session logs**: `~/.atlas/logs/sessions/`
-- **Agent logs**: `~/.atlas/logs/agents/`
+### Signals
+
+Signals are triggers that start workflows:
+
+```yaml
+signals:
+  webhook:
+    provider: "http"
+    endpoint: "/webhook"
+    description: "Handle incoming webhooks"
+
+  schedule:
+    provider: "cron"
+    schedule: "0 9 * * MON"
+    description: "Weekly Monday report"
+
+  manual:
+    provider: "cli"
+    description: "Manual trigger"
+```
+
+### Jobs
+
+Jobs define what happens when signals trigger:
+
+```yaml
+jobs:
+  process-webhook:
+    triggers:
+      - signal: "webhook"
+        condition: { "type": "deployment" }
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "validator"
+          input_source: "signal"
+        - id: "processor"
+          input_source: "previous"
+```
+
+### Triggering Signals
+
+```bash
+# Trigger via CLI
+atlas signal trigger manual
+
+# Trigger with data
+atlas signal trigger webhook --data '{"type":"deployment","env":"prod"}'
+
+# Trigger in specific workspace
+atlas signal trigger test --workspace my-workspace-id
+```
+
+## 🖥️ Working with the TUI
+
+The Terminal User Interface (TUI) provides an interactive way to work with Atlas:
+
+```bash
+# Launch TUI
+atlas tui
+
+# Or launch interactive mode
+atlas
+```
+
+### TUI Features
+
+- **Workspace Detection**: Automatically finds and displays available workspaces
+- **Dual-Panel Layout**: Separate panels for conversation and server logs
+- **Vi-Style Navigation**: j/k for up/down, gg/G for top/bottom
+- **Slash Commands**: All Atlas commands available with `/` prefix
+- **Real-time Logs**: Live session and server output
+- **Copy Support**: Press `y` to copy selected lines
+
+### Key Navigation
+
+| Key        | Action                 |
+| ---------- | ---------------------- |
+| `j/k`      | Navigate up/down       |
+| `gg/G`     | Jump to top/bottom     |
+| `Ctrl+D/U` | Page up/down           |
+| `Tab`      | Switch panels          |
+| `/command` | Execute Atlas commands |
+| `y`        | Copy selected line     |
+| `Enter`    | Expand/copy content    |
+| `Esc`      | Close expanded view    |
+
+### TUI Commands
+
+```bash
+# In TUI, all commands use / prefix
+/signal list                    # List available signals
+/signal trigger test           # Trigger a signal
+/session list                  # List active sessions
+/ps                           # Shorthand for session list
+/logs <session-id>            # View session logs
+/help                         # Show command help
+```
+
+## 📋 Example Workflows
+
+### 1. Simple Chat Agent
+
+```yaml
+# workspace.yml
+workspace:
+  name: "Chat Assistant"
+
+agents:
+  chat-bot:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "Conversational assistant"
+    prompts:
+      system: "You are a helpful, friendly AI assistant."
+
+signals:
+  chat:
+    provider: "cli"
+
+jobs:
+  chat-session:
+    triggers:
+      - signal: "chat"
+    execution:
+      agents:
+        - id: "chat-bot"
+```
+
+```bash
+# Usage
+atlas signal trigger chat --data '{"message": "Hello!"}'
+```
+
+### 2. Multi-Agent Pipeline
+
+```yaml
+agents:
+  analyzer:
+    type: "llm"
+    purpose: "Analyze input data"
+    prompts:
+      system: "Analyze the provided data and extract key insights."
+
+  reporter:
+    type: "llm"
+    purpose: "Generate reports"
+    prompts:
+      system: "Create a comprehensive report based on the analysis."
+
+jobs:
+  analysis-pipeline:
+    triggers:
+      - signal: "analyze"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "analyzer"
+          input_source: "signal"
+        - id: "reporter"
+          input_source: "previous"
+```
+
+### 3. Scheduled Monitoring
+
+```yaml
+signals:
+  daily-check:
+    provider: "cron"
+    schedule: "0 9 * * *" # 9 AM daily
+
+jobs:
+  health-monitor:
+    triggers:
+      - signal: "daily-check"
+    execution:
+      agents:
+        - id: "monitor"
+          input_source: "signal"
+```
+
+## 🚨 Troubleshooting
+
+### Common Issues
+
+#### 1. Daemon Not Running
+
+```bash
+# Check daemon status
+atlas daemon status
+
+# Start if not running
+atlas daemon start
+
+# Check logs for errors
+atlas daemon logs
+```
+
+#### 2. Workspace Not Found
+
+```bash
+# List registered workspaces
+atlas
+
+# Register current directory
+cd my-workspace
+atlas  # Auto-registers if workspace.yml exists
+```
+
+#### 3. Signal Trigger Failures
+
+```bash
+# Validate workspace config
+atlas config validate
+
+# Check signal definitions
+atlas signal list
+
+# Use correct signal name
+atlas signal trigger correct-name --data '{}'
+```
+
+#### 4. Session Stuck or Failed
+
+```bash
+# List active sessions
+atlas ps
+
+# View session logs
+atlas logs <session-id>
+
+# Cancel if needed (sessions auto-cleanup)
+```
+
+### Debug Mode
+
+```bash
+# Start daemon with debug logging
+ATLAS_LOG_LEVEL=debug atlas daemon start
+
+# Run commands with verbose output
+ATLAS_LOG_LEVEL=debug atlas signal trigger test
+```
+
+### Configuration Issues
+
+```bash
+# Validate workspace configuration
+atlas config validate
+
+# Check workspace detection
+atlas daemon status
+
+# Refresh workspace cache
+atlas daemon restart
+```
 
 ### Getting Help
 
-```bash
-# CLI help
-atlas help
-atlas workspace help
-atlas signal help
+- **Built-in Help**: Use `atlas --help` or `help` in TUI
+- **Examples**: Check `examples/workspaces/` for working configurations
+- **Documentation**: See `CLAUDE.md` for technical details
+- **Community**: Join discussions on GitHub Issues
 
-# TUI help
-/help
+### Performance Tips
 
-# Community resources
-# - Documentation: https://docs.atlas.dev
-# - Discord: https://discord.gg/atlas-dev  
-# - GitHub Issues: https://github.com/atlas/issues
-```
+1. **Daemon Management**: Keep daemon running for best performance
+2. **Config Caching**: Avoid frequent workspace.yml changes
+3. **Session Monitoring**: Use `atlas ps` to track active sessions
+4. **Log Management**: Logs auto-rotate; use specific session IDs
 
-## 🎯 Next Steps
+## 🎉 Next Steps
 
-After completing this guide:
+Once you're comfortable with the basics:
 
-1. **Explore Example Workspaces**: Check `examples/workspaces/` for pre-built configurations
-2. **Customize Agents**: Create your own agent configurations for specific use cases
-3. **Set Up Integrations**: Connect Atlas to your existing tools (GitHub, Slack, Kubernetes)
-4. **Create Complex Workflows**: Build multi-step automation using natural language
-5. **Monitor Performance**: Use the TUI to track job execution and optimize workflows
+1. **Explore Examples**: Try the telephone game, k8s-assistant, or other example workspaces
+2. **Custom Agents**: Create specialized agents for your use cases
+3. **Advanced Signals**: Set up webhooks, cron schedules, or stream processing
+4. **MCP Integration**: Connect to Model Context Protocol servers
+5. **Memory & Context**: Configure persistent memory across sessions
 
-## 📖 Additional Resources
+For advanced topics, see [`CLAUDE.md`](CLAUDE.md) and the `docs/` directory.
 
-- **[Configuration Architecture](docs/CONFIGURATION_ARCHITECTURE.md)**: Deep dive into workspace
-  configuration
-- **[Agent Types Guide](docs/AGENT_TYPES.md)**: Comprehensive agent development
-- **[Signal Processing](docs/ENHANCED_SIGNAL_PROCESSING.md)**: Advanced signal configuration
-- **[Memory Management](docs/memory-model-flow.md)**: Understanding Atlas memory systems
-- **[CLI Reference](docs/CLI_SHORTHANDS.md)**: Complete command reference
-
----
-
-**Welcome to the future of AI-powered software delivery!** 🚀
-
-Atlas transforms how teams collaborate with AI agents to build, deploy, and maintain software. Start
-small with simple jobs and gradually build sophisticated multi-agent workflows that revolutionize
-your development process.
+Welcome to Atlas! 🚀

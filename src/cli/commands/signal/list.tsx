@@ -1,6 +1,6 @@
 import { render } from "ink";
 import { SignalListComponent } from "../../modules/signals/SignalListComponent.tsx";
-import { resolveWorkspaceOnly, loadWorkspaceConfig } from "../../modules/workspaces/resolver.ts";
+import { loadWorkspaceConfig, resolveWorkspaceOnly } from "../../modules/workspaces/resolver.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
@@ -68,4 +68,3 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     Deno.exit(1);
   }
 };
-

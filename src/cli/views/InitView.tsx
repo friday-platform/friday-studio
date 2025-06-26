@@ -1,12 +1,6 @@
 import { Box, Text, useInput } from "ink";
-import {
-  TextInput,
-  Spinner,
-  ThemeProvider,
-  defaultTheme,
-  extendTheme,
-} from "@inkjs/ui";
-import { useState, useCallback } from "react";
+import { defaultTheme, extendTheme, Spinner, TextInput, ThemeProvider } from "@inkjs/ui";
+import { useCallback, useState } from "react";
 import process from "node:process";
 import { createAndRegisterWorkspace } from "../modules/workspaces/creator.ts";
 import { MultiSelect } from "../components/multi-select.tsx";
@@ -170,7 +164,7 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
       <Box flexDirection="column" padding={1}>
         <Box flexDirection="row" alignItems="center">
           <Spinner type="dots" />
-          <Text> Creating workspace...</Text>
+          <Text>Creating workspace...</Text>
         </Box>
       </Box>
     );
@@ -191,14 +185,12 @@ const InitViewContent = ({ onExit }: InitViewProps) => {
         </Box>
         <Box>
           <Text>
-            Agents:{" "}
-            {config.agents.length > 0 ? config.agents.join(", ") : "(none)"}
+            Agents: {config.agents.length > 0 ? config.agents.join(", ") : "(none)"}
           </Text>
         </Box>
         <Box>
           <Text>
-            Signals:{" "}
-            {config.signals.length > 0 ? config.signals.join(", ") : "(none)"}
+            Signals: {config.signals.length > 0 ? config.signals.join(", ") : "(none)"}
           </Text>
         </Box>
 

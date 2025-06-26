@@ -1,8 +1,9 @@
-import { exists } from "@std/fs";
+import {
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
 import { ConfigLoader } from "../../../core/config-loader.ts";
-import type { WorkspaceConfig } from "@atlas/types";
-import { FileSystemConfigurationAdapter } from "@atlas/storage";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 import { errorOutput, infoOutput, warningOutput } from "../../utils/output.ts";
 import { isCancel, spinner, text } from "../../utils/prompts.tsx";
 
@@ -42,13 +43,67 @@ export const builder = {
 
 export const handler = async (argv: TestArgs): Promise<void> => {
   try {
-    const workspace = await resolveWorkspace(argv.workspace);
-    const config = await loadWorkspaceConfig(workspace.path);
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
+    }
 
-    const agentConfig = config.agents?.[argv.name];
-    if (!agentConfig) {
+    const client = getDaemonClient();
+
+    // Determine target workspace
+    let workspaceId: string;
+    let workspaceName: string;
+
+    if (argv.workspace) {
+      // Use specified workspace - try to find by ID or name
+      try {
+        const workspace = await client.getWorkspace(argv.workspace);
+        workspaceId = workspace.id;
+        workspaceName = workspace.name;
+      } catch (error) {
+        // Try to find by name if ID lookup failed
+        const allWorkspaces = await client.listWorkspaces();
+        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
+        if (foundWorkspace) {
+          workspaceId = foundWorkspace.id;
+          workspaceName = foundWorkspace.name;
+        } else {
+          throw new Error(`Workspace '${argv.workspace}' not found`);
+        }
+      }
+    } else {
+      // Use current workspace (detect from current directory)
+      try {
+        const configLoader = new ConfigLoader();
+        const config = await configLoader.load();
+        const currentWorkspaceName = config.workspace.workspace.name;
+
+        // Find workspace by name in daemon
+        const allWorkspaces = await client.listWorkspaces();
+        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+        if (currentWorkspace) {
+          workspaceId = currentWorkspace.id;
+          workspaceName = currentWorkspace.name;
+        } else {
+          throw new Error(
+            `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
+          );
+        }
+      } catch (error) {
+        throw new Error(
+          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
+      }
+    }
+
+    // Check if agent exists
+    const agents = await client.listAgents(workspaceId);
+    const agentExists = agents.some((agent) => agent.id === argv.name);
+
+    if (!agentExists) {
       errorOutput(
-        `Agent '${argv.name}' not found in workspace '${workspace.name}' (${workspace.id})`,
+        `Agent '${argv.name}' not found in workspace '${workspaceName}' (${workspaceId})`,
       );
       Deno.exit(1);
     }
@@ -56,7 +111,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     // Get message either from flag or prompt
     let message = argv.message;
     if (!message) {
-      message = (await text({
+      message = await text({
         message: `Enter message to send to ${argv.name}:`,
         placeholder: "Hello, agent!",
         validate: (value) => {
@@ -64,7 +119,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
             return "Message cannot be empty";
           }
         },
-      })) as string;
+      }) as string;
 
       if (isCancel(message)) {
         infoOutput("Agent test cancelled");
@@ -84,8 +139,8 @@ export const handler = async (argv: TestArgs): Promise<void> => {
 
     const result = {
       agent: argv.name,
-      workspace: workspace.name,
-      workspaceId: workspace.id,
+      workspace: workspaceName,
+      workspaceId: workspaceId,
       message: message,
       status: "not_implemented",
       response:
@@ -100,9 +155,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
       infoOutput("Use 'atlas signal trigger' to test agents in a workflow");
       infoOutput(`\nTo test '${argv.name}', you can:`);
       infoOutput(`1. Configure a signal that uses this agent`);
-      infoOutput(
-        `2. Run: atlas signal trigger <signal-name> --data '{"message": "${message}"}'`,
-      );
+      infoOutput(`2. Run: atlas signal trigger <signal-name> --data '{"message": "${message}"}'`);
     }
 
     Deno.exit(0);
@@ -111,75 +164,3 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     Deno.exit(1);
   }
 };
-
-// Helper function to resolve workspace from ID or current directory
-async function resolveWorkspace(workspaceId?: string): Promise<{
-  path: string;
-  id: string;
-  name: string;
-}> {
-  const registry = getWorkspaceRegistry();
-  await registry.initialize();
-
-  if (workspaceId) {
-    // Find by ID or name in registry
-    const workspace = (await registry.findById(workspaceId)) ||
-      (await registry.findByName(workspaceId));
-
-    if (!workspace) {
-      throw new Error(
-        `Workspace '${workspaceId}' not found. ` +
-          `Run 'atlas workspace list' to see available workspaces.`,
-      );
-    }
-
-    return {
-      path: workspace.path,
-      id: workspace.id,
-      name: workspace.name,
-    };
-  } else {
-    // Try current directory
-    const currentWorkspace = await registry.getCurrentWorkspace();
-
-    if (currentWorkspace) {
-      return {
-        path: currentWorkspace.path,
-        id: currentWorkspace.id,
-        name: currentWorkspace.name,
-      };
-    }
-
-    // Fallback to checking for workspace.yml in current directory
-    if (await exists("workspace.yml")) {
-      // Register this workspace if not already registered
-      const workspace = await registry.findOrRegister(Deno.cwd());
-      return {
-        path: workspace.path,
-        id: workspace.id,
-        name: workspace.name,
-      };
-    }
-
-    throw new Error(
-      "No workspace specified and not in a workspace directory. " +
-        "Use --workspace flag or run from a workspace directory.",
-    );
-  }
-}
-
-// Helper function to load workspace configuration
-async function loadWorkspaceConfig(
-  workspacePath: string,
-): Promise<WorkspaceConfig> {
-  const originalCwd = Deno.cwd();
-  try {
-    Deno.chdir(workspacePath);
-    const adapter = new FileSystemConfigurationAdapter();
-    const configLoader = new ConfigLoader(adapter);
-    const mergedConfig = await configLoader.load();
-    return mergedConfig.workspace;
-  } finally {
-    Deno.chdir(originalCwd);
-  }
-}

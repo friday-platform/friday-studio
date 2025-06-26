@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 
 interface Option {
   label: string;
@@ -45,7 +45,7 @@ export const MultiSelect = ({
         onChange?.(newSelectedValues);
       }
     },
-    { isActive: !isDisabled }
+    { isActive: !isDisabled },
   );
 
   return (

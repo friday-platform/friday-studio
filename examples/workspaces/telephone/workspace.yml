@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "7821d138-71a6-434c-bc64-10addcf33532"
   name: "Multi-Provider Telephone Game"
   description: "A game where messages transform through multiple agents using different LLM providers"
 
@@ -11,8 +10,8 @@ server:
     enabled: true
     discoverable:
       capabilities:
-        - "workspace_jobs_*"
-        - "workspace_sessions_*"
+        - "workspace.jobs.*"
+        - "workspace.sessions.*"
       jobs:
         - "telephone"
         - "public-*"
@@ -76,13 +75,13 @@ jobs:
         - id: "embellishment-agent"
           input_source: "previous"
           tools:
-            - "workspace_memory_recall"
-            - "workspace_memory_store" # Can store transformation patterns
+            - "workspace.memory.recall"
+            - "workspace.memory.store" # Can store transformation patterns
         - id: "reinterpretation-agent"
           input_source: "previous"
           tools:
-            - "workspace_memory_recall"
-            - "workspace_sessions_describe" # Can check session progress
+            - "workspace.memory.recall"
+            - "workspace.sessions.describe" # Can check session progress
 
 # Agent definitions
 agents:

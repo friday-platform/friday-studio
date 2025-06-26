@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "a8c4d759-2e5b-4f3c-9a1d-8c7b3e6f2a9d"
   name: "k8s-assistant"
   description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
 
@@ -39,28 +38,28 @@ jobs:
   # -------------------------
   # Direct Operations
   # -------------------------
-  unified-k8s-operation:
-    name: "unified-k8s-operation"
-    description: "Comprehensive Kubernetes operation handler via HTTP API"
-    triggers:
-      - signal: "http-k8s"
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "k8s-main-agent"
+  # unified-k8s-operation:
+  #   name: "unified-k8s-operation"
+  #   description: "Comprehensive Kubernetes operation handler via HTTP API"
+  #   triggers:
+  #     - signal: "http-k8s"
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "k8s-main-agent"
 
-  direct-k8s-operation:
-    name: "direct-k8s-operation"
-    description: "Direct Kubernetes operation execution via CLI interface"
-    triggers:
-      - signal: "cli-k8s"
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "k8s-main-agent"
+  # direct-k8s-operation:
+  #   name: "direct-k8s-operation"
+  #   description: "Direct Kubernetes operation execution via CLI interface"
+  #   triggers:
+  #     - signal: "cli-k8s"
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "k8s-main-agent"
 
   # -------------------------
-  # Real-time Monitoring (KEPT INACTIVE)
+  # Real-time Monitoring
   # -------------------------
 
   # handle-k8s-event:
@@ -78,63 +77,153 @@ jobs:
   # Linear Integration
   # -------------------------
 
-  linear-devops-task:
-    name: "linear-devops-task"
-    description: "DevOps and infrastructure task automation from Linear issues. Handles Kubernetes operations, deployments, scaling, troubleshooting, and infrastructure management based on Linear tickets."
+  # linear-cluster-issue-triage:
+  #   name: "linear-cluster-issue-triage"
+  #   description: "Automated cluster issue triage from Linear tickets"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         data.action === "create" &&
+  #         data.data.type === "Issue" &&
+  #         (data.data.labels?.some(l => ["k8s", "cluster", "devops", "deployment", "pod"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
+  #          ["kubernetes", "cluster", "pod", "deployment", "service", "ingress"].some(keyword =>
+  #            data.data.title.toLowerCase().includes(keyword) ||
+  #            data.data.description?.toLowerCase().includes(keyword)))
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "k8s-main-agent"
+  #       - id: "local-assistant"
+
+  # linear-devops-automation:
+  #   name: "linear-devops-automation"
+  #   description: "Automated DevOps task execution from Linear issue updates"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         (data.action === "update" || data.action === "create") &&
+  #         data.data.type === "Comment" &&
+  #         data.data.body &&
+  #         ["kubectl", "restart", "scale", "logs", "describe", "get pods", "get services"].some(cmd =>
+  #           data.data.body.toLowerCase().includes(cmd))
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "k8s-main-agent"
+  #       - id: "local-assistant"
+
+  # linear-incident-resolution:
+  #   name: "linear-incident-resolution"
+  #   description: "Automated incident resolution workflow for assigned cluster issues"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         data.action === "update" &&
+  #         data.data.type === "Issue" &&
+  #         data.data.assignee?.email?.includes("atlas") &&
+  #         data.data.state.name === "In Progress" &&
+  #         data.data.priority <= 2
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "k8s-main-agent"
+  #       - id: "local-assistant"
+
+  # -------------------------
+  # Linear MCP Testing
+  # -------------------------
+  linear-mcp-test:
+    name: "linear-mcp-test"
+    description: "Test Linear MCP integration by creating and updating issues"
     triggers:
       - signal: "linear-webhook"
-        condition: |
-          (data.action === "create" || data.action === "update") &&
-          data.data.type === "Issue" &&
-          (data.data.labels?.some(l => ["k8s", "kubernetes", "cluster", "devops", "deployment", "pod", "infrastructure", "scale", "restart"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
-           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress", "scale", "restart", "logs", "kubectl"].some(keyword =>
-             data.data.title.toLowerCase().includes(keyword) ||
-             data.data.description?.toLowerCase().includes(keyword)))
-    success_criteria:
-      k8s_operation_completed: "Kubernetes operation executed successfully with valid kubectl response"
-      linear_issue_updated: "Linear issue status updated with operation results and proper state transition"
-      workflow_completion: "Both agents completed their tasks without critical errors"
     execution:
       strategy: "sequential"
       agents:
-        - id: "k8s-main-agent"
         - id: "linear-writer"
 
 # =============================================================================
 # AGENT CONFIGURATION
 # =============================================================================
-# Clear separation of responsibilities:
-# - k8s-main-agent: Kubernetes cluster operations worker (kubectl, deployments, scaling, monitoring)
-# - linear-writer: Linear issue management specialist (creates/updates issues, manages status)
+# Multi-agent architecture for Kubernetes management:
+# - k8s-main-agent: Primary AI agent for K8s operations via ACP protocol
+# - local-assistant: LLM agent for documentation, Linear integration, and support
 # =============================================================================
 
 agents:
-  k8s-main-agent:
-    type: "remote"
-    protocol: "acp"
-    endpoint: "http://localhost:8080"
-    purpose: "Kubernetes cluster operations worker. Handles kubectl commands, deployment management, scaling, troubleshooting, log retrieval, and cluster monitoring. Does NOT handle Linear issue management."
+  # k8s-main-agent:
+  #   type: "remote"
+  #   protocol: "acp"
+  #   endpoint: "http://localhost:8080"
+  #   purpose: "AI-powered Kubernetes management agent using ReAct framework for intelligent deployment generation, validation, cluster operations, and Linear issue automation"
 
-    # ACP Protocol Configuration
-    acp:
-      agent_name: "k8s-deployment-manager"
-      default_mode: "sync"
-      timeout_ms: 180000 # 2-minute timeout for complex operations
-      max_retries: 2
-      health_check_interval: 30000 # Health check every 30 seconds
+  #   # ACP Protocol Configuration
+  #   acp:
+  #     agent_name: "k8s-deployment-manager"
+  #     default_mode: "sync"
+  #     timeout_ms: 120000 # 2-minute timeout for complex operations
+  #     max_retries: 2
+  #     health_check_interval: 30000 # Health check every 30 seconds
 
-    # Monitoring & Reliability
-    monitoring:
-      enabled: true
-      circuit_breaker:
-        failure_threshold: 3
-        timeout_ms: 120000
-        half_open_max_calls: 2
+  #   # Monitoring & Reliability
+  #   monitoring:
+  #     enabled: true
+  #     circuit_breaker:
+  #       failure_threshold: 3
+  #       timeout_ms: 120000
+  #       half_open_max_calls: 2
 
+  #   # DevOps Safety Context
+  #   context:
+  #     linear_integration: true
+  #     automation_mode: "devops_worker"
+  #     safe_operations:
+  #       - "kubectl get"
+  #       - "kubectl describe"
+  #       - "kubectl logs"
+  #       - "kubectl restart deployment"
+  #       - "kubectl scale deployment"
+  #       - "kubectl rollout status"
+  #     requires_approval:
+  #       - "kubectl delete"
+  #       - "kubectl apply"
+  #       - "kubectl patch"
+
+  # local-assistant:
+  #   type: "llm"
+  #   model: "claude-3-5-sonnet-20241022"
+  #   purpose: "Local AI assistant for documentation, explanations, fallback operations, and Linear issue management"
+  #   tools: ["computer_use"]
+
+  #   # Linear Integration
+  #   integrations:
+  #     linear:
+  #       api_key: "${LINEAR_API_KEY}"
+  #       team_id: "${LINEAR_TEAM_ID}"
+  #       enabled: true
+  #       auto_update: true
+
+  #   # Agent Behavior
+  #   prompts:
+  #     system: |
+  #       You are a Kubernetes assistant with Linear integration capabilities. Your responsibilities include:
+
+  #       1. K8s Documentation & Support: Provide explanations, troubleshooting guidance, and fallback support
+  #       2. Linear Issue Management: Format cluster analysis results for Linear issues, post status updates, and manage issue lifecycle
+  #       3. DevOps Automation: Document automated remediation outcomes and maintain issue audit trails
+
+  #       When working with Linear issues:
+  #       - Format all cluster information clearly with proper markdown
+  #       - Include kubectl commands, resource states, and troubleshooting steps
+  #       - Use structured updates with clear action items and resolution status
+  #       - Automatically close issues when problems are fully resolved
+  #       - Tag relevant team members for manual intervention when automation limits are reached
+
+  #       Always provide actionable information that helps engineers quickly understand and resolve cluster issues.
   linear-writer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Linear issue management specialist. Responsible for ALL Linear operations: creating issues, updating status, adding comments, managing assignments and priorities. Uses MCP tools to interact with Linear API."
+    purpose: "Linear issue management agent using MCP tools for creating and updating Linear issues"
     tools:
       mcp: ["linear"]
     max_steps: 3
@@ -147,40 +236,30 @@ agents:
 
         Your primary responsibilities:
         1. Create new Linear issues with proper descriptions and metadata
-        2. Add detailed comments to issues with progress updates and results
-        3. Manage issue assignments and priorities when needed
-        4. Format all communications clearly with proper markdown
+        2. Update existing issues with status changes and progress notes
+        3. Set issue states using Linear state UUIDs (NOT human-readable names)
+        4. Manage issue assignments and priorities
 
-        FOCUS: Your main job is to provide excellent communication through comments.
-        Always add comprehensive, helpful comments when operations are performed.
+        IMPORTANT: When updating issue states, you MUST use Linear state UUIDs, not human-readable names.
+        Common Linear state UUIDs (use these exact values):
+        - Backlog: Use the actual UUID from Linear API (query available states first)
+        - Todo: Use the actual UUID from Linear API (query available states first)
+        - In Progress: Use the actual UUID from Linear API (query available states first)
+        - Done: Use the actual UUID from Linear API (query available states first)
 
-        Linear interaction rules:
-        - Always use Linear MCP tools to interact with the Linear API
-        - Format issue comments clearly with proper markdown
+        When working with Linear:
+        - Always use the Linear MCP tools to interact with the Linear API
+        - ALWAYS query available states first using linear_search_issues or similar tools to get valid state UUIDs
+        - Format issue descriptions clearly with proper markdown
         - Include relevant context and actionable information
-        - Add detailed progress updates and results from operations
-        - Provide clear summaries of what was accomplished
+        - Set appropriate priorities and labels based on content
+        - When updating issue status, use the actual UUID value, not human-readable names like "In Progress"
 
-        Comment workflow:
-        When work starts:
-        - Add comment indicating work is starting and what will be done
-        
-        When work completes:
-        - Add detailed completion comment with comprehensive results
-        - Include technical details, logs, or findings
-        - Summarize what was accomplished and next steps if relevant
-        - Use clear formatting with emojis and markdown for readability
-        
-        When operations fail:
-        - Add comment with error details and troubleshooting information
-        - Explain what went wrong and suggest next steps
-
-        Required workflow for webhook signals:
-        1. Add comment indicating automation is processing the request
-        2. After k8s operations complete, add final detailed comment with results
-        3. Ensure comments are comprehensive and helpful for the team
-        
-        Focus on providing excellent communication and documentation through comments.
+        For testing purposes, when you receive a webhook signal:
+        1. Create or update the issue with a clear description
+        2. Query available states to get the correct UUID for "In Progress" state
+        3. Set the issue status using the UUID (not "In Progress" string)
+        4. Provide a summary of actions taken
 
 # =============================================================================
 # SIGNAL CONFIGURATION

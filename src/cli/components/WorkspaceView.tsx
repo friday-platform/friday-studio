@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput, useStdout } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
 import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
-import type { WorkspaceConfig } from "@atlas/types";
+import { NewWorkspaceConfig } from "../../core/config-loader.ts";
 import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
 
 interface WorkspaceViewProps {
@@ -15,7 +15,7 @@ export const WorkspaceView = ({
   onBack,
 }: WorkspaceViewProps) => {
   const { exit } = useApp();
-  const [config, setConfig] = useState<WorkspaceConfig | null>(null);
+  const [config, setConfig] = useState<NewWorkspaceConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastEscapeTime, setLastEscapeTime] = useState<number | null>(null);
   const tabLabels = ["Details", "Agents", "Sessions", "Logs", "Signals"];

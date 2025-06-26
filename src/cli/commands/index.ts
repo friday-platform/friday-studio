@@ -1,4 +1,5 @@
 import * as agentCmd from "./agent.ts";
+import * as daemonCmd from "./daemon.ts";
 import * as interactiveCmd from "./interactive.tsx";
 import * as libraryCmd from "./library/index.ts";
 import * as mcpCmd from "./mcp.ts";
@@ -18,6 +19,7 @@ export const commands = [
   signalCmd,
   libraryCmd,
   mcpCmd,
+  daemonCmd,
   // tuiCmd,
   interactiveCmd,
 ];

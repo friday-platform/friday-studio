@@ -1,8 +1,5 @@
 import { exists } from "@std/fs";
-import {
-  ConfigLoader,
-  NewWorkspaceConfig,
-} from "../../../core/config-loader.ts";
+import { ConfigLoader, NewWorkspaceConfig } from "../../../core/config-loader.ts";
 import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
 
 // Helper function to resolve workspace and load config
@@ -73,21 +70,21 @@ export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promi
   const registry = getWorkspaceRegistry();
   await registry.initialize();
   const targetWorkspace = await registry.findById(workspaceId);
-  
+
   if (!targetWorkspace) {
     throw new Error(`Workspace ${workspaceId} not found`);
   }
-  
+
   // ConfigLoader with absolute path - no directory change needed!
   const configLoader = new ConfigLoader(targetWorkspace.path);
   const mergedConfig = await configLoader.load();
-  
+
   const workspaceInfo = {
     path: targetWorkspace.path,
     id: targetWorkspace.id,
     name: targetWorkspace.name,
   };
-  
+
   return { workspace: workspaceInfo, config: mergedConfig.workspace };
 }
 

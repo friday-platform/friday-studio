@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod/v4";
-import type { AtlasConfig } from "@atlas/types";
+import type { AtlasConfig } from "../config-loader.ts";
 import { FederationManager } from "../federation-manager.ts";
 
 // Atlas proxy transport configuration

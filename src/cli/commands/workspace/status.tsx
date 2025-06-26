@@ -1,32 +1,14 @@
-import { exists } from "@std/fs";
-import * as yaml from "@std/yaml";
 import { Box, render, Text } from "ink";
 import {
-  WorkspaceEntry,
-  WorkspaceStatus as WSStatus,
-} from "../../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceHealthData } from "../../types/health.ts";
+  checkDaemonRunning,
+  createDaemonNotRunningError,
+  getDaemonClient,
+} from "../../utils/daemon-client.ts";
+import { ConfigLoader } from "../../../core/config-loader.ts";
 
 interface StatusArgs {
   json?: boolean;
   workspace?: string;
-}
-
-interface WorkspaceConfig {
-  workspace?: {
-    id?: string;
-    name?: string;
-    description?: string;
-  };
-  runtime?: {
-    server?: {
-      port?: number;
-    };
-  };
-  agents?: Record<string, unknown>;
-  signals?: Record<string, unknown>;
-  jobs?: Record<string, unknown>;
 }
 
 export const command = "status [workspace]";
@@ -46,126 +28,120 @@ export const builder = {
 
 export const handler = async (argv: StatusArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceRegistry();
-    await registry.initialize();
+    // Check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      throw createDaemonNotRunningError();
+    }
 
-    let workspace: WorkspaceEntry | null = null;
-    let workspacePath: string;
+    const client = getDaemonClient();
+
+    // Determine target workspace
+    let workspaceId: string;
+    let workspaceName: string;
 
     if (argv.workspace) {
-      // Find by ID or name
-      workspace = (await registry.findById(argv.workspace)) ||
-        (await registry.findByName(argv.workspace));
-
-      if (!workspace) {
-        console.error(
-          `Error: Workspace '${argv.workspace}' not found. Use 'atlas workspace list' to see available workspaces.`,
-        );
-        Deno.exit(1);
-      }
-
-      workspacePath = workspace!.path;
-    } else {
-      // Use current directory
-      workspace = await registry.getCurrentWorkspace();
-      workspacePath = Deno.cwd();
-
-      if (!workspace) {
-        // Check if there's a workspace.yml in current directory
-        if (await exists("workspace.yml")) {
-          console.error(
-            "Error: Workspace exists but is not registered. Run 'atlas workspace init' to register it.",
-          );
+      // Use specified workspace - try to find by ID or name
+      try {
+        const workspace = await client.getWorkspace(argv.workspace);
+        workspaceId = workspace.id;
+        workspaceName = workspace.name;
+      } catch (error) {
+        // Try to find by name if ID lookup failed
+        const allWorkspaces = await client.listWorkspaces();
+        const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
+        if (foundWorkspace) {
+          workspaceId = foundWorkspace.id;
+          workspaceName = foundWorkspace.name;
         } else {
-          console.error(
-            "Error: No workspace found in current directory. Run 'atlas workspace init <name>' to create one.",
+          throw new Error(`Workspace '${argv.workspace}' not found`);
+        }
+      }
+    } else {
+      // Use current workspace (detect from current directory)
+      try {
+        const configLoader = new ConfigLoader();
+        const config = await configLoader.load();
+        const currentWorkspaceName = config.workspace.workspace.name;
+
+        // Find workspace by name in daemon
+        const allWorkspaces = await client.listWorkspaces();
+        const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
+
+        if (currentWorkspace) {
+          workspaceId = currentWorkspace.id;
+          workspaceName = currentWorkspace.name;
+        } else {
+          throw new Error(
+            `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
           );
         }
-        Deno.exit(1);
+      } catch (error) {
+        throw new Error(
+          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
+        );
       }
     }
 
-    // Load workspace configuration
-    const originalCwd = Deno.cwd();
-    try {
-      Deno.chdir(workspacePath);
+    // Get detailed workspace information from daemon
+    const workspace = await client.getWorkspace(workspaceId);
 
-      // Read workspace.yml
-      const configContent = await Deno.readTextFile("workspace.yml");
-      const config = yaml.parse(configContent) as WorkspaceConfig;
+    // Get additional workspace details
+    const [agents, signals, jobs, sessions] = await Promise.all([
+      client.listAgents(workspaceId).catch(() => []),
+      client.listSignals(workspaceId).catch(() => []),
+      client.listJobs(workspaceId).catch(() => []),
+      client.listWorkspaceSessions(workspaceId).catch(() => []),
+    ]);
 
-      // Check if server is running and get health info
-      let serverRunning = false;
-      let healthData: WorkspaceHealthData | null = null;
-      const port = config.runtime?.server?.port || 8080;
-
-      if (workspace!.status === WSStatus.RUNNING && workspace!.port) {
-        try {
-          const response = await fetch(
-            `http://localhost:${workspace!.port}/api/health`,
-          );
-          if (response.ok) {
-            serverRunning = true;
-            healthData = await response.json();
-          }
-        } catch {
-          serverRunning = false;
-        }
-      }
-
-      const statusData = {
-        workspace: workspace!, // workspace is guaranteed to be non-null here
-        config,
-        serverRunning,
-        port,
-        healthData,
-      };
-
-      if (argv.json) {
-        // JSON output
-        const agentCount = Object.keys(config.agents || {}).length;
-        const signalCount = Object.keys(config.signals || {}).length;
-        const jobCount = Object.keys(config.jobs || {}).length;
-
-        console.log(
-          JSON.stringify(
-            {
-              id: workspace!.id,
-              name: workspace!.name,
-              workspaceId: config.workspace?.id,
-              description: workspace!.metadata?.description ||
-                config.workspace?.description,
-              path: workspace!.path,
-              configPath: workspace!.configPath,
-              status: workspace!.status,
-              serverRunning,
-              port: workspace!.port || port,
-              pid: workspace!.pid,
-              detached: healthData?.detached || false,
-              sessions: healthData?.sessions || 0,
-              uptime: healthData?.uptime,
-              memory: healthData?.memory,
-              agents: agentCount,
-              signals: signalCount,
-              jobs: jobCount,
-              atlasVersion: workspace!.metadata?.atlasVersion,
-              createdAt: workspace!.createdAt,
-              lastSeen: workspace!.lastSeen,
-              startedAt: workspace!.startedAt,
-              stoppedAt: workspace!.stoppedAt,
+    if (argv.json) {
+      // JSON output
+      console.log(
+        JSON.stringify(
+          {
+            id: workspace.id,
+            name: workspace.name,
+            description: workspace.description,
+            path: workspace.path,
+            status: workspace.status,
+            hasActiveRuntime: workspace.hasActiveRuntime,
+            runtime: workspace.runtime,
+            createdAt: workspace.createdAt,
+            lastSeen: workspace.lastSeen,
+            agents: {
+              count: agents.length,
+              list: agents,
             },
-            null,
-            2,
-          ),
-        );
-      } else {
-        // Render with Ink
-        render(<WorkspaceStatusCommand data={statusData} />);
-        // Exit immediately after rendering
-        Deno.exit(0);
-      }
-    } finally {
-      Deno.chdir(originalCwd);
+            signals: {
+              count: signals.length,
+              list: signals,
+            },
+            jobs: {
+              count: jobs.length,
+              list: jobs,
+            },
+            sessions: {
+              count: sessions.length,
+              active: sessions,
+            },
+            timestamp: new Date().toISOString(),
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      // Render with Ink
+      render(
+        <WorkspaceStatusCommand
+          workspace={workspace}
+          agents={agents}
+          signals={signals}
+          jobs={jobs}
+          sessions={sessions}
+        />,
+      );
+      // Exit immediately after rendering
+      Deno.exit(0);
     }
   } catch (error) {
     console.error(
@@ -177,17 +153,23 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
 
 // Component that displays workspace status
 function WorkspaceStatusCommand({
-  data,
+  workspace,
+  agents,
+  signals,
+  jobs,
+  sessions,
 }: {
-  data: {
-    workspace: WorkspaceEntry;
-    config: WorkspaceConfig;
-    serverRunning: boolean;
-    port: number;
-    healthData: WorkspaceHealthData | null;
-  };
+  workspace: any;
+  agents: any[];
+  signals: any[];
+  jobs: any[];
+  sessions: any[];
 }) {
-  const { workspace, config: _config, serverRunning, port, healthData } = data;
+  const statusColor = workspace.status === "running" || workspace.hasActiveRuntime
+    ? "green"
+    : workspace.status === "stopped"
+    ? "yellow"
+    : "red";
 
   return (
     <Box flexDirection="column" paddingY={1}>
@@ -208,6 +190,13 @@ function WorkspaceStatusCommand({
           <Text dimColor>{workspace.id}</Text>
         </Box>
 
+        {workspace.description && (
+          <Box>
+            <Text bold>Description:</Text>
+            <Text>{workspace.description}</Text>
+          </Box>
+        )}
+
         <Box>
           <Text bold>Path:</Text>
           <Text>{workspace.path}</Text>
@@ -215,33 +204,63 @@ function WorkspaceStatusCommand({
 
         <Box>
           <Text bold>Status:</Text>
-          <Text
-            color={workspace.status === WSStatus.RUNNING ? "green" : "yellow"}
-          >
+          <Text color={statusColor}>
             {workspace.status}
           </Text>
         </Box>
 
-        {serverRunning && (
-          <Box>
-            <Text bold>Server:</Text>
-            <Text color="green">Running on port {port}</Text>
+        <Box>
+          <Text bold>Runtime Active:</Text>
+          <Text color={workspace.hasActiveRuntime ? "green" : "red"}>
+            {workspace.hasActiveRuntime ? "Yes" : "No"}
+          </Text>
+        </Box>
+
+        {workspace.runtime && (
+          <Box flexDirection="column" marginTop={1}>
+            <Text bold>Runtime Details:</Text>
+            <Box paddingLeft={2}>
+              <Text>
+                Status: <Text color="green">{workspace.runtime.status}</Text>
+              </Text>
+            </Box>
+            <Box paddingLeft={2}>
+              <Text>Started: {new Date(workspace.runtime.startedAt).toLocaleString()}</Text>
+            </Box>
+            <Box paddingLeft={2}>
+              <Text>Sessions: {workspace.runtime.sessions}</Text>
+            </Box>
+            <Box paddingLeft={2}>
+              <Text>Workers: {workspace.runtime.workers}</Text>
+            </Box>
           </Box>
         )}
 
-        {healthData && (
-          <Box flexDirection="column" marginTop={1}>
-            <Text bold>Health:</Text>
-            <Box paddingLeft={2}>
-              <Text>Status: {healthData.status}</Text>
-            </Box>
-            {healthData.sessions && (
-              <Box paddingLeft={2}>
-                <Text>Active Sessions: {healthData.sessions}</Text>
-              </Box>
-            )}
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>Configuration:</Text>
+          <Box paddingLeft={2}>
+            <Text>Agents: {agents.length}</Text>
           </Box>
-        )}
+          <Box paddingLeft={2}>
+            <Text>Signals: {signals.length}</Text>
+          </Box>
+          <Box paddingLeft={2}>
+            <Text>Jobs: {jobs.length}</Text>
+          </Box>
+          <Box paddingLeft={2}>
+            <Text>Active Sessions: {sessions.length}</Text>
+          </Box>
+        </Box>
+
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>Timestamps:</Text>
+          <Box paddingLeft={2}>
+            <Text>Created: {new Date(workspace.createdAt).toLocaleString()}</Text>
+          </Box>
+          <Box paddingLeft={2}>
+            <Text>Last Seen: {new Date(workspace.lastSeen).toLocaleString()}</Text>
+          </Box>
+        </Box>
       </Box>
     </Box>
   );

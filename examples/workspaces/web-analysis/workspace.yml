@@ -1,7 +1,6 @@
 version: "1.0"
 
 workspace:
-  id: "e8f4c2a0-9b3d-4f2e-a1b7-c5d8f6e9a2b3"
   name: "Web Page Analysis with Playwright MCP"
   description: "Comprehensive web page analysis using Playwright MCP server for browser automation and content extraction"
 

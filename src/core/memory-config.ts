@@ -6,7 +6,6 @@
  */
 
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
-import { CoALALocalFileStorageAdapter } from "../storage/coala-local.ts";
 import type { IAtlasScope } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
 
@@ -259,70 +258,21 @@ export class MemoryConfigManager {
     return currentScope.id;
   }
 
-  private getWorkspaceStoragePath(
-    scope: IAtlasScope,
-    memoryScope: "agent" | "session" | "workspace",
-  ): string {
-    // Try to get storage path from configuration or default location
-    const basePath = this.config.default.storage || "./.atlas/memory";
-
-    // For workspace memory, use the base path directly
-    if (memoryScope === "workspace") {
-      return basePath;
-    }
-
-    // For session and agent memory, create scoped subdirectories
-    const scopeId = memoryScope === "session" ? (scope.parentScopeId || scope.id) : scope.id;
-
-    return `${basePath}/${memoryScope}/${scopeId}`;
-  }
-
   private createConfiguredMemoryManager(
     scope: IAtlasScope,
-    config: MemoryConfiguration,
+    _config: MemoryConfiguration,
   ): CoALAMemoryManager {
-    // Create storage adapter with workspace-specific path
-    let storageAdapter;
-
-    try {
-      // Try to determine the workspace path from the scope
-      const workspacePath = this.getWorkspaceStoragePath(scope, config.scope);
-      storageAdapter = new CoALALocalFileStorageAdapter(workspacePath);
-
-      logger.debug("Created memory storage adapter", {
-        scope: config.scope,
-        path: workspacePath.substring(0, 50) + "...",
-      });
-    } catch (error) {
-      logger.warn("Failed to create workspace-specific storage adapter", {
-        error: error instanceof Error ? error.message : String(error),
-      });
-      // Fallback to default storage
-      storageAdapter = undefined;
-    }
-
     return new CoALAMemoryManager(
       scope,
-      storageAdapter,
+      undefined, // Use default storage
       this.config.default.cognitive_loop,
     );
   }
 
   private createDisabledMemoryManager(scope: IAtlasScope): CoALAMemoryManager {
-    // Even disabled memory managers should use proper storage if available
-    let storageAdapter;
-
-    try {
-      const workspacePath = this.getWorkspaceStoragePath(scope, "workspace");
-      storageAdapter = new CoALALocalFileStorageAdapter(workspacePath);
-    } catch {
-      // Ignore errors for disabled memory manager
-      storageAdapter = undefined;
-    }
-
     return new CoALAMemoryManager(
       scope,
-      storageAdapter,
+      undefined,
       false, // Disable cognitive loop
     );
   }
