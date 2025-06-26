@@ -11,6 +11,7 @@ import { AtlasLibrary } from "./library/atlas-library.ts";
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   supervisorModel?: string;
+  workspacePath?: string; // For daemon mode - path to workspace directory
 }
 
 export interface RuntimeAgentConfig {
@@ -603,7 +604,7 @@ export class WorkspaceRuntime {
       const jobConfig = jobs[jobName];
       const triggers = (jobConfig as any)?.triggers || [];
       const hasMatchingTrigger = triggers.some((trigger: any) => trigger.signal === signalName);
-      
+
       if (hasMatchingTrigger) {
         const signal = { id: signalName, name: signalName, ...(signalConfig as object) } as any;
         const result = await this.processSignal(signal, payload || {});

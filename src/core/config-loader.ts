@@ -1161,25 +1161,25 @@ export class ConfigLoader {
       const defaultsPath = join(this.workspaceDir, "src", "config", "supervisor-defaults.yml");
       const content = await Deno.readTextFile(defaultsPath);
       const supervisorDefaults = parseYaml(content);
-      
+
       logger.debug("Loaded supervisor defaults", {
         path: defaultsPath,
         hasSupervisors: !!(supervisorDefaults as any)?.supervisors,
       });
-      
+
       return supervisorDefaults;
     } catch (error) {
       logger.warn("Failed to load supervisor defaults, using minimal fallback", {
         error: error instanceof Error ? error.message : String(error),
       });
-      
+
       // Minimal fallback - just enough to prevent crashes
       return {
         supervisors: {
           session: {
-            prompts: {}
-          }
-        }
+            prompts: {},
+          },
+        },
       };
     }
   }
@@ -1200,17 +1200,17 @@ export class ConfigLoader {
       supervisors: supervisorDefaults.supervisors || {
         workspace: {
           model: "claude-3-5-sonnet-20241022",
-          prompts: { system: "You are a WorkspaceSupervisor." }
+          prompts: { system: "You are a WorkspaceSupervisor." },
         },
         session: {
-          model: "claude-3-5-sonnet-20241022", 
-          prompts: { system: "You are a SessionSupervisor." }
+          model: "claude-3-5-sonnet-20241022",
+          prompts: { system: "You are a SessionSupervisor." },
         },
         agent: {
           model: "claude-3-5-sonnet-20241022",
-          prompts: { system: "You are an AgentSupervisor." }
-        }
-      }
+          prompts: { system: "You are an AgentSupervisor." },
+        },
+      },
     };
   }
 }

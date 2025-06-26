@@ -20,14 +20,64 @@ const mockAtlasConfig = {
     agent: { model: "test", prompts: { system: "test" } },
   },
   memory: {
-    default: { enabled: true, storage: "memory", cognitive_loop: false, retention: { max_age_days: 30, cleanup_interval_hours: 24 } },
-    agent: { enabled: true, scope: "agent" as const, include_in_context: true, context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 }, memory_types: {} },
-    session: { enabled: true, scope: "session" as const, include_in_context: true, context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 }, memory_types: {} },
-    workspace: { enabled: true, scope: "workspace" as const, include_in_context: true, context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 }, memory_types: {} },
+    default: {
+      enabled: true,
+      storage: "memory",
+      cognitive_loop: false,
+      retention: { max_age_days: 30, cleanup_interval_hours: 24 },
+    },
+    agent: {
+      enabled: true,
+      scope: "agent" as const,
+      include_in_context: true,
+      context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+      memory_types: {},
+    },
+    session: {
+      enabled: true,
+      scope: "session" as const,
+      include_in_context: true,
+      context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+      memory_types: {},
+    },
+    workspace: {
+      enabled: true,
+      scope: "workspace" as const,
+      include_in_context: true,
+      context_limits: { relevant_memories: 10, past_successes: 5, past_failures: 5 },
+      memory_types: {},
+    },
   },
   planning: {
-    execution: { precomputation: "minimal" as const, cache_enabled: false, cache_ttl_hours: 1, invalidate_on_job_change: true, strategy_selection: { simple_jobs: "direct", complex_jobs: "planning", optimization_jobs: "optimization", planning_jobs: "meta-planning" }, strategy_thresholds: { complexity: 0.5, uncertainty: 0.3, optimization: 0.7 } },
-    validation: { precomputation: "minimal" as const, functional_validators: false, smoke_tests: false, content_safety: false, llm_threshold: 0.8, llm_fallback: true, cache_enabled: false, cache_ttl_hours: 1, fail_fast: false, external_services: { openai_moderation: false, perspective_api: false, deepeval_service: null } },
+    execution: {
+      precomputation: "minimal" as const,
+      cache_enabled: false,
+      cache_ttl_hours: 1,
+      invalidate_on_job_change: true,
+      strategy_selection: {
+        simple_jobs: "direct",
+        complex_jobs: "planning",
+        optimization_jobs: "optimization",
+        planning_jobs: "meta-planning",
+      },
+      strategy_thresholds: { complexity: 0.5, uncertainty: 0.3, optimization: 0.7 },
+    },
+    validation: {
+      precomputation: "minimal" as const,
+      functional_validators: false,
+      smoke_tests: false,
+      content_safety: false,
+      llm_threshold: 0.8,
+      llm_fallback: true,
+      cache_enabled: false,
+      cache_ttl_hours: 1,
+      fail_fast: false,
+      external_services: {
+        openai_moderation: false,
+        perspective_api: false,
+        deepeval_service: null,
+      },
+    },
   },
   jobs: {},
 } as any; // Type cast to avoid complex type construction in tests
@@ -38,7 +88,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
 
   await t.step("setup test environment", async () => {
     // Simple setup without EnhancedTestEnvironment
-    
+
     // Get registry instance and clear any existing workspaces
     registry = WorkspaceRuntimeRegistry.getInstance();
     const existingIds = registry.getWorkspaceIds();
@@ -56,7 +106,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
   await t.step("should initialize MCP server with runtime registry", () => {
     assertExists(mcpServer);
     assertEquals(registry.getActiveCount(), 0);
-    
+
     const availableTools = mcpServer.getAvailableTools();
     expect(availableTools).toContain("workspace_list");
     expect(availableTools).toContain("workspace_describe");
@@ -68,7 +118,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
     // Test that workspace_list tool is available
     const availableTools = mcpServer.getAvailableTools();
     expect(availableTools).toContain("workspace_list");
-    
+
     // Test empty registry response
     const workspaces = registry.listWorkspaces();
     assertEquals(workspaces.length, 0);
@@ -133,9 +183,9 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
 
   await t.step("workspace_list should return registered workspace", async () => {
     const workspaces = registry.listWorkspaces();
-    
+
     assertEquals(workspaces.length >= 1, true); // At least one workspace
-    const testWorkspace = workspaces.find(w => w.id === "test-integration-workspace");
+    const testWorkspace = workspaces.find((w) => w.id === "test-integration-workspace");
     assertEquals(testWorkspace !== undefined, true);
     assertEquals(testWorkspace?.name, "Integration Test Workspace");
     assertEquals(testWorkspace?.status, "ready");
@@ -143,7 +193,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
 
   await t.step("workspace_describe should return detailed runtime info", async () => {
     const description = await registry.describeWorkspace("test-integration-workspace");
-    
+
     assertEquals(description.id, "test-integration-workspace");
     assertEquals(description.name, "Integration Test Workspace");
     assertEquals(description.status, "ready");
@@ -166,7 +216,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
       "integration-job",
       { testData: "integration-payload" },
     );
-    
+
     assertExists(result.sessionId);
     assertEquals(typeof result.sessionId, "string");
     assertEquals(result.sessionId.startsWith("session-"), true);
@@ -178,7 +228,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
       "test-signal",
       { eventData: "signal-payload" },
     );
-    
+
     assertExists(result.sessionId);
     assertEquals(typeof result.sessionId, "string");
     assertEquals(result.sessionId.startsWith("session-"), true);
@@ -255,11 +305,11 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
   await t.step("should handle workspace deletion and cleanup", async () => {
     // Delete one workspace
     await registry.deleteWorkspace("concurrent-workspace");
-    
+
     assertEquals(registry.getActiveCount(), 1);
     assertEquals(registry.isRunning("concurrent-workspace"), false);
     assertEquals(registry.isRunning("test-integration-workspace"), true);
-    
+
     const remainingWorkspaces = registry.listWorkspaces();
     assertEquals(remainingWorkspaces.length, 1);
     assertEquals(remainingWorkspaces[0].id, "test-integration-workspace");
@@ -269,7 +319,7 @@ Deno.test("MCP Platform Server - WorkspaceRuntimeRegistry Integration", async (t
     // Clean up remaining workspace
     registry.unregister("test-integration-workspace");
     assertEquals(registry.getActiveCount(), 0);
-    
+
     // Stop MCP server
     await mcpServer.stop();
   });

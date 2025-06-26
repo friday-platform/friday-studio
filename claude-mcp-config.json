@@ -5,7 +5,7 @@
       "args": [
         "run",
         "--allow-all",
-        "--unstable-broadcast-channel", 
+        "--unstable-broadcast-channel",
         "--unstable-worker-options",
         "--env-file",
         "/Users/kenneth/tempest/atlas/src/cli.tsx",

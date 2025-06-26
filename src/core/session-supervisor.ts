@@ -291,7 +291,6 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     };
   }
 
-
   name(): string {
     return "SessionSupervisor";
   }
@@ -1008,7 +1007,9 @@ Prepare a task for agent ${agentSpec.id} with the following format requirements:
 - Job: ${jobSpec.description}
 - Agent Type: ${agentType}
 - Signal: ${sessionContext.signal.id}
-- Capabilities: ${this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)}
+- Capabilities: ${
+      this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)
+    }
 - Signal Data: ${this.extractSignalDataSummary(rawSignalData)}
 - Requirements: ${this.getTaskRequirementsForAgentType(agentType, agentSpec.id)}
 
@@ -1032,7 +1033,7 @@ Create a well-formatted task following the specified format requirements.`;
           agentType,
           signalId: sessionContext.signal.id,
           jobName: jobSpec.name,
-        }
+        },
       );
 
       // Apply post-processing formatting (like library's formatOutput)
@@ -1080,7 +1081,7 @@ Create a well-formatted task following the specified format requirements.`;
   private formatStructuredTask(content: string, format: any, metadata: any): string {
     // Apply structured formatting like library does for reports
     const sections = [];
-    
+
     if (format.include_context) {
       sections.push(`## Context`);
       sections.push(`Agent: ${metadata.agentId} (${metadata.agentType})`);
@@ -1088,10 +1089,10 @@ Create a well-formatted task following the specified format requirements.`;
       sections.push(`Signal: ${metadata.signalId}`);
       sections.push("");
     }
-    
+
     sections.push("## Task");
     sections.push(content);
-    
+
     if (format.include_requirements) {
       sections.push("");
       sections.push("## Requirements");
@@ -1099,7 +1100,7 @@ Create a well-formatted task following the specified format requirements.`;
       sections.push("- Process signal data appropriately");
       sections.push("- Return structured results");
     }
-    
+
     return sections.join("\n");
   }
 
@@ -1108,14 +1109,18 @@ Create a well-formatted task following the specified format requirements.`;
   }
 
   private formatJsonTask(content: string, format: any, metadata: any): string {
-    return JSON.stringify({
-      agent_id: metadata.agentId,
-      agent_type: metadata.agentType,
-      signal_id: metadata.signalId,
-      job_name: metadata.jobName,
-      task: content,
-      timestamp: new Date().toISOString(),
-    }, null, 2);
+    return JSON.stringify(
+      {
+        agent_id: metadata.agentId,
+        agent_type: metadata.agentType,
+        signal_id: metadata.signalId,
+        job_name: metadata.jobName,
+        task: content,
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
   }
 
   // Helper method to extract signal data summary in a generic way

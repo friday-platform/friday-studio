@@ -121,7 +121,7 @@ const WorkspaceInitFlow = ({
 
     try {
       const workspacePath = join(targetPath, config.name!);
-      
+
       await createAndRegisterWorkspace({
         name: config.name!,
         path: workspacePath,

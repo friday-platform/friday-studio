@@ -224,8 +224,8 @@ export class AtlasLogger {
         : "[atlas]";
 
       // Check if colors should be disabled
-      const shouldDisableColor = Deno.env.get("NO_COLOR") !== undefined || 
-                                Deno.env.get("ATLAS_NO_COLOR") !== undefined;
+      const shouldDisableColor = Deno.env.get("NO_COLOR") !== undefined ||
+        Deno.env.get("ATLAS_NO_COLOR") !== undefined;
 
       if (shouldDisableColor) {
         // Plain text output without colors

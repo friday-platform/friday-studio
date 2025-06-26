@@ -58,7 +58,6 @@ export function builder(y: YargsInstance) {
     });
 }
 
-
 export async function handler(argv: ListArgs) {
   const s = spinner();
 
@@ -103,4 +102,3 @@ export async function handler(argv: ListArgs) {
     process.exit(1);
   }
 }
-

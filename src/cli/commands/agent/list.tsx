@@ -1,7 +1,7 @@
 import { render } from "ink";
 import { AgentListComponent } from "../../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../../modules/agents/processor.ts";
-import { resolveWorkspaceOnly, loadWorkspaceConfig } from "../../modules/workspaces/resolver.ts";
+import { loadWorkspaceConfig, resolveWorkspaceOnly } from "../../modules/workspaces/resolver.ts";
 
 interface ListArgs {
   json?: boolean;
@@ -63,4 +63,3 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     Deno.exit(1);
   }
 };
-

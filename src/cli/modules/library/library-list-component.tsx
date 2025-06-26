@@ -41,7 +41,8 @@ export function LibraryListComponent({
     <Box flexDirection="column">
       <Box marginBottom={1}>
         <Text bold color="cyan">
-          {workspaceName ? `Library Items in workspace: ${workspaceName}` : "Library Items"} ({items.length})
+          {workspaceName ? `Library Items in workspace: ${workspaceName}` : "Library Items"}{" "}
+          ({items.length})
         </Text>
       </Box>
 

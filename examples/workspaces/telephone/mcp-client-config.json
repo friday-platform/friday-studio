@@ -5,7 +5,7 @@
       "args": [
         "task",
         "atlas",
-        "workspace", 
+        "workspace",
         "serve",
         "--mcp"
       ],

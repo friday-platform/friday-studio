@@ -6,28 +6,34 @@ I have successfully **FIXED** the broken MCP architecture! Here's what was accom
 
 ### ✅ **FIXED**: MCP Integration Architecture
 
-**Problem**: The Platform MCP Server was bypassing the entire WorkspaceRuntime hierarchy by reading static config files instead of communicating with active WorkspaceRuntime instances.
+**Problem**: The Platform MCP Server was bypassing the entire WorkspaceRuntime hierarchy by reading
+static config files instead of communicating with active WorkspaceRuntime instances.
 
-**Solution**: Complete architectural overhaul to route MCP operations through the proper runtime hierarchy.
+**Solution**: Complete architectural overhaul to route MCP operations through the proper runtime
+hierarchy.
 
 ## Key Changes Made
 
 ### 1. **Created WorkspaceRuntimeRegistry** 📋
+
 - **File**: `src/core/workspace-runtime-registry.ts`
 - **Purpose**: Central registry that tracks all active WorkspaceRuntime instances
 - **Capabilities**: Lists workspaces, describes runtime status, triggers jobs/signals via runtime
 
 ### 2. **Updated Platform MCP Server** 🔄
-- **File**: `src/core/mcp/platform-mcp-server.ts` 
+
+- **File**: `src/core/mcp/platform-mcp-server.ts`
 - **Changed**: Now uses `WorkspaceRuntimeRegistry` instead of static `workspaceRegistry`
 - **Route**: All MCP operations now go through `WorkspaceRuntime.processSignal()`
 
 ### 3. **Fixed MCP Command Handler** 🛠️
+
 - **File**: `src/cli/commands/mcp/serve.tsx`
 - **Changed**: Uses `WorkspaceRuntimeRegistry.getInstance()` instead of old registry
 - **Result**: MCP server now connects to active runtimes, not static configs
 
 ### 4. **Added Runtime Registration** 📝
+
 - **File**: `src/cli/commands/workspace/serve.tsx`
 - **Added**: Automatic registration/unregistration of WorkspaceRuntime instances
 - **Result**: All workspace runtimes are tracked and accessible to MCP
@@ -67,8 +73,7 @@ WorkspaceSupervisor → SessionSupervisor → Agents
    deno task atlas mcp serve
    ```
 
-3. **Test via Claude Code:**
-   The MCP `workspace_list` will now show active workspace runtimes with:
+3. **Test via Claude Code:** The MCP `workspace_list` will now show active workspace runtimes with:
    - Live runtime status
    - Active sessions count
    - Worker counts by type
@@ -76,9 +81,9 @@ WorkspaceSupervisor → SessionSupervisor → Agents
 
 ## Result
 
-✅ **MCP operations now properly route through WorkspaceRuntime hierarchy**  
-✅ **No more static config file reading**  
-✅ **All operations go through supervisors as designed**  
-✅ **Live runtime status instead of dead config data**  
+✅ **MCP operations now properly route through WorkspaceRuntime hierarchy**\
+✅ **No more static config file reading**\
+✅ **All operations go through supervisors as designed**\
+✅ **Live runtime status instead of dead config data**
 
 The architecture is now **correctly implemented** according to the design in CLAUDE.md!
