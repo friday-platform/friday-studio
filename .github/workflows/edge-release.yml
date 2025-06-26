@@ -398,7 +398,7 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Upload artifacts to sandbox GCS
+      - name: Upload artifacts to GCS
         run: |
           VERSION="${{ needs.check-changes.outputs.version }}"
           
@@ -419,34 +419,6 @@ jobs:
           done
           
           echo "Uploaded edge artifacts to sandbox GCS bucket"
-
-      - name: Authenticate for production GCS
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
-          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
-
-      - name: Upload artifacts to production GCS
-        run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
-          
-          # Upload all artifacts to production bucket with edge/ prefix
-          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/edge/
-          fi
-          if ls atlas_*.zip 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/edge/
-          fi
-          gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/edge/checksums-${VERSION}.txt
-          
-          # Also upload to versioned paths
-          for file in atlas_*.tar.gz atlas_*.zip; do
-            if [ -f "$file" ]; then
-              gsutil cp "$file" "gs://tempest-production-atlas-binaries/edge/${VERSION}/$file"
-            fi
-          done
-          
-          echo "Uploaded edge artifacts to production GCS bucket"
 
       - name: Update Homebrew tap
         env:
