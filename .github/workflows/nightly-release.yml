@@ -487,27 +487,6 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
           
-          # Cleanup: Keep only last 7 nightly versions
-          echo "Cleaning up old nightly versions (keeping last 7)..."
-          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
-            sort -r | \
-            tail -n +29 | \
-            head -20 | \
-            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
-          
-          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.zip | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
-          
-          # Also cleanup old checksums
-          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/checksums-nightly-*.txt | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
-          
           echo "Uploaded nightly artifacts to sandbox GCS bucket"
 
   upload-production:
@@ -553,8 +532,63 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
           
+          echo "Uploaded nightly artifacts to production GCS bucket"
+
+  cleanup-sandbox:
+    needs: [check-changes, upload-sandbox]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Sandbox)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old nightly artifacts (sandbox)
+        run: |
           # Cleanup: Keep only last 7 nightly versions
-          echo "Cleaning up old nightly versions (keeping last 7)..."
+          echo "Cleaning up old nightly versions in sandbox (keeping last 7)..."
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
+          
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.zip | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/checksums-nightly-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
+          
+          echo "Sandbox nightly cleanup completed"
+
+  cleanup-production:
+    needs: [check-changes, upload-production]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Production)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old nightly artifacts (production)
+        run: |
+          # Cleanup: Keep only last 7 nightly versions
+          echo "Cleaning up old nightly versions in production (keeping last 7)..."
           gsutil ls gs://tempest-production-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
             sort -r | \
             tail -n +29 | \
@@ -574,7 +608,7 @@ jobs:
             head -10 | \
             xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
           
-          echo "Uploaded nightly artifacts to production GCS bucket"
+          echo "Production nightly cleanup completed"
 
   cleanup:
     needs: [check-changes, release]

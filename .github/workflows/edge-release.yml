@@ -439,21 +439,6 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/edge/checksums-${VERSION}.txt
           
-          # Cleanup: Keep only last 7 edge versions
-          echo "Cleaning up old edge versions (keeping last 7)..."
-          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/atlas_edge-*.tar.gz | \
-            sort -r | \
-            tail -n +29 | \
-            head -20 | \
-            xargs -r gsutil -m rm || echo "No old edge artifacts to clean"
-          
-          # Also cleanup old checksums
-          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/checksums-edge-*.txt | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old edge checksums to clean"
-          
           echo "Uploaded edge artifacts to sandbox GCS bucket"
 
   upload-production:
@@ -493,8 +478,57 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/edge/checksums-${VERSION}.txt
           
+          echo "Uploaded edge artifacts to production GCS bucket"
+
+  cleanup-sandbox:
+    needs: [check-changes, upload-sandbox]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Sandbox)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old edge artifacts (sandbox)
+        run: |
           # Cleanup: Keep only last 7 edge versions
-          echo "Cleaning up old edge versions (keeping last 7)..."
+          echo "Cleaning up old edge versions in sandbox (keeping last 7)..."
+          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/atlas_edge-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old edge artifacts to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/checksums-edge-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old edge checksums to clean"
+          
+          echo "Sandbox edge cleanup completed"
+
+  cleanup-production:
+    needs: [check-changes, upload-production]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to Google Cloud (Production)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Cleanup old edge artifacts (production)
+        run: |
+          # Cleanup: Keep only last 7 edge versions
+          echo "Cleaning up old edge versions in production (keeping last 7)..."
           gsutil ls gs://tempest-production-atlas-binaries/edge/atlas_edge-*.tar.gz | \
             sort -r | \
             tail -n +29 | \
@@ -508,4 +542,4 @@ jobs:
             head -10 | \
             xargs -r gsutil -m rm || echo "No old edge checksums to clean"
           
-          echo "Uploaded edge artifacts to production GCS bucket"
+          echo "Production edge cleanup completed"
