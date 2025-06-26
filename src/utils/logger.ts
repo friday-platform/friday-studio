@@ -233,9 +233,28 @@ export class AtlasLogger {
         }${context.agentName ? ":" + context.agentName : ""}]`
         : "[atlas]";
 
-      console.log(
-        `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
-      );
+      // Check if colors should be disabled
+      const shouldDisableColor = Deno.env.get("NO_COLOR") !== undefined ||
+        Deno.env.get("ATLAS_NO_COLOR") !== undefined;
+
+      if (shouldDisableColor) {
+        // Plain text output without colors
+        console.log(`${entry.timestamp} ${level.toUpperCase()} ${prefix} ${message}`);
+      } else {
+        // Console output with color coding
+        const color = {
+          error: "\x1b[31m", // red
+          warn: "\x1b[33m", // yellow
+          info: "\x1b[36m", // cyan
+          debug: "\x1b[90m", // gray
+          trace: "\x1b[35m", // magenta
+        }[level] || "\x1b[0m";
+
+        const reset = "\x1b[0m";
+        console.log(
+          `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
+        );
+      }
     }
 
     // In detached mode, write directly without normal initialization
