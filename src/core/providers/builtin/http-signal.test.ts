@@ -3,7 +3,7 @@
  * TDD implementation - tests first, then implementation
  */
 
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertRejects } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { HTTPSignalProvider } from "./http-signal.ts";
 import type { HTTPSignalConfig } from "./http-signal.ts";
 

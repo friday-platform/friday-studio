@@ -3,8 +3,8 @@
  * Persistent local storage, good for development/single-instance deployments
  */
 
-import { ensureDir, exists } from "https://deno.land/std@0.208.0/fs/mod.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { ensureDir, exists } from "https://deno.land/std@0.224.0/fs/mod.ts";
+import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
 import type {
   CacheStats,
   SupervisionCacheAdapter,
