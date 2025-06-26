@@ -79,8 +79,19 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         return;
       }
 
+      // Transform session data to match expected interface
+      const transformedSessions = filteredSessions.map((session) => ({
+        id: session.id,
+        workspaceName: session.workspaceId, // Use workspaceId as workspaceName
+        signal: session.signal,
+        status: session.status,
+        startedAt: session.startTime, // Map startTime to startedAt
+        completedAt: session.endTime,
+        agents: [], // Default empty agents array
+      }));
+
       // Render with Ink
-      render(<SessionListComponent sessions={filteredSessions} />);
+      render(<SessionListComponent sessions={transformedSessions} />);
       // Exit immediately after rendering
       Deno.exit(0);
     }

@@ -1,6 +1,6 @@
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 import {
   formatLog,
@@ -80,7 +80,7 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: LogsArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceRegistry();
+    const registry = getWorkspaceManager();
     await registry.initialize();
 
     // Resolve workspace ID

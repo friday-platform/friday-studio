@@ -1,0 +1,7 @@
+version: "1.0"
+workspace:
+  name: Nested Test Workspace
+  description: A test workspace in nested directories
+jobs: {}
+signals: {}
+agents: {}

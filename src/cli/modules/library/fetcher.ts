@@ -51,7 +51,7 @@ export async function fetchLibraryItems(
     const params = buildLibraryQueryParams(options);
     const serverUrl = `http://localhost:${port}`;
 
-    const response = await fetch(`${serverUrl}/library?${params}`, {
+    const response = await fetch(`${serverUrl}/api/library?${params}`, {
       signal: AbortSignal.timeout(5000), // 5 second timeout
     });
 
@@ -65,7 +65,8 @@ export async function fetchLibraryItems(
     }
 
     const data = await response.json();
-    const items = z.array(LibraryItemSchema).parse(data);
+    // API returns {items: [...], total: ...} format
+    const items = z.array(LibraryItemSchema).parse(data.items || data);
 
     return {
       success: true,

@@ -4,7 +4,7 @@ import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { AtlasLogger } from "../utils/logger.ts";
 import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
-import { WorkspaceStatus } from "./workspace-registry-types.ts";
+import { WorkspaceStatus } from "./workspace-manager.ts";
 import { Workspace } from "./workspace.ts";
 import { ConfigLoader } from "./config-loader.ts";
 import { WorkspaceMemberRole } from "../types/core.ts";
@@ -735,17 +735,39 @@ export class AtlasDaemon {
       }
 
       logger.debug(`Creating Workspace object from config...`);
+      logger.debug(`Config has workspace: ${!!mergedConfig.workspace}`);
+      logger.debug(`Config has signals: ${!!mergedConfig.signals}`);
+      logger.debug(
+        `Workspace signals: ${
+          mergedConfig.workspace?.signals
+            ? Object.keys(mergedConfig.workspace.signals).join(", ")
+            : "none"
+        }`,
+      );
+      logger.debug(
+        `Top-level signals: ${
+          mergedConfig.signals ? Object.keys(mergedConfig.signals).join(", ") : "none"
+        }`,
+      );
+      logger.debug(`Merged config keys: ${Object.keys(mergedConfig).join(", ")}`);
+
       const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
-        id: mergedConfig.workspace.workspace.id,
-        name: mergedConfig.workspace.workspace.name,
+        id: workspace.id,
+        name: workspace.name,
         role: WorkspaceMemberRole.OWNER,
       });
-      logger.debug(`Workspace object created`);
+
+      logger.debug(
+        `Workspace object created with signals: ${
+          Object.keys(workspaceObj.signals).join(", ") || "none"
+        } (${Object.keys(workspaceObj.signals).length} total)`,
+      );
 
       logger.debug(`Creating WorkspaceRuntime...`);
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
         workspacePath: workspace.path, // Pass workspace path for daemon mode
+        libraryStorage: this.libraryStorage, // Share daemon's library storage
       });
       logger.debug(`WorkspaceRuntime created successfully`);
 

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { WorkspaceConfig } from "../../../core/config-loader.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { formatLog, WorkspaceLogReader } from "../../utils/log-reader.ts";
 import type { LogEntry } from "../../../utils/logger.ts";
 
 interface LogsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }
 
 export const LogsTab = ({ config }: LogsTabProps) => {
@@ -27,7 +27,7 @@ export const LogsTab = ({ config }: LogsTabProps) => {
     const fetchLogs = async () => {
       try {
         setLoading(true);
-        const registry = getWorkspaceRegistry();
+        const registry = getWorkspaceManager();
 
         // Find workspace by name
         const workspace = await registry.findByName(config.workspace.name);

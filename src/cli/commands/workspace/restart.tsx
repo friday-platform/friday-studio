@@ -2,7 +2,7 @@ import {
   WorkspaceEntry,
   WorkspaceStatus as WSStatus,
 } from "../../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
@@ -48,7 +48,7 @@ export const builder = {
 
 export const handler = async (argv: RestartArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceRegistry();
+    const registry = getWorkspaceManager();
     await registry.initialize();
 
     let workspace: WorkspaceEntry | undefined;

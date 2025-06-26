@@ -1,5 +1,5 @@
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
@@ -42,7 +42,7 @@ export const builder = {
 
 export const handler = async (argv: RemoveArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceRegistry();
+    const registry = getWorkspaceManager();
     await registry.initialize();
 
     let workspace;
@@ -127,7 +127,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     s.start(`Removing workspace '${workspace.name}' from registry...`);
 
     try {
-      await registry.unregister(workspace.id);
+      await registry.unregisterWorkspace(workspace.id);
       s.stop(`Workspace '${workspace.name}' removed from registry`);
 
       // Delete files if requested

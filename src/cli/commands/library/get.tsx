@@ -83,20 +83,22 @@ export async function handler(argv: GetArgs) {
     const serverUrl = `http://localhost:${argv.port}`;
 
     // First, try with the exact ID
-    let response = await fetch(`${serverUrl}/library/${argv.id}?${params}`);
+    let response = await fetch(`${serverUrl}/api/library/${argv.id}?${params}`);
 
     // If not found and ID looks like a partial ID (short), try to find by prefix
     if (!response.ok && response.status === 404 && argv.id.length < 20) {
       // Get all items and find one that starts with this ID
-      const listResponse = await fetch(`${serverUrl}/library`);
+      const listResponse = await fetch(`${serverUrl}/api/library`);
       if (listResponse.ok) {
         const items = await listResponse.json();
-        const matchingItem = items.find((item: { id: string }) => item.id.startsWith(argv.id));
+        const matchingItem = items.items.find((item: { id: string }) =>
+          item.id.startsWith(argv.id)
+        );
 
         if (matchingItem) {
           // Try again with the full ID
           response = await fetch(
-            `${serverUrl}/library/${matchingItem.id}?${params}`,
+            `${serverUrl}/api/library/${matchingItem.id}?${params}`,
           );
         }
       }
@@ -228,12 +230,7 @@ const ItemDetailDisplay: React.FC<ItemDetailDisplayProps> = ({
           <Box marginTop={1} marginBottom={1}>
             <Text bold>Content:</Text>
           </Box>
-          <Box
-            paddingLeft={2}
-            paddingY={1}
-            borderStyle="single"
-            borderColor="gray"
-          >
+          <Box>
             <Text>{itemDetail.content}</Text>
           </Box>
         </>

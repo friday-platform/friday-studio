@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { WorkspaceConfigSchema } from "./config-loader.ts";
 
 // Zod schemas for validation
 export const WorkspaceStatusSchema = z.enum([
@@ -27,7 +28,7 @@ export const WorkspaceEntrySchema = z.object({
   configPath: z.string(),
 
   // Cached Configuration (loaded once at registration time)
-  config: z.record(z.string(), z.any()).optional(), // Full workspace config
+  config: WorkspaceConfigSchema.optional(), // Full workspace config
   configHash: z.string().optional(), // SHA-256 hash for change detection
 
   // Runtime state

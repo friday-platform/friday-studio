@@ -6,7 +6,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { NewWorkspaceConfig } from "../config-loader.ts";
+import type { WorkspaceConfig } from "../config-loader.ts";
 
 export interface WorkspaceMCPServerDependencies {
   workspaceRuntime: {
@@ -21,7 +21,7 @@ export interface WorkspaceMCPServerDependencies {
     listAgents(): Promise<Array<{ id: string; type: string; purpose?: string }>>;
     describeAgent(agentId: string): Promise<any>;
   };
-  workspaceConfig: NewWorkspaceConfig;
+  workspaceConfig: WorkspaceConfig;
 }
 
 export class WorkspaceMCPServer {

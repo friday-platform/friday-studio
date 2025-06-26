@@ -479,7 +479,7 @@ const WorkspaceSignalConfigSchema = z.object({
   command: z.string().optional(),
 }).catchall(z.any()); // Allow additional provider-specific fields
 
-export const NewWorkspaceConfigSchema = z.object({
+export const WorkspaceConfigSchema = z.object({
   version: z.string(),
 
   // Workspace identity (ID is generated automatically, not in config)
@@ -708,7 +708,7 @@ const AtlasConfigSchema = z.object({
 
 // Inferred types from Zod schemas
 export type AtlasConfig = z.infer<typeof AtlasConfigSchema>;
-export type NewWorkspaceConfig = z.infer<typeof NewWorkspaceConfigSchema>;
+export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
@@ -726,7 +726,7 @@ export type WorkspaceIdentity = z.infer<typeof WorkspaceIdentitySchema>;
 // Merged configuration that combines both
 export interface MergedConfig {
   atlas: AtlasConfig;
-  workspace: NewWorkspaceConfig;
+  workspace: WorkspaceConfig;
   jobs: Record<string, JobSpecification>;
   supervisorDefaults: any; // Supervisor defaults from supervisor-defaults.yml
 }
@@ -836,13 +836,13 @@ export class ConfigLoader {
     }
   }
 
-  private async loadWorkspaceConfig(): Promise<NewWorkspaceConfig> {
+  private async loadWorkspaceConfig(): Promise<WorkspaceConfig> {
     try {
       const content = await Deno.readTextFile(this.workspaceConfigPath);
       const rawConfig = parseYaml(content);
 
       // Validate with Zod
-      const config = NewWorkspaceConfigSchema.parse(rawConfig);
+      const config = WorkspaceConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof Deno.errors.NotFound) {
@@ -865,7 +865,7 @@ export class ConfigLoader {
   }
 
   private loadJobSpecs(
-    workspaceConfig: NewWorkspaceConfig,
+    workspaceConfig: WorkspaceConfig,
   ): Record<string, JobSpecification> {
     const jobs: Record<string, JobSpecification> = {};
 
@@ -963,7 +963,7 @@ export class ConfigLoader {
 
   private validateConfig(
     atlasConfig: AtlasConfig,
-    workspaceConfig: NewWorkspaceConfig,
+    workspaceConfig: WorkspaceConfig,
     jobs: Record<string, JobSpecification>,
   ): void {
     // Validate MCP server references in agents
