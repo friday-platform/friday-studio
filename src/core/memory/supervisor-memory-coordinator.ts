@@ -7,6 +7,7 @@
 
 import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../types/core.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
+import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
 import { extractSearchTerms } from "../../utils/prompt-tokenizer.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 
@@ -37,7 +38,19 @@ export class SupervisorMemoryCoordinator {
     workspace: IAtlasScope,
     filteringPolicy?: MemoryFilteringPolicy,
   ) {
-    this.workspaceMemory = new CoALAMemoryManager(workspace);
+    // Create workspace memory manager with proper storage adapter
+    let storageAdapter;
+
+    try {
+      // Try to determine workspace storage path
+      const workspacePath = this.getWorkspaceStoragePath(workspace);
+      storageAdapter = new CoALALocalFileStorageAdapter(workspacePath);
+    } catch (error) {
+      console.warn("Failed to create workspace storage adapter, using default:", error);
+      storageAdapter = undefined;
+    }
+
+    this.workspaceMemory = new CoALAMemoryManager(workspace, storageAdapter);
     this.consolidator = new WorkspaceMemoryConsolidator(this.workspaceMemory);
     this.filteringPolicy = filteringPolicy || new DefaultMemoryFilteringPolicy();
   }
@@ -372,6 +385,11 @@ export class SupervisorMemoryCoordinator {
       .sort(([, a], [, b]) => b - a)
       .slice(0, 3)
       .map(([agentId, _]) => agentId);
+  }
+
+  private getWorkspaceStoragePath(workspace: IAtlasScope): string {
+    // Default workspace memory path
+    return "./.atlas/memory";
   }
 
   private createAnalysisContext(memories: any[], _signal: IWorkspaceSignal): string {

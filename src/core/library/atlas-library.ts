@@ -10,7 +10,7 @@ import {
 import { createDefaultRegistry, TemplateEngineRegistry } from "./template-engine-registry.ts";
 import { LocalLibraryStorage } from "./storage/local-storage.ts";
 import * as path from "@std/path";
-import { crypto } from "https://deno.land/std@0.218.0/crypto/mod.ts";
+import { crypto } from "https://deno.land/std@0.224.0/crypto/mod.ts";
 
 /**
  * Main Atlas Library class providing template processing and artifact storage

@@ -12,6 +12,8 @@ import {
   type VectorSearchResult,
 } from "../types/memory-types.ts";
 import { CoALAMemoryManager } from "../../../src/core/memory/coala-memory.ts";
+import { CoALALocalFileStorageAdapter } from "../../../src/storage/coala-local.ts";
+import { AtlasMemoryLoader } from "./memory-loader.ts";
 
 export class AtlasMemoryOperations implements MemoryOperations {
   private storage: MemoryStorage;
@@ -172,7 +174,11 @@ export class AtlasMemoryOperations implements MemoryOperations {
       [MemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [MemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
       [MemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [MemoryType.VECTOR_SEARCH]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [MemoryType.VECTOR_SEARCH]: {
+        count: 0,
+        totalRelevance: 0,
+        avgRelevance: 0,
+      },
     };
 
     for (const [memoryType, entries] of Object.entries(this.data)) {
@@ -240,9 +246,23 @@ export class AtlasMemoryOperations implements MemoryOperations {
         id: "memory-manager-scope",
       } as any;
 
+      // Get the storage path from the AtlasMemoryLoader
+      let storagePath: string;
+      if (this.storage instanceof AtlasMemoryLoader) {
+        // Access the private storagePath through the public getStorageStats method
+        const stats = await this.storage.getStorageStats();
+        storagePath = stats.path;
+      } else {
+        // Fallback to default path
+        storagePath = "./.atlas/memory";
+      }
+
+      // Create CoALA storage adapter with the correct path
+      const coalaStorage = new CoALALocalFileStorageAdapter(storagePath);
+
       this.coalaMemoryManager = new CoALAMemoryManager(
         mockScope,
-        undefined, // Use default storage
+        coalaStorage, // Use workspace-specific storage
         false, // Disable cognitive loop
         {
           autoIndexOnWrite: true,
@@ -254,27 +274,30 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
     try {
       // Perform vector search across all indexed memory types
-      const results = await this.coalaMemoryManager.getRelevantMemoriesForPrompt(
-        query,
-        {
-          includeWorking: false, // WORKING memory doesn't use vector search
-          includeEpisodic: true,
-          includeSemantic: true,
-          includeProcedural: true,
-          maxMemories: 20,
-          minSimilarity: 0.2,
-          contextFormat: "detailed",
-        },
-      );
+      const results = await this.coalaMemoryManager
+        .getRelevantMemoriesForPrompt(
+          query,
+          {
+            includeWorking: false, // WORKING memory doesn't use vector search
+            includeEpisodic: true,
+            includeSemantic: true,
+            includeProcedural: true,
+            limit: 20,
+            minSimilarity: 0.2,
+            contextFormat: "detailed",
+          },
+        );
 
       // Convert CoALA results to VectorSearchResult format
-      const vectorResults: VectorSearchResult[] = results.memories.map((memory) => ({
+      const vectorResults: VectorSearchResult[] = results.memories.map((
+        memory,
+      ) => ({
         id: memory.id,
         content: memory.content,
         timestamp: memory.timestamp,
         accessCount: memory.accessCount,
         lastAccessed: memory.lastAccessed,
-        memoryType: memory.memoryType as MemoryType, // Convert CoALA type to MemoryType
+        memoryType: memory.memoryType as unknown as MemoryType, // Convert CoALA type to MemoryType
         relevanceScore: memory.relevanceScore,
         sourceScope: memory.sourceScope,
         associations: memory.associations,
@@ -287,11 +310,81 @@ export class AtlasMemoryOperations implements MemoryOperations {
           : JSON.stringify(memory.content).substring(0, 200) + "...",
       }));
 
+      // If vector search returns no results, fall back to traditional text search
+      if (vectorResults.length === 0) {
+        console.log(
+          "Vector search returned no results, falling back to text search...",
+        );
+        const fallbackResults: VectorSearchResult[] = [];
+
+        // Search across semantic, episodic, and procedural memory types
+        for (
+          const memoryType of [
+            MemoryType.SEMANTIC,
+            MemoryType.EPISODIC,
+            MemoryType.PROCEDURAL,
+          ]
+        ) {
+          const textResults = await this.search(memoryType, query);
+
+          // Convert text search results to VectorSearchResult format
+          for (const memory of textResults.slice(0, 7)) { // Limit per type
+            fallbackResults.push({
+              ...memory,
+              similarity: 0.5, // Assign moderate similarity for text matches
+              matchedContent: typeof memory.content === "string"
+                ? memory.content.substring(0, 200) + "..."
+                : JSON.stringify(memory.content).substring(0, 200) + "...",
+            });
+          }
+        }
+
+        // Sort by relevance score since we don't have real similarity scores
+        return fallbackResults.sort((a, b) =>
+          b.relevanceScore - a.relevanceScore
+        );
+      }
+
       // Sort by similarity score (highest first)
       return vectorResults.sort((a, b) => b.similarity - a.similarity);
     } catch (error) {
       console.error("Vector search failed:", error);
-      return [];
+
+      // Fall back to traditional text search on error
+      console.log("Falling back to text search due to error...");
+      const fallbackResults: VectorSearchResult[] = [];
+
+      try {
+        // Search across semantic, episodic, and procedural memory types
+        for (
+          const memoryType of [
+            MemoryType.SEMANTIC,
+            MemoryType.EPISODIC,
+            MemoryType.PROCEDURAL,
+          ]
+        ) {
+          const textResults = await this.search(memoryType, query);
+
+          // Convert text search results to VectorSearchResult format
+          for (const memory of textResults.slice(0, 7)) { // Limit per type
+            fallbackResults.push({
+              ...memory,
+              similarity: 0.5, // Assign moderate similarity for text matches
+              matchedContent: typeof memory.content === "string"
+                ? memory.content.substring(0, 200) + "..."
+                : JSON.stringify(memory.content).substring(0, 200) + "...",
+            });
+          }
+        }
+
+        // Sort by relevance score since we don't have real similarity scores
+        return fallbackResults.sort((a, b) =>
+          b.relevanceScore - a.relevanceScore
+        );
+      } catch (fallbackError) {
+        console.error("Text search fallback also failed:", fallbackError);
+        return [];
+      }
     }
   }
 
@@ -322,7 +415,9 @@ export class AtlasMemoryOperations implements MemoryOperations {
       this.data = importedData;
     } catch (error) {
       throw new Error(
-        `Failed to import JSON data: ${error instanceof Error ? error.message : String(error)}`,
+        `Failed to import JSON data: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       );
     }
   }
