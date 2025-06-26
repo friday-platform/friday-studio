@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/types";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { StatusBadge } from "../StatusBadge.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
 
 interface SessionsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }
 
 interface SessionData {
@@ -74,7 +74,10 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         const response = await fetch(`http://localhost:${port}/sessions`);
 
         if (!response.ok) {
-          if (response.status === 404 || response.statusText.includes("Connection refused")) {
+          if (
+            response.status === 404 ||
+            response.statusText.includes("Connection refused")
+          ) {
             setSessions([]);
             setError("");
             return;
@@ -87,7 +90,10 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
         setSessions(sessionsData);
         setError("");
       } catch (err) {
-        if (err instanceof Error && err.message.includes("Connection refused")) {
+        if (
+          err instanceof Error &&
+          err.message.includes("Connection refused")
+        ) {
           setSessions([]);
           setError("");
         } else {
@@ -115,10 +121,14 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
 
       try {
         const port = 8080;
-        const response = await fetch(`http://localhost:${port}/sessions/${selectedSession.id}`);
+        const response = await fetch(
+          `http://localhost:${port}/sessions/${selectedSession.id}`,
+        );
 
         if (!response.ok) {
-          throw new Error(`Failed to fetch session details: ${response.statusText}`);
+          throw new Error(
+            `Failed to fetch session details: ${response.statusText}`,
+          );
         }
 
         const sessionDetails = await response.json();
@@ -267,7 +277,8 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
               </Box>
 
               {/* Agents Section */}
-              {selectedSessionDetails.agents && selectedSessionDetails.agents.length > 0 && (
+              {selectedSessionDetails.agents &&
+                selectedSessionDetails.agents.length > 0 && (
                 <Box flexDirection="column" marginBottom={2}>
                   <Box marginBottom={1}>
                     <Text bold>Agents Executed:</Text>
@@ -279,7 +290,11 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                         <Text dimColor>({agent.status})</Text>
                       </Box>
                       {agent.output && (
-                        <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+                        <Box
+                          flexDirection="column"
+                          marginLeft={2}
+                          marginBottom={1}
+                        >
                           <Text dimColor>Output:</Text>
                           <Box marginLeft={2}>
                             <Text>{agent.output}</Text>
@@ -287,7 +302,11 @@ export const SessionsTab = ({ config }: SessionsTabProps) => {
                         </Box>
                       )}
                       {agent.error && (
-                        <Box flexDirection="column" marginLeft={2} marginBottom={1}>
+                        <Box
+                          flexDirection="column"
+                          marginLeft={2}
+                          marginBottom={1}
+                        >
                           <Text dimColor>Error:</Text>
                           <Box marginLeft={2}>
                             <Text dimColor>{agent.error}</Text>

@@ -14,7 +14,8 @@ interface WorkspaceSupervisorConfig {
     workspaceSignals?: Record<string, unknown>;
     jobs?: Record<string, unknown>;
     memoryConfig?: AtlasMemoryConfig;
-    workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
+    workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Workspace tools configuration
+    supervisorDefaults?: any; // Supervisor configuration defaults
   };
   memoryConfig?: AtlasMemoryConfig;
   model?: string;
@@ -199,7 +200,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
                 jobSpec: sessionContext.jobSpec, // Pass job specification to session
                 constraints: sessionContext.constraints,
                 additionalPrompts: sessionContext.additionalPrompts,
-                workspaceMcpServers: this.config?.config?.workspaceMcpServers, // Pass MCP servers to session
+                workspaceTools: this.config?.config?.workspaceTools, // Pass workspace tools to session
                 traceHeaders: sessionTraceHeaders, // Pass trace context to session
               },
             });
@@ -351,6 +352,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
           workspaceId: this.workspace?.id,
           memoryConfig,
           precomputedPlans, // Share the planning cache
+          supervisorDefaults: this.config?.config?.supervisorDefaults, // Pass supervisor defaults
         },
       });
       this.log(`Init message sent to session worker ${sessionId}`);

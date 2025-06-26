@@ -9,8 +9,9 @@ import {
   WorkspaceRegistrySchema,
   WorkspaceStatus,
 } from "./workspace-registry-types.ts";
-import { generateUniqueWorkspaceName } from "./workspace-names.ts";
-import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
+import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
+import type { WorkspaceConfig } from "@atlas/types";
+import { WorkspaceConfigSchema } from "./config-loader.ts";
 
 export class WorkspaceRegistryManager {
   private registryPath: string;
@@ -495,8 +496,109 @@ export class WorkspaceRegistryManager {
     return imported;
   }
 
+  // MCP Interface Methods
+  async listWorkspaces(): Promise<Array<{ id: string; name: string; description?: string }>> {
+    const workspaces = await this.listAll();
+    return workspaces.map((w) => ({
+      id: w.id,
+      name: w.name,
+      description: w.metadata?.description,
+    }));
+  }
+
+  async createWorkspace(config: {
+    name: string;
+    description?: string;
+    template?: string;
+    config?: Record<string, unknown>;
+  }): Promise<{ id: string; name: string }> {
+    // Create a new workspace directory in the current working directory
+    const workspacePath = join(Deno.cwd(), config.name);
+
+    // Create directory if it doesn't exist
+    await ensureDir(workspacePath);
+
+    // Create basic workspace.yml file
+    const workspaceConfig = {
+      workspace: {
+        name: config.name,
+        description: config.description,
+      },
+      jobs: {},
+      ...(config.config || {}),
+    };
+
+    const workspaceYmlPath = join(workspacePath, "workspace.yml");
+    await Deno.writeTextFile(workspaceYmlPath, yaml.stringify(workspaceConfig));
+
+    // Register the workspace
+    const entry = await this.register(workspacePath, {
+      name: config.name,
+      description: config.description,
+    });
+
+    return {
+      id: entry.id,
+      name: entry.name,
+    };
+  }
+
+  async deleteWorkspace(id: string, force: boolean = false): Promise<void> {
+    const workspace = await this.findById(id);
+    if (!workspace) {
+      throw new Error(`Workspace ${id} not found`);
+    }
+
+    // Stop workspace if running
+    if (workspace.status === WorkspaceStatus.RUNNING) {
+      if (!force) {
+        throw new Error(`Workspace ${id} is running. Use force=true to delete anyway.`);
+      }
+      // TODO: Stop the workspace process
+    }
+
+    // Remove from registry
+    await this.unregister(id);
+
+    // Optionally remove workspace directory if force is true
+    if (force) {
+      try {
+        await Deno.remove(workspace.path, { recursive: true });
+      } catch (error) {
+        console.warn(`Failed to remove workspace directory ${workspace.path}:`, error);
+      }
+    }
+  }
+
+  async describeWorkspace(id: string): Promise<{
+    id: string;
+    name: string;
+    description?: string;
+    path: string;
+    status: WorkspaceStatus;
+    createdAt: string;
+    lastSeen: string;
+    metadata?: Record<string, unknown>;
+  }> {
+    const workspace = await this.findById(id);
+    if (!workspace) {
+      throw new Error(`Workspace ${id} not found`);
+    }
+
+    return {
+      id: workspace.id,
+      name: workspace.name,
+      description: workspace.metadata?.description,
+      path: workspace.path,
+      status: workspace.status,
+      createdAt: workspace.createdAt,
+      lastSeen: workspace.lastSeen,
+      metadata: workspace.metadata,
+    };
+  }
+
   // Convenience method to get workspace configuration by slug
-  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<NewWorkspaceConfig | null> {
+  async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<WorkspaceConfig | null> {
     if (!this.registry) await this.initialize();
 
     // Find workspace by ID or name
@@ -515,7 +617,7 @@ export class WorkspaceRegistryManager {
       const rawConfig = yaml.parse(workspaceContent);
 
       // Validate with Zod schema
-      const config = NewWorkspaceConfigSchema.parse(rawConfig);
+      const config = WorkspaceConfigSchema.parse(rawConfig);
       return config;
     } catch (error) {
       if (error instanceof z.ZodError) {

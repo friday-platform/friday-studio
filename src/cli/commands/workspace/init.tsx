@@ -1,218 +1,346 @@
+import React, { useState } from "react";
+import { Box, render, Text, useApp } from "ink";
+import { ConfirmInput, MultiSelect, Spinner, TextInput } from "@inkjs/ui";
 import { ensureDir, exists } from "@std/fs";
 import { join, resolve } from "@std/path";
 import * as yaml from "@std/yaml";
-import { Box, Newline, Text } from "ink";
-import { useEffect, useState } from "react";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
-import { WorkspaceCommandProps } from "./utils.ts";
+import { YargsInstance } from "../../utils/yargs.ts";
 
-interface WorkspaceData {
-  type: "created" | "exists";
-  workspace: { name: string; id?: string; description?: string };
-  workspaceId?: string;
-  registryId?: string;
-  path: string;
-  message?: string;
+interface InitArgs {
+  name?: string;
+  path?: string;
 }
 
-export function WorkspaceInitCommand({ args }: WorkspaceCommandProps) {
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
-  const [error, setError] = useState<string>("");
-  const [data, setData] = useState<WorkspaceData | null>(null);
+export const command = "init [name] [path]";
+export const desc = "Initialize a new Atlas workspace";
 
-  useEffect(() => {
-    const execute = async () => {
-      try {
-        // Parse arguments: atlas workspace init <name> <path>
-        const name = args[0];
-        const path = args[1] || ".";
+export function builder(y: YargsInstance) {
+  return y
+    .positional("name", {
+      type: "string",
+      describe: "Workspace name",
+    })
+    .positional("path", {
+      type: "string",
+      describe: "Directory path for the workspace",
+      default: ".",
+    })
+    .example(
+      "$0 workspace init",
+      "Initialize workspace interactively in current directory",
+    )
+    .example("$0 workspace init my-agent", "Create workspace named 'my-agent'")
+    .example(
+      "$0 workspace init my-agent ~/projects",
+      "Create workspace in specific directory",
+    )
+    .example("$0 work init", "Short alias for workspace init")
+    .help()
+    .alias("help", "h");
+}
 
-        if (!name) {
-          throw new Error("Workspace name is required. Usage: atlas workspace init <name> [path]");
-        }
+interface WorkspaceConfig {
+  name: string;
+  description: string;
+  agents: string[];
+  signals: string[];
+}
 
-        await handleInit(name, path);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        setStatus("error");
-      }
-    };
+const WorkspaceInitFlow = ({
+  initialName,
+  targetPath,
+}: {
+  initialName?: string;
+  targetPath: string;
+}) => {
+  const { exit } = useApp();
+  const [step, setStep] = useState(initialName ? "description" : "name");
+  const [config, setConfig] = useState<Partial<WorkspaceConfig>>({
+    name: initialName,
+    agents: [],
+    signals: ["cli"],
+  });
+  const [error, setError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
 
-    execute();
-  }, []);
+  const handleNameSubmit = (name: string) => {
+    if (!name) {
+      setError("Workspace name is required");
+      return;
+    }
+    if (!/^[a-z0-9-]+$/.test(name)) {
+      setError("Use lowercase letters, numbers, and hyphens only");
+      return;
+    }
+    setConfig({ ...config, name });
+    setError(null);
+    setStep("checkExists");
+  };
 
-  async function handleInit(name: string, path: string) {
-    // Resolve the target path
-    const targetPath = resolve(path);
-    const originalCwd = Deno.cwd();
+  const handleExistsCheck = async () => {
+    const workspacePath = join(targetPath, config.name!);
+    if (await exists(workspacePath)) {
+      setStep("overwrite");
+    } else {
+      setStep("description");
+    }
+  };
+
+  const handleOverwrite = (confirmed: boolean) => {
+    if (!confirmed) {
+      console.error("Workspace initialization cancelled");
+      exit();
+      return;
+    }
+    setStep("description");
+  };
+
+  const handleDescription = (description: string) => {
+    setConfig({ ...config, description });
+    setStep("agents");
+  };
+
+  const handleAgents = (agents: string[]) => {
+    setConfig({ ...config, agents });
+    setStep("signals");
+  };
+
+  const handleSignals = (signals: string[]) => {
+    setConfig({ ...config, signals });
+    setStep("confirm");
+  };
+
+  const handleConfirm = async (confirmed: boolean) => {
+    if (!confirmed) {
+      console.error("Workspace initialization cancelled");
+      exit();
+      return;
+    }
+
+    setCreating(true);
 
     try {
-      // Ensure target directory exists
-      await ensureDir(targetPath);
+      const workspacePath = join(targetPath, config.name!);
+      await ensureDir(workspacePath);
 
-      // Change to target directory
-      Deno.chdir(targetPath);
+      // Create workspace.yml
+      const workspaceConfig = {
+        workspace: {
+          name: config.name,
+          description: config.description || `Atlas workspace: ${config.name}`,
+        },
+        signals: {} as Record<string, unknown>,
+        jobs: {} as Record<string, unknown>,
+      };
 
-      // Check if workspace.yml already exists
-      if (await exists("workspace.yml")) {
-        const config = yaml.parse(
-          await Deno.readTextFile("workspace.yml"),
-        ) as { workspace: { name: string; description: string } };
-
-        // Register existing workspace if not already registered
-        const registry = getWorkspaceRegistry();
-        const existingEntry = await registry.getCurrentWorkspace();
-        if (!existingEntry) {
-          await registry.register(targetPath, {
-            name: config.workspace.name,
-            description: config.workspace.description,
-          });
+      // Add configured signals
+      if (config.signals && config.signals.length > 0) {
+        for (const signal of config.signals) {
+          if (signal === "cli") {
+            workspaceConfig.signals["manual-trigger"] = {
+              provider: "cli",
+              description: "Manual signal trigger from CLI",
+            };
+          } else if (signal === "http") {
+            workspaceConfig.signals["webhook"] = {
+              provider: "http",
+              description: "HTTP webhook trigger",
+              config: {
+                port: 8080,
+                path: "/webhook",
+              },
+            };
+          } else if (signal === "schedule") {
+            workspaceConfig.signals["scheduled"] = {
+              provider: "schedule",
+              description: "Scheduled trigger",
+              config: {
+                cron: "0 0 * * *",
+              },
+            };
+          }
         }
-
-        setData({
-          type: "exists",
-          workspace: config.workspace,
-          message: "workspace.yml already exists",
-          path: targetPath,
-        });
-        setStatus("ready");
-        return;
       }
 
-      // Generate workspace ID
-      const workspaceId = crypto.randomUUID();
-
-      // Load template
-      const moduleDir = new URL(".", import.meta.url).pathname;
-      const templatePath = join(
-        moduleDir,
-        "../../../config/workspace_template.yml",
-      );
-      let templateContent = await Deno.readTextFile(templatePath);
-
-      // Replace placeholders
-      templateContent = templateContent
-        .replace("{{WORKSPACE_ID}}", workspaceId)
-        .replace("{{WORKSPACE_NAME}}", name);
+      // Add sample job based on selected agents
+      if (config.agents && config.agents.length > 0) {
+        workspaceConfig.jobs["example-job"] = {
+          description: "Example job for workspace initialization",
+          agents: config.agents,
+          mappings: [
+            {
+              signal: Object.keys(workspaceConfig.signals)[0] || "manual-trigger",
+              conditions: [],
+            },
+          ],
+        };
+      }
 
       // Write workspace.yml
-      await Deno.writeTextFile("workspace.yml", templateContent);
-
-      // Create .atlas directory
-      await ensureDir(".atlas");
-      await ensureDir(".atlas/sessions");
-      await ensureDir(".atlas/logs");
-
-      // Save workspace metadata
+      const yamlContent = yaml.stringify(workspaceConfig);
       await Deno.writeTextFile(
-        ".atlas/workspace.json",
-        JSON.stringify(
-          {
-            id: workspaceId,
-            name,
-            createdAt: new Date().toISOString(),
-            version: "1.0.0",
-          },
-          null,
-          2,
-        ),
+        join(workspacePath, "workspace.yml"),
+        yamlContent,
       );
 
-      // Create .env if it doesn't exist
-      if (!(await exists(".env"))) {
-        await Deno.writeTextFile(
-          ".env",
-          `# Atlas Environment Variables
-
-# Anthropic Claude API Key
-# Get from: https://console.anthropic.com/
-ANTHROPIC_API_KEY=your_api_key_here
-
-# OpenAI API Key (optional)
-# Get from: https://platform.openai.com/api-keys
-OPENAI_API_KEY=your_api_key_here
-`,
-        );
+      // Create .env file if LLM agent selected
+      if (config.agents && config.agents.includes("llm")) {
+        const envContent = "# Add your Anthropic API key here\nANTHROPIC_API_KEY=\n";
+        await Deno.writeTextFile(join(workspacePath, ".env"), envContent);
       }
 
-      // Update .gitignore
-      if (await exists(".gitignore")) {
-        const gitignore = await Deno.readTextFile(".gitignore");
-        if (!gitignore.includes(".env")) {
-          await Deno.writeTextFile(
-            ".gitignore",
-            gitignore + "\n.env\n.atlas/\n*.log\n",
-          );
-        }
-      } else {
-        await Deno.writeTextFile(".gitignore", ".env\n.atlas/\n*.log\n");
-      }
+      // Create jobs directory
+      await ensureDir(join(workspacePath, "jobs"));
 
-      // Register workspace in the registry
-      const registry = getWorkspaceRegistry();
-      const registryEntry = await registry.register(targetPath, {
-        name,
-        description: "An Atlas AI agent workspace",
-      });
-
-      setData({
-        type: "created",
-        workspace: { name, id: workspaceId },
-        workspaceId,
-        registryId: registryEntry.id,
-        path: targetPath,
-      });
-      setStatus("ready");
-    } finally {
-      // Always restore original directory
-      Deno.chdir(originalCwd);
+      setStep("success");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setCreating(false);
     }
+  };
+
+  // Check exists step
+  React.useEffect(() => {
+    if (step === "checkExists") {
+      handleExistsCheck();
+    }
+  }, [step]);
+
+  if (creating) {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Spinner label="Creating workspace directory..." />
+      </Box>
+    );
   }
 
-  if (status === "loading") {
-    return <Text>Loading...</Text>;
-  }
-
-  if (status === "error") {
-    return <Text color="red">Error: {error}</Text>;
-  }
-
-  switch (data?.type) {
-    case "created":
-      return (
-        <Box flexDirection="column">
-          <Text color="green">✓ Workspace initialized successfully!</Text>
-          <Text>Name: {data.workspace.name}</Text>
-          <Text>Path: {data.path}</Text>
-          <Text>Workspace ID: {data.workspaceId}</Text>
-          <Text>Registry ID: {data.registryId}</Text>
-          <Text>Configuration: workspace.yml</Text>
-          <Newline />
-          <Text>Next steps:</Text>
-          <Text color="cyan">1. cd {data.path}</Text>
-          <Text color="cyan">2. Update .env with your Anthropic API key</Text>
-          <Text color="cyan">3. Review and customize workspace.yml</Text>
-          <Text color="cyan">
-            4. Run 'atlas workspace serve' to start the workspace
+  if (step === "success") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Text color="green">✔ Workspace created successfully!</Text>
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold>Next steps:</Text>
+          <Text>1. cd {config.name}</Text>
+          <Text>
+            2. {config.agents?.includes("llm")
+              ? "Add your ANTHROPIC_API_KEY to .env"
+              : "Configure your agents"}
           </Text>
+          <Text>3. Run 'atlas workspace serve' to start</Text>
         </Box>
-      );
-
-    case "exists":
-      return (
-        <Box flexDirection="column">
-          <Text color="yellow">Workspace already initialized</Text>
-          <Text>Name: {data.workspace.name}</Text>
-          <Text>Path: {data.path}</Text>
-          <Text>Config: workspace.yml</Text>
-          <Newline />
-          <Text color="gray">
-            To reinitialize, delete workspace.yml and .atlas/ directory
-          </Text>
-        </Box>
-      );
-
-    default:
-      return null;
+      </Box>
+    );
   }
+
+  return (
+    <Box flexDirection="column" gap={1}>
+      <Box paddingY={1}>
+        <Text bold color="cyan">
+          ┌ Atlas Workspace Setup
+        </Text>
+      </Box>
+
+      {error && (
+        <Box marginBottom={1}>
+          <Text color="red">Error: {error}</Text>
+        </Box>
+      )}
+
+      {step === "name" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>What is your workspace name?</Text>
+          <TextInput placeholder="my-workspace" onSubmit={handleNameSubmit} />
+        </Box>
+      )}
+
+      {step === "overwrite" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>
+            Directory "{config.name}" already exists. Continue anyway?
+          </Text>
+          <ConfirmInput
+            defaultChoice="cancel"
+            onConfirm={() => handleOverwrite(true)}
+            onCancel={() => handleOverwrite(false)}
+          />
+        </Box>
+      )}
+
+      {step === "description" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>Describe your workspace (optional)</Text>
+          <TextInput
+            placeholder="AI-powered workspace for..."
+            onSubmit={handleDescription}
+          />
+        </Box>
+      )}
+
+      {step === "agents" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>Select agents to include:</Text>
+          <MultiSelect
+            options={[
+              {
+                label: "LLM Agent (For AI-powered tasks with Anthropic Claude)",
+                value: "llm",
+              },
+              {
+                label: "Tempest Agent (Built-in agent for system operations)",
+                value: "tempest",
+              },
+              {
+                label: "Remote Agent (Connect to external HTTP agents)",
+                value: "remote",
+              },
+            ]}
+            onSubmit={handleAgents}
+          />
+        </Box>
+      )}
+
+      {step === "signals" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>Configure signal triggers:</Text>
+          <MultiSelect
+            defaultValue={["cli"]}
+            options={[
+              {
+                label: "CLI Trigger (Manual triggering from command line)",
+                value: "cli",
+              },
+              {
+                label: "HTTP Webhook (Trigger via HTTP POST requests)",
+                value: "http",
+              },
+              {
+                label: "Scheduled (Time-based automatic triggers)",
+                value: "schedule",
+              },
+            ]}
+            onSubmit={handleSignals}
+          />
+        </Box>
+      )}
+
+      {step === "confirm" && (
+        <Box flexDirection="column" gap={1}>
+          <Text>
+            Create workspace "{config.name}" with {config.agents?.length || 0} agent(s) and{" "}
+            {config.signals?.length || 0} signal(s)?
+          </Text>
+          <ConfirmInput
+            defaultChoice="confirm"
+            onConfirm={() => handleConfirm(true)}
+            onCancel={() => handleConfirm(false)}
+          />
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+export function handler(argv: InitArgs): void {
+  const targetPath = resolve(argv.path || ".");
+  render(<WorkspaceInitFlow initialName={argv.name} targetPath={targetPath} />);
 }

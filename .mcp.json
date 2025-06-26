@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "atlas-telephone": {
+      "type": "stdio",
+      "command": "deno task atlas workspace serve --mcp",
+      "args": [],
+      "env": {}
+    }
+  }
+}

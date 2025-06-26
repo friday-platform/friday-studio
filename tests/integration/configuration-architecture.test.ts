@@ -8,6 +8,7 @@
 import { expect } from "@std/expect";
 import { join } from "@std/path";
 import { ConfigLoader } from "../../src/core/config-loader.ts";
+import { FileSystemConfigurationAdapter } from "../../packages/storage/mod.ts";
 
 // Test fixtures
 const validAtlasConfig = `version: "1.0"
@@ -226,13 +227,14 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test atlas config structure
     expect(mergedConfig.atlas.version).toBe("1.0");
-    expect(mergedConfig.atlas.platform.name).toBe("Atlas");
-    expect(mergedConfig.atlas.platform.version).toBe("1.0.0");
+    expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
+    expect(mergedConfig.atlas.workspace.id).toBe("atlas-platform");
 
     // Test supervisor configurations
     expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
@@ -292,7 +294,8 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     const workspaceConfig = mergedConfig.workspace;
 
@@ -357,11 +360,12 @@ Deno.test(
       tempDir = await createTestEnvironment();
       Deno.chdir(tempDir);
 
-      const configLoader = new ConfigLoader();
+      const adapter = new FileSystemConfigurationAdapter(tempDir);
+      const configLoader = new ConfigLoader(adapter);
       const mergedConfig = await configLoader.load();
 
       // Verify atlas config is loaded
-      expect(mergedConfig.atlas.platform.name).toBe("Atlas");
+      expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
       expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
         "claude-3-5-sonnet-20241022",
       );
@@ -435,7 +439,8 @@ Deno.test("Agent type configurations validate correctly", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test workspace agents of different types
@@ -500,7 +505,8 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test that job triggers are loaded from workspace.yml
@@ -542,7 +548,8 @@ Deno.test("Remote agent protocol validation", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test workspace remote agent
@@ -616,7 +623,8 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
 
     // Test that validation catches missing protocol
     let errorCaught = false;
@@ -685,7 +693,8 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FileSystemConfigurationAdapter(tempDir);
+    const configLoader = new ConfigLoader(adapter);
 
     // Test that validation catches errors
     let errorCaught = false;

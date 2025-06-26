@@ -14,7 +14,7 @@ import { WorkspaceEntrySchema, WorkspaceStatus } from "../../src/core/workspace-
 import {
   generateUniqueWorkspaceName,
   generateWorkspaceName,
-} from "../../src/core/workspace-names.ts";
+} from "../../src/core/utils/id-generator.ts";
 
 // Helper to create isolated test environment
 async function createTestEnvironment() {

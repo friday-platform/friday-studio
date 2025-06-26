@@ -1,0 +1,8 @@
+{
+  "name": "@atlas/types",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./config": "./config/mod.ts"
+  }
+}

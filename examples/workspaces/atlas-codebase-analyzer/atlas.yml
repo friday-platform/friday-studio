@@ -3,9 +3,10 @@ version: "1.0"
 # Atlas Codebase Analyzer Workspace Configuration
 # Advanced reasoning and execution for autonomous codebase analysis
 
-platform:
-  name: "Atlas"
-  version: "1.0.0"
+workspace:
+  id: "atlas-codebase-analyzer"
+  name: "Atlas Codebase Analyzer"
+  description: "Advanced reasoning and execution for autonomous codebase analysis"
 
 # No workspace-specific agents (inherit from platform)
 agents: {}

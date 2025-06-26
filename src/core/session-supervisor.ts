@@ -7,7 +7,6 @@ import { FactExtractor } from "./memory/fact-extractor.ts";
 import { KnowledgeGraphManager } from "./memory/knowledge-graph.ts";
 import { KnowledgeGraphLocalStorageAdapter } from "../storage/knowledge-graph-local.ts";
 import { logger } from "../utils/logger.ts";
-import { AtlasConfigLoader, type AtlasSupervisionConfig } from "./atlas-config-loader.ts";
 import { SupervisionLevel } from "./caching/supervision-cache.ts";
 import {
   type StreamingMemoryConfig,
@@ -17,6 +16,7 @@ import { ContextProvisioner } from "./context/context-provisioner.ts";
 import { QualityAssessmentPrompts } from "./evaluation/quality-assessment-prompts.ts";
 import { QualityAssessmentParser } from "./evaluation/quality-assessment-parser.ts";
 import { QualityAssessment } from "./interfaces/quality-assessment.ts";
+import { parse } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -237,18 +237,21 @@ export class SessionSupervisor extends BaseAgent {
   private knowledgeGraph?: KnowledgeGraphManager;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private streamingMemory?: StreamingMemoryManager;
-  private workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
+  private workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Tools configuration from workspace
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
   private contextProvisioner?: ContextProvisioner;
+  private supervisorDefaults?: any; // Supervisor configuration defaults
 
   constructor(
     memoryConfig: AtlasMemoryConfig,
     parentScopeId?: string,
     precomputedPlans?: Record<string, any>,
+    supervisorDefaults?: any,
   ) {
     super(memoryConfig, parentScopeId);
     this.memoryConfig = memoryConfig; // Store for later use
     this.precomputedPlans = this.validateAndSanitizePlans(precomputedPlans || {}, parentScopeId); // Store shared plans
+    this.supervisorDefaults = supervisorDefaults; // Receive supervisor config from parent process
 
     // Override logger from BaseAgent with proper supervisor context
     this.logger = logger.createChildLogger({
@@ -328,26 +331,30 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     return this.sessionContext;
   }
 
-  // Set workspace MCP servers received from session worker
-  setWorkspaceMcpServers(mcpServers?: Record<string, any>): void {
-    this.workspaceMcpServers = mcpServers;
+  // Set workspace tools configuration received from session worker
+  setWorkspaceTools(tools?: { mcp?: { servers?: Record<string, any> } }): void {
+    this.workspaceTools = tools;
+    const mcpServers = tools?.mcp?.servers;
     this.log(
-      `Set workspace MCP servers: ${mcpServers ? Object.keys(mcpServers).join(", ") : "none"}`,
+      `Set workspace tools configuration - MCP servers: ${
+        mcpServers ? Object.keys(mcpServers).join(", ") : "none"
+      }`,
     );
   }
 
   // Get MCP server configurations for specific agent using workspace MCP servers
   getMcpServerConfigsForAgent(agentId: string, requestedServerIds: string[]): any[] {
-    if (!this.workspaceMcpServers) {
+    const workspaceMcpServers = this.workspaceTools?.mcp?.servers;
+    if (!workspaceMcpServers) {
       this.log(`No workspace MCP servers available when requesting configs for agent ${agentId}`);
       return [];
     }
 
     const configs: any[] = [];
     for (const serverId of requestedServerIds) {
-      if (this.workspaceMcpServers[serverId]) {
+      if (workspaceMcpServers[serverId]) {
         // Add server ID to the config if it's missing
-        const config = { ...this.workspaceMcpServers[serverId], id: serverId };
+        const config = { ...workspaceMcpServers[serverId], id: serverId };
         configs.push(config);
       } else {
         this.log(`MCP server ${serverId} not found in workspace servers for agent ${agentId}`);
@@ -370,11 +377,21 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   // Initialize AgentSupervisor using atlas.yml configuration
   async initializeStreamingMemory(context: SessionContext): Promise<void> {
     try {
-      const atlasConfigLoader = AtlasConfigLoader.getInstance();
-      const atlasConfig = await atlasConfigLoader.loadConfiguration();
-
-      // Load streaming memory configuration from atlas.yml
-      const streamingMemoryConfig = (atlasConfig.memory as any)?.streaming || {};
+      // Use streaming memory configuration from atlas config
+      const streamingMemoryConfig = this.memoryConfig.streaming || {
+        enabled: true,
+        queue_max_size: 1000,
+        batch_size: 10,
+        flush_interval_ms: 1000,
+        background_processing: true,
+        persistence_enabled: true,
+        error_retry_attempts: 3,
+        priority_processing: true,
+        dual_write_enabled: true,
+        legacy_batch_enabled: false,
+        stream_everything: true,
+        performance_tracking: true,
+      };
       const streamingConfig: StreamingMemoryConfig = {
         queue_max_size: streamingMemoryConfig.queue_max_size || 1000,
         batch_size: streamingMemoryConfig.batch_size || 10,
@@ -430,12 +447,30 @@ You can use advanced reasoning methods to make complex decisions about agent coo
 
   async initializeAgentSupervisorFromConfig(context: SessionContext): Promise<void> {
     try {
-      const atlasConfigLoader = AtlasConfigLoader.getInstance();
-      const atlasConfig = await atlasConfigLoader.loadConfiguration();
-      const agentSupervisorConfig = atlasConfig.supervisors.agent;
+      // Get agent supervisor config from atlas configuration or load defaults
+      let agentSupervisorConfig;
+      try {
+        // Try to load from defaults file
+        const defaultsPath =
+          new URL("../../config/supervisor-defaults.yml", import.meta.url).pathname;
+        const defaultsYaml = await Deno.readTextFile(defaultsPath);
+        const { parse } = await import("@std/yaml");
+        const defaults = parse(defaultsYaml) as any;
+        agentSupervisorConfig = defaults.supervisors.agent;
+      } catch (error) {
+        this.logger.warn("Failed to load supervisor defaults, using minimal fallback", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Minimal fallback if defaults file is missing
+        agentSupervisorConfig = {
+          model: "claude-3-5-sonnet-20241022",
+          supervision: { level: "minimal" },
+          prompts: { system: "You are an AgentSupervisor." },
+        };
+      }
 
       // Extract supervision configuration with defaults
-      const supervisionConfig = (agentSupervisorConfig.supervision as AtlasSupervisionConfig) || {};
+      const supervisionConfig = agentSupervisorConfig.supervision || {};
 
       // Set session supervision level for optimizations
       this.supervisionLevel = (supervisionConfig as any).level
@@ -461,7 +496,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
             (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
           ]) || SupervisionLevel.MINIMAL,
         cacheEnabled: (supervisionConfig as any).cache_enabled !== false,
-        workspaceMcpServers: this.workspaceMcpServers,
+        workspaceTools: this.workspaceTools,
         prompts: agentSupervisorConfig.prompts,
       });
 
@@ -921,7 +956,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     }
   }
 
-  // Intelligent task preparation method
+  // Intelligent task preparation method using existing reasoning capabilities
   private async prepareTaskForAgent(
     agentSpec: JobAgentSpec,
     jobSpec: JobSpecification,
@@ -938,7 +973,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       return jobSpec.task_template;
     }
 
-    // Priority 3: Ask supervisor to intelligently prepare the task
+    // Priority 3: Use existing reasoning capabilities to prepare the task
     return await this.generateIntelligentTaskPrompt(
       agentSpec,
       jobSpec,
@@ -947,6 +982,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     );
   }
 
+  /**
+   * Use existing reasoning engine with library-style output formatting
+   */
   private async generateIntelligentTaskPrompt(
     agentSpec: JobAgentSpec,
     jobSpec: JobSpecification,
@@ -956,105 +994,231 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     const agent = sessionContext.availableAgents?.find((a) => a.id === agentSpec.id);
     const agentType = agent?.type || "unknown";
 
-    // Extract event details for more specific task generation
-    const eventDetails = this.extractEventDetails(rawSignalData);
+    // Get task format specification from supervisor config (like library does)
+    const taskFormat = this.supervisorDefaults?.supervisors?.session?.task_format || {
+      type: "structured",
+      template: "action_oriented",
+      include_context: true,
+      include_requirements: true,
+    };
 
-    const preparationPrompt = `
-You are an expert SessionSupervisor creating specific, actionable tasks for agents. Transform signal data into focused instructions.
+    // Use reasoning engine with format specification (adapting library's approach)
+    const reasoningPrompt = `
+Prepare a task for agent ${agentSpec.id} with the following format requirements:
 
-## SIGNAL ANALYSIS
-**Signal Type**: ${sessionContext.signal.id}
-**Event Details**: ${eventDetails}
+**Context:**
+- Job: ${jobSpec.description}
+- Agent Type: ${agentType}
+- Signal: ${sessionContext.signal.id}
+- Capabilities: ${
+      this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)
+    }
+- Signal Data: ${this.extractSignalDataSummary(rawSignalData)}
+- Requirements: ${this.getTaskRequirementsForAgentType(agentType, agentSpec.id)}
 
-**Raw Data Summary**:
-- Event Type: ${rawSignalData?.type || "Unknown"}
-- Resource: ${rawSignalData?.event?.involvedObject?.kind || "Unknown"}
-- Name: ${rawSignalData?.event?.name || "Unknown"}
-- Namespace: ${rawSignalData?.event?.namespace || "default"}
-- Reason: ${rawSignalData?.event?.reason || "Unknown"}
-- Message: ${rawSignalData?.event?.message || "No message"}
+**Output Format**: ${taskFormat.type}
+**Template Style**: ${taskFormat.template}
+**Include Context**: ${taskFormat.include_context}
+**Include Requirements**: ${taskFormat.include_requirements}
 
-## AGENT CONTEXT
-**Target Agent**: ${agentSpec.id} (${agentType})
-**Job Purpose**: ${jobSpec.description}
+Create a well-formatted task following the specified format requirements.`;
 
-**Agent Capabilities**:
-${this.getAgentCapabilitiesDescription(agentSpec.id, sessionContext.availableAgents)}
+    try {
+      // Use existing LLM generation capabilities
+      const taskResult = await this.generateLLM(
+        "claude-3-5-sonnet-20241022",
+        "You are an intelligent task preparation assistant.",
+        reasoningPrompt,
+        false,
+        {
+          operation: "task_preparation",
+          agentId: agentSpec.id,
+          agentType,
+          signalId: sessionContext.signal.id,
+          jobName: jobSpec.name,
+        },
+      );
 
-## TASK REQUIREMENTS
-${this.getTaskRequirementsForAgentType(agentType, agentSpec.id)}
-
-## CRITICAL INSTRUCTIONS
-1. **BE SPECIFIC**: Use actual names, namespaces, and data from the event
-2. **BE ACTIONABLE**: Focus on what the agent should DO, not generic descriptions
-3. **BE RELEVANT**: Address the specific event type and context
-4. **AVOID REPETITION**: Don't repeat the same workspace knowledge in every task
-
-## OUTPUT FORMAT (Use this exact structure):
-
-**Immediate Action**: [Specific first step using actual event data]
-**Core Objective**: [Clear goal based on this specific event, not generic processing]
-**Specific Steps**:
-1. [First concrete action with actual resource names]
-2. [Second action based on event type and context]
-3. [Third action if needed for completion]
-**Expected Outcome**: [Specific result for this event type]
-**Context**: [Key event details without noise or repeated workspace knowledge]
-
-Generate the task description now following the OUTPUT FORMAT exactly. Focus on THIS SPECIFIC EVENT, not generic Kubernetes processing:`;
-
-    const cleanTask = await this.generateLLM(
-      "claude-3-5-sonnet-20241022",
-      "You are an intelligent task preparation assistant focused on creating specific, actionable tasks.",
-      preparationPrompt,
-      true,
-      {
-        operation: "intelligent_task_preparation",
+      // Apply post-processing formatting (like library's formatOutput)
+      const formattedTask = this.formatTaskOutput(taskResult, taskFormat, {
         agentId: agentSpec.id,
+        agentType,
+        signalId: sessionContext.signal.id,
         jobName: jobSpec.name,
-        sessionId: sessionContext.sessionId,
-        eventType: rawSignalData?.event?.reason,
-        resourceName: rawSignalData?.event?.name,
-      },
-    );
+      });
 
-    this.log(`Prepared intelligent task for ${agentSpec.id}`, "info", {
-      originalDataSize: JSON.stringify(rawSignalData).length,
-      cleanTaskLength: cleanTask.length,
-      job: jobSpec.name,
-      eventType: rawSignalData?.event?.reason,
-      resourceName: rawSignalData?.event?.name,
-    });
+      this.log(`Task prepared with formatting for ${agentSpec.id}`, "info", {
+        agentType,
+        signalType: sessionContext.signal.id,
+        jobName: jobSpec.name,
+        formatType: taskFormat.type,
+      });
 
-    return cleanTask.trim();
+      return formattedTask;
+    } catch (error) {
+      this.log(`Reasoning failed, using fallback: ${error}`, "warn");
+      return `Execute ${jobSpec.description} for signal ${sessionContext.signal.id}`;
+    }
   }
 
-  // Helper method to extract key event details for task generation
-  private extractEventDetails(rawSignalData: any): string {
-    if (!rawSignalData?.event) {
-      return "No event details available";
+  /**
+   * Format task output using library-style formatting controls
+   */
+  private formatTaskOutput(
+    taskContent: string,
+    format: any,
+    metadata: { agentId: string; agentType: string; signalId: string; jobName: string },
+  ): string {
+    switch (format.type) {
+      case "structured":
+        return this.formatStructuredTask(taskContent, format, metadata);
+      case "markdown":
+        return this.formatMarkdownTask(taskContent, format, metadata);
+      case "json":
+        return this.formatJsonTask(taskContent, format, metadata);
+      default:
+        return taskContent;
+    }
+  }
+
+  private formatStructuredTask(content: string, format: any, metadata: any): string {
+    // Apply structured formatting like library does for reports
+    const sections = [];
+
+    if (format.include_context) {
+      sections.push(`## Context`);
+      sections.push(`Agent: ${metadata.agentId} (${metadata.agentType})`);
+      sections.push(`Job: ${metadata.jobName}`);
+      sections.push(`Signal: ${metadata.signalId}`);
+      sections.push("");
     }
 
-    const event = rawSignalData.event;
+    sections.push("## Task");
+    sections.push(content);
+
+    if (format.include_requirements) {
+      sections.push("");
+      sections.push("## Requirements");
+      sections.push("- Follow agent-specific capabilities");
+      sections.push("- Process signal data appropriately");
+      sections.push("- Return structured results");
+    }
+
+    return sections.join("\n");
+  }
+
+  private formatMarkdownTask(content: string, format: any, metadata: any): string {
+    return `# Task for ${metadata.agentId}\n\n${content}`;
+  }
+
+  private formatJsonTask(content: string, format: any, metadata: any): string {
+    return JSON.stringify(
+      {
+        agent_id: metadata.agentId,
+        agent_type: metadata.agentType,
+        signal_id: metadata.signalId,
+        job_name: metadata.jobName,
+        task: content,
+        timestamp: new Date().toISOString(),
+      },
+      null,
+      2,
+    );
+  }
+
+  // Helper method to extract signal data summary in a generic way
+  private extractSignalDataSummary(rawSignalData: any): string {
+    if (!rawSignalData) {
+      return "No signal data available";
+    }
+
+    const summary = [];
+
+    // Extract common signal properties generically
+    if (rawSignalData.type) {
+      summary.push(`- Type: ${rawSignalData.type}`);
+    }
+
+    if (rawSignalData.source) {
+      summary.push(`- Source: ${rawSignalData.source}`);
+    }
+
+    if (rawSignalData.timestamp) {
+      summary.push(`- Timestamp: ${rawSignalData.timestamp}`);
+    }
+
+    // Handle different signal payload structures
+    if (rawSignalData.event) {
+      const event = rawSignalData.event;
+      if (event.type) summary.push(`- Event Type: ${event.type}`);
+      if (event.reason) summary.push(`- Reason: ${event.reason}`);
+      if (event.message) {
+        summary.push(
+          `- Message: ${event.message.substring(0, 100)}${event.message.length > 100 ? "..." : ""}`,
+        );
+      }
+    }
+
+    // Handle HTTP/webhook signals
+    if (rawSignalData.method) {
+      summary.push(`- HTTP Method: ${rawSignalData.method}`);
+    }
+
+    if (rawSignalData.path) {
+      summary.push(`- Path: ${rawSignalData.path}`);
+    }
+
+    // Handle other signal types
+    Object.keys(rawSignalData).forEach((key) => {
+      if (
+        !["type", "source", "timestamp", "event", "method", "path"].includes(key) &&
+        typeof rawSignalData[key] === "string" && rawSignalData[key].length < 50
+      ) {
+        summary.push(`- ${key}: ${rawSignalData[key]}`);
+      }
+    });
+
+    return summary.length > 0 ? summary.join("\n") : "- No structured data available";
+  }
+
+  // Helper method to extract key event details for task generation (generic)
+  private extractEventDetails(rawSignalData: any): string {
+    if (!rawSignalData) {
+      return "No signal details available";
+    }
+
     const details = [];
 
-    if (event.type === "Normal") {
-      details.push(`Normal operation: ${event.reason}`);
-    } else if (event.type === "Warning") {
-      details.push(`Warning detected: ${event.reason}`);
+    // Extract details based on signal structure
+    if (rawSignalData.type) {
+      details.push(`Signal type: ${rawSignalData.type}`);
     }
 
-    if (event.involvedObject) {
-      details.push(`${event.involvedObject.kind}: ${event.involvedObject.name}`);
+    if (rawSignalData.source) {
+      details.push(`Source: ${rawSignalData.source}`);
     }
 
-    if (event.message) {
-      details.push(
-        `Details: ${event.message.substring(0, 100)}${event.message.length > 100 ? "..." : ""}`,
-      );
+    // Handle nested event data generically
+    if (rawSignalData.event) {
+      const event = rawSignalData.event;
+      if (event.type && event.reason) {
+        details.push(`${event.type}: ${event.reason}`);
+      }
+      if (event.name) {
+        details.push(`Target: ${event.name}`);
+      }
     }
 
-    return details.join(" | ");
+    // Add first key-value pair as representative detail
+    const keys = Object.keys(rawSignalData).filter((k) =>
+      !["type", "source", "timestamp", "event"].includes(k) &&
+      typeof rawSignalData[k] === "string"
+    );
+    if (keys.length > 0) {
+      details.push(`${keys[0]}: ${rawSignalData[keys[0]]}`);
+    }
+
+    return details.length > 0 ? details.join(" | ") : "Generic signal received";
   }
 
   // Helper method to provide agent-specific task requirements
@@ -1063,12 +1227,11 @@ Generate the task description now following the OUTPUT FORMAT exactly. Focus on 
       case "remote":
         return `For remote agents:
 - Execute specific operations based on the signal data
-- Analyze the event type and severity
-- Determine if the event requires immediate action or is informational
+- Analyze the signal type and determine appropriate actions
 - Use appropriate protocol-specific commands or API calls
 - Provide clear remediation steps if issues are detected
-- Include resource identifiers and specific error details
-- Consider cascading effects on related resources`;
+- Include relevant identifiers and specific details from signal
+- Consider downstream effects and dependencies`;
 
       case "llm":
         return `For LLM agents:
@@ -1145,7 +1308,10 @@ Generate the task description now following the OUTPUT FORMAT exactly. Focus on 
       capabilities += `- AI analysis and reasoning\n`;
       capabilities += `- Documentation and explanations\n`;
       capabilities += `- Integration with external services\n`;
-      if (agent.config?.tools?.includes("computer_use")) {
+      if (
+        agent.tools?.mcp?.includes("computer_use") ||
+        agent.tools?.workspace?.includes("computer_use")
+      ) {
         capabilities += `- Computer interactions and automation\n`;
       }
     } else if (agent.type === "remote") {

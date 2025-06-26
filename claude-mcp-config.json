@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "atlas": {
+      "command": "deno",
+      "args": [
+        "run",
+        "--allow-all",
+        "--unstable-broadcast-channel",
+        "--unstable-worker-options",
+        "--env-file",
+        "/Users/kenneth/tempest/atlas/src/cli.tsx",
+        "mcp",
+        "serve"
+      ],
+      "cwd": "/Users/kenneth/tempest/atlas"
+    }
+  }
+}

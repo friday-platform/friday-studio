@@ -135,7 +135,8 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Linear issue management specialist. Responsible for ALL Linear operations: creating issues, updating status, adding comments, managing assignments and priorities. Uses MCP tools to interact with Linear API."
-    mcp_servers: ["linear"]
+    tools:
+      mcp: ["linear"]
     max_steps: 3
     tool_choice: "auto"
 

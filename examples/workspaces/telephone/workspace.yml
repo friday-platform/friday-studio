@@ -5,6 +5,39 @@ workspace:
   name: "Multi-Provider Telephone Game"
   description: "A game where messages transform through multiple agents using different LLM providers"
 
+# Server configuration - how this workspace exposes itself via MCP
+server:
+  mcp:
+    enabled: true
+    discoverable:
+      capabilities:
+        - "workspace_jobs_*"
+        - "workspace_sessions_*"
+      jobs:
+        - "telephone"
+        - "public-*"
+    rate_limits:
+      requests_per_hour: 100
+      concurrent_sessions: 3
+
+# Tools configuration - MCP servers this workspace connects to
+tools:
+  mcp:
+    client_config:
+      timeout: 30000
+      retry_policy:
+        max_attempts: 3
+    servers:
+      filesystem-context:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-filesystem"]
+          env:
+            FILESYSTEM_ROOT: "/workspace"
+        tools:
+          allowed: ["read_file", "list_directory"]
+
 # Signal definitions
 signals:
   telephone-message:
@@ -38,10 +71,18 @@ jobs:
       agents:
         - id: "mishearing-agent"
           input_source: "signal"
+          tools:
+            - "workspace.memory.recall" # Can access session memory
         - id: "embellishment-agent"
           input_source: "previous"
+          tools:
+            - "workspace_memory_recall"
+            - "workspace_memory_store" # Can store transformation patterns
         - id: "reinterpretation-agent"
           input_source: "previous"
+          tools:
+            - "workspace_memory_recall"
+            - "workspace_sessions_describe" # Can check session progress
 
 # Agent definitions
 agents:
@@ -49,13 +90,26 @@ agents:
     type: "llm"
     model: "claude-3-5-haiku-20241022" # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
+    default_tools:
+      - "workspace.memory.recall" # Default memory access for all jobs
+    tools:
+      mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
 
   embellishment-agent:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative details and context to messages"
+    default_tools:
+      - "workspace.memory.*" # Full memory access for pattern storage
+    tools:
+      mcp: ["filesystem-context"]
 
   reinterpretation-agent:
     type: "llm"
     model: "claude-3-5-haiku-20241022"
     purpose: "Dramatically transforms and reinterprets messages"
+    default_tools:
+      - "workspace.memory.recall"
+      - "workspace.sessions.*" # Can check session status and progress
+    tools:
+      mcp: ["filesystem-context"]

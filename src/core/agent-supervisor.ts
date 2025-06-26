@@ -50,7 +50,7 @@ interface AgentSupervisorConfig {
   workspaceId?: string;
   supervisionLevel?: SupervisionLevel;
   cacheEnabled?: boolean;
-  workspaceMcpServers?: Record<string, any>; // MCP servers from workspace
+  workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Workspace tools configuration
   prompts?: {
     system?: string;
     user?: string;
@@ -610,7 +610,8 @@ Focus on safety, efficiency, and reliability.`;
       return undefined;
     }
 
-    const workspaceMcpServers = this.supervisorConfig.workspaceMcpServers;
+    const workspaceTools = this.supervisorConfig.workspaceTools;
+    const workspaceMcpServers = workspaceTools?.mcp?.servers;
     if (!workspaceMcpServers) {
       this.log(
         `Agent ${agent.id} requests MCP servers ${
