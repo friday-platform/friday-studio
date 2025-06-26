@@ -7,7 +7,7 @@ import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
-import { WorkspaceEntry } from "../../core/workspace-registry-types.ts";
+import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
@@ -1060,12 +1060,14 @@ const WorkspaceSelection = ({
           const compatibleWorkspaces = workspaceList.map((w) => ({
             id: w.id,
             name: w.name,
-            description: w.description,
             path: w.path,
-            status: w.status,
+            configPath: `${w.path}/workspace.yml`, // Standard workspace config path
+            status: w.status as WorkspaceStatus,
             createdAt: w.createdAt,
             lastSeen: w.lastSeen,
-            hasActiveRuntime: w.hasActiveRuntime,
+            metadata: {
+              description: w.description,
+            },
           }));
           setWorkspaces(compatibleWorkspaces);
         } else {

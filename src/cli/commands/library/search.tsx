@@ -91,7 +91,7 @@ export async function handler(argv: SearchArgs) {
     if (argv.limit) params.append("limit", argv.limit.toString());
 
     const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/library/search?${params}`);
+    const response = await fetch(`${serverUrl}/api/library/search?${params}`);
 
     if (!response.ok) {
       const errorText = await response.text();

@@ -61,7 +61,7 @@ export async function handler(argv: StatsArgs) {
     s.start("Fetching library statistics...");
 
     const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/library/stats`);
+    const response = await fetch(`${serverUrl}/api/library/stats`);
 
     if (!response.ok) {
       const errorText = await response.text();

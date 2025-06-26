@@ -4,7 +4,7 @@ import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { AtlasLogger } from "../utils/logger.ts";
 import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
-import { WorkspaceStatus } from "./workspace-registry-types.ts";
+import { WorkspaceStatus } from "./workspace-manager.ts";
 import { Workspace } from "./workspace.ts";
 import { ConfigLoader } from "./config-loader.ts";
 import { WorkspaceMemberRole } from "../types/core.ts";

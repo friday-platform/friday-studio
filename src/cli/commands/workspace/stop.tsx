@@ -1,5 +1,5 @@
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
@@ -26,7 +26,7 @@ export const builder = {
 
 export const handler = async (argv: StopArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceRegistry();
+    const registry = getWorkspaceManager();
     await registry.initialize();
 
     if (argv.all) {
@@ -43,7 +43,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
 };
 
 async function stopSingleWorkspace(idOrName?: string): Promise<void> {
-  const registry = getWorkspaceRegistry();
+  const registry = getWorkspaceManager();
   const processManager = new WorkspaceProcessManager();
 
   let workspace;
@@ -85,10 +85,10 @@ async function stopSingleWorkspace(idOrName?: string): Promise<void> {
 }
 
 async function stopAllWorkspaces(): Promise<void> {
-  const registry = getWorkspaceRegistry();
+  const registry = getWorkspaceManager();
   const processManager = new WorkspaceProcessManager();
 
-  const runningWorkspaces = await registry.getRunning();
+  const runningWorkspaces = await registry.getRunningWorkspaces();
 
   if (runningWorkspaces.length === 0) {
     infoOutput("No running workspaces found.");

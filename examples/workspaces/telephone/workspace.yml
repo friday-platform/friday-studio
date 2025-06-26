@@ -10,8 +10,8 @@ server:
     enabled: true
     discoverable:
       capabilities:
-        - "workspace.jobs.*"
-        - "workspace.sessions.*"
+        - "workspace_jobs_*"
+        - "workspace_sessions.*"
       jobs:
         - "telephone"
         - "public-*"
@@ -75,13 +75,13 @@ jobs:
         - id: "embellishment-agent"
           input_source: "previous"
           tools:
-            - "workspace.memory.recall"
-            - "workspace.memory.store" # Can store transformation patterns
+            - "workspace_memory_recall"
+            - "workspace_memory_store" # Can store transformation patterns
         - id: "reinterpretation-agent"
           input_source: "previous"
           tools:
-            - "workspace.memory.recall"
-            - "workspace.sessions.describe" # Can check session progress
+            - "workspace_memory_recall"
+            - "workspace_sessions_describe" # Can check session progress
 
 # Agent definitions
 agents:
@@ -90,7 +90,7 @@ agents:
     model: "claude-3-5-haiku-20241022" # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
     default_tools:
-      - "workspace.memory.recall" # Default memory access for all jobs
+      - "workspace_memory_recall" # Default memory access for all jobs
     tools:
       mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
 
@@ -99,7 +99,7 @@ agents:
     model: "claude-3-5-haiku-20241022"
     purpose: "Adds creative details and context to messages"
     default_tools:
-      - "workspace.memory.*" # Full memory access for pattern storage
+      - "workspace_memory_*" # Full memory access for pattern storage
     tools:
       mcp: ["filesystem-context"]
 
