@@ -1,9 +1,11 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { WorkspaceProcessManager } from "../../src/core/workspace-process-manager.ts";
+import { getWorkspaceRegistry } from "../../src/core/workspace-registry.ts";
 import { AtlasLogger } from "../../src/utils/logger.ts";
 
-// Close logger after tests to prevent file leaks
-const cleanup = () => {
+// Close logger and registry after tests to prevent file leaks
+const cleanup = async () => {
+  await getWorkspaceRegistry().close();
   AtlasLogger.getInstance().close();
 };
 
@@ -19,7 +21,7 @@ Deno.test("WorkspaceProcessManager - should validate process running check", asy
     const fakeRunning = await manager.isProcessRunning(999999);
     assertEquals(fakeRunning, false);
   } finally {
-    cleanup();
+    await cleanup();
   }
 });
 
@@ -36,7 +38,7 @@ Deno.test("WorkspaceProcessManager - should reject starting non-existent workspa
       "No such file or directory",
     );
   } finally {
-    cleanup();
+    await cleanup();
   }
 });
 
@@ -52,7 +54,7 @@ Deno.test("WorkspaceProcessManager - should reject stopping non-existent workspa
       "Workspace non-existent-workspace-id not found",
     );
   } finally {
-    cleanup();
+    await cleanup();
   }
 });
 

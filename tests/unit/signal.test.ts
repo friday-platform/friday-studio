@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { cleanupTestDir, runCLI, setupTestWorkspace } from "./helpers.ts";
+import { cleanupTestDir, runCLI, setupTestWorkspace } from "../utils/test-utils.ts";
 
 Deno.test("signal list shows configured signals", async () => {
   const tempDir = await setupTestWorkspace();

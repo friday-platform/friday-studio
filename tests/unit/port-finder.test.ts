@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import { findAvailablePort, getNextAvailablePort } from "./port-finder.ts";
+import { findAvailablePort, getNextAvailablePort } from "../../src/utils/port-finder.ts";
 
 Deno.test("findAvailablePort - finds available port in default range", () => {
   const port = findAvailablePort();

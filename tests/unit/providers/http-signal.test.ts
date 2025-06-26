@@ -4,8 +4,8 @@
  */
 
 import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { HTTPSignalProvider } from "./http-signal.ts";
-import type { HTTPSignalConfig } from "./http-signal.ts";
+import { HTTPSignalProvider } from "../../../src/core/providers/builtin/http-signal.ts";
+import type { HTTPSignalConfig } from "../../../src/core/providers/builtin/http-signal.ts";
 
 Deno.test("HTTPSignalProvider - initialization", async (t) => {
   await t.step("should initialize with valid HTTP config", () => {

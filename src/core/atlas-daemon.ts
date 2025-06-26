@@ -3,7 +3,7 @@ import { cors } from "hono/cors";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { AtlasLogger } from "../utils/logger.ts";
-import { getWorkspaceRegistry } from "./workspace-registry.ts";
+import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
 import { WorkspaceStatus } from "./workspace-registry-types.ts";
 import { Workspace } from "./workspace.ts";
 import { ConfigLoader } from "./config-loader.ts";
@@ -73,17 +73,9 @@ export class AtlasDaemon {
     // List all registered workspaces
     this.app.get("/api/workspaces", async (c) => {
       try {
-        const registry = getWorkspaceRegistry();
-        const workspaces = await registry.listAll();
-
-        return c.json(workspaces.map((w) => ({
-          id: w.id,
-          name: w.name,
-          status: w.status,
-          path: w.path,
-          lastSeen: w.lastSeen,
-          hasActiveRuntime: this.runtimes.has(w.id),
-        })));
+        const manager = getWorkspaceManager();
+        const workspaces = await manager.listWorkspaces();
+        return c.json(workspaces);
       } catch (error) {
         return c.json({
           error: `Failed to list workspaces: ${
@@ -98,29 +90,46 @@ export class AtlasDaemon {
       const workspaceId = c.req.param("workspaceId");
 
       try {
-        const registry = getWorkspaceRegistry();
-        const workspace = await registry.findById(workspaceId) ||
-          await registry.findByName(workspaceId);
-
-        if (!workspace) {
-          return c.json({ error: `Workspace not found: ${workspaceId}` }, 404);
-        }
-
-        const runtime = this.runtimes.get(workspace.id);
-
-        return c.json({
-          ...workspace,
-          hasActiveRuntime: !!runtime,
-          runtimeInfo: runtime
-            ? {
-              status: runtime.getStatus(),
-              workers: runtime.getWorkers(),
-            }
-            : null,
-        });
+        const manager = getWorkspaceManager();
+        const workspace = await manager.describeWorkspace(workspaceId);
+        return c.json(workspace);
       } catch (error) {
         return c.json({
           error: `Failed to get workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Create a new workspace
+    this.app.post("/api/workspaces", async (c) => {
+      try {
+        const body = await c.req.json() as WorkspaceCreateConfig;
+        const manager = getWorkspaceManager();
+        const result = await manager.createWorkspace(body);
+        return c.json(result, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to create workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Delete a workspace
+    this.app.delete("/api/workspaces/:workspaceId", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+      const force = c.req.query("force") === "true";
+
+      try {
+        const manager = getWorkspaceManager();
+        await manager.deleteWorkspace(workspaceId, force);
+        return c.json({ message: `Workspace ${workspaceId} deleted` });
+      } catch (error) {
+        return c.json({
+          error: `Failed to delete workspace: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);
@@ -326,11 +335,11 @@ export class AtlasDaemon {
 
       // Find workspace in registry
       logger.debug(`Looking up workspace in registry: ${workspaceId}`);
-      const registry = getWorkspaceRegistry();
-      await registry.initialize();
+      const manager = getWorkspaceManager();
+      await manager.initialize();
 
-      const workspace = await registry.findById(workspaceId) ||
-        await registry.findByName(workspaceId);
+      const workspace = await manager.findById(workspaceId) ||
+        await manager.findByName(workspaceId);
 
       if (!workspace) {
         const error = `Workspace not found: ${workspaceId}`;
@@ -376,6 +385,13 @@ export class AtlasDaemon {
 
       this.runtimes.set(workspace.id, runtime);
       logger.debug(`Runtime stored in daemon registry`);
+
+      // Register runtime with WorkspaceManager
+      manager.registerRuntime(workspace.id, runtime, workspaceObj, {
+        name: workspace.name,
+        description: workspace.metadata?.description,
+      });
+      logger.debug(`Runtime registered with WorkspaceManager`);
 
       // Set idle timeout
       this.resetIdleTimeout(workspace.id);
@@ -488,6 +504,10 @@ export class AtlasDaemon {
     }
 
     this.runtimes.delete(workspaceId);
+
+    // Unregister runtime from WorkspaceManager
+    const manager = getWorkspaceManager();
+    manager.unregisterRuntime(workspaceId);
 
     // Clear idle timeout
     const timeoutId = this.idleTimeouts.get(workspaceId);

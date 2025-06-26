@@ -214,6 +214,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
     return {
       github: {
         id: "github-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",
@@ -234,6 +235,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
 
       filesystem: {
         id: "filesystem-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",
@@ -246,6 +248,7 @@ export class EnhancedMCPManager extends BaseMCPManager {
 
       linear: {
         id: "linear-mcp",
+        timeout_ms: 30000,
         transport: {
           type: "stdio",
           command: "npx",

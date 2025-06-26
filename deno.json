@@ -16,12 +16,12 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
-  "unstable": ["broadcast-channel", "worker-options", "otel"],
+  "unstable": ["broadcast-channel", "worker-options", "otel", "kv"],
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16",
-    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
-    "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas": "cd \"$INIT_CWD\" && OTEL_DENO=true OTEL_SERVICE_NAME=atlas OTEL_SERVICE_VERSION=1.0.0 OTEL_RESOURCE_ATTRIBUTES=service.name=atlas,service.version=1.0.0 deno run -q --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --unstable-kv --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
+    "atlas-no-otel": "cd \"$INIT_CWD\" && deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-kv --env-file \"$(git rev-parse --show-toplevel)/src/cli.tsx\"",
     "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --env-file",

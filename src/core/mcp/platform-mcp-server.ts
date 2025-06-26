@@ -8,7 +8,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { AtlasConfig } from "../config-loader.ts";
-import { WorkspaceRuntimeRegistry } from "../workspace-runtime-registry.ts";
+import { getWorkspaceManager } from "../workspace-manager.ts";
 import { logger } from "../../utils/logger.ts";
 
 // Platform capability types
@@ -26,7 +26,6 @@ interface WorkspaceInfo {
 }
 
 export interface PlatformMCPServerDependencies {
-  runtimeRegistry: WorkspaceRuntimeRegistry;
   atlasConfig: AtlasConfig;
 }
 
@@ -42,27 +41,26 @@ export class PlatformMCPServer {
     });
     this.setupTools();
 
-    logger.info("Platform MCP Server initialized with WorkspaceRuntimeRegistry", {
-      activeWorkspaces: this.dependencies.runtimeRegistry.getActiveCount(),
-    });
+    logger.info("Platform MCP Server initialized with WorkspaceManager");
   }
 
   private setupTools(): void {
-    // Platform capability: workspace.list - NOW ROUTES THROUGH RUNTIME REGISTRY
+    // Platform capability: workspace.list - ROUTES THROUGH WORKSPACE MANAGER
     this.server.registerTool(
       "workspace_list",
       {
-        description: "List all active workspaces with runtime status",
+        description: "List all workspaces with runtime status",
         inputSchema: {},
       },
-      () => {
-        logger.info("MCP workspace_list called - querying active runtimes");
+      async () => {
+        logger.info("MCP workspace_list called - querying WorkspaceManager");
 
-        const workspaces = this.dependencies.runtimeRegistry.listWorkspaces();
+        const manager = getWorkspaceManager();
+        const workspaces = await manager.listWorkspaces();
 
         logger.info("MCP workspace_list response", {
-          activeWorkspaces: workspaces.length,
-          workspaceIds: workspaces.map((w) => w.id),
+          totalWorkspaces: workspaces.length,
+          activeRuntimes: workspaces.filter((w) => w.hasActiveRuntime).length,
         });
 
         return {
@@ -73,7 +71,7 @@ export class PlatformMCPServer {
                 {
                   workspaces,
                   total: workspaces.length,
-                  source: "active_runtimes",
+                  source: "workspace_manager",
                   timestamp: new Date().toISOString(),
                 },
                 null,
@@ -85,11 +83,11 @@ export class PlatformMCPServer {
       },
     );
 
-    // Platform capability: workspace.create - ROUTES THROUGH RUNTIME REGISTRY
+    // Platform capability: workspace.create - ROUTES THROUGH WORKSPACE MANAGER
     this.server.registerTool(
       "workspace_create",
       {
-        description: "Create a new workspace and start its runtime",
+        description: "Create a new workspace",
         inputSchema: {
           name: z.string().min(1).describe("Workspace name"),
           description: z.string().optional().describe("Workspace description"),
@@ -101,14 +99,15 @@ export class PlatformMCPServer {
         logger.info("MCP workspace_create called", { name, description, template });
 
         try {
-          const workspace = await this.dependencies.runtimeRegistry.createWorkspace({
+          const manager = getWorkspaceManager();
+          const workspace = await manager.createWorkspace({
             name,
             description,
             template,
             config,
           });
 
-          logger.info("Workspace created via runtime registry", workspace);
+          logger.info("Workspace created via WorkspaceManager", workspace);
 
           return {
             content: [
@@ -118,8 +117,8 @@ export class PlatformMCPServer {
                   {
                     success: true,
                     workspace,
-                    message: `Workspace '${workspace.name}' created and runtime started`,
-                    source: "runtime_registry",
+                    message: `Workspace '${workspace.name}' created`,
+                    source: "workspace_manager",
                   },
                   null,
                   2,
@@ -136,7 +135,7 @@ export class PlatformMCPServer {
       },
     );
 
-    // Platform capability: workspace.delete - ROUTES THROUGH RUNTIME REGISTRY
+    // Platform capability: workspace.delete - ROUTES THROUGH WORKSPACE MANAGER
     this.server.registerTool(
       "workspace_delete",
       {
@@ -150,9 +149,10 @@ export class PlatformMCPServer {
         logger.info("MCP workspace_delete called", { workspaceId, force });
 
         try {
-          await this.dependencies.runtimeRegistry.deleteWorkspace(workspaceId, force);
+          const manager = getWorkspaceManager();
+          await manager.deleteWorkspace(workspaceId, force);
 
-          logger.info("Workspace deleted via runtime registry", { workspaceId });
+          logger.info("Workspace deleted via WorkspaceManager", { workspaceId });
 
           return {
             content: [
@@ -162,8 +162,8 @@ export class PlatformMCPServer {
                   {
                     success: true,
                     workspaceId,
-                    message: `Workspace '${workspaceId}' runtime shutdown and deleted`,
-                    source: "runtime_registry",
+                    message: `Workspace '${workspaceId}' deleted`,
+                    source: "workspace_manager",
                   },
                   null,
                   2,
@@ -181,11 +181,11 @@ export class PlatformMCPServer {
       },
     );
 
-    // Platform capability: workspace.describe - ROUTES THROUGH RUNTIME REGISTRY
+    // Platform capability: workspace.describe - ROUTES THROUGH WORKSPACE MANAGER
     this.server.registerTool(
       "workspace_describe",
       {
-        description: "Get detailed runtime information about a workspace",
+        description: "Get detailed information about a workspace",
         inputSchema: {
           workspaceId: z.string().describe("Workspace ID to describe"),
         },
@@ -194,13 +194,12 @@ export class PlatformMCPServer {
         logger.info("MCP workspace_describe called", { workspaceId });
 
         try {
-          const workspace = await this.dependencies.runtimeRegistry.describeWorkspace(workspaceId);
+          const manager = getWorkspaceManager();
+          const workspace = await manager.describeWorkspace(workspaceId);
 
-          logger.info("Workspace described via runtime registry", {
+          logger.info("Workspace described via WorkspaceManager", {
             workspaceId,
-            status: workspace.status,
-            sessions: workspace.sessions?.length || 0,
-            jobs: workspace.jobs?.length || 0,
+            hasActiveRuntime: workspace.hasActiveRuntime,
           });
 
           return {
@@ -210,7 +209,7 @@ export class PlatformMCPServer {
                 text: JSON.stringify(
                   {
                     ...workspace,
-                    source: "runtime_registry",
+                    source: "workspace_manager",
                     queryTime: new Date().toISOString(),
                   },
                   null,
@@ -229,119 +228,9 @@ export class PlatformMCPServer {
       },
     );
 
-    // Additional workspace operations through runtime registry
-    this.server.registerTool(
-      "workspace_trigger_job",
-      {
-        description: "Trigger a job in a specific workspace through its runtime",
-        inputSchema: {
-          workspaceId: z.string().describe("Workspace ID"),
-          jobName: z.string().describe("Job name to trigger"),
-          payload: z.record(z.string(), z.any()).optional().describe("Job payload"),
-        },
-      },
-      async ({ workspaceId, jobName, payload }) => {
-        logger.info("MCP workspace_trigger_job called", { workspaceId, jobName });
-
-        try {
-          const result = await this.dependencies.runtimeRegistry.triggerJob(
-            workspaceId,
-            jobName,
-            payload,
-          );
-
-          logger.info("Job triggered via runtime registry", {
-            workspaceId,
-            jobName,
-            sessionId: result.sessionId,
-          });
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    workspaceId,
-                    job: jobName,
-                    sessionId: result.sessionId,
-                    message: `Job '${jobName}' triggered in workspace '${workspaceId}' via runtime`,
-                    source: "runtime_registry",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          logger.error("MCP workspace_trigger_job failed", {
-            workspaceId,
-            jobName,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-      },
-    );
-
-    this.server.registerTool(
-      "workspace_process_signal",
-      {
-        description: "Process a signal in a specific workspace through its runtime",
-        inputSchema: {
-          workspaceId: z.string().describe("Workspace ID"),
-          signalName: z.string().describe("Signal name to process"),
-          payload: z.record(z.string(), z.any()).optional().describe("Signal payload"),
-        },
-      },
-      async ({ workspaceId, signalName, payload }) => {
-        logger.info("MCP workspace_process_signal called", { workspaceId, signalName });
-
-        try {
-          const result = await this.dependencies.runtimeRegistry.processSignal(
-            workspaceId,
-            signalName,
-            payload || {},
-          );
-
-          logger.info("Signal processed via runtime registry", {
-            workspaceId,
-            signalName,
-            sessionId: result.sessionId,
-          });
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    workspaceId,
-                    signal: signalName,
-                    sessionId: result.sessionId,
-                    message:
-                      `Signal '${signalName}' processed in workspace '${workspaceId}' via runtime`,
-                    source: "runtime_registry",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          logger.error("MCP workspace_process_signal failed", {
-            workspaceId,
-            signalName,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-      },
-    );
+    // NOTE: Additional operations like workspace_trigger_job and workspace_process_signal
+    // should route through the daemon API when implemented. For now, we focus on the
+    // core workspace management operations.
 
     // Discoverable platform jobs (if any defined in atlas.yml)
     if (this.dependencies.atlasConfig.jobs) {
@@ -412,8 +301,6 @@ export class PlatformMCPServer {
       "workspace_create",
       "workspace_delete",
       "workspace_describe",
-      "workspace_trigger_job",
-      "workspace_process_signal",
       ...Object.keys(this.dependencies.atlasConfig.jobs || {}).map((job) => `atlas_${job}`),
     ];
   }

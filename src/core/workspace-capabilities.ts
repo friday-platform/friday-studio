@@ -222,7 +222,7 @@ export class WorkspaceCapabilityRegistry {
     const grantedCapabilities: WorkspaceCapability[] = [];
     const allTools = [
       ...(filter.agentConfig.default_tools || []),
-      ...(filter.agentConfig.tools || []),
+      ...(Array.isArray(filter.agentConfig.tools) ? filter.agentConfig.tools : []),
       ...filter.grantedTools,
     ];
 
