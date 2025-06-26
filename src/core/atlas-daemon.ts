@@ -9,6 +9,8 @@ import { Workspace } from "./workspace.ts";
 import { ConfigLoader } from "./config-loader.ts";
 import { WorkspaceMemberRole } from "../types/core.ts";
 import { supervisorDefaults } from "../config/supervisor-defaults.ts";
+import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
+import type { LibrarySearchQuery } from "./library/types.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -33,6 +35,7 @@ export class AtlasDaemon {
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
   private supervisorDefaults: any = null;
+  private libraryStorage: any = null; // LibraryStorageAdapter
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -62,6 +65,15 @@ export class AtlasDaemon {
     logger.info("Initializing WorkspaceManager...");
     const manager = getWorkspaceManager();
     await manager.initialize();
+
+    // Initialize LibraryStorage with hybrid storage
+    logger.info("Initializing LibraryStorage...");
+    this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
+      // Use XDG-compliant default location, but allow environment override
+      contentDir: Deno.env.get("ATLAS_LIBRARY_DIR"),
+      organizeByType: true,
+      organizeByDate: true,
+    });
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -422,6 +434,191 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to list workspace sessions: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Library management routes
+    // List library items
+    this.app.get("/api/library", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        // Parse query parameters
+        const query: LibrarySearchQuery = {
+          query: c.req.query("q") || c.req.query("query"),
+          type: c.req.query("type") ? c.req.query("type")!.split(",") : undefined,
+          tags: c.req.query("tags") ? c.req.query("tags")!.split(",") : undefined,
+          since: c.req.query("since"),
+          until: c.req.query("until"),
+          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
+          offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : 0,
+        };
+
+        const result = await this.libraryStorage.search(query);
+        return c.json(result);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list library items: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Search library items (before itemId route)
+    this.app.get("/api/library/search", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const query: LibrarySearchQuery = {
+          query: c.req.query("q") || c.req.query("query"),
+          type: c.req.query("type") ? c.req.query("type")!.split(",") : undefined,
+          tags: c.req.query("tags") ? c.req.query("tags")!.split(",") : undefined,
+          since: c.req.query("since"),
+          until: c.req.query("until"),
+          limit: c.req.query("limit") ? parseInt(c.req.query("limit")!) : 50,
+          offset: c.req.query("offset") ? parseInt(c.req.query("offset")!) : 0,
+        };
+
+        const result = await this.libraryStorage.search(query);
+        return c.json(result);
+      } catch (error) {
+        return c.json({
+          error: `Failed to search library: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // List available templates (before itemId route)
+    this.app.get("/api/library/templates", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const templates = await this.libraryStorage.listTemplates();
+        return c.json(templates);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list templates: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Get library statistics (before itemId route)
+    this.app.get("/api/library/stats", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const stats = await this.libraryStorage.getStats();
+        return c.json(stats);
+      } catch (error) {
+        return c.json({
+          error: `Failed to get library stats: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Generate content from template (before itemId route)
+    this.app.post("/api/library/generate", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const { templateId, data, options } = await c.req.json();
+
+        if (!templateId) {
+          return c.json({ error: "templateId is required" }, 400);
+        }
+
+        // This would need template engine integration
+        // For now, return a simple response
+        return c.json({
+          message: "Template generation not yet implemented",
+          templateId,
+          data,
+          options,
+        }, 501);
+      } catch (error) {
+        return c.json({
+          error: `Failed to generate from template: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Get specific library item (must be after specific routes)
+    this.app.get("/api/library/:itemId", async (c) => {
+      const itemId = c.req.param("itemId");
+      const includeContent = c.req.query("content") === "true";
+
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const result = includeContent
+          ? await this.libraryStorage.getItemWithContent(itemId)
+          : await this.libraryStorage.getItem(itemId);
+
+        if (!result) {
+          return c.json({ error: `Library item not found: ${itemId}` }, 404);
+        }
+
+        if (includeContent && "content" in result) {
+          return c.json({
+            item: result.item,
+            content: result.content,
+          });
+        } else {
+          return c.json({ item: result.item });
+        }
+      } catch (error) {
+        return c.json({
+          error: `Failed to get library item: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // (Moved above to be before itemId route)
+
+    // Delete library item
+    this.app.delete("/api/library/:itemId", async (c) => {
+      const itemId = c.req.param("itemId");
+
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const deleted = await this.libraryStorage.deleteItem(itemId);
+        if (!deleted) {
+          return c.json({ error: `Library item not found: ${itemId}` }, 404);
+        }
+
+        return c.json({ message: `Library item ${itemId} deleted` });
+      } catch (error) {
+        return c.json({
+          error: `Failed to delete library item: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);

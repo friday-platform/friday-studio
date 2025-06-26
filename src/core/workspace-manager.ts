@@ -1,7 +1,10 @@
 /**
  * Unified WorkspaceManager - Single source of truth for workspace lifecycle
- * Combines persistence (KV storage) with runtime instance tracking
+ * Combines persistence (storage adapter) with runtime instance tracking
  * Replaces the dual WorkspaceRegistry + WorkspaceRuntimeRegistry architecture
+ *
+ * This implementation uses the storage adapter pattern to completely hide
+ * storage implementation details behind clean domain-specific interfaces.
  */
 
 import { basename, join } from "@std/path";
@@ -13,6 +16,7 @@ import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
 import { NewWorkspaceConfig, NewWorkspaceConfigSchema } from "./config-loader.ts";
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { IWorkspace } from "../types/core.ts";
+import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
 
 // Re-export types from workspace-registry-types for compatibility
 export {
@@ -47,39 +51,29 @@ export interface WorkspaceCreateConfig {
 
 /**
  * Unified WorkspaceManager - handles both persistence and runtime tracking
+ *
+ * This class uses the RegistryStorageAdapter to provide clean separation
+ * between business logic and storage implementation details.
  */
 export class WorkspaceManager {
-  private kv: Deno.Kv | null = null;
-  private kvPath: string;
-  private readonly REGISTRY_VERSION = "2.0.0";
+  private registry: RegistryStorageAdapter | null = null;
 
   // Runtime tracking (in-memory)
   private runtimes = new Map<string, RuntimeWorkspaceInfo>();
 
-  constructor() {
-    const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || Deno.cwd();
-    const atlasDir = join(homeDir, ".atlas");
-    this.kvPath = join(atlasDir, "registry.db");
+  constructor(registry?: RegistryStorageAdapter) {
+    this.registry = registry || null;
   }
 
   async initialize(options?: { skipAutoImport?: boolean }): Promise<void> {
-    // Ensure .atlas directory exists
-    const atlasDir = join(this.kvPath, "..");
-    await Deno.mkdir(atlasDir, { recursive: true });
-
-    // Open Deno KV database
-    this.kv = await Deno.openKv(this.kvPath);
-
-    // Initialize registry metadata if not exists
-    const versionCheck = await this.kv.get(["registry", "version"]);
-    if (!versionCheck.value) {
-      await this.kv.set(["registry", "version"], this.REGISTRY_VERSION);
-      await this.kv.set(["registry", "lastUpdated"], new Date().toISOString());
+    // Create default registry if not provided
+    if (!this.registry) {
+      this.registry = await createRegistryStorage(StorageConfigs.defaultKV());
     }
 
     // Auto-import existing workspaces unless explicitly skipped (skip in tests and signal processing)
     const isTestMode = Deno.env.get("DENO_TEST") === "true" ||
-      await exists(join(this.kvPath, "..", ".test-mode"));
+      await exists(join(Deno.env.get("HOME") || Deno.cwd(), ".atlas", ".test-mode"));
 
     if (!isTestMode && !options?.skipAutoImport) {
       try {
@@ -108,16 +102,17 @@ export class WorkspaceManager {
       tags?: string[];
     },
   ): Promise<WorkspaceEntry> {
-    if (!this.kv) await this.initialize();
+    if (!this.registry) await this.initialize();
 
     // Check if already registered
-    const existing = await this.findByPathUnsafe(workspacePath);
+    const existing = await this.registry!.findWorkspaceByPath(workspacePath);
     if (existing) {
       return existing;
     }
 
     // Generate unique Docker-style ID
-    const existingIds = new Set((await this.listAllPersisted()).map((w) => w.id));
+    const existingWorkspaces = await this.registry!.listWorkspaces();
+    const existingIds = new Set(existingWorkspaces.map((w) => w.id));
     const id = generateUniqueWorkspaceName(existingIds);
 
     // Load and cache workspace configuration
@@ -177,15 +172,8 @@ export class WorkspaceManager {
     // Validate entry with Zod
     const validatedEntry = WorkspaceEntrySchema.parse(entry);
 
-    // Atomic operation to store workspace
-    const result = await this.kv!.atomic()
-      .set(["workspaces", validatedEntry.id], validatedEntry)
-      .set(["registry", "lastUpdated"], new Date().toISOString())
-      .commit();
-
-    if (!result.ok) {
-      throw new Error("Failed to register workspace in KV store");
-    }
+    // Register using storage adapter
+    await this.registry!.registerWorkspace(validatedEntry);
 
     logger.info("Workspace registered", { id: validatedEntry.id, name: validatedEntry.name });
     return validatedEntry;
@@ -195,17 +183,9 @@ export class WorkspaceManager {
    * Unregister a workspace from persistent storage
    */
   async unregisterWorkspace(id: string): Promise<void> {
-    if (!this.kv) await this.initialize();
+    if (!this.registry) await this.initialize();
 
-    const result = await this.kv!.atomic()
-      .delete(["workspaces", id])
-      .set(["registry", "lastUpdated"], new Date().toISOString())
-      .commit();
-
-    if (!result.ok) {
-      throw new Error(`Failed to unregister workspace ${id}`);
-    }
-
+    await this.registry!.unregisterWorkspace(id);
     logger.info("Workspace unregistered", { id });
   }
 
@@ -213,53 +193,33 @@ export class WorkspaceManager {
    * List all persisted workspaces
    */
   async listAllPersisted(): Promise<WorkspaceEntry[]> {
-    if (!this.kv) await this.initialize();
-
-    const workspaces: WorkspaceEntry[] = [];
-    const iter = this.kv!.list<WorkspaceEntry>({ prefix: ["workspaces"] });
-
-    for await (const entry of iter) {
-      workspaces.push(entry.value);
-    }
-
-    return workspaces;
+    if (!this.registry) await this.initialize();
+    return await this.registry!.listWorkspaces();
   }
 
   /**
    * Find workspace by ID in persistent storage
    */
   async findById(id: string): Promise<WorkspaceEntry | null> {
-    if (!this.kv) await this.initialize();
-
-    const result = await this.kv!.get<WorkspaceEntry>(["workspaces", id]);
-    return result.value || null;
+    if (!this.registry) await this.initialize();
+    return await this.registry!.getWorkspace(id);
   }
 
   /**
    * Find workspace by name in persistent storage
    */
   async findByName(name: string): Promise<WorkspaceEntry | null> {
-    if (!this.kv) await this.initialize();
-
-    const workspaces = await this.listAllPersisted();
-    return workspaces.find((w) => w.name === name) || null;
+    if (!this.registry) await this.initialize();
+    return await this.registry!.findWorkspaceByName(name);
   }
 
   /**
    * Find workspace by path in persistent storage
    */
   async findByPath(path: string): Promise<WorkspaceEntry | null> {
-    if (!this.kv) await this.initialize();
-
+    if (!this.registry) await this.initialize();
     const normalizedPath = await Deno.realPath(path).catch(() => path);
-    const workspaces = await this.listAllPersisted();
-    return workspaces.find((w) => w.path === normalizedPath) || null;
-  }
-
-  private async findByPathUnsafe(path: string): Promise<WorkspaceEntry | null> {
-    const normalizedPath = await Deno.realPath(path).catch(() => path);
-    const workspaces = await this.listAllPersisted();
-    return workspaces.find((w) => w.path === normalizedPath) || null;
+    return await this.registry!.findWorkspaceByPath(normalizedPath);
   }
 
   /**
@@ -270,42 +230,9 @@ export class WorkspaceManager {
     status: WorkspaceStatus,
     updates?: Partial<WorkspaceEntry>,
   ): Promise<void> {
-    if (!this.kv) await this.initialize();
+    if (!this.registry) await this.initialize();
 
-    const current = await this.kv!.get<WorkspaceEntry>(["workspaces", id]);
-    if (!current.value) {
-      throw new Error(`Workspace ${id} not found`);
-    }
-
-    const workspace = { ...current.value };
-    workspace.status = status;
-    workspace.lastSeen = new Date().toISOString();
-
-    // Apply additional updates
-    if (updates) {
-      Object.assign(workspace, updates);
-    }
-
-    // Update timestamps based on status
-    if (status === WorkspaceStatus.RUNNING) {
-      workspace.startedAt = new Date().toISOString();
-    } else if (status === WorkspaceStatus.STOPPED || status === WorkspaceStatus.CRASHED) {
-      workspace.stoppedAt = new Date().toISOString();
-      workspace.pid = undefined;
-      workspace.port = undefined;
-    }
-
-    // Atomic update
-    const result = await this.kv!.atomic()
-      .check(current)
-      .set(["workspaces", id], workspace)
-      .set(["registry", "lastUpdated"], new Date().toISOString())
-      .commit();
-
-    if (!result.ok) {
-      throw new Error(`Failed to update workspace ${id} status`);
-    }
-
+    await this.registry!.updateWorkspaceStatus(id, status, updates);
     logger.debug("Workspace status updated", { id, status });
   }
 
@@ -437,7 +364,7 @@ export class WorkspaceManager {
    * Create a new workspace
    */
   async createWorkspace(config: WorkspaceCreateConfig): Promise<{ id: string; name: string }> {
-    if (!this.kv) await this.initialize();
+    if (!this.registry) await this.initialize();
 
     // Create workspace directory
     const workspacePath = join(Deno.cwd(), config.name);
@@ -477,7 +404,7 @@ export class WorkspaceManager {
    * Refresh cached config for a workspace
    */
   async refreshWorkspaceConfig(id: string): Promise<void> {
-    if (!this.kv) await this.initialize();
+    if (!this.registry) await this.initialize();
 
     const workspace = await this.findById(id);
     if (!workspace) {
@@ -504,15 +431,11 @@ export class WorkspaceManager {
       // Update workspace entry
       const updatedWorkspace = { ...workspace, config, configHash };
 
-      // Atomic update
-      const result = await this.kv!.atomic()
+      // Update via storage adapter
+      await this.registry!.getStorage().atomic()
         .set(["workspaces", id], updatedWorkspace)
         .set(["registry", "lastUpdated"], new Date().toISOString())
         .commit();
-
-      if (!result.ok) {
-        throw new Error(`Failed to update workspace ${id} config cache`);
-      }
 
       logger.info("Workspace config cache refreshed", {
         id,
@@ -749,26 +672,32 @@ export class WorkspaceManager {
   }
 
   /**
-   * Close KV database connection and cleanup
+   * Close storage connection and cleanup
    */
   async close(): Promise<void> {
-    if (this.kv) {
-      this.kv.close();
-      this.kv = null;
+    if (this.registry) {
+      await this.registry.close();
+      this.registry = null;
     }
     this.runtimes.clear();
     logger.debug("WorkspaceManager closed");
   }
 }
 
-// Global singleton instance - lazy initialization
+// Global singleton instance - lazy initialization with new storage
 let _workspaceManager: WorkspaceManager | null = null;
 
 export function getWorkspaceManager(): WorkspaceManager {
   if (!_workspaceManager) {
+    // Use new storage adapter architecture
     _workspaceManager = new WorkspaceManager();
   }
   return _workspaceManager;
+}
+
+// Factory function for custom storage (testing, etc.)
+export function createWorkspaceManager(registry?: RegistryStorageAdapter): WorkspaceManager {
+  return new WorkspaceManager(registry);
 }
 
 // Reset singleton (useful for tests and cleanup)

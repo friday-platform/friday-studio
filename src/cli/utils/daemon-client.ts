@@ -31,6 +31,63 @@ export interface WorkspaceCreateResponse {
   name: string;
 }
 
+export interface LibrarySearchQuery {
+  query?: string;
+  type?: string | string[];
+  tags?: string[];
+  since?: string;
+  until?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface LibraryItem {
+  id: string;
+  type: string;
+  name: string;
+  description?: string;
+  metadata: {
+    format: string;
+    source: string;
+    session_id?: string;
+    agent_ids?: string[];
+    custom_fields?: Record<string, any>;
+  };
+  created_at: string;
+  updated_at: string;
+  tags: string[];
+  size_bytes: number;
+  workspace_id?: string;
+}
+
+export interface LibrarySearchResult {
+  items: LibraryItem[];
+  total: number;
+  query: LibrarySearchQuery;
+  took_ms: number;
+}
+
+export interface LibraryStats {
+  total_items: number;
+  total_size_bytes: number;
+  types: Record<string, number>;
+  recent_activity: Array<{
+    date: string;
+    items_added: number;
+    items_modified: number;
+  }>;
+}
+
+export interface TemplateConfig {
+  id: string;
+  name: string;
+  description?: string;
+  format: string;
+  engine: string;
+  config: Record<string, any>;
+  schema?: Record<string, any>;
+}
+
 export class DaemonClient {
   private daemonUrl: string;
   private timeout: number;
@@ -256,6 +313,121 @@ export class DaemonClient {
     }>
   > {
     const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
+    return response;
+  }
+
+  // =================================================================
+  // LIBRARY OPERATIONS
+  // =================================================================
+
+  /**
+   * List library items
+   */
+  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
+    const params = new URLSearchParams();
+    if (query?.query) params.set("q", query.query);
+    if (query?.type) {
+      const types = Array.isArray(query.type) ? query.type : [query.type];
+      params.set("type", types.join(","));
+    }
+    if (query?.tags) params.set("tags", query.tags.join(","));
+    if (query?.since) params.set("since", query.since);
+    if (query?.until) params.set("until", query.until);
+    if (query?.limit) params.set("limit", query.limit.toString());
+    if (query?.offset) params.set("offset", query.offset.toString());
+
+    const queryString = params.toString();
+    const path = queryString ? `/api/library?${queryString}` : "/api/library";
+
+    const response = await this.makeRequest(path);
+    return response;
+  }
+
+  /**
+   * Get specific library item
+   */
+  async getLibraryItem(itemId: string, includeContent: boolean = false): Promise<{
+    item: LibraryItem;
+    content?: string | Uint8Array;
+  }> {
+    const params = new URLSearchParams();
+    if (includeContent) params.set("content", "true");
+
+    const queryString = params.toString();
+    const path = queryString ? `/api/library/${itemId}?${queryString}` : `/api/library/${itemId}`;
+
+    const response = await this.makeRequest(path);
+    return response;
+  }
+
+  /**
+   * Search library items
+   */
+  async searchLibrary(query: LibrarySearchQuery): Promise<LibrarySearchResult> {
+    const params = new URLSearchParams();
+    if (query.query) params.set("q", query.query);
+    if (query.type) {
+      const types = Array.isArray(query.type) ? query.type : [query.type];
+      params.set("type", types.join(","));
+    }
+    if (query.tags) params.set("tags", query.tags.join(","));
+    if (query.since) params.set("since", query.since);
+    if (query.until) params.set("until", query.until);
+    if (query.limit) params.set("limit", query.limit.toString());
+    if (query.offset) params.set("offset", query.offset.toString());
+
+    const queryString = params.toString();
+    const path = `/api/library/search?${queryString}`;
+
+    const response = await this.makeRequest(path);
+    return response;
+  }
+
+  /**
+   * List available templates
+   */
+  async listTemplates(): Promise<TemplateConfig[]> {
+    const response = await this.makeRequest("/api/library/templates");
+    return response;
+  }
+
+  /**
+   * Generate content from template
+   */
+  async generateFromTemplate(
+    templateId: string,
+    data: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): Promise<any> {
+    const response = await this.makeRequest("/api/library/generate", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        templateId,
+        data,
+        options,
+      }),
+    });
+    return response;
+  }
+
+  /**
+   * Get library statistics
+   */
+  async getLibraryStats(): Promise<LibraryStats> {
+    const response = await this.makeRequest("/api/library/stats");
+    return response;
+  }
+
+  /**
+   * Delete library item
+   */
+  async deleteLibraryItem(itemId: string): Promise<{ message: string }> {
+    const response = await this.makeRequest(`/api/library/${itemId}`, {
+      method: "DELETE",
+    });
     return response;
   }
 
