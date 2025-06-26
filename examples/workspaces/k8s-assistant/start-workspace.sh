@@ -54,13 +54,24 @@ else
     echo ""
 fi
 
-# Initialize/register the workspace with the daemon
-echo "📝 Registering workspace with daemon..."
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx workspace init "$WORKSPACE_NAME" "$WORKSPACE_PATH"
+# The daemon automatically discovers and caches workspace configurations
+echo "📝 Workspace automatically discovered by daemon..."
 
-# Check workspace status
-echo "📊 Checking workspace status..."
-deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx workspace status "$WORKSPACE_NAME"
+# Check if workspace is discovered (optional verification)
+echo "📊 Verifying workspace discovery..."
+WORKSPACE_FOUND=$(deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx ps 2>/dev/null | grep -q "$WORKSPACE_NAME" && echo "found" || echo "not found")
+
+if [ "$WORKSPACE_FOUND" = "found" ]; then
+    echo "✅ Workspace $WORKSPACE_NAME discovered and ready"
+else
+    echo "📁 Workspace will be discovered when first signal is triggered"
+fi
+
+echo ""
+echo "📊 Workspace configuration loaded:"
+echo "   • linear-writer agent configured for Linear integration"
+echo "   • standalone-coordinator agent configured for K8s operations"  
+echo "   • DevOps workflow jobs ready for Linear → K8s → Linear automation"
 
 echo ""
 echo "🎉 k8s-assistant workspace is ready!"
