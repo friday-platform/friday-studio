@@ -447,8 +447,12 @@ jobs:
           cd ./dist
           
           # Upload all artifacts to sandbox bucket with nightly/ prefix
-          gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
-          gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
           
           # Also upload to versioned paths
@@ -474,8 +478,12 @@ jobs:
           cd ./dist
           
           # Upload all artifacts to production bucket with nightly/ prefix
-          gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/nightly/
-          gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/nightly/
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/nightly/
+          fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
           
           # Also upload to versioned paths

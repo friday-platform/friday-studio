@@ -403,8 +403,12 @@ jobs:
           VERSION="${{ needs.check-changes.outputs.version }}"
           
           # Upload all artifacts to sandbox bucket with edge/ prefix
-          gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/edge/
-          gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/edge/
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/edge/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/edge/
+          fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/edge/checksums-${VERSION}.txt
           
           # Also upload to versioned paths
@@ -427,8 +431,12 @@ jobs:
           VERSION="${{ needs.check-changes.outputs.version }}"
           
           # Upload all artifacts to production bucket with edge/ prefix
-          gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/edge/
-          gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/edge/
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/edge/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/edge/
+          fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/edge/checksums-${VERSION}.txt
           
           # Also upload to versioned paths
