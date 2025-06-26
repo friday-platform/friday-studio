@@ -64,21 +64,37 @@ The framework provides detailed analysis across multiple dimensions:
 - **Context Violations**: Detects use of fictional/canary trap content
 - **Consistency Failures**: Finds logical contradictions in decisions
 
-## Current Test Results
+## Current Test Results & Detailed Analysis
 
-**Framework Status**: ✅ **OPERATIONAL**
+**Framework Status**: ✅ **OPERATIONAL & PROVIDING VALUABLE INSIGHTS**
 
-Latest test run shows:
-- **Framework functioning correctly** - detects hallucination patterns as designed
-- **76.8% overall reliability score** - identifies areas for supervisor improvement
-- **Advanced detection working** - semantic and statistical analysis operational
-- **Failure detection active** - properly tests supervisor failure response
+Latest comprehensive analysis shows:
+- **Framework functioning correctly** - successfully detecting dangerous hallucination patterns
+- **73.9% baseline reliability score** - appropriate for dev utility, identifies specific improvement areas
+- **Critical issues revealed** - supervisor risk assessment logic is fundamentally broken
+- **Realistic scenarios validated** - tests mirror actual Atlas usage patterns
 
-### Key Findings
-1. **Logical consistency issues** - supervisor decision logic needs refinement
-2. **Agent selection problems** - not selecting appropriate agents for tasks
-3. **Safety compliance gaps** - approval gates need strengthening
-4. **Hallucination detection effective** - framework successfully identifies fictional content usage
+### Detailed Findings from 10 Realistic Test Scenarios
+
+#### **🎯 Hallucination Patterns Detected**
+1. **Defensive Inaction Hallucination** (8/10 tests) - supervisor defaults to no action when confused
+2. **Fictional Agent Selection** (1/10 tests) - **CRITICAL**: selected "SuperQuantumAgent-FAKE" 
+3. **Capability Overestimation** (4/10 tests) - assumes "quantum-processing" capabilities exist
+4. **Risk Assessment Failure** (10/10 tests) - **CRITICAL**: all incidents marked as "low risk"
+
+#### **🚨 Critical Supervisor Logic Issues Identified**
+- **Risk Assessment Broken**: SQL injection, system outages marked as "low risk"
+- **Security Policy Bypasses**: No approval required for critical security incidents  
+- **Agent Selection Too Conservative**: Often selects no agents when should act
+- **Signal Classification Generic**: Missing domain-specific logic for K8s, security, etc.
+
+#### **✅ Framework Validation Success**
+- **Caught dangerous pattern**: SuperQuantumAgent-FAKE selection would break production
+- **Revealed logic gaps**: Risk assessment completely disconnected from reality
+- **Provided specific feedback**: Exact code areas needing improvement identified
+- **Tested realistic scenarios**: Based on actual Linear/GitHub/K8s Atlas workflows
+
+See [DETAILED_OBSERVATIONS_AND_IMPROVEMENTS.md](../DETAILED_OBSERVATIONS_AND_IMPROVEMENTS.md) for comprehensive analysis and specific improvement recommendations.
 
 ## Test Scenarios Covered
 

@@ -9,6 +9,7 @@
 
 import { IndependentTestRunner, type TestSuiteConfig } from "./independent-test-runner.ts";
 import { runFailureDetectionTests } from "./failure-detection-tests.ts";
+import { runRealisticAtlasTests } from "./realistic-scenarios.ts";
 import { 
   SemanticHallucinationDetector, 
   StatisticalAnomalyDetector,
@@ -227,12 +228,17 @@ async function runComprehensiveTests() {
       statisticalDetector.addHistoricalData(testResult.simulation);
     }
 
-    // 2. Failure Detection Tests
+    // 2. Realistic Atlas Usage Tests
+    console.log("\n🏗️ Running Realistic Atlas Usage Tests...");
+    const realisticResults = await runRealisticAtlasTests();
+    results.push({ name: "Realistic Atlas Usage", results: realisticResults });
+
+    // 3. Failure Detection Tests
     console.log("\n🚨 Running Failure Detection Tests...");
     const failureResults = await runFailureDetectionTests();
     results.push({ name: "Failure Detection", results: failureResults });
 
-    // 3. Overall Summary
+    // 4. Overall Summary
     console.log("\n" + "=".repeat(60));
     console.log("🎯 COMPREHENSIVE TEST SUMMARY");
     console.log("=".repeat(60));
@@ -326,6 +332,9 @@ if (import.meta.main) {
   
   if (args.includes("--quick")) {
     await runQuickValidation();
+  } else if (args.includes("--realistic")) {
+    console.log("🏗️ Running Realistic Atlas Usage Tests Only\n");
+    await runRealisticAtlasTests();
   } else {
     await runComprehensiveTests();
   }
