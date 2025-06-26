@@ -12,6 +12,9 @@ export type UseTextInputProps = {
 
   /** Text to display when input is empty. */
   placeholder?: string;
+
+  /** Callback when tab is pressed and should change focus instead of accepting suggestion. */
+  onTabFocus?: () => void;
 };
 
 export type UseTextInputResult = {
@@ -25,6 +28,7 @@ export const useTextInput = ({
   isDisabled = false,
   state,
   placeholder = "",
+  onTabFocus,
 }: UseTextInputProps): UseTextInputResult => {
   const renderedPlaceholder = useMemo(() => {
     if (isDisabled) {
@@ -93,8 +97,15 @@ export const useTextInput = ({
         state.submit();
       }
 
-      if (key.tab && state.suggestion) {
-        state.insert(state.suggestion);
+      if (key.tab) {
+        if (state.suggestion && !state.justAcceptedSuggestion) {
+          // Accept the suggestion
+          state.acceptSuggestion();
+        } else {
+          // Either no suggestion or just accepted one, pass tab through for focus handling
+          state.clearSuggestionFlag();
+          onTabFocus?.();
+        }
       }
 
       if (input) {

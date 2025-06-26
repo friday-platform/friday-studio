@@ -1,4 +1,4 @@
-import { type Reducer, useCallback, useEffect, useMemo, useReducer } from "react";
+import { type Reducer, useCallback, useEffect, useMemo, useReducer, useState } from "react";
 
 type State = {
   previousValue: string;
@@ -79,11 +79,14 @@ export type UseTextInputStateProps = {
 
 export type TextInputState = State & {
   suggestion?: string;
+  justAcceptedSuggestion: boolean;
   moveCursorLeft: () => void;
   moveCursorRight: () => void;
   insert: (text: string) => void;
   delete: () => void;
   submit: () => void;
+  acceptSuggestion: () => void;
+  clearSuggestionFlag: () => void;
 };
 
 export const useTextInputState = ({
@@ -97,6 +100,8 @@ export const useTextInputState = ({
     value: defaultValue,
     cursorOffset: defaultValue.length,
   });
+
+  const [justAcceptedSuggestion, setJustAcceptedSuggestion] = useState(false);
 
   const suggestion = useMemo(() => {
     if (state.value.length === 0) {
@@ -125,12 +130,27 @@ export const useTextInputState = ({
       type: "insert",
       text,
     });
+    // Clear the suggestion flag when new text is inserted
+    setJustAcceptedSuggestion(false);
   }, []);
 
   const deleteCharacter = useCallback(() => {
     dispatch({
       type: "delete",
     });
+    // Clear the suggestion flag when text is deleted
+    setJustAcceptedSuggestion(false);
+  }, []);
+
+  const acceptSuggestion = useCallback(() => {
+    if (suggestion) {
+      insert(suggestion);
+      setJustAcceptedSuggestion(true);
+    }
+  }, [suggestion, insert]);
+
+  const clearSuggestionFlag = useCallback(() => {
+    setJustAcceptedSuggestion(false);
   }, []);
 
   const submit = useCallback(() => {
@@ -152,10 +172,13 @@ export const useTextInputState = ({
   return {
     ...state,
     suggestion,
+    justAcceptedSuggestion,
     moveCursorLeft,
     moveCursorRight,
     insert,
     delete: deleteCharacter,
     submit,
+    acceptSuggestion,
+    clearSuggestionFlag,
   };
 };

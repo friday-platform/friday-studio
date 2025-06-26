@@ -20,6 +20,9 @@ export type TextInputProps = {
 
   /** Callback when enter is pressed. First argument is input value. */
   readonly onSubmit?: (value: string) => void;
+
+  /** Callback when tab is pressed and should change focus instead of accepting suggestion. */
+  readonly onTabFocus?: () => void;
 };
 
 export function TextInput({
@@ -29,6 +32,7 @@ export function TextInput({
   suggestions,
   onChange,
   onSubmit,
+  onTabFocus,
 }: TextInputProps) {
   const state = useTextInputState({
     defaultValue,
@@ -41,6 +45,7 @@ export function TextInput({
     isDisabled,
     placeholder,
     state,
+    onTabFocus,
   });
 
   return <Text>{inputValue}</Text>;

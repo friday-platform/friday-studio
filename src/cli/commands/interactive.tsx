@@ -1,4 +1,4 @@
-import { defaultTheme, extendTheme, Select, Spinner, TextInput, ThemeProvider } from "@inkjs/ui";
+import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
@@ -6,6 +6,7 @@ import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
+import CreditsView from "../views/CreditsView.tsx";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry } from "../../core/workspace-registry-types.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
@@ -17,6 +18,8 @@ import { SessionListComponent } from "../modules/sessions/session-list-component
 import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
+import { TextInput } from "../components/text-input/text-input.tsx";
+import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -234,6 +237,11 @@ const handleInitCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
+const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
+  // Credits command switches to its own view, no output entries needed
+  return [];
+};
+
 const handleSessionCommand = (args: string[]): OutputEntry[] => {
   const subcommand = args[0] || "list";
   return [
@@ -336,6 +344,13 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleInitCommand,
   },
 
+  credits: {
+    name: "credits",
+    description: "Show Atlas credits and acknowledgments",
+    usage: "/credits",
+    handler: handleCreditsCommand,
+  },
+
   session: {
     name: "session",
     description: "Manage workspace sessions",
@@ -373,7 +388,9 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init">("command");
+  const [view, setView] = useState<"help" | "command" | "init" | "credits">(
+    "credits",
+  );
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [showWorkspaceSelection, setShowWorkspaceSelection] = useState(false);
@@ -718,6 +735,11 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "credits") {
+      setView("credits");
+      return;
+    }
+
     if (parsed.command === "workspaces") {
       setShowWorkspacesWorkspaceSelection(true);
       return;
@@ -785,25 +807,27 @@ export default function InteractiveCommand() {
       alignItems="flex-start"
       width={dimensions.paddedWidth}
     >
-      <Box flexDirection="row" alignItems="center">
-        <Box flexDirection="column">
-          <Text>╭───╮</Text>
-          <Text>│&nbsp;∆&nbsp;│</Text>
-          <Text>╰───╯</Text>
+      <Box flexDirection="column" flexShrink={0}>
+        <Box flexDirection="row" alignItems="center">
+          <Box flexDirection="column">
+            <Text>╭───╮</Text>
+            <Text>│&nbsp;∆&nbsp;│</Text>
+            <Text>╰───╯</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text bold>&nbsp;Atlas.&nbsp;</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text dimColor>Made by Tempest.</Text>
+          </Box>
         </Box>
 
-        <Box flexDirection="column">
-          <Text bold>&nbsp;Atlas.&nbsp;</Text>
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text dimColor>⊕ /help for help</Text>
+          <Text dimColor>∶ {Deno.cwd()}</Text>
         </Box>
-
-        <Box flexDirection="column">
-          <Text dimColor>Made by Tempest.</Text>
-        </Box>
-      </Box>
-
-      <Box flexDirection="column" paddingLeft={2}>
-        <Text dimColor>⊕ /help for help</Text>
-        <Text dimColor>∶ {Deno.cwd()}</Text>
       </Box>
 
       {view === "command" && (
@@ -861,6 +885,7 @@ export default function InteractiveCommand() {
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
+      {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );
 }
@@ -878,34 +903,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Get all available suggestions with descriptions
-  const getAllSuggestionsWithDescriptions = () => [
-    {
-      command: "/help",
-      description: "Show available commands and usage information",
-    },
-    {
-      command: "/workspaces",
-      description: "View available workspaces",
-    },
-    { command: "/init", description: "Initialize a new workspace" },
-    { command: "/sessions", description: "View available workspace sessions" },
-    {
-      command: "/signals",
-      description: "View available workspace signals",
-    },
-    {
-      command: "/agents",
-      description: "View workspace agents",
-    },
-    {
-      command: "/library",
-      description: "View workspace library",
-    },
-    { command: "/config", description: "Atlas configuration settings" },
-    { command: "/version", description: "Show Atlas version information" },
-    { command: "/clear", description: "Clear the output buffer" },
-    { command: "/exit", description: "Exit the Atlas interactive interface" },
-  ];
+  const getAllSuggestionsWithDescriptions = () => COMMAND_DEFINITIONS;
 
   // Get all available suggestions (commands only)
   const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
@@ -931,16 +929,6 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
         setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
-        return;
-      }
-      if (key.return && selectedSuggestionIndex >= 0) {
-        // Accept selected suggestion
-        const filteredSuggestions = getFilteredSuggestions();
-        const selectedSuggestion = filteredSuggestions[selectedSuggestionIndex];
-        setCurrentInput(selectedSuggestion.command);
-        setShowSuggestions(false);
-        setSelectedSuggestionIndex(-1);
-
         return;
       }
       if (key.escape || key.tab) {
@@ -970,7 +958,14 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
 
   // Enhanced submission handler
   const handleSubmit = (command: string) => {
-    const trimmedCommand = command.trim();
+    let commandToSubmit = command.trim();
+
+    // If we have a selected suggestion, use that instead
+    if (selectedSuggestionIndex >= 0) {
+      const filteredSuggestions = getFilteredSuggestions();
+      const selectedSuggestion = filteredSuggestions[selectedSuggestionIndex];
+      commandToSubmit = selectedSuggestion.command;
+    }
 
     // Always reset input state
     setCurrentInput("");
@@ -979,7 +974,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
     setInputKey((prev) => prev + 1);
 
     // Submit the command
-    onSubmit(trimmedCommand);
+    onSubmit(commandToSubmit);
   };
 
   return (
@@ -1070,7 +1065,9 @@ const WorkspaceSelection = ({
           setWorkspaces(compatibleWorkspaces);
         } else {
           setWorkspaces([]);
-          setError("Daemon not running. Use 'atlas daemon start' to enable workspace management.");
+          setError(
+            "Daemon not running. Use 'atlas daemon start' to enable workspace management.",
+          );
         }
         setError("");
       } catch (err) {
