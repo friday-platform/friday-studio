@@ -1,11 +1,6 @@
 import { confirm, isCancel, spinner, text } from "../../utils/prompts.tsx";
-import { getCurrentWorkspaceName } from "../../utils/workspace-name.ts";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-} from "../../utils/daemon-client.ts";
 import { errorOutput, infoOutput } from "../../utils/output.ts";
+import { batchTriggerSignal, validateSignalPayload } from "../../modules/signals/trigger.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface TriggerArgs {
@@ -16,21 +11,6 @@ interface TriggerArgs {
   all?: boolean;
   exclude?: string | string[];
   json?: boolean;
-}
-
-interface TargetWorkspace {
-  id: string;
-  name: string;
-  port: number;
-  path: string;
-}
-
-interface TriggerResult {
-  workspace: TargetWorkspace;
-  success: boolean;
-  sessionId?: string;
-  error?: string;
-  duration: number;
 }
 
 export const command = "trigger <name>";
@@ -93,11 +73,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
   let payload: Record<string, unknown> = {};
 
   if (args.data) {
-    try {
-      payload = JSON.parse(args.data);
-    } catch (err) {
-      throw new Error(`Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`);
-    }
+    payload = validateSignalPayload(args.data);
   } else if (!args.json) {
     // Interactive mode - prompt for data
     const wantsData = await confirm({
@@ -129,7 +105,7 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
         throw new Error("Signal trigger cancelled");
       }
 
-      payload = JSON.parse(dataStr);
+      payload = validateSignalPayload(dataStr);
     }
   }
 
@@ -138,102 +114,32 @@ async function getSignalPayload(args: TriggerArgs): Promise<Record<string, unkno
 
 export const handler = async (argv: TriggerArgs): Promise<void> => {
   try {
-    // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
-      throw createDaemonNotRunningError();
-    }
-
     // Get payload data
     const payload = await getSignalPayload(argv);
 
-    const client = getDaemonClient();
+    // Prepare workspace targeting options
+    const workspaceIds = argv.workspace
+      ? (Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace])
+      : undefined;
 
-    // Determine target workspace(s)
-    let targetWorkspaces: Array<{ id: string; name: string }> = [];
+    const exclude = argv.exclude
+      ? (Array.isArray(argv.exclude) ? argv.exclude : [argv.exclude])
+      : undefined;
 
-    if (argv.workspace) {
-      // Use specific workspace(s)
-      const workspaceIds = Array.isArray(argv.workspace) ? argv.workspace : [argv.workspace];
-
-      for (const workspaceId of workspaceIds) {
-        try {
-          const workspace = await client.getWorkspace(workspaceId);
-          targetWorkspaces.push({ id: workspace.id, name: workspace.name });
-        } catch (error) {
-          // Try to find by name if ID lookup failed
-          const allWorkspaces = await client.listWorkspaces();
-          const foundWorkspace = allWorkspaces.find((w) => w.name === workspaceId);
-          if (foundWorkspace) {
-            targetWorkspaces.push({ id: foundWorkspace.id, name: foundWorkspace.name });
-          } else {
-            console.warn(`Workspace '${workspaceId}' not found`);
-          }
-        }
-      }
-    } else {
-      // Use current workspace or error if no workspace specified
-      const currentWorkspaceName = await getCurrentWorkspaceName();
-
-      if (!currentWorkspaceName) {
-        errorOutput(
-          "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
-        );
-        Deno.exit(1);
-      }
-
-      // Find workspace by name in daemon
-      const allWorkspaces = await client.listWorkspaces();
-      const currentWorkspace = allWorkspaces.find((w) => w.name === currentWorkspaceName);
-
-      if (currentWorkspace) {
-        targetWorkspaces.push({ id: currentWorkspace.id, name: currentWorkspace.name });
-      } else {
-        errorOutput(
-          `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
-        );
-        Deno.exit(1);
-      }
-    }
-
-    if (targetWorkspaces.length === 0) {
-      errorOutput("No target workspaces found.");
-      Deno.exit(1);
-    }
-
-    // Trigger signal on each workspace
-    const results = [];
-
-    for (const workspace of targetWorkspaces) {
-      try {
-        const result = await client.triggerSignal(workspace.id, argv.name, payload);
-        results.push({
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-          success: true,
-          result,
-        });
-      } catch (error) {
-        results.push({
-          workspaceId: workspace.id,
-          workspaceName: workspace.name,
-          success: false,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
+    // Trigger signal using abstracted function
+    const batchResult = await batchTriggerSignal({
+      signalName: argv.name,
+      payload,
+      workspaceIds,
+      all: argv.all,
+      exclude,
+    });
 
     // Output results
     if (argv.json) {
-      console.log(JSON.stringify(
-        {
-          signal: argv.name,
-          timestamp: new Date().toISOString(),
-          results,
-        },
-        null,
-        2,
-      ));
+      console.log(JSON.stringify(batchResult, null, 2));
     } else {
+      const { results } = batchResult;
       console.log(`\n✨ Signal '${argv.name}' triggered on ${results.length} workspace(s)\n`);
 
       const successful = results.filter((r) => r.success);

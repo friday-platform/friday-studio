@@ -20,6 +20,10 @@ import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { SignalSelection } from "../components/signal-selection.tsx";
 import { SessionSelection } from "../components/session-selection.tsx";
 import { AgentSelection } from "../components/agent-selection.tsx";
+import { SignalDetails } from "../components/signal-details.tsx";
+import { SignalActionSelection } from "../components/signal-action-selection.tsx";
+import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+import { triggerSignalSimple } from "../modules/signals/trigger.ts";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
@@ -414,7 +418,10 @@ export default function InteractiveCommand() {
   const [showSignalSelection, setShowSignalSelection] = useState(false);
   const [showSessionSelection, setShowSessionSelection] = useState(false);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
+  const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
+  const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
   const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
+  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<string | null>(null);
   const [workspaceSelectionContext, setWorkspaceSelectionContext] = useState<
     | "signals-list"
     | "agents-list"
@@ -698,11 +705,120 @@ export default function InteractiveCommand() {
   // Handle signal selection
   const handleSignalSelect = (signalId: string) => {
     setShowSignalSelection(false);
-    setCurrentSelectionWorkspace(null);
+    setCurrentSelectedSignal(signalId);
+    setShowSignalActionSelection(true);
+  };
+
+  // Handle signal action selection (describe/trigger)
+  const handleSignalActionSelect = (action: string) => {
+    setShowSignalActionSelection(false);
+    const workspaceId = currentSelectionWorkspace;
+    const signalId = currentSelectedSignal;
+
+    if (!workspaceId || !signalId) {
+      addOutputEntry({
+        id: `signal-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace or signal selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+      return;
+    }
+
+    if (action === "describe") {
+      addOutputEntry({
+        id: `signal-details-${Date.now()}`,
+        component: <SignalDetails workspaceId={workspaceId} signalId={signalId} />,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+    } else if (action === "trigger") {
+      setShowSignalTriggerInput(true);
+    }
+  };
+
+  // Handle signal trigger input
+  const handleSignalTriggerSubmit = async (input: string) => {
+    setShowSignalTriggerInput(false);
+    const workspaceId = currentSelectionWorkspace;
+    const signalId = currentSelectedSignal;
+
+    if (!workspaceId || !signalId) {
+      addOutputEntry({
+        id: `signal-trigger-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace or signal selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+      return;
+    }
+
+    // Add loading indicator
     addOutputEntry({
-      id: `signal-selected-${Date.now()}`,
-      component: <Text>Selected signal: {signalId}</Text>,
+      id: `signal-trigger-loading-${Date.now()}`,
+      component: (
+        <Box flexDirection="column">
+          <Text color="cyan">Triggering signal...</Text>
+          <Text dimColor>Workspace: {workspaceId}</Text>
+          <Text dimColor>Signal: {signalId}</Text>
+          <Text dimColor>Payload: {input || "(empty)"}</Text>
+        </Box>
+      ),
     });
+
+    try {
+      const result = await triggerSignalSimple(workspaceId, signalId, input.trim() || undefined);
+
+      // Remove loading entry and add result
+      setOutputBuffer((prev) => prev.slice(0, -1));
+
+      if (result.success) {
+        addOutputEntry({
+          id: `signal-trigger-success-${Date.now()}`,
+          component: (
+            <Box flexDirection="column">
+              <Text color="green">Signal triggered successfully!</Text>
+              <Text dimColor>Workspace: {result.workspaceName || workspaceId}</Text>
+              <Text dimColor>Signal: {signalId}</Text>
+              {result.sessionId && <Text dimColor>Session ID: {result.sessionId}</Text>}
+              {result.status && <Text dimColor>Status: {result.status}</Text>}
+              <Text dimColor>Duration: {result.duration.toFixed(2)}ms</Text>
+            </Box>
+          ),
+        });
+      } else {
+        addOutputEntry({
+          id: `signal-trigger-error-${Date.now()}`,
+          component: (
+            <Box flexDirection="column">
+              <Text color="red">Signal trigger failed</Text>
+              <Text dimColor>Workspace: {workspaceId}</Text>
+              <Text dimColor>Signal: {signalId}</Text>
+              <Text color="red">Error: {result.error}</Text>
+              <Text dimColor>Duration: {result.duration.toFixed(2)}ms</Text>
+            </Box>
+          ),
+        });
+      }
+    } catch (error) {
+      // Remove loading entry and add error
+      setOutputBuffer((prev) => prev.slice(0, -1));
+
+      addOutputEntry({
+        id: `signal-trigger-exception-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <Text color="red">Unexpected error during signal trigger</Text>
+            <Text dimColor>Workspace: {workspaceId}</Text>
+            <Text dimColor>Signal: {signalId}</Text>
+            <Text color="red">Error: {error instanceof Error ? error.message : String(error)}</Text>
+          </Box>
+        ),
+      });
+    }
+
+    setCurrentSelectionWorkspace(null);
+    setCurrentSelectedSignal(null);
   };
 
   // Handle session selection
@@ -1035,6 +1151,30 @@ export default function InteractiveCommand() {
                   setCurrentSelectionWorkspace(null);
                 }}
                 onAgentSelect={handleAgentSelect}
+              />
+            )
+            : showSignalActionSelection && currentSelectedSignal
+            ? (
+              <SignalActionSelection
+                signalId={currentSelectedSignal}
+                onEscape={() => {
+                  setShowSignalActionSelection(false);
+                  setCurrentSelectedSignal(null);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onActionSelect={handleSignalActionSelect}
+              />
+            )
+            : showSignalTriggerInput && currentSelectedSignal
+            ? (
+              <SignalTriggerInput
+                signalId={currentSelectedSignal}
+                onEscape={() => {
+                  setShowSignalTriggerInput(false);
+                  setCurrentSelectedSignal(null);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSubmit={handleSignalTriggerSubmit}
               />
             )
             : (
