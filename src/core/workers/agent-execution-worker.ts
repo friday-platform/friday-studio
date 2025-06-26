@@ -574,8 +574,8 @@ class AgentExecutionWorker {
               unknown
             >)?.timeout as number || 30000,
             mcpServers: mcp_servers,
-            maxSteps: max_steps || 1,
-            toolChoice: tool_choice,
+            maxSteps: max_steps || 5,
+            toolChoice: tool_choice || "auto",
             operationContext: {
               operation: "agent_execution",
               agentId: request.agent_id,
