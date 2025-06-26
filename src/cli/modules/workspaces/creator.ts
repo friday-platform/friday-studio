@@ -17,17 +17,17 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
   path: string;
 }> {
   const { name, path, description, agents = [], signals = [] } = options;
-  
+
   // Ensure directory exists
   await ensureDir(path);
-  
+
   // Build workspace config object (like init.tsx)
   const workspaceConfig = {
     version: "1.0",
     workspace: {
       id: crypto.randomUUID(),
       name: name,
-      description: description || (simple ? "A new Atlas workspace" : `Atlas workspace: ${name}`),
+      description: description || `Atlas workspace: ${name}`,
     },
     signals: {} as Record<string, unknown>,
     jobs: {} as Record<string, unknown>,
@@ -93,7 +93,7 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
   if (agents.length > 0) {
     workspaceConfig.jobs["example-job"] = {
       description: "Example job for workspace initialization",
-      agents: agents.map(agent => `${agent}-agent`),
+      agents: agents.map((agent) => `${agent}-agent`),
       mappings: [
         {
           signal: Object.keys(workspaceConfig.signals)[0] || "manual-trigger",
