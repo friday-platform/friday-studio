@@ -779,9 +779,12 @@ export class PlatformMCPServer {
         workspaceId,
         operation: operation.name,
       });
-      throw new Error(
+      // Use MCP standard error code for authorization failure
+      const error = new Error(
         `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
       );
+      (error as any).code = -32000; // MCP server error code for authorization
+      throw error;
     }
 
     return await operation(args);

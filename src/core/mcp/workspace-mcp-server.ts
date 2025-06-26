@@ -21,6 +21,7 @@ class RateLimitError extends Error {
   constructor(message: string, public retryAfter?: number) {
     super(message);
     this.name = "RateLimitError";
+    (this as any).code = -32000; // MCP server error code
   }
 }
 
