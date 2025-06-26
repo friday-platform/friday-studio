@@ -430,6 +430,63 @@ jobs:
           git tag -f nightly HEAD
           git push origin nightly --force
 
+      - name: Upload to Google Cloud Storage
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to sandbox GCS
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Change to dist directory where artifacts are
+          cd ./dist
+          
+          # Upload all artifacts to sandbox bucket with nightly/ prefix
+          gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
+          gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
+          gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
+          
+          # Also upload to versioned paths
+          for file in atlas_*.tar.gz atlas_*.zip; do
+            if [ -f "$file" ]; then
+              gsutil cp "$file" "gs://tempest-sandbox-atlas-binaries/nightly/${VERSION}/$file"
+            fi
+          done
+          
+          echo "Uploaded nightly artifacts to sandbox GCS bucket"
+
+      - name: Authenticate for production GCS
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-production.iam.gserviceaccount.com'
+
+      - name: Upload artifacts to production GCS
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Change to dist directory where artifacts are
+          cd ./dist
+          
+          # Upload all artifacts to production bucket with nightly/ prefix
+          gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/nightly/
+          gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/nightly/
+          gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
+          
+          # Also upload to versioned paths
+          for file in atlas_*.tar.gz atlas_*.zip; do
+            if [ -f "$file" ]; then
+              gsutil cp "$file" "gs://tempest-production-atlas-binaries/nightly/${VERSION}/$file"
+            fi
+          done
+          
+          echo "Uploaded nightly artifacts to production GCS bucket"
+
       - name: Update Homebrew tap for nightly
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
