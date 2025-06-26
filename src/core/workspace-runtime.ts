@@ -6,12 +6,13 @@ import { Session } from "./session.ts";
 import { WorkerManager } from "./utils/worker-manager.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
-import { AtlasLibrary } from "./library/atlas-library.ts";
+import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   supervisorModel?: string;
   workspacePath?: string; // For daemon mode - path to workspace directory
+  libraryStorage?: LibraryStorageAdapter; // For daemon mode - shared library storage
 }
 
 export interface RuntimeAgentConfig {
@@ -82,7 +83,7 @@ export class WorkspaceRuntime {
   private options: WorkspaceRuntimeOptions;
   private config?: any;
   private stateMachine: Actor<typeof workspaceRuntimeMachine>;
-  private library?: AtlasLibrary;
+  private libraryStorage?: LibraryStorageAdapter;
 
   constructor(
     workspace: IWorkspace,
@@ -94,10 +95,11 @@ export class WorkspaceRuntime {
     this.options = options;
     this.workerManager = new WorkerManager();
 
+    // Use provided library storage if available (daemon mode)
+    this.libraryStorage = options.libraryStorage;
+
     // Set up message handler for session completion
     this.setupMessageHandlers();
-
-    // Library will be initialized lazily
 
     // Agent loading will happen during initialization
 
@@ -153,12 +155,11 @@ export class WorkspaceRuntime {
    */
   private async handleSessionComplete(sessionId: string, result: any): Promise<void> {
     try {
-      const library = this.getLibrary();
-      if (!library || !result) {
-        logger.warn("Cannot store session results - library not available or no result", {
+      if (!this.libraryStorage || !result) {
+        logger.warn("Cannot store session results - library storage not available or no result", {
           workspaceId: this.workspace.id,
           sessionId,
-          hasLibrary: !!library,
+          hasLibraryStorage: !!this.libraryStorage,
           hasResult: !!result,
         });
         return;
@@ -167,36 +168,31 @@ export class WorkspaceRuntime {
       logger.info("Storing session results in library", {
         workspaceId: this.workspace.id,
         sessionId,
-        resultStatus: result.status,
+        resultType: typeof result,
+        hasPhases: !!result.phases_executed,
+        hasTiming: !!result.timing,
         hasFinalOutput: !!result.final_output,
         finalOutputType: typeof result.final_output,
-        hasFinalOutputResult: !!result.final_output?.result,
-        resultKeys: Object.keys(result || {}),
-        timingKeys: result.timing ? Object.keys(result.timing) : null,
-        finalOutputKeys: result.final_output ? Object.keys(result.final_output) : null,
-        agentExecutionsCount: result.timing?.agent_executions?.length,
-        totalDuration: result.timing?.total_duration,
-        totalAgentsInvoked: result.total_agents_invoked,
+        finalOutputResultLength: result.final_output?.result?.length || 0,
       });
+
+      // Build session data for archiving
+      const sessionRecord = this.sessions.get(sessionId);
+      if (!sessionRecord) {
+        logger.warn("No session record found for completed session", {
+          sessionId,
+          availableSessions: Array.from(this.sessions.keys()),
+        });
+        return;
+      }
 
       // Extract session data for library storage
       const sessionData = {
-        session_id: sessionId,
-        workspace_name: this.workspace.id,
-        start_time: new Date(Date.now() - (result.timing?.total_duration || 0)).toISOString(),
-        end_time: new Date().toISOString(),
-        agents_used: result.timing?.agent_executions?.map((exec: any) => ({
-          id: exec.agent,
-          type: "llm",
-          purpose: `Agent execution in session ${sessionId}`,
-        })) || [],
-        artifacts: [],
-        outcomes: [{
-          type: "session_completion",
-          data: result.final_output,
-          agent_count: result.timing?.agent_executions?.length || 0,
-          total_duration: result.timing?.total_duration || 0,
-        }],
+        sessionId,
+        workspaceId: this.workspace.id,
+        signalId: sessionRecord.signals.triggers[0]?.id || "unknown",
+        result,
+        timestamp: new Date().toISOString(),
         metadata: {
           signal: result.original_input || {},
           phases_executed: result.phases_executed || 1,
@@ -208,8 +204,25 @@ export class WorkspaceRuntime {
         },
       };
 
-      // Store session archive in library
-      const archiveId = await library.archiveSession(sessionData);
+      // Store session archive in library using new storage adapter
+      const archiveId = crypto.randomUUID();
+      await this.libraryStorage.storeItem({
+        id: archiveId,
+        type: "session_archive",
+        name: `Session Archive - ${sessionId.slice(0, 8)}`,
+        description: `Complete session data and results from session ${sessionId}`,
+        content: JSON.stringify(sessionData, null, 2),
+        metadata: {
+          format: "json",
+          source: "system",
+          session_id: sessionId,
+          custom_fields: sessionData.metadata,
+        },
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        tags: ["session-archive", "automated"],
+        workspace_id: this.workspace.id,
+      });
 
       // Also store the final report as a separate library item if available
       logger.info("Checking for final report to store", {
@@ -224,24 +237,40 @@ export class WorkspaceRuntime {
           reportLength: result.final_output.result.length,
         });
 
-        const reportId = await library.store({
-          type: "report",
-          name: `Analysis Report - ${sessionId.slice(0, 8)}`,
-          content: result.final_output.result,
-          format: "markdown",
-          source: "agent",
-          tags: ["session-report", "analysis", "automated"],
-          description: `Generated analysis report from session ${sessionId}`,
-          metadata: {
-            session_id: sessionId,
-            agent_type: result.final_output.agent_type,
-            agent_id: result.final_output.agent_id,
-            model: result.final_output.model,
-            generation_time: new Date().toISOString(),
-          },
-          session_id: sessionId,
-          agent_ids: result.timing?.agent_executions?.map((exec: any) => exec.agent) || [],
-        });
+        const reportId = crypto.randomUUID();
+        try {
+          await this.libraryStorage.storeItem({
+            id: reportId,
+            type: "report",
+            name: `Analysis Report - ${sessionId.slice(0, 8)}`,
+            description: `Generated analysis report from session ${sessionId}`,
+            content: result.final_output.result,
+            metadata: {
+              format: "markdown",
+              source: "agent",
+              session_id: sessionId,
+              agent_ids: result.timing?.agent_executions?.map((exec: any) => exec.agent) || [],
+              custom_fields: {
+                agent_type: result.final_output.agent_type,
+                agent_id: result.final_output.agent_id,
+                model: result.final_output.model,
+                generation_time: new Date().toISOString(),
+              },
+            },
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            tags: ["session-report", "analysis", "automated"],
+            workspace_id: this.workspace.id,
+          });
+          logger.info("Report item stored successfully", { reportId, sessionId });
+        } catch (error) {
+          logger.error("Failed to store report item", {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            reportId,
+            sessionId,
+          });
+        }
 
         logger.info("Session results stored in library", {
           workspaceId: this.workspace.id,
@@ -523,59 +552,6 @@ export class WorkspaceRuntime {
       workspaceId: this.workspace.id,
       checkpoint: state,
     });
-  }
-
-  /**
-   * Get the library instance for this workspace
-   */
-  getLibrary(): AtlasLibrary | undefined {
-    if (!this.library) {
-      // Initialize library synchronously on first access
-      try {
-        const workspacePath = Deno.cwd();
-
-        // Validate that we have a proper workspace path
-        if (!workspacePath || typeof workspacePath !== "string") {
-          logger.error("Invalid workspace path", {
-            workspaceId: this.workspace.id,
-            workspacePath: typeof workspacePath,
-            cwd: Deno.cwd(),
-          });
-          return undefined;
-        }
-
-        const config = {
-          platform_path: "~/.atlas/library",
-          workspace_relative: ".atlas/library",
-        };
-
-        this.library = new AtlasLibrary(
-          config,
-          workspacePath,
-          this.workspace.id,
-        );
-
-        // Initialize asynchronously but don't wait
-        this.library.initialize().catch((error) => {
-          logger.error("Failed to initialize library", {
-            workspaceId: this.workspace.id,
-            error,
-          });
-        });
-
-        logger.info("Library created (initializing in background)", {
-          workspaceId: this.workspace.id,
-          workspacePath,
-        });
-      } catch (error) {
-        logger.error("Failed to create library", {
-          workspaceId: this.workspace.id,
-          error,
-        });
-        return undefined;
-      }
-    }
-    return this.library;
   }
 
   /**
