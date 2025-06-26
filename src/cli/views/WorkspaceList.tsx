@@ -1,10 +1,7 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
-import {
-  WorkspaceEntry,
-  WorkspaceStatus as WSStatus,
-} from "../../core/workspace-registry-types.ts";
-import { getWorkspaceRegistry } from "../../core/workspace-registry.ts";
+import { WorkspaceEntry, WorkspaceStatus as WSStatus } from "../../core/workspace-manager.ts";
+import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
 
 export const WorkspaceList = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([]);
@@ -14,10 +11,24 @@ export const WorkspaceList = () => {
   useEffect(() => {
     const loadWorkspaces = async () => {
       try {
-        const registry = getWorkspaceRegistry();
-        await registry.initialize();
-        const workspaceList = await registry.listAll();
-        setWorkspaces(workspaceList);
+        // Use workspace discovery (works without daemon)
+        const discoveredWorkspaces = await discoverWorkspaces();
+
+        // Convert to WorkspaceEntry format
+        const workspaceEntries = discoveredWorkspaces.map((w) => ({
+          id: w.id,
+          name: w.name,
+          path: w.path,
+          configPath: `${w.path}/workspace.yml`,
+          status: "stopped" as WSStatus, // Discovery doesn't know runtime status
+          createdAt: new Date().toISOString(),
+          lastSeen: new Date().toISOString(),
+          metadata: {
+            description: w.description,
+          },
+        }));
+
+        setWorkspaces(workspaceEntries);
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

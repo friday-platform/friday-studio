@@ -1,30 +1,7 @@
 import { Box, Newline, Text, useInput } from "ink";
+import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 
 export default function HelpCommand({ onExit }: { onExit: () => void }) {
-  const commands = [
-    {
-      command: "/help",
-      description: "Show available commands and usage information",
-    },
-    {
-      command: "/list",
-      description: "View workspaces, sessions, signals, agents, and library items",
-    },
-    { command: "/init", description: "Initialize a new workspace" },
-    { command: "/sessions", description: "View available workspace sessions" },
-    {
-      command: "/signals",
-      description: "View available workspace signals",
-    },
-    { command: "/agents", description: "View workspace agents" },
-    {
-      command: "/library",
-      description: "View available workspace artifacts",
-    },
-    { command: "/config", description: "Atlas configuration settings" },
-    { command: "/logs", description: "View workspace logs" },
-    { command: "/exit", description: "Exit the Atlas interactive interface" },
-  ];
   useInput((_, key) => {
     if (key.return) {
       onExit();
@@ -43,10 +20,12 @@ export default function HelpCommand({ onExit }: { onExit: () => void }) {
 
       <Box flexDirection="row" marginTop={1}>
         <Box flexDirection="column" marginRight={1}>
-          {commands.map((suggestion) => <Text key={suggestion.command}>{suggestion.command}</Text>)}
+          {COMMAND_DEFINITIONS.map((suggestion) => (
+            <Text key={suggestion.command}>{suggestion.command}</Text>
+          ))}
         </Box>
         <Box flexDirection="column" paddingLeft={1}>
-          {commands.map((suggestion) => (
+          {COMMAND_DEFINITIONS.map((suggestion) => (
             <Text key={`${suggestion.command}-desc`} dimColor>
               {suggestion.description}
             </Text>

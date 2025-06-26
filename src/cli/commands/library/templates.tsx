@@ -74,7 +74,7 @@ export async function handler(argv: TemplatesArgs) {
     if (argv.platform) params.append("platform", "true");
 
     const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/library/templates?${params}`);
+    const response = await fetch(`${serverUrl}/api/library/templates?${params}`);
 
     if (!response.ok) {
       const errorText = await response.text();

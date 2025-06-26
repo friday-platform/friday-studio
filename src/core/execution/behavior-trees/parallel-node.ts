@@ -59,9 +59,6 @@ export class ParallelNode extends BaseNode {
     });
 
     // Wait for all children to complete or determine result early
-    let completedChildren = 0;
-    const totalChildren = this.children.length;
-
     try {
       await Promise.all(childPromises);
     } catch (error) {
@@ -100,10 +97,11 @@ export class ParallelNode extends BaseNode {
         // At least one child must succeed
         return successes > 0 ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
 
-      case "threshold":
+      case "threshold": {
         // Minimum number of successes required
         const threshold = (this.config as ParallelNodeConfig).threshold || 1;
         return successes >= threshold ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
+      }
 
       default:
         this.log(`Unknown policy: ${policy}, defaulting to 'all'`, "warn");

@@ -1,8 +1,8 @@
 import { Box, Text } from "ink";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "../../../core/config-loader.ts";
 
 interface DetailsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
   workspaceSlug: string;
 }
 

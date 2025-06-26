@@ -1,4 +1,4 @@
-import { getWorkspaceRegistry } from "./workspace-registry.ts";
+import { getWorkspaceManager } from "./workspace-manager.ts";
 import { findAvailablePort } from "../utils/port-finder.ts";
 import { getAtlasHome } from "../utils/paths.ts";
 import { ensureDir } from "@std/fs";
@@ -13,7 +13,7 @@ export interface ProcessStartOptions {
 }
 
 export class WorkspaceProcessManager {
-  private registry = getWorkspaceRegistry();
+  private registry = getWorkspaceManager();
 
   async startDetached(
     workspaceIdOrPath: string,
@@ -29,7 +29,7 @@ export class WorkspaceProcessManager {
     if (!workspace) {
       // Try as path
       logger.debug("Workspace not found by ID/name, trying as path");
-      workspace = await this.registry.findOrRegister(workspaceIdOrPath);
+      workspace = await this.registry.findOrRegisterWorkspace(workspaceIdOrPath);
     }
 
     // Check if already running
@@ -114,7 +114,7 @@ export class WorkspaceProcessManager {
     }
 
     // Update registry immediately
-    await this.registry.updateStatus(workspace.id, "starting", {
+    await this.registry.updateWorkspaceStatus(workspace.id, "starting", {
       pid,
       port,
       startedAt: new Date().toISOString(),
@@ -139,7 +139,7 @@ export class WorkspaceProcessManager {
       // Process failed to start
       logger.error("Process failed to start", { pid });
 
-      await this.registry.updateStatus(workspace.id, "crashed");
+      await this.registry.updateWorkspaceStatus(workspace.id, "crashed");
       throw new Error("Failed to start workspace process");
     }
 
@@ -161,7 +161,7 @@ export class WorkspaceProcessManager {
     }
 
     // Update status
-    await this.registry.updateStatus(workspace.id, "stopping");
+    await this.registry.updateWorkspaceStatus(workspace.id, "stopping");
 
     try {
       if (force) {
@@ -188,7 +188,7 @@ export class WorkspaceProcessManager {
         }
       }
 
-      await this.registry.updateStatus(workspace.id, "stopped", {
+      await this.registry.updateWorkspaceStatus(workspace.id, "stopped", {
         pid: undefined,
         port: undefined,
         stoppedAt: new Date().toISOString(),
@@ -197,7 +197,7 @@ export class WorkspaceProcessManager {
       logger.info("Workspace stopped successfully", { workspaceId: workspace.id });
     } catch (error) {
       logger.error("Error stopping workspace", { error: error.message });
-      await this.registry.updateStatus(workspace.id, "crashed");
+      await this.registry.updateWorkspaceStatus(workspace.id, "crashed");
       throw error;
     }
   }
@@ -260,7 +260,7 @@ export class WorkspaceProcessManager {
           `http://localhost:${workspace.port}/api/health`,
         );
         if (response.ok) {
-          await this.registry.updateStatus(workspace.id, "running");
+          await this.registry.updateWorkspaceStatus(workspace.id, "running");
           logger.info("Workspace is ready", { workspaceId });
           return true;
         }

@@ -10,7 +10,6 @@
 
 import {
   BaseExecutionStrategy,
-  ExecutionContext,
   ExecutionStep,
   StrategyExecutionResult,
 } from "./base-execution-strategy.ts";
@@ -20,21 +19,38 @@ import {
   HTNDomain,
 } from "./strategies/hierarchical-task-network-strategy.ts";
 import { MonteCarloTreeSearchStrategy } from "./strategies/monte-carlo-tree-search-strategy.ts";
+import { objectKeys } from "../../utils/index.ts";
+
+// Strategy specific configuration types
+interface BehaviorTreeConfig {
+  maxDepth?: number;
+  timeout?: number;
+}
+
+interface HTNConfig {
+  domain?: HTNDomain;
+  maxDepth?: number;
+}
+
+interface MCTSConfig {
+  maxIterations?: number;
+  explorationConstant?: number;
+  timeLimit?: number;
+}
+
+// Type-safe mapping of strategy types to their configs
+type StrategyConfigMap = {
+  "behavior-tree": BehaviorTreeConfig;
+  "htn": HTNConfig;
+  "mcts": MCTSConfig;
+};
 
 export interface ExecutionEngineConfig {
   defaultStrategy: ExecutionStrategyType;
   strategyConfigs: {
-    [key: string]: any; // Allow dynamic strategy configs
-    behaviorTree?: any;
-    htn?: {
-      domain?: HTNDomain;
-      maxDepth?: number;
-    };
-    mcts?: {
-      maxIterations?: number;
-      explorationConstant?: number;
-      timeLimit?: number;
-    };
+    behaviorTree?: BehaviorTreeConfig;
+    htn?: HTNConfig;
+    mcts?: MCTSConfig;
   };
   selectionCriteria: StrategySelectionCriteria;
   enablePerformanceTracking: boolean;
@@ -69,6 +85,24 @@ export interface ExecutionMetrics {
 
 export type ExecutionStrategyType = "behavior-tree" | "htn" | "mcts";
 
+// Extended metadata type for execution engine results
+interface ExtendedStrategyMetadata {
+  strategy: string;
+  stepsExecuted: number;
+  totalSteps: number;
+  adaptations?: number;
+  selectedStrategy?: ExecutionStrategyType;
+  characteristics?: TaskCharacteristics;
+  selectionReason?: string;
+  selectionMethod?: "manual" | "automatic";
+  error?: string;
+}
+
+// Extended result type with enhanced metadata
+interface ExtendedStrategyExecutionResult extends Omit<StrategyExecutionResult, "metadata"> {
+  metadata: ExtendedStrategyMetadata;
+}
+
 export class ExecutionEngine {
   private strategies: Map<ExecutionStrategyType, BaseExecutionStrategy>;
   private config: ExecutionEngineConfig;
@@ -76,7 +110,7 @@ export class ExecutionEngine {
   private recentExecutions: Array<{
     characteristics: TaskCharacteristics;
     strategy: ExecutionStrategyType;
-    result: StrategyExecutionResult;
+    result: ExtendedStrategyExecutionResult;
     timestamp: number;
   }>;
 
@@ -108,7 +142,7 @@ export class ExecutionEngine {
   async execute(
     steps: ExecutionStep[],
     hints?: Partial<TaskCharacteristics>,
-  ): Promise<StrategyExecutionResult> {
+  ): Promise<ExtendedStrategyExecutionResult> {
     const characteristics = this.analyzeTaskCharacteristics(steps, hints);
     const selectedStrategy = this.selectStrategy(characteristics);
 
@@ -118,18 +152,21 @@ export class ExecutionEngine {
     }
 
     const startTime = Date.now();
-    let result: StrategyExecutionResult;
+    let result: ExtendedStrategyExecutionResult;
 
     try {
-      result = await strategy.execute(steps);
+      const baseResult = await strategy.execute(steps);
 
-      // Add strategy selection info to metadata
-      result.metadata = {
-        ...result.metadata,
-        selectedStrategy,
-        characteristics,
-        selectionReason: this.getSelectionReason(selectedStrategy, characteristics),
-      } as any; // Extend the base metadata type
+      // Create extended result with additional metadata
+      result = {
+        ...baseResult,
+        metadata: {
+          ...baseResult.metadata,
+          selectedStrategy,
+          characteristics,
+          selectionReason: this.getSelectionReason(selectedStrategy, characteristics),
+        },
+      };
     } catch (error) {
       result = {
         success: false,
@@ -142,7 +179,7 @@ export class ExecutionEngine {
           error: error instanceof Error ? error.message : String(error),
           selectedStrategy,
           characteristics,
-        } as any,
+        },
       };
     }
 
@@ -160,18 +197,23 @@ export class ExecutionEngine {
   async executeWithStrategy(
     steps: ExecutionStep[],
     strategyType: ExecutionStrategyType,
-  ): Promise<StrategyExecutionResult> {
+  ): Promise<ExtendedStrategyExecutionResult> {
     const strategy = this.strategies.get(strategyType);
     if (!strategy) {
       throw new Error(`Strategy ${strategyType} not found`);
     }
 
-    const result = await strategy.execute(steps);
-    result.metadata = {
-      ...result.metadata,
-      selectedStrategy: strategyType,
-      selectionMethod: "manual",
-    } as any;
+    const baseResult = await strategy.execute(steps);
+
+    // Create extended result with additional metadata
+    const result: ExtendedStrategyExecutionResult = {
+      ...baseResult,
+      metadata: {
+        ...baseResult.metadata,
+        selectedStrategy: strategyType,
+        selectionMethod: "manual",
+      },
+    };
 
     return result;
   }
@@ -188,16 +230,18 @@ export class ExecutionEngine {
     const characteristics = this.analyzeTaskCharacteristics(steps, hints);
     const scores = this.calculateStrategyScores(characteristics);
 
-    const sortedStrategies = Object.entries(scores)
-      .sort(([, a], [, b]) => b - a) as Array<[ExecutionStrategyType, number]>;
+    // Create strategy-score pairs as objects first to maintain type safety
+    const strategyScorePairs = objectKeys(scores)
+      .map((strategy) => ({ strategy, score: scores[strategy] }))
+      .sort((a, b) => b.score - a.score);
 
-    const [bestStrategy, bestScore] = sortedStrategies[0];
+    const best = strategyScorePairs[0];
 
     return {
-      strategy: bestStrategy,
-      confidence: bestScore,
-      reasoning: this.getSelectionReason(bestStrategy, characteristics),
-      alternatives: sortedStrategies.slice(1).map(([strategy, score]) => ({ strategy, score })),
+      strategy: best.strategy,
+      confidence: best.score,
+      reasoning: this.getSelectionReason(best.strategy, characteristics),
+      alternatives: strategyScorePairs.slice(1),
     };
   }
 
@@ -211,8 +255,27 @@ export class ExecutionEngine {
   /**
    * Update strategy configuration
    */
-  updateStrategyConfig(strategy: ExecutionStrategyType, config: any): void {
-    this.config.strategyConfigs[strategy] = { ...this.config.strategyConfigs[strategy], ...config };
+  updateStrategyConfig<T extends ExecutionStrategyType>(
+    strategy: T,
+    config: StrategyConfigMap[T],
+  ): void {
+    // TypeScript knows the exact type relationship here
+    if (strategy === "behavior-tree") {
+      this.config.strategyConfigs.behaviorTree = {
+        ...this.config.strategyConfigs.behaviorTree,
+        ...config,
+      };
+    } else if (strategy === "htn") {
+      this.config.strategyConfigs.htn = {
+        ...this.config.strategyConfigs.htn,
+        ...config,
+      };
+    } else if (strategy === "mcts") {
+      this.config.strategyConfigs.mcts = {
+        ...this.config.strategyConfigs.mcts,
+        ...config,
+      };
+    }
     this.reinitializeStrategy(strategy);
   }
 
@@ -236,10 +299,11 @@ export class ExecutionEngine {
 
   private reinitializeStrategy(strategyType: ExecutionStrategyType): void {
     switch (strategyType) {
-      case "behavior-tree":
+      case "behavior-tree": {
         this.strategies.set("behavior-tree", new BehaviorTreeStrategy());
         break;
-      case "htn":
+      }
+      case "htn": {
         const htnConfig = this.config.strategyConfigs.htn || {};
         const htnDomain = htnConfig.domain ||
           HierarchicalTaskNetworkStrategy.createAgentWorkflowDomain();
@@ -248,10 +312,12 @@ export class ExecutionEngine {
           new HierarchicalTaskNetworkStrategy(htnDomain, {}, htnConfig.maxDepth),
         );
         break;
-      case "mcts":
+      }
+      case "mcts": {
         const mctsConfig = this.config.strategyConfigs.mcts || {};
         this.strategies.set("mcts", new MonteCarloTreeSearchStrategy(mctsConfig));
         break;
+      }
     }
   }
 
@@ -287,9 +353,18 @@ export class ExecutionEngine {
     const optimization_needed = stepCount > 5 ? Math.min(1, stepCount * 0.08) : 0;
 
     // Detect time criticality
-    const time_critical = steps.some((step) =>
-      (step as any).timeout !== undefined && (step as any).timeout < 10000
-    );
+    const time_critical = steps.some((step) => {
+      if (!step.config || typeof step.config !== "object") {
+        return false;
+      }
+
+      // Type guard to check if timeout exists and is a number
+      if ("timeout" in step.config && typeof step.config.timeout === "number") {
+        return step.config.timeout < 10000;
+      }
+
+      return false;
+    });
 
     // Calculate dependency complexity
     const dependency_complexity = this.calculateDependencyComplexity(steps);
@@ -421,11 +496,10 @@ export class ExecutionEngine {
     const scores = this.calculateStrategyScores(characteristics);
 
     // Select strategy with highest score
-    return Object.entries(scores)
+    return objectKeys(scores)
       .reduce(
-        (best, [strategy, score]) =>
-          score > scores[best] ? strategy as ExecutionStrategyType : best,
-        "behavior-tree" as ExecutionStrategyType,
+        (best, strategy) => scores[strategy] > scores[best] ? strategy : best,
+        "behavior-tree",
       );
   }
 
@@ -492,7 +566,7 @@ export class ExecutionEngine {
   private recordExecution(
     characteristics: TaskCharacteristics,
     strategy: ExecutionStrategyType,
-    result: StrategyExecutionResult,
+    result: ExtendedStrategyExecutionResult,
   ): void {
     // Record recent execution
     this.recentExecutions.push({
@@ -513,8 +587,8 @@ export class ExecutionEngine {
 
   private updatePerformanceMetrics(
     strategy: ExecutionStrategyType,
-    result: StrategyExecutionResult,
-    characteristics: TaskCharacteristics,
+    _result: ExtendedStrategyExecutionResult,
+    _characteristics: TaskCharacteristics,
   ): void {
     const current = this.performanceHistory.get(strategy);
     if (!current) return;
@@ -524,7 +598,7 @@ export class ExecutionEngine {
 
     // Calculate updated metrics
     const successRate = executions.filter((e) => e.result.success).length / executions.length;
-    const avgExecutionTime = executions.reduce((sum, e) => sum + e.result.executionTime, 0) /
+    const avgExecutionTime = executions.reduce((sum, e) => sum + e.result.duration, 0) /
       executions.length;
     const avgStepSuccessRate = this.calculateAvgStepSuccessRate(executions);
     const maxComplexityHandled = Math.max(...executions.map((e) => e.characteristics.complexity));
@@ -557,12 +631,28 @@ export class ExecutionEngine {
    */
   exportState(): {
     config: ExecutionEngineConfig;
-    performance: Record<string, ExecutionMetrics>;
+    performance: Record<ExecutionStrategyType, ExecutionMetrics>;
     recentExecutions: number;
   } {
+    // Get metrics for each strategy - they should all exist from initializePerformanceTracking
+    const behaviorTreeMetrics = this.performanceHistory.get("behavior-tree");
+    const htnMetrics = this.performanceHistory.get("htn");
+    const mctsMetrics = this.performanceHistory.get("mcts");
+
+    if (!behaviorTreeMetrics || !htnMetrics || !mctsMetrics) {
+      throw new Error("Performance history is missing required strategies");
+    }
+
+    // Now TypeScript knows all values are defined
+    const performance: Record<ExecutionStrategyType, ExecutionMetrics> = {
+      "behavior-tree": behaviorTreeMetrics,
+      "htn": htnMetrics,
+      "mcts": mctsMetrics,
+    };
+
     return {
       config: this.config,
-      performance: Object.fromEntries(this.performanceHistory),
+      performance,
       recentExecutions: this.recentExecutions.length,
     };
   }
@@ -572,7 +662,7 @@ export class ExecutionEngine {
    */
   importState(state: {
     config?: Partial<ExecutionEngineConfig>;
-    performance?: Record<string, ExecutionMetrics>;
+    performance?: Record<ExecutionStrategyType, ExecutionMetrics>;
   }): void {
     if (state.config) {
       this.config = { ...this.config, ...state.config };
@@ -580,8 +670,8 @@ export class ExecutionEngine {
     }
 
     if (state.performance) {
-      for (const [strategy, metrics] of Object.entries(state.performance)) {
-        this.performanceHistory.set(strategy as ExecutionStrategyType, metrics);
+      for (const strategy of objectKeys(state.performance)) {
+        this.performanceHistory.set(strategy, state.performance[strategy]);
       }
     }
   }

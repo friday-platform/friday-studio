@@ -3,32 +3,33 @@
  * Provides dynamic control flow execution for complex agent coordination
  */
 
-import { BaseNode, NodeContext, NodeStatus } from "./base-node.ts";
+import { BaseNode, NodeContext, NodeStatus, SerializedNode } from "./base-node.ts";
 import { SequenceNode } from "./sequence-node.ts";
 import { SelectorNode } from "./selector-node.ts";
 import { ParallelNode, type ParallelNodeConfig } from "./parallel-node.ts";
 import { ConditionNode, type ConditionNodeConfig } from "./condition-node.ts";
 import { AgentActionNode, type AgentActionNodeConfig } from "./agent-action-node.ts";
+import type { JobSpecification } from "../../session-supervisor.ts";
 
 export interface BehaviorTreeSpec {
   type: "sequence" | "selector" | "parallel" | "condition" | "agent";
   id: string;
   name?: string;
   description?: string;
-  config?: any;
+  config?: Record<string, unknown>;
   children?: BehaviorTreeSpec[];
 
   // Agent-specific properties
   agentId?: string;
   task?: string;
   inputSource?: "signal" | "previous" | "global" | "custom";
-  customInput?: any;
+  customInput?: Record<string, unknown>;
   outputKey?: string;
-  successCriteria?: any;
+  successCriteria?: Record<string, unknown>;
 
   // Condition-specific properties
   condition?: string;
-  expectedValue?: any;
+  expectedValue?: unknown;
   operator?: string;
   valuePath?: string;
 
@@ -56,6 +57,15 @@ export interface ExecutionTraceEntry {
   startTime: number;
   duration: number;
   error?: string;
+}
+
+// Serialized behavior tree representation
+export interface SerializedBehaviorTree {
+  root?: SerializedNode;
+  lastExecution: {
+    trace: ExecutionTraceEntry[];
+    nodeStatuses: Record<string, NodeStatus>;
+  };
 }
 
 export class BehaviorTree {
@@ -92,7 +102,7 @@ export class BehaviorTree {
         });
         break;
 
-      case "parallel":
+      case "parallel": {
         const parallelConfig: ParallelNodeConfig = {
           id: spec.id,
           name: spec.name,
@@ -103,21 +113,23 @@ export class BehaviorTree {
         };
         node = new ParallelNode(parallelConfig);
         break;
+      }
 
-      case "condition":
+      case "condition": {
         const conditionConfig: ConditionNodeConfig = {
           id: spec.id,
           name: spec.name,
           description: spec.description,
           condition: spec.condition || "true",
           expectedValue: spec.expectedValue,
-          operator: spec.operator as any,
+          operator: spec.operator as ConditionNodeConfig["operator"],
           valuePath: spec.valuePath,
         };
         node = new ConditionNode(conditionConfig);
         break;
+      }
 
-      case "agent":
+      case "agent": {
         const agentConfig: AgentActionNodeConfig = {
           id: spec.id,
           name: spec.name,
@@ -131,6 +143,7 @@ export class BehaviorTree {
         };
         node = new AgentActionNode(agentConfig);
         break;
+      }
 
       default:
         throw new Error(`Unknown node type: ${spec.type}`);
@@ -159,7 +172,11 @@ export class BehaviorTree {
 
     // Set up execution tracing
     const originalExecutor = context.agentExecutor;
-    context.agentExecutor = async (agentId: string, task: string, input: any) => {
+    context.agentExecutor = async (
+      agentId: string,
+      task: string,
+      input: Record<string, unknown>,
+    ) => {
       if (originalExecutor) {
         return await originalExecutor(agentId, task, input);
       }
@@ -177,7 +194,7 @@ export class BehaviorTree {
         duration,
         nodeStatuses: this.nodeStatuses,
       };
-    } catch (error) {
+    } catch (_error) {
       const duration = Date.now() - startTime;
 
       return {
@@ -269,7 +286,7 @@ export class BehaviorTree {
   }
 
   // Get tree structure as JSON
-  toJSON(): any {
+  toJSON(): SerializedBehaviorTree {
     return {
       root: this.rootNode?.toJSON(),
       lastExecution: {
@@ -280,7 +297,9 @@ export class BehaviorTree {
   }
 
   // Create behavior tree from job specification
-  static fromJobSpec(jobSpec: any): BehaviorTree {
+  static fromJobSpec(
+    jobSpec: JobSpecification & { execution: { tree?: BehaviorTreeSpec } },
+  ): BehaviorTree {
     if (!jobSpec.execution?.tree) {
       throw new Error("Job specification must include execution.tree for behavior tree strategy");
     }

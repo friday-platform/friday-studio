@@ -129,7 +129,7 @@ export async function handler(argv: GenerateArgs) {
     };
 
     const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/library/generate`, {
+    const response = await fetch(`${serverUrl}/api/library/generate`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

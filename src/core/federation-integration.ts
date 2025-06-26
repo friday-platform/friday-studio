@@ -4,7 +4,7 @@
  */
 
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
-import type { AtlasConfig, NewWorkspaceConfig } from "./config-loader.ts";
+import type { AtlasConfig, WorkspaceConfig } from "./config-loader.ts";
 import { FederationManager } from "./federation-manager.ts";
 import { WorkspaceCapabilityRegistry } from "./workspace-capabilities.ts";
 import { PlatformMCPServer } from "./mcp/platform-mcp-server.ts";
@@ -34,7 +34,7 @@ export interface FederatedWorkspaceRuntime extends WorkspaceRuntime {
 
 export class FederationIntegration {
   private atlasConfig: AtlasConfig;
-  private workspaceConfig: NewWorkspaceConfig;
+  private workspaceConfig: WorkspaceConfig;
   private federationManager: FederationManager;
   private mcpProxy: MCPProxy;
   private platformMCPServer?: PlatformMCPServer;
@@ -43,7 +43,7 @@ export class FederationIntegration {
 
   constructor(
     atlasConfig: AtlasConfig,
-    workspaceConfig: NewWorkspaceConfig,
+    workspaceConfig: WorkspaceConfig,
     options: FederationIntegrationOptions = {},
   ) {
     this.atlasConfig = atlasConfig;

@@ -12,6 +12,7 @@
 import {
   BaseExecutionStrategy,
   ExecutionContext,
+  ExecutionResult,
   ExecutionStep,
   StrategyExecutionResult,
 } from "../base-execution-strategy.ts";
@@ -23,7 +24,7 @@ export interface HTNTask {
   type: "compound" | "primitive";
   preconditions?: HTNCondition[];
   effects?: HTNEffect[];
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
 }
 
 export interface HTNMethod {
@@ -38,21 +39,21 @@ export interface HTNMethod {
 export interface HTNSubtask {
   id: string;
   task: string;
-  parameters?: Record<string, any>;
+  parameters?: Record<string, unknown>;
   binding?: Record<string, string>; // Variable bindings
 }
 
 export interface HTNCondition {
   type: "equals" | "not_equals" | "greater" | "less" | "exists" | "custom";
   property: string;
-  value?: any;
+  value?: unknown;
   custom_check?: (context: ExecutionContext) => boolean;
 }
 
 export interface HTNEffect {
   type: "set" | "add" | "remove";
   property: string;
-  value?: any;
+  value?: unknown;
 }
 
 export interface HTNOrdering {
@@ -83,8 +84,8 @@ export interface HTNPlan {
 export interface HTNPlanStep {
   id: string;
   operator: HTNOperator;
-  parameters: Record<string, any>;
-  worldState: Record<string, any>;
+  parameters: Record<string, unknown>;
+  worldState: Record<string, unknown>;
 }
 
 export interface HTNDecomposition {
@@ -94,10 +95,12 @@ export interface HTNDecomposition {
 }
 
 export interface HTNWorldState {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
+  readonly name = "hierarchical-task-network";
+  readonly description = "Goal-oriented task decomposition using HTN planning";
   private domain: HTNDomain;
   private worldState: HTNWorldState;
   private maxDecompositionDepth: number;
@@ -111,7 +114,7 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
   }
 
   async execute(steps: ExecutionStep[]): Promise<StrategyExecutionResult> {
-    const startTime = Date.now();
+    const _startTime = Date.now();
 
     try {
       // Convert execution steps to HTN goal tasks
@@ -121,56 +124,31 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
       const plan = await this.generateHTNPlan(goalTasks);
 
       if (!plan) {
-        return {
-          success: false,
-          results: [],
-          executionTime: Date.now() - startTime,
-          strategy: "hierarchical-task-network",
-          metadata: {
-            error: "No valid HTN plan could be generated",
-            worldState: this.worldState,
-            goalTasks,
-          },
-        };
+        return this.createStrategyResult(false, [], 0);
       }
 
       // Execute the generated plan
-      const results = await this.executePlan(plan);
+      const results = this.executePlan(plan);
 
-      return {
-        success: results.every((r) => r.success),
+      return this.createStrategyResult(
+        results.every((r) => r.success),
         results,
-        executionTime: Date.now() - startTime,
-        strategy: "hierarchical-task-network",
-        metadata: {
-          plan,
-          finalWorldState: this.worldState,
-          decompositionDepth: this.currentDepth,
-        },
-      };
-    } catch (error) {
-      return {
-        success: false,
-        results: [],
-        executionTime: Date.now() - startTime,
-        strategy: "hierarchical-task-network",
-        metadata: {
-          error: error instanceof Error ? error.message : String(error),
-          worldState: this.worldState,
-        },
-      };
+        this.currentDepth,
+      );
+    } catch (_error) {
+      return this.createStrategyResult(false, [], 0);
     }
   }
 
   private convertStepsToGoals(steps: ExecutionStep[]): HTNTask[] {
     return steps.map((step, index) => ({
       id: `goal-${index}`,
-      name: step.description || `Goal ${index + 1}`,
+      name: `Goal ${index + 1}`,
       type: "compound" as const,
       parameters: {
         agentId: step.agentId,
-        input: step.input,
-        expectedOutput: step.expectedOutput,
+        config: step.config,
+        expectedOutputs: step.expectedOutputs,
       },
     }));
   }
@@ -267,7 +245,7 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
             subtasks: subtaskDecompositions,
           };
         }
-      } catch (error) {
+      } catch (_error) {
         // Try next method
         continue;
       } finally {
@@ -304,7 +282,15 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
   private checkPreconditions(conditions: HTNCondition[], worldState: HTNWorldState): boolean {
     return conditions.every((condition) => {
       if (condition.custom_check) {
-        return condition.custom_check({ globalState: worldState } as ExecutionContext);
+        return condition.custom_check(
+          this.context || {
+            sessionId: "",
+            workspaceId: "",
+            signal: {},
+            payload: worldState,
+            availableAgents: [],
+          },
+        );
       }
 
       const value = worldState[condition.property];
@@ -351,22 +337,24 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
         case "set":
           newState[effect.property] = effect.value;
           break;
-        case "add":
-          if (Array.isArray(newState[effect.property])) {
-            newState[effect.property] = [...newState[effect.property], effect.value];
+        case "add": {
+          const currentValue = newState[effect.property];
+          if (Array.isArray(currentValue)) {
+            newState[effect.property] = [...currentValue, effect.value];
           } else {
             newState[effect.property] = effect.value;
           }
           break;
-        case "remove":
-          if (Array.isArray(newState[effect.property])) {
-            newState[effect.property] = newState[effect.property].filter((v: any) =>
-              v !== effect.value
-            );
+        }
+        case "remove": {
+          const currentValue = newState[effect.property];
+          if (Array.isArray(currentValue)) {
+            newState[effect.property] = currentValue.filter((v) => v !== effect.value);
           } else {
             delete newState[effect.property];
           }
           break;
+        }
       }
     }
 
@@ -425,18 +413,19 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
     };
   }
 
-  private async executePlan(
+  private executePlan(
     plan: HTNPlan,
-  ): Promise<Array<{ success: boolean; result?: any; error?: string }>> {
-    const results = [];
+  ): ExecutionResult[] {
+    const results: ExecutionResult[] = [];
 
     for (const step of plan.steps) {
+      const startTime = Date.now();
       try {
         // Update world state with step's world state
         this.worldState = { ...step.worldState };
 
         // Execute the operator
-        const result = await this.executeOperator(step.operator, step.parameters);
+        const result = this.executeOperator(step.operator, step.parameters);
 
         // Apply operator effects
         if (step.operator.effects) {
@@ -446,13 +435,22 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
         }
 
         results.push({
+          stepId: step.id,
           success: true,
-          result,
+          output: result,
+          duration: Date.now() - startTime,
+          metadata: {
+            operator: step.operator.id,
+            worldState: { ...this.worldState },
+          },
         });
-      } catch (error) {
+      } catch (_error) {
         results.push({
+          stepId: step.id,
           success: false,
-          error: error instanceof Error ? error.message : String(error),
+          output: null,
+          duration: Date.now() - startTime,
+          error: _error instanceof Error ? _error.message : String(_error),
         });
 
         // Continue execution or break depending on strategy
@@ -463,10 +461,10 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
     return results;
   }
 
-  private async executeOperator(
+  private executeOperator(
     operator: HTNOperator,
-    parameters: Record<string, any>,
-  ): Promise<any> {
+    parameters: Record<string, unknown>,
+  ): unknown {
     // This would integrate with the actual agent execution system
     // For now, we simulate execution
 
@@ -495,23 +493,122 @@ export class HierarchicalTaskNetworkStrategy extends BaseExecutionStrategy {
       case "set":
         this.worldState[effect.property] = effect.value;
         break;
-      case "add":
-        if (Array.isArray(this.worldState[effect.property])) {
-          this.worldState[effect.property].push(effect.value);
+      case "add": {
+        const currentValue = this.worldState[effect.property];
+        if (Array.isArray(currentValue)) {
+          currentValue.push(effect.value);
         } else {
           this.worldState[effect.property] = effect.value;
         }
         break;
-      case "remove":
-        if (Array.isArray(this.worldState[effect.property])) {
-          this.worldState[effect.property] = this.worldState[effect.property].filter((v: any) =>
-            v !== effect.value
-          );
+      }
+      case "remove": {
+        const currentValue = this.worldState[effect.property];
+        if (Array.isArray(currentValue)) {
+          this.worldState[effect.property] = currentValue.filter((v) => v !== effect.value);
         } else {
           delete this.worldState[effect.property];
         }
         break;
+      }
     }
+  }
+
+  validateSteps(steps: ExecutionStep[]): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+
+    if (steps.length === 0) {
+      errors.push("HTN strategy requires at least one goal step");
+    }
+
+    // Check that we have a valid domain
+    if (!this.domain || !this.domain.tasks || !this.domain.methods || !this.domain.operators) {
+      errors.push("HTN strategy requires a valid domain with tasks, methods, and operators");
+    }
+
+    // Validate that steps have required properties
+    for (const step of steps) {
+      if (!step.id) {
+        errors.push("All steps must have an id");
+      }
+      if (step.type === "agent" && !step.agentId) {
+        errors.push(`Step ${step.id} is an agent step but missing agentId`);
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  getConfigSchema(): Record<string, unknown> {
+    return {
+      type: "object",
+      properties: {
+        domain: {
+          type: "object",
+          description: "HTN domain specification",
+          required: ["tasks", "methods", "operators"],
+          properties: {
+            tasks: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "name", "type"],
+                properties: {
+                  id: { type: "string" },
+                  name: { type: "string" },
+                  type: { type: "string", enum: ["compound", "primitive"] },
+                  preconditions: { type: "array" },
+                  effects: { type: "array" },
+                  parameters: { type: "object" },
+                },
+              },
+            },
+            methods: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "task", "name", "subtasks"],
+                properties: {
+                  id: { type: "string" },
+                  task: { type: "string" },
+                  name: { type: "string" },
+                  preconditions: { type: "array" },
+                  subtasks: { type: "array" },
+                  ordering: { type: "array" },
+                },
+              },
+            },
+            operators: {
+              type: "array",
+              items: {
+                type: "object",
+                required: ["id", "task", "action"],
+                properties: {
+                  id: { type: "string" },
+                  task: { type: "string" },
+                  action: { type: "string" },
+                  preconditions: { type: "array" },
+                  effects: { type: "array" },
+                  agentId: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        initialWorldState: {
+          type: "object",
+          description: "Initial world state for HTN planning",
+        },
+        maxDecompositionDepth: {
+          type: "number",
+          description: "Maximum depth for task decomposition",
+          default: 10,
+        },
+      },
+    };
   }
 
   // Public methods for domain building

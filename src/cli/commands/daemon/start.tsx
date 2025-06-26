@@ -1,6 +1,6 @@
 import { load } from "@std/dotenv";
 import { AtlasDaemon } from "../../../core/atlas-daemon.ts";
-import { getWorkspaceRegistry } from "../../../core/workspace-registry.ts";
+import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
@@ -92,7 +92,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     await load({ export: true });
 
     // Initialize workspace registry
-    const registry = getWorkspaceRegistry();
+    const registry = getWorkspaceManager();
     await registry.initialize();
 
     if (argv.detached) {

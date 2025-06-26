@@ -1,0 +1,7 @@
+version: "1.0"
+workspace:
+  name: My Workspace & Co. (v2.0)
+  description: "Atlas workspace: My Workspace & Co. (v2.0)"
+jobs: {}
+signals: {}
+agents: {}

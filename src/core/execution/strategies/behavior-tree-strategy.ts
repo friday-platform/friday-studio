@@ -5,13 +5,16 @@
 
 import {
   BaseExecutionStrategy,
-  type ExecutionContext,
   type ExecutionResult,
   type ExecutionStep,
   type StrategyExecutionResult,
 } from "../base-execution-strategy.ts";
-import { BehaviorTree, type BehaviorTreeSpec } from "../behavior-trees/behavior-tree.ts";
 import { NodeContext, NodeStatus } from "../behavior-trees/base-node.ts";
+import {
+  BehaviorTree,
+  type BehaviorTreeExecutionResult,
+  type BehaviorTreeSpec,
+} from "../behavior-trees/behavior-tree.ts";
 
 export class BehaviorTreeStrategy extends BaseExecutionStrategy {
   readonly name = "behavior-tree";
@@ -78,7 +81,7 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
     };
   }
 
-  getConfigSchema(): Record<string, any> {
+  getConfigSchema(): Record<string, unknown> {
     return {
       type: "object",
       properties: {
@@ -109,9 +112,15 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
 
   private createBehaviorTreeFromSteps(steps: ExecutionStep[]): BehaviorTree {
     // Check if the context contains a pre-built tree specification
-    if (this.context?.jobSpec?.execution?.tree) {
-      this.log("Using behavior tree from job specification");
-      return new BehaviorTree(this.context.jobSpec.execution.tree);
+    // Look for tree in the execution context which allows additional properties
+    const executionContext = this.context?.jobSpec?.execution?.context;
+    if (executionContext && typeof executionContext === "object" && "tree" in executionContext) {
+      const tree = executionContext.tree;
+      // Validate basic structure before using
+      if (this.isValidBehaviorTreeSpec(tree)) {
+        this.log("Using behavior tree from job specification");
+        return new BehaviorTree(tree);
+      }
     }
 
     // Build a tree from execution steps
@@ -217,16 +226,37 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
         signal: this.context.signal,
         availableAgents: this.context.availableAgents,
       },
-      agentExecutor: async (agentId: string, task: string, input: any) => {
+      agentExecutor: (agentId: string, task: string, input: Record<string, unknown>) => {
         // This would be provided by the session supervisor
         // For now, return a mock response
         this.log(`Agent executor called: ${agentId} with task: ${task}`);
-        return `Agent ${agentId} processed input`;
+        return Promise.resolve({
+          agentId,
+          task,
+          input,
+          result: `Agent ${agentId} processed input`,
+          timestamp: new Date().toISOString(),
+        });
       },
     };
   }
 
-  private convertTreeResultToExecutionResults(treeResult: any): ExecutionResult[] {
+  private normalizePayload(payload: unknown): Record<string, unknown> {
+    // If payload is already an object, return it
+    if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+      return payload as Record<string, unknown>;
+    }
+
+    // Otherwise, wrap it in an object
+    return {
+      value: payload,
+      _normalized: true,
+    };
+  }
+
+  private convertTreeResultToExecutionResults(
+    treeResult: BehaviorTreeExecutionResult,
+  ): ExecutionResult[] {
     const results: ExecutionResult[] = [];
 
     for (const traceEntry of treeResult.executionTrace) {
@@ -244,5 +274,22 @@ export class BehaviorTreeStrategy extends BaseExecutionStrategy {
     }
 
     return results;
+  }
+
+  private isValidBehaviorTreeSpec(value: unknown): value is BehaviorTreeSpec {
+    if (!value || typeof value !== "object" || value === null) {
+      return false;
+    }
+    // Type narrowing: after the check above, TS knows value is object & not null
+    if (!("type" in value) || !("id" in value)) {
+      return false;
+    }
+    // Now we can safely access these properties
+    const validTypes = ["sequence", "selector", "parallel", "condition", "agent"];
+    return (
+      typeof value.type === "string" &&
+      validTypes.includes(value.type) &&
+      typeof value.id === "string"
+    );
   }
 }

@@ -135,12 +135,12 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
     } catch (error) {
       // Fallback to local creation if daemon registration fails
       console.warn("Failed to register with daemon, creating workspace locally");
-      workspaceId = generateUniqueWorkspaceName();
+      workspaceId = generateUniqueWorkspaceName(new Set());
       workspaceName = name;
     }
   } else {
     // Create workspace locally (daemon not running)
-    workspaceId = generateUniqueWorkspaceName();
+    workspaceId = generateUniqueWorkspaceName(new Set());
     workspaceName = name;
     console.info(
       "Daemon not running - workspace created locally. Use 'atlas daemon start' to register it.",

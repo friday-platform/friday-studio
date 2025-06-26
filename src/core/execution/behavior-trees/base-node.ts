@@ -12,9 +12,13 @@ export enum NodeStatus {
 export interface NodeContext {
   sessionId: string;
   workspaceId: string;
-  currentInput: any;
-  globalState: Record<string, any>;
-  agentExecutor?: (agentId: string, task: string, input: any) => Promise<any>;
+  currentInput: Record<string, unknown>;
+  globalState: Record<string, unknown>;
+  agentExecutor?: (
+    agentId: string,
+    task: string,
+    input: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 }
 
 export interface NodeConfig {
@@ -23,7 +27,19 @@ export interface NodeConfig {
   description?: string;
   timeout?: number;
   retries?: number;
-  [key: string]: any;
+}
+
+// Private interface for timeout tracking
+interface BaseNodePrivate {
+  _timeoutId?: number;
+}
+
+// Serialized node representation
+export interface SerializedNode {
+  type: string;
+  config: NodeConfig;
+  children: SerializedNode[];
+  status: NodeStatus;
 }
 
 export abstract class BaseNode {
@@ -113,7 +129,8 @@ export abstract class BaseNode {
       }, timeoutMs);
 
       // Store timeout ID for cleanup
-      (this as any)._timeoutId = timeoutId;
+      const nodeWithTimeout = this as BaseNode & BaseNodePrivate;
+      nodeWithTimeout._timeoutId = timeoutId;
     });
   }
 
@@ -132,7 +149,7 @@ export abstract class BaseNode {
   }
 
   // Convert node to JSON representation
-  toJSON(): any {
+  toJSON(): SerializedNode {
     return {
       type: this.constructor.name,
       config: this.config,

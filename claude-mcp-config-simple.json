@@ -1,15 +1,23 @@
 {
   "mcpServers": {
-    "atlas-telephone": {
+    "atlas-platform": {
       "command": "deno",
       "args": [
-        "task",
-        "atlas",
-        "workspace",
+        "run",
+        "--allow-all",
+        "--unstable-broadcast-channel",
+        "--unstable-worker-options",
+        "--env-file",
+        "/Users/kenneth/tempest/atlas/src/cli.tsx",
+        "mcp",
         "serve",
-        "--mcp"
+        "--daemon-url",
+        "http://localhost:8080"
       ],
-      "cwd": "/Users/kenneth/tempest/atlas/examples/workspaces/telephone"
+      "cwd": "/Users/kenneth/tempest/atlas",
+      "env": {
+        "ATLAS_DAEMON_URL": "http://localhost:8080"
+      }
     }
   }
 }

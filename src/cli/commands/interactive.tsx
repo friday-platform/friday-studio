@@ -1,4 +1,4 @@
-import { defaultTheme, extendTheme, Select, Spinner, TextInput, ThemeProvider } from "@inkjs/ui";
+import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
 import { Box, render, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
@@ -6,8 +6,9 @@ import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
+import CreditsView from "../views/CreditsView.tsx";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
-import { WorkspaceEntry } from "../../core/workspace-registry-types.ts";
+import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
@@ -16,7 +17,18 @@ import { fetchLibraryItems } from "../modules/library/fetcher.ts";
 import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
 import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
+import { SignalSelection } from "../components/signal-selection.tsx";
+import { SessionSelection } from "../components/session-selection.tsx";
+import { AgentSelection } from "../components/agent-selection.tsx";
+import { JobSelection } from "../components/job-selection.tsx";
+import { SignalDetails } from "../components/signal-details.tsx";
+import { SignalActionSelection } from "../components/signal-action-selection.tsx";
+import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+import { triggerSignalSimple } from "../modules/signals/trigger.ts";
+import { AgentDetails } from "../components/agent-details.tsx";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
+import { TextInput } from "../components/text-input/text-input.tsx";
+import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -163,7 +175,7 @@ const handleSignalsCommand = (
   _args: string[],
   context: CommandContext,
 ): OutputEntry[] => {
-  // Switch to workspace selection mode
+  // Switch to workspace selection mode for signals
   context.addEntry({
     id: `signals-trigger-${Date.now()}`,
     component: <Text>Select a workspace to view its signals:</Text>,
@@ -234,6 +246,11 @@ const handleInitCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
+const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
+  // Credits command switches to its own view, no output entries needed
+  return [];
+};
+
 const handleSessionCommand = (args: string[]): OutputEntry[] => {
   const subcommand = args[0] || "list";
   return [
@@ -287,17 +304,17 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleWorkspacesCommand,
   },
 
-  signals: {
-    name: "signals",
+  signal: {
+    name: "signal",
     description: "View workspace signals",
-    usage: "/signals",
+    usage: "/signal list",
     handler: handleSignalsCommand,
   },
 
-  agents: {
-    name: "agents",
+  agent: {
+    name: "agent",
     description: "View workspace agents",
-    usage: "/agents",
+    usage: "/agent list",
     handler: handleAgentsCommand,
   },
 
@@ -308,10 +325,10 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleLibraryCommand,
   },
 
-  sessions: {
-    name: "sessions",
+  session: {
+    name: "session",
     description: "View workspace sessions",
-    usage: "/sessions",
+    usage: "/session list",
     handler: handleSessionsCommand,
   },
 
@@ -334,6 +351,13 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     description: "Initialize a new workspace",
     usage: "/init",
     handler: handleInitCommand,
+  },
+
+  credits: {
+    name: "credits",
+    description: "Show Atlas credits and acknowledgments",
+    usage: "/credits",
+    handler: handleCreditsCommand,
   },
 
   session: {
@@ -373,7 +397,9 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init">("command");
+  const [view, setView] = useState<"help" | "command" | "init" | "credits">(
+    "command",
+  );
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [showWorkspaceSelection, setShowWorkspaceSelection] = useState(false);
@@ -391,6 +417,26 @@ export default function InteractiveCommand() {
   const [_loadingLibrary, setLoadingLibrary] = useState(false);
   const [showSessionsWorkspaceSelection, setShowSessionsWorkspaceSelection] = useState(false);
   const [_loadingSessions, setLoadingSessions] = useState(false);
+  const [showSignalSelection, setShowSignalSelection] = useState(false);
+  const [showSessionSelection, setShowSessionSelection] = useState(false);
+  const [showAgentSelection, setShowAgentSelection] = useState(false);
+  const [showJobSelection, setShowJobSelection] = useState(false);
+  const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
+  const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
+  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
+  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<string | null>(null);
+  const [workspaceSelectionContext, setWorkspaceSelectionContext] = useState<
+    | "signals-list"
+    | "agents-list"
+    | "sessions-list"
+    | "library"
+    | "workspaces"
+    | "signals-select"
+    | "agents-select"
+    | "sessions-select"
+    | "jobs-select"
+    | null
+  >(null);
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
@@ -434,8 +480,8 @@ export default function InteractiveCommand() {
     }
   };
 
-  // Handle workspace selection for signals
-  const handleWorkspaceSelect = async (workspaceId: string) => {
+  // Handle workspace selection for signals (list view)
+  const handleWorkspaceSelectForSignalsList = async (workspaceId: string) => {
     setShowWorkspaceSelection(false);
     setLoadingSignals(true);
 
@@ -616,6 +662,221 @@ export default function InteractiveCommand() {
     }
   };
 
+  // Unified workspace selection handler
+  const handleWorkspaceSelect = async (workspaceId: string) => {
+    const context = workspaceSelectionContext;
+    setShowWorkspaceSelection(false);
+    setShowWorkspacesWorkspaceSelection(false);
+    setShowAgentWorkspaceSelection(false);
+    setShowSessionsWorkspaceSelection(false);
+    setShowLibraryWorkspaceSelection(false);
+    setWorkspaceSelectionContext(null);
+
+    switch (context) {
+      case "signals-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowSignalSelection(true);
+        break;
+      case "agents-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowAgentSelection(true);
+        break;
+      case "sessions-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowSessionSelection(true);
+        break;
+      case "jobs-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowJobSelection(true);
+        break;
+      case "signals-list":
+        await handleWorkspaceSelectForSignalsList(workspaceId);
+        break;
+      case "agents-list":
+        await handleWorkspaceSelectForAgents(workspaceId);
+        break;
+      case "sessions-list":
+        await handleWorkspaceSelectForSessions(workspaceId);
+        break;
+      case "library":
+        await handleWorkspaceSelectForLibrary(workspaceId);
+        break;
+      case "workspaces":
+        await handleWorkspaceSelectForWorkspaces(workspaceId);
+        break;
+      default:
+        // Fallback behavior
+        break;
+    }
+  };
+
+  // Handle signal selection
+  const handleSignalSelect = (signalId: string) => {
+    setShowSignalSelection(false);
+    setCurrentSelectedSignal(signalId);
+    setShowSignalActionSelection(true);
+  };
+
+  // Handle signal action selection (describe/trigger)
+  const handleSignalActionSelect = (action: string) => {
+    setShowSignalActionSelection(false);
+    const workspaceId = currentSelectionWorkspace;
+    const signalId = currentSelectedSignal;
+
+    if (!workspaceId || !signalId) {
+      addOutputEntry({
+        id: `signal-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace or signal selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+      return;
+    }
+
+    if (action === "describe") {
+      addOutputEntry({
+        id: `signal-details-${Date.now()}`,
+        component: <SignalDetails workspaceId={workspaceId} signalId={signalId} />,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+    } else if (action === "trigger") {
+      setShowSignalTriggerInput(true);
+    }
+  };
+
+  // Handle signal trigger input
+  const handleSignalTriggerSubmit = async (input: string) => {
+    setShowSignalTriggerInput(false);
+    const workspaceId = currentSelectionWorkspace;
+    const signalId = currentSelectedSignal;
+
+    if (!workspaceId || !signalId) {
+      addOutputEntry({
+        id: `signal-trigger-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace or signal selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      setCurrentSelectedSignal(null);
+      return;
+    }
+
+    // Add loading indicator
+    addOutputEntry({
+      id: `signal-trigger-loading-${Date.now()}`,
+      component: (
+        <Box flexDirection="column">
+          <Text color="cyan">Triggering signal...</Text>
+          <Text dimColor>Workspace: {workspaceId}</Text>
+          <Text dimColor>Signal: {signalId}</Text>
+          <Text dimColor>Payload: {input || "(empty)"}</Text>
+        </Box>
+      ),
+    });
+
+    try {
+      const result = await triggerSignalSimple(workspaceId, signalId, input.trim() || undefined);
+
+      // Remove loading entry and add result
+      setOutputBuffer((prev) => prev.slice(0, -1));
+
+      if (result.success) {
+        addOutputEntry({
+          id: `signal-trigger-success-${Date.now()}`,
+          component: (
+            <Box flexDirection="column">
+              <Text color="green">Signal triggered successfully!</Text>
+              <Text dimColor>Workspace: {result.workspaceName || workspaceId}</Text>
+              <Text dimColor>Signal: {signalId}</Text>
+              {result.sessionId && <Text dimColor>Session ID: {result.sessionId}</Text>}
+              {result.status && <Text dimColor>Status: {result.status}</Text>}
+              <Text dimColor>Duration: {result.duration.toFixed(2)}ms</Text>
+            </Box>
+          ),
+        });
+      } else {
+        addOutputEntry({
+          id: `signal-trigger-error-${Date.now()}`,
+          component: (
+            <Box flexDirection="column">
+              <Text color="red">Signal trigger failed</Text>
+              <Text dimColor>Workspace: {workspaceId}</Text>
+              <Text dimColor>Signal: {signalId}</Text>
+              <Text color="red">Error: {result.error}</Text>
+              <Text dimColor>Duration: {result.duration.toFixed(2)}ms</Text>
+            </Box>
+          ),
+        });
+      }
+    } catch (error) {
+      // Remove loading entry and add error
+      setOutputBuffer((prev) => prev.slice(0, -1));
+
+      addOutputEntry({
+        id: `signal-trigger-exception-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <Text color="red">Unexpected error during signal trigger</Text>
+            <Text dimColor>Workspace: {workspaceId}</Text>
+            <Text dimColor>Signal: {signalId}</Text>
+            <Text color="red">Error: {error instanceof Error ? error.message : String(error)}</Text>
+          </Box>
+        ),
+      });
+    }
+
+    setCurrentSelectionWorkspace(null);
+    setCurrentSelectedSignal(null);
+  };
+
+  // Handle session selection
+  const handleSessionSelect = (sessionId: string) => {
+    setShowSessionSelection(false);
+    setCurrentSelectionWorkspace(null);
+    addOutputEntry({
+      id: `session-selected-${Date.now()}`,
+      component: <Text>Selected session: {sessionId}</Text>,
+    });
+  };
+
+  // Handle agent selection
+  const handleAgentSelect = (agentId: string) => {
+    setShowAgentSelection(false);
+
+    const workspaceId = currentSelectionWorkspace;
+    if (!workspaceId) {
+      addOutputEntry({
+        id: `agent-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace selected</Text>,
+      });
+      setCurrentSelectionWorkspace(null);
+      return;
+    }
+
+    // Add agent details to output buffer
+    addOutputEntry({
+      id: `agent-details-${Date.now()}`,
+      component: <AgentDetails workspaceId={workspaceId} agentId={agentId} />,
+    });
+
+    // Clear workspace selection context
+    setCurrentSelectionWorkspace(null);
+  };
+
+  // Handle job selection
+  const handleJobSelect = (jobName: string) => {
+    setShowJobSelection(false);
+
+    // Add job selection to output buffer
+    addOutputEntry({
+      id: `job-selected-${Date.now()}`,
+      component: <Text>Selected job: {jobName}</Text>,
+    });
+
+    // Clear workspace selection context
+    setCurrentSelectionWorkspace(null);
+  };
+
   // Handle workspace selection for sessions
   const handleWorkspaceSelectForSessions = async (workspaceId: string) => {
     setShowSessionsWorkspaceSelection(false);
@@ -718,27 +979,67 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "credits") {
+      setView("credits");
+      return;
+    }
+
     if (parsed.command === "workspaces") {
+      setWorkspaceSelectionContext("workspaces");
       setShowWorkspacesWorkspaceSelection(true);
       return;
     }
 
-    if (parsed.command === "signals") {
+    if (parsed.command === "signal" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("signals-list");
       setShowWorkspaceSelection(true);
       return;
     }
 
+    if (parsed.command === "signal" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("signals-select");
+      setShowWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "agent" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("agents-list");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "agent" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("agents-select");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
     if (parsed.command === "agents") {
+      setWorkspaceSelectionContext("agents-select");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "job") {
+      setWorkspaceSelectionContext("jobs-select");
       setShowAgentWorkspaceSelection(true);
       return;
     }
 
     if (parsed.command === "library") {
+      setWorkspaceSelectionContext("library");
       setShowLibraryWorkspaceSelection(true);
       return;
     }
 
-    if (parsed.command === "sessions") {
+    if (parsed.command === "session" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("sessions-list");
+      setShowSessionsWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "session" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("sessions-select");
       setShowSessionsWorkspaceSelection(true);
       return;
     }
@@ -785,25 +1086,27 @@ export default function InteractiveCommand() {
       alignItems="flex-start"
       width={dimensions.paddedWidth}
     >
-      <Box flexDirection="row" alignItems="center">
-        <Box flexDirection="column">
-          <Text>╭───╮</Text>
-          <Text>│&nbsp;∆&nbsp;│</Text>
-          <Text>╰───╯</Text>
+      <Box flexDirection="column" flexShrink={0}>
+        <Box flexDirection="row" alignItems="center">
+          <Box flexDirection="column">
+            <Text>╭───╮</Text>
+            <Text>│&nbsp;∆&nbsp;│</Text>
+            <Text>╰───╯</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text bold>&nbsp;Atlas.&nbsp;</Text>
+          </Box>
+
+          <Box flexDirection="column">
+            <Text dimColor>Made by Tempest.</Text>
+          </Box>
         </Box>
 
-        <Box flexDirection="column">
-          <Text bold>&nbsp;Atlas.&nbsp;</Text>
+        <Box flexDirection="column" paddingLeft={2}>
+          <Text dimColor>⊕ /help for help</Text>
+          <Text dimColor>∶ {Deno.cwd()}</Text>
         </Box>
-
-        <Box flexDirection="column">
-          <Text dimColor>Made by Tempest.</Text>
-        </Box>
-      </Box>
-
-      <Box flexDirection="column" paddingLeft={2}>
-        <Text dimColor>⊕ /help for help</Text>
-        <Text dimColor>∶ {Deno.cwd()}</Text>
       </Box>
 
       {view === "command" && (
@@ -818,36 +1121,119 @@ export default function InteractiveCommand() {
           {showWorkspacesWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowWorkspacesWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForWorkspaces}
+                onEscape={() => {
+                  setShowWorkspacesWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowWorkspaceSelection(false)}
+                onEscape={() => {
+                  setShowWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
                 onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showAgentWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowAgentWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForAgents}
+                onEscape={() => {
+                  setShowAgentWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showLibraryWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowLibraryWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForLibrary}
+                onEscape={() => {
+                  setShowLibraryWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showSessionsWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowSessionsWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForSessions}
+                onEscape={() => {
+                  setShowSessionsWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
+              />
+            )
+            : showSignalSelection && currentSelectionWorkspace
+            ? (
+              <SignalSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowSignalSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSignalSelect={handleSignalSelect}
+              />
+            )
+            : showSessionSelection && currentSelectionWorkspace
+            ? (
+              <SessionSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowSessionSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSessionSelect={handleSessionSelect}
+              />
+            )
+            : showAgentSelection && currentSelectionWorkspace
+            ? (
+              <AgentSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowAgentSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onAgentSelect={handleAgentSelect}
+              />
+            )
+            : showJobSelection && currentSelectionWorkspace
+            ? (
+              <JobSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowJobSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onJobSelect={handleJobSelect}
+              />
+            )
+            : showSignalActionSelection && currentSelectedSignal
+            ? (
+              <SignalActionSelection
+                signalId={currentSelectedSignal}
+                onEscape={() => {
+                  setShowSignalActionSelection(false);
+                  setCurrentSelectedSignal(null);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onActionSelect={handleSignalActionSelect}
+              />
+            )
+            : showSignalTriggerInput && currentSelectedSignal
+            ? (
+              <SignalTriggerInput
+                signalId={currentSelectedSignal}
+                onEscape={() => {
+                  setShowSignalTriggerInput(false);
+                  setCurrentSelectedSignal(null);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSubmit={handleSignalTriggerSubmit}
               />
             )
             : (
@@ -861,6 +1247,7 @@ export default function InteractiveCommand() {
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
+      {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );
 }
@@ -878,34 +1265,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Get all available suggestions with descriptions
-  const getAllSuggestionsWithDescriptions = () => [
-    {
-      command: "/help",
-      description: "Show available commands and usage information",
-    },
-    {
-      command: "/workspaces",
-      description: "View available workspaces",
-    },
-    { command: "/init", description: "Initialize a new workspace" },
-    { command: "/sessions", description: "View available workspace sessions" },
-    {
-      command: "/signals",
-      description: "View available workspace signals",
-    },
-    {
-      command: "/agents",
-      description: "View workspace agents",
-    },
-    {
-      command: "/library",
-      description: "View workspace library",
-    },
-    { command: "/config", description: "Atlas configuration settings" },
-    { command: "/version", description: "Show Atlas version information" },
-    { command: "/clear", description: "Clear the output buffer" },
-    { command: "/exit", description: "Exit the Atlas interactive interface" },
-  ];
+  const getAllSuggestionsWithDescriptions = () => COMMAND_DEFINITIONS;
 
   // Get all available suggestions (commands only)
   const getAllSuggestions = () => getAllSuggestionsWithDescriptions().map((item) => item.command);
@@ -931,16 +1291,6 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
       if (key.downArrow) {
         const filteredSuggestions = getFilteredSuggestions();
         setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
-        return;
-      }
-      if (key.return && selectedSuggestionIndex >= 0) {
-        // Accept selected suggestion
-        const filteredSuggestions = getFilteredSuggestions();
-        const selectedSuggestion = filteredSuggestions[selectedSuggestionIndex];
-        setCurrentInput(selectedSuggestion.command);
-        setShowSuggestions(false);
-        setSelectedSuggestionIndex(-1);
-
         return;
       }
       if (key.escape || key.tab) {
@@ -970,7 +1320,16 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
 
   // Enhanced submission handler
   const handleSubmit = (command: string) => {
-    const trimmedCommand = command.trim();
+    let commandToSubmit = command.trim();
+
+    // If we have a selected suggestion, use that instead
+    if (selectedSuggestionIndex >= 0) {
+      const filteredSuggestions = getFilteredSuggestions();
+      const selectedSuggestion = filteredSuggestions[selectedSuggestionIndex];
+      if (selectedSuggestion) {
+        commandToSubmit = selectedSuggestion.command;
+      }
+    }
 
     // Always reset input state
     setCurrentInput("");
@@ -979,7 +1338,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
     setInputKey((prev) => prev + 1);
 
     // Submit the command
-    onSubmit(trimmedCommand);
+    onSubmit(commandToSubmit);
   };
 
   return (
@@ -1060,17 +1419,21 @@ const WorkspaceSelection = ({
           const compatibleWorkspaces = workspaceList.map((w) => ({
             id: w.id,
             name: w.name,
-            description: w.description,
             path: w.path,
-            status: w.status,
+            configPath: `${w.path}/workspace.yml`, // Standard workspace config path
+            status: w.status as WorkspaceStatus,
             createdAt: w.createdAt,
             lastSeen: w.lastSeen,
-            hasActiveRuntime: w.hasActiveRuntime,
+            metadata: {
+              description: w.description,
+            },
           }));
           setWorkspaces(compatibleWorkspaces);
         } else {
           setWorkspaces([]);
-          setError("Daemon not running. Use 'atlas daemon start' to enable workspace management.");
+          setError(
+            "Daemon not running. Use 'atlas daemon start' to enable workspace management.",
+          );
         }
         setError("");
       } catch (err) {

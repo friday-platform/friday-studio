@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { z } from "zod/v4";
-import { NewWorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "../../../core/config-loader.ts";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
@@ -9,7 +9,7 @@ import { SidebarWrapper } from "../SidebarWrapper.tsx";
 import { Select, TextInput } from "@inkjs/ui";
 
 interface SignalsTabProps {
-  config: NewWorkspaceConfig;
+  config: WorkspaceConfig;
 }
 
 // Schema validation for signal schemas
