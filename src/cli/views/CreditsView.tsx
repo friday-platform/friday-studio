@@ -46,8 +46,8 @@ export default function CreditsView({ onExit }: CreditsViewProps) {
         <Text bold>Thank you to our contributors:</Text>
 
         <Box marginTop={1} flexDirection="column" flexShrink={0}>
-          <Text dimColor>Ken Kouout</Text>
-          <Text dimColor>Łukasz Jagiello</Text>
+          <Text dimColor>Ken Kouot</Text>
+          <Text dimColor>Łukasz Jagiełło</Text>
           <Text dimColor>Eric Skram</Text>
           <Text dimColor>Michał Gryko</Text>
           <Text dimColor>Sara Ryfczyńska</Text>

@@ -17,6 +17,9 @@ import { fetchLibraryItems } from "../modules/library/fetcher.ts";
 import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
 import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
+import { SignalSelection } from "../components/signal-selection.tsx";
+import { SessionSelection } from "../components/session-selection.tsx";
+import { AgentSelection } from "../components/agent-selection.tsx";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
@@ -166,7 +169,7 @@ const handleSignalsCommand = (
   _args: string[],
   context: CommandContext,
 ): OutputEntry[] => {
-  // Switch to workspace selection mode
+  // Switch to workspace selection mode for signals
   context.addEntry({
     id: `signals-trigger-${Date.now()}`,
     component: <Text>Select a workspace to view its signals:</Text>,
@@ -295,17 +298,17 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleWorkspacesCommand,
   },
 
-  signals: {
-    name: "signals",
+  signal: {
+    name: "signal",
     description: "View workspace signals",
-    usage: "/signals",
+    usage: "/signal list",
     handler: handleSignalsCommand,
   },
 
-  agents: {
-    name: "agents",
+  agent: {
+    name: "agent",
     description: "View workspace agents",
-    usage: "/agents",
+    usage: "/agent list",
     handler: handleAgentsCommand,
   },
 
@@ -316,10 +319,10 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleLibraryCommand,
   },
 
-  sessions: {
-    name: "sessions",
+  session: {
+    name: "session",
     description: "View workspace sessions",
-    usage: "/sessions",
+    usage: "/session list",
     handler: handleSessionsCommand,
   },
 
@@ -389,7 +392,7 @@ interface OutputEntry {
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
   const [view, setView] = useState<"help" | "command" | "init" | "credits">(
-    "credits",
+    "command",
   );
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
@@ -408,6 +411,21 @@ export default function InteractiveCommand() {
   const [_loadingLibrary, setLoadingLibrary] = useState(false);
   const [showSessionsWorkspaceSelection, setShowSessionsWorkspaceSelection] = useState(false);
   const [_loadingSessions, setLoadingSessions] = useState(false);
+  const [showSignalSelection, setShowSignalSelection] = useState(false);
+  const [showSessionSelection, setShowSessionSelection] = useState(false);
+  const [showAgentSelection, setShowAgentSelection] = useState(false);
+  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
+  const [workspaceSelectionContext, setWorkspaceSelectionContext] = useState<
+    | "signals-list"
+    | "agents-list"
+    | "sessions-list"
+    | "library"
+    | "workspaces"
+    | "signals-select"
+    | "agents-select"
+    | "sessions-select"
+    | null
+  >(null);
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
@@ -451,8 +469,8 @@ export default function InteractiveCommand() {
     }
   };
 
-  // Handle workspace selection for signals
-  const handleWorkspaceSelect = async (workspaceId: string) => {
+  // Handle workspace selection for signals (list view)
+  const handleWorkspaceSelectForSignalsList = async (workspaceId: string) => {
     setShowWorkspaceSelection(false);
     setLoadingSignals(true);
 
@@ -633,6 +651,80 @@ export default function InteractiveCommand() {
     }
   };
 
+  // Unified workspace selection handler
+  const handleWorkspaceSelect = async (workspaceId: string) => {
+    const context = workspaceSelectionContext;
+    setShowWorkspaceSelection(false);
+    setShowWorkspacesWorkspaceSelection(false);
+    setShowAgentWorkspaceSelection(false);
+    setShowSessionsWorkspaceSelection(false);
+    setShowLibraryWorkspaceSelection(false);
+    setWorkspaceSelectionContext(null);
+
+    switch (context) {
+      case "signals-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowSignalSelection(true);
+        break;
+      case "agents-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowAgentSelection(true);
+        break;
+      case "sessions-select":
+        setCurrentSelectionWorkspace(workspaceId);
+        setShowSessionSelection(true);
+        break;
+      case "signals-list":
+        await handleWorkspaceSelectForSignalsList(workspaceId);
+        break;
+      case "agents-list":
+        await handleWorkspaceSelectForAgents(workspaceId);
+        break;
+      case "sessions-list":
+        await handleWorkspaceSelectForSessions(workspaceId);
+        break;
+      case "library":
+        await handleWorkspaceSelectForLibrary(workspaceId);
+        break;
+      case "workspaces":
+        await handleWorkspaceSelectForWorkspaces(workspaceId);
+        break;
+      default:
+        // Fallback behavior
+        break;
+    }
+  };
+
+  // Handle signal selection
+  const handleSignalSelect = (signalId: string) => {
+    setShowSignalSelection(false);
+    setCurrentSelectionWorkspace(null);
+    addOutputEntry({
+      id: `signal-selected-${Date.now()}`,
+      component: <Text>Selected signal: {signalId}</Text>,
+    });
+  };
+
+  // Handle session selection
+  const handleSessionSelect = (sessionId: string) => {
+    setShowSessionSelection(false);
+    setCurrentSelectionWorkspace(null);
+    addOutputEntry({
+      id: `session-selected-${Date.now()}`,
+      component: <Text>Selected session: {sessionId}</Text>,
+    });
+  };
+
+  // Handle agent selection
+  const handleAgentSelect = (agentId: string) => {
+    setShowAgentSelection(false);
+    setCurrentSelectionWorkspace(null);
+    addOutputEntry({
+      id: `agent-selected-${Date.now()}`,
+      component: <Text>Selected agent: {agentId}</Text>,
+    });
+  };
+
   // Handle workspace selection for sessions
   const handleWorkspaceSelectForSessions = async (workspaceId: string) => {
     setShowSessionsWorkspaceSelection(false);
@@ -741,26 +833,49 @@ export default function InteractiveCommand() {
     }
 
     if (parsed.command === "workspaces") {
+      setWorkspaceSelectionContext("workspaces");
       setShowWorkspacesWorkspaceSelection(true);
       return;
     }
 
-    if (parsed.command === "signals") {
+    if (parsed.command === "signal" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("signals-list");
       setShowWorkspaceSelection(true);
       return;
     }
 
-    if (parsed.command === "agents") {
+    if (parsed.command === "signal" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("signals-select");
+      setShowWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "agent" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("agents-list");
+      setShowAgentWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "agent" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("agents-select");
       setShowAgentWorkspaceSelection(true);
       return;
     }
 
     if (parsed.command === "library") {
+      setWorkspaceSelectionContext("library");
       setShowLibraryWorkspaceSelection(true);
       return;
     }
 
-    if (parsed.command === "sessions") {
+    if (parsed.command === "session" && parsed.args[0] === "list") {
+      setWorkspaceSelectionContext("sessions-list");
+      setShowSessionsWorkspaceSelection(true);
+      return;
+    }
+
+    if (parsed.command === "session" && parsed.args.length === 0) {
+      setWorkspaceSelectionContext("sessions-select");
       setShowSessionsWorkspaceSelection(true);
       return;
     }
@@ -842,36 +957,84 @@ export default function InteractiveCommand() {
           {showWorkspacesWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowWorkspacesWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForWorkspaces}
+                onEscape={() => {
+                  setShowWorkspacesWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowWorkspaceSelection(false)}
+                onEscape={() => {
+                  setShowWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
                 onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showAgentWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowAgentWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForAgents}
+                onEscape={() => {
+                  setShowAgentWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showLibraryWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowLibraryWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForLibrary}
+                onEscape={() => {
+                  setShowLibraryWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
               />
             )
             : showSessionsWorkspaceSelection
             ? (
               <WorkspaceSelection
-                onEscape={() => setShowSessionsWorkspaceSelection(false)}
-                onWorkspaceSelect={handleWorkspaceSelectForSessions}
+                onEscape={() => {
+                  setShowSessionsWorkspaceSelection(false);
+                  setWorkspaceSelectionContext(null);
+                }}
+                onWorkspaceSelect={handleWorkspaceSelect}
+              />
+            )
+            : showSignalSelection && currentSelectionWorkspace
+            ? (
+              <SignalSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowSignalSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSignalSelect={handleSignalSelect}
+              />
+            )
+            : showSessionSelection && currentSelectionWorkspace
+            ? (
+              <SessionSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowSessionSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onSessionSelect={handleSessionSelect}
+              />
+            )
+            : showAgentSelection && currentSelectionWorkspace
+            ? (
+              <AgentSelection
+                workspaceId={currentSelectionWorkspace}
+                onEscape={() => {
+                  setShowAgentSelection(false);
+                  setCurrentSelectionWorkspace(null);
+                }}
+                onAgentSelect={handleAgentSelect}
               />
             )
             : (
@@ -964,7 +1127,9 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
     if (selectedSuggestionIndex >= 0) {
       const filteredSuggestions = getFilteredSuggestions();
       const selectedSuggestion = filteredSuggestions[selectedSuggestionIndex];
-      commandToSubmit = selectedSuggestion.command;
+      if (selectedSuggestion) {
+        commandToSubmit = selectedSuggestion.command;
+      }
     }
 
     // Always reset input state

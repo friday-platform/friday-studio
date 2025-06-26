@@ -21,15 +21,15 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Show Atlas credits and acknowledgments",
   },
   {
-    command: "/sessions",
+    command: "/session",
     description: "View available workspace sessions",
   },
   {
-    command: "/signals",
+    command: "/signal",
     description: "View available workspace signals",
   },
   {
-    command: "/agents",
+    command: "/agent",
     description: "View workspace agents",
   },
   {
