@@ -478,7 +478,7 @@ jobs:
           # Change to dist directory where artifacts are
           cd ./dist
           
-          # Upload all artifacts to sandbox bucket with nightly/ prefix
+          # Upload all artifacts to sandbox bucket with nightly/ prefix (flat structure)
           if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
           fi
@@ -487,12 +487,26 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
           
-          # Also upload to versioned paths
-          for file in atlas_*.tar.gz atlas_*.zip; do
-            if [ -f "$file" ]; then
-              gsutil cp "$file" "gs://tempest-sandbox-atlas-binaries/nightly/${VERSION}/$file"
-            fi
-          done
+          # Cleanup: Keep only last 7 nightly versions
+          echo "Cleaning up old nightly versions (keeping last 7)..."
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
+          
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/atlas_nightly-*.zip | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-sandbox-atlas-binaries/nightly/checksums-nightly-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
           
           echo "Uploaded nightly artifacts to sandbox GCS bucket"
 
@@ -530,7 +544,7 @@ jobs:
           # Change to dist directory where artifacts are
           cd ./dist
           
-          # Upload all artifacts to production bucket with nightly/ prefix
+          # Upload all artifacts to production bucket with nightly/ prefix (flat structure)
           if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/nightly/
           fi
@@ -539,12 +553,26 @@ jobs:
           fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
           
-          # Also upload to versioned paths
-          for file in atlas_*.tar.gz atlas_*.zip; do
-            if [ -f "$file" ]; then
-              gsutil cp "$file" "gs://tempest-production-atlas-binaries/nightly/${VERSION}/$file"
-            fi
-          done
+          # Cleanup: Keep only last 7 nightly versions
+          echo "Cleaning up old nightly versions (keeping last 7)..."
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/atlas_nightly-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old nightly artifacts to clean"
+          
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/atlas_nightly-*.zip | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly zip files to clean"
+          
+          # Also cleanup old checksums
+          gsutil ls gs://tempest-production-atlas-binaries/nightly/checksums-nightly-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old nightly checksums to clean"
           
           echo "Uploaded nightly artifacts to production GCS bucket"
 
