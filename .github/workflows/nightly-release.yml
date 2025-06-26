@@ -430,6 +430,40 @@ jobs:
           git tag -f nightly HEAD
           git push origin nightly --force
 
+      - name: Upload to Google Cloud Storage
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: 'projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github'
+          service_account: 'atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com'
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Upload artifacts to GCS
+        run: |
+          VERSION="${{ needs.check-changes.outputs.version }}"
+          
+          # Change to dist directory where artifacts are
+          cd ./dist
+          
+          # Upload all artifacts to sandbox bucket with nightly/ prefix
+          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.zip 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
+          
+          # Also upload to versioned paths
+          for file in atlas_*.tar.gz atlas_*.zip; do
+            if [ -f "$file" ]; then
+              gsutil cp "$file" "gs://tempest-sandbox-atlas-binaries/nightly/${VERSION}/$file"
+            fi
+          done
+          
+          echo "Uploaded nightly artifacts to sandbox GCS bucket"
+
       - name: Update Homebrew tap for nightly
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
