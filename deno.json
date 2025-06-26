@@ -43,6 +43,7 @@
     "@std/async": "jsr:@std/async@^1.0.0",
     "@std/dotenv": "jsr:@std/dotenv@^0.225.0",
     "@std/yaml": "jsr:@std/yaml@^1.0.7",
+    "chalk": "npm:chalk@^5.4.1",
     "fullscreen-ink": "npm:fullscreen-ink@^0.0.2",
     "ink": "npm:ink@^5.0.1",
     "js-levenshtein": "npm:js-levenshtein@^1.1.6",
