@@ -11,10 +11,10 @@ server:
     discoverable:
       capabilities:
         - "workspace_jobs_*"
-        - "workspace_sessions.*"
+        # Fixed: removed invalid dot notation "workspace_sessions.*"
       jobs:
         - "telephone"
-        - "public-*"
+        - "public_*"
     rate_limits:
       requests_per_hour: 100
       concurrent_sessions: 3
