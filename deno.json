@@ -70,9 +70,8 @@
     "@atlas/storage": "./packages/storage/mod.ts",
     "@atlas/types": "./packages/types/mod.ts"
   },
-  "workspace": [
-    "packages/*"
-  ],
+  "nodeModulesDir": "auto",
+  "workspace": ["packages/*"],
   "fmt": {
     "lineWidth": 100
   },
