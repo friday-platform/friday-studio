@@ -45,4 +45,4 @@ export type {
   SignalTriggerResponse,
 } from "./signal.ts";
 
-export type { AgentInfo, JobInfo } from "./agent.ts";
+export type { AgentInfo, JobDetailedInfo, JobInfo } from "./agent.ts";

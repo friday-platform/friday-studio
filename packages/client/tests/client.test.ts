@@ -190,3 +190,77 @@ Deno.test("getAtlasClient - returns singleton instance", () => {
   const client2 = getAtlasClient();
   expect(client1).toBe(client2);
 });
+
+Deno.test("AtlasClient - describeJob loads job configuration", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalReadTextFile = Deno.readTextFile;
+
+  // Mock the job list API call
+  globalThis.fetch = (url) => {
+    if (typeof url === "string" && url.includes("/api/workspaces/test-workspace/jobs")) {
+      return Promise.resolve(mockResponse([
+        { name: "test-job", description: "Test job description" },
+      ]));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  // Mock the file read for workspace configuration
+  Deno.readTextFile = (path) => {
+    if (typeof path === "string" && path.includes("workspace.yml")) {
+      return Promise.resolve(`
+workspace:
+  name: "Test Workspace"
+jobs:
+  test-job:
+    name: "test-job"
+    description: "Test job description"
+    execution:
+      strategy: "sequential" 
+      agents:
+        - "agent1"
+        - "agent2"
+`);
+    }
+    return Promise.reject(new Error(`Unexpected path: ${path}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+    const jobDetails = await client.describeJob(
+      "test-workspace",
+      "test-job",
+      "/test/workspace/path",
+    );
+
+    expect(jobDetails.name).toBe("test-job");
+    expect(jobDetails.description).toBe("Test job description");
+    expect(jobDetails.execution?.strategy).toBe("sequential");
+    expect(jobDetails.execution?.agents).toEqual(["agent1", "agent2"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+    Deno.readTextFile = originalReadTextFile;
+  }
+});
+
+Deno.test("AtlasClient - describeJob throws error when job not found", async () => {
+  const originalFetch = globalThis.fetch;
+
+  // Mock the job list API call with empty array
+  globalThis.fetch = (url) => {
+    if (typeof url === "string" && url.includes("/api/workspaces/test-workspace/jobs")) {
+      return Promise.resolve(mockResponse([]));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+
+    await expect(
+      client.describeJob("test-workspace", "nonexistent-job", "/test/workspace/path"),
+    ).rejects.toThrow("Job 'nonexistent-job' not found in workspace");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

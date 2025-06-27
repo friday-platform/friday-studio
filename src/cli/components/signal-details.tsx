@@ -374,7 +374,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
             workspacePath,
           );
 
-          setSignalData(signalDetails as Record<string, unknown>);
+          setSignalData(signalDetails as unknown as Record<string, unknown>);
         } else {
           setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
         }

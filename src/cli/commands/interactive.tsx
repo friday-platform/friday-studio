@@ -26,6 +26,8 @@ import { SignalActionSelection } from "../components/signal-action-selection.tsx
 import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
 import { AgentDetails } from "../components/agent-details.tsx";
+import { JobDetails } from "../components/job-details.tsx";
+import { SessionDetails } from "../components/session-details.tsx";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
@@ -86,6 +88,61 @@ const SignalDetailsWithPath = (
   return (
     <SignalDetails workspaceId={workspaceId} signalId={signalId} workspacePath={workspacePath} />
   );
+};
+
+// Wrapper component that fetches workspace path for job details
+const JobDetailsWithPath = (
+  { workspaceId, jobName }: { workspaceId: string; jobName: string },
+) => {
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    const fetchWorkspacePath = async () => {
+      try {
+        if (await checkDaemonRunning()) {
+          const client = getAtlasClient();
+          const workspacePath = await client.getWorkspacePath(workspaceId);
+          setWorkspacePath(workspacePath);
+        } else {
+          setError("Daemon not running");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWorkspacePath();
+  }, [workspaceId]);
+
+  if (loading) {
+    return (
+      <Box>
+        <Text dimColor>Loading workspace information...</Text>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Text color="red">Error: {error}</Text>
+      </Box>
+    );
+  }
+
+  if (!workspacePath) {
+    return (
+      <Box>
+        <Text color="red">Workspace path not found</Text>
+      </Box>
+    );
+  }
+
+  return <JobDetails workspaceId={workspaceId} jobName={jobName} workspacePath={workspacePath} />;
 };
 
 export const command = "$0";
@@ -841,8 +898,12 @@ export default function InteractiveCommand() {
     setShowSessionSelection(false);
     setCurrentSelectionWorkspace(null);
     addOutputEntry({
-      id: `session-selected-${Date.now()}`,
-      component: <Text>Selected session: {sessionId}</Text>,
+      id: `session-details-${Date.now()}`,
+      component: (
+        <Box>
+          <SessionDetails sessionId={sessionId} />
+        </Box>
+      ),
     });
   };
 
@@ -874,10 +935,19 @@ export default function InteractiveCommand() {
   const handleJobSelect = (jobName: string) => {
     setShowJobSelection(false);
 
-    // Add job selection to output buffer
+    const workspaceId = currentSelectionWorkspace;
+    if (!workspaceId) {
+      addOutputEntry({
+        id: `job-error-${Date.now()}`,
+        component: <Text color="red">Error: No workspace selected</Text>,
+      });
+      return;
+    }
+
+    // Add job details to output buffer using the new JobDetailsWithPath component
     addOutputEntry({
-      id: `job-selected-${Date.now()}`,
-      component: <Text>Selected job: {jobName}</Text>,
+      id: `job-details-${Date.now()}`,
+      component: <JobDetailsWithPath workspaceId={workspaceId} jobName={jobName} />,
     });
 
     // Clear workspace selection context

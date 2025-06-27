@@ -37,9 +37,9 @@ export const SessionSelection = ({
 
           const sessions = sessionList.map((session) => ({
             id: session.id,
-            name: session.name || session.id,
+            name: session.id, // WorkspaceSessionInfo doesn't have a name field
             status: session.status,
-            createdAt: session.createdAt,
+            createdAt: session.startedAt, // Use startedAt field from WorkspaceSessionInfo
           }));
 
           setSessions(sessions);
