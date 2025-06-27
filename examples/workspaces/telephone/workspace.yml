@@ -13,7 +13,7 @@ server:
         - "workspace_jobs_*"
         # Fixed: removed invalid dot notation "workspace_sessions.*"
       jobs:
-        - "telephone"
+        - telephone
         - "public_*"
     rate_limits:
       requests_per_hour: 100
@@ -94,22 +94,20 @@ jobs:
       agents:
         - id: "mishearing-agent"
           input_source: "signal"
-          tools:
-            workspace:
-              - "workspace_memory_recall" # Can access session memory
         - id: "embellishment-agent"
           input_source: "previous"
-          tools:
-            workspace:
-              - "workspace_memory_recall"
-              - "workspace_memory_store" # Can store transformation patterns
-            mcp: ["atlas-platform"] # Can access workspace capabilities via daemon API
         - id: "reinterpretation-agent"
           input_source: "previous"
-          tools:
-            workspace:
-              - "workspace_memory_recall"
-            mcp: ["atlas-platform"] # Can access workspace capabilities via daemon API
+
+  # Test job that should NOT be discoverable (not in discoverable.jobs list)
+  private_test:
+    name: "private_test"
+    description: "A private test job that should not be accessible via MCP"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+          input_source: "signal"
 
 # Agent definitions
 agents:

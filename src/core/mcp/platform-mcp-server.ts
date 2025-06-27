@@ -291,7 +291,23 @@ export class PlatformMCPServer {
               );
             }
 
-            const jobs = await response.json();
+            const allJobs = await response.json();
+
+            // Filter jobs based on discoverability settings
+            const discoverableJobs = [];
+            for (const job of allJobs) {
+              const isDiscoverable = await this.checkJobDiscoverable(workspaceId, job.name);
+              if (isDiscoverable) {
+                discoverableJobs.push(job);
+              }
+            }
+
+            logger.info("MCP workspace_jobs_list filtered results", {
+              workspaceId,
+              totalJobs: allJobs.length,
+              discoverableJobs: discoverableJobs.length,
+              filteredOut: allJobs.length - discoverableJobs.length,
+            });
 
             return {
               content: [
@@ -299,10 +315,11 @@ export class PlatformMCPServer {
                   type: "text" as const,
                   text: JSON.stringify(
                     {
-                      jobs,
-                      total: jobs.length,
+                      jobs: discoverableJobs,
+                      total: discoverableJobs.length,
                       workspaceId,
                       source: "daemon_api",
+                      filtered: true, // Indicate that jobs were filtered for discoverability
                     },
                     null,
                     2,
@@ -328,7 +345,7 @@ export class PlatformMCPServer {
         },
       },
       async (args) =>
-        this.withWorkspaceMCPCheck(args, async ({ workspaceId, jobName }) => {
+        this.withJobDiscoverabilityCheck(args, async ({ workspaceId, jobName }) => {
           logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 
           try {
@@ -759,6 +776,52 @@ export class PlatformMCPServer {
   }
 
   /**
+   * Check if a job is discoverable for a workspace
+   * SECURITY: Respects workspace-level discoverable.jobs configuration
+   */
+  private async checkJobDiscoverable(workspaceId: string, jobName: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
+      if (!response.ok) {
+        return false; // Fail closed
+      }
+
+      const workspace = await response.json();
+      const discoverableJobs = workspace.config?.server?.mcp?.discoverable?.jobs || [];
+
+      // Check if job matches any discoverable pattern
+      for (const pattern of discoverableJobs) {
+        const isWildcard = pattern.endsWith("*");
+        const basePattern = isWildcard ? pattern.slice(0, -1) : pattern;
+
+        if (isWildcard ? jobName.startsWith(basePattern) : jobName === pattern) {
+          logger.debug("Platform MCP: Job is discoverable", {
+            workspaceId,
+            jobName,
+            pattern,
+          });
+          return true;
+        }
+      }
+
+      logger.debug("Platform MCP: Job not discoverable", {
+        workspaceId,
+        jobName,
+        discoverableJobs,
+      });
+
+      return false;
+    } catch (error) {
+      logger.error("Platform MCP: Error checking job discoverability", {
+        workspaceId,
+        jobName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false; // Fail closed
+    }
+  }
+
+  /**
    * Wrapper to enforce workspace MCP settings for workspace-scoped tools
    * SECURITY: All workspace operations must go through this check
    */
@@ -784,6 +847,43 @@ export class PlatformMCPServer {
         `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
       );
       (error as any).code = -32000; // MCP server error code for authorization
+      throw error;
+    }
+
+    return await operation(args);
+  }
+
+  /**
+   * Wrapper to enforce job discoverability for job-related operations
+   * SECURITY: Only allows operations on discoverable jobs
+   */
+  private async withJobDiscoverabilityCheck<T extends Record<string, any>>(
+    args: T,
+    operation: (args: T) => Promise<any>,
+  ): Promise<any> {
+    const workspaceId = args.workspaceId as string;
+    const jobName = args.jobName as string;
+
+    if (!workspaceId || !jobName) {
+      throw new Error("workspaceId and jobName are required for job operations");
+    }
+
+    // First check workspace MCP enabled
+    await this.withWorkspaceMCPCheck(args, async () => {}); // Just run the check
+
+    // Then check job discoverability
+    const isDiscoverable = await this.checkJobDiscoverable(workspaceId, jobName);
+    if (!isDiscoverable) {
+      logger.warn("Platform MCP: Blocked job operation - not discoverable", {
+        workspaceId,
+        jobName,
+        operation: operation.name,
+      });
+      // Use MCP standard error code for method not found
+      const error = new Error(
+        `Job '${jobName}' is not discoverable for workspace '${workspaceId}'. Add it to workspace.yml server.mcp.discoverable.jobs to allow access.`,
+      );
+      (error as any).code = -32601; // MCP method not found for undiscoverable jobs
       throw error;
     }
 
