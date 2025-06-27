@@ -157,7 +157,7 @@ export class WorkspaceManager {
     // Create new entry
     const entry: WorkspaceEntry = {
       id,
-      name: options?.name || config?.name || basename(workspacePath),
+      name: options?.name || config?.workspace.name || basename(workspacePath),
       path: absolutePath,
       configPath,
       config,
@@ -167,7 +167,7 @@ export class WorkspaceManager {
       lastSeen: new Date().toISOString(),
       metadata: {
         atlasVersion: Deno.version.deno,
-        description: options?.description || config?.description,
+        description: options?.description || config?.workspace.description,
         tags: options?.tags,
       },
     };
