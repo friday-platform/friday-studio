@@ -377,6 +377,63 @@ const handleConfigCommand = (args: string[]): OutputEntry[] => {
   ];
 };
 
+const handleStatusCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  // Perform async health check
+  const checkDaemonStatus = async () => {
+    try {
+      const client = getAtlasClient();
+      const isHealthy = await client.isHealthy();
+
+      if (isHealthy) {
+        context.addEntry({
+          id: `status-success-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="green">✓ Atlas daemon is running</Text>
+            </Box>
+          ),
+        });
+      } else {
+        context.addEntry({
+          id: `status-not-running-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+            </Box>
+          ),
+        });
+      }
+    } catch (error) {
+      context.addEntry({
+        id: `status-error-${Date.now()}`,
+        component: (
+          <Box paddingLeft={1}>
+            <Text color="yellow">◆ Atlas daemon is not running</Text>
+          </Box>
+        ),
+      });
+    }
+  };
+
+  // Fire and forget async operation
+  checkDaemonStatus();
+
+  // Return loading message
+  return [
+    {
+      id: `status-loading-${Date.now()}`,
+      component: (
+        <Box paddingLeft={1}>
+          <Text dimColor>Checking daemon status...</Text>
+        </Box>
+      ),
+    },
+  ];
+};
+
 /**
  * Handle /library open <item_id> command
  */
@@ -534,6 +591,13 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleCreditsCommand,
   },
 
+  status: {
+    name: "status",
+    description: "Check Atlas daemon status",
+    usage: "/status",
+    handler: handleStatusCommand,
+  },
+
   config: {
     name: "config",
     description: "View and manage workspace configuration",
@@ -602,9 +666,47 @@ export default function InteractiveCommand() {
     setMinHeight(requiredHeight);
   }, [availableHeight]);
 
-  // Add intro message on startup
+  // Add intro message on startup and check daemon status
   useEffect(() => {
-    setOutputBuffer([]);
+    const checkDaemonAndInitialize = async () => {
+      setOutputBuffer([]);
+
+      // Check if Atlas daemon is running
+      try {
+        const client = getAtlasClient();
+        const isHealthy = await client.isHealthy();
+
+        if (!isHealthy) {
+          // Daemon is not running - add message to output buffer
+          setOutputBuffer([{
+            id: `daemon-not-running-${Date.now()}`,
+            component: (
+              <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+                <Text color="yellow">◆ Atlas daemon is not running</Text>
+                <Text dimColor>
+                  Run `atlas daemon start` in a new terminal to use Atlas.
+                </Text>
+              </Box>
+            ),
+          }]);
+        }
+      } catch (error) {
+        // If health check fails, also show the same message
+        setOutputBuffer([{
+          id: `daemon-not-running-${Date.now()}`,
+          component: (
+            <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+              <Text dimColor>
+                Run `atlas daemon start` in a new terminal tab to enable full functionality.
+              </Text>
+            </Box>
+          ),
+        }]);
+      }
+    };
+
+    checkDaemonAndInitialize();
   }, []);
 
   // Add entry to output buffer

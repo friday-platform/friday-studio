@@ -45,6 +45,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Atlas configuration settings",
   },
   {
+    command: "/status",
+    description: "Check Atlas daemon status",
+  },
+  {
     command: "/version",
     description: "Show Atlas version information",
   },
