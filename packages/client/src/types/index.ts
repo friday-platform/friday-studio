@@ -38,6 +38,11 @@ export type {
   TemplateConfig,
 } from "./library.ts";
 
-export type { SignalInfo, SignalResponse, SignalTriggerResponse } from "./signal.ts";
+export type {
+  SignalDetailedInfo,
+  SignalInfo,
+  SignalResponse,
+  SignalTriggerResponse,
+} from "./signal.ts";
 
 export type { AgentInfo, JobInfo } from "./agent.ts";

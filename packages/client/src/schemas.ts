@@ -53,10 +53,12 @@ export const SessionInfoSchema = z.object({
 });
 
 export const SessionDetailedInfoSchema = SessionInfoSchema.extend({
-  artifacts: z.array(z.object({
-    type: z.string(),
-    data: z.unknown(),
-  })),
+  artifacts: z.array(
+    z.object({
+      type: z.string(),
+      data: z.unknown(),
+    }),
+  ),
   results: z.unknown().optional(),
 });
 
@@ -114,11 +116,13 @@ export const LibraryStatsSchema = z.object({
   total_items: z.number(),
   total_size_bytes: z.number(),
   types: z.record(z.string(), z.number()),
-  recent_activity: z.array(z.object({
-    date: z.string(),
-    items_added: z.number(),
-    items_modified: z.number(),
-  })),
+  recent_activity: z.array(
+    z.object({
+      date: z.string(),
+      items_added: z.number(),
+      items_modified: z.number(),
+    }),
+  ),
 });
 
 export const TemplateConfigSchema = z.object({
@@ -140,6 +144,32 @@ export const LibraryItemWithContentSchema = z.object({
 export const SignalInfoSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
+});
+
+export const SignalDetailedInfoSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  provider: z.string(),
+  method: z.string().optional(),
+  path: z.string().optional(),
+  endpoint: z.string().optional(),
+  headers: z.record(z.string(), z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  schema: z
+    .object({
+      type: z.string(),
+      properties: z.record(z.string(), z.unknown()).optional(),
+      required: z.array(z.string()).optional(),
+    })
+    .optional(),
+  webhook_secret: z.string().optional(),
+  timeout_ms: z.number().optional(),
+  retry_config: z
+    .object({
+      max_retries: z.number().optional(),
+      retry_delay_ms: z.number().optional(),
+    })
+    .optional(),
 });
 
 export const SignalTriggerResponseSchema = z.object({

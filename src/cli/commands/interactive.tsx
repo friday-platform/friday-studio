@@ -29,6 +29,64 @@ import { AgentDetails } from "../components/agent-details.tsx";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
+import { getAtlasClient } from "@atlas/client";
+
+// Wrapper component that fetches workspace path via client
+const SignalDetailsWithPath = (
+  { workspaceId, signalId }: { workspaceId: string; signalId: string },
+) => {
+  const [workspacePath, setWorkspacePath] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string>("");
+
+  useEffect(() => {
+    const fetchWorkspacePath = async () => {
+      try {
+        if (await checkDaemonRunning()) {
+          const client = getAtlasClient();
+          const workspacePath = await client.getWorkspacePath(workspaceId);
+          setWorkspacePath(workspacePath);
+        } else {
+          setError("Daemon not running");
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchWorkspacePath();
+  }, [workspaceId]);
+
+  if (loading) {
+    return (
+      <Box>
+        <Text dimColor>Loading workspace information...</Text>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box>
+        <Text color="red">Error: {error}</Text>
+      </Box>
+    );
+  }
+
+  if (!workspacePath) {
+    return (
+      <Box>
+        <Text color="red">Workspace path not found</Text>
+      </Box>
+    );
+  }
+
+  return (
+    <SignalDetails workspaceId={workspaceId} signalId={signalId} workspacePath={workspacePath} />
+  );
+};
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -685,7 +743,7 @@ export default function InteractiveCommand() {
     if (action === "describe") {
       addOutputEntry({
         id: `signal-details-${Date.now()}`,
-        component: <SignalDetails workspaceId={workspaceId} signalId={signalId} />,
+        component: <SignalDetailsWithPath workspaceId={workspaceId} signalId={signalId} />,
       });
       setCurrentSelectionWorkspace(null);
       setCurrentSelectedSignal(null);

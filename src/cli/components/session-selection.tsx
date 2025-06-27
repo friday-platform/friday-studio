@@ -2,8 +2,8 @@ import { Box, Text, useInput } from "ink";
 import { Select } from "@inkjs/ui";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
-import { fetchSessions } from "../modules/sessions/fetcher.ts";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface SessionSelectionProps {
   workspaceId: string;
@@ -32,28 +32,17 @@ export const SessionSelection = ({
     const loadSessions = async () => {
       try {
         if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
-          const workspace = await client.getWorkspace(workspaceId);
-          if (!workspace) {
-            throw new Error(`Workspace ${workspaceId} not found`);
-          }
+          const client = getAtlasClient();
+          const sessionList = await client.listWorkspaceSessions(workspaceId);
 
-          const result = await fetchSessions({
-            workspace: workspace.name,
-            port: 8080,
-          });
+          const sessions = sessionList.map((session) => ({
+            id: session.id,
+            name: session.name || session.id,
+            status: session.status,
+            createdAt: session.createdAt,
+          }));
 
-          if (result.success) {
-            const sessionList = result.filteredSessions.map((session: any) => ({
-              id: session.id,
-              name: session.name || session.id,
-              status: session.status,
-              createdAt: session.createdAt,
-            }));
-            setSessions(sessionList);
-          } else {
-            throw new Error((result as any).error || "Failed to fetch sessions");
-          }
+          setSessions(sessions);
         } else {
           setSessions([]);
           setError("Daemon not running. Use 'atlas daemon start' to enable session management.");
