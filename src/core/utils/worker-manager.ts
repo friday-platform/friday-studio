@@ -544,14 +544,14 @@ export class WorkerManager {
     broadcastChannel.close();
   }
 
-  sendTask(workerId: string, taskId: string, data: any): Promise<any> {
+  sendTask(workerId: string, taskId: string, data: any, timeoutMs: number = 120000): Promise<any> {
     const worker = this.workers.get(workerId);
     if (!worker) {
       throw new Error(`Worker not found: ${workerId}`);
     }
 
     return new Promise((resolve, reject) => {
-      const timeoutMs = 120000; // 2 minutes for worker operations (allows for LLM calls)
+      // timeoutMs is now passed as parameter with default of 120000 (2 minutes for worker operations)
       let isResolved = false;
 
       const cleanup = () => {

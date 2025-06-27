@@ -2,7 +2,8 @@ import { Box, Text, useInput } from "ink";
 import { Select } from "@inkjs/ui";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface JobSelectionProps {
   workspaceId: string;
@@ -29,9 +30,9 @@ export const JobSelection = ({
     const loadJobs = async () => {
       try {
         if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
+          const client = getAtlasClient();
 
-          // Use daemon API to get jobs directly
+          // Use Atlas client API to get jobs directly
           const jobList = await client.listJobs(workspaceId);
 
           setJobs(jobList);

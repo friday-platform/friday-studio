@@ -23,7 +23,7 @@ job:
       transformation demonstrates clear progression from input to final result.
 
   execution:
-    strategy: "staged"
+    strategy: "sequential"
 
     stages:
       # Stage 1: Content Transformation (Sequential)
@@ -112,11 +112,12 @@ job:
   resources:
     estimated_duration_seconds: 300
     max_memory_mb: 1024
-    required_capabilities: [
-      "text-processing",
-      "creative-generation",
-      "security-analysis",
-      "memory-storage",
-      "content-synthesis",
-    ]
+    required_capabilities:
+      [
+        "text-processing",
+        "creative-generation",
+        "security-analysis",
+        "memory-storage",
+        "content-synthesis",
+      ]
     concurrent_agent_limit: 3

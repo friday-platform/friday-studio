@@ -388,24 +388,41 @@ export class WorkspaceRuntime {
         const traceHeaders = await AtlasTelemetry.createTraceHeaders();
 
         // Send task to supervisor for processing
-        await this.workerManager.sendTask(
-          supervisorId,
-          taskId,
-          {
-            action: "processSignal",
-            signal: {
-              id: signal.id,
-              provider: signal.provider,
-              // Only send serializable signal data
+        try {
+          await this.workerManager.sendTask(
+            supervisorId,
+            taskId,
+            {
+              action: "processSignal",
+              signal: {
+                id: signal.id,
+                provider: signal.provider,
+                // Only send serializable signal data
+              },
+              payload,
+              sessionId,
+              // Pass job configuration for this signal processing
+              signalConfig: mergedConfig?.workspace?.signals?.[signal.id],
+              jobs: mergedConfig?.jobs,
+              traceHeaders, // Pass trace context to supervisor
             },
-            payload,
-            sessionId,
-            // Pass job configuration for this signal processing
-            signalConfig: mergedConfig?.workspace?.signals?.[signal.id],
-            jobs: mergedConfig?.jobs,
-            traceHeaders, // Pass trace context to supervisor
-          },
-        );
+          );
+        } catch (error) {
+          logger.error(`Task ${taskId} failed`, {
+            workspaceId: this.workspace.id,
+            signalId: signal.id,
+            supervisorId,
+            error: error.message,
+          });
+
+          // Mark session as failed and clean up
+          session.signals.callback.onError(error);
+
+          // Remove failed session from tracking
+          this.sessions.delete(sessionId);
+
+          throw error; // Re-throw to allow caller to handle
+        }
 
         return session;
       },

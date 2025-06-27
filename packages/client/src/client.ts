@@ -11,6 +11,7 @@ import {
   CancelSessionResponseSchema,
   DaemonStatusSchema,
   DeleteResponseSchema,
+  JobDetailedInfoSchema as _JobDetailedInfoSchema,
   JobInfoSchema,
   LibraryItemWithContentSchema,
   LibrarySearchResultSchema,
@@ -19,6 +20,7 @@ import {
   SessionDetailedInfoSchema,
   SessionInfoSchema,
   SessionLogsResponseSchema,
+  SignalDetailedInfoSchema as _SignalDetailedInfoSchema,
   SignalInfoSchema,
   SignalTriggerResponseSchema,
   TemplateConfigSchema,
@@ -33,6 +35,7 @@ import type {
   CancelSessionResponse,
   DaemonStatus,
   DeleteLibraryItemResponse,
+  JobDetailedInfo,
   JobInfo,
   LibraryItemWithContent,
   LibrarySearchQuery,
@@ -41,6 +44,7 @@ import type {
   LogEntry,
   SessionDetailedInfo,
   SessionInfo,
+  SignalDetailedInfo,
   SignalInfo,
   SignalResponse,
   SignalTriggerResponse,
@@ -105,9 +109,25 @@ export class AtlasClient {
   }
 
   /**
+   * Get workspace path only without triggering full validation
+   */
+  async getWorkspacePath(workspaceId: string): Promise<string> {
+    const workspaces = await this.listWorkspaces();
+    const workspace = workspaces.find((w) => w.id === workspaceId);
+
+    if (!workspace) {
+      throw new AtlasApiError(`Workspace '${workspaceId}' not found`, 404);
+    }
+
+    return workspace.path;
+  }
+
+  /**
    * Create a new workspace
    */
-  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
+  async createWorkspace(
+    request: WorkspaceCreateRequest,
+  ): Promise<WorkspaceCreateResponse> {
     const response = await this.makeRequest("/api/workspaces", {
       method: "POST",
       headers: {
@@ -121,7 +141,10 @@ export class AtlasClient {
   /**
    * Delete a workspace
    */
-  async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
+  async deleteWorkspace(
+    workspaceId: string,
+    force: boolean = false,
+  ): Promise<{ message: string }> {
     const url = new URL(`${this.url}/api/workspaces/${workspaceId}`);
     if (force) {
       url.searchParams.set("force", "true");
@@ -141,13 +164,16 @@ export class AtlasClient {
     signalId: string,
     payload: Record<string, unknown> = {},
   ): Promise<SignalTriggerResponse> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/signals/${signalId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
     return SignalTriggerResponseSchema.parse(response);
   }
 
@@ -239,11 +265,14 @@ export class AtlasClient {
   /**
    * Get session logs
    */
-  async getSessionLogs(sessionId: string, options?: {
-    tail?: number;
-    follow?: boolean;
-    filter?: string;
-  }): Promise<LogEntry[]> {
+  async getSessionLogs(
+    sessionId: string,
+    options?: {
+      tail?: number;
+      follow?: boolean;
+      filter?: string;
+    },
+  ): Promise<LogEntry[]> {
     const params = new URLSearchParams();
     if (options?.tail) params.set("tail", options.tail.toString());
     if (options?.filter) params.set("filter", options.filter);
@@ -261,10 +290,13 @@ export class AtlasClient {
   /**
    * Stream session logs using Server-Sent Events
    */
-  async *streamSessionLogs(sessionId: string, options?: {
-    tail?: number;
-    filter?: string;
-  }): AsyncIterableIterator<LogEntry> {
+  async *streamSessionLogs(
+    sessionId: string,
+    options?: {
+      tail?: number;
+      filter?: string;
+    },
+  ): AsyncIterableIterator<LogEntry> {
     const params = new URLSearchParams();
     if (options?.tail) params.set("tail", options.tail.toString());
     if (options?.filter) params.set("filter", options.filter);
@@ -275,7 +307,7 @@ export class AtlasClient {
 
     const response = await fetch(`${this.url}${path}`, {
       headers: {
-        "Accept": "text/event-stream",
+        Accept: "text/event-stream",
       },
     });
 
@@ -323,7 +355,9 @@ export class AtlasClient {
    * List agents in a workspace
    */
   async listAgents(workspaceId: string): Promise<AgentInfo[]> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/agents`,
+    );
     return z.array(AgentInfoSchema).parse(response);
   }
 
@@ -331,7 +365,9 @@ export class AtlasClient {
    * Describe a specific agent in a workspace
    */
   async describeAgent(workspaceId: string, agentId: string): Promise<unknown> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/agents/${agentId}`,
+    );
     return response;
   }
 
@@ -339,23 +375,220 @@ export class AtlasClient {
    * List signals in a workspace
    */
   async listSignals(workspaceId: string): Promise<SignalInfo[]> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/signals`,
+    );
     return z.array(SignalInfoSchema).parse(response);
+  }
+
+  /**
+   * Describe a specific signal in a workspace
+   * Note: This uses a hybrid approach since there's no dedicated signal describe endpoint
+   */
+  async describeSignal(
+    workspaceId: string,
+    signalName: string,
+    workspacePath: string,
+  ): Promise<SignalDetailedInfo> {
+    // First verify the signal exists
+    const signals = await this.listSignals(workspaceId);
+    const signal = signals.find((s) => s.name === signalName);
+
+    if (!signal) {
+      throw new AtlasApiError(
+        `Signal '${signalName}' not found in workspace`,
+        404,
+      );
+    }
+
+    // Load signal configuration directly using provided workspace path
+    const signalConfig = await this.loadSignalConfig(workspacePath, signalName);
+
+    // Return without schema validation for now to avoid Zod issues
+    return signalConfig as unknown as SignalDetailedInfo;
+  }
+
+  /**
+   * Load signal configuration from workspace config without triggering agent validation
+   * Private method to support describeSignal
+   */
+  private async loadSignalConfig(
+    workspacePath: string,
+    signalName: string,
+  ): Promise<Record<string, unknown>> {
+    // Load raw YAML without full ConfigLoader validation to avoid agent/job validation
+    try {
+      // Read and parse workspace.yml directly to avoid validation issues
+      const yaml = await import("@std/yaml");
+
+      const workspaceYmlPath = `${workspacePath}/workspace.yml`;
+      const yamlContent = await Deno.readTextFile(workspaceYmlPath);
+      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
+
+      // Extract signal configuration (signals can be at root or under workspace)
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const signals = (workspace?.signals || rawConfig.signals) as
+        | Record<string, unknown>
+        | undefined;
+      const signalConfig = signals?.[signalName] as Record<string, unknown> | undefined;
+
+      if (!signalConfig) {
+        throw new AtlasApiError(
+          `Signal '${signalName}' configuration not found`,
+          404,
+        );
+      }
+
+      // Ensure required fields for SignalDetailedInfo schema
+      const detailedConfig = {
+        name: signalName,
+        description: signalConfig.description,
+        provider: signalConfig.provider || "unknown",
+        method: signalConfig.method,
+        path: signalConfig.path,
+        endpoint: signalConfig.endpoint,
+        headers: signalConfig.headers,
+        config: signalConfig.config,
+        schema: signalConfig.schema,
+        webhook_secret: signalConfig.webhook_secret,
+        timeout_ms: signalConfig.timeout_ms,
+        retry_config: signalConfig.retry_config,
+      };
+
+      return detailedConfig;
+    } catch (error) {
+      if (error instanceof AtlasApiError) {
+        throw error;
+      }
+
+      // Handle file not found errors specifically
+      if (error instanceof Deno.errors.NotFound) {
+        throw new AtlasApiError(
+          `Workspace configuration file not found at ${workspacePath}`,
+          404,
+        );
+      }
+
+      throw new AtlasApiError(
+        `Failed to load signal configuration: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        500,
+      );
+    }
+  }
+
+  /**
+   * Load job configuration from workspace.yml without triggering workspace validation
+   * Private method to support describeJob
+   */
+  private async loadJobConfig(
+    workspacePath: string,
+    jobName: string,
+  ): Promise<Record<string, unknown>> {
+    // Load raw YAML without full ConfigLoader validation to avoid agent/job validation
+    try {
+      // Read and parse workspace.yml directly to avoid validation issues
+      const yaml = await import("@std/yaml");
+
+      const workspaceYmlPath = `${workspacePath}/workspace.yml`;
+      const yamlContent = await Deno.readTextFile(workspaceYmlPath);
+      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
+
+      // Extract job configuration from workspace.yml (jobs can be at root or under workspace)
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const jobs = (workspace?.jobs || rawConfig.jobs) as Record<string, unknown> | undefined;
+      const jobConfig = jobs?.[jobName] as Record<string, unknown> | undefined;
+
+      if (!jobConfig) {
+        throw new AtlasApiError(
+          `Job '${jobName}' configuration not found`,
+          404,
+        );
+      }
+
+      // Ensure required fields for JobDetailedInfo schema
+      const detailedConfig = {
+        name: jobConfig.name || jobName,
+        description: jobConfig.description,
+        task_template: jobConfig.task_template,
+        triggers: jobConfig.triggers,
+        session_prompts: jobConfig.session_prompts,
+        execution: jobConfig.execution,
+        success_criteria: jobConfig.success_criteria,
+        error_handling: jobConfig.error_handling,
+        resources: jobConfig.resources,
+      };
+
+      return detailedConfig;
+    } catch (error) {
+      if (error instanceof AtlasApiError) {
+        throw error;
+      }
+
+      // Handle file not found errors specifically
+      if (error instanceof Deno.errors.NotFound) {
+        throw new AtlasApiError(
+          `Workspace configuration file not found at ${workspacePath}`,
+          404,
+        );
+      }
+
+      throw new AtlasApiError(
+        `Failed to load job configuration: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        500,
+      );
+    }
   }
 
   /**
    * List jobs in a workspace
    */
   async listJobs(workspaceId: string): Promise<JobInfo[]> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/jobs`,
+    );
     return z.array(JobInfoSchema).parse(response);
+  }
+
+  /**
+   * Describe a specific job in a workspace
+   * Note: This loads configuration directly without triggering workspace validation
+   */
+  async describeJob(
+    workspaceId: string,
+    jobName: string,
+    workspacePath: string,
+  ): Promise<JobDetailedInfo> {
+    // First verify the job exists
+    const jobs = await this.listJobs(workspaceId);
+    const job = jobs.find((j) => j.name === jobName);
+
+    if (!job) {
+      throw new AtlasApiError(
+        `Job '${jobName}' not found in workspace`,
+        404,
+      );
+    }
+
+    // Load job configuration directly using provided workspace path
+    const jobConfig = await this.loadJobConfig(workspacePath, jobName);
+
+    // Return without schema validation for now to avoid Zod issues
+    return jobConfig as unknown as JobDetailedInfo;
   }
 
   /**
    * List sessions in a specific workspace
    */
-  async listWorkspaceSessions(workspaceId: string): Promise<WorkspaceSessionInfo[]> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
+  async listWorkspaceSessions(
+    workspaceId: string,
+  ): Promise<WorkspaceSessionInfo[]> {
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/sessions`,
+    );
     return z.array(WorkspaceSessionInfoSchema).parse(response);
   }
 
@@ -366,7 +599,9 @@ export class AtlasClient {
   /**
    * List library items
    */
-  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
+  async listLibraryItems(
+    query?: Partial<LibrarySearchQuery>,
+  ): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
     if (query?.type) {
@@ -487,7 +722,10 @@ export class AtlasClient {
   /**
    * Make a request to the Atlas API with error handling
    */
-  private async makeRequest(path: string, options: RequestInit = {}): Promise<unknown> {
+  private async makeRequest(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<unknown> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -503,7 +741,8 @@ export class AtlasClient {
         let errorMessage: string;
         try {
           const errorData = await response.json();
-          errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+          errorMessage = errorData.error ||
+            `HTTP ${response.status}: ${response.statusText}`;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
@@ -537,7 +776,11 @@ export class AtlasClient {
    * Handle fetch errors in a standardized way
    * Used by consumer code for consistent error handling
    */
-  handleFetchError(error: unknown): { success: false; error: string; reason?: string } {
+  handleFetchError(error: unknown): {
+    success: false;
+    error: string;
+    reason?: string;
+  } {
     if (error instanceof AtlasApiError) {
       let reason: string | undefined;
       if (error.status === 503) {

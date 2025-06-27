@@ -1,12 +1,13 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { z } from "zod/v4";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
-import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface SignalDetailsProps {
   workspaceId: string;
   signalId: string;
+  workspacePath: string;
 }
 
 // Schema validation for signal schemas
@@ -350,7 +351,7 @@ const SpecializedProviderDetails = ({
   );
 };
 
-export const SignalDetails = ({ workspaceId, signalId }: SignalDetailsProps) => {
+export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDetailsProps) => {
   const [signalData, setSignalData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -359,20 +360,21 @@ export const SignalDetails = ({ workspaceId, signalId }: SignalDetailsProps) => 
     const loadSignalDetails = async () => {
       try {
         if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
-          const workspace = await client.getWorkspace(workspaceId);
-          if (!workspace) {
-            throw new Error(`Workspace ${workspaceId} not found`);
+          const client = getAtlasClient();
+
+          // Workspace path must be provided - no fallbacks to avoid validation issues
+          if (!workspacePath) {
+            throw new Error("Workspace path is required for signal details");
           }
 
-          const config = await loadWorkspaceConfigNoCwd(workspace.path);
-          const signal = config.signals?.[signalId];
+          // Use the new client package method that avoids agent validation
+          const signalDetails = await client.describeSignal(
+            workspaceId,
+            signalId,
+            workspacePath,
+          );
 
-          if (!signal) {
-            throw new Error(`Signal ${signalId} not found in workspace ${workspace.name}`);
-          }
-
-          setSignalData(signal as Record<string, unknown>);
+          setSignalData(signalDetails as unknown as Record<string, unknown>);
         } else {
           setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
         }
