@@ -40,6 +40,24 @@ export const WorkspaceCreateResponseSchema = z.object({
   name: z.string(),
 });
 
+export const WorkspaceAddRequestSchema = z.object({
+  path: z.string(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const WorkspaceBatchAddRequestSchema = z.object({
+  paths: z.array(z.string()),
+});
+
+export const WorkspaceBatchAddResponseSchema = z.object({
+  added: z.array(WorkspaceInfoSchema),
+  failed: z.array(z.object({
+    path: z.string(),
+    error: z.string(),
+  })),
+});
+
 // Session schemas
 export const SessionInfoSchema = z.object({
   id: z.string(),

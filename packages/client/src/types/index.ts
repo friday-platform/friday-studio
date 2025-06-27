@@ -12,6 +12,9 @@ export interface AtlasClientOptions {
 export type { DaemonStatus } from "./daemon.ts";
 
 export type {
+  WorkspaceAddRequest,
+  WorkspaceBatchAddRequest,
+  WorkspaceBatchAddResponse,
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   WorkspaceDetailedInfo,

@@ -1,5 +1,5 @@
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
-import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
+import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
+import type { WorkspaceInfo } from "@atlas/client";
 import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
@@ -42,17 +42,25 @@ export const builder = {
 
 export const handler = async (argv: RemoveArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceManager();
-    await registry.initialize();
+    // Check if daemon is running
+    if (!(await checkAtlasRunning())) {
+      throw createAtlasNotRunningError();
+    }
 
-    let workspace;
+    // Get workspaces from daemon API
+    const client = getAtlasClient();
+    const workspaces = await client.listWorkspaces();
+
+    let workspace: WorkspaceInfo | undefined;
     if (argv.workspace) {
       // Find by ID or name
-      workspace = (await registry.findById(argv.workspace)) ||
-        (await registry.findByName(argv.workspace));
+      workspace = workspaces.find(
+        (w) => w.id === argv.workspace || w.name === argv.workspace,
+      );
     } else {
       // Use current directory
-      workspace = await registry.getCurrentWorkspace();
+      const currentPath = Deno.cwd();
+      workspace = workspaces.find((w) => w.path === currentPath);
     }
 
     if (!workspace) {
@@ -65,7 +73,7 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
     }
 
     // Check if workspace is running
-    if (workspace.status === WSStatus.RUNNING || workspace.status === WSStatus.STARTING) {
+    if (workspace.status === "RUNNING" || workspace.status === "STARTING") {
       warningOutput(`Workspace '${workspace.name}' is currently running.`);
 
       const confirmStop = await confirmAction(
@@ -122,12 +130,12 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
       Deno.exit(0);
     }
 
-    // Remove from registry
+    // Remove from registry via daemon API
     const s = spinner();
     s.start(`Removing workspace '${workspace.name}' from registry...`);
 
     try {
-      await registry.unregisterWorkspace(workspace.id);
+      await client.deleteWorkspace(workspace.id);
       s.stop(`Workspace '${workspace.name}' removed from registry`);
 
       // Delete files if requested

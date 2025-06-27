@@ -24,6 +24,9 @@ import {
   SignalInfoSchema,
   SignalTriggerResponseSchema,
   TemplateConfigSchema,
+  WorkspaceAddRequestSchema,
+  WorkspaceBatchAddRequestSchema,
+  WorkspaceBatchAddResponseSchema,
   WorkspaceCreateResponseSchema,
   WorkspaceDetailedInfoSchema,
   WorkspaceInfoSchema,
@@ -49,6 +52,9 @@ import type {
   SignalResponse,
   SignalTriggerResponse,
   TemplateConfig,
+  WorkspaceAddRequest,
+  WorkspaceBatchAddRequest,
+  WorkspaceBatchAddResponse,
   WorkspaceCreateRequest,
   WorkspaceCreateResponse,
   WorkspaceDetailedInfo,
@@ -154,6 +160,34 @@ export class AtlasClient {
       method: "DELETE",
     });
     return MessageResponseSchema.parse(response);
+  }
+
+  /**
+   * Add a single workspace by path
+   */
+  async addWorkspace(request: WorkspaceAddRequest): Promise<WorkspaceInfo> {
+    const response = await this.makeRequest("/api/workspaces/add", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(WorkspaceAddRequestSchema.parse(request)),
+    });
+    return WorkspaceInfoSchema.parse(response);
+  }
+
+  /**
+   * Add multiple workspaces by paths (batch operation)
+   */
+  async addWorkspaces(request: WorkspaceBatchAddRequest): Promise<WorkspaceBatchAddResponse> {
+    const response = await this.makeRequest("/api/workspaces/add-batch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(WorkspaceBatchAddRequestSchema.parse(request)),
+    });
+    return WorkspaceBatchAddResponseSchema.parse(response);
   }
 
   /**

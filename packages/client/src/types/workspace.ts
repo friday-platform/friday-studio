@@ -35,3 +35,21 @@ export interface WorkspaceRuntime {
 export interface WorkspaceDetailedInfo extends WorkspaceInfo {
   runtime?: WorkspaceRuntime;
 }
+
+export interface WorkspaceAddRequest {
+  path: string;
+  name?: string;
+  description?: string;
+}
+
+export interface WorkspaceBatchAddRequest {
+  paths: string[];
+}
+
+export interface WorkspaceBatchAddResponse {
+  added: WorkspaceInfo[];
+  failed: Array<{
+    path: string;
+    error: string;
+  }>;
+}

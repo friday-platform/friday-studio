@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { join } from "@std/path";
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { AtlasLogger } from "../utils/logger.ts";
@@ -194,6 +195,246 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to delete workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Add a single workspace by path
+    this.app.post("/api/workspaces/add", async (c) => {
+      try {
+        const body = await c.req.json() as { path: string; name?: string; description?: string };
+        const { path, name: providedName, description: providedDescription } = body;
+
+        if (!path) {
+          return c.json({ error: "Path is required" }, 400);
+        }
+
+        // Validate path exists and is a directory
+        let stats: Deno.FileInfo;
+        try {
+          stats = await Deno.stat(path);
+        } catch {
+          return c.json({ error: `Path not found: ${path}` }, 404);
+        }
+
+        if (!stats.isDirectory) {
+          return c.json({ error: `Path is not a directory: ${path}` }, 400);
+        }
+
+        // Check for workspace.yml
+        const workspaceYmlPath = join(path, "workspace.yml");
+        try {
+          await Deno.stat(workspaceYmlPath);
+        } catch {
+          return c.json({ error: `workspace.yml not found in: ${path}` }, 400);
+        }
+
+        // Try to read workspace.yml to get name and description
+        let workspaceName = providedName;
+        let workspaceDescription = providedDescription;
+
+        // Only read workspace.yml if name wasn't explicitly provided
+        if (!providedName) {
+          try {
+            const { parse } = await import("@std/yaml");
+            const yamlContent = await Deno.readTextFile(workspaceYmlPath);
+            const config = parse(yamlContent) as {
+              workspace?: { name?: string; description?: string };
+            };
+
+            if (config.workspace?.name) {
+              workspaceName = config.workspace.name;
+            }
+            // Also use description from config if not provided
+            if (!providedDescription && config.workspace?.description) {
+              workspaceDescription = config.workspace.description;
+            }
+          } catch {
+            // Ignore parsing errors, registerWorkspace will use directory name as fallback
+          }
+        }
+
+        const manager = getWorkspaceManager();
+
+        // Check if workspace already exists at this path
+        const existingByPath = await manager.findByPath(path);
+        if (existingByPath) {
+          return c.json({
+            error: `Workspace already registered at path: ${path}`,
+          }, 409);
+        }
+
+        // If name is determined (provided or from config), check for naming conflicts
+        if (workspaceName) {
+          const existingByName = await manager.findByName(workspaceName);
+          if (existingByName) {
+            return c.json({
+              error: `Workspace with name '${workspaceName}' already exists`,
+            }, 409);
+          }
+        }
+
+        // Register the workspace
+        const entry = await manager.registerWorkspace(path, {
+          name: workspaceName,
+          description: workspaceDescription,
+        });
+
+        // Convert to API response format
+        const workspaceInfo = {
+          id: entry.id,
+          name: entry.name,
+          description: entry.metadata?.description,
+          status: entry.status,
+          path: entry.path,
+          hasActiveRuntime: false,
+          createdAt: entry.createdAt,
+          lastSeen: entry.lastSeen,
+        };
+
+        return c.json(workspaceInfo, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to add workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Add multiple workspaces by paths (batch operation)
+    this.app.post("/api/workspaces/add-batch", async (c) => {
+      try {
+        const body = await c.req.json() as { paths: string[] };
+        const { paths } = body;
+
+        if (!paths || !Array.isArray(paths) || paths.length === 0) {
+          return c.json({ error: "Paths array is required" }, 400);
+        }
+
+        const manager = getWorkspaceManager();
+        const results: {
+          added: Array<{
+            id: string;
+            name: string;
+            description?: string;
+            status: string;
+            path: string;
+            hasActiveRuntime: boolean;
+            createdAt: string;
+            lastSeen: string;
+          }>;
+          failed: Array<{
+            path: string;
+            error: string;
+          }>;
+        } = {
+          added: [],
+          failed: [],
+        };
+
+        // Process paths with reasonable concurrency (5 parallel)
+        const batchSize = 5;
+        for (let i = 0; i < paths.length; i += batchSize) {
+          const batch = paths.slice(i, i + batchSize);
+          const batchPromises = batch.map(async (path) => {
+            try {
+              // Validate path exists and is a directory
+              let stats: Deno.FileInfo;
+              try {
+                stats = await Deno.stat(path);
+              } catch {
+                results.failed.push({
+                  path,
+                  error: `Path not found: ${path}`,
+                });
+                return;
+              }
+
+              if (!stats.isDirectory) {
+                results.failed.push({
+                  path,
+                  error: `Path is not a directory: ${path}`,
+                });
+                return;
+              }
+
+              // Check for workspace.yml
+              const workspaceYmlPath = join(path, "workspace.yml");
+              try {
+                await Deno.stat(workspaceYmlPath);
+              } catch {
+                results.failed.push({
+                  path,
+                  error: `workspace.yml not found in: ${path}`,
+                });
+                return;
+              }
+
+              // Check if workspace already exists at this path
+              const existingByPath = await manager.findByPath(path);
+              if (existingByPath) {
+                results.failed.push({
+                  path,
+                  error: `Workspace already registered at path: ${path}`,
+                });
+                return;
+              }
+
+              // Try to read workspace.yml to get name and description
+              let workspaceName: string | undefined;
+              let workspaceDescription: string | undefined;
+
+              try {
+                const { parse } = await import("@std/yaml");
+                const yamlContent = await Deno.readTextFile(workspaceYmlPath);
+                const config = parse(yamlContent) as {
+                  workspace?: { name?: string; description?: string };
+                };
+
+                if (config.workspace?.name) {
+                  workspaceName = config.workspace.name;
+                }
+                if (config.workspace?.description) {
+                  workspaceDescription = config.workspace.description;
+                }
+              } catch {
+                // Ignore parsing errors, registerWorkspace will use directory name as fallback
+              }
+
+              // Register the workspace
+              const entry = await manager.registerWorkspace(path, {
+                name: workspaceName,
+                description: workspaceDescription,
+              });
+
+              results.added.push({
+                id: entry.id,
+                name: entry.name,
+                description: entry.metadata?.description,
+                status: entry.status,
+                path: entry.path,
+                hasActiveRuntime: false,
+                createdAt: entry.createdAt,
+                lastSeen: entry.lastSeen,
+              });
+            } catch (error) {
+              results.failed.push({
+                path,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          });
+
+          await Promise.all(batchPromises);
+        }
+
+        return c.json(results, 200);
+      } catch (error) {
+        return c.json({
+          error: `Failed to add workspaces: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);

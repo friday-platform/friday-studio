@@ -14,9 +14,9 @@ environment.
 
 When developing CLI commands:
 
-1. **Command File Structure**: Prefer flat command files (e.g., `src/cli/commands/version.ts`) over
-   subdirectories with index.ts files (e.g., `src/cli/commands/version/index.ts`). This reduces file
-   nesting and improves code organization clarity.
+1. **Command File Structure**: Use nested command structures for subcommands (e.g.,
+   `src/cli/commands/workspace/add.tsx` for `atlas workspace add`). This follows the existing
+   codebase pattern and provides better organization for complex command hierarchies.
 
 ## Claude Code execution guidelines
 
