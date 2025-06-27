@@ -278,42 +278,60 @@ export class PlatformMCPServer {
           workspaceId: z.string().describe("Workspace ID to list jobs for"),
         },
       },
-      async ({ workspaceId }) => {
-        logger.info("MCP workspace_jobs_list called", { workspaceId });
+      async (args) =>
+        this.withWorkspaceMCPCheck(args, async ({ workspaceId }) => {
+          logger.info("MCP workspace_jobs_list called", { workspaceId });
 
-        try {
-          const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-            );
+          try {
+            const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+              );
+            }
+
+            const allJobs = await response.json();
+
+            // Filter jobs based on discoverability settings
+            const discoverableJobs = [];
+            for (const job of allJobs) {
+              const isDiscoverable = await this.checkJobDiscoverable(workspaceId, job.name);
+              if (isDiscoverable) {
+                discoverableJobs.push(job);
+              }
+            }
+
+            logger.info("MCP workspace_jobs_list filtered results", {
+              workspaceId,
+              totalJobs: allJobs.length,
+              discoverableJobs: discoverableJobs.length,
+              filteredOut: allJobs.length - discoverableJobs.length,
+            });
+
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify(
+                    {
+                      jobs: discoverableJobs,
+                      total: discoverableJobs.length,
+                      workspaceId,
+                      source: "daemon_api",
+                      filtered: true, // Indicate that jobs were filtered for discoverability
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          } catch (error) {
+            logger.error("MCP workspace_jobs_list failed", { workspaceId, error });
+            throw error;
           }
-
-          const jobs = await response.json();
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    jobs,
-                    total: jobs.length,
-                    workspaceId,
-                    source: "daemon_api",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          logger.error("MCP workspace_jobs_list failed", { workspaceId, error });
-          throw error;
-        }
-      },
+        }),
     );
 
     // Workspace capability: workspace_jobs_describe - ROUTES THROUGH DAEMON API
@@ -326,47 +344,48 @@ export class PlatformMCPServer {
           jobName: z.string().describe("Job name to describe"),
         },
       },
-      async ({ workspaceId, jobName }) => {
-        logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
+      async (args) =>
+        this.withJobDiscoverabilityCheck(args, async ({ workspaceId, jobName }) => {
+          logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 
-        try {
-          // Get all jobs and find the specific one
-          const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-            );
+          try {
+            // Get all jobs and find the specific one
+            const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+              );
+            }
+
+            const jobs = await response.json();
+            const job = jobs.find((j: any) => j.name === jobName);
+
+            if (!job) {
+              throw new Error(`Job not found: ${jobName}`);
+            }
+
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify(
+                    {
+                      job,
+                      workspaceId,
+                      source: "daemon_api",
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          } catch (error) {
+            logger.error("MCP workspace_jobs_describe failed", { workspaceId, jobName, error });
+            throw error;
           }
-
-          const jobs = await response.json();
-          const job = jobs.find((j: any) => j.name === jobName);
-
-          if (!job) {
-            throw new Error(`Job not found: ${jobName}`);
-          }
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    job,
-                    workspaceId,
-                    source: "daemon_api",
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          logger.error("MCP workspace_jobs_describe failed", { workspaceId, jobName, error });
-          throw error;
-        }
-      },
+        }),
     );
 
     // Workspace capability: workspace_sessions_list - ROUTES THROUGH DAEMON API
@@ -569,54 +588,59 @@ export class PlatformMCPServer {
           payload: z.record(z.string(), z.any()).optional().describe("Signal payload"),
         },
       },
-      async ({ workspaceId, signalName, payload }) => {
-        logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
+      async (args) =>
+        this.withWorkspaceMCPCheck(args, async ({ workspaceId, signalName, payload }) => {
+          logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
-        try {
-          const response = await fetch(
-            `${this.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(payload || {}),
-            },
-          );
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-            );
-          }
-
-          const result = await response.json();
-
-          return {
-            content: [
+          try {
+            const response = await fetch(
+              `${this.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
               {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    success: true,
-                    workspaceId,
-                    signalName,
-                    status: result.status,
-                    message: result.message,
-                    source: "daemon_api",
-                  },
-                  null,
-                  2,
-                ),
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(payload || {}),
               },
-            ],
-          };
-        } catch (error) {
-          logger.error("MCP workspace_signals_trigger failed", { workspaceId, signalName, error });
-          throw error;
-        }
-      },
+            );
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+              );
+            }
+
+            const result = await response.json();
+
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: JSON.stringify(
+                    {
+                      success: true,
+                      workspaceId,
+                      signalName,
+                      status: result.status,
+                      message: result.message,
+                      source: "daemon_api",
+                    },
+                    null,
+                    2,
+                  ),
+                },
+              ],
+            };
+          } catch (error) {
+            logger.error("MCP workspace_signals_trigger failed", {
+              workspaceId,
+              signalName,
+              error,
+            });
+            throw error;
+          }
+        }),
     );
 
     // Workspace capability: workspace_agents_list - ROUTES THROUGH DAEMON API
@@ -716,6 +740,154 @@ export class PlatformMCPServer {
     );
 
     // Platform jobs are handled by the daemon, not the MCP server
+  }
+
+  /**
+   * Check if a workspace has MCP enabled
+   * SECURITY: Respects workspace-level server.mcp.enabled settings
+   */
+  private async checkWorkspaceMCPEnabled(workspaceId: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
+      if (!response.ok) {
+        logger.warn("Platform MCP: Failed to check workspace MCP settings", {
+          workspaceId,
+          status: response.status,
+        });
+        return false; // Fail closed - deny access if can't verify
+      }
+
+      const workspace = await response.json();
+      const mcpEnabled = workspace.config?.server?.mcp?.enabled ?? false;
+
+      logger.debug("Platform MCP: Checked workspace MCP settings", {
+        workspaceId,
+        mcpEnabled,
+      });
+
+      return mcpEnabled;
+    } catch (error) {
+      logger.error("Platform MCP: Error checking workspace MCP settings", {
+        workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false; // Fail closed - deny access on error
+    }
+  }
+
+  /**
+   * Check if a job is discoverable for a workspace
+   * SECURITY: Respects workspace-level discoverable.jobs configuration
+   */
+  private async checkJobDiscoverable(workspaceId: string, jobName: string): Promise<boolean> {
+    try {
+      const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
+      if (!response.ok) {
+        return false; // Fail closed
+      }
+
+      const workspace = await response.json();
+      const discoverableJobs = workspace.config?.server?.mcp?.discoverable?.jobs || [];
+
+      // Check if job matches any discoverable pattern
+      for (const pattern of discoverableJobs) {
+        const isWildcard = pattern.endsWith("*");
+        const basePattern = isWildcard ? pattern.slice(0, -1) : pattern;
+
+        if (isWildcard ? jobName.startsWith(basePattern) : jobName === pattern) {
+          logger.debug("Platform MCP: Job is discoverable", {
+            workspaceId,
+            jobName,
+            pattern,
+          });
+          return true;
+        }
+      }
+
+      logger.debug("Platform MCP: Job not discoverable", {
+        workspaceId,
+        jobName,
+        discoverableJobs,
+      });
+
+      return false;
+    } catch (error) {
+      logger.error("Platform MCP: Error checking job discoverability", {
+        workspaceId,
+        jobName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return false; // Fail closed
+    }
+  }
+
+  /**
+   * Wrapper to enforce workspace MCP settings for workspace-scoped tools
+   * SECURITY: All workspace operations must go through this check
+   */
+  private async withWorkspaceMCPCheck<T extends Record<string, any>>(
+    args: T,
+    operation: (args: T) => Promise<any>,
+  ): Promise<any> {
+    const workspaceId = args.workspaceId as string;
+
+    if (!workspaceId) {
+      throw new Error("workspaceId is required for workspace operations");
+    }
+
+    // SECURITY: Check if workspace has MCP enabled
+    const mcpEnabled = await this.checkWorkspaceMCPEnabled(workspaceId);
+    if (!mcpEnabled) {
+      logger.warn("Platform MCP: Blocked workspace operation - MCP disabled", {
+        workspaceId,
+        operation: operation.name,
+      });
+      // Use MCP standard error code for authorization failure
+      const error = new Error(
+        `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
+      );
+      (error as any).code = -32000; // MCP server error code for authorization
+      throw error;
+    }
+
+    return await operation(args);
+  }
+
+  /**
+   * Wrapper to enforce job discoverability for job-related operations
+   * SECURITY: Only allows operations on discoverable jobs
+   */
+  private async withJobDiscoverabilityCheck<T extends Record<string, any>>(
+    args: T,
+    operation: (args: T) => Promise<any>,
+  ): Promise<any> {
+    const workspaceId = args.workspaceId as string;
+    const jobName = args.jobName as string;
+
+    if (!workspaceId || !jobName) {
+      throw new Error("workspaceId and jobName are required for job operations");
+    }
+
+    // First check workspace MCP enabled
+    await this.withWorkspaceMCPCheck(args, async () => {}); // Just run the check
+
+    // Then check job discoverability
+    const isDiscoverable = await this.checkJobDiscoverable(workspaceId, jobName);
+    if (!isDiscoverable) {
+      logger.warn("Platform MCP: Blocked job operation - not discoverable", {
+        workspaceId,
+        jobName,
+        operation: operation.name,
+      });
+      // Use MCP standard error code for method not found
+      const error = new Error(
+        `Job '${jobName}' is not discoverable for workspace '${workspaceId}'. Add it to workspace.yml server.mcp.discoverable.jobs to allow access.`,
+      );
+      (error as any).code = -32601; // MCP method not found for undiscoverable jobs
+      throw error;
+    }
+
+    return await operation(args);
   }
 
   /**

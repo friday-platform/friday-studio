@@ -25,6 +25,8 @@
     "dev": "OTEL_DENO=true deno run --allow-all --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --env-file",
+    "test:mcp": "deno test --allow-all test_all_mcp.ts",
+    "test:mcp-integration": "deno test --allow-all --no-check src/core/mcp/platform-mcp-server.test.ts src/core/mcp/two-level-mcp-integration.test.ts",
     "fmt": "deno fmt",
     "lint": "deno lint",
     "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
