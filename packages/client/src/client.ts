@@ -11,6 +11,7 @@ import {
   CancelSessionResponseSchema,
   DaemonStatusSchema,
   DeleteResponseSchema,
+  JobDetailedInfoSchema as _JobDetailedInfoSchema,
   JobInfoSchema,
   LibraryItemWithContentSchema,
   LibrarySearchResultSchema,
@@ -19,6 +20,7 @@ import {
   SessionDetailedInfoSchema,
   SessionInfoSchema,
   SessionLogsResponseSchema,
+  SignalDetailedInfoSchema as _SignalDetailedInfoSchema,
   SignalInfoSchema,
   SignalTriggerResponseSchema,
   TemplateConfigSchema,
@@ -33,6 +35,7 @@ import type {
   CancelSessionResponse,
   DaemonStatus,
   DeleteLibraryItemResponse,
+  JobDetailedInfo,
   JobInfo,
   LibraryItemWithContent,
   LibrarySearchQuery,
@@ -402,7 +405,7 @@ export class AtlasClient {
     const signalConfig = await this.loadSignalConfig(workspacePath, signalName);
 
     // Return without schema validation for now to avoid Zod issues
-    return signalConfig as SignalDetailedInfo;
+    return signalConfig as unknown as SignalDetailedInfo;
   }
 
   /**
@@ -420,11 +423,14 @@ export class AtlasClient {
 
       const workspaceYmlPath = `${workspacePath}/workspace.yml`;
       const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-      const rawConfig = yaml.parse(yamlContent) as any;
+      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
 
       // Extract signal configuration (signals can be at root or under workspace)
-      const signalConfig = rawConfig?.workspace?.signals?.[signalName] ||
-        rawConfig?.signals?.[signalName];
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const signals = (workspace?.signals || rawConfig.signals) as
+        | Record<string, unknown>
+        | undefined;
+      const signalConfig = signals?.[signalName] as Record<string, unknown> | undefined;
 
       if (!signalConfig) {
         throw new AtlasApiError(
@@ -473,6 +479,71 @@ export class AtlasClient {
   }
 
   /**
+   * Load job configuration from workspace.yml without triggering workspace validation
+   * Private method to support describeJob
+   */
+  private async loadJobConfig(
+    workspacePath: string,
+    jobName: string,
+  ): Promise<Record<string, unknown>> {
+    // Load raw YAML without full ConfigLoader validation to avoid agent/job validation
+    try {
+      // Read and parse workspace.yml directly to avoid validation issues
+      const yaml = await import("@std/yaml");
+
+      const workspaceYmlPath = `${workspacePath}/workspace.yml`;
+      const yamlContent = await Deno.readTextFile(workspaceYmlPath);
+      const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
+
+      // Extract job configuration from workspace.yml (jobs can be at root or under workspace)
+      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const jobs = (workspace?.jobs || rawConfig.jobs) as Record<string, unknown> | undefined;
+      const jobConfig = jobs?.[jobName] as Record<string, unknown> | undefined;
+
+      if (!jobConfig) {
+        throw new AtlasApiError(
+          `Job '${jobName}' configuration not found`,
+          404,
+        );
+      }
+
+      // Ensure required fields for JobDetailedInfo schema
+      const detailedConfig = {
+        name: jobConfig.name || jobName,
+        description: jobConfig.description,
+        task_template: jobConfig.task_template,
+        triggers: jobConfig.triggers,
+        session_prompts: jobConfig.session_prompts,
+        execution: jobConfig.execution,
+        success_criteria: jobConfig.success_criteria,
+        error_handling: jobConfig.error_handling,
+        resources: jobConfig.resources,
+      };
+
+      return detailedConfig;
+    } catch (error) {
+      if (error instanceof AtlasApiError) {
+        throw error;
+      }
+
+      // Handle file not found errors specifically
+      if (error instanceof Deno.errors.NotFound) {
+        throw new AtlasApiError(
+          `Workspace configuration file not found at ${workspacePath}`,
+          404,
+        );
+      }
+
+      throw new AtlasApiError(
+        `Failed to load job configuration: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        500,
+      );
+    }
+  }
+
+  /**
    * List jobs in a workspace
    */
   async listJobs(workspaceId: string): Promise<JobInfo[]> {
@@ -480,6 +551,33 @@ export class AtlasClient {
       `/api/workspaces/${workspaceId}/jobs`,
     );
     return z.array(JobInfoSchema).parse(response);
+  }
+
+  /**
+   * Describe a specific job in a workspace
+   * Note: This loads configuration directly without triggering workspace validation
+   */
+  async describeJob(
+    workspaceId: string,
+    jobName: string,
+    workspacePath: string,
+  ): Promise<JobDetailedInfo> {
+    // First verify the job exists
+    const jobs = await this.listJobs(workspaceId);
+    const job = jobs.find((j) => j.name === jobName);
+
+    if (!job) {
+      throw new AtlasApiError(
+        `Job '${jobName}' not found in workspace`,
+        404,
+      );
+    }
+
+    // Load job configuration directly using provided workspace path
+    const jobConfig = await this.loadJobConfig(workspacePath, jobName);
+
+    // Return without schema validation for now to avoid Zod issues
+    return jobConfig as unknown as JobDetailedInfo;
   }
 
   /**

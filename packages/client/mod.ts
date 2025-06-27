@@ -11,11 +11,13 @@ export { AtlasApiError } from "./src/errors.ts";
 export type {
   AtlasClientOptions,
   DaemonStatus,
+  JobDetailedInfo,
   LibraryItem,
   LibrarySearchQuery,
   LibrarySearchResult,
   LibraryStats,
   LogEntry,
+  SessionDetailedInfo,
   SessionInfo,
   SignalResponse,
   TemplateConfig,
