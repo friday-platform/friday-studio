@@ -193,26 +193,33 @@ export class ConfigLoader {
         workspaceConfig.agents || {},
       )
     ) {
-      if (agentConfig.mcp_servers && agentConfig.mcp_servers.length > 0) {
-        // Ensure agent is LLM type if using MCP servers
-        if (agentConfig.type !== "llm") {
-          throw new ConfigValidationError(
-            `Agent '${agentId}' has mcp_servers configured but is not an LLM agent. Only LLM agents support MCP servers.`,
-            "workspace.yml",
-            `agents.${agentId}.mcp_servers`,
-            agentConfig.mcp_servers,
-          );
-        }
-
-        // Validate each MCP server reference exists
-        for (const mcpServerId of agentConfig.mcp_servers) {
-          if (!workspaceConfig.mcp_servers?.[mcpServerId]) {
+      // Check for new format MCP configuration: tools.mcp
+      if (
+        agentConfig.tools && typeof agentConfig.tools === "object" &&
+        !Array.isArray(agentConfig.tools)
+      ) {
+        const toolsConfig = agentConfig.tools as { mcp?: string[] };
+        if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp) && toolsConfig.mcp.length > 0) {
+          // Ensure agent is LLM type if using MCP servers
+          if (agentConfig.type !== "llm") {
             throw new ConfigValidationError(
-              `Agent '${agentId}' references MCP server '${mcpServerId}' which is not defined in mcp_servers section`,
+              `Agent '${agentId}' has tools.mcp configured but is not an LLM agent. Only LLM agents support MCP servers.`,
               "workspace.yml",
-              `agents.${agentId}.mcp_servers`,
-              mcpServerId,
+              `agents.${agentId}.tools.mcp`,
+              toolsConfig.mcp,
             );
+          }
+
+          // Validate each MCP server reference exists
+          for (const mcpServerId of toolsConfig.mcp) {
+            if (!workspaceConfig.tools?.mcp?.servers?.[mcpServerId]) {
+              throw new ConfigValidationError(
+                `Agent '${agentId}' references MCP server '${mcpServerId}' which is not defined in tools.mcp.servers section`,
+                "workspace.yml",
+                `agents.${agentId}.tools.mcp`,
+                mcpServerId,
+              );
+            }
           }
         }
       }
@@ -461,17 +468,16 @@ export class ConfigLoader {
         } as TempestAgentConfig;
 
       case "llm": {
-        // Convert tools.mcp to mcp_servers for backward compatibility
-        let mcpServers = workspaceAgentConfig.mcp_servers; // Legacy format
+        // Extract MCP servers from new format: tools.mcp
+        let mcpServers: string[] | undefined;
 
-        // Check for new format: tools.mcp
         if (
           workspaceAgentConfig.tools && typeof workspaceAgentConfig.tools === "object" &&
           !Array.isArray(workspaceAgentConfig.tools)
         ) {
           const toolsConfig = workspaceAgentConfig.tools as { mcp?: string[] };
           if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp)) {
-            mcpServers = toolsConfig.mcp; // Use new format, overrides legacy
+            mcpServers = toolsConfig.mcp;
           }
         }
 

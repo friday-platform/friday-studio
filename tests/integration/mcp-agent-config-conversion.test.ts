@@ -33,44 +33,47 @@ Deno.test("MCP Agent Config Conversion", async (t) => {
     assertEquals(llmConfig.mcp_servers[1], "filesystem", "Should include filesystem server");
   });
 
-  await t.step("should handle legacy mcp_servers format", async () => {
-    // Test workspace agent config with LEGACY format
+  await t.step("should handle tools.mcp.servers format", async () => {
+    // Test workspace agent config with tools.mcp.servers format
     const workspaceAgentConfig = {
       type: "llm" as const,
       model: "claude-3-5-haiku-20241022",
-      purpose: "Test agent with legacy MCP format",
-      mcp_servers: ["weather", "database"], // LEGACY format
+      purpose: "Test agent with tools.mcp.servers format",
+      tools: {
+        mcp: ["weather", "database"], // New format
+      },
     };
 
     const agentConfig = ConfigLoader.convertWorkspaceAgentConfig(workspaceAgentConfig);
 
-    // Verify legacy format still works
+    // Verify new format works
     const llmConfig = agentConfig as any;
-    assertExists(llmConfig.mcp_servers, "Should preserve mcp_servers field");
+    assertExists(llmConfig.mcp_servers, "Should have mcp_servers field");
     assertEquals(llmConfig.mcp_servers.length, 2, "Should have 2 MCP servers");
     assertEquals(llmConfig.mcp_servers[0], "weather", "Should include weather server");
     assertEquals(llmConfig.mcp_servers[1], "database", "Should include database server");
   });
 
-  await t.step("should prioritize new format over legacy format", async () => {
-    // Test workspace agent config with BOTH formats (new should win)
+  await t.step("should handle tools.mcp array format correctly", async () => {
+    // Test workspace agent config with proper tools.mcp array format
     const workspaceAgentConfig = {
       type: "llm" as const,
       model: "claude-3-5-sonnet-20241022",
-      purpose: "Test agent with both MCP formats",
+      purpose: "Test agent with tools.mcp array format",
       tools: {
-        mcp: ["new-server"], // NEW format
+        mcp: ["server-a", "server-b", "server-c"], // NEW format with multiple servers
       },
-      mcp_servers: ["legacy-server"], // LEGACY format
     };
 
     const agentConfig = ConfigLoader.convertWorkspaceAgentConfig(workspaceAgentConfig);
 
-    // New format should override legacy
+    // Should extract all servers from tools.mcp
     const llmConfig = agentConfig as any;
     assertExists(llmConfig.mcp_servers, "Should have mcp_servers field");
-    assertEquals(llmConfig.mcp_servers.length, 1, "Should have 1 MCP server");
-    assertEquals(llmConfig.mcp_servers[0], "new-server", "Should use new format, not legacy");
+    assertEquals(llmConfig.mcp_servers.length, 3, "Should have 3 MCP servers");
+    assertEquals(llmConfig.mcp_servers[0], "server-a", "Should include server-a");
+    assertEquals(llmConfig.mcp_servers[1], "server-b", "Should include server-b");
+    assertEquals(llmConfig.mcp_servers[2], "server-c", "Should include server-c");
   });
 
   await t.step("should handle no MCP configuration", async () => {
