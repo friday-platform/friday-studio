@@ -509,6 +509,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         workspaceId: context.workspaceId,
         supervisionLevel: SupervisionLevel.MINIMAL,
         cacheEnabled: true,
+        workspaceTools: this.workspaceTools,
         prompts: {
           system: "You are an AgentSupervisor responsible for safe agent execution.",
         },
