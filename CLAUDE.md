@@ -38,6 +38,13 @@ When developing CLI commands:
 8. Run `deno lint --fix` to autofix any linting errors and identify those that aren't autofixable.
    Do this after making changes.
 9. **Code formatting**: Always run `deno fmt` to format all changed files before completing a task
+10. **Client Package Usage**: When you see `loadWorkspaceConfigNoCwd` or similar direct workspace
+    configuration access patterns, propose adding the functionality to the centralized daemon client
+    in `@atlas/client` instead. This prevents validation conflicts, ensures consistent API usage,
+    and avoids triggering unnecessary workspace agent/job validation.
+11. **Mandatory Client Usage**: ALL CLI operations MUST go through the `@atlas/client` package.
+    NEVER use direct file system access, `Deno.cwd()`, or other fallback patterns. Always use the
+    appropriate client method to ensure consistent API usage and proper error handling.
 
 ## TUI Development Guidelines
 

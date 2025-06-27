@@ -2,7 +2,8 @@ import { Box, Text, useInput } from "ink";
 import { Select } from "@inkjs/ui";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface AgentSelectionProps {
   workspaceId: string;
@@ -31,9 +32,9 @@ export const AgentSelection = ({
     const loadAgents = async () => {
       try {
         if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
+          const client = getAtlasClient();
 
-          // Use daemon API to get agents directly
+          // Use Atlas client API to get agents directly
           const agentList = await client.listAgents(workspaceId);
 
           const agents = agentList.map((agent) => ({

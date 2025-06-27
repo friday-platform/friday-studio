@@ -2,8 +2,8 @@ import { Box, Text, useInput } from "ink";
 import { Select } from "@inkjs/ui";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
-import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
+import { checkDaemonRunning } from "../utils/daemon-client.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface SignalSelectionProps {
   workspaceId: string;
@@ -31,22 +31,16 @@ export const SignalSelection = ({
     const loadSignals = async () => {
       try {
         if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
-          const workspace = await client.getWorkspace(workspaceId);
-          if (!workspace) {
-            throw new Error(`Workspace ${workspaceId} not found`);
-          }
+          const client = getAtlasClient();
+          const signalList = await client.listSignals(workspaceId);
 
-          const config = await loadWorkspaceConfigNoCwd(workspace.path);
-          const signalEntries = Object.entries(config.signals || {});
-
-          const signalList = signalEntries.map(([id, signalConfig]) => ({
-            id,
-            name: id,
-            description: (signalConfig as any)?.description || undefined,
+          const signals = signalList.map((signal) => ({
+            id: signal.name,
+            name: signal.name,
+            description: signal.description || undefined,
           }));
 
-          setSignals(signalList);
+          setSignals(signals);
         } else {
           setSignals([]);
           setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
