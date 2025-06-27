@@ -264,3 +264,195 @@ Deno.test("AtlasClient - describeJob throws error when job not found", async () 
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test("AtlasClient - listWorkspaceLibraryItems returns workspace library items", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const mockLibraryResult = {
+    items: [
+      {
+        id: "lib_1",
+        type: "document",
+        name: "Test Document",
+        description: "Test description",
+        metadata: {
+          format: "markdown",
+          source: "user",
+          session_id: "sess_123",
+        },
+        created_at: "2024-01-01T10:00:00Z",
+        updated_at: "2024-01-01T10:00:00Z",
+        tags: ["test", "document"],
+        size_bytes: 1024,
+        workspace_id: "test-workspace",
+      },
+    ],
+    total: 1,
+    query: {},
+    took_ms: 10,
+  };
+
+  globalThis.fetch = (url) => {
+    if (typeof url === "string" && url.includes("/api/workspaces/test-workspace/library")) {
+      return Promise.resolve(mockResponse(mockLibraryResult));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+    const result = await client.listWorkspaceLibraryItems("test-workspace", {
+      type: "document",
+      limit: 10,
+    });
+
+    expect(result.items.length).toBe(1);
+    expect(result.items[0].id).toBe("lib_1");
+    expect(result.items[0].workspace_id).toBe("test-workspace");
+    expect(result.total).toBe(1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const mockSearchResult = {
+    items: [
+      {
+        id: "lib_search_1",
+        type: "code",
+        name: "Search Result",
+        metadata: {
+          format: "typescript",
+          source: "agent",
+        },
+        created_at: "2024-01-01T11:00:00Z",
+        updated_at: "2024-01-01T11:00:00Z",
+        tags: ["search", "test"],
+        size_bytes: 2048,
+        workspace_id: "test-workspace",
+      },
+    ],
+    total: 1,
+    query: { query: "test search", type: "code" },
+    took_ms: 25,
+  };
+
+  globalThis.fetch = (url) => {
+    if (typeof url === "string" && url.includes("/api/workspaces/test-workspace/library/search")) {
+      return Promise.resolve(mockResponse(mockSearchResult));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+    const result = await client.searchWorkspaceLibrary("test-workspace", {
+      query: "test search",
+      type: "code",
+      limit: 20,
+    });
+
+    expect(result.items.length).toBe(1);
+    expect(result.items[0].type).toBe("code");
+    expect(result.query.query).toBe("test search");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("AtlasClient - getWorkspaceLibraryItem retrieves specific item", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const mockLibraryItem = {
+    item: {
+      id: "lib_item_1",
+      type: "config",
+      name: "Configuration File",
+      description: "Test config",
+      metadata: {
+        format: "yaml",
+        source: "user",
+      },
+      created_at: "2024-01-01T12:00:00Z",
+      updated_at: "2024-01-01T12:00:00Z",
+      tags: ["config"],
+      size_bytes: 512,
+      workspace_id: "test-workspace",
+    },
+    content: "test: configuration\nvalue: 123",
+  };
+
+  globalThis.fetch = (url) => {
+    if (
+      typeof url === "string" && url.includes("/api/workspaces/test-workspace/library/lib_item_1")
+    ) {
+      return Promise.resolve(mockResponse(mockLibraryItem));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+    const result = await client.getWorkspaceLibraryItem(
+      "test-workspace",
+      "lib_item_1",
+      true, // includeContent
+    );
+
+    expect(result.item.id).toBe("lib_item_1");
+    expect(result.item.type).toBe("config");
+    expect(result.content).toBe("test: configuration\nvalue: 123");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+Deno.test("AtlasClient - getWorkspaceLibraryItem without content", async () => {
+  const originalFetch = globalThis.fetch;
+
+  const mockLibraryItem = {
+    item: {
+      id: "lib_item_2",
+      type: "document",
+      name: "Document Without Content",
+      metadata: {
+        format: "markdown",
+        source: "agent",
+      },
+      created_at: "2024-01-01T13:00:00Z",
+      updated_at: "2024-01-01T13:00:00Z",
+      tags: ["document"],
+      size_bytes: 1536,
+      workspace_id: "test-workspace",
+    },
+    // No content field when includeContent is false
+  };
+
+  globalThis.fetch = (url) => {
+    if (
+      typeof url === "string" && url.includes("/api/workspaces/test-workspace/library/lib_item_2")
+    ) {
+      // Verify that content=true is NOT in the URL when includeContent is false
+      expect(url).not.toContain("content=true");
+      return Promise.resolve(mockResponse(mockLibraryItem));
+    }
+    return Promise.reject(new Error(`Unexpected URL: ${url}`));
+  };
+
+  try {
+    const client = new AtlasClient();
+    const result = await client.getWorkspaceLibraryItem(
+      "test-workspace",
+      "lib_item_2",
+      false, // includeContent = false
+    );
+
+    expect(result.item.id).toBe("lib_item_2");
+    expect(result.content).toBeUndefined();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

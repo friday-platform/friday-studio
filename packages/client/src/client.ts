@@ -743,6 +743,84 @@ export class AtlasClient {
     return DeleteResponseSchema.parse(response);
   }
 
+  // =================================================================
+  // WORKSPACE-SPECIFIC LIBRARY OPERATIONS
+  // =================================================================
+
+  /**
+   * List library items in a specific workspace
+   */
+  async listWorkspaceLibraryItems(
+    workspaceId: string,
+    query?: Partial<LibrarySearchQuery>,
+  ): Promise<LibrarySearchResult> {
+    const params = new URLSearchParams();
+    if (query?.query) params.set("q", query.query);
+    if (query?.type) {
+      const types = Array.isArray(query.type) ? query.type : [query.type];
+      params.set("type", types.join(","));
+    }
+    if (query?.tags) params.set("tags", query.tags.join(","));
+    if (query?.since) params.set("since", query.since);
+    if (query?.until) params.set("until", query.until);
+    if (query?.limit) params.set("limit", query.limit.toString());
+    if (query?.offset) params.set("offset", query.offset.toString());
+
+    const queryString = params.toString();
+    const path = queryString
+      ? `/api/workspaces/${workspaceId}/library?${queryString}`
+      : `/api/workspaces/${workspaceId}/library`;
+
+    const response = await this.makeRequest(path);
+    return LibrarySearchResultSchema.parse(response);
+  }
+
+  /**
+   * Search library items within a specific workspace
+   */
+  async searchWorkspaceLibrary(
+    workspaceId: string,
+    query: LibrarySearchQuery,
+  ): Promise<LibrarySearchResult> {
+    const params = new URLSearchParams();
+    if (query.query) params.set("q", query.query);
+    if (query.type) {
+      const types = Array.isArray(query.type) ? query.type : [query.type];
+      params.set("type", types.join(","));
+    }
+    if (query.tags) params.set("tags", query.tags.join(","));
+    if (query.since) params.set("since", query.since);
+    if (query.until) params.set("until", query.until);
+    if (query.limit) params.set("limit", query.limit.toString());
+    if (query.offset) params.set("offset", query.offset.toString());
+
+    const queryString = params.toString();
+    const path = `/api/workspaces/${workspaceId}/library/search?${queryString}`;
+
+    const response = await this.makeRequest(path);
+    return LibrarySearchResultSchema.parse(response);
+  }
+
+  /**
+   * Get specific library item from a workspace
+   */
+  async getWorkspaceLibraryItem(
+    workspaceId: string,
+    itemId: string,
+    includeContent: boolean = false,
+  ): Promise<LibraryItemWithContent> {
+    const params = new URLSearchParams();
+    if (includeContent) params.set("content", "true");
+
+    const queryString = params.toString();
+    const path = queryString
+      ? `/api/workspaces/${workspaceId}/library/${itemId}?${queryString}`
+      : `/api/workspaces/${workspaceId}/library/${itemId}`;
+
+    const response = await this.makeRequest(path);
+    return LibraryItemWithContentSchema.parse(response);
+  }
+
   /**
    * Shutdown the daemon
    */

@@ -6,6 +6,7 @@ import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
+import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
@@ -32,6 +33,7 @@ import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { getAtlasClient } from "@atlas/client";
+import { createTempFileAndOpen } from "../utils/file-opener.ts";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = (
@@ -366,14 +368,154 @@ const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
-const handleConfigCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "show";
+const handleConfigCommand = (_args: string[]): OutputEntry[] => {
+  // Config command switches to its own view, no output entries needed
+  return [];
+};
+
+const handleStatusCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  // Perform async health check
+  const checkDaemonStatus = async () => {
+    try {
+      const client = getAtlasClient();
+      const isHealthy = await client.isHealthy();
+
+      if (isHealthy) {
+        context.addEntry({
+          id: `status-success-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="green">✓ Atlas daemon is running</Text>
+            </Box>
+          ),
+        });
+      } else {
+        context.addEntry({
+          id: `status-not-running-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+            </Box>
+          ),
+        });
+      }
+    } catch (error) {
+      context.addEntry({
+        id: `status-error-${Date.now()}`,
+        component: (
+          <Box paddingLeft={1}>
+            <Text color="yellow">◆ Atlas daemon is not running</Text>
+          </Box>
+        ),
+      });
+    }
+  };
+
+  // Fire and forget async operation
+  checkDaemonStatus();
+
+  // Return loading message
   return [
     {
-      id: `config-output-${Date.now()}`,
-      component: <Text>Config {subcommand} executed (placeholder implementation)</Text>,
+      id: `status-loading-${Date.now()}`,
+      component: (
+        <Box paddingLeft={1}>
+          <Text dimColor>Checking daemon status...</Text>
+        </Box>
+      ),
     },
   ];
+};
+
+/**
+ * Handle /library open <item_id> command
+ */
+const handleLibraryOpenCommand = async (
+  itemId: string,
+  addOutputEntry: (entry: OutputEntry) => void,
+) => {
+  try {
+    // First check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Daemon not running. Use 'atlas daemon start' to enable library operations.
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    const client = getAtlasClient();
+
+    // Show loading message
+    addOutputEntry({
+      id: `library-open-loading-${Date.now()}`,
+      component: <Text dimColor>Opening library item {itemId}...</Text>,
+    });
+
+    // We need to search for the item across all workspaces since we don't have workspace context
+    // First try to get the item directly from global library
+    let libraryItem;
+    try {
+      libraryItem = await client.getLibraryItem(itemId, true);
+    } catch (error) {
+      // If global library doesn't work, we'd need workspace-specific search
+      // For now, show an error about needing workspace context
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Could not find library item '{itemId}'. Library items may be workspace-specific.
+            {error instanceof Error ? ` Error: ${error.message}` : ""}
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    if (!libraryItem.content) {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Library item '{itemId}' has no content to open.</Text>,
+      });
+      return;
+    }
+
+    // Create temporary file and open it
+    const openResult = await createTempFileAndOpen(libraryItem.item, libraryItem.content);
+
+    if (openResult.success) {
+      addOutputEntry({
+        id: `library-open-success-${Date.now()}`,
+        component: (
+          <Text color="green">
+            Opened '{libraryItem.item.name}' in default application.
+            {openResult.tempPath && <Text dimColor>(Temporary file: {openResult.tempPath})</Text>}
+          </Text>
+        ),
+      });
+    } else {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Failed to open file: {openResult.error}</Text>,
+      });
+    }
+  } catch (error) {
+    addOutputEntry({
+      id: `library-open-error-${Date.now()}`,
+      component: (
+        <Text color="red">
+          Error opening library item: {error instanceof Error ? error.message : String(error)}
+        </Text>
+      ),
+    });
+  }
 };
 
 // Command registry
@@ -405,8 +547,8 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
 
   library: {
     name: "library",
-    description: "View workspace library",
-    usage: "/library",
+    description: "View workspace library or open library items",
+    usage: "/library [open <item_id>]",
     handler: handleLibraryCommand,
   },
 
@@ -445,6 +587,13 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleCreditsCommand,
   },
 
+  status: {
+    name: "status",
+    description: "Check Atlas daemon status",
+    usage: "/status",
+    handler: handleStatusCommand,
+  },
+
   config: {
     name: "config",
     description: "View and manage workspace configuration",
@@ -461,7 +610,7 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init" | "credits">(
+  const [view, setView] = useState<"help" | "command" | "init" | "config" | "credits">(
     "command",
   );
   const [_minHeight, setMinHeight] = useState(35);
@@ -513,9 +662,47 @@ export default function InteractiveCommand() {
     setMinHeight(requiredHeight);
   }, [availableHeight]);
 
-  // Add intro message on startup
+  // Add intro message on startup and check daemon status
   useEffect(() => {
-    setOutputBuffer([]);
+    const checkDaemonAndInitialize = async () => {
+      setOutputBuffer([]);
+
+      // Check if Atlas daemon is running
+      try {
+        const client = getAtlasClient();
+        const isHealthy = await client.isHealthy();
+
+        if (!isHealthy) {
+          // Daemon is not running - add message to output buffer
+          setOutputBuffer([{
+            id: `daemon-not-running-${Date.now()}`,
+            component: (
+              <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+                <Text color="yellow">◆ Atlas daemon is not running</Text>
+                <Text dimColor>
+                  Run `atlas daemon start` in a new terminal to use Atlas.
+                </Text>
+              </Box>
+            ),
+          }]);
+        }
+      } catch (error) {
+        // If health check fails, also show the same message
+        setOutputBuffer([{
+          id: `daemon-not-running-${Date.now()}`,
+          component: (
+            <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+              <Text dimColor>
+                Run `atlas daemon start` in a new terminal tab to enable full functionality.
+              </Text>
+            </Box>
+          ),
+        }]);
+      }
+    };
+
+    checkDaemonAndInitialize();
   }, []);
 
   // Add entry to output buffer
@@ -1056,6 +1243,11 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "config") {
+      setView("config");
+      return;
+    }
+
     if (parsed.command === "credits") {
       setView("credits");
       return;
@@ -1104,6 +1296,22 @@ export default function InteractiveCommand() {
     }
 
     if (parsed.command === "library") {
+      if (parsed.args[0] === "open" && parsed.args[1]) {
+        // Handle /library open <item_id> - fire and forget async operation
+        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch((error) => {
+          addOutputEntry({
+            id: `library-open-error-${Date.now()}`,
+            component: (
+              <Text color="red">
+                Unexpected error: {error instanceof Error ? error.message : String(error)}
+              </Text>
+            ),
+          });
+        });
+        return;
+      }
+
+      // Default library command - show workspace selection
       setWorkspaceSelectionContext("library");
       setShowLibraryWorkspaceSelection(true);
       return;
@@ -1324,6 +1532,7 @@ export default function InteractiveCommand() {
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
+      {view === "config" && <ConfigView onExit={() => setView("command")} />}
       {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );
