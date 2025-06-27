@@ -10,7 +10,7 @@ echo "🔧 Troubleshooting Kubernetes cluster using Atlas K8s Assistant..."
 
 # Using direct HTTP call to the k8s endpoint (faster than CLI signal trigger)
 echo "📡 Sending troubleshooting request to Atlas workspace..."
-response=$(curl -X POST http://localhost:3001/k8s \
+response=$(curl -X POST http://localhost:8080/k8s \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Analyze the cluster for common issues: failed pods, resource constraints, networking problems, and deployment issues. Provide specific recommendations for resolution."

@@ -36,6 +36,8 @@
     "test-mcp-echo": "deno run --allow-all tests/mocks/echo-mcp-server.ts"
   },
   "imports": {
+    "@atlas/config": "./packages/config/mod.ts",
+    "@atlas/storage": "./packages/storage/mod.ts",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",
