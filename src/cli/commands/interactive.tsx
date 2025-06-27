@@ -32,6 +32,7 @@ import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { getAtlasClient } from "@atlas/client";
+import { createTempFileAndOpen } from "../utils/file-opener.ts";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = (
@@ -376,6 +377,94 @@ const handleConfigCommand = (args: string[]): OutputEntry[] => {
   ];
 };
 
+/**
+ * Handle /library open <item_id> command
+ */
+const handleLibraryOpenCommand = async (
+  itemId: string,
+  addOutputEntry: (entry: OutputEntry) => void,
+) => {
+  try {
+    // First check if daemon is running
+    if (!(await checkDaemonRunning())) {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Daemon not running. Use 'atlas daemon start' to enable library operations.
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    const client = getAtlasClient();
+
+    // Show loading message
+    addOutputEntry({
+      id: `library-open-loading-${Date.now()}`,
+      component: <Text dimColor>Opening library item {itemId}...</Text>,
+    });
+
+    // We need to search for the item across all workspaces since we don't have workspace context
+    // First try to get the item directly from global library
+    let libraryItem;
+    try {
+      libraryItem = await client.getLibraryItem(itemId, true);
+    } catch (error) {
+      // If global library doesn't work, we'd need workspace-specific search
+      // For now, show an error about needing workspace context
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Could not find library item '{itemId}'. Library items may be workspace-specific.
+            {error instanceof Error ? ` Error: ${error.message}` : ""}
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    if (!libraryItem.content) {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Library item '{itemId}' has no content to open.</Text>,
+      });
+      return;
+    }
+
+    // Create temporary file and open it
+    const openResult = await createTempFileAndOpen(libraryItem.item, libraryItem.content);
+
+    if (openResult.success) {
+      addOutputEntry({
+        id: `library-open-success-${Date.now()}`,
+        component: (
+          <Text color="green">
+            Opened '{libraryItem.item.name}' in default application.
+            {openResult.tempPath && <Text dimColor>(Temporary file: {openResult.tempPath})</Text>}
+          </Text>
+        ),
+      });
+    } else {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Failed to open file: {openResult.error}</Text>,
+      });
+    }
+  } catch (error) {
+    addOutputEntry({
+      id: `library-open-error-${Date.now()}`,
+      component: (
+        <Text color="red">
+          Error opening library item: {error instanceof Error ? error.message : String(error)}
+        </Text>
+      ),
+    });
+  }
+};
+
 // Command registry
 const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
   // help command is handled separately with view change
@@ -405,8 +494,8 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
 
   library: {
     name: "library",
-    description: "View workspace library",
-    usage: "/library",
+    description: "View workspace library or open library items",
+    usage: "/library [open <item_id>]",
     handler: handleLibraryCommand,
   },
 
@@ -1104,6 +1193,22 @@ export default function InteractiveCommand() {
     }
 
     if (parsed.command === "library") {
+      if (parsed.args[0] === "open" && parsed.args[1]) {
+        // Handle /library open <item_id> - fire and forget async operation
+        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch((error) => {
+          addOutputEntry({
+            id: `library-open-error-${Date.now()}`,
+            component: (
+              <Text color="red">
+                Unexpected error: {error instanceof Error ? error.message : String(error)}
+              </Text>
+            ),
+          });
+        });
+        return;
+      }
+
+      // Default library command - show workspace selection
       setWorkspaceSelectionContext("library");
       setShowLibraryWorkspaceSelection(true);
       return;
