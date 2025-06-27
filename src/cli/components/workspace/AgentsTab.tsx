@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { WorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "@atlas/config";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
 

@@ -23,6 +23,7 @@ export interface StorageAdapter {
   has(key: string): Promise<boolean>;
 }
 
+// deno-lint-ignore no-empty-interface
 export interface KVStorage {
   // TODO: Add KV storage interface
 }
@@ -31,22 +32,28 @@ export interface KVStorage {
 export class MemoryStorage implements StorageAdapter {
   private store = new Map<string, unknown>();
 
-  async get(key: string): Promise<unknown> {
-    return this.store.get(key);
+  get(key: string): Promise<unknown> {
+    return Promise.resolve(this.store.get(key));
   }
 
-  async set(key: string, value: unknown): Promise<void> {
+  set(key: string, value: unknown): Promise<void> {
     this.store.set(key, value);
+    return Promise.resolve();
   }
 
-  async delete(key: string): Promise<void> {
+  delete(key: string): Promise<void> {
     this.store.delete(key);
+    return Promise.resolve();
   }
 
-  async has(key: string): Promise<boolean> {
-    return this.store.has(key);
+  has(key: string): Promise<boolean> {
+    return Promise.resolve(this.store.has(key));
   }
 }
+
+// Export configuration adapters
+export type { ConfigurationAdapter } from "./src/adapters/config-adapter.ts";
+export { FilesystemConfigAdapter } from "./src/adapters/filesystem-config-adapter.ts";
 
 // TODO: Export actual implementations as we migrate:
 // - LocalStorage

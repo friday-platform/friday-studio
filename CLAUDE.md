@@ -34,7 +34,7 @@ When developing CLI commands:
 6. **Signal handling**: Server handles all signal processing via HttpServer.shutdown(), CLI exits
    immediately
 7. **Configuration**: workspace.yml uses job specifications in jobs/ directory, agents loaded via
-   WorkspaceRuntime
+   WorkspaceRuntime. Configuration loading uses dependency injection pattern with adapters.
 8. Run `deno lint --fix` to autofix any linting errors and identify those that aren't autofixable.
    Do this after making changes.
 9. **Code formatting**: Always run `deno fmt` to format all changed files before completing a task
@@ -176,6 +176,28 @@ Atlas manages three resource types:
 - **Memory**: Internal learned state managed by Atlas
 - **Context**: External reference materials fetched for tasks
 - **Tools**: MCP providers that perform operations or fetch data
+
+### Configuration Architecture
+
+The configuration system uses a clean, testable architecture:
+
+- **`@atlas/config` package**: Contains all Zod schemas, types, and the ConfigLoader
+- **`@atlas/storage` package**: Provides `ConfigurationAdapter` interface and implementations
+- **Dependency Injection**: ConfigLoader accepts adapters, enabling multiple configuration sources
+- **Type Safety**: All configurations validated with Zod v4 schemas at runtime
+- **MCP Compliance**: Job names must follow MCP tool naming (letters, numbers, underscores, hyphens)
+
+**Key patterns**:
+
+```typescript
+// Always use adapter pattern for configuration loading
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
+
+const adapter = new FilesystemConfigAdapter();
+const configLoader = new ConfigLoader(adapter, workspacePath);
+const config = await configLoader.load();
+```
 
 ## Technology Stack
 

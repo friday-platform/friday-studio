@@ -4,7 +4,7 @@
  */
 
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
-import type { AtlasConfig, WorkspaceConfig } from "./config-loader.ts";
+import type { AtlasConfig, WorkspaceConfig } from "@atlas/config";
 import { FederationManager } from "./federation-manager.ts";
 import { WorkspaceCapabilityRegistry } from "./workspace-capabilities.ts";
 import { PlatformMCPServer } from "./mcp/platform-mcp-server.ts";

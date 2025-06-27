@@ -854,8 +854,10 @@ const workspaceRuntimeMachine = setup({
         await logger.warn("No pre-loaded config found, falling back to loading from disk", {
           workspaceId: context.workspace.id,
         });
-        const { ConfigLoader } = await import("./config-loader.ts");
-        const configLoader = new ConfigLoader();
+        const { ConfigLoader } = await import("@atlas/config");
+        const { FilesystemConfigAdapter } = await import("@atlas/storage");
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter);
         mergedConfig = await configLoader.load();
       }
 

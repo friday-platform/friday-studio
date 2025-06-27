@@ -447,13 +447,9 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       // Get agent supervisor config from atlas configuration or load defaults
       let agentSupervisorConfig;
       try {
-        // Try to load from defaults file
-        const defaultsPath =
-          new URL("../../config/supervisor-defaults.yml", import.meta.url).pathname;
-        const defaultsYaml = await Deno.readTextFile(defaultsPath);
-        const { parse } = await import("@std/yaml");
-        const defaults = parse(defaultsYaml) as any;
-        agentSupervisorConfig = defaults.supervisors.agent;
+        // Import supervisor defaults from config package
+        const { supervisorDefaults } = await import("@atlas/config");
+        agentSupervisorConfig = supervisorDefaults.supervisors.agent;
       } catch (error) {
         this.logger.warn("Failed to load supervisor defaults, using minimal fallback", {
           error: error instanceof Error ? error.message : String(error),

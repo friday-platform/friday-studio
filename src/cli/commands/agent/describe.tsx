@@ -4,7 +4,8 @@ import {
   createDaemonNotRunningError,
   getDaemonClient,
 } from "../../utils/daemon-client.ts";
-import { ConfigLoader } from "../../../core/config-loader.ts";
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 
 interface DescribeArgs {
   name: string;
@@ -79,7 +80,8 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
     } else {
       // Use current workspace (detect from current directory)
       try {
-        const configLoader = new ConfigLoader();
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter);
         const config = await configLoader.load();
         const currentWorkspaceName = config.workspace.workspace.name;
 

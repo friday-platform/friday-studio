@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput, useStdout } from "ink";
-import { WorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "@atlas/config";
 import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { formatLog, WorkspaceLogReader } from "../../utils/log-reader.ts";
 import type { LogEntry } from "../../../utils/logger.ts";

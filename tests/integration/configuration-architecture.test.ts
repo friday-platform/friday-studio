@@ -7,7 +7,8 @@
 
 import { expect } from "@std/expect";
 import { join } from "@std/path";
-import { ConfigLoader } from "../../src/core/config-loader.ts";
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 
 // Test fixtures
 const validAtlasConfig = `version: "1.0"
@@ -226,7 +227,8 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test atlas config structure
@@ -292,7 +294,8 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
     const workspaceConfig = mergedConfig.workspace;
 
@@ -357,7 +360,8 @@ Deno.test(
       tempDir = await createTestEnvironment();
       Deno.chdir(tempDir);
 
-      const configLoader = new ConfigLoader();
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter);
       const mergedConfig = await configLoader.load();
 
       // Verify atlas config is loaded
@@ -415,7 +419,8 @@ Deno.test.ignore("Signal-to-job mapping validates conditions", async () => {
   // - M:M signal-job relationships
   // - Condition evaluation logic
   // - Job file resolution and validation
-  // const configLoader = new ConfigLoader();
+  // const adapter = new FilesystemConfigAdapter();
+  // const configLoader = new ConfigLoader(adapter);
   // const workspaceConfig = await configLoader.loadWorkspaceConfig("./test-workspace.yml");
   // const githubSignal = workspaceConfig.signals["github-pr"];
   // assertEquals(githubSignal.jobs.length >= 2, true);
@@ -435,7 +440,8 @@ Deno.test("Agent type configurations validate correctly", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test workspace agents of different types
@@ -500,7 +506,8 @@ Deno.test("Job-owns-relationship architecture: triggers field is preserved", asy
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test that job triggers are loaded from workspace.yml
@@ -542,7 +549,8 @@ Deno.test("Remote agent protocol validation", async () => {
     tempDir = await createTestEnvironment();
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Test workspace remote agent
@@ -616,7 +624,8 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
 
     // Test that validation catches missing protocol
     let errorCaught = false;
@@ -685,7 +694,8 @@ signals:
     );
     Deno.chdir(tempDir);
 
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
 
     // Test that validation catches errors
     let errorCaught = false;

@@ -1,4 +1,4 @@
-import { type WorkspaceConfig } from "../../../core/config-loader.ts";
+import { type WorkspaceConfig } from "@atlas/config";
 import { type Agent } from "./agent-list-component.tsx";
 
 // Transform workspace config agents into Agent array

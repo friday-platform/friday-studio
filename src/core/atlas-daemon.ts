@@ -6,9 +6,10 @@ import { AtlasLogger } from "../utils/logger.ts";
 import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
 import { WorkspaceStatus } from "./workspace-manager.ts";
 import { Workspace } from "./workspace.ts";
-import { ConfigLoader } from "./config-loader.ts";
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { WorkspaceMemberRole } from "../types/core.ts";
-import { supervisorDefaults } from "../config/supervisor-defaults.ts";
+import { supervisorDefaults } from "@atlas/config";
 import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
 import type { LibrarySearchQuery } from "./library/types.ts";
 
@@ -729,7 +730,8 @@ export class AtlasDaemon {
           workspaceId: workspace.id,
           path: workspace.path,
         });
-        const configLoader = new ConfigLoader(workspace.path);
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter, workspace.path);
         mergedConfig = await configLoader.load();
         logger.debug(`Configuration loaded from disk as fallback`);
       }

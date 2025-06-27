@@ -16,9 +16,12 @@ This workspace demonstrates Atlas's advanced capabilities including:
 
 ### Agent Architecture (DevOps Workflow)
 
-1. **standalone-coordinator (Port 8085)** - K8s operations specialist that executes cluster tasks and returns structured results (NO Linear access)
-2. **linear-writer** - Complete Linear integration agent that manages ticket lifecycle and processes K8s results
-3. **DevOps Flow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear update
+1. **standalone-coordinator (Port 8085)** - K8s operations specialist that executes cluster tasks
+   and returns structured results (NO Linear access)
+2. **linear-writer** - Complete Linear integration agent that manages ticket lifecycle and processes
+   K8s results
+3. **DevOps Flow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear
+   update
 
 ### Signal Types
 
@@ -55,6 +58,7 @@ cd atlas/examples/workspaces/k8s-assistant
 ```
 
 **Atlas 2.0 Changes:**
+
 - Uses centralized daemon architecture (no individual workspace servers)
 - Atlas daemon runs on `http://localhost:8080`
 - Workspaces are managed by the daemon, not standalone servers
@@ -117,12 +121,13 @@ The `workspace.yml` file defines:
    - **Type**: HTTP Signal Provider
    - **Endpoint**: `/webhooks/linear` (via daemon)
    - **Method**: POST
-   - **Workflow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear update
-   - **Agent Flow**: 
-     * linear-writer: Process ticket, set In Progress
-     * standalone-coordinator: Execute K8s operations (returns structured results)
-     * linear-writer: Update Linear with results and status
-   - **Triggers**: 
+   - **Workflow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear
+     update
+   - **Agent Flow**:
+     - linear-writer: Process ticket, set In Progress
+     - standalone-coordinator: Execute K8s operations (returns structured results)
+     - linear-writer: Update Linear with results and status
+   - **Triggers**:
      - DevOps issues (keywords: kubernetes, kubectl, deploy, scale, etc.)
      - DevOps comments (containing kubectl commands)
      - High-priority incidents assigned to Atlas
@@ -143,22 +148,24 @@ The `workspace.yml` file defines:
 ### Primary DevOps Workflow (Linear → K8s → Linear)
 
 **Step 1: Linear Ticket Processing**
+
 1. **Linear webhook triggered** - Issue created/updated with DevOps keywords
 2. **linear-writer agent** - Analyzes ticket content for K8s operations needed
 3. **Ticket updated** - Status set to "In Progress", comment added about automation
 
-**Step 2: K8s Operations Execution**  
-4. **standalone-coordinator agent** - Receives structured task from linear-writer
-5. **K8s execution** - Performs kubectl operations (deploy, scale, troubleshoot, etc.)
-6. **Structured results** - Returns JSON-formatted operation results (no Linear access)
+**Step 2: K8s Operations Execution**\
+4. **standalone-coordinator agent** - Receives structured task from linear-writer 5. **K8s
+execution** - Performs kubectl operations (deploy, scale, troubleshoot, etc.) 6. **Structured
+results** - Returns JSON-formatted operation results (no Linear access)
 
-**Step 3: Linear Results Processing & Update**
-7. **linear-writer agent** - Receives structured results from standalone-coordinator
-8. **Results formatting** - Converts technical data to user-friendly Linear comments
-9. **Ticket completion** - Status updated to Done/Escalated, comprehensive results posted
-10. **Memory storage** - Successful patterns and resolutions stored for learning
+**Step 3: Linear Results Processing & Update** 7. **linear-writer agent** - Receives structured
+results from standalone-coordinator 8. **Results formatting** - Converts technical data to
+user-friendly Linear comments 9. **Ticket completion** - Status updated to Done/Escalated,
+comprehensive results posted 10. **Memory storage** - Successful patterns and resolutions stored for
+learning
 
-**Key Separation**: standalone-coordinator handles ONLY K8s operations, linear-writer handles ALL Linear interactions
+**Key Separation**: standalone-coordinator handles ONLY K8s operations, linear-writer handles ALL
+Linear interactions
 
 ### Direct Operations (Optional)
 
@@ -230,7 +237,6 @@ curl -X POST http://localhost:8080/signals/linear-webhook \
     }
   }'
 ```
-
 
 ### Health Check (Atlas 2.0)
 

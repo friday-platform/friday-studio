@@ -1,35 +1,82 @@
 # @atlas/config
 
-Configuration management package for Atlas.
+Configuration management package for Atlas platform.
 
 ## Overview
 
-This package provides configuration schemas, defaults, and validation for Atlas workspaces.
+This package provides:
 
-## Installation
+- Configuration schemas using Zod v4
+- Type definitions for all configuration objects
+- Validation utilities
+- ConfigLoader class with dependency injection
+- Default configurations
 
-This package is part of the Atlas monorepo and is available internally via:
+## Standard Configuration Format
+
+Atlas uses **TypeScript (.ts)** as the standard format for configuration defaults.
+
+### Benefits of TypeScript Defaults
+
+1. **Type Safety**: Automatically validated against Zod schemas at compile time
+2. **IDE Support**: Full autocomplete, refactoring, and error detection
+3. **No Runtime Parsing**: Defaults are compiled into the application
+4. **Richer Data Structures**: Support for template literals and computed values
+5. **Single Source of Truth**: Part of the codebase with version control
+
+### Configuration Files
+
+- `src/defaults/supervisor-defaults.ts` - Default supervisor configurations
+- `src/defaults/atlas-defaults.ts` - Default Atlas platform settings
+- `src/templates/workspace-template.yml` - Template for new workspaces
+
+## Usage
 
 ```typescript
-import { loadConfig, validateConfig } from "@atlas/config";
+import { AtlasConfig, ConfigLoader, supervisorDefaults, WorkspaceConfig } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
+
+// Load configuration
+const adapter = new FilesystemConfigAdapter();
+const loader = new ConfigLoader(adapter, workspaceDir);
+const config = await loader.load();
+
+// Access typed configuration
+const atlas: AtlasConfig = config.atlas;
+const workspace: WorkspaceConfig = config.workspace;
 ```
 
-## Features
+## Schema Types
 
-- Configuration schemas for workspaces, supervisors, and agents
-- Default configuration templates
-- Configuration validation utilities
-- Workspace initialization helpers
+All configuration types are inferred from Zod schemas:
+
+- `AtlasConfig` - Platform-level configuration
+- `WorkspaceConfig` - Workspace-specific configuration
+- `SupervisorDefaults` - Default supervisor settings
+- `JobSpecification` - Job execution definitions
+- `WorkspaceAgentConfig` - Agent configurations
+- `MergedConfig` - Combined configuration object
+
+## Validation
+
+The package provides comprehensive validation:
+
+```typescript
+import { ConfigValidationError, formatZodError } from "@atlas/config";
+
+try {
+  const config = AtlasConfigSchema.parse(rawData);
+} catch (error) {
+  if (error instanceof z.ZodError) {
+    const formatted = formatZodError(error, "config.yml");
+    throw new ConfigValidationError(formatted, "config.yml");
+  }
+}
+```
 
 ## Dependencies
 
-- `@atlas/types` - Shared type definitions
-- `@atlas/storage` - For configuration persistence
-
-## Migration Status
-
-🚧 This package is being migrated from the following locations:
-
-- `src/config/` - Configuration files and defaults
-- `src/core/workspace-config.ts` - Workspace configuration logic
-- `src/core/config-loader.ts` - Configuration loading utilities
+- `@atlas/storage` - For configuration adapters
+- `zod` - For schema validation
+- `@std/yaml` - For YAML parsing
+- `@std/path` - For path operations

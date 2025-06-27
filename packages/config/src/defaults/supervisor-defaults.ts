@@ -172,6 +172,72 @@ Please assess:
 5. Continuation or completion decision
 
 Provide structured evaluation with clear next steps.`,
+
+        task_preparation:
+          `You are an expert SessionSupervisor creating specific, actionable tasks for agents. Transform signal data into focused instructions.
+
+## SIGNAL ANALYSIS
+**Signal Type**: {signal_id}
+**Event Details**: {event_details}
+
+**Raw Data Summary**:
+{signal_data_summary}
+
+## AGENT CONTEXT
+**Target Agent**: {agent_id} ({agent_type})
+**Job Purpose**: {job_description}
+
+**Agent Capabilities**:
+{agent_capabilities}
+
+## TASK REQUIREMENTS
+{task_requirements}
+
+## CRITICAL INSTRUCTIONS
+1. **BE SPECIFIC**: Use actual names, identifiers, and data from the signal
+2. **BE ACTIONABLE**: Focus on what the agent should DO, not generic descriptions
+3. **BE RELEVANT**: Address the specific signal type and context
+4. **AVOID REPETITION**: Don't repeat the same workspace knowledge in every task
+
+## OUTPUT FORMAT (Use this exact structure):
+
+**Immediate Action**: [Specific first step using actual signal data]
+**Core Objective**: [Clear goal based on this specific signal, not generic processing]
+**Specific Steps**:
+1. [First concrete action with actual resource names]
+2. [Second action based on signal type and context]
+3. [Third action if needed for completion]
+**Expected Outcome**: [Specific result for this signal type]
+**Context**: [Key signal details without noise or repeated workspace knowledge]
+
+Generate the task description now following the OUTPUT FORMAT exactly. Focus on THIS SPECIFIC SIGNAL, not generic processing:`,
+      },
+    },
+
+    agent: {
+      model: "claude-3-5-sonnet-20241022",
+      memory: "agent",
+      supervision: {
+        level: "minimal",
+        cache_enabled: true,
+        cache_adapter: "memory",
+        cache_ttl_hours: 1,
+        parallel_llm_calls: true,
+        timeouts: {
+          analysis_ms: 2000,
+          validation_ms: 1000,
+        },
+      },
+      prompts: {
+        system: `You are an AgentSupervisor responsible for safe agent loading and execution.
+Your role is to analyze agents for safety, prepare secure environments, and supervise execution.
+
+Key responsibilities:
+- Analyze agents for safety and optimization before loading
+- Prepare secure execution environments
+- Monitor agent execution in real-time
+- Validate outputs for quality and safety
+- Handle failures and recovery scenarios`,
       },
     },
   },

@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { type WorkspaceSignalConfig } from "../../../core/config-loader.ts";
+import { type WorkspaceSignalConfig } from "@atlas/config";
 
 // Component that renders the signal list
 export function SignalListComponent({

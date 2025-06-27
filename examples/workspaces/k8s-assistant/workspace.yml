@@ -38,7 +38,6 @@ jobs:
   # -------------------------
   # DevOps Workflow (Linear → K8s → Linear)
   # -------------------------
-  
   devops-workflow:
     name: "devops-workflow"
     description: "Complete DevOps workflow: Linear ticket analysis → K8s operations → Linear result update"
@@ -54,9 +53,9 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "linear-writer"           # Step 1: Process ticket, set to In Progress, coordinate K8s task
-        - id: "standalone-coordinator"  # Step 2: Execute K8s operations, return structured results
-        - id: "linear-writer"           # Step 3: Process K8s results, update Linear ticket with outcomes
+        - id: "linear-writer" # Step 1: Process ticket, set to In Progress, coordinate K8s task
+        - id: "standalone-coordinator" # Step 2: Execute K8s operations, return structured results
+        - id: "linear-writer" # Step 3: Process K8s results, update Linear ticket with outcomes
 
   devops-comment-automation:
     name: "devops-comment-automation"
@@ -72,9 +71,9 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "linear-writer"           # Step 1: Process comment, set ticket to In Progress
-        - id: "standalone-coordinator"  # Step 2: Execute K8s operations from comment
-        - id: "linear-writer"           # Step 3: Update Linear with command execution results
+        - id: "linear-writer" # Step 1: Process comment, set ticket to In Progress
+        - id: "standalone-coordinator" # Step 2: Execute K8s operations from comment
+        - id: "linear-writer" # Step 3: Update Linear with command execution results
 
   devops-incident-resolution:
     name: "devops-incident-resolution"
@@ -93,14 +92,14 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "linear-writer"           # Step 1: Process incident, add priority handling
-        - id: "standalone-coordinator"  # Step 2: Execute emergency K8s operations
-        - id: "linear-writer"           # Step 3: Update Linear with incident resolution results
+        - id: "linear-writer" # Step 1: Process incident, add priority handling
+        - id: "standalone-coordinator" # Step 2: Execute emergency K8s operations
+        - id: "linear-writer" # Step 3: Update Linear with incident resolution results
 
   # -------------------------
   # Direct K8s Operations (Optional)
   # -------------------------
-  
+
   direct-k8s-operation:
     name: "direct-k8s-operation"
     description: "Direct Kubernetes operation execution via HTTP API"
@@ -114,7 +113,7 @@ jobs:
   # -------------------------
   # Testing
   # -------------------------
-  
+
   linear-mcp-test:
     name: "linear-mcp-test"
     description: "Test Linear MCP integration by creating and updating issues"

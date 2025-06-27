@@ -251,36 +251,6 @@ const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
-const handleSessionCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "list";
-  return [
-    {
-      id: `session-output-${Date.now()}`,
-      component: <Text>Session {subcommand} executed (placeholder implementation)</Text>,
-    },
-  ];
-};
-
-const handleSignalCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "list";
-  return [
-    {
-      id: `signal-output-${Date.now()}`,
-      component: <Text>Signal {subcommand} executed (placeholder implementation)</Text>,
-    },
-  ];
-};
-
-const handleAgentCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "list";
-  return [
-    {
-      id: `agent-output-${Date.now()}`,
-      component: <Text>Agent {subcommand} executed (placeholder implementation)</Text>,
-    },
-  ];
-};
-
 const handleConfigCommand = (args: string[]): OutputEntry[] => {
   const subcommand = args[0] || "show";
   return [
@@ -358,27 +328,6 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     description: "Show Atlas credits and acknowledgments",
     usage: "/credits",
     handler: handleCreditsCommand,
-  },
-
-  session: {
-    name: "session",
-    description: "Manage workspace sessions",
-    usage: "/session [list|get|kill] [args...]",
-    handler: handleSessionCommand,
-  },
-
-  signal: {
-    name: "signal",
-    description: "Manage and trigger workspace signals",
-    usage: "/signal [list|trigger] [args...]",
-    handler: handleSignalCommand,
-  },
-
-  agent: {
-    name: "agent",
-    description: "Manage workspace agents",
-    usage: "/agent [list|describe|status] [args...]",
-    handler: handleAgentCommand,
   },
 
   config: {
