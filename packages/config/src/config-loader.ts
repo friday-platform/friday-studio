@@ -442,6 +442,15 @@ export class ConfigLoader {
   convertToAgentConfig(
     workspaceAgentConfig: WorkspaceAgentConfig,
   ): AgentConfig {
+    return ConfigLoader.convertWorkspaceAgentConfig(workspaceAgentConfig);
+  }
+
+  /**
+   * Static version of convertToAgentConfig for use without ConfigLoader instance
+   */
+  static convertWorkspaceAgentConfig(
+    workspaceAgentConfig: WorkspaceAgentConfig,
+  ): AgentConfig {
     switch (workspaceAgentConfig.type) {
       case "tempest":
         return {
@@ -451,17 +460,32 @@ export class ConfigLoader {
           config: workspaceAgentConfig.config,
         } as TempestAgentConfig;
 
-      case "llm":
+      case "llm": {
+        // Convert tools.mcp to mcp_servers for backward compatibility
+        let mcpServers = workspaceAgentConfig.mcp_servers; // Legacy format
+
+        // Check for new format: tools.mcp
+        if (
+          workspaceAgentConfig.tools && typeof workspaceAgentConfig.tools === "object" &&
+          !Array.isArray(workspaceAgentConfig.tools)
+        ) {
+          const toolsConfig = workspaceAgentConfig.tools as { mcp?: string[] };
+          if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp)) {
+            mcpServers = toolsConfig.mcp; // Use new format, overrides legacy
+          }
+        }
+
         return {
           type: "llm",
           model: workspaceAgentConfig.model!,
           purpose: workspaceAgentConfig.purpose,
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
-          mcp_servers: workspaceAgentConfig.mcp_servers,
+          mcp_servers: mcpServers,
           max_steps: workspaceAgentConfig.max_steps,
           tool_choice: workspaceAgentConfig.tool_choice,
         } as LLMAgentConfig;
+      }
 
       case "remote":
         return {

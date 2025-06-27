@@ -1,6 +1,7 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
 import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
+import { ConfigLoader } from "@atlas/config";
 
 export interface AgentLoadResult {
   loaded: IWorkspaceAgent[];
@@ -96,7 +97,7 @@ export class AgentLoader {
       provider: agentConfig.provider || "user",
       purpose: agentConfig.purpose || "",
       type: agentConfig.type,
-      config: agentConfig,
+      config: ConfigLoader.convertWorkspaceAgentConfig(agentConfig as any),
       // Add metadata flag so supervisor knows this is config-only
       isMetadata: true,
       // Required IWorkspaceAgent interface methods
