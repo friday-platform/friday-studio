@@ -753,7 +753,7 @@ export class AtlasDaemon {
       );
       logger.debug(`Merged config keys: ${Object.keys(mergedConfig).join(", ")}`);
 
-      const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
+      const workspaceObj = Workspace.fromConfig(mergedConfig, {
         id: workspace.id,
         name: workspace.name,
         role: WorkspaceMemberRole.OWNER,
