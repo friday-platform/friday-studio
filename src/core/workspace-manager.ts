@@ -13,7 +13,7 @@ import * as yaml from "@std/yaml";
 import { z } from "zod/v4";
 import { logger } from "../utils/logger.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { WorkspaceConfig, WorkspaceConfigSchema } from "./config-loader.ts";
+import { WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { IWorkspace } from "../types/core.ts";
 import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
@@ -125,8 +125,10 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("./config-loader.ts");
-      const configLoader = new ConfigLoader(absolutePath);
+      const { ConfigLoader } = await import("@atlas/config");
+      const { FilesystemConfigAdapter } = await import("@atlas/storage");
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, absolutePath);
       const loadedConfig = await configLoader.load();
 
       // Cache the workspace config from merged config
@@ -414,8 +416,10 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("./config-loader.ts");
-      const configLoader = new ConfigLoader(workspace.path);
+      const { ConfigLoader } = await import("@atlas/config");
+      const { FilesystemConfigAdapter } = await import("@atlas/storage");
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, workspace.path);
       const loadedConfig = await configLoader.load();
 
       // Cache the workspace config from merged config

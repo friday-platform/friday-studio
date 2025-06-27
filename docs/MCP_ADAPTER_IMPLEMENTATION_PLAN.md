@@ -141,9 +141,13 @@ export class MCPAdapter extends BaseRemoteAdapter {
     try {
       await this.client.connect(this.transport);
       this.connected = true;
-      this.logger.info("Connected to MCP server", { endpoint: this.config.endpoint });
+      this.logger.info("Connected to MCP server", {
+        endpoint: this.config.endpoint,
+      });
     } catch (error) {
-      this.logger.error("Failed to connect to MCP server", { error: error.message });
+      this.logger.error("Failed to connect to MCP server", {
+        error: error.message,
+      });
       throw new Error(`MCP connection failed: ${error.message}`);
     }
   }
@@ -152,26 +156,35 @@ export class MCPAdapter extends BaseRemoteAdapter {
     await this.connect();
 
     try {
-      const toolsResult = await this.client.request({
-        method: "tools/list",
-        params: {},
-      }, ListToolsResultSchema);
-
-      return [{
-        name: "mcp-server",
-        description: `MCP Server with ${toolsResult.tools.length} tools`,
-        metadata: {
-          tools: toolsResult.tools.map((t) => t.name),
-          endpoint: this.config.endpoint,
+      const toolsResult = await this.client.request(
+        {
+          method: "tools/list",
+          params: {},
         },
-      }];
+        ListToolsResultSchema,
+      );
+
+      return [
+        {
+          name: "mcp-server",
+          description: `MCP Server with ${toolsResult.tools.length} tools`,
+          metadata: {
+            tools: toolsResult.tools.map((t) => t.name),
+            endpoint: this.config.endpoint,
+          },
+        },
+      ];
     } catch (error) {
-      this.logger.error("Failed to discover MCP tools", { error: error.message });
+      this.logger.error("Failed to discover MCP tools", {
+        error: error.message,
+      });
       throw new Error(`MCP discovery failed: ${error.message}`);
     }
   }
 
-  async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
+  async executeAgent(
+    request: RemoteExecutionRequest,
+  ): Promise<RemoteExecutionResult> {
     await this.connect();
 
     const startTime = performance.now();
@@ -180,21 +193,30 @@ export class MCPAdapter extends BaseRemoteAdapter {
       const toolCall = this.parseToolCall(request.input);
 
       // Check tool filtering
-      if (this.config.allowed_tools && !this.config.allowed_tools.includes(toolCall.name)) {
+      if (
+        this.config.allowed_tools &&
+        !this.config.allowed_tools.includes(toolCall.name)
+      ) {
         throw new Error(`Tool '${toolCall.name}' not in allowed tools list`);
       }
 
-      if (this.config.denied_tools && this.config.denied_tools.includes(toolCall.name)) {
+      if (
+        this.config.denied_tools &&
+        this.config.denied_tools.includes(toolCall.name)
+      ) {
         throw new Error(`Tool '${toolCall.name}' is denied by configuration`);
       }
 
-      const result = await this.client.request({
-        method: "tools/call",
-        params: {
-          name: toolCall.name,
-          arguments: toolCall.arguments,
+      const result = await this.client.request(
+        {
+          method: "tools/call",
+          params: {
+            name: toolCall.name,
+            arguments: toolCall.arguments,
+          },
         },
-      }, CallToolResultSchema);
+        CallToolResultSchema,
+      );
 
       const executionTime = performance.now() - startTime;
 
@@ -231,10 +253,13 @@ export class MCPAdapter extends BaseRemoteAdapter {
       await this.connect();
 
       // Simple health check by listing tools
-      await this.client.request({
-        method: "tools/list",
-        params: {},
-      }, ListToolsResultSchema);
+      await this.client.request(
+        {
+          method: "tools/list",
+          params: {},
+        },
+        ListToolsResultSchema,
+      );
 
       return { status: "healthy" };
     } catch (error) {
@@ -245,9 +270,10 @@ export class MCPAdapter extends BaseRemoteAdapter {
     }
   }
 
-  private parseToolCall(
-    input: string | MessagePart[],
-  ): { name: string; arguments: Record<string, unknown> } {
+  private parseToolCall(input: string | MessagePart[]): {
+    name: string;
+    arguments: Record<string, unknown>;
+  } {
     const inputStr = typeof input === "string" ? input : input[0]?.content || "";
 
     try {
@@ -281,7 +307,10 @@ export class MCPAdapter extends BaseRemoteAdapter {
           }
         }
 
-        if (this.config.auth?.type === "api_key" && this.config.auth.token_env) {
+        if (
+          this.config.auth?.type === "api_key" &&
+          this.config.auth.token_env
+        ) {
           const apiKey = Deno.env.get(this.config.auth.token_env);
           if (apiKey) {
             headers[this.config.auth.header || "X-API-Key"] = apiKey;
@@ -326,7 +355,7 @@ const WorkspaceAgentConfigSchema = z
 
     // Remote agent specific (enhanced for MCP)
     protocol: z.enum(["acp", "a2a", "mcp", "custom"]).optional(),
-    endpoint: z.string().url().optional(),
+    endpoint: z.url().optional(),
     auth: AuthConfigSchema.optional(),
 
     // Protocol-specific configurations
@@ -369,7 +398,10 @@ export class AgentLoader {
     }
   }
 
-  private async validateMCPAgent(adapter: MCPAdapter, config: RemoteAgentConfig): Promise<void> {
+  private async validateMCPAgent(
+    adapter: MCPAdapter,
+    config: RemoteAgentConfig,
+  ): Promise<void> {
     try {
       const agents = await adapter.discoverAgents();
       if (agents.length === 0) {
@@ -396,9 +428,9 @@ export class AgentLoader {
 
 async executeAgent(request: RemoteExecutionRequest): Promise<RemoteExecutionResult> {
   await this.connect();
-  
+
   const startTime = performance.now();
-  
+
   try {
     const requestData = this.parseRequest(request.input);
     let result;
@@ -547,17 +579,17 @@ private async executeWithRetry<T>(
   maxRetries: number = 3
 ): Promise<T> {
   let lastError: Error;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (error) {
       lastError = error;
-      
+
       if (attempt < maxRetries) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff
         await new Promise(resolve => setTimeout(resolve, delay));
-        
+
         // Reconnect if connection lost
         if (error.message.includes("connection") || error.message.includes("network")) {
           this.connected = false;
@@ -565,7 +597,7 @@ private async executeWithRetry<T>(
       }
     }
   }
-  
+
   throw lastError!;
 }
 ```

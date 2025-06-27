@@ -3,7 +3,7 @@
  * Manages ambient workspace capabilities that are available to agents
  */
 
-import type { WorkspaceAgentConfig } from "./config-loader.ts";
+import type { WorkspaceAgentConfig } from "@atlas/config";
 
 export interface WorkspaceCapability {
   id: string;

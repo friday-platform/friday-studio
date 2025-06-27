@@ -7,7 +7,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import type { AtlasConfig } from "../config-loader.ts";
+import type { AtlasConfig } from "@atlas/config";
 import { getWorkspaceManager } from "../workspace-manager.ts";
 import { logger } from "../../utils/logger.ts";
 

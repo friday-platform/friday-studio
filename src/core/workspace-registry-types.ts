@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { WorkspaceConfigSchema } from "./config-loader.ts";
+import { WorkspaceConfigSchema } from "@atlas/config";
 
 // Zod schemas for validation
 export const WorkspaceStatusSchema = z.enum([

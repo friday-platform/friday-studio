@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { z } from "zod/v4";
-import { WorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "@atlas/config";
 import { useActiveFocus, useTabNavigation } from "../tabs.tsx";
 import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";

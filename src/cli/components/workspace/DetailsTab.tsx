@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { WorkspaceConfig } from "../../../core/config-loader.ts";
+import { WorkspaceConfig } from "@atlas/config";
 
 interface DetailsTabProps {
   config: WorkspaceConfig;

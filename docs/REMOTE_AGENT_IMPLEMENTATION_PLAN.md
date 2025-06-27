@@ -1005,7 +1005,7 @@ const WorkspaceAgentConfigSchema = z
 
     // Remote agent specific (enhanced)
     protocol: z.enum(["acp", "a2a", "custom"]).optional(),
-    endpoint: z.string().url().optional(),
+    endpoint: z.url().optional(),
     auth: AuthConfigSchema.optional(),
     timeout: z.number().positive().optional(),
 

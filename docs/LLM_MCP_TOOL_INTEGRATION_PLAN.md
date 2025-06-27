@@ -141,7 +141,7 @@ type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
 export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("sse"),
-    url: z.string().url(),
+    url: z.url(),
   }).strict(),
   z.object({
     type: z.literal("stdio"),
@@ -699,7 +699,7 @@ export class LLMProviderManager {
 const MCPTransportConfigSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("sse"),
-    url: z.string().url(),
+    url: z.url(),
   }),
   z.object({
     type: z.literal("stdio"),

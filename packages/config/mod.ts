@@ -1,38 +1,20 @@
 /**
- * @module @atlas/config
- *
- * Configuration management package for Atlas
+ * Configuration package for Atlas
  *
  * This package provides:
- * - Configuration schemas
- * - Default configurations
- * - Configuration validation
- * - Workspace initialization defaults
+ * - Configuration schemas using Zod v4
+ * - Type definitions for all configuration objects
+ * - Validation utilities
+ * - ConfigLoader class (to be implemented)
  */
 
-// TODO: Move configuration schemas from src/config/
-// TODO: Move workspace configuration logic from src/core/workspace-config.ts
-// TODO: Move config loader from src/core/config-loader.ts
+// Export all schemas and types
+export * from "./src/schemas.ts";
+export * from "./src/validation.ts";
 
-export const CONFIG_VERSION = "1.0.0";
+// Export ConfigLoader
+export { ConfigLoader } from "./src/config-loader.ts";
 
-// Placeholder exports - will be replaced as we migrate code
-export interface WorkspaceConfig {
-  name: string;
-  version: string;
-  // TODO: Add full schema
-}
-
-export interface SupervisorConfig {
-  // TODO: Add supervisor configuration schema
-}
-
-export function loadConfig(path: string): Promise<WorkspaceConfig> {
-  // TODO: Implement
-  throw new Error("Not implemented yet");
-}
-
-export function validateConfig(config: unknown): WorkspaceConfig {
-  // TODO: Implement validation
-  throw new Error("Not implemented yet");
-}
+// Export default configurations
+export { supervisorDefaults } from "./src/defaults/supervisor-defaults.ts";
+export { atlasDefaults } from "./src/defaults/atlas-defaults.ts";

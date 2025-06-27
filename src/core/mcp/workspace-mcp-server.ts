@@ -6,7 +6,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import type { WorkspaceConfig } from "../config-loader.ts";
+import type { WorkspaceConfig } from "@atlas/config";
 
 export interface WorkspaceMCPServerDependencies {
   workspaceRuntime: {

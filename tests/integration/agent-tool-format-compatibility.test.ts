@@ -9,7 +9,8 @@ import {
   assertExists,
   assertStringIncludes,
 } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { ConfigLoader } from "../../src/core/config-loader.ts";
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
 
 /**
@@ -69,7 +70,8 @@ Deno.test("All workspace examples use correct tool format", async () => {
     const workspacePath = `./examples/workspaces/${workspaceName}`;
 
     try {
-      const loader = new ConfigLoader(workspacePath);
+      const adapter = new FilesystemConfigAdapter();
+      const loader = new ConfigLoader(adapter, workspacePath);
       const config = await loader.load();
 
       // Verify agents use new format
@@ -102,7 +104,8 @@ Deno.test("All workspace examples use correct tool format", async () => {
  * Test that job-level tool assignments work with new format
  */
 Deno.test("Job-level tool assignments work with new format", async () => {
-  const loader = new ConfigLoader("./examples/workspaces/telephone");
+  const adapter = new FilesystemConfigAdapter();
+  const loader = new ConfigLoader(adapter, "./examples/workspaces/telephone");
   const config = await loader.load();
 
   // Check telephone job agent tool assignments

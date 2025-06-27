@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Spacer, Text, useApp, useInput, useStdout } from "ink";
 import { useTabNavigation } from "./tabs.tsx";
 import { getWorkspaceManager } from "../../core/workspace-manager.ts";
-import { WorkspaceConfig } from "../../core/config-loader.ts";
+import { WorkspaceConfig } from "@atlas/config";
 import { AgentsTab, DetailsTab, LogsTab, SessionsTab, SignalsTab } from "./workspace/index.ts";
 
 interface WorkspaceViewProps {

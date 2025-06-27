@@ -8,35 +8,19 @@ import { z } from "zod/v4";
 import { logger } from "../../../utils/logger.ts";
 import { AtlasTelemetry } from "../../../utils/telemetry.ts";
 import type { Span } from "@opentelemetry/api";
+import {
+  type MCPAuthConfig,
+  MCPAuthConfigSchema,
+  type MCPToolsConfig,
+  MCPToolsConfigSchema,
+  type MCPTransportConfig,
+  MCPTransportConfigSchema,
+} from "@atlas/config";
 
 // ai doesn't export the MCPClient type, so we need to infer it.
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
 
-// Zod schemas for type-safe configuration
-export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
-  z.object({
-    type: z.literal("sse"),
-    url: z.string().url(),
-  }).strict(),
-  z.object({
-    type: z.literal("stdio"),
-    command: z.string(),
-    args: z.array(z.string()).optional(),
-    env: z.record(z.string(), z.string()).optional(),
-  }).strict(),
-]);
-
-export const MCPAuthConfigSchema = z.object({
-  type: z.enum(["bearer", "api_key"]),
-  token_env: z.string().optional(),
-  header: z.string().optional(),
-});
-
-export const MCPToolsConfigSchema = z.object({
-  allowed: z.array(z.string()).optional(),
-  denied: z.array(z.string()).optional(),
-});
-
+// Extended MCP server config schema for internal use
 export const MCPServerConfigSchema = z.object({
   id: z.string(),
   transport: MCPTransportConfigSchema,
@@ -46,10 +30,7 @@ export const MCPServerConfigSchema = z.object({
   scope: z.enum(["platform", "workspace", "merged"]).optional(),
 });
 
-// Infer TypeScript types from Zod schemas
-export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
-export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
-export type MCPToolsConfig = z.infer<typeof MCPToolsConfigSchema>;
+// Infer TypeScript type from extended schema
 export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
 
 interface MCPClientWrapper {

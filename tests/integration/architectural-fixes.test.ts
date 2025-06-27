@@ -4,7 +4,8 @@
  */
 
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { ConfigLoader } from "../../src/core/config-loader.ts";
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
 import type { AtlasMemoryConfig } from "../../src/core/memory-config.ts";
 
@@ -89,7 +90,8 @@ agents:
   await Deno.writeTextFile("workspace.yml", testWorkspaceConfig);
 
   try {
-    const configLoader = new ConfigLoader();
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter);
     const mergedConfig = await configLoader.load();
 
     // Verify supervisor defaults were loaded
