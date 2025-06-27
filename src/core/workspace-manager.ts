@@ -10,10 +10,10 @@
 import { basename, join } from "@std/path";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
-import { z } from "zod/v4";
 import { logger } from "../utils/logger.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
+import { ConfigLoader, WorkspaceConfig } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { IWorkspace } from "../types/core.ts";
 import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
@@ -125,8 +125,6 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("@atlas/config");
-      const { FilesystemConfigAdapter } = await import("@atlas/storage");
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, absolutePath);
       const loadedConfig = await configLoader.load();
@@ -416,8 +414,6 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("@atlas/config");
-      const { FilesystemConfigAdapter } = await import("@atlas/storage");
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, workspace.path);
       const loadedConfig = await configLoader.load();
@@ -502,7 +498,7 @@ export class WorkspaceManager {
     createdAt: string;
     lastSeen: string;
     hasActiveRuntime: boolean;
-    config?: any; // Workspace configuration including server.mcp settings
+    config: WorkspaceConfig;
     runtime?: {
       status: string;
       startedAt: string;
@@ -538,7 +534,7 @@ export class WorkspaceManager {
       createdAt: workspace.createdAt,
       lastSeen: workspace.lastSeen,
       hasActiveRuntime: !!runtimeInfo,
-      config, // Include workspace configuration for MCP enforcement
+      config,
       runtime: runtimeInfo
         ? {
           status: runtimeInfo.runtime.getState(),
@@ -567,21 +563,17 @@ export class WorkspaceManager {
     }
 
     try {
-      // Read and parse the workspace.yml file
-      const workspaceContent = await Deno.readTextFile(workspace.configPath);
-      const rawConfig = yaml.parse(workspaceContent);
+      // Use ConfigLoader for consistent configuration loading
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, workspace.path);
+      const mergedConfig = await configLoader.load();
 
-      // Validate with Zod schema
-      const config = WorkspaceConfigSchema.parse(rawConfig);
-      return config;
+      // Return just the workspace portion
+      return mergedConfig.workspace;
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        logger.error(`Invalid workspace configuration for ${workspaceSlug}`, {
-          error: error.issues,
-        });
-      } else {
-        logger.error(`Failed to load workspace config for ${workspaceSlug}`, { error });
-      }
+      logger.error(`Failed to load workspace config for ${workspaceSlug}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -822,22 +814,21 @@ export class WorkspaceManager {
       try {
         const existing = await this.findByPath(workspacePath);
         if (!existing) {
-          // Try to read workspace.yml to get name and description
-          const workspaceYmlPath = join(workspacePath, "workspace.yml");
+          // Try to load workspace config using ConfigLoader
           let name = basename(workspacePath);
           let description: string | undefined;
 
           try {
-            const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-            const config = yaml.parse(yamlContent) as {
-              workspace?: { name?: string; description?: string };
-            };
+            const adapter = new FilesystemConfigAdapter();
+            const configLoader = new ConfigLoader(adapter, workspacePath);
+            const mergedConfig = await configLoader.load();
 
-            if (config.workspace?.name) {
-              name = config.workspace.name;
+            // Extract name and description from validated config
+            if (mergedConfig.workspace.workspace.name) {
+              name = mergedConfig.workspace.workspace.name;
             }
-            if (config.workspace?.description) {
-              description = config.workspace.description;
+            if (mergedConfig.workspace.workspace.description) {
+              description = mergedConfig.workspace.workspace.description;
             }
           } catch {
             // Ignore parsing errors, use defaults

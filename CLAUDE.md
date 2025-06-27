@@ -248,6 +248,42 @@ When the user's approach is sound, acknowledge it directly. When it has flaws, i
 specifically with alternative solutions. Aim for the engineering excellence expected at
 organizations like Google Research, not merely functional code.
 
+## Import Pattern Guidelines
+
+**Prefer static imports** (at the top of modules) over dynamic imports unless there's a specific
+reason:
+
+### When to use static imports (preferred):
+
+```typescript
+import { ConfigLoader } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
+```
+
+Use static imports when:
+
+- No circular dependency issues exist
+- The imported modules are always used in the file
+- No conditional loading logic is needed
+- Better performance is desired (modules loaded once at startup)
+- Better type safety and IDE support is needed
+
+### When to use dynamic imports:
+
+```typescript
+const { ConfigLoader } = await import("@atlas/config");
+```
+
+Only use dynamic imports when:
+
+- Breaking circular dependency chains
+- Conditional loading based on runtime conditions
+- Lazy loading for rarely used code paths
+- Loading optional dependencies that might not be installed
+
+**Default to static imports** for cleaner code, better performance, and improved developer
+experience.
+
 ## TypeScript Type Error Resolution Best Practices
 
 When fixing TypeScript type errors:
