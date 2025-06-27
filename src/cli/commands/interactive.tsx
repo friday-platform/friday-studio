@@ -6,6 +6,7 @@ import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
+import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
@@ -367,14 +368,9 @@ const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
-const handleConfigCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "show";
-  return [
-    {
-      id: `config-output-${Date.now()}`,
-      component: <Text>Config {subcommand} executed (placeholder implementation)</Text>,
-    },
-  ];
+const handleConfigCommand = (_args: string[]): OutputEntry[] => {
+  // Config command switches to its own view, no output entries needed
+  return [];
 };
 
 const handleStatusCommand = (
@@ -614,7 +610,7 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init" | "credits">(
+  const [view, setView] = useState<"help" | "command" | "init" | "config" | "credits">(
     "command",
   );
   const [_minHeight, setMinHeight] = useState(35);
@@ -1247,6 +1243,11 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "config") {
+      setView("config");
+      return;
+    }
+
     if (parsed.command === "credits") {
       setView("credits");
       return;
@@ -1531,6 +1532,7 @@ export default function InteractiveCommand() {
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
+      {view === "config" && <ConfigView onExit={() => setView("command")} />}
       {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );
