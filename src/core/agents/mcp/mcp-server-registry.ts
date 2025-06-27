@@ -9,12 +9,22 @@ import { type MCPServerConfig } from "./mcp-manager.ts";
 
 // Type definitions for configuration sources
 export interface AtlasConfig {
-  mcp_servers?: Record<string, Partial<MCPServerConfig>>;
+  mcp_servers?: Record<string, Partial<MCPServerConfig>>; // Legacy format
+  tools?: {
+    mcp?: {
+      servers?: Record<string, Partial<MCPServerConfig>>;
+    };
+  }; // New format
   [key: string]: unknown;
 }
 
 export interface WorkspaceConfig {
-  mcp_servers?: Record<string, Partial<MCPServerConfig>>;
+  mcp_servers?: Record<string, Partial<MCPServerConfig>>; // Legacy format
+  tools?: {
+    mcp?: {
+      servers?: Record<string, Partial<MCPServerConfig>>;
+    };
+  }; // New format
   [key: string]: unknown;
 }
 
@@ -89,27 +99,50 @@ export class MCPServerRegistry {
 
   /**
    * Extract platform-level MCP servers from atlas.yml
+   * Supports both new format (tools.mcp.servers) and legacy format (mcp_servers)
    */
   private static extractPlatformMCPServers(
     atlasConfig?: AtlasConfig,
   ): Map<string, MCPServerConfig> {
     const servers = new Map<string, MCPServerConfig>();
 
-    if (!atlasConfig?.mcp_servers) return servers;
+    if (!atlasConfig) return servers;
 
-    for (const [serverId, config] of Object.entries(atlasConfig.mcp_servers)) {
-      servers.set(serverId, {
-        ...config,
-        id: serverId,
-        timeout_ms: config.timeout_ms || 30000,
-        scope: "platform",
-      } as MCPServerConfig);
+    // First, try the new format: tools.mcp.servers
+    const newFormatServers = atlasConfig.tools?.mcp?.servers;
+    if (newFormatServers) {
+      for (const [serverId, config] of Object.entries(newFormatServers)) {
+        servers.set(serverId, {
+          ...config,
+          id: serverId,
+          timeout_ms: config.timeout_ms || 30000,
+          scope: "platform",
+        } as MCPServerConfig);
+      }
+    }
+
+    // Fallback to legacy format: mcp_servers (for backward compatibility)
+    const legacyServers = atlasConfig.mcp_servers;
+    if (legacyServers) {
+      for (const [serverId, config] of Object.entries(legacyServers)) {
+        // Only add if not already present from new format (new format takes precedence)
+        if (!servers.has(serverId)) {
+          servers.set(serverId, {
+            ...config,
+            id: serverId,
+            timeout_ms: config.timeout_ms || 30000,
+            scope: "platform",
+          } as MCPServerConfig);
+        }
+      }
     }
 
     logger.debug(`Extracted ${servers.size} platform MCP servers`, {
       operation: "mcp_platform_extraction",
       serverCount: servers.size,
       serverIds: Array.from(servers.keys()),
+      newFormatCount: newFormatServers ? Object.keys(newFormatServers).length : 0,
+      legacyFormatCount: legacyServers ? Object.keys(legacyServers).length : 0,
     });
 
     return servers;
@@ -117,27 +150,50 @@ export class MCPServerRegistry {
 
   /**
    * Extract workspace-level MCP servers from workspace.yml
+   * Supports both new format (tools.mcp.servers) and legacy format (mcp_servers)
    */
   private static extractWorkspaceMCPServers(
     workspaceConfig?: WorkspaceConfig,
   ): Map<string, MCPServerConfig> {
     const servers = new Map<string, MCPServerConfig>();
 
-    if (!workspaceConfig?.mcp_servers) return servers;
+    if (!workspaceConfig) return servers;
 
-    for (const [serverId, config] of Object.entries(workspaceConfig.mcp_servers)) {
-      servers.set(serverId, {
-        ...config,
-        id: serverId,
-        timeout_ms: config.timeout_ms || 30000,
-        scope: "workspace",
-      } as MCPServerConfig);
+    // First, try the new format: tools.mcp.servers
+    const newFormatServers = workspaceConfig.tools?.mcp?.servers;
+    if (newFormatServers) {
+      for (const [serverId, config] of Object.entries(newFormatServers)) {
+        servers.set(serverId, {
+          ...config,
+          id: serverId,
+          timeout_ms: config.timeout_ms || 30000,
+          scope: "workspace",
+        } as MCPServerConfig);
+      }
+    }
+
+    // Fallback to legacy format: mcp_servers (for backward compatibility)
+    const legacyServers = workspaceConfig.mcp_servers;
+    if (legacyServers) {
+      for (const [serverId, config] of Object.entries(legacyServers)) {
+        // Only add if not already present from new format (new format takes precedence)
+        if (!servers.has(serverId)) {
+          servers.set(serverId, {
+            ...config,
+            id: serverId,
+            timeout_ms: config.timeout_ms || 30000,
+            scope: "workspace",
+          } as MCPServerConfig);
+        }
+      }
     }
 
     logger.debug(`Extracted ${servers.size} workspace MCP servers`, {
       operation: "mcp_workspace_extraction",
       serverCount: servers.size,
       serverIds: Array.from(servers.keys()),
+      newFormatCount: newFormatServers ? Object.keys(newFormatServers).length : 0,
+      legacyFormatCount: legacyServers ? Object.keys(legacyServers).length : 0,
     });
 
     return servers;

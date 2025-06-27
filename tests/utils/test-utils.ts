@@ -400,3 +400,44 @@ export class EnhancedTestEnvironment extends TestEnvironment {
 export function createEnhancedTestEnvironment(): EnhancedTestEnvironment {
   return new EnhancedTestEnvironment();
 }
+
+/**
+ * Test workspace interface for managing temporary workspaces
+ */
+export interface TestWorkspace {
+  path: string;
+  cleanup(): Promise<void>;
+}
+
+/**
+ * Creates a temporary test workspace with specified files
+ * @param files Object mapping file paths to content
+ * @returns Promise<TestWorkspace> Test workspace instance
+ */
+export async function createTestWorkspace(files: Record<string, string>): Promise<TestWorkspace> {
+  const tempDir = await Deno.makeTempDir({ prefix: "atlas-test-workspace-" });
+
+  // Write all files to the temp directory
+  for (const [filePath, content] of Object.entries(files)) {
+    const fullPath = `${tempDir}/${filePath}`;
+    const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
+
+    // Create directory if it doesn't exist
+    if (dir !== tempDir) {
+      await Deno.mkdir(dir, { recursive: true });
+    }
+
+    await Deno.writeTextFile(fullPath, content);
+  }
+
+  return {
+    path: tempDir,
+    async cleanup() {
+      try {
+        await Deno.remove(tempDir, { recursive: true });
+      } catch (error) {
+        console.warn(`Failed to cleanup test workspace ${tempDir}:`, error);
+      }
+    },
+  };
+}
