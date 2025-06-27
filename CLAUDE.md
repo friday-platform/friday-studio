@@ -240,3 +240,56 @@ system quality, even if they come from the user. Prioritize:
 When the user's approach is sound, acknowledge it directly. When it has flaws, identify them
 specifically with alternative solutions. Aim for the engineering excellence expected at
 organizations like Google Research, not merely functional code.
+
+## TypeScript Type Error Resolution Best Practices
+
+When fixing TypeScript type errors:
+
+1. **Avoid `any` types**: Never use `any` to bypass type errors. Instead:
+   - Use `unknown` when the type is truly unknown
+   - Use proper type definitions or interfaces
+   - Use generic types where appropriate
+
+2. **Avoid `as` type assertions**: Instead of using `as` casts:
+   - Use type guards for runtime type checking
+   - Use Zod schemas for validation and type inference
+   - Let TypeScript infer types where possible
+
+3. **Prefer existing types**: Always check if types already exist in the codebase before creating
+   new ones
+   - Look for existing interfaces and type definitions
+   - Check imported packages for exported types
+   - Reuse types from `@atlas/config`, `@atlas/storage`, etc.
+
+4. **Use Zod for API responses**: When handling external data (API responses, JSON parsing):
+   ```typescript
+   import { z } from "zod/v4";
+
+   const ResponseSchema = z.object({
+     field: z.string(),
+     count: z.number(),
+   });
+
+   const response = await fetch(url);
+   const data = await response.json();
+   return ResponseSchema.parse(data); // Validates and types the response
+   ```
+
+5. **Record types in Zod v4**: When using `z.record()`, always provide both key and value types:
+   ```typescript
+   // Correct for Zod v4
+   z.record(z.string(), z.unknown());
+
+   // Incorrect (will cause type errors)
+   z.record(z.unknown());
+   ```
+
+6. **Generic type parameters**: When creating reusable functions that work with different types:
+   ```typescript
+   // Good: Use generics instead of any
+   async function fetchData<T>(url: string, schema: z.ZodSchema<T>): Promise<T> {
+     const response = await fetch(url);
+     const data = await response.json();
+     return schema.parse(data);
+   }
+   ```

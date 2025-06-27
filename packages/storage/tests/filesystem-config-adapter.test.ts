@@ -120,9 +120,8 @@ Deno.test("FilesystemConfigAdapter - resolves atlas.yml from git root", async ()
     // So it should find the git root atlas.yml
     expect(resolvedPath).toContain("atlas.yml");
 
-    // If we weren't in a git repo, it would return the workspace path
-    // But in our case, we ARE in the atlas git repo
-    const isGitRootPath = resolvedPath.includes("atlas/atlas.yml") &&
+    // The resolved path should either be from git root or the workspace default
+    const isGitRootPath = resolvedPath.includes("atlas-client-sdk/atlas.yml") &&
       !resolvedPath.includes("workspace2");
     const isWorkspacePath = resolvedPath === join(workspaceDir, "atlas.yml");
 

@@ -1,4 +1,5 @@
 import { formatSessionForJson, type Session } from "./session-list-component.tsx";
+import { getAtlasClient, type SessionInfo } from "@atlas/client";
 
 export interface SessionFetchOptions {
   workspace?: string;
@@ -24,20 +25,23 @@ export async function fetchSessions(
   options: SessionFetchOptions = {},
 ): Promise<SessionFetchResponse> {
   try {
-    const port = options.port || 8080;
-    const response = await fetch(`http://localhost:${port}/api/sessions`, {
-      signal: AbortSignal.timeout(5000), // 5 second timeout
+    const client = getAtlasClient({
+      url: `http://localhost:${options.port || 8080}`,
+      timeout: 5000, // 5 second timeout
     });
 
-    if (!response.ok) {
-      return {
-        success: false,
-        error: `Failed to fetch sessions: ${response.statusText}`,
-        reason: "api_error",
-      };
-    }
+    const sessionInfos = await client.listSessions();
 
-    const sessions = (await response.json()) as Session[];
+    // Convert SessionInfo[] to Session[] format expected by the UI
+    const sessions = sessionInfos.map((s: SessionInfo): Session => ({
+      id: s.id,
+      workspaceName: s.workspaceId, // Map workspaceId to workspaceName
+      signal: s.signal,
+      status: s.status,
+      startedAt: s.startTime,
+      completedAt: s.endTime,
+      // Note: SessionInfo doesn't have agents info, so we'll omit it
+    }));
 
     // Filter by workspace if specified
     const filteredSessions = options.workspace
@@ -54,7 +58,7 @@ export async function fetchSessions(
       // Check for connection refused (no server running)
       if (
         error.message.includes("Connection refused") ||
-        (error.name === "TypeError" && error.message.includes("fetch"))
+        error.message.includes("Failed to connect to Atlas")
       ) {
         return {
           success: false,
@@ -63,7 +67,7 @@ export async function fetchSessions(
         };
       }
 
-      if (error.name === "AbortError") {
+      if (error.message.includes("timed out")) {
         return {
           success: false,
           error: `Request timed out. Server may be unresponsive.`,

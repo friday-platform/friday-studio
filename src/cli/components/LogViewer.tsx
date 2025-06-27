@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
+import { getAtlasClient, type LogEntry as AtlasLogEntry } from "@atlas/client";
 
 export interface LogEntry {
   timestamp: string;
@@ -73,16 +74,24 @@ export function LogViewer(
   useEffect(() => {
     if (!sessionId) return;
 
-    // Simulate log streaming - in real implementation, this would connect to the actual log source
     const fetchLogs = async () => {
       try {
-        const response = await fetch(
-          `http://localhost:8080/sessions/${sessionId}/logs?tail=${tail}`,
-        );
-        if (response.ok) {
-          const data = await response.json();
-          setLogs(data.logs || []);
-        }
+        const client = getAtlasClient();
+        const logEntries = await client.getSessionLogs(sessionId, {
+          tail,
+          follow: isFollowing,
+        });
+
+        // Convert AtlasLogEntry to LogEntry format
+        const convertedLogs = logEntries.map((entry: AtlasLogEntry): LogEntry => ({
+          timestamp: entry.timestamp,
+          component: entry.component,
+          level: entry.level as "info" | "warn" | "error" | "debug",
+          message: entry.message,
+          metadata: entry.metadata,
+        }));
+
+        setLogs(convertedLogs);
       } catch (err) {
         // Handle error
       }

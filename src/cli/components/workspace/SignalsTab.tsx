@@ -7,6 +7,7 @@ import { HttpUsageExamples } from "../HttpUsageExamples.tsx";
 import { CliUsageExamples } from "../CliUsageExamples.tsx";
 import { SidebarWrapper } from "../SidebarWrapper.tsx";
 import { Select, TextInput } from "@inkjs/ui";
+import { getAtlasClient } from "@atlas/client";
 
 interface SignalsTabProps {
   config: WorkspaceConfig;
@@ -614,26 +615,15 @@ export const SignalsTab = ({ config }: SignalsTabProps) => {
 
     try {
       const port = 8080; // Default workspace server port
-      const response = await fetch(
-        `http://localhost:${port}/signals/${selectedSignal}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(data),
-        },
-      );
+      const client = getAtlasClient();
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Failed to trigger signal: ${response.status} ${response.statusText}. ${errorText}`,
-        );
-      }
+      // Use the workspace signal trigger method
+      await client.triggerWorkspaceSignal(port, selectedSignal, data);
 
       setSubmissionResult(`Signal '${selectedSignal}' triggered successfully!`);
       setShowForm(false);
     } catch (err) {
-      if (err instanceof Error && err.message.includes("Connection refused")) {
+      if (err instanceof Error && err.message.includes("Failed to connect")) {
         setSubmissionResult(
           `Cannot connect to workspace server on port 8080. Is it running? Use 'atlas workspace serve' to start it.`,
         );

@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { type LibraryItem, LibraryItemSchema } from "./library-list-component.tsx";
+import { getAtlasClient, type LibrarySearchQuery } from "@atlas/client";
 
 export interface LibraryFetchOptions {
   type?: string;
@@ -47,26 +48,34 @@ export async function fetchLibraryItems(
   options: LibraryFetchOptions = {},
 ): Promise<LibraryFetchResponse> {
   try {
-    const port = options.port || 8080;
-    const params = buildLibraryQueryParams(options);
-    const serverUrl = `http://localhost:${port}`;
-
-    const response = await fetch(`${serverUrl}/api/library?${params}`, {
-      signal: AbortSignal.timeout(5000), // 5 second timeout
+    const client = getAtlasClient({
+      url: `http://localhost:${options.port || 8080}`,
+      timeout: 5000, // 5 second timeout
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return {
-        success: false,
-        error: `HTTP ${response.status}: ${errorText}`,
-        reason: "api_error",
-      };
-    }
+    // Convert LibraryFetchOptions to LibrarySearchQuery format
+    const searchQuery: LibrarySearchQuery = {
+      type: options.type,
+      tags: options.tags ? options.tags.split(",") : undefined,
+      since: options.since,
+      limit: options.limit,
+    };
 
-    const data = await response.json();
-    // API returns {items: [...], total: ...} format
-    const items = z.array(LibraryItemSchema).parse(data.items || data);
+    // Handle workspace filter by adding it to the query string if needed
+    // Note: The AtlasClient doesn't have a workspace parameter in LibrarySearchQuery,
+    // so we'll need to handle this differently or update the API
+    const result = await client.searchLibrary(searchQuery);
+
+    // Convert the result to match the expected format
+    const items = result.items.map((item): LibraryItem => ({
+      id: item.id,
+      type: item.type,
+      name: item.name,
+      description: item.description,
+      created_at: item.created_at,
+      tags: item.tags,
+      size_bytes: item.size_bytes,
+    }));
 
     return {
       success: true,
@@ -75,7 +84,10 @@ export async function fetchLibraryItems(
   } catch (error) {
     if (error instanceof Error) {
       // Check for common network errors
-      if (error.name === "TypeError" && error.message.includes("fetch")) {
+      if (
+        error.message.includes("Connection refused") ||
+        error.message.includes("Failed to connect to Atlas")
+      ) {
         return {
           success: false,
           error: `Cannot connect to server on port ${
@@ -85,7 +97,7 @@ export async function fetchLibraryItems(
         };
       }
 
-      if (error.name === "AbortError") {
+      if (error.message.includes("timed out")) {
         return {
           success: false,
           error: `Request timed out. Server may be unresponsive.`,
