@@ -184,6 +184,9 @@ export class ConfigLoader {
     workspaceConfig: WorkspaceConfig,
     jobs: Record<string, JobSpecification>,
   ): void {
+    // Validate MCP server configuration if enabled
+    this.validateMCPConfiguration(workspaceConfig, jobs);
+
     // Validate MCP server references in agents
     for (
       const [agentId, agentConfig] of Object.entries(
@@ -310,6 +313,127 @@ export class ConfigLoader {
         },
       },
     };
+  }
+
+  /**
+   * Validate MCP server configuration to prevent invalid workspaces from registering
+   */
+  private validateMCPConfiguration(
+    workspaceConfig: WorkspaceConfig,
+    jobs: Record<string, JobSpecification>,
+  ): void {
+    const serverConfig = workspaceConfig.server?.mcp;
+    if (!serverConfig?.enabled) {
+      return; // MCP not enabled, skip validation
+    }
+
+    // Validate discoverable job patterns match actual jobs
+    if (serverConfig.discoverable?.jobs) {
+      for (const jobPattern of serverConfig.discoverable.jobs) {
+        const isWildcard = jobPattern.endsWith("*");
+        const basePattern = isWildcard ? jobPattern.slice(0, -1) : jobPattern;
+
+        // Find matching jobs
+        const matchingJobs = Object.keys(jobs).filter((jobName) => {
+          return isWildcard ? jobName.startsWith(basePattern) : jobName === jobPattern;
+        });
+
+        if (matchingJobs.length === 0) {
+          throw new ConfigValidationError(
+            `MCP discoverable job pattern '${jobPattern}' doesn't match any defined jobs. Available jobs: ${
+              Object.keys(jobs).join(", ")
+            }`,
+            "workspace.yml",
+            "server.mcp.discoverable.jobs",
+            jobPattern,
+          );
+        }
+
+        // Validate that matching jobs have MCP-compliant names (already validated by schema, but explicit check)
+        for (const jobName of matchingJobs) {
+          if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(jobName)) {
+            throw new ConfigValidationError(
+              `Job '${jobName}' matched by MCP discoverable pattern '${jobPattern}' has invalid MCP tool name. MCP tool names must start with a letter and contain only letters, numbers, underscores, and hyphens.`,
+              "workspace.yml",
+              "jobs",
+              jobName,
+            );
+          }
+        }
+      }
+    }
+
+    // Validate capability patterns refer to valid workspace capabilities
+    if (serverConfig.discoverable?.capabilities) {
+      const validWorkspaceCapabilities = [
+        "workspace_jobs_list",
+        "workspace_jobs_trigger",
+        "workspace_jobs_describe",
+        "workspace_sessions_list",
+        "workspace_sessions_describe",
+        "workspace_sessions_cancel",
+        "workspace_agents_list",
+        "workspace_agents_describe",
+        "workspace_signals_list",
+        "workspace_signals_trigger",
+      ];
+
+      for (const capabilityPattern of serverConfig.discoverable.capabilities) {
+        const isWildcard = capabilityPattern.endsWith("*");
+        const basePattern = isWildcard ? capabilityPattern.slice(0, -1) : capabilityPattern;
+
+        // Find matching capabilities
+        const matchingCapabilities = validWorkspaceCapabilities.filter((cap) => {
+          return isWildcard ? cap.startsWith(basePattern) : cap === capabilityPattern;
+        });
+
+        if (matchingCapabilities.length === 0) {
+          throw new ConfigValidationError(
+            `MCP discoverable capability pattern '${capabilityPattern}' doesn't match any valid workspace capabilities. Valid capabilities: ${
+              validWorkspaceCapabilities.join(", ")
+            }`,
+            "workspace.yml",
+            "server.mcp.discoverable.capabilities",
+            capabilityPattern,
+          );
+        }
+      }
+    }
+
+    // Validate rate limits are reasonable
+    if (serverConfig.rate_limits) {
+      if (
+        serverConfig.rate_limits.requests_per_hour &&
+        serverConfig.rate_limits.requests_per_hour > 10000
+      ) {
+        throw new ConfigValidationError(
+          `MCP rate limit requests_per_hour (${serverConfig.rate_limits.requests_per_hour}) is too high. Maximum allowed: 10000`,
+          "workspace.yml",
+          "server.mcp.rate_limits.requests_per_hour",
+          serverConfig.rate_limits.requests_per_hour,
+        );
+      }
+
+      if (
+        serverConfig.rate_limits.concurrent_sessions &&
+        serverConfig.rate_limits.concurrent_sessions > 100
+      ) {
+        throw new ConfigValidationError(
+          `MCP rate limit concurrent_sessions (${serverConfig.rate_limits.concurrent_sessions}) is too high. Maximum allowed: 100`,
+          "workspace.yml",
+          "server.mcp.rate_limits.concurrent_sessions",
+          serverConfig.rate_limits.concurrent_sessions,
+        );
+      }
+    }
+
+    logger.info("MCP configuration validation passed", {
+      workspaceId: workspaceConfig.workspace.id || workspaceConfig.workspace.name,
+      mcpEnabled: serverConfig.enabled,
+      discoverableJobs: serverConfig.discoverable?.jobs?.length || 0,
+      discoverableCapabilities: serverConfig.discoverable?.capabilities?.length || 0,
+      hasRateLimits: !!serverConfig.rate_limits,
+    });
   }
 
   /**

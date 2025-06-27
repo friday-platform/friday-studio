@@ -5,6 +5,7 @@ import { YargsInstance } from "../../utils/yargs.ts";
 interface McpServeArgs {
   port?: number;
   logLevel?: string;
+  daemonUrl?: string;
 }
 
 export const command = "serve";
@@ -22,6 +23,11 @@ export function builder(y: YargsInstance) {
       alias: "p",
       describe: "Port for HTTP endpoint (optional, MCP uses stdio)",
     })
+    .option("daemon-url", {
+      type: "string",
+      describe: "Atlas daemon URL to connect to",
+      default: "http://localhost:8080",
+    })
     .option("logLevel", {
       type: "string",
       describe: "Logging level (debug, info, warn, error)",
@@ -29,36 +35,28 @@ export function builder(y: YargsInstance) {
       default: "info",
     })
     .example("$0 mcp serve", "Start MCP server with default settings")
-    .example("$0 mcp serve --port 8081", "Start MCP server on specific port");
+    .example("$0 mcp serve --daemon-url http://localhost:8080", "Connect to specific daemon");
 }
 
-export const handler = async (_argv: McpServeArgs): Promise<void> => {
+export const handler = async (argv: McpServeArgs): Promise<void> => {
   try {
     // Load environment variables
     await load({ export: true });
 
-    infoOutput("Starting Atlas MCP server...");
+    // Get daemon URL from argument, environment variable, or default
+    const daemonUrl = argv.daemonUrl ||
+      Deno.env.get("ATLAS_DAEMON_URL") ||
+      "http://localhost:8080";
 
-    // Import platform MCP server and dependencies
+    infoOutput(`Starting Atlas MCP server...`);
+    infoOutput(`Connecting to daemon at: ${daemonUrl}`);
+
+    // Import platform MCP server
     const { PlatformMCPServer } = await import("../../../core/mcp/platform-mcp-server.ts");
-    const { getWorkspaceManager } = await import("../../../core/workspace-manager.ts");
-    const { ConfigLoader } = await import("../../../core/config-loader.ts");
 
-    // Load Atlas configuration
-    const configLoader = new ConfigLoader();
-    const mergedConfig = await configLoader.load();
-    const atlasConfig = mergedConfig.atlas;
-
-    // Get workspace manager (tracks workspace registrations)
-    const workspaceManager = getWorkspaceManager();
-    await workspaceManager.initialize();
-
-    const workspaces = await workspaceManager.listAllPersisted();
-    infoOutput(`Found ${workspaces.length} registered workspace(s)`);
-
-    // Create MCP server with platform-level capabilities
+    // Create MCP server with platform-level capabilities (no config needed - daemon handles that)
     const mcpServer = new PlatformMCPServer({
-      atlasConfig,
+      daemonUrl, // All operations go through daemon API
     });
 
     // Handle graceful shutdown
@@ -76,13 +74,23 @@ export const handler = async (_argv: McpServeArgs): Promise<void> => {
     try {
       await mcpServer.start();
       successOutput("Atlas MCP server is running (stdio transport)");
+      successOutput(`Connected to daemon at: ${daemonUrl}`);
       infoOutput("Available tools:");
-      infoOutput("  - workspace_list (shows active runtime status)");
-      infoOutput("  - workspace_create (creates and starts runtime)");
-      infoOutput("  - workspace_delete (shuts down runtime)");
-      infoOutput("  - workspace_describe (live runtime details)");
-      infoOutput("  - workspace_trigger_job (trigger job via runtime)");
-      infoOutput("  - workspace_process_signal (process signal via runtime)");
+      infoOutput("Platform capabilities:");
+      infoOutput("  - workspace_list (list workspaces via daemon API)");
+      infoOutput("  - workspace_create (create workspace via daemon API)");
+      infoOutput("  - workspace_delete (delete workspace via daemon API)");
+      infoOutput("  - workspace_describe (describe workspace via daemon API)");
+      infoOutput("Workspace capabilities (via daemon API):");
+      infoOutput("  - workspace_jobs_list (list jobs in workspace)");
+      infoOutput("  - workspace_jobs_describe (describe specific job)");
+      infoOutput("  - workspace_sessions_list (list sessions in workspace)");
+      infoOutput("  - workspace_sessions_describe (describe specific session)");
+      infoOutput("  - workspace_sessions_cancel (cancel running session)");
+      infoOutput("  - workspace_signals_list (list signals in workspace)");
+      infoOutput("  - workspace_signals_trigger (trigger signal in workspace)");
+      infoOutput("  - workspace_agents_list (list agents in workspace)");
+      infoOutput("  - workspace_agents_describe (describe specific agent)");
       infoOutput("Press Ctrl+C to stop the server.");
 
       // Keep the process alive
@@ -93,6 +101,10 @@ export const handler = async (_argv: McpServeArgs): Promise<void> => {
       errorOutput(
         `Failed to start MCP server: ${error instanceof Error ? error.message : String(error)}`,
       );
+      if (error instanceof Error && error.message.includes("daemon not accessible")) {
+        errorOutput("Make sure to start the Atlas daemon first:");
+        errorOutput("  atlas daemon start");
+      }
       Deno.exit(1);
     }
   } catch (error) {

@@ -115,7 +115,7 @@ Deno.test("WorkspaceConfigSchema - validates workspace configuration", () => {
     },
     jobs: {
       "test-job": {
-        name: "Test Job",
+        name: "test_job",
         description: "A test job",
         execution: {
           strategy: "sequential",
@@ -216,7 +216,7 @@ Deno.test("WorkspaceAgentConfigSchema - rejects Tempest agent without required f
 
 Deno.test("JobSpecificationSchema - validates complex job configuration", () => {
   const complexJob = {
-    name: "Complex Deployment Job",
+    name: "complex_deployment_job",
     description: "Multi-stage deployment with validation",
     task_template: "Deploy {{service}} to {{environment}}",
     triggers: [

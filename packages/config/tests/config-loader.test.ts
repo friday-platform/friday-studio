@@ -300,7 +300,7 @@ Deno.test("ConfigLoader - loads job specifications from workspace config", async
       workspace: { name: "test-workspace" },
       jobs: {
         "inline-job": {
-          name: "Inline Job",
+          name: "inline_job",
           description: "Job defined inline",
           execution: {
             strategy: "sequential",
@@ -322,7 +322,7 @@ Deno.test("ConfigLoader - loads job specifications from workspace config", async
   const config = await loader.load();
 
   expect(config.jobs["inline-job"]).toBeDefined();
-  expect(config.jobs["inline-job"].name).toBe("Inline Job");
+  expect(config.jobs["inline-job"].name).toBe("inline_job");
   expect(config.jobs["inline-job"].execution.strategy).toBe("sequential");
 });
 
@@ -349,7 +349,7 @@ Deno.test("ConfigLoader - loads job specifications from files", async () => {
       },
     },
     "/test/jobs/file-job.yml": {
-      name: "File Job",
+      name: "file_job",
       description: "Job loaded from file",
       execution: {
         strategy: "parallel",
@@ -362,7 +362,7 @@ Deno.test("ConfigLoader - loads job specifications from files", async () => {
   const config = await loader.load();
 
   expect(config.jobs["file-job"]).toBeDefined();
-  expect(config.jobs["file-job"].name).toBe("File Job");
+  expect(config.jobs["file-job"].name).toBe("file_job");
   expect(config.jobs["file-job"].execution.strategy).toBe("parallel");
 });
 
@@ -445,7 +445,7 @@ Deno.test("ConfigLoader - handles complex job execution configurations", async (
       workspace: { name: "test-workspace" },
       jobs: {
         "complex-job": {
-          name: "Complex Job",
+          name: "complex_job",
           description: "Job with advanced execution config",
           triggers: [
             {
@@ -533,7 +533,7 @@ Deno.test("ConfigLoader - handles complex job execution configurations", async (
       },
     },
     "/test/jobs/complex-deployment.yml": {
-      name: "Advanced Deployment Pipeline",
+      name: "advanced_deployment_pipeline",
       description: "Complex job with all configuration options",
       task_template: "Deploy {{service}} to {{environment}} with rollback support",
       triggers: [
@@ -615,7 +615,7 @@ Deno.test("ConfigLoader - handles complex job execution configurations", async (
 
   const job = config.jobs["complex-job"];
   expect(job).toBeDefined();
-  expect(job.name).toBe("Complex Job");
+  expect(job.name).toBe("complex_job");
   expect(job.triggers).toBeDefined();
   expect(job.triggers![0].signal).toBe("webhook");
   expect(job.execution.agents).toHaveLength(2);
@@ -626,7 +626,7 @@ Deno.test("ConfigLoader - handles complex job execution configurations", async (
   // Also check the file-loaded job
   const deploymentJob = config.jobs["complex-deployment"];
   expect(deploymentJob).toBeDefined();
-  expect(deploymentJob.name).toBe("Advanced Deployment Pipeline");
+  expect(deploymentJob.name).toBe("advanced_deployment_pipeline");
   expect(deploymentJob.triggers).toHaveLength(2);
   expect(deploymentJob.execution.agents).toHaveLength(3);
   expect(deploymentJob.resources?.required_capabilities).toHaveLength(3);

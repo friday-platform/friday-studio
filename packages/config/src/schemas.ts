@@ -73,6 +73,24 @@ export const FederationConfigSchema = z.object({
   scope_sets: z.record(z.string(), z.array(z.string())).optional(),
 });
 
+// MCP tool name validation - dots are illegal in MCP tool names
+const MCPToolNameSchema = z.string().regex(
+  /^[a-zA-Z][a-zA-Z0-9_-]*$/,
+  "MCP tool names must start with a letter and contain only letters, numbers, underscores, and hyphens (no dots)",
+);
+
+// MCP capability pattern validation - support wildcards but no dots in base names
+const MCPCapabilityPatternSchema = z.string().regex(
+  /^[a-zA-Z][a-zA-Z0-9_]*(\*)?$/,
+  "MCP capability patterns must start with a letter, contain only letters, numbers, underscores, and optional trailing wildcard (*)",
+);
+
+// MCP job pattern validation - support wildcards and hyphens for job names
+const MCPJobPatternSchema = z.string().regex(
+  /^[a-zA-Z][a-zA-Z0-9_-]*(\*)?$/,
+  "MCP job patterns must start with a letter, contain only letters, numbers, underscores, hyphens, and optional trailing wildcard (*)",
+);
+
 // MCP server configuration schema with environment variables
 export const MCPServerConfigSchema = z.object({
   transport: MCPTransportConfigSchema,
@@ -88,8 +106,8 @@ export const ServerConfigSchema = z.object({
     enabled: z.boolean().default(false),
     transport: MCPTransportConfigSchema.optional(),
     discoverable: z.object({
-      capabilities: z.array(z.string()).optional(),
-      jobs: z.array(z.string()).optional(),
+      capabilities: z.array(MCPCapabilityPatternSchema).optional(),
+      jobs: z.array(MCPJobPatternSchema).optional(),
     }).optional(),
     auth: z.object({
       required: z.boolean().default(false),
@@ -431,7 +449,7 @@ export const TriggerSpecificationSchema = z.object({
 
 // Job specification schema for top-level jobs section
 export const JobSpecificationSchema = z.object({
-  name: z.string(),
+  name: MCPToolNameSchema.optional(), // Job names become MCP tools, so validate MCP compliance. Optional - uses key if not provided
   description: z.string().optional(),
   task_template: z.string().optional(), // Optional task template for clearer agent instructions
   triggers: z.array(TriggerSpecificationSchema).optional(), // NEW: Jobs define their signal triggers
@@ -497,7 +515,7 @@ export const WorkspaceConfigSchema = z.object({
   tools: ToolsConfigSchema.optional(),
 
   // Workspace capabilities (jobs, signals, agents)
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(),
+  jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(), // Job keys become MCP tools
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
 

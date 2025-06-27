@@ -78,7 +78,8 @@ export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promi
   }
 
   // ConfigLoader with absolute path - no directory change needed!
-  const configLoader = new ConfigLoader(targetWorkspace.path);
+  const adapter = new FilesystemConfigAdapter();
+  const configLoader = new ConfigLoader(adapter, targetWorkspace.path);
   const mergedConfig = await configLoader.load();
 
   const workspaceInfo = {
@@ -162,7 +163,8 @@ export async function loadWorkspaceConfig(workspacePath: string): Promise<Worksp
 
 // Load workspace config without directory change (for interactive)
 export async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<WorkspaceConfig> {
-  const configLoader = new ConfigLoader(workspacePath);
+  const adapter = new FilesystemConfigAdapter();
+  const configLoader = new ConfigLoader(adapter, workspacePath);
   const mergedConfig = await configLoader.load();
   return mergedConfig.workspace;
 }

@@ -14,13 +14,14 @@ This workspace demonstrates Atlas's advanced capabilities including:
   comprehensive monitoring
 - **Production-Ready Architecture** - Circuit breakers, retry logic, and health monitoring
 
-### Agent Architecture
+### Agent Architecture (DevOps Workflow)
 
-1. **k8s-main-agent (Port 8080)** - Primary AI agent handling user requests and Kubernetes
-   operations
-2. **local-assistant** - LLM-based fallback agent for documentation and support
-3. **Built-in k8s-events signal provider** - Direct Kubernetes API integration for real-time event
-   monitoring
+1. **standalone-coordinator (Port 8085)** - K8s operations specialist that executes cluster tasks
+   and returns structured results (NO Linear access)
+2. **linear-writer** - Complete Linear integration agent that manages ticket lifecycle and processes
+   K8s results
+3. **DevOps Flow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear
+   update
 
 ### Signal Types
 
@@ -28,25 +29,22 @@ This workspace demonstrates Atlas's advanced capabilities including:
 2. **CLI Signals** - Command-line driven operations
 3. **🆕 K8s Events Signals** - Built-in real-time Kubernetes Events streaming via Events API
 
-## Quick Start
+## Quick Start (Atlas 2.0)
 
-### 1. Setup K8s Agent Demo (Main Agent Only)
+### 1. Setup Standalone Coordinator Agent
 
 ```bash
-# Clone the k8s-agent-demo repository
-git clone git@github.com:tempestteam/k8s-agent-demo.git
-cd k8s-agent-demo
+# Start your standalone coordinator agent on port 8085
+# This should be your k8s management agent running at:
+# http://localhost:8085
 
-# Set API key
-export GEMINI_API_KEY="your_api_key_here"
-# OR
-export AI_API_KEY="your_api_key_here"
-
-# Start only the main agent (monitor agent no longer needed)
-make start-main-agent
+# Ensure your agent provides:
+# - /health endpoint for health checks
+# - ACP protocol support for agent communication
+# - Kubernetes management capabilities
 ```
 
-### 2. Setup and Start the Workspace
+### 2. Setup and Start the Workspace (Atlas 2.0)
 
 ```bash
 # Navigate to the workspace directory
@@ -55,11 +53,15 @@ cd atlas/examples/workspaces/k8s-assistant
 # Run setup script to create necessary files
 ./setup.sh
 
-# Start the workspace
+# Start the workspace using Atlas 2.0 daemon architecture
 ./start-workspace.sh
 ```
 
-The workspace will start on `http://localhost:3001`
+**Atlas 2.0 Changes:**
+
+- Uses centralized daemon architecture (no individual workspace servers)
+- Atlas daemon runs on `http://localhost:8080`
+- Workspaces are managed by the daemon, not standalone servers
 
 ### 3. Test the Setup
 
@@ -74,14 +76,20 @@ The workspace will start on `http://localhost:3001`
 ./scripts/troubleshoot.sh
 ```
 
-### 4. Monitor Progress
+### 4. Monitor Progress (Atlas 2.0)
 
 ```bash
 # List active sessions
 atlas ps
 
-# View session details
-atlas logs <session-id>
+# View workspace status
+atlas workspace status k8s-assistant
+
+# View workspace logs
+atlas workspace logs k8s-assistant
+
+# Check daemon status
+atlas daemon status
 ```
 
 ## Project Structure
@@ -107,114 +115,184 @@ The `workspace.yml` file defines:
 - **Memory Settings** - Operation history and patterns
 - **Server Settings** - Port, logging, etc.
 
-### Available Signals
+### Available Signals & Workflows (Atlas 2.0)
 
-1. **`http-k8s`** - Unified HTTP endpoint for all Kubernetes operations
+1. **`linear-webhook`** - DevOps workflow automation (PRIMARY)
+   - **Type**: HTTP Signal Provider
+   - **Endpoint**: `/webhooks/linear` (via daemon)
+   - **Method**: POST
+   - **Workflow**: Linear ticket → linear-writer → standalone-coordinator → linear-writer → Linear
+     update
+   - **Agent Flow**:
+     - linear-writer: Process ticket, set In Progress
+     - standalone-coordinator: Execute K8s operations (returns structured results)
+     - linear-writer: Update Linear with results and status
+   - **Triggers**:
+     - DevOps issues (keywords: kubernetes, kubectl, deploy, scale, etc.)
+     - DevOps comments (containing kubectl commands)
+     - High-priority incidents assigned to Atlas
+
+2. **`http-k8s`** - Direct Kubernetes operations (OPTIONAL)
    - **Type**: HTTP Signal Provider
    - **Path**: `/k8s`
    - **Method**: POST
-   - **Agents**: k8s-main-agent only
+   - **Agent**: standalone-coordinator (direct execution, no Linear integration)
 
-2. **`cli-k8s`** - CLI interface for direct operations
+3. **`cli-k8s`** - CLI interface for direct operations (OPTIONAL)
    - **Type**: CLI Signal Provider
    - **Command**: `k8s`
-   - **Agents**: k8s-main-agent only
+   - **Agent**: standalone-coordinator (direct execution, no Linear integration)
 
-3. **🆕 `k8s-events`** - Real-time Kubernetes event streaming
-   - **Type**: K8s Events Signal Provider (built-in)
-   - **Source**: Direct Kubernetes Events API watch integration
-   - **Authentication**: Local kubeconfig (`~/.kube/config`)
-   - **Scope**: Kubernetes Events in default namespace (or all namespaces)
-   - **Event Types**: ADDED, MODIFIED, DELETED Events
-   - **Agents**: k8s-main-agent → local-assistant (sequential)
-   - **Configuration**: Events-only watching with flexible auth options (kubeconfig, service
-     account, direct API)
+## How It Works (DevOps Workflow)
 
-## How It Works
+### Primary DevOps Workflow (Linear → K8s → Linear)
 
-### User-Initiated Operations (HTTP/CLI Signals)
+**Step 1: Linear Ticket Processing**
 
-1. **Signal Triggered** - User sends request via HTTP or CLI
-2. **Main Agent Processes** - Analyzes request using ReAct framework
-3. **Local Assistant Supports** - Provides documentation and fallback
-4. **Memory Updates** - Stores successful patterns and resolutions
+1. **Linear webhook triggered** - Issue created/updated with DevOps keywords
+2. **linear-writer agent** - Analyzes ticket content for K8s operations needed
+3. **Ticket updated** - Status set to "In Progress", comment added about automation
 
-### Real-Time Event Monitoring (K8s Events Signals)
+**Step 2: K8s Operations Execution**\
+4. **standalone-coordinator agent** - Receives structured task from linear-writer 5. **K8s
+execution** - Performs kubectl operations (deploy, scale, troubleshoot, etc.) 6. **Structured
+results** - Returns JSON-formatted operation results (no Linear access)
 
-1. **Built-in Events Provider** - Atlas directly connects to Kubernetes Events API using watch
-   endpoints
-2. **Event Monitoring**:
-   - **Kubernetes Events Only** → Watches cluster Events (pod failures, deployments, etc.)
-   - **Real-time Streaming** → Direct HTTP streaming from K8s Events API
-3. **Atlas Processing** - K8s Events trigger k8s-main-agent → local-assistant workflow
-4. **Simple Configuration** - Events-only watching with local kubeconfig support
+**Step 3: Linear Results Processing & Update** 7. **linear-writer agent** - Receives structured
+results from standalone-coordinator 8. **Results formatting** - Converts technical data to
+user-friendly Linear comments 9. **Ticket completion** - Status updated to Done/Escalated,
+comprehensive results posted 10. **Memory storage** - Successful patterns and resolutions stored for
+learning
 
-## Available Endpoints
+**Key Separation**: standalone-coordinator handles ONLY K8s operations, linear-writer handles ALL
+Linear interactions
 
-### K8s Operations (Direct API endpoint)
+### Direct Operations (Optional)
+
+- **HTTP API**: Direct K8s operations via `/k8s` endpoint
+- **CLI Interface**: Command-line driven operations via `atlas signal trigger`
+
+## Available Endpoints (Atlas 2.0)
+
+### DevOps Workflow Triggers
 
 ```bash
-# Create deployment
-curl -X POST http://localhost:3001/k8s \
+# Trigger DevOps workflow with K8s issue
+curl -X POST http://localhost:8080/signals/linear-webhook \
   -H "Content-Type: application/json" \
+  -H "Linear-Event: Issue" \
   -d '{
-    "message": "Deploy nginx with 3 replicas"
+    "action": "create",
+    "data": {
+      "type": "Issue",
+      "title": "Deploy nginx to production namespace",
+      "description": "Need to deploy nginx with 3 replicas to production namespace with proper resource limits"
+    }
   }'
 
-# Scale deployment
-curl -X POST http://localhost:3001/k8s \
+# Trigger via DevOps comment
+curl -X POST http://localhost:8080/signals/linear-webhook \
   -H "Content-Type: application/json" \
+  -H "Linear-Event: Comment" \
   -d '{
-    "message": "Scale nginx to 5 replicas"
+    "action": "create",
+    "data": {
+      "type": "Comment",
+      "body": "kubectl scale deployment nginx --replicas=5"
+    }
   }'
 ```
 
-# List resources
-
-curl -X POST http://localhost:3001/k8s\
--H "Content-Type: application/json"\
--d '{ "message": "List all pods in default namespace" }'
-
-# Troubleshoot issues
-
-curl -X POST http://localhost:3001/k8s\
--H "Content-Type: application/json"\
--d '{ "message": "Check why my deployment is not ready" }'
-
-### K8s Events Signal Testing (Real-time Events)
-
-The k8s-events signal automatically processes Kubernetes events. To test:
+### CLI DevOps Triggers
 
 ```bash
-# Create a failing deployment to trigger events
-kubectl create deployment test-fail --image=invalid:latest
+# Trigger DevOps workflow via CLI
+atlas signal trigger linear-webhook --workspace k8s-assistant --data '{
+  "action": "create",
+  "data": {
+    "type": "Issue",
+    "title": "Kubernetes deployment issue",
+    "description": "kubectl get pods shows failing pods in default namespace"
+  }
+}'
 
-# Monitor Atlas logs to see k8s events signal processing
-atlas logs --follow
-
-# Create/delete pods to see real-time events
-kubectl run test-pod --image=nginx --restart=Never
-kubectl delete pod test-pod
+# Direct K8s operation (optional)
+atlas signal trigger http-k8s --workspace k8s-assistant --data '{
+  "message": "Deploy nginx with 3 replicas"
+}'
 ```
 
-### Health Check
+### Test Workflows
 
 ```bash
-# Check workspace health
-curl http://localhost:3001/health
+# Test simple Linear integration
+curl -X POST http://localhost:8080/signals/linear-webhook \
+  -H "Content-Type: application/json" \
+  -H "Linear-Event: Issue" \
+  -d '{
+    "action": "create",
+    "data": {
+      "type": "Issue",
+      "title": "Test Linear MCP integration"
+    }
+  }'
+```
 
-# Check main agent health (monitor agent no longer needed)
+### Health Check (Atlas 2.0)
+
+```bash
+# Check Atlas daemon health
 curl http://localhost:8080/health
+
+# Check daemon status via CLI
+atlas daemon status
+
+# Check workspace status
+atlas workspace status k8s-assistant
+
+# Check standalone coordinator agent health
+curl http://localhost:8085/health
 ```
 
-## CLI Usage
+## CLI Usage (Atlas 2.0)
 
 ```bash
-# Direct k8s operations via HTTP signal
-deno task atlas signal trigger http-k8s --data '{"message": "Create a namespace called production"}'
+# Trigger Linear webhook signal
+atlas signal trigger linear-webhook --workspace k8s-assistant --data '{
+  "action": "create",
+  "data": {
+    "type": "Issue",
+    "title": "Test from CLI"
+  }
+}'
 
-# Alternative using CLI signal
-deno task atlas signal trigger cli-k8s --data '{"message": "Deploy Redis with persistent storage"}'
+# List active sessions
+atlas ps
+
+# Check workspace status
+atlas workspace status k8s-assistant
+
+# View workspace logs
+atlas workspace logs k8s-assistant
+
+# Stop daemon when done
+atlas daemon stop
+```
+
+### Enabling K8s Operations (Optional)
+
+To enable the K8s operations that are currently commented out:
+
+1. Uncomment the desired jobs and agents in `workspace.yml`
+2. Restart the workspace: `./start-workspace.sh`
+3. Use the signals:
+
+```bash
+# Would work after uncommenting http-k8s signal
+# atlas signal trigger http-k8s --workspace k8s-assistant --data '{"message": "Create a namespace called production"}'
+
+# Would work after uncommenting cli-k8s signal  
+# atlas signal trigger cli-k8s --workspace k8s-assistant --data '{"message": "Deploy Redis with persistent storage"}'
 ```
 
 ## Customization

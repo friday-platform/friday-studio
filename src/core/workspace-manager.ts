@@ -502,6 +502,7 @@ export class WorkspaceManager {
     createdAt: string;
     lastSeen: string;
     hasActiveRuntime: boolean;
+    config?: any; // Workspace configuration including server.mcp settings
     runtime?: {
       status: string;
       startedAt: string;
@@ -516,6 +517,18 @@ export class WorkspaceManager {
 
     const runtimeInfo = this.getRuntime(id);
 
+    // Get workspace configuration for MCP settings and other config
+    let config;
+    try {
+      config = await this.getWorkspaceConfigBySlug(id);
+    } catch (error) {
+      logger.warn("Failed to load workspace configuration for describe", {
+        workspaceId: id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      config = null;
+    }
+
     return {
       id: workspace.id,
       name: workspace.name,
@@ -525,6 +538,7 @@ export class WorkspaceManager {
       createdAt: workspace.createdAt,
       lastSeen: workspace.lastSeen,
       hasActiveRuntime: !!runtimeInfo,
+      config, // Include workspace configuration for MCP enforcement
       runtime: runtimeInfo
         ? {
           status: runtimeInfo.runtime.getState(),

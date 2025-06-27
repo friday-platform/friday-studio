@@ -1,29 +1,91 @@
 #!/bin/bash
 
-# Get the directory of this script
+# Get the directory of this script and navigate to Atlas root
 SCRIPT_DIR="$(dirname "$0")"
-cd "$SCRIPT_DIR"
+ATLAS_ROOT="$(cd "$SCRIPT_DIR/../../../" && pwd)"
+WORKSPACE_NAME="k8s-assistant"
+WORKSPACE_PATH="$SCRIPT_DIR"
 
-echo "🚀 Starting Atlas k8s-assistant workspace..."
-echo "📡 Port: 3001 (configured to avoid conflicts with k8s-deployment-demo on port 8080)"
-echo "🔗 Endpoint: http://localhost:3001"
+echo "🚀 Starting Atlas k8s-assistant workspace (Atlas 2.0)..."
+echo "🏠 Atlas Root: $ATLAS_ROOT"
+echo "📁 Workspace Path: $WORKSPACE_PATH"
 echo ""
 
-# Check if k8s-deployment-demo is running
-if curl -s http://localhost:8080/health > /dev/null 2>&1; then
-    echo "✅ k8s-deployment-demo main agent is running on port 8080"
+# Navigate to Atlas root for CLI commands
+cd "$ATLAS_ROOT"
+
+# Check if Atlas daemon is running
+echo "🔍 Checking Atlas daemon status..."
+if deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx daemon status > /dev/null 2>&1; then
+    echo "✅ Atlas daemon is running"
 else
-    echo "⚠️  k8s-deployment-demo main agent is NOT running on port 8080"
-    echo "   Start it with: cd ../../../k8s-deployment-demo && make dev-main"
+    echo "⚠️  Atlas daemon is not running. Starting daemon..."
+    echo "🌟 Starting Atlas daemon with OpenTelemetry..."
+    
+    # Start daemon in background
+    NODE_ENV=development \
+        OTEL_DENO=true \
+        OTEL_SERVICE_NAME=atlas-daemon \
+        OTEL_SERVICE_VERSION=1.0.0 \
+        OTEL_RESOURCE_ATTRIBUTES=service.name=atlas-daemon,service.version=1.0.0 \
+        deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --unsafely-ignore-certificate-errors --env-file src/cli.tsx daemon start &
+    
+    # Wait for daemon to start
+    echo "⏳ Waiting for daemon to start..."
+    sleep 5
+    
+    # Verify daemon started
+    if deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx daemon status > /dev/null 2>&1; then
+        echo "✅ Atlas daemon started successfully"
+    else
+        echo "❌ Failed to start Atlas daemon"
+        exit 1
+    fi
+fi
+
+# Check if standalone-coordinator agent is running
+echo ""
+echo "🔍 Checking standalone-coordinator agent..."
+if curl -s http://localhost:8085/health > /dev/null 2>&1; then
+    echo "✅ standalone-coordinator agent is running on port 8085"
+else
+    echo "⚠️  standalone-coordinator agent is NOT running on port 8085"
+    echo "   Start it with your k8s agent on port 8085"
     echo ""
 fi
 
-echo "🌟 Starting Atlas workspace with OpenTelemetry..."
+# The daemon automatically discovers and caches workspace configurations
+echo "📝 Workspace automatically discovered by daemon..."
 
-# Use the correct path to the Atlas CLI
-NODE_ENV=development \
-    OTEL_DENO=true \
-    OTEL_SERVICE_NAME=atlas-k8s-assistant \
-    OTEL_SERVICE_VERSION=1.0.0 \
-    OTEL_RESOURCE_ATTRIBUTES=service.name=atlas-k8s-assistant,service.version=1.0.0 \
-    deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --unstable-otel --unsafely-ignore-certificate-errors --env-file ../../../src/cli.tsx workspace serve --port 3001 
+# Check if workspace is discovered (optional verification)
+echo "📊 Verifying workspace discovery..."
+WORKSPACE_FOUND=$(deno run --allow-all --unstable-broadcast-channel --unstable-worker-options --env-file src/cli.tsx ps 2>/dev/null | grep -q "$WORKSPACE_NAME" && echo "found" || echo "not found")
+
+if [ "$WORKSPACE_FOUND" = "found" ]; then
+    echo "✅ Workspace $WORKSPACE_NAME discovered and ready"
+else
+    echo "📁 Workspace will be discovered when first signal is triggered"
+fi
+
+echo ""
+echo "📊 Workspace configuration loaded:"
+echo "   • linear-writer agent configured for Linear integration"
+echo "   • standalone-coordinator agent configured for K8s operations"  
+echo "   • DevOps workflow jobs ready for Linear → K8s → Linear automation"
+
+echo ""
+echo "🎉 k8s-assistant workspace is ready!"
+echo "🔗 Atlas daemon running on: http://localhost:8080"
+echo "📡 Workspace signals available:"
+echo "   • HTTP: POST /signals/linear-webhook"
+echo "   • CLI: atlas signal trigger linear-webhook --workspace $WORKSPACE_NAME"
+echo ""
+echo "📋 Useful commands:"
+echo "   • atlas ps                                    # List active sessions"
+echo "   • atlas workspace status $WORKSPACE_NAME     # Check workspace status"
+echo "   • atlas workspace logs $WORKSPACE_NAME       # View workspace logs"
+echo "   • atlas daemon stop                          # Stop daemon when done"
+echo ""
+echo "🧪 Test the workspace:"
+echo "   • ./test.sh                                   # Run test script"
+echo "   • atlas signal trigger linear-webhook --workspace $WORKSPACE_NAME --data '{\"action\": \"create\"}'" 
