@@ -1,43 +1,43 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { WorkspaceEntry, WorkspaceStatus as WSStatus } from "../../core/workspace-manager.ts";
-import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
+// import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
 
 export const WorkspaceList = () => {
   const [workspaces, setWorkspaces] = useState<WorkspaceEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
-  useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        // Use workspace discovery (works without daemon)
-        const discoveredWorkspaces = await discoverWorkspaces();
+  // useEffect(() => {
+  //   const loadWorkspaces = async () => {
+  //     try {
+  //       // Use workspace discovery (works without daemon)
+  //       const discoveredWorkspaces = await discoverWorkspaces();
 
-        // Convert to WorkspaceEntry format
-        const workspaceEntries = discoveredWorkspaces.map((w) => ({
-          id: w.id,
-          name: w.name,
-          path: w.path,
-          configPath: `${w.path}/workspace.yml`,
-          status: "stopped" as WSStatus, // Discovery doesn't know runtime status
-          createdAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-          metadata: {
-            description: w.description,
-          },
-        }));
+  //       // Convert to WorkspaceEntry format
+  //       const workspaceEntries = discoveredWorkspaces.map((w) => ({
+  //         id: w.id,
+  //         name: w.name,
+  //         path: w.path,
+  //         configPath: `${w.path}/workspace.yml`,
+  //         status: "stopped" as WSStatus, // Discovery doesn't know runtime status
+  //         createdAt: new Date().toISOString(),
+  //         lastSeen: new Date().toISOString(),
+  //         metadata: {
+  //           description: w.description,
+  //         },
+  //       }));
 
-        setWorkspaces(workspaceEntries);
-        setError("");
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadWorkspaces();
-  }, []);
+  //       setWorkspaces(workspaceEntries);
+  //       setError("");
+  //     } catch (err) {
+  //       setError(err instanceof Error ? err.message : String(err));
+  //     } finally {
+  //       setLoading(false);
+  //     }
+  //   };
+  //   loadWorkspaces();
+  // }, []);
 
   if (loading) {
     return (

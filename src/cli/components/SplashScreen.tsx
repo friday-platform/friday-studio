@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Box, Newline, Text, useApp, useInput } from "ink";
 import { Select, TextInput } from "@inkjs/ui";
 // import { getWorkspaceStatus, WorkspaceList, WorkspaceStatus } from "../commands/workspace.tsx";
-import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
+// import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
 import { ErrorAlert } from "./ErrorAlert.tsx";
 
 interface Workspace {
@@ -64,24 +64,24 @@ export const SplashScreen = ({
   }, [minHeight, onMinHeightChange]);
 
   // Load registered workspaces on mount
-  useEffect(() => {
-    const loadWorkspaces = async () => {
-      try {
-        // Use workspace discovery (works without daemon)
-        const discoveredWorkspaces = await discoverWorkspaces();
-        const availableWorkspaces = discoveredWorkspaces.map((w) => ({
-          id: w.id,
-          name: w.name,
-          path: w.path,
-          slug: w.slug,
-        }));
-        setWorkspaces(availableWorkspaces);
-      } catch (error) {
-        console.error("Failed to load workspaces:", error);
-      }
-    };
-    loadWorkspaces();
-  }, []);
+  // useEffect(() => {
+  //   const loadWorkspaces = async () => {
+  //     try {
+  //       // Use workspace discovery (works without daemon)
+  //       const discoveredWorkspaces = await discoverWorkspaces();
+  //       const availableWorkspaces = discoveredWorkspaces.map((w) => ({
+  //         id: w.id,
+  //         name: w.name,
+  //         path: w.path,
+  //         slug: w.slug,
+  //       }));
+  //       setWorkspaces(availableWorkspaces);
+  //     } catch (error) {
+  //       console.error("Failed to load workspaces:", error);
+  //     }
+  //   };
+  //   loadWorkspaces();
+  // }, []);
 
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
