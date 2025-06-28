@@ -1,5 +1,5 @@
 import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
-import { Box, render, Text, useApp, useInput, useStdout } from "ink";
+import { Box, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
@@ -36,9 +36,13 @@ import { getAtlasClient } from "@atlas/client";
 import { createTempFileAndOpen } from "../utils/file-opener.ts";
 
 // Wrapper component that fetches workspace path via client
-const SignalDetailsWithPath = (
-  { workspaceId, signalId }: { workspaceId: string; signalId: string },
-) => {
+const SignalDetailsWithPath = ({
+  workspaceId,
+  signalId,
+}: {
+  workspaceId: string;
+  signalId: string;
+}) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -88,14 +92,22 @@ const SignalDetailsWithPath = (
   }
 
   return (
-    <SignalDetails workspaceId={workspaceId} signalId={signalId} workspacePath={workspacePath} />
+    <SignalDetails
+      workspaceId={workspaceId}
+      signalId={signalId}
+      workspacePath={workspacePath}
+    />
   );
 };
 
 // Wrapper component that fetches workspace path for job details
-const JobDetailsWithPath = (
-  { workspaceId, jobName }: { workspaceId: string; jobName: string },
-) => {
+const JobDetailsWithPath = ({
+  workspaceId,
+  jobName,
+}: {
+  workspaceId: string;
+  jobName: string;
+}) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -144,7 +156,13 @@ const JobDetailsWithPath = (
     );
   }
 
-  return <JobDetails workspaceId={workspaceId} jobName={jobName} workspacePath={workspacePath} />;
+  return (
+    <JobDetails
+      workspaceId={workspaceId}
+      jobName={jobName}
+      workspacePath={workspacePath}
+    />
+  );
 };
 
 export const command = "$0";
@@ -482,13 +500,20 @@ const handleLibraryOpenCommand = async (
     if (!libraryItem.content) {
       addOutputEntry({
         id: `library-open-error-${Date.now()}`,
-        component: <Text color="red">Library item '{itemId}' has no content to open.</Text>,
+        component: (
+          <Text color="red">
+            Library item '{itemId}' has no content to open.
+          </Text>
+        ),
       });
       return;
     }
 
     // Create temporary file and open it
-    const openResult = await createTempFileAndOpen(libraryItem.item, libraryItem.content);
+    const openResult = await createTempFileAndOpen(
+      libraryItem.item,
+      libraryItem.content,
+    );
 
     if (openResult.success) {
       addOutputEntry({
@@ -610,9 +635,9 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init" | "config" | "credits">(
-    "command",
-  );
+  const [view, setView] = useState<
+    "help" | "command" | "init" | "config" | "credits"
+  >("command");
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [showWorkspaceSelection, setShowWorkspaceSelection] = useState(false);
@@ -636,8 +661,12 @@ export default function InteractiveCommand() {
   const [showJobSelection, setShowJobSelection] = useState(false);
   const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
   const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
-  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
-  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<string | null>(null);
+  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<
+    string | null
+  >(null);
+  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<
+    string | null
+  >(null);
   const [workspaceSelectionContext, setWorkspaceSelectionContext] = useState<
     | "signals-list"
     | "agents-list"
@@ -674,31 +703,35 @@ export default function InteractiveCommand() {
 
         if (!isHealthy) {
           // Daemon is not running - add message to output buffer
-          setOutputBuffer([{
+          setOutputBuffer([
+            {
+              id: `daemon-not-running-${Date.now()}`,
+              component: (
+                <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+                  <Text color="yellow">◆ Atlas daemon is not running</Text>
+                  <Text dimColor>
+                    Run `atlas daemon start` in a new terminal to use Atlas.
+                  </Text>
+                </Box>
+              ),
+            },
+          ]);
+        }
+      } catch (error) {
+        // If health check fails, also show the same message
+        setOutputBuffer([
+          {
             id: `daemon-not-running-${Date.now()}`,
             component: (
               <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
                 <Text color="yellow">◆ Atlas daemon is not running</Text>
                 <Text dimColor>
-                  Run `atlas daemon start` in a new terminal to use Atlas.
+                  Run `atlas daemon start` in a new terminal tab to enable full functionality.
                 </Text>
               </Box>
             ),
-          }]);
-        }
-      } catch (error) {
-        // If health check fails, also show the same message
-        setOutputBuffer([{
-          id: `daemon-not-running-${Date.now()}`,
-          component: (
-            <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
-              <Text color="yellow">◆ Atlas daemon is not running</Text>
-              <Text dimColor>
-                Run `atlas daemon start` in a new terminal tab to enable full functionality.
-              </Text>
-            </Box>
-          ),
-        }]);
+          },
+        ]);
       }
     };
 
@@ -987,7 +1020,12 @@ export default function InteractiveCommand() {
     if (action === "describe") {
       addOutputEntry({
         id: `signal-details-${Date.now()}`,
-        component: <SignalDetailsWithPath workspaceId={workspaceId} signalId={signalId} />,
+        component: (
+          <SignalDetailsWithPath
+            workspaceId={workspaceId}
+            signalId={signalId}
+          />
+        ),
       });
       setCurrentSelectionWorkspace(null);
       setCurrentSelectedSignal(null);
@@ -1026,7 +1064,11 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const result = await triggerSignalSimple(workspaceId, signalId, input.trim() || undefined);
+      const result = await triggerSignalSimple(
+        workspaceId,
+        signalId,
+        input.trim() || undefined,
+      );
 
       // Remove loading entry and add result
       setOutputBuffer((prev) => prev.slice(0, -1));
@@ -1037,7 +1079,9 @@ export default function InteractiveCommand() {
           component: (
             <Box flexDirection="column">
               <Text color="green">Signal triggered successfully!</Text>
-              <Text dimColor>Workspace: {result.workspaceName || workspaceId}</Text>
+              <Text dimColor>
+                Workspace: {result.workspaceName || workspaceId}
+              </Text>
               <Text dimColor>Signal: {signalId}</Text>
               {result.sessionId && <Text dimColor>Session ID: {result.sessionId}</Text>}
               {result.status && <Text dimColor>Status: {result.status}</Text>}
@@ -1070,7 +1114,9 @@ export default function InteractiveCommand() {
             <Text color="red">Unexpected error during signal trigger</Text>
             <Text dimColor>Workspace: {workspaceId}</Text>
             <Text dimColor>Signal: {signalId}</Text>
-            <Text color="red">Error: {error instanceof Error ? error.message : String(error)}</Text>
+            <Text color="red">
+              Error: {error instanceof Error ? error.message : String(error)}
+            </Text>
           </Box>
         ),
       });
@@ -1298,16 +1344,18 @@ export default function InteractiveCommand() {
     if (parsed.command === "library") {
       if (parsed.args[0] === "open" && parsed.args[1]) {
         // Handle /library open <item_id> - fire and forget async operation
-        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch((error) => {
-          addOutputEntry({
-            id: `library-open-error-${Date.now()}`,
-            component: (
-              <Text color="red">
-                Unexpected error: {error instanceof Error ? error.message : String(error)}
-              </Text>
-            ),
-          });
-        });
+        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch(
+          (error) => {
+            addOutputEntry({
+              id: `library-open-error-${Date.now()}`,
+              component: (
+                <Text color="red">
+                  Unexpected error: {error instanceof Error ? error.message : String(error)}
+                </Text>
+              ),
+            });
+          },
+        );
         return;
       }
 
@@ -1372,26 +1420,32 @@ export default function InteractiveCommand() {
       width={dimensions.paddedWidth}
     >
       <Box flexDirection="column" flexShrink={0}>
-        <Box flexDirection="row" alignItems="center">
-          <Box flexDirection="column">
-            <Text>╭───╮</Text>
-            <Text>│&nbsp;∆&nbsp;│</Text>
-            <Text>╰───╯</Text>
-          </Box>
+        <Static items={[1]}>
+          {(item) => (
+            <Box key={item} flexDirection="column" flexShrink={0}>
+              <Box flexDirection="row" alignItems="center">
+                <Box flexDirection="column">
+                  <Text>╭───╮</Text>
+                  <Text>│&nbsp;∆&nbsp;│</Text>
+                  <Text>╰───╯</Text>
+                </Box>
 
-          <Box flexDirection="column">
-            <Text bold>&nbsp;Atlas.&nbsp;</Text>
-          </Box>
+                <Box flexDirection="column">
+                  <Text bold>&nbsp;Atlas.&nbsp;</Text>
+                </Box>
 
-          <Box flexDirection="column">
-            <Text dimColor>Made by Tempest.</Text>
-          </Box>
-        </Box>
+                <Box flexDirection="column">
+                  <Text dimColor>Made by Tempest.</Text>
+                </Box>
+              </Box>
 
-        <Box flexDirection="column" paddingLeft={2}>
-          <Text dimColor>⊕ /help for help</Text>
-          <Text dimColor>∶ {Deno.cwd()}</Text>
-        </Box>
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text dimColor>⊕ /help for help</Text>
+                <Text dimColor>∶ {Deno.cwd()}</Text>
+              </Box>
+            </Box>
+          )}
+        </Static>
       </Box>
 
       {view === "command" && (
