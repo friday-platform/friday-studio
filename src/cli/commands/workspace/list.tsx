@@ -53,8 +53,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     } else {
       // Render with Ink
       render(<WorkspaceList registeredWorkspaces={workspaces} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

@@ -121,8 +121,6 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
     } else {
       // Render with Ink
       render(<AgentDetailCommand agent={agent} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

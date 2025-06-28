@@ -142,8 +142,6 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
           sessions={sessions}
         />,
       );
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

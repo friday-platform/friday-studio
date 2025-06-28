@@ -92,8 +92,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
       // Render with Ink
       render(<SessionListComponent sessions={transformedSessions} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(
