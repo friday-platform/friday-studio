@@ -16,5 +16,16 @@ export const builder = (yargs: any) => {
         return handler(argv);
       },
     )
-    .demandCommand();
+    .demandCommand(1)
+    .fail((msg: string, _: unknown, yargs: any) => {
+      if (msg && msg.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error("\n" + msg);
+      Deno.exit(1);
+    })
+    .help()
+    .alias("help", "h");
 };

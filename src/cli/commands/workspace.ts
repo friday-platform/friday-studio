@@ -14,7 +14,16 @@ export const aliases = ["work", "w"];
 export function builder(y: YargsInstance) {
   return y
     .command([init, list, status, remove, logs, add])
-    .demandCommand(1, "You need to specify a workspace action")
+    .demandCommand(1)
+    .fail((msg: string, _: unknown, yargs: YargsInstance) => {
+      if (msg && msg.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error("\n" + msg);
+      Deno.exit(1);
+    })
     .example("$0 workspace init", "Initialize a new workspace interactively")
     .example("$0 workspace list", "List all registered workspaces")
     .example("$0 workspace status", "Show workspace status and configuration")

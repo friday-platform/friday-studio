@@ -11,7 +11,16 @@ export const aliases = ["sesh", "sess"];
 export function builder(y: YargsInstance) {
   return y
     .command([list, get, cancel])
-    .demandCommand(1, "You need to specify a session action")
+    .demandCommand(1)
+    .fail((msg: string, _: unknown, yargs: YargsInstance) => {
+      if (msg && msg.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error("\n" + msg);
+      Deno.exit(1);
+    })
     .example("$0 session list", "List all active sessions")
     .example("$0 session get sess_abc123", "Get details of a specific session")
     .example("$0 sesh cancel sess_xyz789", "Cancel a running session")
