@@ -2,27 +2,30 @@ version: "1.0"
 
 workspace:
   name: "k8s-assistant"
-  description: "Atlas workspace for Kubernetes management with real-time monitoring using AI-powered agents via ACP protocol and stream signals"
+  description: "Atlas workspace for Kubernetes management using AI-powered agents via ACP protocol"
 
-# MCP server configurations
-mcp_servers:
-  linear:
-    transport:
-      type: "stdio"
-      command: "npx"
-      args: ["-y", "linear-mcp-server"]
-      env:
-        LINEAR_API_KEY: "auto"
-    tools:
-      allowed: [
-        "linear_create_issue",
-        "linear_update_issue",
-        "linear_get_issue",
-        "linear_search_issues",
-        "linear_get_user_issues",
-        "linear_add_comment",
-      ]
-    timeout_ms: 30000
+# Tools configuration (MCP servers and workspace capabilities)
+tools:
+  mcp:
+    servers:
+      linear:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "linear-mcp-server"]
+          env:
+            LINEAR_API_KEY: "auto"
+        capabilities:
+          tools:
+            allowed: [
+              "linear_create_issue",
+              "linear_update_issue",
+              "linear_get_issue",
+              "linear_search_issues",
+              "linear_get_user_issues",
+              "linear_add_comment",
+            ]
+        timeout_ms: 30000
 
 # =============================================================================
 # JOB DEFINITIONS
@@ -40,16 +43,12 @@ jobs:
   # -------------------------
   devops-workflow:
     name: "devops-workflow"
-    description: "Complete DevOps workflow: Linear ticket analysis → K8s operations → Linear result update"
+    description: "Complete workflow: Linear issue analysis → task execution → Linear result update"
     triggers:
       - signal: "linear-webhook"
         condition: |
           data.action === "create" &&
-          data.data.type === "Issue" &&
-          (data.data.labels?.some(l => ["k8s", "cluster", "devops", "deployment", "pod", "kubectl", "kubernetes"].some(keyword => l.name.toLowerCase().includes(keyword))) ||
-           ["kubernetes", "cluster", "pod", "deployment", "service", "ingress", "kubectl", "scale", "restart", "logs", "troubleshoot", "namespace"].some(keyword =>
-             data.data.title.toLowerCase().includes(keyword) ||
-             data.data.description?.toLowerCase().includes(keyword)))
+          data.data.type === "Issue"
     execution:
       strategy: "sequential"
       agents:
@@ -57,44 +56,44 @@ jobs:
         - id: "standalone-coordinator" # Step 2: Execute K8s operations, return structured results
         - id: "linear-writer" # Step 3: Process K8s results, update Linear ticket with outcomes
 
-  devops-comment-automation:
-    name: "devops-comment-automation"
-    description: "Automated DevOps task execution from Linear issue comments containing kubectl commands"
-    triggers:
-      - signal: "linear-webhook"
-        condition: |
-          (data.action === "update" || data.action === "create") &&
-          data.data.type === "Comment" &&
-          data.data.body &&
-          ["kubectl", "restart", "scale", "logs", "describe", "get pods", "get services", "deploy", "troubleshoot"].some(cmd =>
-            data.data.body.toLowerCase().includes(cmd))
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "linear-writer" # Step 1: Process comment, set ticket to In Progress
-        - id: "standalone-coordinator" # Step 2: Execute K8s operations from comment
-        - id: "linear-writer" # Step 3: Update Linear with command execution results
+  # devops-comment-automation:
+  #   name: "devops-comment-automation"
+  #   description: "Automated DevOps task execution from Linear issue comments containing kubectl commands"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         (data.action === "update" || data.action === "create") &&
+  #         data.data.type === "Comment" &&
+  #         data.data.body &&
+  #         ["kubectl", "restart", "scale", "logs", "describe", "get pods", "get services", "deploy", "troubleshoot"].some(cmd =>
+  #           data.data.body.toLowerCase().includes(cmd))
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "linear-writer" # Step 1: Process comment, set ticket to In Progress
+  #       - id: "standalone-coordinator" # Step 2: Execute K8s operations from comment
+  #       - id: "linear-writer" # Step 3: Update Linear with command execution results
 
-  devops-incident-resolution:
-    name: "devops-incident-resolution"
-    description: "High-priority DevOps incident resolution workflow"
-    triggers:
-      - signal: "linear-webhook"
-        condition: |
-          data.action === "update" &&
-          data.data.type === "Issue" &&
-          data.data.assignee?.email?.includes("atlas") &&
-          data.data.state.name === "In Progress" &&
-          data.data.priority <= 2 &&
-          ["kubernetes", "cluster", "pod", "deployment", "service", "critical", "down", "failed"].some(keyword =>
-            data.data.title.toLowerCase().includes(keyword) ||
-            data.data.description?.toLowerCase().includes(keyword))
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "linear-writer" # Step 1: Process incident, add priority handling
-        - id: "standalone-coordinator" # Step 2: Execute emergency K8s operations
-        - id: "linear-writer" # Step 3: Update Linear with incident resolution results
+  # devops-incident-resolution:
+  #   name: "devops-incident-resolution"
+  #   description: "High-priority DevOps incident resolution workflow"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         data.action === "update" &&
+  #         data.data.type === "Issue" &&
+  #         data.data.assignee?.email?.includes("atlas") &&
+  #         data.data.state.name === "In Progress" &&
+  #         data.data.priority <= 2 &&
+  #         ["kubernetes", "cluster", "pod", "deployment", "service", "critical", "down", "failed"].some(keyword =>
+  #           data.data.title.toLowerCase().includes(keyword) ||
+  #           data.data.description?.toLowerCase().includes(keyword))
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "linear-writer" # Step 1: Process incident, add priority handling
+  #       - id: "standalone-coordinator" # Step 2: Execute emergency K8s operations
+  #       - id: "linear-writer" # Step 3: Update Linear with incident resolution results
 
   # -------------------------
   # Direct K8s Operations (Optional)
@@ -114,19 +113,19 @@ jobs:
   # Testing
   # -------------------------
 
-  linear-mcp-test:
-    name: "linear-mcp-test"
-    description: "Test Linear MCP integration by creating and updating issues"
-    triggers:
-      - signal: "linear-webhook"
-        condition: |
-          data.action === "create" &&
-          data.data.type === "Issue" &&
-          data.data.title.toLowerCase().includes("test")
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "linear-writer"
+  # linear-mcp-test:
+  #   name: "linear-mcp-test"
+  #   description: "Test Linear MCP integration by creating and updating issues"
+  #   triggers:
+  #     - signal: "linear-webhook"
+  #       condition: |
+  #         data.action === "create" &&
+  #         data.data.type === "Issue" &&
+  #         data.data.title.toLowerCase().includes("test")
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "linear-writer"
 
 # =============================================================================
 # AGENT CONFIGURATION
@@ -219,7 +218,9 @@ agents:
         1. **Initial Ticket Processing**:
            - Parse incoming Linear webhooks for DevOps-related tasks
            - Extract K8s requirements (deploy, scale, troubleshoot, etc.)
-           - Update ticket status to "In Progress" using proper state UUID
+           - FIRST: Use linear_get_issue to fetch current issue and available states
+           - Find "In Progress" state UUID from the issue's workflow states
+           - Update ticket status using the actual UUID (NOT "In Progress" string)
            - Add comment: "🤖 DevOps automation initiated - analyzing requirements..."
 
         2. **K8s Task Coordination**:
@@ -239,8 +240,11 @@ agents:
            - Set final ticket state (Done/In Review/Escalated)
 
         **Linear Integration Rules**:
-        - ALWAYS use Linear state UUIDs, not human-readable names
-        - Query available states first to get correct UUIDs
+        - CRITICAL: ALWAYS use Linear state UUIDs, NEVER human-readable names
+        - MUST query available states first using linear_get_issue to get current state UUID
+        - MUST use linear_search_issues to find state UUIDs when needed
+        - Example: Use "f47ac10b-58cc-4372-a567-0e02b2c3d479" NOT "In Progress"
+        - When updating issue state, first get current issue to see available states
         - Format all updates with clear markdown
         - Include technical details in code blocks
         - Tag appropriate team members for failures
@@ -249,13 +253,28 @@ agents:
 
         **Result Processing**: When you receive structured results from standalone-coordinator, format them into user-friendly Linear comments with proper markdown formatting.
 
+        **REQUIRED Linear API Workflow Example**:
+        ```
+        Step 1: Get issue details and available states
+        - Call: linear_get_issue with issue ID
+        - Extract: state.id (current state UUID) and state.team.states (available states)
+
+        Step 2: Find target state UUID
+        - Loop through available states to find "In Progress" or "Done"
+        - Use the actual UUID, not the name
+
+        Step 3: Update with UUID
+        - Call: linear_update_issue with stateId: "actual-uuid-here"
+        - Never use strings like "In Progress" or "Done"
+        ```
+
 # =============================================================================
 # SIGNAL CONFIGURATION
 # =============================================================================
 # Atlas supports multiple signal types for different interaction patterns:
 # - HTTP: Direct API calls and webhook integrations
 # - CLI: Command-line driven operations
-# - K8s Events: Real-time Kubernetes event streaming
+# - K8s Events: Real-time Kubernetes event streaming (DISABLED)
 # =============================================================================
 
 signals:

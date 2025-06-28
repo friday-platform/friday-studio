@@ -4,17 +4,19 @@ workspace:
   name: "MCP Filesystem Test"
   description: "Testing local MCP filesystem server integration"
 
-# MCP server configuration - only standard MCP servers
-mcp_servers:
-  # Official MCP filesystem server for interactive file operations
-  filesystem-mcp:
-    id: "filesystem-mcp"
-    transport:
-      type: "stdio"
-      command: "npx"
-      args: ["@modelcontextprotocol/server-filesystem", "/tmp"]
-    tools:
-      allowed: ["read_file", "write_file", "list_directory", "create_directory"]
+# Tools configuration (MCP servers and workspace capabilities)
+tools:
+  mcp:
+    servers:
+      # Official MCP filesystem server for interactive file operations
+      filesystem-mcp:
+        id: "filesystem-mcp"
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["@modelcontextprotocol/server-filesystem", "/tmp"]
+        tools:
+          allowed: ["read_file", "write_file", "list_directory", "create_directory"]
 
 # Signal for manual testing
 signals:
