@@ -5,7 +5,7 @@
  * These tests verify the version checking functionality works with real API calls
  */
 
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assert, assertEquals, assertExists } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { checkAndDisplayUpdate, checkForUpdates } from "./version-checker.ts";
 
 Deno.test("Version Checker - Development builds skip checking", async () => {
@@ -88,6 +88,166 @@ Deno.test("Version Checker - Error handling", async () => {
     // Should either have no error message or indicate inability to check
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+// Integration tests for the version CLI command with --remote flag
+
+Deno.test("Version CLI - Remote flag integration test", async () => {
+  // Import the handler to test the full CLI integration
+  const { handler } = await import("../cli/commands/version.ts");
+
+  // Capture console output by mocking console.log
+  const originalConsoleLog = console.log;
+  const outputs: string[] = [];
+
+  console.log = (...args: unknown[]) => {
+    outputs.push(args.join(" "));
+  };
+
+  // Mock Deno.exit to prevent test process from exiting
+  const originalExit = Deno.exit;
+  let exitCalled = false;
+  let exitCode = -1;
+
+  Deno.exit = (code?: number) => {
+    exitCalled = true;
+    exitCode = code || 0;
+    return undefined as never;
+  };
+
+  try {
+    // Test normal version command (should not call remote)
+    await handler({ json: false, remote: false });
+
+    assert(exitCalled, "Handler should call Deno.exit");
+    assertEquals(exitCode, 0, "Should exit with code 0");
+    assert(outputs.length > 0, "Should produce output");
+    assert(outputs.some((line) => line.includes("Atlas")), "Should show Atlas version");
+
+    // Reset for remote test
+    outputs.length = 0;
+    exitCalled = false;
+    exitCode = -1;
+
+    // Test remote version command (dev builds should show different message)
+    await handler({ json: false, remote: true });
+
+    assert(exitCalled, "Remote handler should call Deno.exit");
+    assertEquals(exitCode, 0, "Should exit with code 0");
+    assert(outputs.length > 0, "Should produce output");
+    assert(outputs.some((line) => line.includes("Atlas")), "Should show Atlas version");
+    // For dev builds, should show disabled message instead of checking
+    assert(
+      outputs.some((line) =>
+        line.includes("Remote version checking is disabled for development builds")
+      ),
+      "Should show dev build message",
+    );
+  } finally {
+    // Restore original functions
+    console.log = originalConsoleLog;
+    Deno.exit = originalExit;
+  }
+});
+
+Deno.test("Version CLI - Remote flag with JSON output", async () => {
+  const { handler } = await import("../cli/commands/version.ts");
+
+  // Capture console output
+  const originalConsoleLog = console.log;
+  const outputs: string[] = [];
+
+  console.log = (...args: unknown[]) => {
+    outputs.push(args.join(" "));
+  };
+
+  // Mock Deno.exit
+  const originalExit = Deno.exit;
+  let exitCalled = false;
+
+  Deno.exit = () => {
+    exitCalled = true;
+    return undefined as never;
+  };
+
+  try {
+    await handler({ json: true, remote: true });
+
+    assert(exitCalled, "Handler should call Deno.exit");
+    assert(outputs.length > 0, "Should produce JSON output");
+
+    // Should be valid JSON
+    const jsonOutput = outputs.join(" ");
+    const parsed = JSON.parse(jsonOutput);
+
+    // Should contain version info
+    assertExists(parsed.version);
+    assertExists(parsed.isCompiled);
+    assertExists(parsed.isNightly);
+    assertExists(parsed.isDev);
+
+    // Should contain remote info
+    assertExists(parsed.remote);
+    assertEquals(typeof parsed.remote.hasUpdate, "boolean");
+
+    // For dev builds, should have skipped flag and reason
+    if (parsed.isDev) {
+      assertEquals(parsed.remote.skipped, true);
+      assertExists(parsed.remote.reason);
+    }
+  } finally {
+    console.log = originalConsoleLog;
+    Deno.exit = originalExit;
+  }
+});
+
+Deno.test("Version CLI - displayVersionWithRemote function unit test", async () => {
+  const { displayVersionWithRemote } = await import("../utils/version.ts");
+
+  // Capture console output
+  const originalConsoleLog = console.log;
+  const outputs: string[] = [];
+
+  console.log = (...args: unknown[]) => {
+    outputs.push(args.join(" "));
+  };
+
+  try {
+    // Test human-readable output
+    await displayVersionWithRemote(false);
+
+    assert(outputs.length > 0, "Should produce output");
+    assert(outputs.some((line) => line.includes("Atlas")), "Should show version info");
+    // For dev builds, should show disabled message instead of checking
+    assert(
+      outputs.some((line) =>
+        line.includes("Remote version checking is disabled for development builds")
+      ),
+      "Should show dev build message",
+    );
+
+    // Reset for JSON test
+    outputs.length = 0;
+
+    // Test JSON output
+    await displayVersionWithRemote(true);
+
+    assert(outputs.length > 0, "Should produce JSON output");
+    const jsonOutput = outputs.join(" ");
+    const parsed = JSON.parse(jsonOutput);
+
+    assertExists(parsed.version);
+    assertExists(parsed.remote);
+    assertEquals(typeof parsed.remote.hasUpdate, "boolean");
+
+    // For dev builds, should have skipped flag and reason
+    if (parsed.isDev) {
+      assertEquals(parsed.remote.skipped, true);
+      assertExists(parsed.remote.reason);
+    }
+  } finally {
+    console.log = originalConsoleLog;
   }
 });
 

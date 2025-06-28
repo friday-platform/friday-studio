@@ -199,8 +199,9 @@ async function fetchLatestVersion(channel: string): Promise<VersionResponse | nu
 
 /**
  * Check for available updates with daily caching
+ * @param forceCheck Skip cache and force fresh remote check
  */
-export async function checkForUpdates(): Promise<VersionCheckResult> {
+export async function checkForUpdates(forceCheck: boolean = false): Promise<VersionCheckResult> {
   const versionInfo = getVersionInfo();
   const currentVersion = versionInfo.version;
 
@@ -212,13 +213,15 @@ export async function checkForUpdates(): Promise<VersionCheckResult> {
     };
   }
 
-  // Check cache first - only check once per day
-  const cached = await loadCache();
-  if (cached && cached.result.currentVersion === currentVersion) {
-    return {
-      ...cached.result,
-      fromCache: true,
-    };
+  // Check cache first - only check once per day (unless forced)
+  if (!forceCheck) {
+    const cached = await loadCache();
+    if (cached && cached.result.currentVersion === currentVersion) {
+      return {
+        ...cached.result,
+        fromCache: true,
+      };
+    }
   }
 
   // Determine channel from version
@@ -245,6 +248,7 @@ export async function checkForUpdates(): Promise<VersionCheckResult> {
         const result: VersionCheckResult = {
           hasUpdate: false,
           currentVersion,
+          latestVersion: latestVersion, // Always include remote version
         };
         await saveCache(result);
         return result;
@@ -257,7 +261,7 @@ export async function checkForUpdates(): Promise<VersionCheckResult> {
     const result: VersionCheckResult = {
       hasUpdate,
       currentVersion,
-      latestVersion: hasUpdate ? latestVersion : undefined,
+      latestVersion: latestVersion, // Always include remote version
     };
 
     // Cache the result
