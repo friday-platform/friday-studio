@@ -263,6 +263,30 @@ export const JobDetailedInfoSchema = z.object({
   }).optional(),
 });
 
+// Workspace template schemas
+export const WorkspaceTemplateInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  tags: z.array(z.string()).optional(),
+});
+
+export const WorkspaceTemplateListResponseSchema = z.array(WorkspaceTemplateInfoSchema);
+
+export const CreateWorkspaceFromTemplateRequestSchema = z.object({
+  templateId: z.string(),
+  name: z.string(),
+  path: z.string(),
+});
+
+export const CreateWorkspaceFromTemplateResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  templateId: z.string(),
+  message: z.string(),
+});
+
 // Generic response schemas
 export const MessageResponseSchema = z.object({
   message: z.string(),

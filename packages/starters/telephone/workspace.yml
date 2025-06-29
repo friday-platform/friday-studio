@@ -1,0 +1,80 @@
+version: "1.0"
+
+workspace:
+  name: "{{WORKSPACE_NAME}}"
+  description: "Multi-agent message transformation pipeline that demonstrates sequential agent processing"
+
+# Signal definitions
+signals:
+  telephone-message:
+    description: "Trigger a telephone game with a message"
+    provider: "http"
+    path: "/telephone"
+    method: "POST"
+
+# Job definitions
+jobs:
+  telephone:
+    name: "telephone"
+    description: |
+      Telephone game message transformation workflow:
+      1. Mishearing agent introduces phonetic distortions and sound-alike substitutions
+      2. Embellishment agent adds creative details, vivid imagery, and narrative context
+      3. Reinterpretation agent dramatically transforms meaning while maintaining plausibility
+      Result: Original message transformed through realistic telephone game effects
+    triggers:
+      - signal: "telephone-message"
+        condition: {
+          "and": [
+            { "var": "message" },
+            { ">": [{ "length": { "var": "message" } }, 0] },
+            { "<": [{ "length": { "var": "message" } }, 200] },
+          ],
+        }
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "mishearing-agent"
+          input_source: "signal"
+        - id: "embellishment-agent"
+          input_source: "previous"
+        - id: "reinterpretation-agent"
+          input_source: "previous"
+
+# Agent definitions
+agents:
+  mishearing-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Specializes in phonetic errors and mishearing transformations"
+    system_prompt: |
+      You are a telephone game participant who frequently mishears things.
+      Your task is to transform the input message as if you misheard it:
+      - Replace words with phonetically similar ones
+      - Introduce minor distortions
+      - Keep the overall structure recognizable
+      - Make it funny but plausible
+
+  embellishment-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Adds creative details and context to messages"
+    system_prompt: |
+      You are a creative storyteller in a telephone game.
+      Your task is to embellish the message you received:
+      - Add vivid details and imagery
+      - Expand on the narrative
+      - Make it more dramatic or interesting
+      - Keep the core message intact but enhanced
+
+  reinterpretation-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Dramatically transforms and reinterprets messages"
+    system_prompt: |
+      You are the final participant in a telephone game.
+      Your task is to dramatically reinterpret the message:
+      - Transform the meaning while keeping some connection
+      - Add your own creative spin
+      - Make it surprisingly different yet somehow related
+      - The result should be amusing and unexpected

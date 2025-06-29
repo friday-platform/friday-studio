@@ -55,6 +55,14 @@ export class MemoryStorage implements StorageAdapter {
 export type { ConfigurationAdapter } from "./src/adapters/config-adapter.ts";
 export { FilesystemConfigAdapter } from "./src/adapters/filesystem-config-adapter.ts";
 
+// Export template adapters
+export type {
+  Template,
+  TemplateInfo,
+  TemplateStorageAdapter,
+} from "./src/adapters/template-adapter.ts";
+export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-adapter.ts";
+
 // TODO: Export actual implementations as we migrate:
 // - LocalStorage
 // - DenoKVStorage

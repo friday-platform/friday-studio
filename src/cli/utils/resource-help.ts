@@ -43,11 +43,13 @@ Workspaces contain AI agents, signals, and job configurations. They are
 registered with the Atlas daemon and activate on-demand when signals arrive.`,
     concepts: `
 Key Concepts:
+  • Template-Based Init: Create workspaces from pre-built templates
   • Daemon Registration: Workspaces must be registered with the daemon
   • On-Demand Activation: Runtimes created only when signals trigger
   • Configuration-Based: Defined by workspace.yml and jobs/*.yml files`,
     commonTasks: [
-      "Initialize a new workspace: atlas workspace init my-agent",
+      "Initialize from template: atlas workspace init",
+      "Initialize at path: atlas workspace init ~/my-workspace",
       "Add workspace to daemon: atlas workspace add /path/to/workspace",
       "List registered workspaces: atlas workspace list",
       "Check workspace status: atlas workspace status my-agent",
@@ -59,6 +61,7 @@ Key Concepts:
       "Workspace not registered: Use 'atlas workspace add' to register",
       "Cannot find workspace: Ensure registered with 'atlas workspace list'",
       "ANTHROPIC_API_KEY missing: Add your API key to the .env file",
+      "Init requires terminal: Run directly in terminal, not through pipes",
     ],
     seeAlso: ["daemon", "session", "signal", "agent", "library"],
   },
@@ -151,9 +154,10 @@ by agents during execution.`,
     concepts: `
 Key Concepts:
   • Library Items: Stored content with metadata, tags, and versioning
-  • Templates: Reusable patterns for generating content
+  • Templates: Reusable patterns for generating content (not workspace templates)
   • Content Types: prompts, configs, documents, code, etc.
-  • Workspace vs Platform: Items can be workspace-specific or platform-wide`,
+  • Workspace vs Platform: Items can be workspace-specific or platform-wide
+Note: For workspace initialization templates, use 'atlas workspace init'`,
     commonTasks: [
       "List library items: atlas library list",
       "Search content: atlas library search 'agent config'",

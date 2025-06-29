@@ -53,3 +53,24 @@ export interface WorkspaceBatchAddResponse {
     error: string;
   }>;
 }
+
+export interface WorkspaceTemplateInfo {
+  id: string;
+  name: string;
+  description: string;
+  tags?: string[];
+}
+
+export interface CreateWorkspaceFromTemplateRequest {
+  templateId: string;
+  name: string;
+  path: string;
+}
+
+export interface CreateWorkspaceFromTemplateResponse {
+  id: string;
+  name: string;
+  path: string;
+  templateId: string;
+  message: string;
+}

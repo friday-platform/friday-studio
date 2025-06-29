@@ -9,6 +9,8 @@ import { DEFAULT_ATLAS_URL, DEFAULT_TIMEOUT } from "./constants.ts";
 import {
   AgentInfoSchema,
   CancelSessionResponseSchema,
+  CreateWorkspaceFromTemplateRequestSchema,
+  CreateWorkspaceFromTemplateResponseSchema,
   DaemonStatusSchema,
   DeleteResponseSchema,
   JobDetailedInfoSchema as _JobDetailedInfoSchema,
@@ -31,11 +33,14 @@ import {
   WorkspaceDetailedInfoSchema,
   WorkspaceInfoSchema,
   WorkspaceSessionInfoSchema,
+  WorkspaceTemplateListResponseSchema,
 } from "./schemas.ts";
 import type {
   AgentInfo,
   AtlasClientOptions,
   CancelSessionResponse,
+  CreateWorkspaceFromTemplateRequest,
+  CreateWorkspaceFromTemplateResponse,
   DaemonStatus,
   DeleteLibraryItemResponse,
   JobDetailedInfo,
@@ -60,6 +65,7 @@ import type {
   WorkspaceDetailedInfo,
   WorkspaceInfo,
   WorkspaceSessionInfo,
+  WorkspaceTemplateInfo,
 } from "./types/index.ts";
 
 export class AtlasClient {
@@ -188,6 +194,30 @@ export class AtlasClient {
       body: JSON.stringify(WorkspaceBatchAddRequestSchema.parse(request)),
     });
     return WorkspaceBatchAddResponseSchema.parse(response);
+  }
+
+  /**
+   * List available workspace templates
+   */
+  async listWorkspaceTemplates(): Promise<WorkspaceTemplateInfo[]> {
+    const response = await this.makeRequest("/api/templates");
+    return WorkspaceTemplateListResponseSchema.parse(response);
+  }
+
+  /**
+   * Create a new workspace from a template
+   */
+  async createWorkspaceFromTemplate(
+    request: CreateWorkspaceFromTemplateRequest,
+  ): Promise<CreateWorkspaceFromTemplateResponse> {
+    const response = await this.makeRequest("/api/workspaces/create-from-template", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(CreateWorkspaceFromTemplateRequestSchema.parse(request)),
+    });
+    return CreateWorkspaceFromTemplateResponseSchema.parse(response);
   }
 
   /**
