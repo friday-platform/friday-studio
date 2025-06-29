@@ -13,12 +13,12 @@ export interface ResourceHelp {
 export const resourceHelp: Record<string, ResourceHelp> = {
   workspace: {
     overview: `
-Workspaces are the fundamental units in Atlas that contain your AI agents, signals, 
-and job configurations. Each workspace is a self-contained environment with its own 
-configuration, state, and runtime.`,
+Workspaces are the fundamental units in Atlas that contain your AI agents,
+signals, and job configurations. Each workspace is a self-contained 
+environment with its own configuration, state, and runtime.`,
     concepts: `
 Key Concepts:
-  • workspace.yml: The main configuration file defining agents, signals, and jobs
+  • workspace.yml: The main configuration file defining agents, signals, & jobs
   • Agents: AI-powered or deterministic workers that execute tasks
   • Signals: Events that trigger job execution (webhooks, CLI, scheduled)
   • Jobs: Workflows that map signals to agent executions`,
@@ -39,9 +39,9 @@ Key Concepts:
 
   session: {
     overview: `
-Sessions represent active executions triggered by signals in your workspace. Each 
-session has a unique ID and tracks the execution state of agents responding to 
-a signal.`,
+Sessions represent active executions triggered by signals in your workspace.
+Each session has a unique ID and tracks the execution state of agents
+responding to a signal.`,
     concepts: `
 Key Concepts:
   • Session ID: Unique identifier (e.g., sess_abc123) for tracking execution
