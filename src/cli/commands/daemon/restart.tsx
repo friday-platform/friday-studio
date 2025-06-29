@@ -131,7 +131,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
       env: Deno.env.toObject(),
     });
 
-    const { success, stdout, stderr } = await cmd.output();
+    const { success, stderr } = await cmd.output();
 
     if (!success) {
       const errorText = new TextDecoder().decode(stderr);
