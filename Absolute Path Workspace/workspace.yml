@@ -1,7 +1,0 @@
-version: "1.0"
-workspace:
-  name: Absolute Path Workspace
-  description: "Atlas workspace: Absolute Path Workspace"
-jobs: {}
-signals: {}
-agents: {}
