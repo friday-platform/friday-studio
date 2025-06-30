@@ -1,4 +1,11 @@
-import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
+import {
+  defaultTheme,
+  extendTheme,
+  Select,
+  Spinner,
+  ThemeProvider,
+  UnorderedList,
+} from "@inkjs/ui";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
@@ -718,8 +725,52 @@ export default function InteractiveCommand() {
           }
         }
 
-        // Clear the starting message after successful connection
-        setOutputBuffer([]);
+        // Clear the starting message and add welcome message
+        const welcomeTimestamp = new Date()
+          .toLocaleTimeString([], {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+          .toLowerCase()
+          .replace(/\s/g, "");
+
+        setOutputBuffer([
+          {
+            id: `welcome-${Date.now()}`,
+            component: (
+              <Box flexDirection="column">
+                <Box flexDirection="row" gap={1}>
+                  <Text color="blue" bold>
+                    Δ Atlas
+                  </Text>
+                  <Text color="blue" dimColor bold>
+                    [{welcomeTimestamp}]
+                  </Text>
+                </Box>
+                <Box>
+                  <Text wrap="wrap" color="white">
+                    How can I help you today? Here are some options to get started:
+                  </Text>
+                </Box>
+                <Box marginTop={1}>
+                  <UnorderedList>
+                    <UnorderedList.Item>
+                      <Text>"Tell me about the features in Atlas"</Text>
+                    </UnorderedList.Item>
+                    <UnorderedList.Item>
+                      <Text>"Create a new workspace called..."</Text>
+                    </UnorderedList.Item>
+                    <UnorderedList.Item>
+                      <Text>
+                        "Show me any available Workspaces that I can use right now"
+                      </Text>
+                    </UnorderedList.Item>
+                  </UnorderedList>
+                </Box>
+              </Box>
+            ),
+          },
+        ]);
       } catch (error) {
         // Clear any loading messages and show error
         setOutputBuffer([
@@ -1287,12 +1338,14 @@ export default function InteractiveCommand() {
     addOutputEntry({
       id: `user-${Date.now()}`,
       component: (
-        <ChatMessage
-          author={currentUser}
-          date={userTimestamp}
-          message={input}
-          authorColor="green"
-        />
+        <Box flexDirection="column">
+          <ChatMessage
+            author={currentUser}
+            date={userTimestamp}
+            message={input}
+            authorColor="green"
+          />
+        </Box>
       ),
     });
 
@@ -1335,12 +1388,14 @@ export default function InteractiveCommand() {
             addOutputEntry({
               id: `llm-response-${Date.now()}`,
               component: (
-                <ChatMessage
-                  author="Δ Atlas"
-                  date={responseTimestamp}
-                  message={responseMessage}
-                  authorColor="blue"
-                />
+                <Box flexDirection="column">
+                  <ChatMessage
+                    author="Δ Atlas"
+                    date={responseTimestamp}
+                    message={responseMessage}
+                    authorColor="blue"
+                  />
+                </Box>
               ),
             });
           }
@@ -1567,7 +1622,7 @@ export default function InteractiveCommand() {
         <>
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
-            <Box flexDirection="column" marginY={1} paddingX={1}>
+            <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
               {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
             </Box>
           )}

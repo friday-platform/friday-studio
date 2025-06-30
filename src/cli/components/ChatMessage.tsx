@@ -15,7 +15,7 @@ export const ChatMessage = ({
   authorColor = "blue",
 }: ChatMessageProps) => {
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <>
       <Box flexDirection="row" gap={1}>
         <Text color={authorColor} bold>
           {author}
@@ -29,6 +29,6 @@ export const ChatMessage = ({
           {message}
         </Text>
       </Box>
-    </Box>
+    </>
   );
 };
