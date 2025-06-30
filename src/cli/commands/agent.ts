@@ -11,7 +11,16 @@ export const aliases = ["ag"];
 export function builder(y: YargsInstance) {
   return y
     .command([list, describe, test])
-    .demandCommand(1, "You need to specify an agent action")
+    .demandCommand(1)
+    .fail((msg: string, _: unknown, yargs: YargsInstance) => {
+      if (msg && msg.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error("\n" + msg);
+      Deno.exit(1);
+    })
     .example("$0 agent list", "List all configured agents")
     .example("$0 agent describe llm-agent", "View agent configuration details")
     .example("$0 ag test tempest-agent", "Test an agent with sample input")

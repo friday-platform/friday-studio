@@ -65,8 +65,6 @@ export const handler = async (argv: GetArgs): Promise<void> => {
     } else {
       // Render with Ink
       render(<SessionDetailCommand session={session} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

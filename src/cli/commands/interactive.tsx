@@ -1,13 +1,14 @@
 import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
-import { Box, render, Text, useApp, useInput, useStdout } from "ink";
+import { Box, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
 import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
+import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
+import { getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
@@ -32,11 +33,16 @@ import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { getAtlasClient } from "@atlas/client";
+import { createTempFileAndOpen } from "../utils/file-opener.ts";
 
 // Wrapper component that fetches workspace path via client
-const SignalDetailsWithPath = (
-  { workspaceId, signalId }: { workspaceId: string; signalId: string },
-) => {
+const SignalDetailsWithPath = ({
+  workspaceId,
+  signalId,
+}: {
+  workspaceId: string;
+  signalId: string;
+}) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -44,13 +50,9 @@ const SignalDetailsWithPath = (
   useEffect(() => {
     const fetchWorkspacePath = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getAtlasClient();
-          const workspacePath = await client.getWorkspacePath(workspaceId);
-          setWorkspacePath(workspacePath);
-        } else {
-          setError("Daemon not running");
-        }
+        const client = getAtlasClient();
+        const workspacePath = await client.getWorkspacePath(workspaceId);
+        setWorkspacePath(workspacePath);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -86,14 +88,22 @@ const SignalDetailsWithPath = (
   }
 
   return (
-    <SignalDetails workspaceId={workspaceId} signalId={signalId} workspacePath={workspacePath} />
+    <SignalDetails
+      workspaceId={workspaceId}
+      signalId={signalId}
+      workspacePath={workspacePath}
+    />
   );
 };
 
 // Wrapper component that fetches workspace path for job details
-const JobDetailsWithPath = (
-  { workspaceId, jobName }: { workspaceId: string; jobName: string },
-) => {
+const JobDetailsWithPath = ({
+  workspaceId,
+  jobName,
+}: {
+  workspaceId: string;
+  jobName: string;
+}) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -101,13 +111,9 @@ const JobDetailsWithPath = (
   useEffect(() => {
     const fetchWorkspacePath = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getAtlasClient();
-          const workspacePath = await client.getWorkspacePath(workspaceId);
-          setWorkspacePath(workspacePath);
-        } else {
-          setError("Daemon not running");
-        }
+        const client = getAtlasClient();
+        const workspacePath = await client.getWorkspacePath(workspaceId);
+        setWorkspacePath(workspacePath);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -142,7 +148,13 @@ const JobDetailsWithPath = (
     );
   }
 
-  return <JobDetails workspaceId={workspaceId} jobName={jobName} workspacePath={workspacePath} />;
+  return (
+    <JobDetails
+      workspaceId={workspaceId}
+      jobName={jobName}
+      workspacePath={workspacePath}
+    />
+  );
 };
 
 export const command = "$0";
@@ -156,18 +168,13 @@ export function builder(yargs: YargsInstance) {
     );
 }
 
-// Helper function to get workspace by ID using daemon API or fallback
+// Helper function to get workspace by ID using daemon API
 const getWorkspaceById = async (workspaceId: string) => {
-  if (await checkDaemonRunning()) {
-    try {
-      const client = getDaemonClient();
-      return await client.getWorkspace(workspaceId);
-    } catch (error) {
-      console.warn("Daemon API call failed, workspace not found:", error);
-      return null;
-    }
-  } else {
-    console.warn("Daemon not running, cannot resolve workspace");
+  try {
+    const client = getDaemonClient();
+    return await client.getWorkspace(workspaceId);
+  } catch (error) {
+    console.warn("Failed to get workspace:", error);
     return null;
   }
 };
@@ -366,14 +373,149 @@ const handleCreditsCommand = (_args: string[]): OutputEntry[] => {
   return [];
 };
 
-const handleConfigCommand = (args: string[]): OutputEntry[] => {
-  const subcommand = args[0] || "show";
+const handleConfigCommand = (_args: string[]): OutputEntry[] => {
+  // Config command switches to its own view, no output entries needed
+  return [];
+};
+
+const handleStatusCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  // Perform async health check
+  const checkDaemonStatus = async () => {
+    try {
+      // Use getAtlasClient for consistent behavior, but with a short timeout
+      const client = getAtlasClient({ timeout: 1000 }); // 1 second timeout for status check
+      const isHealthy = await client.isHealthy();
+
+      if (isHealthy) {
+        context.addEntry({
+          id: `status-success-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="green">✓ Atlas daemon is running</Text>
+            </Box>
+          ),
+        });
+      } else {
+        context.addEntry({
+          id: `status-not-running-${Date.now()}`,
+          component: (
+            <Box paddingLeft={1}>
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+            </Box>
+          ),
+        });
+      }
+    } catch (_error) {
+      context.addEntry({
+        id: `status-error-${Date.now()}`,
+        component: (
+          <Box paddingLeft={1}>
+            <Text color="yellow">◆ Atlas daemon is not running</Text>
+          </Box>
+        ),
+      });
+    }
+  };
+
+  // Fire and forget async operation
+  checkDaemonStatus();
+
+  // Return loading message
   return [
     {
-      id: `config-output-${Date.now()}`,
-      component: <Text>Config {subcommand} executed (placeholder implementation)</Text>,
+      id: `status-loading-${Date.now()}`,
+      component: (
+        <Box paddingLeft={1}>
+          <Text dimColor>Checking daemon status...</Text>
+        </Box>
+      ),
     },
   ];
+};
+
+/**
+ * Handle /library open <item_id> command
+ */
+const handleLibraryOpenCommand = async (
+  itemId: string,
+  addOutputEntry: (entry: OutputEntry) => void,
+) => {
+  try {
+    const client = getAtlasClient();
+
+    // Show loading message
+    addOutputEntry({
+      id: `library-open-loading-${Date.now()}`,
+      component: <Text dimColor>Opening library item {itemId}...</Text>,
+    });
+
+    // We need to search for the item across all workspaces since we don't have workspace context
+    // First try to get the item directly from global library
+    let libraryItem;
+    try {
+      libraryItem = await client.getLibraryItem(itemId, true);
+    } catch (error) {
+      // If global library doesn't work, we'd need workspace-specific search
+      // For now, show an error about needing workspace context
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Could not find library item '{itemId}'. Library items may be workspace-specific.
+            {error instanceof Error ? ` Error: ${error.message}` : ""}
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    if (!libraryItem.content) {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Library item '{itemId}' has no content to open.
+          </Text>
+        ),
+      });
+      return;
+    }
+
+    // Create temporary file and open it
+    const openResult = await createTempFileAndOpen(
+      libraryItem.item,
+      libraryItem.content,
+    );
+
+    if (openResult.success) {
+      addOutputEntry({
+        id: `library-open-success-${Date.now()}`,
+        component: (
+          <Text color="green">
+            Opened '{libraryItem.item.name}' in default application.
+            {openResult.tempPath && <Text dimColor>(Temporary file: {openResult.tempPath})</Text>}
+          </Text>
+        ),
+      });
+    } else {
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Failed to open file: {openResult.error}</Text>,
+      });
+    }
+  } catch (error) {
+    addOutputEntry({
+      id: `library-open-error-${Date.now()}`,
+      component: (
+        <Text color="red">
+          Error opening library item: {error instanceof Error ? error.message : String(error)}
+        </Text>
+      ),
+    });
+  }
 };
 
 // Command registry
@@ -405,8 +547,8 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
 
   library: {
     name: "library",
-    description: "View workspace library",
-    usage: "/library",
+    description: "View workspace library or open library items",
+    usage: "/library [open <item_id>]",
     handler: handleLibraryCommand,
   },
 
@@ -445,6 +587,13 @@ const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     handler: handleCreditsCommand,
   },
 
+  status: {
+    name: "status",
+    description: "Check Atlas daemon status",
+    usage: "/status",
+    handler: handleStatusCommand,
+  },
+
   config: {
     name: "config",
     description: "View and manage workspace configuration",
@@ -461,9 +610,9 @@ interface OutputEntry {
 
 export default function InteractiveCommand() {
   const [_inputValue, _setInputValue] = useState("");
-  const [view, setView] = useState<"help" | "command" | "init" | "credits">(
-    "command",
-  );
+  const [view, setView] = useState<
+    "help" | "command" | "init" | "config" | "credits"
+  >("command");
   const [_minHeight, setMinHeight] = useState(35);
   const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [showWorkspaceSelection, setShowWorkspaceSelection] = useState(false);
@@ -487,8 +636,12 @@ export default function InteractiveCommand() {
   const [showJobSelection, setShowJobSelection] = useState(false);
   const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
   const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
-  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<string | null>(null);
-  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<string | null>(null);
+  const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<
+    string | null
+  >(null);
+  const [currentSelectedSignal, setCurrentSelectedSignal] = useState<
+    string | null
+  >(null);
   const [workspaceSelectionContext, setWorkspaceSelectionContext] = useState<
     | "signals-list"
     | "agents-list"
@@ -513,9 +666,55 @@ export default function InteractiveCommand() {
     setMinHeight(requiredHeight);
   }, [availableHeight]);
 
-  // Add intro message on startup
+  // Add intro message on startup and check daemon status
   useEffect(() => {
-    setOutputBuffer([]);
+    const checkDaemonAndInitialize = async () => {
+      setOutputBuffer([]);
+
+      try {
+        // Try to connect to daemon - this will auto-start it if needed
+        const client = getDaemonClient();
+
+        // Show "starting daemon" message briefly
+        const startingId = `daemon-starting-${Date.now()}`;
+        setOutputBuffer([
+          {
+            id: startingId,
+            component: (
+              <Box paddingLeft={1}>
+                <Text dimColor>Connecting to Atlas daemon...</Text>
+              </Box>
+            ),
+          },
+        ]);
+
+        // Try to list workspaces - this will trigger auto-start if needed
+        await client.listWorkspaces();
+
+        // Clear the starting message after successful connection
+        setOutputBuffer([]);
+      } catch (error) {
+        // Clear any loading messages and show error
+        setOutputBuffer([
+          {
+            id: `daemon-error-${Date.now()}`,
+            component: (
+              <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
+                <Text color="red">
+                  Failed to start Atlas daemon:{" "}
+                  {error instanceof Error ? error.message : String(error)}
+                </Text>
+                <Text dimColor>
+                  Try running `atlas daemon start` manually.
+                </Text>
+              </Box>
+            ),
+          },
+        ]);
+      }
+    };
+
+    checkDaemonAndInitialize();
   }, []);
 
   // Add entry to output buffer
@@ -800,7 +999,12 @@ export default function InteractiveCommand() {
     if (action === "describe") {
       addOutputEntry({
         id: `signal-details-${Date.now()}`,
-        component: <SignalDetailsWithPath workspaceId={workspaceId} signalId={signalId} />,
+        component: (
+          <SignalDetailsWithPath
+            workspaceId={workspaceId}
+            signalId={signalId}
+          />
+        ),
       });
       setCurrentSelectionWorkspace(null);
       setCurrentSelectedSignal(null);
@@ -839,7 +1043,11 @@ export default function InteractiveCommand() {
     });
 
     try {
-      const result = await triggerSignalSimple(workspaceId, signalId, input.trim() || undefined);
+      const result = await triggerSignalSimple(
+        workspaceId,
+        signalId,
+        input.trim() || undefined,
+      );
 
       // Remove loading entry and add result
       setOutputBuffer((prev) => prev.slice(0, -1));
@@ -850,7 +1058,9 @@ export default function InteractiveCommand() {
           component: (
             <Box flexDirection="column">
               <Text color="green">Signal triggered successfully!</Text>
-              <Text dimColor>Workspace: {result.workspaceName || workspaceId}</Text>
+              <Text dimColor>
+                Workspace: {result.workspaceName || workspaceId}
+              </Text>
               <Text dimColor>Signal: {signalId}</Text>
               {result.sessionId && <Text dimColor>Session ID: {result.sessionId}</Text>}
               {result.status && <Text dimColor>Status: {result.status}</Text>}
@@ -883,7 +1093,9 @@ export default function InteractiveCommand() {
             <Text color="red">Unexpected error during signal trigger</Text>
             <Text dimColor>Workspace: {workspaceId}</Text>
             <Text dimColor>Signal: {signalId}</Text>
-            <Text color="red">Error: {error instanceof Error ? error.message : String(error)}</Text>
+            <Text color="red">
+              Error: {error instanceof Error ? error.message : String(error)}
+            </Text>
           </Box>
         ),
       });
@@ -1041,9 +1253,8 @@ export default function InteractiveCommand() {
     }
 
     // Special handling for certain commands
-    if (parsed.command === "exit" || parsed.command === "quit") {
-      exit();
-      return;
+    if (parsed.command === "exit" || parsed.command === "quit" || parsed.command === "q") {
+      Deno.exit(0);
     }
 
     if (parsed.command === "help") {
@@ -1053,6 +1264,11 @@ export default function InteractiveCommand() {
 
     if (parsed.command === "init") {
       setView("init");
+      return;
+    }
+
+    if (parsed.command === "config") {
+      setView("config");
       return;
     }
 
@@ -1104,6 +1320,24 @@ export default function InteractiveCommand() {
     }
 
     if (parsed.command === "library") {
+      if (parsed.args[0] === "open" && parsed.args[1]) {
+        // Handle /library open <item_id> - fire and forget async operation
+        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch(
+          (error) => {
+            addOutputEntry({
+              id: `library-open-error-${Date.now()}`,
+              component: (
+                <Text color="red">
+                  Unexpected error: {error instanceof Error ? error.message : String(error)}
+                </Text>
+              ),
+            });
+          },
+        );
+        return;
+      }
+
+      // Default library command - show workspace selection
       setWorkspaceSelectionContext("library");
       setShowLibraryWorkspaceSelection(true);
       return;
@@ -1151,7 +1385,8 @@ export default function InteractiveCommand() {
   // Enhanced navigation handler
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
-      exit();
+      // Force immediate exit to avoid waiting for API timeouts
+      Deno.exit(0);
       return;
     }
   });
@@ -1164,26 +1399,32 @@ export default function InteractiveCommand() {
       width={dimensions.paddedWidth}
     >
       <Box flexDirection="column" flexShrink={0}>
-        <Box flexDirection="row" alignItems="center">
-          <Box flexDirection="column">
-            <Text>╭───╮</Text>
-            <Text>│&nbsp;∆&nbsp;│</Text>
-            <Text>╰───╯</Text>
-          </Box>
+        <Static items={[1]}>
+          {(item) => (
+            <Box key={item} flexDirection="column" flexShrink={0}>
+              <Box flexDirection="row" alignItems="center">
+                <Box flexDirection="column">
+                  <Text>╭───╮</Text>
+                  <Text>│&nbsp;∆&nbsp;│</Text>
+                  <Text>╰───╯</Text>
+                </Box>
 
-          <Box flexDirection="column">
-            <Text bold>&nbsp;Atlas.&nbsp;</Text>
-          </Box>
+                <Box flexDirection="column">
+                  <Text bold>&nbsp;Atlas.&nbsp;</Text>
+                </Box>
 
-          <Box flexDirection="column">
-            <Text dimColor>Made by Tempest.</Text>
-          </Box>
-        </Box>
+                <Box flexDirection="column">
+                  <Text dimColor>Made by Tempest.</Text>
+                </Box>
+              </Box>
 
-        <Box flexDirection="column" paddingLeft={2}>
-          <Text dimColor>⊕ /help for help</Text>
-          <Text dimColor>∶ {Deno.cwd()}</Text>
-        </Box>
+              <Box flexDirection="column" paddingLeft={2}>
+                <Text dimColor>⊕ /help for help</Text>
+                <Text dimColor>∶ {Deno.cwd()}</Text>
+              </Box>
+            </Box>
+          )}
+        </Static>
       </Box>
 
       {view === "command" && (
@@ -1324,6 +1565,7 @@ export default function InteractiveCommand() {
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
+      {view === "config" && <ConfigView onExit={() => setView("command")} />}
       {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );
@@ -1489,29 +1731,22 @@ const WorkspaceSelection = ({
   useEffect(() => {
     const loadWorkspaces = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
-          const workspaceList = await client.listWorkspaces();
-          // Convert daemon API format to WorkspaceEntry format for compatibility
-          const compatibleWorkspaces = workspaceList.map((w) => ({
-            id: w.id,
-            name: w.name,
-            path: w.path,
-            configPath: `${w.path}/workspace.yml`, // Standard workspace config path
-            status: w.status as WorkspaceStatus,
-            createdAt: w.createdAt,
-            lastSeen: w.lastSeen,
-            metadata: {
-              description: w.description,
-            },
-          }));
-          setWorkspaces(compatibleWorkspaces);
-        } else {
-          setWorkspaces([]);
-          setError(
-            "Daemon not running. Use 'atlas daemon start' to enable workspace management.",
-          );
-        }
+        const client = getDaemonClient();
+        const workspaceList = await client.listWorkspaces();
+        // Convert daemon API format to WorkspaceEntry format for compatibility
+        const compatibleWorkspaces = workspaceList.map((w) => ({
+          id: w.id,
+          name: w.name,
+          path: w.path,
+          configPath: `${w.path}/workspace.yml`, // Standard workspace config path
+          status: w.status as WorkspaceStatus,
+          createdAt: w.createdAt,
+          lastSeen: w.lastSeen,
+          metadata: {
+            description: w.description,
+          },
+        }));
+        setWorkspaces(compatibleWorkspaces);
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

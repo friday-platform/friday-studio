@@ -1,285 +1,284 @@
 import React, { useState } from "react";
 import { Box, render, Text, useApp } from "ink";
-import { ConfirmInput, MultiSelect, Spinner, TextInput } from "@inkjs/ui";
-import { exists } from "@std/fs";
+import { Select, Spinner, TextInput } from "@inkjs/ui";
 import { join, resolve } from "@std/path";
 import { YargsInstance } from "../../utils/yargs.ts";
-import { createAndRegisterWorkspace } from "../../modules/workspaces/creator.ts";
+import { AtlasClient } from "@atlas/client";
 import { checkDaemonRunning } from "../../utils/daemon-client.ts";
 
 interface InitArgs {
-  name?: string;
   path?: string;
 }
 
-export const command = "init [name] [path]";
-export const desc = "Initialize a new Atlas workspace";
+export const command = "init [path]";
+export const desc = "Initialize a new Atlas workspace from a template";
 
 export function builder(y: YargsInstance) {
   return y
-    .positional("name", {
-      type: "string",
-      describe: "Workspace name",
-    })
     .positional("path", {
       type: "string",
-      describe: "Directory path for the workspace",
-      default: ".",
+      describe: "Directory path for the workspace (defaults to ./<workspace-name>)",
     })
     .example(
       "$0 workspace init",
       "Initialize workspace interactively in current directory",
     )
-    .example("$0 workspace init my-agent", "Create workspace named 'my-agent'")
     .example(
-      "$0 workspace init my-agent ~/projects",
-      "Create workspace in specific directory",
+      "$0 workspace init ~/projects/my-workspace",
+      "Create workspace at specific path",
     )
     .example("$0 work init", "Short alias for workspace init")
     .help()
     .alias("help", "h");
 }
 
-interface WorkspaceConfig {
-  name: string;
-  description: string;
-  agents: string[];
-  signals: string[];
+interface Template {
+  value: string;
+  label: string;
+  hint?: string;
 }
 
 const WorkspaceInitFlow = ({
-  initialName,
   targetPath,
 }: {
-  initialName?: string;
-  targetPath: string;
+  targetPath?: string;
 }) => {
   const { exit } = useApp();
-  const [step, setStep] = useState(initialName ? "description" : "name");
-  const [config, setConfig] = useState<Partial<WorkspaceConfig>>({
-    name: initialName,
-    agents: [],
-    signals: ["cli"],
-  });
+  const [step, setStep] = useState("checkDaemon");
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [workspaceName, setWorkspaceName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+
+  // Check daemon status
+  React.useEffect(() => {
+    if (step === "checkDaemon") {
+      checkDaemonRunning()
+        .then((running) => {
+          if (running) {
+            setStep("loadTemplates");
+          } else {
+            setError("Atlas daemon is not running. Please run 'atlas daemon start' first.");
+            setStep("error");
+          }
+        })
+        .catch(() => {
+          setError("Failed to check daemon status");
+          setStep("error");
+        });
+    }
+  }, [step]);
+
+  // Load templates
+  React.useEffect(() => {
+    if (step === "loadTemplates") {
+      const loadTemplates = async () => {
+        try {
+          const client = new AtlasClient();
+          const templateList = await client.listWorkspaceTemplates();
+
+          const formattedTemplates = templateList.map((t) => ({
+            value: t.id,
+            label: t.name,
+            hint: t.description,
+          }));
+
+          setTemplates(formattedTemplates);
+          setStep("selectTemplate");
+        } catch (error) {
+          setError(
+            `Failed to load templates: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setStep("error");
+        }
+      };
+
+      loadTemplates();
+    }
+  }, [step]);
+
+  const handleTemplateSelect = (value: string) => {
+    setSelectedTemplate(value);
+    setStep("enterName");
+  };
 
   const handleNameSubmit = (name: string) => {
     if (!name) {
       setError("Workspace name is required");
       return;
     }
-    if (!/^[a-z0-9-]+$/.test(name)) {
-      setError("Use lowercase letters, numbers, and hyphens only");
+
+    const kebabName = toKebabCase(name);
+    if (!/^[a-z0-9-]+$/.test(kebabName)) {
+      setError("Use letters, numbers, and hyphens only (will be converted to kebab-case)");
       return;
     }
-    setConfig({ ...config, name });
+
+    setWorkspaceName(kebabName);
     setError(null);
-    setStep("checkExists");
+    setStep("createWorkspace");
   };
 
-  const handleExistsCheck = async () => {
-    const workspacePath = join(targetPath, config.name!);
-    if (await exists(workspacePath)) {
-      setStep("overwrite");
-    } else {
-      setStep("description");
-    }
-  };
-
-  const handleOverwrite = (confirmed: boolean) => {
-    if (!confirmed) {
-      console.error("Workspace initialization cancelled");
-      exit();
-      return;
-    }
-    setStep("description");
-  };
-
-  const handleDescription = (description: string) => {
-    setConfig({ ...config, description });
-    setStep("agents");
-  };
-
-  const handleAgents = (agents: string[]) => {
-    setConfig({ ...config, agents });
-    setStep("signals");
-  };
-
-  const handleSignals = (signals: string[]) => {
-    setConfig({ ...config, signals });
-    setStep("confirm");
-  };
-
-  const handleConfirm = async (confirmed: boolean) => {
-    if (!confirmed) {
-      console.error("Workspace initialization cancelled");
-      exit();
-      return;
-    }
-
-    setCreating(true);
-
-    try {
-      const workspacePath = join(targetPath, config.name!);
-
-      await createAndRegisterWorkspace({
-        name: config.name!,
-        path: workspacePath,
-        description: config.description,
-        agents: config.agents,
-        signals: config.signals,
-      });
-
-      setStep("success");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setCreating(false);
-    }
-  };
-
-  // Check exists step
+  // Create workspace
   React.useEffect(() => {
-    if (step === "checkExists") {
-      handleExistsCheck();
+    if (step === "createWorkspace") {
+      const createWorkspace = async () => {
+        setCreating(true);
+
+        try {
+          // Resolve target path
+          const resolvedPath = resolveWorkspacePath(workspaceName, targetPath);
+
+          // Create workspace from template
+          const client = new AtlasClient();
+          const result = await client.createWorkspaceFromTemplate({
+            templateId: selectedTemplate,
+            name: workspaceName,
+            path: resolvedPath,
+          });
+
+          // Success!
+          console.log("\n✔ Workspace created successfully!\n");
+          console.log(`📁 Created at: ${result.path}`);
+          console.log(`📄 Template: ${templates.find((t) => t.value === selectedTemplate)?.label}`);
+          console.log("\nNext steps:");
+          console.log(`1. cd ${result.path}`);
+          console.log("2. Configure your API keys in .env");
+          console.log("3. atlas daemon start");
+          console.log(`4. atlas signal trigger <signal-name> --data '{"message": "Hello world"}'`);
+
+          exit();
+        } catch (error) {
+          setError(
+            `Failed to create workspace: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          setStep("error");
+        }
+      };
+
+      createWorkspace();
     }
-  }, [step]);
+  }, [step, workspaceName, selectedTemplate, targetPath, templates, exit]);
 
-  if (creating) {
+  if (step === "checkDaemon" || step === "loadTemplates") {
     return (
-      <Box flexDirection="column" gap={1}>
-        <Spinner label="Creating workspace directory..." />
-      </Box>
-    );
-  }
-
-  if (step === "success") {
-    return (
-      <Box flexDirection="column" gap={1}>
-        <Text color="green">✔ Workspace created successfully!</Text>
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold>Next steps:</Text>
-          <Text>1. cd {config.name}</Text>
-          <Text>
-            2. {config.agents?.includes("llm")
-              ? "Add your ANTHROPIC_API_KEY to .env"
-              : "Configure your agents"}
-          </Text>
-          <Text>3. Run 'atlas daemon start' to start Atlas daemon</Text>
+      <Box flexDirection="column">
+        <Box>
+          <Spinner
+            label={step === "checkDaemon" ? "Checking daemon status..." : "Loading templates..."}
+          />
         </Box>
       </Box>
     );
   }
 
-  return (
-    <Box flexDirection="column" gap={1}>
-      <Box paddingY={1}>
-        <Text bold color="cyan">
-          ┌ Atlas Workspace Setup
-        </Text>
+  if (step === "error") {
+    return (
+      <Box flexDirection="column">
+        <Text color="red">✖ {error}</Text>
       </Box>
+    );
+  }
 
-      {error && (
+  if (step === "selectTemplate") {
+    return (
+      <Box flexDirection="column">
         <Box marginBottom={1}>
-          <Text color="red">Error: {error}</Text>
+          <Text>Select a template:</Text>
         </Box>
-      )}
+        <Select
+          options={templates}
+          onChange={handleTemplateSelect}
+        />
+      </Box>
+    );
+  }
 
-      {step === "name" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>What is your workspace name?</Text>
-          <TextInput placeholder="my-workspace" onSubmit={handleNameSubmit} />
+  if (step === "enterName") {
+    return (
+      <Box flexDirection="column">
+        <Box marginBottom={1}>
+          <Text>Workspace name:</Text>
         </Box>
-      )}
+        <TextInput
+          placeholder="my-workspace"
+          onSubmit={handleNameSubmit}
+        />
+        {error && (
+          <Box marginTop={1}>
+            <Text color="red">{error}</Text>
+          </Box>
+        )}
+      </Box>
+    );
+  }
 
-      {step === "overwrite" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>
-            Directory "{config.name}" already exists. Continue anyway?
-          </Text>
-          <ConfirmInput
-            defaultChoice="cancel"
-            onConfirm={() => handleOverwrite(true)}
-            onCancel={() => handleOverwrite(false)}
-          />
+  if (step === "createWorkspace" && creating) {
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Spinner label="Creating workspace..." />
         </Box>
-      )}
+      </Box>
+    );
+  }
 
-      {step === "description" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>Describe your workspace (optional)</Text>
-          <TextInput
-            placeholder="AI-powered workspace for..."
-            onSubmit={handleDescription}
-          />
-        </Box>
-      )}
-
-      {step === "agents" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>Select agents to include:</Text>
-          <MultiSelect
-            options={[
-              {
-                label: "LLM Agent (For AI-powered tasks with Anthropic Claude)",
-                value: "llm",
-              },
-              {
-                label: "Tempest Agent (Built-in agent for system operations)",
-                value: "tempest",
-              },
-              {
-                label: "Remote Agent (Connect to external HTTP agents)",
-                value: "remote",
-              },
-            ]}
-            onSubmit={handleAgents}
-          />
-        </Box>
-      )}
-
-      {step === "signals" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>Configure signal triggers:</Text>
-          <MultiSelect
-            defaultValue={["cli"]}
-            options={[
-              {
-                label: "CLI Trigger (Manual triggering from command line)",
-                value: "cli",
-              },
-              {
-                label: "HTTP Webhook (Trigger via HTTP POST requests)",
-                value: "http",
-              },
-              {
-                label: "Scheduled (Time-based automatic triggers)",
-                value: "schedule",
-              },
-            ]}
-            onSubmit={handleSignals}
-          />
-        </Box>
-      )}
-
-      {step === "confirm" && (
-        <Box flexDirection="column" gap={1}>
-          <Text>
-            Create workspace "{config.name}" with {config.agents?.length || 0} agent(s) and{" "}
-            {config.signals?.length || 0} signal(s)?
-          </Text>
-          <ConfirmInput
-            defaultChoice="confirm"
-            onConfirm={() => handleConfirm(true)}
-            onCancel={() => handleConfirm(false)}
-          />
-        </Box>
-      )}
-    </Box>
-  );
+  return null;
 };
 
-export function handler(argv: InitArgs): void {
-  const targetPath = resolve(argv.path || ".");
-  render(<WorkspaceInitFlow initialName={argv.name} targetPath={targetPath} />);
+export function handler(args: InitArgs) {
+  // Check if we have a TTY
+  if (!Deno.stdin.isTerminal()) {
+    console.error("✖ Error: This command requires an interactive terminal.");
+    console.error(
+      "Please run this command directly in your terminal, not through pipes or scripts.",
+    );
+    Deno.exit(1);
+  }
+
+  render(<WorkspaceInitFlow targetPath={args.path} />);
+}
+
+/**
+ * Convert a string to kebab-case
+ */
+function toKebabCase(str: string): string {
+  return str
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Resolve the workspace path, handling duplicates with counters
+ */
+function resolveWorkspacePath(name: string, providedPath?: string): string {
+  if (providedPath) {
+    return resolve(providedPath);
+  }
+
+  const baseName = name;
+  let finalPath = join(Deno.cwd(), baseName);
+  let counter = 2;
+
+  while (existsSync(finalPath)) {
+    finalPath = join(Deno.cwd(), `${baseName}-${counter}`);
+    counter++;
+  }
+
+  return finalPath;
+}
+
+/**
+ * Check if a path exists synchronously
+ */
+function existsSync(path: string): boolean {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }

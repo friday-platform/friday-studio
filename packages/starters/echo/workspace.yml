@@ -1,0 +1,48 @@
+version: "1.0"
+
+workspace:
+  name: "{{WORKSPACE_NAME}}"
+  description: "Simple echo workspace for getting started - receives and returns messages with minimal transformation"
+
+# Signal definitions
+signals:
+  echo:
+    description: "Send a message to be echoed back"
+    provider: "cli"
+
+  echo-http:
+    description: "Echo via HTTP endpoint"
+    provider: "http"
+    path: "/echo"
+    method: "POST"
+
+# Job definitions
+jobs:
+  simple-echo:
+    name: "simple-echo"
+    description: "Echoes back the input message with slight modifications"
+    triggers:
+      - signal: "echo"
+      - signal: "echo-http"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "echo-agent"
+
+# Agent definitions
+agents:
+  echo-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Simple message echo with minor enhancements"
+    system_prompt: |
+      You are a helpful echo assistant. Your task is to:
+      1. Acknowledge receipt of the message
+      2. Echo back the message with minor formatting improvements
+      3. Add a friendly closing
+
+      Keep your response concise and friendly.
+
+      Example:
+      Input: "hello world"
+      Output: "I received your message: 'Hello world'. Have a great day!"

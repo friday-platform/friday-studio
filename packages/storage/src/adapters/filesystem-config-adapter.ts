@@ -6,6 +6,7 @@
 import { join } from "@std/path";
 import { parse as parseYaml } from "@std/yaml";
 import type { ConfigurationAdapter } from "./config-adapter.ts";
+import { type SupervisorDefaults, supervisorDefaults } from "@atlas/config";
 
 /**
  * Filesystem-based configuration adapter
@@ -104,10 +105,8 @@ export class FilesystemConfigAdapter implements ConfigurationAdapter {
    * Load supervisor default configuration
    * Returns the compiled defaults from the config package
    */
-  async loadSupervisorDefaults(): Promise<unknown> {
-    // Import the compiled supervisor defaults from the config package
-    const { supervisorDefaults } = await import("@atlas/config");
-    return supervisorDefaults;
+  loadSupervisorDefaults(): Promise<SupervisorDefaults> {
+    return Promise.resolve(supervisorDefaults);
   }
 
   /**

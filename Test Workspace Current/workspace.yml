@@ -1,7 +1,0 @@
-version: "1.0"
-workspace:
-  name: Test Workspace Current
-  description: "Atlas workspace: Test Workspace Current"
-jobs: {}
-signals: {}
-agents: {}

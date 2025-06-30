@@ -2,6 +2,7 @@ import yargs from "yargs";
 import { commands } from "./cli/commands/index.ts";
 import { customFailHandler } from "./cli/utils/fail-handler.ts";
 import { addExamples } from "./cli/utils/help-formatter.ts";
+import { checkAndDisplayUpdate } from "./utils/version-checker.ts";
 
 // Check for --version or -v flag before yargs processes commands
 if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
@@ -28,5 +29,10 @@ const cli = yargs(Deno.args)
 // Add examples
 addExamples(cli);
 
+// Check for updates (non-blocking)
+checkAndDisplayUpdate().catch(() => {
+  // Silently ignore errors to avoid disrupting CLI usage
+});
+
 // Parse the commands
-const argv = await cli.parseAsync();
+const _argv = await cli.parseAsync();

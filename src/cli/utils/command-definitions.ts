@@ -45,6 +45,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Atlas configuration settings",
   },
   {
+    command: "/status",
+    description: "Check Atlas daemon status",
+  },
+  {
     command: "/version",
     description: "Show Atlas version information",
   },
@@ -54,6 +58,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   },
   {
     command: "/exit",
-    description: "Exit the Atlas interactive interface",
+    description: "Exit the Atlas interactive interface (quit, q)",
   },
 ];

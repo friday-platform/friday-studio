@@ -2,7 +2,12 @@
  * Default supervisor configurations for Atlas platform
  * These are compiled into the application and used as fallbacks when atlas.yml doesn't provide supervisor config
  */
-export const supervisorDefaults = {
+
+import type { SupervisorDefaults } from "../schemas.ts";
+import { SupervisorDefaultsSchema } from "../schemas.ts";
+
+// Define the default supervisor configuration with TypeScript validation
+const supervisorDefaultsUnvalidated: SupervisorDefaults = {
   version: "1.0",
   supervisors: {
     workspace: {
@@ -242,3 +247,7 @@ Key responsibilities:
     },
   },
 };
+
+// Validate the supervisor defaults against the schema at module load time
+// This ensures our defaults are always valid according to the schema
+export const supervisorDefaults = SupervisorDefaultsSchema.parse(supervisorDefaultsUnvalidated);

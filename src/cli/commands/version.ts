@@ -1,7 +1,8 @@
-import { displayVersion } from "../../utils/version.ts";
+import { displayVersion, displayVersionWithRemote } from "../../utils/version.ts";
 
 interface VersionArgs {
   json?: boolean;
+  remote?: boolean;
 }
 
 export const command = "version";
@@ -14,9 +15,18 @@ export const builder = {
     describe: "Output version information as JSON",
     default: false,
   },
+  remote: {
+    type: "boolean" as const,
+    describe: "Check for newer version from remote server",
+    default: false,
+  },
 };
 
-export const handler = (argv: VersionArgs): void => {
-  displayVersion(argv.json);
+export const handler = async (argv: VersionArgs): Promise<void> => {
+  if (argv.remote) {
+    await displayVersionWithRemote(argv.json);
+  } else {
+    displayVersion(argv.json);
+  }
   Deno.exit(0);
 };

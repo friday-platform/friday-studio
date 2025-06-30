@@ -2,7 +2,12 @@
  * Default Atlas platform configuration
  * Used as fallback when atlas.yml is missing or incomplete
  */
-export const atlasDefaults = {
+
+import type { AtlasConfig } from "../schemas.ts";
+import { AtlasConfigSchema } from "../schemas.ts";
+
+// Define the default configuration with TypeScript validation
+const atlasDefaultsUnvalidated: AtlasConfig = {
   version: "1.0",
 
   workspace: {
@@ -10,6 +15,33 @@ export const atlasDefaults = {
     name: "Atlas Platform",
     description: "Default Atlas platform workspace with global management capabilities",
   },
+
+  // Platform MCP server configuration
+  server: {
+    mcp: {
+      enabled: true,
+      discoverable: {
+        capabilities: ["workspace_*"],
+        jobs: [],
+      },
+    },
+  },
+
+  // Platform tools and federation policies
+  tools: {
+    mcp: {
+      client_config: {
+        timeout: 30000,
+      },
+      policies: {
+        type: "allowlist",
+        allowed: ["filesystem-mcp", "memory-mcp"],
+      },
+    },
+  },
+
+  // No platform-specific agents for default config
+  agents: {},
 
   memory: {
     default: {
@@ -137,8 +169,6 @@ export const atlasDefaults = {
     },
   },
 
-  agents: {},
-
   supervisors: {
     workspace: {
       model: "claude-3-5-sonnet-20241022",
@@ -190,3 +220,7 @@ Key responsibilities:
     },
   },
 };
+
+// Validate the default configuration against the schema at module load time
+// This ensures our defaults are always valid according to the schema
+export const atlasDefaults = AtlasConfigSchema.parse(atlasDefaultsUnvalidated);

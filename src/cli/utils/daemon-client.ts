@@ -91,6 +91,8 @@ export interface TemplateConfig {
 export class DaemonClient {
   private daemonUrl: string;
   private timeout: number;
+  private attemptedStart = false;
+  private startingDaemon = false;
 
   constructor(options: DaemonClientOptions = {}) {
     this.daemonUrl = options.daemonUrl || "http://localhost:8080";
@@ -445,6 +447,32 @@ export class DaemonClient {
    * Make a request to the daemon API with error handling
    */
   private async makeRequest(path: string, options: RequestInit = {}): Promise<any> {
+    try {
+      // Try the request first
+      return await this.makeRequestInternal(path, options);
+    } catch (error) {
+      // If it's a connection error and we haven't tried starting the daemon yet
+      if (
+        error instanceof DaemonApiError &&
+        error.status === 503 &&
+        !this.attemptedStart &&
+        !this.startingDaemon
+      ) {
+        // Attempt to auto-start the daemon
+        await this.autoStartDaemon();
+
+        // Retry the request
+        return await this.makeRequestInternal(path, options);
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Internal request method without auto-start logic
+   */
+  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -489,6 +517,87 @@ export class DaemonClient {
       );
     }
   }
+
+  /**
+   * Auto-start the daemon if it's not running
+   */
+  private async autoStartDaemon(): Promise<void> {
+    // Prevent multiple concurrent start attempts
+    if (this.startingDaemon) {
+      // Wait for the other start attempt to complete
+      while (this.startingDaemon) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return;
+    }
+
+    this.startingDaemon = true;
+    this.attemptedStart = true;
+
+    try {
+      // Import output utilities dynamically to avoid circular dependencies
+      const { infoOutput, successOutput } = await import("./output.ts");
+
+      // Check one more time if daemon is running (in case another process started it)
+      if (await this.isHealthy()) {
+        return;
+      }
+
+      infoOutput("Starting Atlas daemon...");
+
+      // Get the port from the daemon URL
+      const url = new URL(this.daemonUrl);
+      const port = url.port || "8080";
+
+      // Start the daemon using the actual binary path
+      const cmd = new Deno.Command(Deno.execPath(), {
+        args: [
+          "task",
+          "atlas",
+          "daemon",
+          "start",
+          "--port",
+          port,
+          "--detached",
+        ],
+        cwd: new URL("../../..", import.meta.url).pathname,
+        stdout: "null",
+        stderr: "null",
+        stdin: "null",
+      });
+
+      cmd.spawn();
+
+      // Wait for daemon to be ready (up to 10 seconds)
+      let isReady = false;
+      for (let i = 0; i < 20; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        try {
+          if (await this.isHealthy()) {
+            isReady = true;
+            break;
+          }
+        } catch {
+          // Ignore errors during startup
+        }
+      }
+
+      if (!isReady) {
+        throw new Error("Failed to start daemon - timeout waiting for it to become healthy");
+      }
+
+      successOutput("Atlas daemon started successfully");
+    } catch (error) {
+      // Reset the flag so user can try manually
+      this.attemptedStart = false;
+      throw new DaemonApiError(
+        `Failed to auto-start daemon: ${error.message}. Please start it manually with 'atlas daemon start'`,
+        503,
+      );
+    } finally {
+      this.startingDaemon = false;
+    }
+  }
 }
 
 export class DaemonApiError extends Error {
@@ -506,6 +615,11 @@ export function getDaemonClient(options?: DaemonClientOptions): DaemonClient {
     defaultClient = new DaemonClient(options);
   }
   return defaultClient;
+}
+
+// Reset the default client (useful for testing or when daemon URL changes)
+export function resetDaemonClient(): void {
+  defaultClient = null;
 }
 
 // Utility function for CLI commands to detect if daemon is running

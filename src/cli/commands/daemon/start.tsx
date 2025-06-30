@@ -3,6 +3,7 @@ import { AtlasDaemon } from "../../../core/atlas-daemon.ts";
 import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { displayDaemonStatus, fetchDaemonStatus } from "../../utils/daemon-status.ts";
 
 interface StartArgs {
   port?: number;
@@ -66,11 +67,6 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: StartArgs): Promise<void> => {
   try {
-    // Early exit for help - this should not happen but just in case
-    if ((argv as any).help) {
-      return;
-    }
-
     // Validate port
     if (argv.port && (argv.port < 1 || argv.port > 65535)) {
       errorOutput(`Invalid port number: ${argv.port}. Port must be between 1 and 65535.`);
@@ -78,14 +74,15 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     }
 
     // Check if daemon is already running
-    const isRunning = await checkDaemonRunning(argv.port || 8080);
+    const port = argv.port || 8080;
+    const isRunning = await checkDaemonRunning(port);
     if (isRunning) {
-      errorOutput(
-        `Atlas daemon is already running on port ${
-          argv.port || 8080
-        }. Use 'atlas daemon stop' first.`,
-      );
-      Deno.exit(1);
+      infoOutput(`Atlas daemon is already running on port ${port}`);
+      const status = await fetchDaemonStatus(port);
+      if (status) {
+        displayDaemonStatus(status, port);
+      }
+      Deno.exit(0);
     }
 
     // Load environment variables

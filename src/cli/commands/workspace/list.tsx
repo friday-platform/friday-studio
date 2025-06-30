@@ -1,11 +1,5 @@
 import { Box, render, Text } from "ink";
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-  type WorkspaceInfo,
-} from "../../utils/daemon-client.ts";
+import { getDaemonClient, type WorkspaceInfo } from "../../utils/daemon-client.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
@@ -29,12 +23,8 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
-    // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
-      throw createDaemonNotRunningError();
-    }
-
     // Get workspaces from daemon API
+    // The client will auto-start the daemon if needed
     const client = getDaemonClient();
     const workspaces = await client.listWorkspaces();
 
@@ -53,8 +43,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     } else {
       // Render with Ink
       render(<WorkspaceList registeredWorkspaces={workspaces} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

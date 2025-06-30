@@ -126,8 +126,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       render(
         <AgentListComponent agents={transformedAgents} workspaceName={workspaceName} />,
       );
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

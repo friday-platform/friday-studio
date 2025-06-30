@@ -66,7 +66,7 @@ export function LibraryListComponent({
       />
 
       <Box marginTop={1}>
-        <Text dimColor>Use 'atlas library get &lt;id&gt;' to view details</Text>
+        <Text dimColor>Use '/library open &lt;id&gt;' to open items</Text>
       </Box>
     </Box>
   );

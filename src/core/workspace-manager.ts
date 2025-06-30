@@ -10,10 +10,10 @@
 import { basename, join } from "@std/path";
 import { exists } from "@std/fs";
 import * as yaml from "@std/yaml";
-import { z } from "zod/v4";
 import { logger } from "../utils/logger.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
+import { ConfigLoader, WorkspaceConfig } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { IWorkspace } from "../types/core.ts";
 import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
@@ -78,10 +78,14 @@ export class WorkspaceManager {
 
     if (!isTestMode && !options?.skipAutoImport) {
       try {
+        // Import any new workspaces
         const imported = await this.importExistingWorkspaces();
         if (imported > 0) {
           logger.info(`Imported ${imported} workspace(s) into registry`);
         }
+
+        // Validate existing workspaces and show cache status
+        await this.validateExistingWorkspaces();
       } catch (error) {
         logger.warn("Failed to auto-import workspaces", { error });
       }
@@ -105,9 +109,51 @@ export class WorkspaceManager {
   ): Promise<WorkspaceEntry> {
     if (!this.registry) await this.initialize();
 
+    // Resolve to absolute path for consistent lookups
+    const absolutePath = await Deno.realPath(workspacePath);
+
     // Check if already registered
-    const existing = await this.registry!.findWorkspaceByPath(workspacePath);
+    const existing = await this.registry!.findWorkspaceByPath(absolutePath);
     if (existing) {
+      // Check if config has changed by comparing file hash
+      const workspaceName = existing.name;
+
+      try {
+        // Calculate current config hash
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter, existing.path);
+        const loadedConfig = await configLoader.load();
+        const config = loadedConfig.workspace;
+
+        const configJson = JSON.stringify(config, Object.keys(config).sort());
+        const encoder = new TextEncoder();
+        const data = encoder.encode(configJson);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const currentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+        if (existing.configHash === currentHash) {
+          logger.info(`Workspace '${workspaceName}' loaded from cache (no changes detected)`, {
+            workspaceId: existing.id,
+            configHash: currentHash.substring(0, 8) + "...",
+          });
+        } else {
+          // Config has changed, refresh the cache
+          logger.info(`Workspace '${workspaceName}' config changed, refreshing cache`, {
+            workspaceId: existing.id,
+            oldHash: existing.configHash?.substring(0, 8) + "...",
+            newHash: currentHash.substring(0, 8) + "...",
+          });
+
+          await this.refreshWorkspaceConfig(existing.id);
+        }
+      } catch (error) {
+        logger.warn(`Failed to check config changes for '${workspaceName}', using cached version`, {
+          workspaceId: existing.id,
+          error: error.message,
+        });
+      }
+
       return existing;
     }
 
@@ -117,7 +163,6 @@ export class WorkspaceManager {
     const id = generateUniqueWorkspaceName(existingIds);
 
     // Load and cache workspace configuration
-    const absolutePath = await Deno.realPath(workspacePath);
     const configPath = join(absolutePath, "workspace.yml");
 
     let config: WorkspaceConfig | undefined;
@@ -125,8 +170,6 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("@atlas/config");
-      const { FilesystemConfigAdapter } = await import("@atlas/storage");
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, absolutePath);
       const loadedConfig = await configLoader.load();
@@ -147,17 +190,64 @@ export class WorkspaceManager {
         configHash: configHash.substring(0, 8) + "...",
       });
     } catch (error) {
-      logger.warn("Failed to load workspace config during registration", {
+      const workspaceName = basename(absolutePath);
+
+      // Create a compact error message for console display
+      let errorSummary = error.message;
+
+      if (error.message.includes("Configuration validation failed")) {
+        // Extract the actual field error from validation messages
+        const lines = error.message.split("\n");
+        const errorLine = lines.find((line) => line.includes("•"));
+        if (errorLine) {
+          // Extract field path and error type
+          const match = errorLine.match(/• ([^:]+): (.+)/);
+          if (match) {
+            const fieldPath = match[1];
+            const errorType = match[2].split(",")[0]; // Take first part before comma
+            errorSummary = `${fieldPath}: ${errorType}`;
+          }
+        }
+      } else if (error.issues && Array.isArray(error.issues)) {
+        // Handle Zod validation errors directly
+        const issueCount = error.issues.length;
+        const firstIssue = error.issues[0];
+        const issuePath = firstIssue?.path?.join?.(".") || "root";
+        const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
+        errorSummary = `${issueCount} error${
+          issueCount > 1 ? "s" : ""
+        } (${issuePath}: ${shortMessage})`;
+      } else {
+        // For other errors, use the original message
+        errorSummary = error.message;
+      }
+
+      logger.warn(`Failed to load workspace config for '${workspaceName}': ${errorSummary}`, {
+        workspace: workspaceName,
         workspacePath: absolutePath,
         error: error.message,
+        reason: error.name || "ConfigurationError",
       });
+
+      // Log additional validation details if available
+      if (error.issues && Array.isArray(error.issues)) {
+        logger.debug("Workspace config validation issues", {
+          workspace: workspaceName,
+          issues: error.issues.map((issue: any) => ({
+            path: issue.path?.join(".") || "root",
+            message: issue.message,
+            code: issue.code,
+          })),
+        });
+      }
+
       // Continue registration without config cache - will be loaded on-demand if needed
     }
 
     // Create new entry
     const entry: WorkspaceEntry = {
       id,
-      name: options?.name || config?.name || basename(workspacePath),
+      name: options?.name || config?.workspace.name || basename(workspacePath),
       path: absolutePath,
       configPath,
       config,
@@ -167,7 +257,7 @@ export class WorkspaceManager {
       lastSeen: new Date().toISOString(),
       metadata: {
         atlasVersion: Deno.version.deno,
-        description: options?.description || config?.description,
+        description: options?.description || config?.workspace.description,
         tags: options?.tags,
       },
     };
@@ -178,7 +268,21 @@ export class WorkspaceManager {
     // Register using storage adapter
     await this.registry!.registerWorkspace(validatedEntry);
 
-    logger.info("Workspace registered", { id: validatedEntry.id, name: validatedEntry.name });
+    // Log registration result with appropriate context
+    if (config) {
+      logger.info(`Workspace '${validatedEntry.name}' registered successfully`, {
+        id: validatedEntry.id,
+        name: validatedEntry.name,
+      });
+    } else {
+      logger.warn(
+        `Workspace '${validatedEntry.name}' registered with config errors (will load on-demand)`,
+        {
+          id: validatedEntry.id,
+          name: validatedEntry.name,
+        },
+      );
+    }
     return validatedEntry;
   }
 
@@ -416,8 +520,6 @@ export class WorkspaceManager {
 
     try {
       // Load configuration using absolute path
-      const { ConfigLoader } = await import("@atlas/config");
-      const { FilesystemConfigAdapter } = await import("@atlas/storage");
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, workspace.path);
       const loadedConfig = await configLoader.load();
@@ -502,7 +604,7 @@ export class WorkspaceManager {
     createdAt: string;
     lastSeen: string;
     hasActiveRuntime: boolean;
-    config?: any; // Workspace configuration including server.mcp settings
+    config: WorkspaceConfig;
     runtime?: {
       status: string;
       startedAt: string;
@@ -538,7 +640,7 @@ export class WorkspaceManager {
       createdAt: workspace.createdAt,
       lastSeen: workspace.lastSeen,
       hasActiveRuntime: !!runtimeInfo,
-      config, // Include workspace configuration for MCP enforcement
+      config,
       runtime: runtimeInfo
         ? {
           status: runtimeInfo.runtime.getState(),
@@ -567,21 +669,17 @@ export class WorkspaceManager {
     }
 
     try {
-      // Read and parse the workspace.yml file
-      const workspaceContent = await Deno.readTextFile(workspace.configPath);
-      const rawConfig = yaml.parse(workspaceContent);
+      // Use ConfigLoader for consistent configuration loading
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, workspace.path);
+      const mergedConfig = await configLoader.load();
 
-      // Validate with Zod schema
-      const config = WorkspaceConfigSchema.parse(rawConfig);
-      return config;
+      // Return just the workspace portion
+      return mergedConfig.workspace;
     } catch (error) {
-      if (error instanceof z.ZodError) {
-        logger.error(`Invalid workspace configuration for ${workspaceSlug}`, {
-          error: error.issues,
-        });
-      } else {
-        logger.error(`Failed to load workspace config for ${workspaceSlug}`, { error });
-      }
+      logger.error(`Failed to load workspace config for ${workspaceSlug}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -785,6 +883,11 @@ export class WorkspaceManager {
     if (currentDepth > maxDepth) return;
 
     try {
+      // Skip template storage directory
+      if (path.includes(join("packages", "starters"))) {
+        return;
+      }
+
       // Check if this directory has workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
       if (await exists(workspaceYmlPath)) {
@@ -822,22 +925,21 @@ export class WorkspaceManager {
       try {
         const existing = await this.findByPath(workspacePath);
         if (!existing) {
-          // Try to read workspace.yml to get name and description
-          const workspaceYmlPath = join(workspacePath, "workspace.yml");
+          // Try to load workspace config using ConfigLoader
           let name = basename(workspacePath);
           let description: string | undefined;
 
           try {
-            const yamlContent = await Deno.readTextFile(workspaceYmlPath);
-            const config = yaml.parse(yamlContent) as {
-              workspace?: { name?: string; description?: string };
-            };
+            const adapter = new FilesystemConfigAdapter();
+            const configLoader = new ConfigLoader(adapter, workspacePath);
+            const mergedConfig = await configLoader.load();
 
-            if (config.workspace?.name) {
-              name = config.workspace.name;
+            // Extract name and description from validated config
+            if (mergedConfig.workspace.workspace.name) {
+              name = mergedConfig.workspace.workspace.name;
             }
-            if (config.workspace?.description) {
-              description = config.workspace.description;
+            if (mergedConfig.workspace.workspace.description) {
+              description = mergedConfig.workspace.workspace.description;
             }
           } catch {
             // Ignore parsing errors, use defaults
@@ -852,6 +954,104 @@ export class WorkspaceManager {
     }
 
     return imported;
+  }
+
+  /**
+   * Validate existing workspaces and show cache status during startup
+   */
+  async validateExistingWorkspaces(): Promise<void> {
+    const workspaces = await this.listAllPersisted();
+    if (workspaces.length === 0) {
+      return;
+    }
+
+    logger.info(`Validating ${workspaces.length} existing workspace(s)...`);
+
+    for (const workspace of workspaces) {
+      try {
+        // Check if workspace directory still exists
+        const dirExists = await Deno.stat(workspace.path).catch(() => null);
+        if (!dirExists) {
+          logger.warn(`Workspace '${workspace.name}' directory not found: ${workspace.path}`);
+          continue;
+        }
+
+        // Check config file and cache status
+        const workspaceYmlPath = join(workspace.path, "workspace.yml");
+        const configExists = await Deno.stat(workspaceYmlPath).catch(() => null);
+        if (!configExists) {
+          logger.warn(`Workspace '${workspace.name}' missing workspace.yml file`);
+          continue;
+        }
+
+        // Check if cached config is still valid
+        try {
+          const adapter = new FilesystemConfigAdapter();
+          const configLoader = new ConfigLoader(adapter, workspace.path);
+          const loadedConfig = await configLoader.load();
+          const config = loadedConfig.workspace;
+
+          // Calculate current config hash
+          const configJson = JSON.stringify(config, Object.keys(config).sort());
+          const encoder = new TextEncoder();
+          const data = encoder.encode(configJson);
+          const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const currentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          if (workspace.configHash === currentHash) {
+            logger.info(`Workspace '${workspace.name}' loaded from cache (no changes detected)`, {
+              workspaceId: workspace.id,
+              configHash: currentHash.substring(0, 8) + "...",
+            });
+          } else {
+            logger.info(`Workspace '${workspace.name}' config changed since last startup`, {
+              workspaceId: workspace.id,
+              oldHash: workspace.configHash?.substring(0, 8) + "...",
+              newHash: currentHash.substring(0, 8) + "...",
+            });
+          }
+        } catch (error) {
+          // Create compact error message for validation failures
+          let compactError = error.message;
+
+          if (error.message.includes("Configuration validation failed")) {
+            // Extract the actual field error from validation messages
+            const lines = error.message.split("\n");
+            const errorLine = lines.find((line) => line.includes("•"));
+            if (errorLine) {
+              // Extract field path and error type
+              const match = errorLine.match(/• ([^:]+): (.+)/);
+              if (match) {
+                const fieldPath = match[1];
+                const errorType = match[2].split(",")[0]; // Take first part before comma
+                compactError = `${fieldPath}: ${errorType}`;
+              }
+            }
+          } else if (error.issues && Array.isArray(error.issues)) {
+            // Handle Zod validation errors directly
+            const issueCount = error.issues.length;
+            const firstIssue = error.issues[0];
+            const issuePath = firstIssue?.path?.join?.(".") || "root";
+            const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
+            compactError = `${issueCount} error${
+              issueCount > 1 ? "s" : ""
+            } (${issuePath}: ${shortMessage})`;
+          } else {
+            compactError = error.message;
+          }
+
+          logger.warn(`Failed to validate config for '${workspace.name}': ${compactError}`, {
+            workspaceId: workspace.id,
+            workspacePath: workspace.path,
+          });
+        }
+      } catch (error) {
+        logger.warn(`Failed to validate workspace '${workspace.name}': ${error.message}`, {
+          workspaceId: workspace.id,
+        });
+      }
+    }
   }
 
   /**

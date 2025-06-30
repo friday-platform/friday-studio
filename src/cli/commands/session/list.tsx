@@ -1,10 +1,6 @@
 import { render } from "ink";
 import { SessionListComponent } from "../../modules/sessions/session-list-component.tsx";
-import {
-  checkDaemonRunning,
-  createDaemonNotRunningError,
-  getDaemonClient,
-} from "../../utils/daemon-client.ts";
+import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 
 interface ListArgs {
@@ -38,11 +34,7 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
-    // Check if daemon is running
-    if (!(await checkDaemonRunning())) {
-      throw createDaemonNotRunningError();
-    }
-
+    // Get client - it will auto-start daemon if needed
     const client = getDaemonClient();
 
     // Get all sessions from daemon
@@ -92,8 +84,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
 
       // Render with Ink
       render(<SessionListComponent sessions={transformedSessions} />);
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

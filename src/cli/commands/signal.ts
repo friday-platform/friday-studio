@@ -11,7 +11,16 @@ export const aliases = ["sig"];
 export function builder(y: YargsInstance) {
   return y
     .command([list, trigger, history])
-    .demandCommand(1, "You need to specify a signal action")
+    .demandCommand(1)
+    .fail((msg: string, _: unknown, yargs: YargsInstance) => {
+      if (msg && msg.includes("Not enough non-option arguments")) {
+        yargs.showHelp();
+        Deno.exit(0);
+      }
+      yargs.showHelp();
+      console.error("\n" + msg);
+      Deno.exit(1);
+    })
     .example("$0 signal list", "List all configured signals")
     .example("$0 signal trigger webhook", "Trigger a signal interactively")
     .example('$0 sig trigger manual --data \'{"message":"hello"}\'', "Trigger with data")

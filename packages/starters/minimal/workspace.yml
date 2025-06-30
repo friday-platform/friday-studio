@@ -1,0 +1,222 @@
+version: "1.0"
+
+workspace:
+  name: "{{WORKSPACE_NAME}}"
+  description: "Minimal workspace with comprehensive documentation - all options commented for easy customization"
+
+# ==============================================================================
+# SIGNALS - How external events trigger jobs in your workspace
+# ==============================================================================
+
+signals:
+  # CLI Signal - Triggered via: atlas signal trigger my-signal
+  my-signal:
+    description: "Example CLI signal"
+    provider: "cli"
+
+  # HTTP Signal - Receives webhooks at POST /signals/webhook
+  # webhook:
+  #   description: "Example HTTP webhook receiver"
+  #   provider: "http"
+  #   path: "/webhook"
+  #   method: "POST"
+  #   headers:
+  #     authorization: "Bearer secret-token"  # Optional auth
+
+  # Scheduled Signal - Runs on a cron schedule
+  # daily-task:
+  #   description: "Runs every day at midnight"
+  #   provider: "schedule"
+  #   schedule: "0 0 * * *"  # Standard cron format
+
+# ==============================================================================
+# JOBS - Workflows that execute when signals are triggered
+# ==============================================================================
+
+jobs:
+  example-job:
+    name: "example-job"
+    description: "A simple job that processes incoming signals"
+
+    # Triggers - Which signals activate this job
+    triggers:
+      - signal: "my-signal"
+        # Optional conditions using JsonLogic
+        # condition:
+        #   and:
+        #     - { "var": "message" }  # Message must exist
+        #     - { ">": [{ "length": { "var": "message" } }, 0] }  # Non-empty
+
+    # Execution strategy
+    execution:
+      strategy: "sequential" # Options: sequential, parallel
+      agents:
+        - id: "main-agent"
+          # input_source: "signal"  # Default, uses signal payload
+          # input_source: "previous"  # Uses previous agent's output
+          # input_transform:  # Transform input before passing to agent
+          #   template: "Process this: {{message}}"
+
+  # Advanced job with multiple agents
+  # multi-agent-job:
+  #   name: "multi-agent-job"
+  #   description: "Complex workflow with multiple agents"
+  #   triggers:
+  #     - signal: "webhook"
+  #   execution:
+  #     strategy: "sequential"
+  #     agents:
+  #       - id: "analyzer"
+  #         input_source: "signal"
+  #       - id: "processor"
+  #         input_source: "previous"
+  #       - id: "reporter"
+  #         input_source: "all"  # Gets all previous outputs
+
+# ==============================================================================
+# AGENTS - AI agents that perform the actual work
+# ==============================================================================
+
+agents:
+  main-agent:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022" # Fast and efficient
+    # model: "claude-3-5-sonnet-20241022"  # More capable
+    # model: "gpt-4o-mini"  # Requires OPENAI_API_KEY
+
+    purpose: "General purpose assistant"
+
+    # System prompt defines agent behavior
+    system_prompt: |
+      You are a helpful AI assistant.
+      Process the incoming message and provide a thoughtful response.
+      Be concise but thorough.
+
+    # Optional: Attach MCP tools to the agent
+    # tools:
+    #   mcp: ["filesystem", "github", "slack"]
+
+  # Example analyzer agent with tools
+  # analyzer:
+  #   type: "llm"
+  #   model: "claude-3-5-sonnet-20241022"
+  #   purpose: "Analyzes and extracts insights from data"
+  #   system_prompt: |
+  #     You are a data analyst. Extract key insights and patterns.
+  #   tools:
+  #     mcp: ["database-reader", "chart-generator"]
+
+  # Example Tempest agent (code execution)
+  # code-runner:
+  #   type: "tempest"
+  #   image: "docker.io/tempestai/agent:latest"
+  #   purpose: "Executes code and returns results"
+  #   environment:
+  #     NODE_ENV: "production"
+  #   resources:
+  #     memory: "512Mi"
+  #     cpu: "0.5"
+
+  # Example Remote agent (external service)
+  # external-api:
+  #   type: "remote"
+  #   endpoint: "https://api.example.com/agent"
+  #   purpose: "Connects to external AI service"
+  #   headers:
+  #     authorization: "Bearer ${API_TOKEN}"
+  #   timeout: 30000
+
+# ==============================================================================
+# TOOLS - MCP (Model Context Protocol) servers that provide capabilities
+# ==============================================================================
+
+# tools:
+#   mcp:
+#     # Global MCP client configuration
+#     client_config:
+#       timeout: 30000
+#       retry_policy:
+#         max_attempts: 3
+#         backoff_ms: 1000
+#
+#     # MCP server definitions
+#     servers:
+#       # Filesystem access
+#       filesystem:
+#         transport:
+#           type: "stdio"
+#           command: "npx"
+#           args: ["-y", "@modelcontextprotocol/server-filesystem"]
+#           env:
+#             FILESYSTEM_ROOT: "{{WORKSPACE_PATH}}"
+#         tools:
+#           allowed: ["read_file", "write_file", "list_directory"]
+#           # blocked: ["delete_file"]  # Explicitly block tools
+#
+#       # GitHub integration
+#       github:
+#         transport:
+#           type: "stdio"
+#           command: "npx"
+#           args: ["-y", "@modelcontextprotocol/server-github"]
+#           env:
+#             GITHUB_TOKEN: "${GITHUB_TOKEN}"
+#         tools:
+#           allowed: ["create_issue", "list_issues", "create_pr"]
+#
+#       # Custom MCP server
+#       custom:
+#         transport:
+#           type: "http"
+#           url: "http://localhost:3000/mcp"
+#           headers:
+#             authorization: "Bearer ${MCP_TOKEN}"
+
+# ==============================================================================
+# SERVER - How this workspace exposes itself as an MCP server
+# ==============================================================================
+
+# server:
+#   mcp:
+#     enabled: true
+#     # Make this workspace discoverable by other workspaces
+#     discoverable:
+#       capabilities:
+#         - "workspace_jobs_*"  # Expose job execution
+#         - "workspace_sessions_read"  # Allow session querying
+#       jobs:
+#         - "example-job"  # Specific jobs to expose
+#         - "public_*"  # Wildcard patterns supported
+#     # Rate limiting
+#     rate_limits:
+#       requests_per_hour: 100
+#       concurrent_sessions: 5
+#     # Access control
+#     access_control:
+#       require_auth: true
+#       allowed_tokens:
+#         - "${WORKSPACE_ACCESS_TOKEN}"
+
+# ==============================================================================
+# RESOURCES - External data sources and contexts
+# ==============================================================================
+
+# resources:
+#   # Documentation context
+#   - id: "docs"
+#     type: "url"
+#     url: "https://docs.example.com/api"
+#     description: "API documentation"
+#     refresh_interval: "24h"
+#
+#   # Local file context
+#   - id: "config"
+#     type: "file"
+#     path: "./config/settings.json"
+#     description: "Application configuration"
+#
+#   # Database connection
+#   - id: "postgres"
+#     type: "database"
+#     connection_string: "${DATABASE_URL}"
+#     description: "Main application database"

@@ -65,10 +65,7 @@ export async function resolveWorkspaceTargets(
   excludeNames?: string[],
   all?: boolean,
 ): Promise<WorkspaceTarget[]> {
-  if (!(await checkDaemonRunning())) {
-    throw createDaemonNotRunningError();
-  }
-
+  // Get client - it will auto-start daemon if needed
   const client = getDaemonClient();
   const targetWorkspaces: WorkspaceTarget[] = [];
   const excludeSet = new Set(excludeNames || []);
@@ -142,10 +139,7 @@ export async function triggerSignal(options: TriggerSignalOptions): Promise<Trig
   const startTime = performance.now();
 
   try {
-    if (!(await checkDaemonRunning())) {
-      throw createDaemonNotRunningError();
-    }
-
+    // Get client - it will auto-start daemon if needed
     const client = getDaemonClient();
 
     // Get workspace info for result

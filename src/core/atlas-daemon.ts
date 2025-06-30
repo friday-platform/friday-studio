@@ -1,21 +1,18 @@
+import { ConfigLoader, supervisorDefaults } from "@atlas/config";
+import { FilesystemConfigAdapter, FilesystemTemplateAdapter } from "@atlas/storage";
+import { join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { join } from "@std/path";
-import { WorkspaceRuntime } from "./workspace-runtime.ts";
-import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { AtlasLogger } from "../utils/logger.ts";
-import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
-import { WorkspaceStatus } from "./workspace-manager.ts";
-import { Workspace } from "./workspace.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 import { WorkspaceMemberRole } from "../types/core.ts";
-import { supervisorDefaults } from "@atlas/config";
-import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
-import type { LibrarySearchQuery } from "./library/types.ts";
-import { type ConversationEvent, ConversationSupervisor } from "./conversation-supervisor.ts";
+import { AtlasLogger } from "../utils/logger.ts";
+import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { ConversationSessionManager } from "./conversation-session-manager.ts";
-import { createEventSource } from "./agents/remote/adapters/sse-utils.ts";
+import { type ConversationEvent, ConversationSupervisor } from "./conversation-supervisor.ts";
+import type { LibrarySearchQuery } from "./library/types.ts";
+import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
+import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
+import { WorkspaceRuntime } from "./workspace-runtime.ts";
+import { Workspace } from "./workspace.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -42,6 +39,7 @@ export class AtlasDaemon {
   private supervisorDefaults: any = null;
   private libraryStorage: any = null; // LibraryStorageAdapter
   private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
+  private templateAdapter: FilesystemTemplateAdapter | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -80,6 +78,15 @@ export class AtlasDaemon {
       organizeByType: true,
       organizeByDate: true,
     });
+
+    // Initialize template adapter with path to starters
+    logger.info("Initializing template adapter...");
+    // Use import.meta.url to get absolute path relative to this file
+    const currentFileUrl = new URL(import.meta.url);
+    const atlasRoot = join(currentFileUrl.pathname, "..", "..", "..");
+    const templatePath = join(atlasRoot, "packages", "starters");
+    logger.info(`Template path: ${templatePath}`);
+    this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -439,6 +446,92 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to add workspaces: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // List available workspace templates
+    this.app.get("/api/templates", async (c) => {
+      try {
+        if (!this.templateAdapter) {
+          return c.json({ error: "Template system not initialized" }, 500);
+        }
+
+        const templates = await this.templateAdapter.listTemplates();
+        return c.json(templates);
+      } catch (error) {
+        return c.json({
+          error: `Failed to list templates: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Create workspace from template
+    this.app.post("/api/workspaces/create-from-template", async (c) => {
+      try {
+        if (!this.templateAdapter) {
+          return c.json({ error: "Template system not initialized" }, 500);
+        }
+
+        const body = await c.req.json() as {
+          templateId: string;
+          name: string;
+          path: string;
+        };
+
+        const { templateId, name, path } = body;
+
+        if (!templateId || !name || !path) {
+          return c.json({ error: "templateId, name, and path are required" }, 400);
+        }
+
+        // Check if template exists
+        if (!await this.templateAdapter.templateExists(templateId)) {
+          return c.json({ error: `Template '${templateId}' not found` }, 404);
+        }
+
+        // Check if target path already exists
+        try {
+          await Deno.stat(path);
+          return c.json({ error: `Path already exists: ${path}` }, 409);
+        } catch {
+          // Path doesn't exist, which is what we want
+        }
+
+        // Create parent directory if needed
+        const parentDir = join(path, "..");
+        await Deno.mkdir(parentDir, { recursive: true });
+
+        // Copy template files with replacements
+        const replacements = {
+          WORKSPACE_NAME: name,
+          WORKSPACE_PATH: path,
+          TIMESTAMP: new Date().toISOString(),
+        };
+
+        await this.templateAdapter.copyTemplate(templateId, path, replacements);
+
+        // Register the new workspace
+        const manager = getWorkspaceManager();
+        const entry = await manager.registerWorkspace(path, {
+          name,
+          description: `Created from ${templateId} template`,
+        });
+
+        return c.json({
+          id: entry.id,
+          name: entry.name,
+          path: entry.path,
+          templateId,
+          message: `Workspace created successfully from ${templateId} template`,
+        }, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to create workspace from template: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);

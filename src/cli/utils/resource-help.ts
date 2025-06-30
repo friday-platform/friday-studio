@@ -11,43 +11,73 @@ export interface ResourceHelp {
 }
 
 export const resourceHelp: Record<string, ResourceHelp> = {
-  workspace: {
+  daemon: {
     overview: `
-Workspaces are the fundamental units in Atlas that contain your AI agents, signals, 
-and job configurations. Each workspace is a self-contained environment with its own 
-configuration, state, and runtime.`,
+The Atlas daemon is the core service that manages all workspaces and agent
+executions. It runs as a single process that serves multiple workspaces
+on-demand, creating runtimes only when signals arrive.`,
     concepts: `
 Key Concepts:
-  • workspace.yml: The main configuration file defining agents, signals, and jobs
-  • Agents: AI-powered or deterministic workers that execute tasks
-  • Signals: Events that trigger job execution (webhooks, CLI, scheduled)
-  • Jobs: Workflows that map signals to agent executions`,
+  • Single Process Model: One daemon manages all registered workspaces
+  • On-Demand Runtimes: Workspaces activate only when signals arrive
+  • Workspace Registry: Workspaces must be registered with the daemon
+  • Resource Management: Configurable limits for concurrent workspaces`,
     commonTasks: [
-      "Initialize a new workspace: atlas workspace init my-agent",
-      "Start workspace server: atlas workspace serve",
-      "Run in background: atlas workspace serve --detached",
-      "Check workspace status: atlas workspace status",
-      "Stop a workspace: atlas workspace stop",
+      "Start the daemon: atlas daemon start",
+      "Start in background: atlas daemon start --detached",
+      "Check daemon status: atlas daemon status",
+      "Stop the daemon: atlas daemon stop",
+      "Restart daemon: atlas daemon restart",
     ],
     troubleshooting: [
       "Port already in use: Use --port flag to specify a different port",
-      "Workspace not found: Ensure you're in the workspace directory or use --workspace flag",
-      "ANTHROPIC_API_KEY missing: Add your API key to the .env file",
+      "Daemon not responding: Check if it's running with 'atlas daemon status'",
+      "Cannot stop daemon: Use --force flag to forcefully terminate",
     ],
-    seeAlso: ["session", "signal", "agent", "library"],
+    seeAlso: ["workspace", "session", "ps"],
+  },
+
+  workspace: {
+    overview: `
+Workspaces contain AI agents, signals, and job configurations. They are
+registered with the Atlas daemon and activate on-demand when signals arrive.`,
+    concepts: `
+Key Concepts:
+  • Template-Based Init: Create workspaces from pre-built templates
+  • Daemon Registration: Workspaces must be registered with the daemon
+  • On-Demand Activation: Runtimes created only when signals trigger
+  • Configuration-Based: Defined by workspace.yml and jobs/*.yml files`,
+    commonTasks: [
+      "Initialize from template: atlas workspace init",
+      "Initialize at path: atlas workspace init ~/my-workspace",
+      "Add workspace to daemon: atlas workspace add /path/to/workspace",
+      "List registered workspaces: atlas workspace list",
+      "Check workspace status: atlas workspace status my-agent",
+      "Remove from daemon: atlas workspace remove my-agent",
+      "View workspace logs: atlas workspace logs my-agent",
+    ],
+    troubleshooting: [
+      "Daemon not running: Start with 'atlas daemon start'",
+      "Workspace not registered: Use 'atlas workspace add' to register",
+      "Cannot find workspace: Ensure registered with 'atlas workspace list'",
+      "ANTHROPIC_API_KEY missing: Add your API key to the .env file",
+      "Init requires terminal: Run directly in terminal, not through pipes",
+    ],
+    seeAlso: ["daemon", "session", "signal", "agent", "library"],
   },
 
   session: {
     overview: `
-Sessions represent active executions triggered by signals in your workspace. Each 
-session has a unique ID and tracks the execution state of agents responding to 
-a signal.`,
+Sessions represent unique executions of jobs triggered by signals. When a signal
+arrives and matches a job configuration, Atlas creates a new session to execute
+that job through its supervised agent pipeline.`,
     concepts: `
 Key Concepts:
-  • Session ID: Unique identifier (e.g., sess_abc123) for tracking execution
-  • Session State: created → planning → executing → completed/failed
-  • Agent Coordination: Sessions manage multiple agent executions
-  • Isolation: Each session runs in its own context with filtered memory`,
+  • Job Execution: Each session is one run of a job (signal → job → session)
+  • Unique Identity: Every session has a unique ID (e.g., sess_abc123)
+  • Supervised Pipeline: Jobs execute through WorkspaceSupervisor → SessionSupervisor → Agents
+  • Execution Planning: LLM-powered analysis determines which agents to invoke
+  • Session Lifecycle: created → planning → executing → completed/failed`,
     commonTasks: [
       "List active sessions: atlas session list or atlas ps",
       "View session details: atlas session get sess_abc123",
@@ -56,18 +86,17 @@ Key Concepts:
       "Export as JSON: atlas session list --json",
     ],
     troubleshooting: [
-      "No sessions found: Ensure workspace is running and signals have been triggered",
-      "Session stuck: Check logs with 'atlas logs sess_abc123'",
+      "Session stuck: Check logs with 'atlas workspace logs sess_abc123'",
       "Can't cancel session: Session may have already completed or failed",
     ],
-    seeAlso: ["workspace", "signal", "logs"],
+    seeAlso: ["workspace", "signal", "logs", "ps"],
   },
 
   signal: {
     overview: `
-Signals are events that trigger job execution in your workspace. They can come from 
-various sources like HTTP webhooks, CLI commands, scheduled timers, or external 
-systems.`,
+Signals are events that trigger job execution in your workspace. They can come
+from various sources like HTTP webhooks, CLI commands, scheduled timers, or
+external systems.`,
     concepts: `
 Key Concepts:
   • Signal Providers: cli, http, schedule, github, etc.
@@ -91,15 +120,16 @@ Key Concepts:
 
   agent: {
     overview: `
-Agents are the execution units in Atlas that perform tasks. They can be AI-powered 
-(using LLMs), deterministic (Tempest agents), or remote HTTP services. Agents are 
-stateless and receive context from supervisors.`,
+Agents are execution units managed by Atlas supervisors. They can be Tempest
+(built-in), LLM (AI-powered), or Remote (MCP/HTTP services). All agents execute
+through a supervision pipeline that ensures safety and coordination.`,
     concepts: `
 Key Concepts:
-  • Agent Types: llm (AI-powered), tempest (built-in), remote (HTTP)
-  • Stateless Design: Agents don't maintain memory between invocations
-  • Supervisor Coordination: Agents are orchestrated by session supervisors
-  • Tool Access: Agents can use tools/actions defined in configuration`,
+  • Supervised Execution: Agents never run directly, always through supervisors
+  • Agent Types: tempest (first-party), llm (custom AI), remote (external)
+  • MCP Integration: Agents can use MCP servers as tool providers
+  • Stateless Design: Context provided by supervisors for each invocation
+  • Safety Analysis: LLM-powered assessment before execution`,
     commonTasks: [
       "List workspace agents: atlas agent list",
       "View agent config: atlas agent describe llm-agent",
@@ -111,8 +141,9 @@ Key Concepts:
       "Agent not found: Verify agent name in workspace.yml",
       "LLM agent failing: Check ANTHROPIC_API_KEY in .env file",
       "Remote agent timeout: Verify remote endpoint is accessible",
+      "MCP connection failed: Check MCP server configuration",
     ],
-    seeAlso: ["workspace", "session", "library"],
+    seeAlso: ["workspace", "session", "library", "mcp"],
   },
 
   library: {
@@ -123,9 +154,10 @@ by agents during execution.`,
     concepts: `
 Key Concepts:
   • Library Items: Stored content with metadata, tags, and versioning
-  • Templates: Reusable patterns for generating content
+  • Templates: Reusable patterns for generating content (not workspace templates)
   • Content Types: prompts, configs, documents, code, etc.
-  • Workspace vs Platform: Items can be workspace-specific or platform-wide`,
+  • Workspace vs Platform: Items can be workspace-specific or platform-wide
+Note: For workspace initialization templates, use 'atlas workspace init'`,
     commonTasks: [
       "List library items: atlas library list",
       "Search content: atlas library search 'agent config'",
@@ -153,18 +185,91 @@ Key Concepts:
   • Real-time Streaming: Follow logs as they're generated
   • Log Levels: debug, info, warn, error`,
     commonTasks: [
-      "View session logs: atlas logs sess_abc123",
-      "Follow logs in real-time: atlas logs sess_abc123 --follow",
-      "Show last N lines: atlas logs sess_abc123 --tail 50",
-      "Filter by level: atlas logs sess_abc123 --level error",
-      "View workspace logs: atlas logs --workspace my-agent",
+      "View workspace logs: atlas workspace logs my-agent",
+      "Follow logs in real-time: atlas workspace logs --follow",
+      "Show last N lines: atlas workspace logs --tail 50",
+      "Filter by level: atlas workspace logs --level error",
+      "Filter by time: atlas workspace logs --since 1h",
     ],
     troubleshooting: [
-      "No logs found: Ensure session ID is correct and session has started",
-      "Logs not updating: Check if workspace server is still running",
-      "Too many logs: Use --level or --tail to filter output",
+      "No logs found: Ensure workspace is registered and has activity",
+      "Logs not updating: Check if daemon is still running",
+      "Too many logs: Use --level, --tail, or --since to filter output",
+    ],
+    seeAlso: ["session", "workspace", "daemon"],
+  },
+
+  mcp: {
+    overview: `
+The Model Context Protocol (MCP) integration allows Atlas to serve as an MCP
+server, enabling other AI tools to interact with Atlas workspaces through a
+standardized protocol.`,
+    concepts: `
+Key Concepts:
+  • MCP Server: Atlas exposes workspace capabilities via MCP
+  • Tool Integration: Seamless integration with MCP-compatible tools
+  • Resource Access: Expose workspace resources through MCP
+  • Protocol Bridge: Connect Atlas agents to external MCP servers`,
+    commonTasks: [
+      "Start MCP server: atlas mcp serve",
+      "Use with Claude Desktop: Configure in Claude app settings",
+      "List available tools: Exposed automatically via MCP protocol",
+    ],
+    troubleshooting: [
+      "Connection failed: Ensure Atlas daemon is running",
+      "Tools not showing: Check workspace configuration",
+      "Permission denied: Verify MCP client has proper access",
+    ],
+    seeAlso: ["agent", "workspace", "daemon"],
+  },
+
+  ps: {
+    overview: `
+Quick command to list all active sessions across all workspaces. This is an
+alias for 'atlas session list' providing a familiar interface for process
+monitoring.`,
+    commonTasks: [
+      "List all sessions: atlas ps",
+      "Filter by workspace: atlas ps --workspace my-agent",
+      "Show as JSON: atlas ps --json",
     ],
     seeAlso: ["session", "workspace"],
+  },
+
+  interactive: {
+    overview: `
+Atlas provides rich interactive interfaces for managing workspaces, sessions,
+and agents. The interactive mode (default) and TUI provide visual dashboards
+for monitoring and control.`,
+    concepts: `
+Key Concepts:
+  • Default Interface: Running 'atlas' launches interactive mode
+  • Visual Dashboard: Real-time status of workspaces and sessions
+  • Keyboard Navigation: Arrow keys, Enter, and hotkeys for actions
+  • Multi-pane Layout: View logs, sessions, and details simultaneously`,
+    commonTasks: [
+      "Launch interactive mode: atlas or atlas interactive",
+      "Open terminal UI: atlas tui",
+      "Navigate with keyboard: Use arrow keys and Enter",
+      "Exit interface: Press 'q' or Ctrl+C",
+    ],
+    troubleshooting: [
+      "UI not rendering: Ensure terminal supports ANSI colors",
+      "Daemon connection failed: Start daemon with 'atlas daemon start'",
+      "Display issues: Try resizing terminal window",
+    ],
+    seeAlso: ["tui", "workspace", "session"],
+  },
+
+  version: {
+    overview: `
+Display Atlas version information and check for updates. Useful for ensuring
+you're running the latest version with all features and fixes.`,
+    commonTasks: [
+      "Show current version: atlas version",
+      "Check for updates: atlas version --remote",
+    ],
+    seeAlso: ["daemon"],
   },
 };
 

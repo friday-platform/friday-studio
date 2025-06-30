@@ -122,7 +122,6 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
       console.log(JSON.stringify(historyData, null, 2));
     } else {
       render(<SignalHistoryCommand data={historyData} />);
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(

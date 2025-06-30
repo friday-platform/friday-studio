@@ -1,7 +1,7 @@
 import { AtlasClient, WorkspaceAddRequest, WorkspaceBatchAddRequest } from "@atlas/client";
 import { Spinner } from "@inkjs/ui";
 import { exists, walk } from "@std/fs";
-import { basename, join, resolve } from "@std/path";
+import { basename, dirname, join, resolve } from "@std/path";
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
 import { YargsInstance } from "../../utils/yargs.ts";
@@ -24,7 +24,7 @@ export function builder(y: YargsInstance) {
     .positional("paths", {
       type: "string",
       array: true,
-      describe: "Path(s) to workspace directories",
+      describe: "Path(s) to workspace directories or workspace.yml files",
     })
     .option("scan", {
       type: "string",
@@ -68,6 +68,7 @@ export function builder(y: YargsInstance) {
     })
     .example("$0 workspace add ~/my-workspace", "Add a single workspace")
     .example("$0 workspace add ~/proj1 ~/proj2", "Add multiple workspaces")
+    .example("$0 workspace add ~/my-workspace/workspace.yml", "Add using workspace.yml path")
     .example("$0 workspace add --scan ~/projects", "Scan directory for workspaces")
     .example("$0 workspace add ~/work --name my-work", "Add with custom name")
     .help()
@@ -136,16 +137,23 @@ const WorkspaceAddUI = ({
             }
 
             const stats = await Deno.stat(resolvedPath);
-            if (!stats.isDirectory) {
-              throw new Error(`Not a directory: ${resolvedPath}`);
-            }
 
-            const workspaceYml = join(resolvedPath, "workspace.yml");
-            if (!await exists(workspaceYml)) {
-              throw new Error(`workspace.yml not found in: ${resolvedPath}`);
+            if (stats.isFile && basename(resolvedPath) === "workspace.yml") {
+              // If the path is a workspace.yml file, use its parent directory
+              const workspaceDir = dirname(resolvedPath);
+              paths.push(workspaceDir);
+            } else if (stats.isDirectory) {
+              // If it's a directory, check for workspace.yml inside
+              const workspaceYml = join(resolvedPath, "workspace.yml");
+              if (!await exists(workspaceYml)) {
+                throw new Error(`workspace.yml not found in: ${resolvedPath}`);
+              }
+              paths.push(resolvedPath);
+            } else {
+              throw new Error(
+                `Invalid path: ${resolvedPath} (must be a directory or workspace.yml file)`,
+              );
             }
-
-            paths.push(resolvedPath);
           }
         }
 
@@ -262,12 +270,30 @@ const WorkspaceAddUI = ({
   }
 
   // Interactive UI
-  if (status === "initializing" || status === "processing") {
+  if (status === "initializing") {
     return (
       <Box flexDirection="column" gap={1}>
-        <Spinner
-          label={status === "initializing" ? "Discovering workspaces..." : "Adding workspaces..."}
-        />
+        <Spinner label="Discovering workspaces..." />
+      </Box>
+    );
+  }
+
+  if (status === "processing") {
+    return (
+      <Box flexDirection="column" gap={1}>
+        <Box>
+          <Text color="cyan">
+            Adding {workspacePaths.length} workspace{workspacePaths.length !== 1 ? "s" : ""}...
+          </Text>
+        </Box>
+        <Box marginTop={1}>
+          <Spinner label="Registering with Atlas daemon" />
+        </Box>
+        {workspacePaths.map((path, i) => (
+          <Box key={i} marginLeft={2}>
+            <Text dimColor>• {path}</Text>
+          </Box>
+        ))}
       </Box>
     );
   }
@@ -286,15 +312,23 @@ const WorkspaceAddUI = ({
 
     return (
       <Box flexDirection="column" gap={1}>
+        {/* Summary header */}
         <Box marginBottom={1}>
           <Text bold>
-            {successCount > 0 && (
+            {successCount > 0 && failedCount === 0 && (
               <Text color="green">
-                ✓ Added {successCount} workspace{successCount !== 1 ? "s" : ""}
+                ✓ Successfully added {successCount} workspace{successCount !== 1 ? "s" : ""}{" "}
+                to Atlas
               </Text>
             )}
-            {successCount > 0 && failedCount > 0 && <Text></Text>}
-            {failedCount > 0 && (
+            {successCount > 0 && failedCount > 0 && (
+              <>
+                <Text color="yellow">
+                  ⚠ Partially completed: {successCount} succeeded, {failedCount} failed
+                </Text>
+              </>
+            )}
+            {successCount === 0 && failedCount > 0 && (
               <Text color="red">
                 ✗ Failed to add {failedCount} workspace{failedCount !== 1 ? "s" : ""}
               </Text>
@@ -302,15 +336,19 @@ const WorkspaceAddUI = ({
           </Text>
         </Box>
 
+        {/* Detailed results */}
+        <Box flexDirection="column">
+          <Text bold dimColor>Registration Details:</Text>
+        </Box>
+
         {results.map((result, i) => (
-          <Box key={i} flexDirection="column">
+          <Box key={i} flexDirection="column" marginLeft={2}>
             {result.success
               ? (
                 <Box>
-                  <Text color="green">✓</Text>
-                  <Text>{basename(result.path)}</Text>
-                  <Text dimColor>({result.id})</Text>
-                  {result.name && <Text>as "{result.name}"</Text>}
+                  <Text color="green">{`✓ `}</Text>
+                  <Text bold>{result.name || basename(result.path)}</Text>
+                  <Text dimColor>{` (${result.id})`}</Text>
                 </Box>
               )
               : (
@@ -320,18 +358,31 @@ const WorkspaceAddUI = ({
                     <Text>{basename(result.path)}</Text>
                   </Box>
                   <Box marginLeft={2}>
-                    <Text dimColor>{result.error}</Text>
+                    <Text dimColor>→ {result.error}</Text>
                   </Box>
                 </Box>
               )}
+            <Box marginLeft={2}>
+              <Text dimColor>Path: {result.path}</Text>
+            </Box>
           </Box>
         ))}
 
         {successCount > 0 && (
           <Box marginTop={1} flexDirection="column">
-            <Text bold>Next steps:</Text>
-            <Text>• Run 'atlas workspace list' to see all workspaces</Text>
-            <Text>• Run 'atlas tui' to open the interactive interface</Text>
+            <Text bold color="cyan">Next steps:</Text>
+            <Box marginLeft={2}>
+              <Text>• Run</Text> <Text color="cyan">atlas workspace list</Text>{" "}
+              <Text>to see all workspaces</Text>
+            </Box>
+            <Box marginLeft={2}>
+              <Text>• Run</Text> <Text color="cyan">atlas tui</Text>{" "}
+              <Text>to open the interactive interface</Text>
+            </Box>
+            <Box marginLeft={2}>
+              <Text>• Run</Text> <Text color="cyan">atlas daemon start</Text>{" "}
+              <Text>to start the Atlas daemon</Text>
+            </Box>
           </Box>
         )}
       </Box>
@@ -342,25 +393,19 @@ const WorkspaceAddUI = ({
 };
 
 export async function handler(argv: AddArgs): Promise<void> {
-  if (!argv.json) {
-    render(
-      <WorkspaceAddUI
-        args={argv}
-        onComplete={() => {
-          Deno.exit(0);
-        }}
-      />,
-    );
-  } else {
-    // For JSON output, render without exiting
-    const { waitUntilExit } = render(
-      <WorkspaceAddUI
-        args={argv}
-        onComplete={() => {
-          // Don't exit, let the render complete
-        }}
-      />,
-    );
+  const { waitUntilExit } = render(
+    <WorkspaceAddUI
+      args={argv}
+      onComplete={() => {
+        // For non-JSON output, exit after a short delay to ensure render completes
+        if (!argv.json) {
+          setTimeout(() => Deno.exit(0), 100);
+        }
+      }}
+    />,
+  );
+
+  if (argv.json) {
     await waitUntilExit();
   }
 }

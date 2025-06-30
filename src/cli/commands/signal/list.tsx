@@ -58,8 +58,6 @@ export const handler = async (argv: ListArgs): Promise<void> => {
           workspaceName={workspace.name}
         />,
       );
-      // Exit immediately after rendering
-      Deno.exit(0);
     }
   } catch (error) {
     console.error(
