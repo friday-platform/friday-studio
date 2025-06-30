@@ -883,6 +883,11 @@ export class WorkspaceManager {
     if (currentDepth > maxDepth) return;
 
     try {
+      // Skip template storage directory
+      if (path.includes(join("packages", "starters"))) {
+        return;
+      }
+
       // Check if this directory has workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
       if (await exists(workspaceYmlPath)) {
