@@ -192,15 +192,34 @@ export class WorkspaceManager {
     } catch (error) {
       const workspaceName = basename(absolutePath);
 
-      // Create a more informative error message for console display
+      // Create a compact error message for console display
       let errorSummary = error.message;
-      if (error.issues && Array.isArray(error.issues)) {
+
+      if (error.message.includes("Configuration validation failed")) {
+        // Extract the actual field error from validation messages
+        const lines = error.message.split("\n");
+        const errorLine = lines.find((line) => line.includes("•"));
+        if (errorLine) {
+          // Extract field path and error type
+          const match = errorLine.match(/• ([^:]+): (.+)/);
+          if (match) {
+            const fieldPath = match[1];
+            const errorType = match[2].split(",")[0]; // Take first part before comma
+            errorSummary = `${fieldPath}: ${errorType}`;
+          }
+        }
+      } else if (error.issues && Array.isArray(error.issues)) {
+        // Handle Zod validation errors directly
         const issueCount = error.issues.length;
         const firstIssue = error.issues[0];
         const issuePath = firstIssue?.path?.join?.(".") || "root";
-        errorSummary = `${issueCount} validation error${issueCount > 1 ? "s" : ""} (${issuePath}: ${
-          firstIssue?.message || "unknown"
-        })`;
+        const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
+        errorSummary = `${issueCount} error${
+          issueCount > 1 ? "s" : ""
+        } (${issuePath}: ${shortMessage})`;
+      } else {
+        // For other errors, use the original message
+        errorSummary = error.message;
       }
 
       logger.warn(`Failed to load workspace config for '${workspaceName}': ${errorSummary}`, {
@@ -988,7 +1007,36 @@ export class WorkspaceManager {
             });
           }
         } catch (error) {
-          logger.warn(`Failed to validate config for '${workspace.name}': ${error.message}`, {
+          // Create compact error message for validation failures
+          let compactError = error.message;
+
+          if (error.message.includes("Configuration validation failed")) {
+            // Extract the actual field error from validation messages
+            const lines = error.message.split("\n");
+            const errorLine = lines.find((line) => line.includes("•"));
+            if (errorLine) {
+              // Extract field path and error type
+              const match = errorLine.match(/• ([^:]+): (.+)/);
+              if (match) {
+                const fieldPath = match[1];
+                const errorType = match[2].split(",")[0]; // Take first part before comma
+                compactError = `${fieldPath}: ${errorType}`;
+              }
+            }
+          } else if (error.issues && Array.isArray(error.issues)) {
+            // Handle Zod validation errors directly
+            const issueCount = error.issues.length;
+            const firstIssue = error.issues[0];
+            const issuePath = firstIssue?.path?.join?.(".") || "root";
+            const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
+            compactError = `${issueCount} error${
+              issueCount > 1 ? "s" : ""
+            } (${issuePath}: ${shortMessage})`;
+          } else {
+            compactError = error.message;
+          }
+
+          logger.warn(`Failed to validate config for '${workspace.name}': ${compactError}`, {
             workspaceId: workspace.id,
             workspacePath: workspace.path,
           });
