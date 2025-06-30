@@ -8,7 +8,7 @@ import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
 import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
-import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
+import { getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
@@ -50,13 +50,9 @@ const SignalDetailsWithPath = ({
   useEffect(() => {
     const fetchWorkspacePath = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getAtlasClient();
-          const workspacePath = await client.getWorkspacePath(workspaceId);
-          setWorkspacePath(workspacePath);
-        } else {
-          setError("Daemon not running");
-        }
+        const client = getAtlasClient();
+        const workspacePath = await client.getWorkspacePath(workspaceId);
+        setWorkspacePath(workspacePath);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -115,13 +111,9 @@ const JobDetailsWithPath = ({
   useEffect(() => {
     const fetchWorkspacePath = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getAtlasClient();
-          const workspacePath = await client.getWorkspacePath(workspaceId);
-          setWorkspacePath(workspacePath);
-        } else {
-          setError("Daemon not running");
-        }
+        const client = getAtlasClient();
+        const workspacePath = await client.getWorkspacePath(workspaceId);
+        setWorkspacePath(workspacePath);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
@@ -176,18 +168,13 @@ export function builder(yargs: YargsInstance) {
     );
 }
 
-// Helper function to get workspace by ID using daemon API or fallback
+// Helper function to get workspace by ID using daemon API
 const getWorkspaceById = async (workspaceId: string) => {
-  if (await checkDaemonRunning()) {
-    try {
-      const client = getDaemonClient();
-      return await client.getWorkspace(workspaceId);
-    } catch (error) {
-      console.warn("Daemon API call failed, workspace not found:", error);
-      return null;
-    }
-  } else {
-    console.warn("Daemon not running, cannot resolve workspace");
+  try {
+    const client = getDaemonClient();
+    return await client.getWorkspace(workspaceId);
+  } catch (error) {
+    console.warn("Failed to get workspace:", error);
     return null;
   }
 };
@@ -398,7 +385,8 @@ const handleStatusCommand = (
   // Perform async health check
   const checkDaemonStatus = async () => {
     try {
-      const client = getAtlasClient();
+      // Use getAtlasClient for consistent behavior, but with a short timeout
+      const client = getAtlasClient({ timeout: 1000 }); // 1 second timeout for status check
       const isHealthy = await client.isHealthy();
 
       if (isHealthy) {
@@ -420,7 +408,7 @@ const handleStatusCommand = (
           ),
         });
       }
-    } catch (error) {
+    } catch (_error) {
       context.addEntry({
         id: `status-error-${Date.now()}`,
         component: (
@@ -456,19 +444,6 @@ const handleLibraryOpenCommand = async (
   addOutputEntry: (entry: OutputEntry) => void,
 ) => {
   try {
-    // First check if daemon is running
-    if (!(await checkDaemonRunning())) {
-      addOutputEntry({
-        id: `library-open-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Daemon not running. Use 'atlas daemon start' to enable library operations.
-          </Text>
-        ),
-      });
-      return;
-    }
-
     const client = getAtlasClient();
 
     // Show loading message
@@ -696,37 +671,41 @@ export default function InteractiveCommand() {
     const checkDaemonAndInitialize = async () => {
       setOutputBuffer([]);
 
-      // Check if Atlas daemon is running
       try {
-        const client = getAtlasClient();
-        const isHealthy = await client.isHealthy();
+        // Try to connect to daemon - this will auto-start it if needed
+        const client = getDaemonClient();
 
-        if (!isHealthy) {
-          // Daemon is not running - add message to output buffer
-          setOutputBuffer([
-            {
-              id: `daemon-not-running-${Date.now()}`,
-              component: (
-                <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
-                  <Text color="yellow">◆ Atlas daemon is not running</Text>
-                  <Text dimColor>
-                    Run `atlas daemon start` in a new terminal to use Atlas.
-                  </Text>
-                </Box>
-              ),
-            },
-          ]);
-        }
-      } catch (error) {
-        // If health check fails, also show the same message
+        // Show "starting daemon" message briefly
+        const startingId = `daemon-starting-${Date.now()}`;
         setOutputBuffer([
           {
-            id: `daemon-not-running-${Date.now()}`,
+            id: startingId,
+            component: (
+              <Box paddingLeft={1}>
+                <Text dimColor>Connecting to Atlas daemon...</Text>
+              </Box>
+            ),
+          },
+        ]);
+
+        // Try to list workspaces - this will trigger auto-start if needed
+        await client.listWorkspaces();
+
+        // Clear the starting message after successful connection
+        setOutputBuffer([]);
+      } catch (error) {
+        // Clear any loading messages and show error
+        setOutputBuffer([
+          {
+            id: `daemon-error-${Date.now()}`,
             component: (
               <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
-                <Text color="yellow">◆ Atlas daemon is not running</Text>
+                <Text color="red">
+                  Failed to start Atlas daemon:{" "}
+                  {error instanceof Error ? error.message : String(error)}
+                </Text>
                 <Text dimColor>
-                  Run `atlas daemon start` in a new terminal tab to enable full functionality.
+                  Try running `atlas daemon start` manually.
                 </Text>
               </Box>
             ),
@@ -1274,9 +1253,8 @@ export default function InteractiveCommand() {
     }
 
     // Special handling for certain commands
-    if (parsed.command === "exit" || parsed.command === "quit") {
-      exit();
-      return;
+    if (parsed.command === "exit" || parsed.command === "quit" || parsed.command === "q") {
+      Deno.exit(0);
     }
 
     if (parsed.command === "help") {
@@ -1407,7 +1385,8 @@ export default function InteractiveCommand() {
   // Enhanced navigation handler
   useInput((inputChar, key) => {
     if (key.ctrl && inputChar === "c") {
-      exit();
+      // Force immediate exit to avoid waiting for API timeouts
+      Deno.exit(0);
       return;
     }
   });
@@ -1752,29 +1731,22 @@ const WorkspaceSelection = ({
   useEffect(() => {
     const loadWorkspaces = async () => {
       try {
-        if (await checkDaemonRunning()) {
-          const client = getDaemonClient();
-          const workspaceList = await client.listWorkspaces();
-          // Convert daemon API format to WorkspaceEntry format for compatibility
-          const compatibleWorkspaces = workspaceList.map((w) => ({
-            id: w.id,
-            name: w.name,
-            path: w.path,
-            configPath: `${w.path}/workspace.yml`, // Standard workspace config path
-            status: w.status as WorkspaceStatus,
-            createdAt: w.createdAt,
-            lastSeen: w.lastSeen,
-            metadata: {
-              description: w.description,
-            },
-          }));
-          setWorkspaces(compatibleWorkspaces);
-        } else {
-          setWorkspaces([]);
-          setError(
-            "Daemon not running. Use 'atlas daemon start' to enable workspace management.",
-          );
-        }
+        const client = getDaemonClient();
+        const workspaceList = await client.listWorkspaces();
+        // Convert daemon API format to WorkspaceEntry format for compatibility
+        const compatibleWorkspaces = workspaceList.map((w) => ({
+          id: w.id,
+          name: w.name,
+          path: w.path,
+          configPath: `${w.path}/workspace.yml`, // Standard workspace config path
+          status: w.status as WorkspaceStatus,
+          createdAt: w.createdAt,
+          lastSeen: w.lastSeen,
+          metadata: {
+            description: w.description,
+          },
+        }));
+        setWorkspaces(compatibleWorkspaces);
         setError("");
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));

@@ -57,7 +57,7 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Clear the output buffer",
   },
   {
-    command: "/exit",
+    command: "/exit (quit, q)",
     description: "Exit the Atlas interactive interface",
   },
 ];
