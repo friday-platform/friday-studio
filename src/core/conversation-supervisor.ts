@@ -287,7 +287,7 @@ Tools:
         tools: cxTools,
         model: "claude-3-5-haiku-20241022",
         temperature: 0.3,
-        maxSteps: 3, // Allow multiple tool calls (workspace_create + cx_reply)
+        maxSteps: 2, // Allow workspace_create + cx_reply
         toolChoice: "required", // Force the model to use tools
         operationContext: { operation: "conversation_supervision" },
       });
@@ -358,7 +358,7 @@ Tools:
               };
 
               // Small delay for realistic typing feel
-              await new Promise((resolve) => setTimeout(resolve, 50));
+              await new Promise((resolve) => setTimeout(resolve, 10)); // Reduced from 50ms
             }
           }
 
