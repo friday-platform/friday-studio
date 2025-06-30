@@ -1,10 +1,9 @@
 import { defaultTheme, extendTheme, Select, Spinner, ThemeProvider } from "@inkjs/ui";
-import { Box, render, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
-import { Newline } from "../views/Newline.tsx";
 import { InitView } from "../views/InitView.tsx";
 import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
@@ -34,6 +33,7 @@ import { TextInput } from "../components/text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { getAtlasClient } from "@atlas/client";
 import { createTempFileAndOpen } from "../utils/file-opener.ts";
+import { ConversationClient } from "../utils/conversation-client.ts";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -658,6 +658,11 @@ export default function InteractiveCommand() {
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
+  // LLM conversation state (Phase 1 - Core Integration)
+  const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
+  const [conversationSessionId, setConversationSessionId] = useState<string | null>(null);
+  const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
+
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
 
@@ -689,7 +694,26 @@ export default function InteractiveCommand() {
         ]);
 
         // Try to list workspaces - this will trigger auto-start if needed
-        await client.listWorkspaces();
+        const workspaces = await client.listWorkspaces();
+
+        // Initialize ConversationClient if workspaces available (Phase 1)
+        if (workspaces.length > 0) {
+          try {
+            const defaultWorkspace = workspaces[0];
+            const conversationClient = new ConversationClient(
+              "http://localhost:8080",
+              defaultWorkspace.id,
+              "cli-user",
+            );
+
+            const session = await conversationClient.createSession();
+            setConversationClient(conversationClient);
+            setConversationSessionId(session.sessionId);
+          } catch (error) {
+            // Silent fail for ConversationClient - LLM features just won't be available
+            console.warn("Failed to initialize conversation client:", error);
+          }
+        }
 
         // Clear the starting message after successful connection
         setOutputBuffer([]);
@@ -704,9 +728,7 @@ export default function InteractiveCommand() {
                   Failed to start Atlas daemon:{" "}
                   {error instanceof Error ? error.message : String(error)}
                 </Text>
-                <Text dimColor>
-                  Try running `atlas daemon start` manually.
-                </Text>
+                <Text dimColor>Try running `atlas daemon start` manually.</Text>
               </Box>
             ),
           },
@@ -1235,25 +1257,121 @@ export default function InteractiveCommand() {
     }
   };
 
+  // Handle LLM input (Phase 2.1)
+  const handleLLMInput = async (input: string) => {
+    if (!conversationClient || !conversationSessionId) {
+      addOutputEntry({
+        id: `llm-error-${Date.now()}`,
+        component: <Text color="red">LLM not available. Try a workspace command first.</Text>,
+      });
+      return;
+    }
+
+    // Add user message (following existing styling patterns)
+    addOutputEntry({
+      id: `user-${Date.now()}`,
+      component: (
+        <Box flexDirection="column" paddingLeft={1}>
+          <Text color="blue">
+            <Text bold>You:</Text> {input}
+          </Text>
+        </Box>
+      ),
+    });
+
+    // Show processing indicator (using existing Spinner pattern)
+    setIsLLMProcessing(true);
+    const spinnerId = `llm-processing-${Date.now()}`;
+    addOutputEntry({
+      id: spinnerId,
+      component: (
+        <Box paddingLeft={1}>
+          <Spinner label="Thinking..." />
+        </Box>
+      ),
+    });
+
+    try {
+      await conversationClient.sendMessage(conversationSessionId, input);
+
+      let responseMessage = "";
+
+      // Listen ONLY for message_complete events (simplified from cx-client)
+      for await (const event of conversationClient.streamEvents(conversationSessionId)) {
+        if (event.type === "message_chunk") {
+          responseMessage = event.data.content;
+        } else if (event.type === "message_complete") {
+          setIsLLMProcessing(false);
+
+          // Remove spinner (following existing pattern)
+          setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
+
+          // Add response (following existing styling)
+          if (responseMessage) {
+            addOutputEntry({
+              id: `llm-response-${Date.now()}`,
+              component: (
+                <Box flexDirection="column" paddingLeft={1}>
+                  <Text color="cyan">
+                    <Text bold>Atlas:</Text>
+                  </Text>
+                  <Box marginLeft={2}>
+                    <Text wrap="wrap" color="white">
+                      {responseMessage}
+                    </Text>
+                  </Box>
+                </Box>
+              ),
+            });
+          }
+
+          if (event.data.error) {
+            addOutputEntry({
+              id: `llm-error-${Date.now()}`,
+              component: (
+                <Box paddingLeft={1}>
+                  <Text color="red">
+                    Error: {event.data.error}
+                  </Text>
+                </Box>
+              ),
+            });
+          }
+          return; // Exit stream
+        }
+      }
+    } catch (error) {
+      setIsLLMProcessing(false);
+      setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
+      addOutputEntry({
+        id: `llm-error-${Date.now()}`,
+        component: (
+          <Box paddingLeft={1}>
+            <Text color="red">
+              LLM Error: {error instanceof Error ? error.message : String(error)}
+            </Text>
+          </Box>
+        ),
+      });
+    }
+  };
+
   // Command execution handler
   const handleCommand = (input: string) => {
     // Parse command
     const parsed = parseSlashCommand(input);
     if (!parsed) {
-      // Non-slash commands show error
-      addOutputEntry({
-        id: `error-${Date.now()}`,
-        component: (
-          <Text>
-            Commands must start with /. Type /help for available commands.
-          </Text>
-        ),
-      });
+      // Send non-slash input to LLM
+      handleLLMInput(input);
       return;
     }
 
     // Special handling for certain commands
-    if (parsed.command === "exit" || parsed.command === "quit" || parsed.command === "q") {
+    if (
+      parsed.command === "exit" ||
+      parsed.command === "quit" ||
+      parsed.command === "q"
+    ) {
       Deno.exit(0);
     }
 
@@ -1667,7 +1785,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
         <TextInput
           key={inputKey}
           suggestions={getAllSuggestions()}
-          placeholder="Type / for commands"
+          placeholder="Type / for commands or chat with Atlas..."
           onChange={handleInputChange}
           onSubmit={handleSubmit}
         />
