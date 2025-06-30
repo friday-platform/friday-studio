@@ -49,7 +49,7 @@ jobs:
 
     # Execution strategy
     execution:
-      strategy: "single" # Options: single, sequential, parallel
+      strategy: "sequential" # Options: sequential, parallel
       agents:
         - id: "main-agent"
           # input_source: "signal"  # Default, uses signal payload

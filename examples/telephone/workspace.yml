@@ -14,7 +14,6 @@ server:
         # Fixed: removed invalid dot notation "workspace_sessions.*"
       jobs:
         - telephone
-        - "public_*"
     rate_limits:
       requests_per_hour: 100
       concurrent_sessions: 3

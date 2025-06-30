@@ -9,24 +9,24 @@ tools:
   mcp:
     servers:
       playwright:
-    transport:
-      type: "stdio"
-      command: "npx"
-      args: ["@playwright/mcp@latest"]
-    tools:
-      allowed:
-        [
-          "browser_navigate",
-          "browser_snapshot",
-          "browser_take_screenshot",
-          "browser_click",
-          "browser_type",
-          "browser_wait_for",
-          "browser_network_requests",
-          "browser_console_messages",
-          "browser_pdf_save",
-        ]
-    timeout_ms: 30000
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["@playwright/mcp@latest"]
+        tools:
+          allowed:
+            [
+              "browser_navigate",
+              "browser_snapshot",
+              "browser_take_screenshot",
+              "browser_click",
+              "browser_type",
+              "browser_wait_for",
+              "browser_network_requests",
+              "browser_console_messages",
+              "browser_pdf_save",
+            ]
+        timeout_ms: 30000
 
 # User-defined agents for web analysis
 agents:

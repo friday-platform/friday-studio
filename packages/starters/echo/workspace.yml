@@ -25,7 +25,7 @@ jobs:
       - signal: "echo"
       - signal: "echo-http"
     execution:
-      strategy: "single"
+      strategy: "sequential"
       agents:
         - id: "echo-agent"
 
