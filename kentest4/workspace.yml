@@ -1,0 +1,7 @@
+version: 1.0.0
+workspace:
+  name: kentest4
+  description: A basic workspace for testing
+jobs: {}
+signals: {}
+agents: {}
