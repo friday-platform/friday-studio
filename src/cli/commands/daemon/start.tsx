@@ -1,5 +1,5 @@
 import { load } from "@std/dotenv";
-import { AtlasDaemon } from "../../../core/atlas-daemon.ts";
+import { AtlasDaemon } from "@atlas/atlasd";
 import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";

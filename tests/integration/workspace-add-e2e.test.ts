@@ -6,7 +6,7 @@
 import { assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
-import { AtlasDaemon } from "../../src/core/atlas-daemon.ts";
+import { AtlasDaemon } from "@atlas/atlasd";
 import { AtlasClient } from "@atlas/client";
 import {
   createWorkspaceManager,

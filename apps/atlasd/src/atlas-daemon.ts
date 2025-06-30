@@ -3,16 +3,22 @@ import { FilesystemConfigAdapter, FilesystemTemplateAdapter } from "@atlas/stora
 import { join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { WorkspaceMemberRole } from "../types/core.ts";
-import { AtlasLogger } from "../utils/logger.ts";
-import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { ConversationSessionManager } from "./conversation-session-manager.ts";
-import { type ConversationEvent, ConversationSupervisor } from "./conversation-supervisor.ts";
-import type { LibrarySearchQuery } from "./library/types.ts";
-import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
-import { getWorkspaceManager, type WorkspaceCreateConfig } from "./workspace-manager.ts";
-import { WorkspaceRuntime } from "./workspace-runtime.ts";
-import { Workspace } from "./workspace.ts";
+import { WorkspaceMemberRole } from "../../../src/types/core.ts";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
+import { ConversationSessionManager } from "../../../src/core/conversation-session-manager.ts";
+import {
+  type ConversationEvent,
+  ConversationSupervisor,
+} from "../../../src/core/conversation-supervisor.ts";
+import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
+import { createLibraryStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
+import {
+  getWorkspaceManager,
+  type WorkspaceCreateConfig,
+} from "../../../src/core/workspace-manager.ts";
+import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
+import { Workspace } from "../../../src/core/workspace.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
