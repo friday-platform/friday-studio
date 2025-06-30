@@ -109,24 +109,73 @@ Deno.test("FilesystemConfigAdapter - resolves atlas.yml from git root", async ()
   tempDir = await Deno.makeTempDir();
   try {
     const adapter = new FilesystemConfigAdapter();
-    const workspaceDir = join(tempDir, "workspace2");
 
+    // Create an isolated git repository
+    const gitRepoDir = join(tempDir, "test-repo");
+    await Deno.mkdir(gitRepoDir, { recursive: true });
+
+    // Initialize git repo
+    const gitInit = new Deno.Command("git", {
+      args: ["init"],
+      cwd: gitRepoDir,
+      stdout: "piped",
+      stderr: "piped",
+    });
+    await gitInit.output();
+
+    // Create atlas.yml in git root
+    const gitRootAtlasPath = join(gitRepoDir, "atlas.yml");
+    await Deno.writeTextFile(gitRootAtlasPath, "version: 1.0\nname: git-root-config");
+
+    // Create a subdirectory to test from
+    const workspaceDir = join(gitRepoDir, "subdir", "workspace");
     await Deno.mkdir(workspaceDir, { recursive: true });
 
-    // No atlas.yml in workspace dir
-    const resolvedPath = await adapter.resolveAtlasConfigPath(workspaceDir);
+    // Change to the subdirectory and resolve config
+    const originalCwd = Deno.cwd();
+    try {
+      Deno.chdir(workspaceDir);
 
-    // In our test environment, we're in a git repo with atlas.yml at root
-    // So it should find the git root atlas.yml
-    expect(resolvedPath).toContain("atlas.yml");
+      // Should find the atlas.yml in git root
+      const resolvedPath = await adapter.resolveAtlasConfigPath(workspaceDir);
 
-    // The resolved path should either be from git root or the workspace default
-    const isGitRootPath = resolvedPath.includes("atlas-client-sdk/atlas.yml") &&
-      !resolvedPath.includes("workspace2");
-    const isWorkspacePath = resolvedPath === join(workspaceDir, "atlas.yml");
+      // Compare using real paths to handle symlinks (e.g., /var -> /private/var on macOS)
+      const expectedRealPath = await Deno.realPath(gitRootAtlasPath);
+      const actualRealPath = await Deno.realPath(resolvedPath);
+      expect(actualRealPath).toBe(expectedRealPath);
 
-    // Should be one or the other
-    expect(isGitRootPath || isWorkspacePath).toBe(true);
+      // Verify it's actually the git root file
+      const content = await adapter.loadYamlFile(resolvedPath);
+      expect(content).toEqual({
+        version: 1.0,
+        name: "git-root-config",
+      });
+    } finally {
+      Deno.chdir(originalCwd);
+    }
+  } finally {
+    await Deno.remove(tempDir, { recursive: true });
+  }
+});
+
+Deno.test("FilesystemConfigAdapter - falls back when not in git repo", async () => {
+  tempDir = await Deno.makeTempDir();
+  try {
+    const adapter = new FilesystemConfigAdapter();
+    const nonGitDir = join(tempDir, "not-a-git-repo");
+    await Deno.mkdir(nonGitDir, { recursive: true });
+
+    // Change to the non-git directory
+    const originalCwd = Deno.cwd();
+    try {
+      Deno.chdir(nonGitDir);
+
+      // Should return the CWD path as default (since no atlas.yml exists anywhere)
+      const resolvedPath = await adapter.resolveAtlasConfigPath(nonGitDir);
+      expect(resolvedPath).toBe(join(nonGitDir, "atlas.yml"));
+    } finally {
+      Deno.chdir(originalCwd);
+    }
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
