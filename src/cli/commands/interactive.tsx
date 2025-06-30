@@ -34,6 +34,7 @@ import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import { getAtlasClient } from "@atlas/client";
 import { createTempFileAndOpen } from "../utils/file-opener.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
+import { ChatMessage } from "../components/ChatMessage.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -660,7 +661,9 @@ export default function InteractiveCommand() {
 
   // LLM conversation state (Phase 1 - Core Integration)
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
-  const [conversationSessionId, setConversationSessionId] = useState<string | null>(null);
+  const [conversationSessionId, setConversationSessionId] = useState<
+    string | null
+  >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
 
   // Calculate available height for conversation display
@@ -1262,20 +1265,34 @@ export default function InteractiveCommand() {
     if (!conversationClient || !conversationSessionId) {
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
-        component: <Text color="red">LLM not available. Try a workspace command first.</Text>,
+        component: (
+          <Text color="red">
+            LLM not available. Try a workspace command first.
+          </Text>
+        ),
       });
       return;
     }
 
-    // Add user message (following existing styling patterns)
+    // Add user message using ChatMessage component
+    const now = new Date();
+    const userTimestamp = now
+      .toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+      .toLowerCase()
+      .replace(/\s/g, "");
+    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
     addOutputEntry({
       id: `user-${Date.now()}`,
       component: (
-        <Box flexDirection="column" paddingLeft={1}>
-          <Text color="blue">
-            <Text bold>You:</Text> {input}
-          </Text>
-        </Box>
+        <ChatMessage
+          author={currentUser}
+          date={userTimestamp}
+          message={input}
+          authorColor="green"
+        />
       ),
     });
 
@@ -1284,11 +1301,7 @@ export default function InteractiveCommand() {
     const spinnerId = `llm-processing-${Date.now()}`;
     addOutputEntry({
       id: spinnerId,
-      component: (
-        <Box paddingLeft={1}>
-          <Spinner label="Thinking..." />
-        </Box>
-      ),
+      component: <Spinner label="Typing..." />,
     });
 
     try {
@@ -1297,7 +1310,11 @@ export default function InteractiveCommand() {
       let responseMessage = "";
 
       // Listen ONLY for message_complete events (simplified from cx-client)
-      for await (const event of conversationClient.streamEvents(conversationSessionId)) {
+      for await (
+        const event of conversationClient.streamEvents(
+          conversationSessionId,
+        )
+      ) {
         if (event.type === "message_chunk") {
           responseMessage = event.data.content;
         } else if (event.type === "message_complete") {
@@ -1306,21 +1323,24 @@ export default function InteractiveCommand() {
           // Remove spinner (following existing pattern)
           setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
 
-          // Add response (following existing styling)
+          // Add response using ChatMessage component
           if (responseMessage) {
+            const responseTimestamp = new Date()
+              .toLocaleTimeString([], {
+                hour: "numeric",
+                minute: "2-digit",
+              })
+              .toLowerCase()
+              .replace(/\s/g, "");
             addOutputEntry({
               id: `llm-response-${Date.now()}`,
               component: (
-                <Box flexDirection="column" paddingLeft={1}>
-                  <Text color="cyan">
-                    <Text bold>Atlas:</Text>
-                  </Text>
-                  <Box marginLeft={2}>
-                    <Text wrap="wrap" color="white">
-                      {responseMessage}
-                    </Text>
-                  </Box>
-                </Box>
+                <ChatMessage
+                  author="Δ Atlas"
+                  date={responseTimestamp}
+                  message={responseMessage}
+                  authorColor="blue"
+                />
               ),
             });
           }
@@ -1330,9 +1350,7 @@ export default function InteractiveCommand() {
               id: `llm-error-${Date.now()}`,
               component: (
                 <Box paddingLeft={1}>
-                  <Text color="red">
-                    Error: {event.data.error}
-                  </Text>
+                  <Text color="red">Error: {event.data.error}</Text>
                 </Box>
               ),
             });
@@ -1785,7 +1803,7 @@ const CommandInput = ({ onSubmit, selectedWorkspace }: CommandInputProps) => {
         <TextInput
           key={inputKey}
           suggestions={getAllSuggestions()}
-          placeholder="Type / for commands or chat with Atlas..."
+          placeholder="Enter a message or type / for commands..."
           onChange={handleInputChange}
           onSubmit={handleSubmit}
         />
