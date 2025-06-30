@@ -145,10 +145,38 @@ export class WorkspaceManager {
         configHash: configHash.substring(0, 8) + "...",
       });
     } catch (error) {
-      logger.warn("Failed to load workspace config during registration", {
+      const workspaceName = basename(absolutePath);
+
+      // Create a more informative error message for console display
+      let errorSummary = error.message;
+      if (error.issues && Array.isArray(error.issues)) {
+        const issueCount = error.issues.length;
+        const firstIssue = error.issues[0];
+        const issuePath = firstIssue?.path?.join?.(".") || "root";
+        errorSummary = `${issueCount} validation error${issueCount > 1 ? "s" : ""} (${issuePath}: ${
+          firstIssue?.message || "unknown"
+        })`;
+      }
+
+      logger.warn(`Failed to load workspace config for '${workspaceName}': ${errorSummary}`, {
+        workspace: workspaceName,
         workspacePath: absolutePath,
         error: error.message,
+        reason: error.name || "ConfigurationError",
       });
+
+      // Log additional validation details if available
+      if (error.issues && Array.isArray(error.issues)) {
+        logger.debug("Workspace config validation issues", {
+          workspace: workspaceName,
+          issues: error.issues.map((issue: any) => ({
+            path: issue.path?.join(".") || "root",
+            message: issue.message,
+            code: issue.code,
+          })),
+        });
+      }
+
       // Continue registration without config cache - will be loaded on-demand if needed
     }
 
