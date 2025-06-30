@@ -204,7 +204,10 @@ export class WorkspaceManager {
     // Register using storage adapter
     await this.registry!.registerWorkspace(validatedEntry);
 
-    logger.info("Workspace registered", { id: validatedEntry.id, name: validatedEntry.name });
+    logger.info(`Workspace '${validatedEntry.name}' registered successfully`, {
+      id: validatedEntry.id,
+      name: validatedEntry.name,
+    });
     return validatedEntry;
   }
 
