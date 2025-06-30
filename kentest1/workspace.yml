@@ -1,7 +1,0 @@
-version: 1.0.0
-workspace:
-  name: kentest1
-  description: Test workspace created via API
-jobs: {}
-signals: {}
-agents: {}

@@ -1,7 +1,0 @@
-version: 1.0.0
-workspace:
-  name: kentest3
-  description: A basic workspace for testing
-jobs: {}
-signals: {}
-agents: {}
