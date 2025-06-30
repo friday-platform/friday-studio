@@ -78,10 +78,14 @@ export class WorkspaceManager {
 
     if (!isTestMode && !options?.skipAutoImport) {
       try {
+        // Import any new workspaces
         const imported = await this.importExistingWorkspaces();
         if (imported > 0) {
           logger.info(`Imported ${imported} workspace(s) into registry`);
         }
+
+        // Validate existing workspaces and show cache status
+        await this.validateExistingWorkspaces();
       } catch (error) {
         logger.warn("Failed to auto-import workspaces", { error });
       }
@@ -915,6 +919,75 @@ export class WorkspaceManager {
     }
 
     return imported;
+  }
+
+  /**
+   * Validate existing workspaces and show cache status during startup
+   */
+  async validateExistingWorkspaces(): Promise<void> {
+    const workspaces = await this.listAllPersisted();
+    if (workspaces.length === 0) {
+      return;
+    }
+
+    logger.info(`Validating ${workspaces.length} existing workspace(s)...`);
+
+    for (const workspace of workspaces) {
+      try {
+        // Check if workspace directory still exists
+        const dirExists = await Deno.stat(workspace.path).catch(() => null);
+        if (!dirExists) {
+          logger.warn(`Workspace '${workspace.name}' directory not found: ${workspace.path}`);
+          continue;
+        }
+
+        // Check config file and cache status
+        const workspaceYmlPath = join(workspace.path, "workspace.yml");
+        const configExists = await Deno.stat(workspaceYmlPath).catch(() => null);
+        if (!configExists) {
+          logger.warn(`Workspace '${workspace.name}' missing workspace.yml file`);
+          continue;
+        }
+
+        // Check if cached config is still valid
+        try {
+          const adapter = new FilesystemConfigAdapter();
+          const configLoader = new ConfigLoader(adapter, workspace.path);
+          const loadedConfig = await configLoader.load();
+          const config = loadedConfig.workspace;
+
+          // Calculate current config hash
+          const configJson = JSON.stringify(config, Object.keys(config).sort());
+          const encoder = new TextEncoder();
+          const data = encoder.encode(configJson);
+          const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          const currentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+          if (workspace.configHash === currentHash) {
+            logger.info(`Workspace '${workspace.name}' loaded from cache (no changes detected)`, {
+              workspaceId: workspace.id,
+              configHash: currentHash.substring(0, 8) + "...",
+            });
+          } else {
+            logger.info(`Workspace '${workspace.name}' config changed since last startup`, {
+              workspaceId: workspace.id,
+              oldHash: workspace.configHash?.substring(0, 8) + "...",
+              newHash: currentHash.substring(0, 8) + "...",
+            });
+          }
+        } catch (error) {
+          logger.warn(`Failed to validate config for '${workspace.name}': ${error.message}`, {
+            workspaceId: workspace.id,
+            workspacePath: workspace.path,
+          });
+        }
+      } catch (error) {
+        logger.warn(`Failed to validate workspace '${workspace.name}': ${error.message}`, {
+          workspaceId: workspace.id,
+        });
+      }
+    }
   }
 
   /**
