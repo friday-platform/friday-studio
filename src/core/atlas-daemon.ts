@@ -13,6 +13,9 @@ import { WorkspaceMemberRole } from "../types/core.ts";
 import { supervisorDefaults } from "@atlas/config";
 import { createLibraryStorage, StorageConfigs } from "./storage/index.ts";
 import type { LibrarySearchQuery } from "./library/types.ts";
+import { type ConversationEvent, ConversationSupervisor } from "./conversation-supervisor.ts";
+import { ConversationSessionManager } from "./conversation-session-manager.ts";
+import { createEventSource } from "./agents/remote/adapters/sse-utils.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -38,6 +41,7 @@ export class AtlasDaemon {
   private isInitialized = false;
   private supervisorDefaults: any = null;
   private libraryStorage: any = null; // LibraryStorageAdapter
+  private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -891,6 +895,293 @@ export class AtlasDaemon {
 
       return c.json({ message: "Daemon shutdown initiated" });
     });
+
+    // Conversation API Routes
+
+    // Create conversation session
+    this.app.post("/api/workspaces/:workspaceId/conversation/sessions", async (c) => {
+      const workspaceId = c.req.param("workspaceId");
+
+      try {
+        const body = await c.req.json();
+        const { mode = "private", metadata } = body;
+        const { userId = "anonymous", clientType = "atlas-cli" } = metadata || {};
+
+        const session = await this.conversationSessionManager.createSession(
+          workspaceId,
+          userId,
+          clientType,
+          mode,
+        );
+
+        return c.json({
+          sessionId: session.id,
+          mode: session.mode,
+          participants: session.participants,
+          sseUrl: `/api/workspaces/${workspaceId}/conversation/sessions/${session.id}/stream`,
+        });
+      } catch (error) {
+        return c.json({
+          error: `Failed to create conversation session: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Send message to conversation session
+    this.app.post(
+      "/api/workspaces/:workspaceId/conversation/sessions/:sessionId/messages",
+      async (c) => {
+        const { workspaceId, sessionId } = c.req.param();
+
+        try {
+          const body = await c.req.json();
+          const { message, fromUser = "anonymous" } = body;
+
+          if (!message) {
+            return c.json({ error: "Message is required" }, 400);
+          }
+
+          const session = this.conversationSessionManager.getSession(sessionId);
+          if (!session) {
+            return c.json({ error: "Session not found" }, 404);
+          }
+
+          if (session.workspaceId !== workspaceId) {
+            return c.json({ error: "Session does not belong to this workspace" }, 400);
+          }
+
+          const messageId = `msg_${Math.random().toString(36).substring(2, 10)}`;
+
+          // Add user message to history
+          this.conversationSessionManager.addMessage(
+            sessionId,
+            messageId,
+            fromUser,
+            message,
+            "user",
+          );
+
+          // Update participant activity
+          this.conversationSessionManager.updateParticipantActivity(sessionId, fromUser);
+
+          // Process message asynchronously (response will come via SSE)
+          this.processConversationMessage(workspaceId, sessionId, messageId, message, fromUser)
+            .catch((error) => {
+              console.error(`Error processing conversation message: ${error}`);
+            });
+
+          return c.json({
+            messageId,
+            status: "processing",
+          });
+        } catch (error) {
+          return c.json({
+            error: `Failed to send message: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }, 500);
+        }
+      },
+    );
+
+    // SSE stream for conversation events
+    this.app.get(
+      "/api/workspaces/:workspaceId/conversation/sessions/:sessionId/stream",
+      async (c) => {
+        const { workspaceId, sessionId } = c.req.param();
+
+        try {
+          const session = this.conversationSessionManager.getSession(sessionId);
+          if (!session) {
+            return c.json({ error: "Session not found" }, 404);
+          }
+
+          if (session.workspaceId !== workspaceId) {
+            return c.json({ error: "Session does not belong to this workspace" }, 400);
+          }
+
+          return this.streamConversationEvents(c, workspaceId, sessionId);
+        } catch (error) {
+          return c.json({
+            error: `Failed to stream conversation: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }, 500);
+        }
+      },
+    );
+
+    // Get conversation session info
+    this.app.get("/api/workspaces/:workspaceId/conversation/sessions/:sessionId", async (c) => {
+      const { workspaceId, sessionId } = c.req.param();
+
+      try {
+        const session = this.conversationSessionManager.getSession(sessionId);
+        if (!session) {
+          return c.json({ error: "Session not found" }, 404);
+        }
+
+        if (session.workspaceId !== workspaceId) {
+          return c.json({ error: "Session does not belong to this workspace" }, 400);
+        }
+
+        return c.json(session);
+      } catch (error) {
+        return c.json({
+          error: `Failed to get session: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
+    });
+  }
+
+  /**
+   * Process conversation message with ConversationSupervisor and emit SSE events
+   */
+  private async processConversationMessage(
+    workspaceId: string,
+    sessionId: string,
+    messageId: string,
+    message: string,
+    fromUser: string,
+  ): Promise<void> {
+    try {
+      // Create ConversationSupervisor with workspace context
+      const supervisor = new ConversationSupervisor(workspaceId);
+
+      // Process message and stream events to all connected SSE clients
+      for await (
+        const event of supervisor.processMessage(sessionId, messageId, message, fromUser)
+      ) {
+        // Emit event to SSE clients for this session
+        this.emitConversationEvent(sessionId, event);
+
+        // Add assistant message to history when complete
+        if (event.type === "message_complete" && !event.data.error) {
+          // Get the complete message from the message_chunk events
+          const completeMessage = this.getCompleteMessageFromEvents(messageId);
+          if (completeMessage) {
+            this.conversationSessionManager.addMessage(
+              sessionId,
+              `${messageId}_response`,
+              "assistant",
+              completeMessage,
+              "assistant",
+            );
+          }
+        }
+      }
+    } catch (error) {
+      // Emit error event
+      const errorEvent: ConversationEvent = {
+        type: "message_complete",
+        data: {
+          messageId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        timestamp: new Date().toISOString(),
+        messageId,
+        sessionId,
+      };
+
+      this.emitConversationEvent(sessionId, errorEvent);
+    }
+  }
+
+  private sseClients: Map<
+    string,
+    Array<{ writer: WritableStreamDefaultWriter; controller: ReadableStreamDefaultController }>
+  > = new Map();
+
+  /**
+   * Stream conversation events via SSE
+   */
+  private streamConversationEvents(c: any, workspaceId: string, sessionId: string): Response {
+    const { readable, writable } = new TransformStream();
+    const writer = writable.getWriter();
+    const encoder = new TextEncoder();
+
+    // Add client to SSE clients for this session
+    if (!this.sseClients.has(sessionId)) {
+      this.sseClients.set(sessionId, []);
+    }
+    this.sseClients.get(sessionId)!.push({ writer, controller: null as any });
+
+    // Send initial connection event
+    const connectEvent = `event: connected\ndata: ${
+      JSON.stringify({
+        sessionId,
+        timestamp: new Date().toISOString(),
+      })
+    }\n\n`;
+
+    writer.write(encoder.encode(connectEvent)).catch(() => {
+      // Client disconnected, clean up
+      this.removeSSEClient(sessionId, writer);
+    });
+
+    // Handle client disconnect
+    c.req.raw.signal?.addEventListener("abort", () => {
+      this.removeSSEClient(sessionId, writer);
+      writer.close();
+    });
+
+    return new Response(readable, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Cache-Control",
+      },
+    });
+  }
+
+  /**
+   * Emit conversation event to all SSE clients for a session
+   */
+  private emitConversationEvent(sessionId: string, event: ConversationEvent): void {
+    const clients = this.sseClients.get(sessionId);
+    if (!clients || clients.length === 0) return;
+
+    const encoder = new TextEncoder();
+    const sseData = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
+    const encodedData = encoder.encode(sseData);
+
+    // Send to all connected clients for this session
+    clients.forEach(({ writer }) => {
+      writer.write(encodedData).catch(() => {
+        // Client disconnected, will be cleaned up by abort handler
+      });
+    });
+  }
+
+  /**
+   * Remove SSE client from session
+   */
+  private removeSSEClient(sessionId: string, writer: WritableStreamDefaultWriter): void {
+    const clients = this.sseClients.get(sessionId);
+    if (!clients) return;
+
+    const index = clients.findIndex((client) => client.writer === writer);
+    if (index !== -1) {
+      clients.splice(index, 1);
+    }
+
+    // Clean up empty sessions
+    if (clients.length === 0) {
+      this.sseClients.delete(sessionId);
+    }
+  }
+
+  /**
+   * Get complete message content from message_chunk events (placeholder)
+   */
+  private getCompleteMessageFromEvents(messageId: string): string | null {
+    // TODO: In a real implementation, we'd track message chunks
+    // For now, return placeholder
+    return "Response from ConversationSupervisor";
   }
 
   /**

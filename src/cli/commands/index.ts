@@ -1,4 +1,6 @@
 import * as agentCmd from "./agent.ts";
+import * as cxCmd from "./cx-client.tsx";
+import * as cxDevCmd from "./cx-dev.tsx";
 import * as daemonCmd from "./daemon.ts";
 import * as interactiveCmd from "./interactive.tsx";
 import * as libraryCmd from "./library/index.ts";
@@ -22,4 +24,6 @@ export const commands = [
   daemonCmd,
   // tuiCmd,
   interactiveCmd,
+  cxCmd,
+  cxDevCmd,
 ];
