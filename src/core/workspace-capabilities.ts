@@ -41,7 +41,7 @@ export class WorkspaceCapabilityRegistry {
 
     // Jobs capabilities
     this.registerCapability({
-      id: "workspace.jobs.trigger",
+      id: "workspace_jobs_trigger",
       name: "Trigger Job",
       description: "Trigger a job in the current workspace",
       category: "jobs",
@@ -54,7 +54,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.jobs.list",
+      id: "workspace_jobs_list",
       name: "List Jobs",
       description: "List all jobs in the current workspace",
       category: "jobs",
@@ -67,7 +67,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.jobs.describe",
+      id: "workspace_jobs_describe",
       name: "Describe Job",
       description: "Get detailed information about a specific job",
       category: "jobs",
@@ -81,7 +81,7 @@ export class WorkspaceCapabilityRegistry {
 
     // Sessions capabilities
     this.registerCapability({
-      id: "workspace.sessions.list",
+      id: "workspace_sessions_list",
       name: "List Sessions",
       description: "List all sessions in the current workspace",
       category: "sessions",
@@ -94,7 +94,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.sessions.describe",
+      id: "workspace_sessions_describe",
       name: "Describe Session",
       description: "Get detailed information about a specific session",
       category: "sessions",
@@ -107,7 +107,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.sessions.cancel",
+      id: "workspace_sessions_cancel",
       name: "Cancel Session",
       description: "Cancel a running session",
       category: "sessions",
@@ -121,7 +121,7 @@ export class WorkspaceCapabilityRegistry {
 
     // Memory capabilities
     this.registerCapability({
-      id: "workspace.memory.recall",
+      id: "workspace_memory_recall",
       name: "Recall Memory",
       description: "Retrieve memories based on query",
       category: "memory",
@@ -134,7 +134,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.memory.store",
+      id: "workspace_memory_store",
       name: "Store Memory",
       description: "Store information in memory",
       category: "memory",
@@ -148,7 +148,7 @@ export class WorkspaceCapabilityRegistry {
 
     // Signals capabilities
     this.registerCapability({
-      id: "workspace.signals.list",
+      id: "workspace_signals_list",
       name: "List Signals",
       description: "List all signals in the current workspace",
       category: "signals",
@@ -161,7 +161,7 @@ export class WorkspaceCapabilityRegistry {
     });
 
     this.registerCapability({
-      id: "workspace.signals.trigger",
+      id: "workspace_signals_trigger",
       name: "Trigger Signal",
       description: "Trigger a signal in the current workspace",
       category: "signals",
@@ -175,7 +175,7 @@ export class WorkspaceCapabilityRegistry {
 
     // Workspace capabilities
     this.registerCapability({
-      id: "workspace.describe",
+      id: "workspace_describe",
       name: "Describe Workspace",
       description: "Get information about the current workspace",
       category: "workspace",
@@ -230,11 +230,19 @@ export class WorkspaceCapabilityRegistry {
       const capability = this.capabilities.get(tool);
       if (capability) {
         grantedCapabilities.push(capability);
-      } else if (tool.endsWith(".*")) {
+      } else if (tool.endsWith("_*")) {
         // Handle wildcard patterns
         const prefix = tool.slice(0, -2);
         for (const [id, cap] of this.capabilities) {
-          if (id.startsWith(prefix + ".")) {
+          if (id.startsWith(prefix + "_")) {
+            grantedCapabilities.push(cap);
+          }
+        }
+      } else if (tool.endsWith(".*")) {
+        // Handle legacy dot wildcard patterns (convert to underscore)
+        const prefix = tool.slice(0, -2).replace(/\./g, "_");
+        for (const [id, cap] of this.capabilities) {
+          if (id.startsWith(prefix + "_")) {
             grantedCapabilities.push(cap);
           }
         }
@@ -331,9 +339,9 @@ export class WorkspaceCapabilityRegistry {
     doc += `  my-agent:\n`;
     doc += `    type: "llm"\n`;
     doc += `    tools:\n`;
-    doc += `      - "workspace.jobs.trigger"\n`;
-    doc += `      - "workspace.memory.recall"\n`;
-    doc += `      - "workspace.sessions.*"  # Wildcard for all session capabilities\n`;
+    doc += `      - "workspace_jobs_trigger"\n`;
+    doc += `      - "workspace_memory_recall"\n`;
+    doc += `      - "workspace_sessions_*"  # Wildcard for all session capabilities\n`;
     doc += `\`\`\`\n\n`;
 
     return doc;
