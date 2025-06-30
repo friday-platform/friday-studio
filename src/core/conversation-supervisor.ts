@@ -42,9 +42,9 @@ export interface ConversationEvent {
   sessionId: string;
 }
 
-// Atlas orchestration proxy tools with message envelope pattern for transparency
-const atlasOrchestrationTools: Record<string, Tool> = {
-  atlas_reply: {
+// CX reply tool with message envelope pattern for transparency
+const cxTools: Record<string, Tool> = {
+  cx_reply: {
     description:
       "Reply to user with structured transparency envelope containing reasoning and potential agent coordination",
     parameters: jsonSchema({
@@ -176,7 +176,7 @@ export class ConversationSupervisor {
     };
 
     const systemPrompt =
-      `You are an Atlas ConversationSupervisor that responds to ALL messages using the atlas_reply tool.
+      `You are an Atlas ConversationSupervisor that responds to ALL messages using the cx_reply tool.
 
 AVAILABLE ATLAS AGENTS:
 - security-agent: Security vulnerability analysis, penetration testing, code security review
@@ -198,12 +198,12 @@ RESPONSE GUIDELINES:
 - For simple greetings or informational queries, set requiresAgentCoordination to false
 - For code review, security analysis, or technical requests, set requiresAgentCoordination to true with appropriate agents
 
-The atlas_reply tool provides structured transparency while maintaining conversational flow.`;
+The cx_reply tool provides structured transparency while maintaining conversational flow.`;
 
     try {
       const result = await LLMProviderManager.generateTextWithTools(message, {
         systemPrompt,
-        tools: atlasOrchestrationTools,
+        tools: cxTools,
         model: "claude-3-5-haiku-20241022",
         temperature: 0.3,
         maxSteps: 1,
