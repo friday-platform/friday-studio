@@ -105,9 +105,51 @@ export class WorkspaceManager {
   ): Promise<WorkspaceEntry> {
     if (!this.registry) await this.initialize();
 
+    // Resolve to absolute path for consistent lookups
+    const absolutePath = await Deno.realPath(workspacePath);
+
     // Check if already registered
-    const existing = await this.registry!.findWorkspaceByPath(workspacePath);
+    const existing = await this.registry!.findWorkspaceByPath(absolutePath);
     if (existing) {
+      // Check if config has changed by comparing file hash
+      const workspaceName = existing.name;
+
+      try {
+        // Calculate current config hash
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter, existing.path);
+        const loadedConfig = await configLoader.load();
+        const config = loadedConfig.workspace;
+
+        const configJson = JSON.stringify(config, Object.keys(config).sort());
+        const encoder = new TextEncoder();
+        const data = encoder.encode(configJson);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        const currentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+        if (existing.configHash === currentHash) {
+          logger.info(`Workspace '${workspaceName}' loaded from cache (no changes detected)`, {
+            workspaceId: existing.id,
+            configHash: currentHash.substring(0, 8) + "...",
+          });
+        } else {
+          // Config has changed, refresh the cache
+          logger.info(`Workspace '${workspaceName}' config changed, refreshing cache`, {
+            workspaceId: existing.id,
+            oldHash: existing.configHash?.substring(0, 8) + "...",
+            newHash: currentHash.substring(0, 8) + "...",
+          });
+
+          await this.refreshWorkspaceConfig(existing.id);
+        }
+      } catch (error) {
+        logger.warn(`Failed to check config changes for '${workspaceName}', using cached version`, {
+          workspaceId: existing.id,
+          error: error.message,
+        });
+      }
+
       return existing;
     }
 
@@ -117,7 +159,6 @@ export class WorkspaceManager {
     const id = generateUniqueWorkspaceName(existingIds);
 
     // Load and cache workspace configuration
-    const absolutePath = await Deno.realPath(workspacePath);
     const configPath = join(absolutePath, "workspace.yml");
 
     let config: WorkspaceConfig | undefined;
