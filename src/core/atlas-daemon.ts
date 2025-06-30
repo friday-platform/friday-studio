@@ -1047,13 +1047,28 @@ export class AtlasDaemon {
     fromUser: string,
   ): Promise<void> {
     try {
+      // QUICK FIX: Get conversation history to pass to supervisor
+      const messageHistory = this.conversationSessionManager.getMessageHistory(sessionId);
+
       // Create ConversationSupervisor with workspace context
       const supervisor = new ConversationSupervisor(workspaceId);
 
       // Process message and stream events to all connected SSE clients
+      // QUICK FIX: Pass message history for context
       for await (
-        const event of supervisor.processMessage(sessionId, messageId, message, fromUser)
+        const event of supervisor.processMessage(
+          sessionId,
+          messageId,
+          message,
+          fromUser,
+          messageHistory,
+        )
       ) {
+        // QUICK FIX: Track message chunks to reconstruct complete response
+        if (event.type === "message_chunk" && event.data.content) {
+          this.messageChunks.set(messageId, event.data.content);
+        }
+
         // Emit event to SSE clients for this session
         this.emitConversationEvent(sessionId, event);
 
@@ -1175,13 +1190,20 @@ export class AtlasDaemon {
     }
   }
 
+  // QUICK FIX: Track message chunks to reconstruct complete messages
+  private messageChunks: Map<string, string> = new Map();
+
   /**
-   * Get complete message content from message_chunk events (placeholder)
+   * Get complete message content from message_chunk events
    */
   private getCompleteMessageFromEvents(messageId: string): string | null {
-    // TODO: In a real implementation, we'd track message chunks
-    // For now, return placeholder
-    return "Response from ConversationSupervisor";
+    const content = this.messageChunks.get(messageId);
+    if (content) {
+      // Clean up after retrieving
+      this.messageChunks.delete(messageId);
+      return content;
+    }
+    return null;
   }
 
   /**

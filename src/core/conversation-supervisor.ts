@@ -1,5 +1,7 @@
 import { jsonSchema, Tool } from "ai";
 import { LLMProviderManager } from "./agents/llm-provider-manager.ts";
+import { AtlasLogger } from "../utils/logger.ts";
+import { z } from "zod";
 
 export interface ConversationSession {
   id: string;
@@ -91,8 +93,7 @@ const cxTools: Record<string, Tool> = {
                 },
                 recommendedJob: {
                   type: "string",
-                  description:
-                    "Existing Atlas job to use (security-audit, code-review, architecture-review) or custom",
+                  description: "Atlas job to recommend or trigger",
                 },
               },
               required: [],
@@ -107,43 +108,85 @@ const cxTools: Record<string, Tool> = {
       additionalProperties: false,
     }),
     execute: async ({ message, transparency }) => {
-      const result: any = {
+      // Simple reply tool - just return the message and transparency
+      // No fake orchestration or session creation
+      return {
         message,
         transparency,
       };
+    },
+  },
+  // Add workspace_create tool for actual workspace creation
+  workspace_create: {
+    description: "Create a new workspace with the specified configuration",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Workspace name (lowercase with hyphens)",
+        },
+        description: {
+          type: "string",
+          description: "Workspace description",
+        },
+        path: {
+          type: "string",
+          description: "Optional path where workspace should be created",
+        },
+      },
+      required: ["name", "description"],
+      additionalProperties: false,
+    }),
+    execute: async ({ name, description, path }) => {
+      const logger = AtlasLogger.getInstance();
+      logger.info("ConversationSupervisor: workspace_create tool called", {
+        name,
+        description,
+        path,
+      });
 
-      // If agent coordination is required, create orchestration plan
-      if (transparency.requiresAgentCoordination && transparency.coordinationPlan) {
-        const sessionId = `sess_${Math.random().toString(36).substring(2, 8)}`;
-
-        result.orchestration = {
-          sessionId,
-          plan: {
-            agents: transparency.coordinationPlan.agents || [],
-            strategy: transparency.coordinationPlan.strategy,
-            estimatedDuration: transparency.complexity === "high"
-              ? "10-15min"
-              : transparency.complexity === "medium"
-              ? "5-10min"
-              : "2-5min",
+      try {
+        // Call the daemon API to actually create the workspace
+        const daemonUrl = Deno.env.get("ATLAS_DAEMON_URL") || "http://localhost:8080";
+        const response = await fetch(`${daemonUrl}/api/workspaces`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
           },
-          executionSteps: [
-            `✅ Created WorkspaceSession ${sessionId}`,
-            `🤖 Initialized ${(transparency.coordinationPlan.agents || []).length} agents: ${
-              (transparency.coordinationPlan.agents || []).join(", ")
-            }`,
-            `⚡ Configured ${transparency.coordinationPlan.strategy} execution strategy`,
-            `📊 Enabled real-time monitoring and supervision`,
-            `🎯 ${
-              transparency.coordinationPlan.recommendedJob
-                ? `Triggered Atlas job: ${transparency.coordinationPlan.recommendedJob}`
-                : "Started custom agent coordination"
-            }`,
-          ],
+          body: JSON.stringify({
+            name,
+            description,
+            path,
+          }),
+        });
+
+        if (!response.ok) {
+          const error = await response.text();
+          logger.error("Failed to create workspace", { error, status: response.status });
+          return {
+            success: false,
+            error: `Failed to create workspace: ${error}`,
+          };
+        }
+
+        const workspace = await response.json();
+        logger.info("Workspace created successfully", { workspace });
+
+        return {
+          success: true,
+          workspace,
+          message: `Workspace '${name}' created successfully with ID: ${workspace.id}`,
+        };
+      } catch (error) {
+        logger.error("Error creating workspace", { error });
+        return {
+          success: false,
+          error: `Error creating workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
         };
       }
-
-      return result;
     },
   },
 };
@@ -159,6 +202,7 @@ export class ConversationSupervisor {
     messageId: string,
     message: string,
     fromUser: string,
+    messageHistory?: ConversationMessage[], // QUICK FIX: Accept conversation history
   ): AsyncIterableIterator<ConversationEvent> {
     const timestamp = new Date().toISOString();
 
@@ -175,45 +219,96 @@ export class ConversationSupervisor {
       sessionId,
     };
 
+    // QUICK FIX: Build conversation context from message history
+    let conversationContext = "";
+    if (messageHistory && messageHistory.length > 0) {
+      // Include last 10 messages for context (5 exchanges)
+      const recentHistory = messageHistory.slice(-10);
+      conversationContext = "\n\nRECENT CONVERSATION HISTORY:\n";
+
+      const logger = AtlasLogger.getInstance();
+      logger.debug("ConversationSupervisor: Including conversation history", {
+        sessionId,
+        historyLength: messageHistory.length,
+        recentHistoryLength: recentHistory.length,
+      });
+
+      for (const msg of recentHistory) {
+        const role = msg.type === "user" ? "User" : "Assistant";
+        conversationContext += `${role}: ${msg.content}\n`;
+      }
+
+      conversationContext += "\nCurrent message:\n";
+    }
+
     const systemPrompt =
-      `You are an Atlas ConversationSupervisor that responds to ALL messages using the cx_reply tool.
+      `You are Atlas Assistant. In your FIRST interaction only, you can mention users can call you "Addy" for short if they prefer. After that, don't mention it again.
 
-AVAILABLE ATLAS AGENTS:
-- security-agent: Security vulnerability analysis, penetration testing, code security review
-- code-reviewer: Static code analysis, best practices, maintainability assessment  
-- architect: System architecture analysis, design patterns, scalability assessment
-- performance-analyzer: Performance bottleneck detection, optimization recommendations
+You help users create and manage AI agent workspaces in Atlas. Workspaces are YAML-configured environments where AI agents collaborate.
 
-AVAILABLE ATLAS JOBS:
-- security-audit: Parallel security and code quality review
-- code-review: Sequential code quality and architecture analysis
-- architecture-review: Staged architecture, performance, and security evaluation
+WORKSPACE CONFIGURATION:
+A workspace.yml file defines:
+- workspace: Basic identity (name, description)  
+- agents: AI agents that perform tasks (LLM, remote, or Tempest agents)
+- jobs: Multi-agent workflows with execution strategies
+- signals: External triggers that start jobs (webhooks, CLI, etc)
+- tools: MCP servers that provide capabilities to agents
 
-RESPONSE GUIDELINES:
-- ALWAYS use the atlas_reply tool for every response - never respond without using it
-- Provide natural, conversational responses in the message field
-- Include detailed reasoning and transparency data for every interaction
-- Assess whether requests need agent coordination and provide coordination plans when needed
-- Be transparent about your confidence level and complexity assessment
-- For simple greetings or informational queries, set requiresAgentCoordination to false
-- For code review, security analysis, or technical requests, set requiresAgentCoordination to true with appropriate agents
+WORKSPACE CREATION GUIDANCE:
+When users want to create a workspace:
+1. If they provide a name, use it directly (e.g., "kentest1", "my-workspace")
+2. If they don't specify what it's for, use "A basic workspace for testing" as description
+3. ACTUALLY CREATE IT using the workspace_create tool - don't just say you did
+4. The workspace_create tool will create real files and directories
 
-The cx_reply tool provides structured transparency while maintaining conversational flow.`;
+CRITICAL INSTRUCTIONS:
+- When user says "create a workspace" or "make a workspace" YOU MUST:
+  1. Call workspace_create with {name: "their-name", description: "their description or default"}
+  2. Then call cx_reply to tell them the result
+- NEVER just use cx_reply alone for workspace creation
+- NEVER pretend you created something without calling workspace_create
+- The workspace_create tool ACTUALLY creates real workspaces in the system
+
+Available tools that you MUST use:
+- workspace_create: Creates real workspaces (USE THIS FOR ANY WORKSPACE CREATION REQUEST)
+- cx_reply: Communicates with the user (USE THIS TO TELL THEM THE RESULT)${conversationContext}`;
 
     try {
+      const logger = AtlasLogger.getInstance();
+      logger.debug("ConversationSupervisor: Calling LLM with tools", {
+        message,
+        toolNames: Object.keys(cxTools),
+        sessionId,
+      });
+
       const result = await LLMProviderManager.generateTextWithTools(message, {
         systemPrompt,
         tools: cxTools,
         model: "claude-3-5-haiku-20241022",
         temperature: 0.3,
-        maxSteps: 1,
-        toolChoice: "required",
+        maxSteps: 3, // Allow multiple tool calls (workspace_create + cx_reply)
+        toolChoice: "required", // Force the model to use tools
         operationContext: { operation: "conversation_supervision" },
+      });
+
+      logger.debug("ConversationSupervisor: LLM result", {
+        toolCallsCount: result.toolCalls.length,
+        toolNames: result.toolCalls.map((tc) => tc.toolName),
+        hasText: !!result.text,
+        sessionId,
       });
 
       // Emit tool call event
       if (result.toolCalls.length > 0) {
+        const logger = AtlasLogger.getInstance();
         for (const toolCall of result.toolCalls) {
+          logger.debug("ConversationSupervisor tool call", {
+            toolName: toolCall.toolName,
+            args: toolCall.args,
+            sessionId,
+            messageId,
+          });
+
           yield {
             type: "tool_call",
             data: {
@@ -229,11 +324,20 @@ The cx_reply tool provides structured transparency while maintaining conversatio
 
       // Process tool results and emit events
       if (result.toolResults.length > 0) {
-        const toolResult = result.toolResults[0]?.result as any;
+        // Process ALL tool results, not just the first one
+        for (const toolResultWrapper of result.toolResults) {
+          const toolResult = toolResultWrapper.result as any;
 
-        if (toolResult) {
-          // Emit message content progressively (simulate streaming)
-          if (toolResult.message) {
+          // Find which tool was called
+          const toolCall = result.toolCalls.find((tc) =>
+            tc.toolCallId === toolResultWrapper.toolCallId
+          );
+          const toolName = toolCall?.toolName;
+
+          if (!toolResult) continue;
+
+          // Handle cx_reply tool result
+          if (toolName === "cx_reply" && toolResult.message) {
             const words = toolResult.message.split(" ");
             let content = "";
 
@@ -256,8 +360,18 @@ The cx_reply tool provides structured transparency while maintaining conversatio
             }
           }
 
-          // Emit transparency data
-          if (toolResult.transparency) {
+          // Emit transparency data (from cx_reply)
+          if (toolName === "cx_reply" && toolResult.transparency) {
+            const logger = AtlasLogger.getInstance();
+            logger.debug("ConversationSupervisor reasoning", {
+              analysis: toolResult.transparency.analysis,
+              confidence: toolResult.transparency.confidence,
+              complexity: toolResult.transparency.complexity,
+              requiresAgentCoordination: toolResult.transparency.requiresAgentCoordination,
+              sessionId,
+              messageId,
+            });
+
             yield {
               type: "transparency",
               data: toolResult.transparency,
@@ -277,7 +391,7 @@ The cx_reply tool provides structured transparency while maintaining conversatio
               sessionId,
             };
           }
-        }
+        } // End of for loop processing all tool results
       }
 
       // Emit completion event

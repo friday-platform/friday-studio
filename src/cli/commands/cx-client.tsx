@@ -148,8 +148,9 @@ function CxCommand({ workspaceId, daemonUrl }: { workspaceId: string; daemonUrl:
 
     // Show processing spinner
     setIsProcessing(true);
+    const spinnerId = `processing-${Date.now()}`;
     addOutputEntry({
-      id: `processing-${Date.now()}`,
+      id: spinnerId,
       component: (
         <Box>
           <Spinner label="Brain thinking..." />
@@ -192,6 +193,9 @@ function CxCommand({ workspaceId, daemonUrl }: { workspaceId: string; daemonUrl:
           case "message_complete":
             setIsProcessing(false);
             const duration = Date.now() - startTime;
+
+            // Remove spinner from output
+            setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
 
             // Display tool calls if any were made
             if (toolCalls.length > 0) {
@@ -364,6 +368,8 @@ function CxCommand({ workspaceId, daemonUrl }: { workspaceId: string; daemonUrl:
       }
     } catch (error) {
       setIsProcessing(false);
+      // Remove spinner on error
+      setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
       addOutputEntry({
         id: `error-${Date.now()}`,
         component: (
