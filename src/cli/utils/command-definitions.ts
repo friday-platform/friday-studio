@@ -58,6 +58,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   },
   {
     command: "/exit",
-    description: "Exit the Atlas interactive interface",
+    description: "Exit the Atlas interactive interface (quit, q)",
   },
 ];
