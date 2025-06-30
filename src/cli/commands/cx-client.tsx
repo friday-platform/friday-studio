@@ -225,129 +225,129 @@ function CxCommand({ workspaceId, daemonUrl }: { workspaceId: string; daemonUrl:
                   </Box>
                 ),
               });
-
-              // Display the conversational response prominently
-              if (responseMessage) {
-                addOutputEntry({
-                  id: `response-${Date.now()}`,
-                  component: (
-                    <Box flexDirection="column" marginLeft={2}>
-                      <Text color="cyan">
-                        🤖 <Text bold>ConversationSupervisor</Text>:
-                      </Text>
-                      <Text wrap="wrap" color="white">{responseMessage}</Text>
-                    </Box>
-                  ),
-                });
-              }
-
-              // Display transparency details
-              if (transparency) {
-                addOutputEntry({
-                  id: `transparency-${Date.now()}`,
-                  component: (
-                    <Box
-                      flexDirection="column"
-                      marginLeft={2}
-                      borderStyle="round"
-                      borderColor="yellow"
-                      paddingX={1}
-                    >
-                      <Text color="yellow">
-                        🔍 <Text bold>Reasoning Transparency</Text>:
-                      </Text>
-                      <Text color="white" marginLeft={1}>
-                        📊 Analysis: {transparency.analysis}
-                      </Text>
-                      <Text color="white" marginLeft={1}>
-                        🎯 Confidence: {Math.round(transparency.confidence * 100)}%
-                      </Text>
-                      <Text color="white" marginLeft={1}>
-                        📈 Complexity: {transparency.complexity}
-                      </Text>
-                      <Text color="white" marginLeft={1}>
-                        🤖 Agent Coordination:{" "}
-                        {transparency.requiresAgentCoordination ? "Yes" : "No"}
-                      </Text>
-                      {transparency.coordinationPlan && (
-                        <>
-                          <Text color="blue" marginLeft={1}>
-                            📝 <Text bold>Coordination Plan:</Text>
-                          </Text>
-                          {transparency.coordinationPlan.agents && (
-                            <Text color="white" marginLeft={2}>
-                              👥 Agents: {transparency.coordinationPlan.agents.join(", ")}
-                            </Text>
-                          )}
-                          {transparency.coordinationPlan.strategy && (
-                            <Text color="white" marginLeft={2}>
-                              ⚡ Strategy: {transparency.coordinationPlan.strategy}
-                            </Text>
-                          )}
-                          {transparency.coordinationPlan.recommendedJob && (
-                            <Text color="white" marginLeft={2}>
-                              🎯 Job: {transparency.coordinationPlan.recommendedJob}
-                            </Text>
-                          )}
-                        </>
-                      )}
-                    </Box>
-                  ),
-                });
-              }
-
-              // Display orchestration details if coordination was executed
-              if (orchestration) {
-                addOutputEntry({
-                  id: `orchestration-${Date.now()}`,
-                  component: (
-                    <Box
-                      flexDirection="column"
-                      marginLeft={2}
-                      borderStyle="round"
-                      borderColor="magenta"
-                      paddingX={1}
-                    >
-                      <Text color="magenta">
-                        ⚡ <Text bold>Atlas Orchestration</Text>:
-                      </Text>
-                      <Text color="white" marginLeft={1}>
-                        Session: {orchestration.sessionId}
-                      </Text>
-                      {orchestration.plan?.estimatedDuration && (
-                        <Text color="white" marginLeft={1}>
-                          Duration: {orchestration.plan.estimatedDuration}
-                        </Text>
-                      )}
-
-                      {/* Execution steps */}
-                      {orchestration.executionSteps && (
-                        <>
-                          <Text color="blue" marginLeft={1}>
-                            📝 <Text bold>Execution Steps:</Text>
-                          </Text>
-                          {orchestration.executionSteps.map((
-                            step: string,
-                            stepIdx: number,
-                          ) => (
-                            <Text key={stepIdx} color="white" marginLeft={2}>
-                              {step}
-                            </Text>
-                          ))}
-                        </>
-                      )}
-                    </Box>
-                  ),
-                });
-              }
-            } else {
+            } else if (responseMessage) {
+              // No tools called but we have a direct response
               addOutputEntry({
-                id: `no-tools-${Date.now()}`,
+                id: `direct-response-${Date.now()}`,
                 component: (
                   <Box marginLeft={2}>
-                    <Text color="gray" dimColor>
-                      💭 <Text bold>No tools called</Text> - direct response
+                    <Text color="cyan">
+                      💭 No tools called - direct response
                     </Text>
+                  </Box>
+                ),
+              });
+            }
+
+            // Display the conversational response (whether from tools or direct)
+            if (responseMessage) {
+              addOutputEntry({
+                id: `response-${Date.now()}`,
+                component: (
+                  <Box flexDirection="column" marginLeft={2}>
+                    <Text color="cyan">
+                      🤖 <Text bold>ConversationSupervisor</Text>:
+                    </Text>
+                    <Text wrap="wrap" color="white">{responseMessage}</Text>
+                  </Box>
+                ),
+              });
+            }
+
+            // Display transparency details
+            if (transparency) {
+              addOutputEntry({
+                id: `transparency-${Date.now()}`,
+                component: (
+                  <Box
+                    flexDirection="column"
+                    marginLeft={2}
+                    borderStyle="round"
+                    borderColor="yellow"
+                    paddingX={1}
+                  >
+                    <Text color="yellow">
+                      🔍 <Text bold>Reasoning Transparency</Text>:
+                    </Text>
+                    <Text color="white" marginLeft={1}>
+                      📊 Analysis: {transparency.analysis}
+                    </Text>
+                    <Text color="white" marginLeft={1}>
+                      🎯 Confidence: {Math.round(transparency.confidence * 100)}%
+                    </Text>
+                    <Text color="white" marginLeft={1}>
+                      📈 Complexity: {transparency.complexity}
+                    </Text>
+                    <Text color="white" marginLeft={1}>
+                      🤖 Agent Coordination: {transparency.requiresAgentCoordination ? "Yes" : "No"}
+                    </Text>
+                    {transparency.coordinationPlan && (
+                      <>
+                        <Text color="blue" marginLeft={1}>
+                          📝 <Text bold>Coordination Plan:</Text>
+                        </Text>
+                        {transparency.coordinationPlan.agents && (
+                          <Text color="white" marginLeft={2}>
+                            👥 Agents: {transparency.coordinationPlan.agents.join(", ")}
+                          </Text>
+                        )}
+                        {transparency.coordinationPlan.strategy && (
+                          <Text color="white" marginLeft={2}>
+                            ⚡ Strategy: {transparency.coordinationPlan.strategy}
+                          </Text>
+                        )}
+                        {transparency.coordinationPlan.recommendedJob && (
+                          <Text color="white" marginLeft={2}>
+                            🎯 Job: {transparency.coordinationPlan.recommendedJob}
+                          </Text>
+                        )}
+                      </>
+                    )}
+                  </Box>
+                ),
+              });
+            }
+
+            // Display orchestration details if coordination was executed
+            if (orchestration) {
+              addOutputEntry({
+                id: `orchestration-${Date.now()}`,
+                component: (
+                  <Box
+                    flexDirection="column"
+                    marginLeft={2}
+                    borderStyle="round"
+                    borderColor="magenta"
+                    paddingX={1}
+                  >
+                    <Text color="magenta">
+                      ⚡ <Text bold>Atlas Orchestration</Text>:
+                    </Text>
+                    <Text color="white" marginLeft={1}>
+                      Session: {orchestration.sessionId}
+                    </Text>
+                    {orchestration.plan?.estimatedDuration && (
+                      <Text color="white" marginLeft={1}>
+                        Duration: {orchestration.plan.estimatedDuration}
+                      </Text>
+                    )}
+
+                    {/* Execution steps */}
+                    {orchestration.executionSteps && (
+                      <>
+                        <Text color="blue" marginLeft={1}>
+                          📝 <Text bold>Execution Steps:</Text>
+                        </Text>
+                        {orchestration.executionSteps.map((
+                          step: string,
+                          stepIdx: number,
+                        ) => (
+                          <Text key={stepIdx} color="white" marginLeft={2}>
+                            {step}
+                          </Text>
+                        ))}
+                      </>
+                    )}
                   </Box>
                 ),
               });

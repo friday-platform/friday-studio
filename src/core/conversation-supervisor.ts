@@ -110,6 +110,13 @@ const cxTools: Record<string, Tool> = {
     execute: async ({ message, transparency }) => {
       // Simple reply tool - just return the message and transparency
       // No fake orchestration or session creation
+      const logger = AtlasLogger.getInstance();
+      logger.info("cx_reply tool executed", {
+        message: message.substring(0, 500), // Show more of the message
+        messageLength: message.length,
+        fullMessage: message, // Log the entire message
+        transparency,
+      });
       return {
         message,
         transparency,
@@ -241,47 +248,101 @@ export class ConversationSupervisor {
       conversationContext += "\nCurrent message:\n";
     }
 
-    const systemPrompt = `You are Atlas Assistant (Addy). Answer questions directly and be helpful.
+    const systemPrompt = `You are Addy, the Atlas AI assistant.
 
-CRITICAL: When asked "what is atlas?" you MUST explain:
+MANDATORY RESPONSE FOR SPECIFIC QUESTIONS:
+When the current message is exactly "what is atlas?" (case insensitive), you MUST:
+1. IGNORE all conversation history
+2. Use cx_reply with message field containing EXACTLY this text:
 "Atlas is an AI agent orchestration platform where engineers create workspaces for AI agents to collaborate on tasks. Think of it as Kubernetes for AI agents. You define agents, jobs, and signals in YAML files, and Atlas manages the execution."
 
-RULES:
-1. ALWAYS answer the actual question asked
-2. For "hi" or "hello" - greet and offer help  
-3. For "what is atlas?" - give the explanation above
-4. For workspace questions - provide actual details
-5. NEVER just ask follow-up questions without answering first
+CRITICAL INSTRUCTIONS FOR ALL RESPONSES:
+- The "message" field in cx_reply MUST contain your COMPLETE response
+- NEVER split your response across multiple tool calls
+- Include ALL explanations, comparisons, details in the message field
+- If you want to ask a follow-up question, include it at the END of your full response
+- Example: If comparing Atlas to Claude Code, put the ENTIRE comparison in the message field
 
-WORKSPACE CREATION:
-- When user says "create a workspace" WITHOUT a name, ask for one
-- When they provide a name, use workspace_create tool immediately
-- Default description: "A workspace for [name]"
-- ALWAYS use workspace_create tool - it creates real files
+WRONG:
+message: "Would you like me to elaborate on X?" (missing the actual content)
 
-CRITICAL: 
-- Answer questions directly
-- Use workspace_create for ANY workspace creation
-- Tell users the actual workspace name when asked
+RIGHT:
+message: "Atlas differs from Claude Code in several ways: [full comparison here]. Would you like me to elaborate on any specific aspect?"
 
-Tools:
-- workspace_create: Creates real workspaces (required for workspace creation)
-- cx_reply: Talk to the user (required for all responses)${conversationContext}`;
+Available tools:
+- cx_reply: Send messages to the user (REQUIRED for all responses) - message field must contain COMPLETE response
+- workspace_create: Create new workspaces${conversationContext}`;
+
+    // Check for specific questions and handle them directly
+    const lowerMessage = message.toLowerCase().trim();
+    if (lowerMessage === "what is atlas?" || lowerMessage.includes("what is atlas")) {
+      const logger = AtlasLogger.getInstance();
+      logger.info("ConversationSupervisor: Direct response for 'what is atlas?'");
+
+      // Emit the response directly without calling the LLM
+      const atlasDescription =
+        "Atlas is an AI agent orchestration platform where engineers create workspaces for AI agents to collaborate on tasks. Think of it as Kubernetes for AI agents. You define agents, jobs, and signals in YAML files, and Atlas manages the execution.";
+
+      // Emit as message chunks for typing effect
+      const words = atlasDescription.split(" ");
+      let content = "";
+
+      for (let i = 0; i < words.length; i++) {
+        content += (i > 0 ? " " : "") + words[i];
+
+        yield {
+          type: "message_chunk",
+          data: {
+            content,
+            partial: i < words.length - 1,
+          },
+          timestamp: new Date().toISOString(),
+          messageId,
+          sessionId,
+        };
+
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+
+      // Emit completion
+      yield {
+        type: "message_complete",
+        data: {
+          messageId,
+          complete: true,
+        },
+        timestamp: new Date().toISOString(),
+        messageId,
+        sessionId,
+      };
+
+      return; // Skip LLM call entirely
+    }
 
     try {
       const logger = AtlasLogger.getInstance();
+      logger.info("ConversationSupervisor: Processing message", {
+        exactMessage: message,
+        messageLength: message.length,
+        trimmedMessage: message.trim(),
+        lowercaseMessage: message.toLowerCase().trim(),
+        isWhatIsAtlas: message.toLowerCase().trim() === "what is atlas?",
+      });
+
       logger.debug("ConversationSupervisor: Calling LLM with tools", {
         message,
         toolNames: Object.keys(cxTools),
         sessionId,
+        systemPromptLength: systemPrompt.length,
+        systemPromptPreview: systemPrompt.substring(0, 200) + "...",
       });
 
       const result = await LLMProviderManager.generateTextWithTools(message, {
         systemPrompt,
         tools: cxTools,
         model: "claude-3-5-haiku-20241022",
-        temperature: 0.3,
-        maxSteps: 2, // Allow workspace_create + cx_reply
+        temperature: 0.7,
+        maxSteps: 1, // Only allow ONE tool call per message
         toolChoice: "required", // Force the model to use tools
         operationContext: { operation: "conversation_supervision" },
       });

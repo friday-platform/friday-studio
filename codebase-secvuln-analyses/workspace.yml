@@ -1,0 +1,10 @@
+version: 1.0.0
+workspace:
+  name: codebase-secvuln-analyses
+  description: >-
+    Workspace for security vulnerability analysis, featuring an agent that
+    retrieves latest CVEs from RSS feeds and performs vulnerability scanning on
+    new code commits.
+jobs: {}
+signals: {}
+agents: {}
