@@ -1,9 +1,0 @@
-version: 1.0.0
-workspace:
-  name: my-first-atlas-workspace
-  description: >-
-    Initial workspace for exploring Atlas AI agent capabilities and
-    collaboration
-jobs: {}
-signals: {}
-agents: {}
