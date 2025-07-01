@@ -111,3 +111,86 @@ export interface AddJobConfig {
   };
   triggers?: Array<{ signal: string }>;
 }
+
+export function generateValidationFixSuggestions(
+  errors: Array<{
+    code?: string;
+    path?: string[];
+    message?: string;
+    expected?: string;
+    received?: string;
+    keys?: string[];
+  }>,
+): string[] {
+  const suggestions: string[] = [];
+
+  for (const error of errors) {
+    const path = error.path?.join(".");
+
+    if (error.code === "invalid_type") {
+      suggestions.push(
+        `Fix type error at ${path}: expected ${error.expected}, got ${error.received}`,
+      );
+    } else if (error.code === "unrecognized_keys") {
+      suggestions.push(`Remove unrecognized fields: ${error.keys?.join(", ")}`);
+    } else if (error.code === "custom" && path?.includes("model")) {
+      suggestions.push(`Use a supported model for the provider (check error message for list)`);
+    } else if (error.message?.includes("MCP tool names")) {
+      suggestions.push(
+        `Rename to follow MCP naming rules: start with letter, use only letters/numbers/underscores/hyphens`,
+      );
+    } else if (error.message?.includes("Remote agents require")) {
+      suggestions.push(`Add missing required field: ${error.message}`);
+    } else {
+      suggestions.push(`${error.message}`);
+    }
+  }
+
+  return suggestions;
+}
+
+export function validateCrossReferences(config: {
+  signals?: Record<string, unknown>;
+  jobs?: Record<string, {
+    triggers?: Array<{ signal: string }>;
+    execution?: {
+      agents?: Array<string | { id: string }>;
+    };
+  }>;
+  agents?: Record<string, unknown>;
+}): string[] {
+  const errors: string[] = [];
+  const signals = Object.keys(config.signals || {});
+  const agents = Object.keys(config.agents || {});
+
+  // Check job triggers reference existing signals
+  for (const [jobId, job] of Object.entries(config.jobs || {})) {
+    if (job.triggers) {
+      for (const trigger of job.triggers) {
+        if (trigger.signal && !signals.includes(trigger.signal)) {
+          errors.push(
+            `Job '${jobId}' references undefined signal '${trigger.signal}'. Available signals: ${
+              signals.length > 0 ? signals.join(", ") : "none"
+            }`,
+          );
+        }
+      }
+    }
+
+    // Check job agents reference existing agents
+    if (job.execution?.agents) {
+      for (const agent of job.execution.agents) {
+        const agentId = typeof agent === "string" ? agent : agent.id;
+        if (!agents.includes(agentId)) {
+          errors.push(
+            `Job '${jobId}' references undefined agent '${agentId}'. Available agents: ${
+              agents.length > 0 ? agents.join(", ") : "none"
+            }`,
+          );
+        }
+      }
+    }
+  }
+
+  return errors;
+}

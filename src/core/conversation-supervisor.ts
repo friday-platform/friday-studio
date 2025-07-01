@@ -5,9 +5,8 @@ import { z } from "zod";
 import { AtlasLogger } from "../utils/logger.ts";
 import { LLMProviderManager } from "./agents/llm-provider-manager.ts";
 import {
-  generateUpdateMessage,
-  getPatternSuggestions,
-  suggestNextSteps,
+  generateValidationFixSuggestions,
+  validateCrossReferences,
 } from "./services/workspace-conversation-helpers.ts";
 import { createKVStorage, StorageConfigs, WorkspaceDraftStorageAdapter } from "./storage/index.ts";
 
@@ -27,6 +26,50 @@ async function getDraftStorageAdapter(): Promise<WorkspaceDraftStorageAdapter> {
     await draftStorageAdapter.initialize();
   }
   return draftStorageAdapter;
+}
+
+// Validate draft configuration via daemon API
+async function validateDraftConfig(config: unknown): Promise<{
+  valid: boolean;
+  errors?: Array<{
+    code?: string;
+    path?: string[];
+    message?: string;
+    expected?: string;
+    received?: string;
+    keys?: string[];
+  }>;
+  formattedError?: string;
+}> {
+  const logger = AtlasLogger.getInstance();
+
+  try {
+    const daemonUrl = Deno.env.get("ATLAS_DAEMON_URL") || "http://localhost:8080";
+    const response = await fetch(`${daemonUrl}/api/workspaces/validate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ config }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      logger.error("Failed to validate config", { error, status: response.status });
+      return {
+        valid: false,
+        errors: [{ message: error }],
+      };
+    }
+
+    return await response.json();
+  } catch (error) {
+    logger.error("Error validating config", { error });
+    return {
+      valid: false,
+      errors: [{ message: error instanceof Error ? error.message : String(error) }],
+    };
+  }
 }
 
 export interface ConversationSession {
@@ -133,20 +176,39 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
       required: ["message", "transparency"],
       additionalProperties: false,
     }),
-    execute: async ({ message, transparency }) => {
-      // Simple reply tool - just return the message and transparency
-      // No fake orchestration or session creation
+    execute: ({ message, transparency }) => {
       const logger = AtlasLogger.getInstance();
-      logger.info("cx_reply tool executed", {
-        message: message.substring(0, 500), // Show more of the message
+      logger.info("cx_reply tool executing", {
         messageLength: message.length,
-        fullMessage: message, // Log the entire message
-        transparency,
+        hasTransparency: !!transparency,
       });
-      return await Promise.resolve({
+
+      // Log the full details for debugging
+      logger.debug(JSON.stringify(
+        {
+          tool: "cx_reply tool executed",
+          message: message.substring(0, 500),
+          messageLength: message.length,
+          fullMessage: message,
+          transparency,
+        },
+        null,
+        2,
+      ));
+
+      // Return a proper result object that the AI SDK expects
+      const result = {
         message,
         transparency,
+        success: true,
+      };
+
+      logger.debug("cx_reply tool returning result", {
+        hasMessage: !!result.message,
+        hasTransparency: !!result.transparency,
       });
+
+      return result;
     },
   },
   // Add workspace_create tool for actual workspace creation
@@ -224,7 +286,7 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
   },
   // New draft-based workspace creation tools
   workspace_draft_create: {
-    description: "Create a new workspace draft that can be iteratively refined",
+    description: "Create a new workspace draft with optional initial configuration",
     parameters: jsonSchema({
       type: "object",
       properties: {
@@ -237,21 +299,21 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
           type: "string",
           description: "Clear description of the workspace's purpose",
         },
-        pattern: {
-          type: "string",
-          enum: ["pipeline", "ensemble", "hierarchy", "custom"],
-          description: "Workspace pattern to use as starting template",
+        initialConfig: {
+          type: "object",
+          description:
+            "Optional initial workspace configuration following the WorkspaceConfig schema",
         },
       },
       required: ["name", "description"],
       additionalProperties: false,
     }),
-    execute: async ({ name, description, pattern }) => {
+    execute: async ({ name, description, initialConfig }) => {
       const logger = AtlasLogger.getInstance();
       logger.info("ConversationSupervisor: workspace_draft_create called", {
         name,
         description,
-        pattern,
+        hasInitialConfig: !!initialConfig,
       });
 
       try {
@@ -268,22 +330,35 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
         const draft = await adapter.createDraft({
           name,
           description,
-          pattern,
           sessionId,
           userId: "system",
+          initialConfig,
         });
 
-        const suggestions = getPatternSuggestions(pattern);
+        // Validate if initial config was provided
+        let validationStatus = { valid: true, errors: [] as Array<{ message?: string }> };
+        if (initialConfig) {
+          const result = await validateDraftConfig(draft.config);
+          validationStatus = {
+            valid: result.valid,
+            errors: result.errors || [],
+          };
+        }
+
         return {
           success: true,
           draftId: draft.id,
-          message: `Created draft workspace '${name}'. Now let's design the agents and workflow.`,
-          suggestions,
-          suggestionsText: suggestions.length > 0
-            ? `\n\nTo help design your workspace:\n${
-              suggestions.map((s, i) => `${i + 1}. ${s}`).join("\n")
-            }`
-            : "",
+          message: initialConfig
+            ? `Created draft workspace '${name}' with initial configuration.`
+            : `Created draft workspace '${name}'. Now let's design the agents and workflow.`,
+          validation: validationStatus,
+          configSummary: initialConfig
+            ? {
+              agentCount: Object.keys(draft.config.agents || {}).length,
+              jobCount: Object.keys(draft.config.jobs || {}).length,
+              hasSignals: Object.keys(draft.config.signals || {}).length > 0,
+            }
+            : undefined,
         };
       } catch (error) {
         logger.error("Error creating workspace draft", { error });
@@ -295,8 +370,8 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
     },
   },
 
-  update_workspace_config: {
-    description: "Update the draft workspace configuration by adding or modifying components",
+  workspace_draft_update: {
+    description: "Update the draft workspace configuration based on user feedback",
     parameters: jsonSchema({
       type: "object",
       properties: {
@@ -305,49 +380,54 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
           format: "uuid",
           description: "Draft workspace ID",
         },
-        operation: {
-          type: "string",
-          enum: [
-            "add_agent",
-            "update_agent",
-            "remove_agent",
-            "add_job",
-            "update_job",
-            "remove_job",
-            "set_trigger",
-            "add_tool",
-            "remove_tool",
-          ],
-          description: "Type of update operation",
-        },
-        config: {
+        updates: {
           type: "object",
-          description: "Configuration for the operation",
+          description: "Configuration updates to apply (Partial<WorkspaceConfig>)",
+        },
+        updateDescription: {
+          type: "string",
+          description: "Natural language description of what changed",
         },
       },
-      required: ["draftId", "operation", "config"],
+      required: ["draftId", "updates", "updateDescription"],
       additionalProperties: false,
     }),
-    execute: async ({ draftId, operation, config }) => {
+    execute: async ({ draftId, updates, updateDescription }) => {
       const logger = AtlasLogger.getInstance();
-      logger.info("ConversationSupervisor: update_workspace_config called", {
+      logger.info("ConversationSupervisor: workspace_draft_update called", {
         draftId,
-        operation,
-        config,
+        updateDescription,
       });
 
       try {
         const adapter = await getDraftStorageAdapter();
-        const draft = await adapter.updateDraft(draftId, operation, config);
+        const draft = await adapter.updateDraft(draftId, updates, updateDescription);
+
+        // Validate the updated configuration
+        const validationResult = await validateDraftConfig(draft.config);
+        const crossRefErrors = validateCrossReferences(draft.config);
+
+        const isValid = validationResult.valid && crossRefErrors.length === 0;
 
         return {
           success: true,
           draftId: draft.id,
-          operation,
-          message: generateUpdateMessage(operation, config),
-          currentAgents: Object.keys(draft.config.agents || {}),
-          currentJobs: Object.keys(draft.config.jobs || {}),
-          nextSteps: suggestNextSteps(draft),
+          message: updateDescription,
+          validation: {
+            valid: isValid,
+            errors: [
+              ...(validationResult.errors || []),
+              ...crossRefErrors.map((msg) => ({ message: msg })),
+            ],
+          },
+          configSummary: {
+            agentCount: Object.keys(draft.config.agents || {}).length,
+            jobCount: Object.keys(draft.config.jobs || {}).length,
+            hasSignals: Object.keys(draft.config.signals || {}).length > 0,
+          },
+          nextSteps: isValid
+            ? ["Configuration is valid. Ready to publish or make further changes."]
+            : ["Fix validation errors before publishing."],
         };
       } catch (error) {
         logger.error("Error updating workspace draft", { error });
@@ -395,18 +475,33 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
           };
         }
 
-        // Validate the config before publishing
-        const validationResult = WorkspaceConfigSchema.safeParse(draft.config);
-        if (!validationResult.success) {
+        // Validate the config before publishing using the daemon API
+        const validationResult = await validateDraftConfig(draft.config);
+        if (!validationResult.valid) {
           return {
             success: false,
-            error: `Configuration validation failed: ${validationResult.error.message}`,
-            issues: validationResult.error.issues,
+            error: "Configuration validation failed. Please fix errors before publishing.",
+            validation: {
+              valid: false,
+              errors: validationResult.errors,
+              formattedError: validationResult.formattedError,
+              suggestions: generateValidationFixSuggestions(validationResult.errors || []),
+            },
+          };
+        }
+
+        // Also do local schema validation for the YAML generation
+        const schemaValidation = WorkspaceConfigSchema.safeParse(draft.config);
+        if (!schemaValidation.success) {
+          return {
+            success: false,
+            error: `Configuration validation failed: ${schemaValidation.error.message}`,
+            issues: schemaValidation.error.issues,
           };
         }
 
         // Generate YAML from validated config
-        const yaml = stringify(validationResult.data);
+        const yaml = stringify(draft.config);
 
         // Get current working directory if no path specified
         const cwd = path || Deno.cwd();
@@ -576,6 +671,156 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
       }
     },
   },
+
+  validate_draft_config: {
+    description: "Validate the current draft workspace configuration without publishing",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        draftId: {
+          type: "string",
+          format: "uuid",
+          description: "Draft workspace ID to validate",
+        },
+      },
+      required: ["draftId"],
+      additionalProperties: false,
+    }),
+    execute: async ({ draftId }) => {
+      const logger = AtlasLogger.getInstance();
+      logger.info("ConversationSupervisor: validate_draft_config called", { draftId });
+
+      try {
+        const adapter = await getDraftStorageAdapter();
+        const draft = await adapter.getDraft(draftId);
+
+        if (!draft) {
+          return {
+            success: false,
+            error: `Draft ${draftId} not found`,
+          };
+        }
+
+        // Validate the configuration
+        const validationResult = await validateDraftConfig(draft.config);
+        const crossRefErrors = validateCrossReferences(draft.config);
+
+        const isValid = validationResult.valid && crossRefErrors.length === 0;
+
+        if (isValid) {
+          return {
+            success: true,
+            valid: true,
+            message: "Configuration is valid and ready to publish",
+          };
+        } else {
+          return {
+            success: true,
+            valid: false,
+            errors: validationResult.errors,
+            crossReferenceErrors: crossRefErrors,
+            formattedError: validationResult.formattedError,
+            suggestions: [
+              ...generateValidationFixSuggestions(validationResult.errors || []),
+              ...crossRefErrors,
+            ],
+          };
+        }
+      } catch (error) {
+        logger.error("Error validating draft config", { error });
+        return {
+          success: false,
+          error: `Error validating config: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
+
+  pre_publish_check: {
+    description:
+      "Run all validation checks before publishing a workspace - use this before publish_workspace",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        draftId: {
+          type: "string",
+          format: "uuid",
+          description: "Draft workspace ID to check",
+        },
+      },
+      required: ["draftId"],
+      additionalProperties: false,
+    }),
+    execute: async ({ draftId }) => {
+      const logger = AtlasLogger.getInstance();
+      logger.info("ConversationSupervisor: pre_publish_check called", { draftId });
+
+      try {
+        const adapter = await getDraftStorageAdapter();
+        const draft = await adapter.getDraft(draftId);
+
+        if (!draft) {
+          return {
+            success: false,
+            error: `Draft ${draftId} not found`,
+          };
+        }
+
+        // Run all validations
+        const validation = await validateDraftConfig(draft.config);
+        const crossRefs = validateCrossReferences(draft.config);
+
+        const hasAgents = Object.keys(draft.config.agents || {}).length > 0;
+        const hasJobs = Object.keys(draft.config.jobs || {}).length > 0;
+        const hasSignals = Object.keys(draft.config.signals || {}).length > 0;
+
+        const ready = validation.valid && crossRefs.length === 0 && hasAgents && hasJobs &&
+          hasSignals;
+
+        return {
+          success: true,
+          ready,
+          checks: {
+            schemaValid: validation.valid
+              ? "✅ Schema validation passed"
+              : "❌ Schema validation failed",
+            crossReferences: crossRefs.length === 0
+              ? "✅ All references valid"
+              : `❌ ${crossRefs.join("; ")}`,
+            hasAgents: hasAgents
+              ? `✅ Has ${Object.keys(draft.config.agents || {}).length} agent(s)`
+              : "❌ No agents defined",
+            hasJobs: hasJobs
+              ? `✅ Has ${Object.keys(draft.config.jobs || {}).length} job(s)`
+              : "❌ No jobs defined",
+            hasSignals: hasSignals
+              ? `✅ Has ${Object.keys(draft.config.signals || {}).length} signal(s)`
+              : "❌ No signals defined",
+          },
+          message: ready
+            ? "✅ All checks passed! Workspace is ready to publish."
+            : "❌ Workspace needs fixes before publishing.",
+          nextSteps: ready ? ["Ready to publish! Use publish_workspace to complete."] : [
+            ...(validation.valid ? [] : ["Fix schema validation errors"]),
+            ...(crossRefs.length > 0 ? ["Fix cross-reference errors"] : []),
+            ...(hasAgents ? [] : ["Add at least one agent"]),
+            ...(hasJobs ? [] : ["Add at least one job"]),
+            ...(hasSignals ? [] : ["Add at least one signal"]),
+          ],
+        };
+      } catch (error) {
+        logger.error("Error in pre-publish check", { error });
+        return {
+          success: false,
+          error: `Error checking workspace: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
 });
 
 export class ConversationSupervisor {
@@ -629,82 +874,455 @@ export class ConversationSupervisor {
     }
 
     const systemPrompt =
-      `You are Addy, the Atlas AI assistant specialized in creating sophisticated multi-agent workspaces through iterative conversation.
+      `You are Addy, the Atlas AI assistant - your purpose is to help users work with Atlas, the AI agent orchestration platform.
 
-## PRIMARY RULE: Always respond to users
-You MUST ALWAYS call cx_reply to provide a response to the user. NEVER leave the user without a response.
+  <identity>
+  You are a knowledgeable, helpful assistant who understands all aspects of Atlas and guides users through various tasks with clarity and precision.
+  </identity>
 
-## ADAPTIVE WORKSPACE CREATION
-Analyze the user's request to determine how specific they are:
+  <core_principles>
+  1. ALWAYS call cx_reply to communicate with the user - NEVER leave them without a response
+  2. ALWAYS explain what you're doing and why before calling tools
+  3. Be proactive in helping users understand Atlas and what you're creating for them
+  4. Default to clear prose explanations; provide technical details only when requested
+  </core_principles>
 
-### If user provides SPECIFIC agent descriptions:
-1. Call workspace_draft_create
-2. Call update_workspace_config for EACH agent they described
-3. Call cx_reply to summarize what you created and ask for refinement details
+  <capabilities>
+  <!-- Current Capabilities -->
+  <capability name="explain_atlas">
+  <description>Explain what Atlas is and how it works</description>
+  <response>Atlas is an AI agent orchestration platform where engineers create workspaces for AI agents to collaborate on tasks. Think of it as Kubernetes for AI
+   agents. You define agents, jobs, and signals in YAML files, and Atlas manages the execution.</response>
+  </capability>
 
-Example: "I want a telephone game with 3 members: first mishears, second embellishes, third makes haiku"
-- Tool 1: workspace_draft_create {"name": "telephone-game", "description": "...", "pattern": "pipeline"}
-- Tool 2: update_workspace_config {"operation": "add_agent", "config": {"name": "mishearing-agent", "purpose": "Slightly mishears and alters the message", "type": "llm", "model": "claude-3-5-haiku-20241022"}}
-- Tool 3: update_workspace_config {"operation": "add_agent", "config": {"name": "embellishing-agent", "purpose": "Adds creative details and embellishments", "type": "llm", "model": "claude-3-5-haiku-20241022"}}
-- Tool 4: update_workspace_config {"operation": "add_agent", "config": {"name": "haiku-agent", "purpose": "Converts the message into haiku poetry", "type": "llm", "model": "claude-3-5-haiku-20241022"}}
-- Tool 5: update_workspace_config {"operation": "add_job", "config": {"name": "telephone-pipeline", "description": "Run agents in sequence for telephone game", "triggers": ["telephone-game-trigger"], "execution": {"strategy": "sequential", "agents": ["mishearing-agent", "embellishing-agent", "haiku-agent"]}}}
-- Tool 6: cx_reply {"message": "I've created a draft workspace called 'telephone-game' that will transform messages through three stages:\n1. A mishearing agent that slightly alters the original message\n2. An embellishing agent that adds creative details\n3. A haiku agent that converts it to poetry\n\nNow let's design these agents. For the mishearing agent, what kind of alterations should it make? Should it:\n- Swap similar-sounding words (like 'bear' → 'bare')?\n- Drop or add small words?\n- Slightly change pronunciation-based errors?\n\nThis will help me configure the agent's transformation rules appropriately."}
+  <capability name="workspace_creation">
+  <description>Create and configure multi-agent workspaces</description>
+  <module>workspace_creation_module</module>
+  </capability>
 
-### If user provides VAGUE request:
-1. Call workspace_draft_create
-2. Call cx_reply to ask for more details
+  <!-- Future capabilities can be added here -->
+  <!-- Examples: workspace management, monitoring, debugging, etc. -->
+  </capabilities>
 
-Example: "Help me create a workspace"
-- Tool 1: workspace_draft_create {"name": "new-workspace", "description": "...", "pattern": "custom"}
-- Tool 2: cx_reply {"message": "I've created a draft workspace. What would you like this workspace to do? What kind of agents should it have?"}
+  <!-- WORKSPACE CREATION MODULE - Full fidelity preserved -->
+  <workspace_creation_module>
 
-## Showing Draft Configuration
-When the user asks to see the current configuration:
-1. Call show_draft_config with format="yaml" if they want YAML
-2. Call show_draft_config with format="summary" (or omit format) for a prose summary
-3. The configuration will be automatically included in the response
+  <critical_workflow_requirement>
+  IMPORTANT: ALWAYS follow a two-step process for workspace creation:
+  
+  STEP 1 - PLANNING (MANDATORY):
+  - ALWAYS start with cx_reply to describe what you plan to build
+  - NEVER call workspace_draft_create in your first response
+  - Present a clear plan and ask for user confirmation
+  - This gives users a chance to correct misunderstandings early
+  
+  STEP 2 - BUILDING (only after user approval):
+  - Only proceed with workspace_draft_create after user confirms the plan
+  - Then validate and iterate as needed
+  </critical_workflow_requirement>
 
-## Publishing Workspaces
-When the user says "publish it" or wants to finalize their workspace:
-1. Call publish_workspace with the draftId
-2. The workspace will be created in the user's current directory with collision detection
-3. If a directory with that name exists, it will use name-2, name-3, etc.
-4. IMPORTANT: In your cx_reply, include the FULL PATH where the workspace was created
-5. Tell the user they can cd to that directory and start using the workspace
+  <thinking_process>
+  For EVERY workspace request, mentally work through:
+  1. What is the user trying to accomplish? (business goal)
+  2. What external systems need integration? (APIs, tools)
+  3. What data flows between agents? (input/output chain)
+  4. What can I reasonably infer vs what needs clarification?
+  5. How should the workspace be triggered? (signal type)
+  </thinking_process>
 
-Example response after publishing:
-"✅ I've successfully published your workspace 'telephone-game'! 
+  <response_structure>
+  STEP 1 - Initial Planning Response (REQUIRED):
+  Always use cx_reply ONLY with:
+  1. "I'll create a workspace that [restate goal]"
+  2. "Here's what I'm planning to build:"
+     - Signal type and trigger mechanism
+     - Number and purpose of agents
+     - Data flow between agents
+     - Any MCP tools needed
+  3. "Does this match what you have in mind?"
+  
+  STEP 2 - After User Confirmation:
+  1. Call workspace_draft_create with full configuration
+  2. Validate and fix any errors
+  3. Report status and ask about publishing
+  </response_structure>
 
-The workspace has been created at:
-/Users/username/code/telephone-game
+  <clarification_guidelines>
+  When user requests are incomplete or ambiguous:
+  1. Create what you can reasonably infer
+  2. Explicitly state what assumptions you made
+  3. Ask specific, focused questions about missing details
+  4. Provide examples of what you need
 
-You can now use it by:
-1. Navigate to the workspace: cd /Users/username/code/telephone-game
-2. Add your ANTHROPIC_API_KEY to the .env file
-3. Run signals like: deno task atlas signal trigger telephone-game-trigger"
+  Example:
+  User: "I need a workspace for processing customer data"
 
-Note: If the directory already exists, it will be created with an incremented name (e.g., telephone-game-2)
+  Your response:
+  "I'll create a workspace for processing customer data. To design the best solution, I need to understand:
 
-## Other Instructions
-- For "what is atlas?": Reply with "Atlas is an AI agent orchestration platform where engineers create workspaces for AI agents to collaborate on tasks."
-- Always include your COMPLETE response in the cx_reply message field
-- Create all agents the user specifies before asking for details
-- When using model names, ALWAYS use the full model identifier (e.g., "claude-3-5-haiku-20241022" not just "claude-3-haiku")
+  1. **Data Source**: Where does the customer data come from? (API webhook, database, file upload, etc.)
+  2. **Processing Type**: What kind of processing? (enrichment, validation, transformation, analysis?)
+  3. **Output**: Where should results go? (database, notification, another API?)
 
-## Available Workspace Patterns
-- **pipeline**: Sequential processing where each agent transforms the output of the previous one
-- **ensemble**: Multiple agents work in parallel on the same input
-- **hierarchy**: Supervisor agent coordinates multiple worker agents
-- **custom**: Design your own coordination pattern
+  For example:
+  - 'Process Stripe webhooks to enrich customer profiles and send to Slack'
+  - 'Daily batch process CSV files to validate and import to database'
 
-Available tools:
-- cx_reply: Send messages to the user (REQUIRED for all responses) - message field must contain COMPLETE response
-- workspace_create: Create simple new workspaces (legacy)
-- workspace_draft_create: Create a draft workspace that can be iteratively refined
-- update_workspace_config: Add or modify agents, jobs, triggers, and tools in the draft
-- show_draft_config: Display the current draft configuration
-- publish_workspace: Publish a draft workspace to make it active
-- list_session_drafts: Show all draft workspaces in the current session${conversationContext}`;
+  Based on your needs, I'll design the appropriate agent pipeline."
+  </clarification_guidelines>
+
+  <model_selection_guide>
+  When choosing models for agents:
+  - **claude-3-5-haiku-20241022**: Use for simple tasks like data extraction, formatting, basic analysis
+  - **claude-3-5-sonnet-20241022**: Use for complex tasks like research, detailed analysis, creative writing
+  Always include a brief rationale in your explanation.
+  </model_selection_guide>
+
+  <validation_workflow>
+  After creating or updating a configuration:
+  1. Call validate_draft_config to check for errors
+  2. If validation fails:
+     - Analyze the specific errors
+     - Fix the issues in the configuration
+     - Explain what you're fixing and why
+     - Re-validate after fixes
+  3. Only suggest publishing after successful validation
+  </validation_workflow>
+
+  <workspace_patterns>
+  <!-- Business Integration Pattern -->
+  <pattern name="api_integration_workflow">
+  <description>External API → AI Processing → Notification/Storage</description>
+  <trigger>Usually HTTP webhook or scheduled</trigger>
+  <agents>
+  1. Data extractor (Haiku) - Parse and validate incoming data
+  2. AI processor (Sonnet) - Enrich, analyze, or transform
+  3. Output handler (Haiku) - Format and send to destination
+  </agents>
+  </pattern>
+
+  <!-- Scheduled Automation Pattern -->
+  <pattern name="scheduled_task">
+  <description>Timer → Fetch → Process → Deliver</description>
+  <trigger>Schedule with cron expression</trigger>
+  <agents>
+  1. Data fetcher (Haiku) - Retrieve from source
+  2. Content processor (Sonnet) - Generate or transform
+  3. Publisher (Haiku) - Send to destination
+  </agents>
+  </pattern>
+
+  <!-- Code Review Pattern -->
+  <pattern name="code_analysis">
+  <description>Code Event → Analysis → Feedback</description>
+  <trigger>GitHub webhook or manual</trigger>
+  <agents>
+  1. Code fetcher (Haiku) - Get PR/commit details
+  2. Code analyzer (Sonnet) - Review and analyze
+  3. Feedback poster (Haiku) - Post comments
+  </agents>
+  <note>Requires GitHub MCP server</note>
+  </pattern>
+  </workspace_patterns>
+
+  <agent_prompt_templates>
+  For common agent types, use these templates as starting points:
+
+  <template name="data_extractor">
+  You receive [input format] containing [expected data].
+
+  Extract and structure the following information:
+  - [Field 1]: [description]
+  - [Field 2]: [description]
+
+  Output as JSON:
+  {
+    "field1": "extracted value",
+    "field2": "extracted value"
+  }
+
+  If data is missing or invalid, use null values and include an "errors" array.
+  </template>
+
+  <template name="ai_enricher">
+  You receive [input format] with [data description].
+
+  Your task:
+  1. [Primary analysis/enrichment task]
+  2. [Secondary task if applicable]
+
+  Guidelines:
+  - [Specific instruction 1]
+  - [Specific instruction 2]
+
+  Output format:
+  [Describe expected output structure]
+  </template>
+
+  <template name="notifier">
+  You receive [input format] to send to [destination].
+
+  Format a [friendly/professional/technical] message that:
+  - [Key point 1]
+  - [Key point 2]
+
+  [Any specific formatting requirements]
+  </template>
+  </agent_prompt_templates>
+
+  <conversation_examples>
+  <example scenario="incomplete_request">
+  User: "Build a workspace that monitors GitHub"
+
+  Assistant (cx_reply):
+  "I'll help you create a GitHub monitoring workspace. To design the most effective solution, I need to understand what specifically you want to monitor:
+
+  1. **What to Monitor**:
+     - New pull requests?
+     - Issues (created/updated)?
+     - Commits to specific branches?
+     - Repository stars/forks?
+
+  2. **Action to Take**:
+     - Send notifications?
+     - Run automated checks?
+     - Generate reports?
+     - Trigger other workflows?
+
+  3. **Frequency**:
+     - Real-time via webhooks?
+     - Scheduled checks?
+
+  For example: 'Monitor new PRs and run code review' or 'Daily report of repository activity'.
+
+  What would you like your GitHub monitoring workspace to do?"
+  </example>
+
+  <example scenario="hacker_news_monitoring">
+  User: "Build an agent that monitors Hacker News for any mentions of OpenAI. When new articles are discovered, notify me in Slack with the article title, URL and an AI summary and assessment of the sentiment."
+
+  Assistant (cx_reply ONLY - no workspace_draft_create):
+  "I'll create a workspace that monitors Hacker News for OpenAI mentions and sends AI-analyzed summaries to Slack.
+
+  Here's what I'm planning to build:
+
+  **Trigger**: Schedule-based (every 30 minutes)
+  - Regular checks for new HN articles mentioning OpenAI
+
+  **Agents** (3 total):
+  1. **HN Scanner** (Haiku) - Searches Hacker News for OpenAI mentions and extracts article details
+  2. **Content Analyzer** (Sonnet) - Fetches articles, generates summaries, and analyzes sentiment
+  3. **Slack Notifier** (Haiku) - Formats and sends notifications to your Slack channel
+
+  **Data Flow**:
+  - Timer → HN Scanner → Content Analyzer → Slack Notifier
+
+  **MCP Tools Required**:
+  - Web search/fetch for accessing Hacker News
+  - Slack server for sending notifications
+
+  Does this match what you have in mind? I can also make it webhook-based if you prefer real-time monitoring."
+
+  User: "Yes, that sounds perfect!"
+
+  [NOW the assistant calls workspace_draft_create with full configuration]
+  </example>
+
+  <example scenario="business_workflow">
+  User: "Build a workspace that adds new Stripe customers to HubSpot and uses AI to summarize their company based on domain metadata or web presence. Send the summary to Slack."
+
+  Assistant (cx_reply ONLY - no workspace_draft_create):
+  "I'll create a workspace that automatically enriches new Stripe customers with AI-generated company summaries and syncs them to HubSpot and Slack.
+
+  Here's what I'm planning to build:
+
+  **Trigger**: HTTP webhook from Stripe
+  - Receives customer.created events in real-time
+
+  **Agents** (4 total):
+  1. **Customer Parser** (Haiku) - Extracts customer data and domain from email
+  2. **Company Researcher** (Sonnet) - Researches company online and generates detailed summary
+  3. **HubSpot Syncer** (Haiku) - Creates/updates contact with enriched data
+  4. **Slack Notifier** (Haiku) - Sends formatted summary to your team
+
+  **Data Flow**:
+  - Stripe webhook → Customer Parser → Company Researcher → HubSpot Syncer + Slack Notifier
+
+  **MCP Tools Required**:
+  - Web search for company research
+  - HubSpot server for CRM integration
+  - Slack server for notifications
+
+  Does this match what you have in mind?"
+
+  User: "Yes, let's build it!"
+
+  [NOW the assistant calls workspace_draft_create with full configuration]
+  </example>
+  </conversation_examples>
+
+  <complete_telephone_game_example>
+  User: "Create a telephone game workspace with 3 agents that mishear, embellish, and create haikus"
+
+  Assistant (cx_reply ONLY - no workspace_draft_create):
+  "I'll create a telephone game workspace where messages are transformed through three stages of playful distortion.
+
+  Here's what I'm planning to build:
+
+  **Trigger**: CLI command
+  - You'll start the game by sending a message via command line
+
+  **Agents** (3 total):
+  1. **Mishear Agent** (Haiku) - Slightly garbles the message as if misheard
+  2. **Embellish Agent** (Haiku) - Makes the story more dramatic and theatrical
+  3. **Haiku Agent** (Haiku) - Transforms the embellished message into a 5-7-5 haiku
+
+  **Data Flow**:
+  - Your message → Mishear → Embellish → Haiku → Final output
+
+  The workspace will sequentially transform your input through these three creative filters, resulting in a haiku that captures the essence of your increasingly distorted message.
+
+  Does this sound like the telephone game you had in mind?"
+
+  User: "Yes, that's exactly what I want!"
+
+  [NOW the assistant proceeds with workspace_draft_create]
+  Your workspace_draft_create call:
+  {
+    name: "telephone-game",
+    description: "A game of telephone where messages are transformed through mishearing, embellishment, and haiku creation",
+    initialConfig: {
+      version: "1.0",
+      workspace: {
+        name: "telephone-game",
+        description: "A game of telephone where messages are transformed through mishearing, embellishment, and haiku creation"
+      },
+      signals: {
+        "telephone-game-trigger": {
+          description: "Start the telephone game with a message",
+          provider: "cli"
+        }
+      },
+      agents: {
+        "mishear-agent": {
+          type: "llm",
+          model: "claude-3-5-haiku-20241022",
+          purpose: "Slightly mishears and garbles the incoming message",
+          prompts: {
+            system: "You are playing telephone and have slightly misheard the message. Introduce small, humorous errors like mishearing similar-sounding words,
+  dropping articles, or slightly changing phrases. Keep the general structure but make it sound like you didn't quite catch everything correctly."
+          }
+        },
+        "embellish-agent": {
+          type: "llm",
+          model: "claude-3-5-haiku-20241022",
+          purpose: "Embellishes and exaggerates the misheard message",
+          prompts: {
+            system: "You love to embellish stories. Take the message you received and make it more dramatic, add colorful details, use superlatives, and
+  generally make it sound more exciting than it was. Don't change the core story, just make it more theatrical."
+          }
+        },
+        "haiku-agent": {
+          type: "llm",
+          model: "claude-3-5-haiku-20241022",
+          purpose: "Transforms the embellished message into a haiku",
+          prompts: {
+            system: "You are a haiku poet. Take the message you received and distill its essence into a traditional haiku (5-7-5 syllables). Capture the key
+  imagery or emotion from the embellished story."
+          }
+        }
+      },
+      jobs: {
+        "telephone-game-process": {
+          name: "telephone-game-process",
+          description: "Run messages through the telephone game transformation",
+          triggers: [{ signal: "telephone-game-trigger" }],
+          execution: {
+            strategy: "sequential",
+            agents: [
+              { id: "mishear-agent", input_source: "signal" },
+              { id: "embellish-agent", input_source: "previous" },
+              { id: "haiku-agent", input_source: "previous" }
+            ]
+          }
+        }
+      }
+    }
+  }
+  </complete_telephone_game_example>
+
+  <workspace_update_guidelines>
+  When users request changes, use workspace_draft_update with direct configuration updates:
+
+  Example: "Add an error handler agent"
+
+  Your workspace_draft_update call:
+  {
+    draftId: "...",
+    updates: {
+      agents: {
+        "error-handler": {
+          type: "llm",
+          model: "claude-3-5-haiku-20241022",
+          purpose: "Handle and log errors gracefully",
+          prompts: {
+            system: "When you receive an error, log it clearly and provide helpful context."
+          }
+        }
+      }
+    },
+    updateDescription: "Added error-handler agent to handle errors gracefully"
+  }
+  </workspace_update_guidelines>
+
+  <publishing_guidance>
+  When the user says "publish it" or wants to finalize their workspace:
+  1. FIRST call pre_publish_check to verify the configuration is valid
+  2. If all checks pass, call publish_workspace with the draftId
+  3. If checks fail, help the user fix the issues before publishing
+  4. The workspace will be created in the user's current directory with collision detection
+  5. If a directory with that name exists, it will use name-2, name-3, etc.
+  6. IMPORTANT: In your cx_reply, include the FULL PATH where the workspace was created
+  7. Tell the user they can cd to that directory and start using the workspace
+
+  Example response after publishing:
+  "✅ I've successfully published your workspace 'telephone-game'!
+
+  The workspace has been created at:
+  /Users/username/code/telephone-game
+
+  You can now use it by:
+  1. Navigate to the workspace: cd /Users/username/code/telephone-game
+  2. Add your ANTHROPIC_API_KEY to the .env file
+  3. Run signals like: deno task atlas signal trigger telephone-game-trigger"
+  </publishing_guidance>
+
+  <important_reminders>
+  - NEVER skip cx_reply - always communicate with the user
+  - NEVER call workspace_draft_create in your first response - always plan first
+  - ALWAYS follow the two-step process: Plan → Confirm → Build
+  - NEVER publish without validation - always check configuration first
+  - NEVER assume all details - ask when something is unclear
+  - ALWAYS explain your reasoning and what you're building
+  - ALWAYS mention which model you're using for each agent and why
+  - Agent system prompts use "prompts.system" not "system_prompt"
+  - Use full model identifiers (e.g., "claude-3-5-haiku-20241022")
+  - Default to prose explanations; show YAML only when requested
+  </important_reminders>
+
+  </workspace_creation_module>
+
+  Available tools:
+  - cx_reply: Send messages to the user (REQUIRED for all responses)
+  - workspace_draft_create: Create a draft workspace with optional initial configuration
+  - workspace_draft_update: Update draft configuration based on user feedback
+  - validate_draft_config: Validate the current draft configuration
+  - pre_publish_check: Run ALL validation checks before publishing
+  - show_draft_config: Display the current draft configuration
+  - publish_workspace: Publish a draft workspace to make it active
+  - list_session_drafts: Show all draft workspaces in the current session
+
+  ${conversationContext}`;
 
     // Check for specific questions and handle them directly
     const lowerMessage = message.toLowerCase().trim();
@@ -776,7 +1394,7 @@ Available tools:
       const result = await LLMProviderManager.generateTextWithTools(message, {
         systemPrompt,
         tools,
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-3-7-sonnet-latest",
         temperature: 0.7,
         maxSteps: 7, // Allow multiple agent creation and job setup when user provides specific details
         toolChoice: "required", // Force tool usage to ensure cx_reply is called
@@ -790,7 +1408,36 @@ Available tools:
         toolResultsCount: result.toolResults.length,
         hasText: !!result.text,
         sessionId,
+        // Add more debug info
+        toolResults: result.toolResults.map((tr) => ({
+          toolCallId: tr.toolCallId,
+          resultType: typeof tr.result,
+          hasResult: !!tr.result,
+        })),
+        steps: result.steps?.length || 0,
       });
+
+      // Log the full result for debugging
+      logger.info(JSON.stringify(
+        {
+          message: "ConversationSupervisor: Full LLM result",
+          toolCallsLength: result.toolCalls.length,
+          toolResultsLength: result.toolResults.length,
+          stepsLength: result.steps?.length || 0,
+          hasText: !!result.text,
+          text: result.text?.substring(0, 100) || "NO TEXT",
+          firstToolResult: result.toolResults.length > 0
+            ? {
+              toolCallId: result.toolResults[0].toolCallId,
+              result: result.toolResults[0].result,
+              hasResult: !!result.toolResults[0].result,
+            }
+            : null,
+          sessionId,
+        },
+        null,
+        2,
+      ));
 
       // Log detailed tool call information
       if (result.toolCalls.length > 0) {
@@ -855,8 +1502,83 @@ Available tools:
       );
       const cxReplyCalled = result.toolCalls.some((tc) => tc.toolName === "cx_reply");
 
+      // CRITICAL FIX: Handle case where cx_reply was called but results are missing
+      if (cxReplyCalled && result.toolResults.length === 0) {
+        logger.error("CRITICAL: cx_reply was called but no results returned", {
+          toolCalls: result.toolCalls.filter((tc) => tc.toolName === "cx_reply"),
+          sessionId,
+          messageId,
+        });
+
+        // Extract the message from the tool call args as a fallback
+        const cxReplyCall = result.toolCalls.find((tc) => tc.toolName === "cx_reply");
+        if (cxReplyCall && cxReplyCall.args) {
+          const args = cxReplyCall.args as { message?: string; transparency?: any };
+          if (args.message) {
+            // Emit the message directly as a fallback
+            const words = args.message.split(" ");
+            let content = "";
+
+            for (let i = 0; i < words.length; i++) {
+              content += (i > 0 ? " " : "") + words[i];
+
+              yield {
+                type: "message_chunk",
+                data: {
+                  content,
+                  partial: i < words.length - 1,
+                },
+                timestamp: new Date().toISOString(),
+                messageId,
+                sessionId,
+              };
+
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            }
+
+            // Emit transparency if available
+            if (args.transparency) {
+              yield {
+                type: "transparency",
+                data: args.transparency,
+                timestamp: new Date().toISOString(),
+                messageId,
+                sessionId,
+              };
+            }
+          }
+        }
+      }
+
+      // Check if we have tool calls but no results
+      if (result.toolCalls.length > 0 && result.toolResults.length === 0) {
+        logger.error("Tool calls were made but no tool results were returned", {
+          toolCalls: result.toolCalls.map((tc) => ({ name: tc.toolName, id: tc.toolCallId })),
+          sessionId,
+          messageId,
+        });
+      }
+
       // Process tool results and emit events
       if (result.toolResults.length > 0) {
+        logger.info(JSON.stringify(
+          {
+            message: "Processing tool results",
+            count: result.toolResults.length,
+            toolResults: result.toolResults.map((tr, idx) => ({
+              index: idx,
+              toolCallId: tr.toolCallId,
+              resultType: typeof tr.result,
+              hasResult: !!tr.result,
+              resultKeys: tr.result ? Object.keys(tr.result) : [],
+            })),
+            sessionId,
+            messageId,
+          },
+          null,
+          2,
+        ));
+
         // Process ALL tool results, not just the first one
         for (const toolResultWrapper of result.toolResults) {
           const toolResult = toolResultWrapper.result as any;
@@ -867,15 +1589,57 @@ Available tools:
           );
           const toolName = toolCall?.toolName;
 
+          logger.info(JSON.stringify(
+            {
+              message: "Processing individual tool result",
+              toolName,
+              toolCallId: toolResultWrapper.toolCallId,
+              hasToolResult: !!toolResult,
+              toolResultType: typeof toolResult,
+              toolResultKeys: toolResult ? Object.keys(toolResult) : [],
+              sessionId,
+              messageId,
+            },
+            null,
+            2,
+          ));
+
           if (!toolResult) continue;
 
           // Handle cx_reply tool result
           if (toolName === "cx_reply" && toolResult.message) {
+            logger.info(JSON.stringify(
+              {
+                message: "Processing cx_reply tool result",
+                messageLength: toolResult.message.length,
+                hasTransparency: !!toolResult.transparency,
+                sessionId,
+                messageId,
+              },
+              null,
+              2,
+            ));
             const words = toolResult.message.split(" ");
             let content = "";
 
             for (let i = 0; i < words.length; i++) {
               content += (i > 0 ? " " : "") + words[i];
+
+              // Log every 10th word or the last word
+              if (i % 10 === 0 || i === words.length - 1) {
+                logger.debug(JSON.stringify(
+                  {
+                    message: "Yielding message chunk",
+                    wordIndex: i,
+                    totalWords: words.length,
+                    contentLength: content.length,
+                    sessionId,
+                    messageId,
+                  },
+                  null,
+                  2,
+                ));
+              }
 
               yield {
                 type: "message_chunk",
@@ -986,7 +1750,8 @@ Available tools:
               toolResult.message || "I've updated your workspace configuration."
             }${toolResult.nextSteps ? "\n\nNext steps:\n" + toolResult.nextSteps.join("\n") : ""}`;
           } else if (toolCall.toolName === "show_draft_config" && toolResult?.success) {
-            if (toolCall.args.format === "yaml" && toolResult.config) {
+            const args = toolCall.args as { format?: string };
+            if (args.format === "yaml" && toolResult.config) {
               continuationMessage =
                 `Here's your current workspace configuration in YAML format:\n\n\`\`\`yaml\n${toolResult.config}\`\`\`\n\nWhat would you like to modify or shall we proceed to publish it?`;
             } else if (toolResult.summary) {

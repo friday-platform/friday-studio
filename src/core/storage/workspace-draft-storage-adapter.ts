@@ -71,13 +71,35 @@ export class WorkspaceDraftStorageAdapter {
     pattern?: string;
     sessionId: string;
     userId: string;
+    initialConfig?: Partial<WorkspaceConfig>;
   }): Promise<WorkspaceDraft> {
+    // Start with minimal base config
+    const baseConfig: Partial<WorkspaceConfig> = {
+      version: "1.0",
+      workspace: {
+        name: params.name,
+        description: params.description,
+      },
+    };
+
+    // Merge with provided initial config if any
+    const config = params.initialConfig
+      ? this.deepMerge(baseConfig, params.initialConfig)
+      : baseConfig;
+
     const draft: WorkspaceDraft = {
       id: crypto.randomUUID(),
       name: params.name,
       description: params.description,
-      config: this.getInitialConfig(params.name, params.description, params.pattern),
-      iterations: [],
+      config,
+      iterations: params.initialConfig
+        ? [{
+          timestamp: new Date().toISOString(),
+          operation: "initial_config",
+          config: params.initialConfig,
+          summary: "Created with initial configuration",
+        }]
+        : [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "draft",
@@ -104,8 +126,8 @@ export class WorkspaceDraftStorageAdapter {
    */
   async updateDraft(
     draftId: string,
-    operation: string,
-    config: Record<string, unknown>,
+    updates: Partial<WorkspaceConfig>,
+    updateDescription: string,
   ): Promise<WorkspaceDraft> {
     const currentDraft = await this.getDraft(draftId);
     if (!currentDraft) {
@@ -115,15 +137,15 @@ export class WorkspaceDraftStorageAdapter {
     // Create a deep copy for modification
     const updatedDraft: WorkspaceDraft = JSON.parse(JSON.stringify(currentDraft));
 
-    // Apply the update based on operation type
-    this.applyOperation(updatedDraft, operation, config);
+    // Deep merge the updates into existing config
+    updatedDraft.config = this.deepMerge(updatedDraft.config, updates);
 
     // Add to iteration history
     updatedDraft.iterations.push({
       timestamp: new Date().toISOString(),
-      operation,
-      config,
-      summary: this.generateOperationSummary(operation, config),
+      operation: "update_config",
+      config: updates,
+      summary: updateDescription,
     });
 
     updatedDraft.updatedAt = new Date().toISOString();
@@ -380,34 +402,38 @@ export class WorkspaceDraftStorageAdapter {
   }
 
   /**
-   * Get initial configuration for a new draft
+   * Deep merge two partial workspace configurations
    */
-  private getInitialConfig(
-    name: string,
-    description: string,
-    pattern?: string,
+  private deepMerge(
+    target: Partial<WorkspaceConfig>,
+    source: Partial<WorkspaceConfig>,
   ): Partial<WorkspaceConfig> {
-    // Return minimal config based on pattern using proper types
-    const config: Partial<WorkspaceConfig> = {
-      version: "1.0",
-      workspace: {
-        name,
-        description: description || "",
-      },
-      signals: {},
-      jobs: {},
-      agents: {},
-    };
+    const result: Record<string, unknown> = { ...target };
 
-    // Add pattern-specific defaults
-    if (pattern === "pipeline") {
-      config.signals![`${name}-trigger`] = {
-        description: `Start the ${name} pipeline`,
-        provider: "cli",
-      };
+    for (const key in source) {
+      const sourceValue = source[key as keyof WorkspaceConfig];
+      const targetValue = target[key as keyof WorkspaceConfig];
+
+      if (
+        sourceValue &&
+        typeof sourceValue === "object" &&
+        !Array.isArray(sourceValue) &&
+        targetValue &&
+        typeof targetValue === "object" &&
+        !Array.isArray(targetValue)
+      ) {
+        // Recursively merge objects
+        result[key] = {
+          ...targetValue,
+          ...sourceValue,
+        };
+      } else {
+        // Direct assignment for primitives and arrays
+        result[key] = sourceValue;
+      }
     }
 
-    return config;
+    return result as Partial<WorkspaceConfig>;
   }
 
   /**

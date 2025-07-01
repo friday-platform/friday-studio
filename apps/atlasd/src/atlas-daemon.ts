@@ -1,4 +1,10 @@
-import { ConfigLoader, type MergedConfig, supervisorDefaults } from "@atlas/config";
+import {
+  ConfigLoader,
+  formatZodError,
+  type MergedConfig,
+  supervisorDefaults,
+  WorkspaceConfigSchema,
+} from "@atlas/config";
 import {
   FilesystemConfigAdapter,
   FilesystemTemplateAdapter,
@@ -547,6 +553,41 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to create workspace from template: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Validate workspace configuration
+    this.app.post("/api/workspaces/validate", async (c) => {
+      try {
+        const body = await c.req.json() as { config: unknown };
+        const { config } = body;
+
+        if (!config) {
+          return c.json({ error: "config is required" }, 400);
+        }
+
+        // Validate using the WorkspaceConfigSchema
+        const validationResult = WorkspaceConfigSchema.safeParse(config);
+
+        if (validationResult.success) {
+          return c.json({
+            valid: true,
+            config: validationResult.data,
+            message: "Configuration is valid",
+          });
+        } else {
+          return c.json({
+            valid: false,
+            errors: validationResult.error.issues,
+            formattedError: formatZodError(validationResult.error, "workspace.yml"),
+          });
+        }
+      } catch (error) {
+        return c.json({
+          error: `Failed to validate configuration: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);
@@ -1238,6 +1279,20 @@ export class AtlasDaemon {
           messageHistory,
         )
       ) {
+        const logger = AtlasLogger.getInstance();
+        logger.debug(JSON.stringify(
+          {
+            message: "Received event from supervisor",
+            eventType: event.type,
+            sessionId,
+            messageId: event.messageId,
+            hasData: !!event.data,
+            dataKeys: event.data ? Object.keys(event.data) : [],
+          },
+          null,
+          2,
+        ));
+
         // QUICK FIX: Track message chunks to reconstruct complete response
         if (event.type === "message_chunk" && event.data.content) {
           this.messageChunks.set(messageId, event.data.content);
@@ -1331,16 +1386,44 @@ export class AtlasDaemon {
    * Emit conversation event to all SSE clients for a session
    */
   private emitConversationEvent(sessionId: string, event: ConversationEvent): void {
+    const logger = AtlasLogger.getInstance();
     const clients = this.sseClients.get(sessionId);
-    if (!clients || clients.length === 0) return;
+
+    logger.info(JSON.stringify(
+      {
+        message: "emitConversationEvent called",
+        sessionId,
+        eventType: event.type,
+        hasClients: !!clients,
+        clientCount: clients?.length || 0,
+        dataKeys: event.data ? Object.keys(event.data) : [],
+      },
+      null,
+      2,
+    ));
+
+    if (!clients || clients.length === 0) {
+      logger.warn("No SSE clients connected for session", { sessionId });
+      return;
+    }
 
     const encoder = new TextEncoder();
     const sseData = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
     const encodedData = encoder.encode(sseData);
 
     // Send to all connected clients for this session
-    clients.forEach(({ writer }) => {
-      writer.write(encodedData).catch(() => {
+    clients.forEach(({ writer }, index) => {
+      writer.write(encodedData).catch((error) => {
+        logger.error(JSON.stringify(
+          {
+            message: "Failed to write to SSE client",
+            sessionId,
+            clientIndex: index,
+            error: error.message,
+          },
+          null,
+          2,
+        ));
         // Client disconnected, will be cleaned up by abort handler
       });
     });

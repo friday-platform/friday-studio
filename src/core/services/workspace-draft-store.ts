@@ -1,10 +1,4 @@
-import type {
-  JobSpecification,
-  WorkspaceAgentConfig,
-  WorkspaceConfig,
-  WorkspaceMCPServerConfig,
-  WorkspaceSignalConfig,
-} from "@atlas/config";
+import type { WorkspaceConfig } from "@atlas/config";
 
 export interface WorkspaceDraft {
   id: string;
@@ -37,13 +31,35 @@ export class WorkspaceDraftStore {
     pattern?: string;
     sessionId: string;
     userId: string;
+    initialConfig?: Partial<WorkspaceConfig>; // NEW: Accept initial config
   }): Promise<WorkspaceDraft> {
+    // Start with minimal base config
+    const baseConfig: Partial<WorkspaceConfig> = {
+      version: "1.0",
+      workspace: {
+        name: params.name,
+        description: params.description,
+      },
+    };
+
+    // Merge with provided initial config if any
+    const config = params.initialConfig
+      ? this.deepMerge(baseConfig, params.initialConfig)
+      : baseConfig;
+
     const draft: WorkspaceDraft = {
       id: crypto.randomUUID(),
       name: params.name,
       description: params.description,
-      config: this.getInitialConfig(params.name, params.description, params.pattern),
-      iterations: [],
+      config,
+      iterations: params.initialConfig
+        ? [{
+          timestamp: new Date().toISOString(),
+          operation: "initial_config",
+          config: params.initialConfig,
+          summary: "Created with initial configuration",
+        }]
+        : [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       status: "draft",
@@ -54,7 +70,7 @@ export class WorkspaceDraftStore {
     const key = ["workspace_drafts", draft.id];
     await this.kv.set(key, draft);
 
-    // Also index by session for easy retrieval
+    // Index by session
     const sessionKey = ["workspace_drafts_by_session", params.sessionId, draft.id];
     await this.kv.set(sessionKey, draft.id);
 
@@ -63,8 +79,8 @@ export class WorkspaceDraftStore {
 
   async updateDraft(
     draftId: string,
-    operation: string,
-    config: Record<string, unknown>,
+    updates: Partial<WorkspaceConfig>,
+    updateDescription: string,
   ): Promise<WorkspaceDraft> {
     const key = ["workspace_drafts", draftId];
     const entry = await this.kv.get<WorkspaceDraft>(key);
@@ -75,109 +91,20 @@ export class WorkspaceDraftStore {
 
     const draft = entry.value;
 
-    // Apply the update based on operation type
-    this.applyOperation(draft, operation, config);
+    // Deep merge the updates into existing config
+    draft.config = this.deepMerge(draft.config, updates);
 
     // Add to iteration history
     draft.iterations.push({
       timestamp: new Date().toISOString(),
-      operation,
-      config,
-      summary: this.generateOperationSummary(operation, config),
+      operation: "update_config",
+      config: updates,
+      summary: updateDescription,
     });
 
     draft.updatedAt = new Date().toISOString();
-
     await this.kv.set(key, draft);
     return draft;
-  }
-
-  private applyOperation(
-    draft: WorkspaceDraft,
-    operation: string,
-    config: Record<string, unknown>,
-  ): void {
-    switch (operation) {
-      case "add_agent": {
-        // Ensure agents object exists
-        if (!draft.config.agents) draft.config.agents = {};
-
-        // Handle both formats: id/purpose and name/description
-        const agentId = (config.id || config.name) as string;
-        const agentPurpose = (config.purpose || config.description) as string;
-
-        // Map 'transformation' type to valid WorkspaceAgentConfig type
-        let agentType = config.type as string;
-        if (agentType === "transformation") {
-          agentType = "llm"; // Default to LLM for transformation agents
-        }
-
-        // Create agent config using WorkspaceAgentConfig type
-        const agentConfig: WorkspaceAgentConfig = {
-          type: (agentType as "llm" | "tempest" | "remote") || "llm",
-          model: config.model as string || "claude-3-5-haiku-20241022",
-          purpose: agentPurpose,
-          ...(config.system_prompt && { prompts: { system: config.system_prompt as string } }),
-          ...(config.tools && { tools: { mcp: config.tools as string[] } }),
-        };
-
-        draft.config.agents[agentId] = agentConfig;
-        break;
-      }
-
-      case "update_agent": {
-        if (draft.config.agents && draft.config.agents[config.id as string]) {
-          Object.assign(draft.config.agents[config.id as string], config.updates);
-        }
-        break;
-      }
-
-      case "add_job": {
-        // Ensure jobs object exists
-        if (!draft.config.jobs) draft.config.jobs = {};
-
-        // Create job config using JobSpecification type
-        const jobId = config.name as string || config.id as string;
-        const jobConfig: JobSpecification = {
-          name: jobId,
-          description: config.description as string,
-          triggers: config.triggers
-            ? (Array.isArray(config.triggers) && typeof config.triggers[0] === "string"
-              ? (config.triggers as string[]).map((t) => ({ signal: t }))
-              : config.triggers as Array<{ signal: string }>)
-            : [{ signal: `${draft.name}-trigger` }],
-          execution: config.execution as JobSpecification["execution"],
-        };
-
-        draft.config.jobs[jobId] = jobConfig;
-        break;
-      }
-
-      case "set_trigger": {
-        // Ensure signals object exists
-        if (!draft.config.signals) draft.config.signals = {};
-
-        const signalId = `${draft.name}-trigger`;
-        // Create signal config using WorkspaceSignalConfig type
-        const signalConfig: WorkspaceSignalConfig = {
-          description: config.description as string || `Trigger for ${draft.name}`,
-          provider: config.provider as string,
-          ...(config.providerConfig as Record<string, unknown>),
-        };
-
-        draft.config.signals[signalId] = signalConfig;
-        break;
-      }
-
-      case "add_tool": {
-        if (!draft.config.tools) draft.config.tools = {};
-        if (!draft.config.tools.mcp) draft.config.tools.mcp = {};
-        if (!draft.config.tools.mcp.servers) draft.config.tools.mcp.servers = {};
-        draft.config.tools.mcp.servers[config.provider as string] = config
-          .config as WorkspaceMCPServerConfig;
-        break;
-      }
-    }
   }
 
   private getInitialConfig(
@@ -263,5 +190,37 @@ export class WorkspaceDraftStore {
       default:
         return `Applied ${operation} to workspace configuration`;
     }
+  }
+
+  private deepMerge(
+    target: Partial<WorkspaceConfig>,
+    source: Partial<WorkspaceConfig>,
+  ): Partial<WorkspaceConfig> {
+    const result: Record<string, unknown> = { ...target };
+
+    for (const key in source) {
+      const sourceValue = source[key as keyof WorkspaceConfig];
+      const targetValue = target[key as keyof WorkspaceConfig];
+
+      if (
+        sourceValue &&
+        typeof sourceValue === "object" &&
+        !Array.isArray(sourceValue) &&
+        targetValue &&
+        typeof targetValue === "object" &&
+        !Array.isArray(targetValue)
+      ) {
+        // Recursively merge objects
+        result[key] = {
+          ...targetValue,
+          ...sourceValue,
+        };
+      } else {
+        // Direct assignment for primitives and arrays
+        result[key] = sourceValue;
+      }
+    }
+
+    return result as Partial<WorkspaceConfig>;
   }
 }
