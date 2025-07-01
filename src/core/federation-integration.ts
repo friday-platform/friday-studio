@@ -7,9 +7,8 @@ import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { AtlasConfig, WorkspaceConfig } from "@atlas/config";
 import { FederationManager } from "./federation-manager.ts";
 import { WorkspaceCapabilityRegistry } from "./workspace-capabilities.ts";
-import { PlatformMCPServer } from "./mcp/platform-mcp-server.ts";
-import { WorkspaceMCPServer } from "./mcp/workspace-mcp-server.ts";
-import { MCPProxy } from "./mcp/mcp-proxy.ts";
+import { PlatformMCPServer, WorkspaceMCPServer } from "@atlas/mcp-server";
+import { MCPProxy } from "@atlas/mcp-tools";
 import { logger } from "../utils/logger.ts";
 
 export interface FederationIntegrationOptions {
@@ -228,7 +227,7 @@ export class FederationIntegration {
       atlasConfig: this.atlasConfig,
     };
 
-    return new PlatformMCPServer(dependencies);
+    return new PlatformMCPServer({ ...dependencies, logger });
   }
 
   private async createWorkspaceMCPServer(runtime: WorkspaceRuntime): Promise<WorkspaceMCPServer> {
@@ -281,7 +280,7 @@ export class FederationIntegration {
       workspaceConfig: this.workspaceConfig,
     };
 
-    return new WorkspaceMCPServer(dependencies);
+    return new WorkspaceMCPServer({ ...dependencies, logger });
   }
 
   private async triggerFederatedJob(

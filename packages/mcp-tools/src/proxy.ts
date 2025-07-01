@@ -5,7 +5,6 @@
 
 import { z } from "zod/v4";
 import type { AtlasConfig } from "@atlas/config";
-import { FederationManager } from "../federation-manager.ts";
 
 // Atlas proxy transport configuration
 const AtlasProxyTransportSchema = z.object({
@@ -29,6 +28,17 @@ export interface MCPProxyResponse {
   result?: any;
   error?: string;
   federationCheck?: {
+    allowed: boolean;
+    reason: string;
+  };
+}
+
+export interface FederationManager {
+  checkAccess(
+    sourceWorkspace: string,
+    targetWorkspace: string,
+    capability: string,
+  ): {
     allowed: boolean;
     reason: string;
   };

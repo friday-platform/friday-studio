@@ -8,7 +8,14 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { WorkspaceConfig } from "@atlas/config";
-import { logger } from "../../utils/logger.ts";
+
+// Logger interface for dependency injection
+export interface Logger {
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  debug(message: string, context?: Record<string, unknown>): void;
+}
 
 // Rate limiting state
 interface RateLimitState {
@@ -35,6 +42,7 @@ export interface WorkspaceMCPServerDependencies {
     // These are platform-level capabilities that workspace MCP should not expose
   };
   workspaceConfig: WorkspaceConfig;
+  logger: Logger;
 }
 
 export class WorkspaceMCPServer {
@@ -42,9 +50,11 @@ export class WorkspaceMCPServer {
   private transport: StdioServerTransport;
   private dependencies: WorkspaceMCPServerDependencies;
   private rateLimitState: RateLimitState;
+  private logger: Logger;
 
   constructor(dependencies: WorkspaceMCPServerDependencies) {
     this.dependencies = dependencies;
+    this.logger = dependencies.logger;
 
     // Initialize rate limiting state
     this.rateLimitState = {
@@ -79,7 +89,7 @@ export class WorkspaceMCPServer {
 
       // Only expose capabilities if MCP is enabled
       if (!serverConfig?.enabled) {
-        logger.warn("MCP server disabled in configuration", {
+        this.logger.warn("MCP server disabled in configuration", {
           workspaceId: this.dependencies.workspaceConfig.workspace.id,
         });
         return { tools: [] };
@@ -141,7 +151,7 @@ export class WorkspaceMCPServer {
         }
       }
 
-      logger.info("WorkspaceMCPServer tools exposed", {
+      this.logger.info("WorkspaceMCPServer tools exposed", {
         workspaceId: this.dependencies.workspaceConfig.workspace.id,
         capabilityCount: allowedCapabilities.length,
         jobCount: discoverableJobs.length,
@@ -248,7 +258,7 @@ export class WorkspaceMCPServer {
           // Track session for concurrent session limiting
           this.trackSessionStart(result.sessionId);
 
-          logger.info("WorkspaceMCPServer job triggered", {
+          this.logger.info("WorkspaceMCPServer job triggered", {
             workspaceId: this.dependencies.workspaceConfig.workspace.id,
             jobName: name,
             sessionId: result.sessionId,
@@ -276,7 +286,7 @@ export class WorkspaceMCPServer {
         }
 
         // Security: Explicitly reject unknown tools
-        logger.warn("WorkspaceMCPServer unauthorized tool call", {
+        this.logger.warn("WorkspaceMCPServer unauthorized tool call", {
           workspaceId: this.dependencies.workspaceConfig.workspace.id,
           toolName: name,
           allowedCapabilities,
@@ -395,7 +405,7 @@ export class WorkspaceMCPServer {
         if (clientState.count > rateLimits.requests_per_hour) {
           const retryAfter = Math.ceil((resetTime - now) / 1000); // seconds until reset
 
-          logger.warn("WorkspaceMCPServer rate limit exceeded", {
+          this.logger.warn("WorkspaceMCPServer rate limit exceeded", {
             workspaceId: this.dependencies.workspaceConfig.workspace.id,
             clientId,
             requestCount: clientState.count,
@@ -416,7 +426,7 @@ export class WorkspaceMCPServer {
       rateLimits.concurrent_sessions &&
       this.rateLimitState.activeSessions.size >= rateLimits.concurrent_sessions
     ) {
-      logger.warn("WorkspaceMCPServer concurrent session limit exceeded", {
+      this.logger.warn("WorkspaceMCPServer concurrent session limit exceeded", {
         workspaceId: this.dependencies.workspaceConfig.workspace.id,
         activeSessions: this.rateLimitState.activeSessions.size,
         limit: rateLimits.concurrent_sessions,
@@ -438,7 +448,7 @@ export class WorkspaceMCPServer {
     if (rateLimits?.concurrent_sessions) {
       this.rateLimitState.activeSessions.add(sessionId);
 
-      logger.debug("WorkspaceMCPServer session started", {
+      this.logger.debug("WorkspaceMCPServer session started", {
         workspaceId: this.dependencies.workspaceConfig.workspace.id,
         sessionId,
         activeSessions: this.rateLimitState.activeSessions.size,
@@ -457,7 +467,7 @@ export class WorkspaceMCPServer {
     if (rateLimits?.concurrent_sessions) {
       this.rateLimitState.activeSessions.delete(sessionId);
 
-      logger.debug("WorkspaceMCPServer session ended", {
+      this.logger.debug("WorkspaceMCPServer session ended", {
         workspaceId: this.dependencies.workspaceConfig.workspace.id,
         sessionId,
         activeSessions: this.rateLimitState.activeSessions.size,
