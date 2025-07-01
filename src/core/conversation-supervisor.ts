@@ -273,62 +273,8 @@ Available tools:
 - cx_reply: Send messages to the user (REQUIRED for all responses) - message field must contain COMPLETE response
 - workspace_create: Create new workspaces${conversationContext}`;
 
-    // Check for specific questions and handle them directly
-    const lowerMessage = message.toLowerCase().trim();
-    if (lowerMessage === "what is atlas?" || lowerMessage.includes("what is atlas")) {
-      const logger = AtlasLogger.getInstance();
-      logger.info("ConversationSupervisor: Direct response for 'what is atlas?'");
-
-      // Emit the response directly without calling the LLM
-      const atlasDescription =
-        "Atlas is an AI agent orchestration platform where engineers create workspaces for AI agents to collaborate on tasks. Think of it as Kubernetes for AI agents. You define agents, jobs, and signals in YAML files, and Atlas manages the execution.";
-
-      // Emit as message chunks for typing effect
-      const words = atlasDescription.split(" ");
-      let content = "";
-
-      for (let i = 0; i < words.length; i++) {
-        content += (i > 0 ? " " : "") + words[i];
-
-        yield {
-          type: "message_chunk",
-          data: {
-            content,
-            partial: i < words.length - 1,
-          },
-          timestamp: new Date().toISOString(),
-          messageId,
-          sessionId,
-        };
-
-        await new Promise((resolve) => setTimeout(resolve, 10));
-      }
-
-      // Emit completion
-      yield {
-        type: "message_complete",
-        data: {
-          messageId,
-          complete: true,
-        },
-        timestamp: new Date().toISOString(),
-        messageId,
-        sessionId,
-      };
-
-      return; // Skip LLM call entirely
-    }
-
     try {
       const logger = AtlasLogger.getInstance();
-      logger.info("ConversationSupervisor: Processing message", {
-        exactMessage: message,
-        messageLength: message.length,
-        trimmedMessage: message.trim(),
-        lowercaseMessage: message.toLowerCase().trim(),
-        isWhatIsAtlas: message.toLowerCase().trim() === "what is atlas?",
-      });
-
       logger.debug("ConversationSupervisor: Calling LLM with tools", {
         message,
         toolNames: Object.keys(cxTools),
