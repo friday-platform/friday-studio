@@ -3,15 +3,15 @@
  * Eliminates direct workspace config access from agent execution workers
  */
 
-import { logger } from "../../utils/logger.ts";
-import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
+import { logger } from "../../../src/utils/logger.ts";
+import { LLMProviderManager } from "../../../src/core/agents/llm-provider-manager.ts";
 import {
   type AgentConfig,
   type MCPServerOverrides,
   MCPServerRegistry,
   type SessionContext,
-} from "../agents/mcp/mcp-server-registry.ts";
-import { type MCPServerConfig } from "../agents/mcp/mcp-manager.ts";
+} from "./registry.ts";
+import { type MCPServerConfig } from "./manager.ts";
 
 /**
  * Interface for MCP configuration service

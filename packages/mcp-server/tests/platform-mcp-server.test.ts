@@ -4,8 +4,8 @@
  */
 
 import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { PlatformMCPServer } from "./platform-mcp-server.ts";
-import { AtlasLogger } from "../../utils/logger.ts";
+import { PlatformMCPServer } from "../src/platform-server.ts";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
 
 // Mock daemon server for testing
 class MockDaemonServer {
@@ -81,6 +81,7 @@ Deno.test({
     await mockDaemon.start();
 
     const mcpServer = new PlatformMCPServer({
+      logger: console,
       daemonUrl: "http://localhost:8081",
     });
 
@@ -309,6 +310,7 @@ Deno.test({
       ]);
 
       const mcpServer = new PlatformMCPServer({
+        logger: console,
         daemonUrl: "http://localhost:8082",
       });
 
@@ -399,6 +401,7 @@ Deno.test({
     await mockDaemon.start();
 
     const mcpServer = new PlatformMCPServer({
+      logger: console,
       daemonUrl: "http://localhost:8083",
     });
 
@@ -420,6 +423,7 @@ Deno.test({
 
       await t.step("Network errors fail closed", async () => {
         const badMcpServer = new PlatformMCPServer({
+          logger: console,
           daemonUrl: "http://localhost:9999", // Non-existent daemon
         });
 

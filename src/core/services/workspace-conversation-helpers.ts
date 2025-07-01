@@ -1,4 +1,4 @@
-import type { WorkspaceDraft } from "../storage/workspace-draft-storage-adapter.ts";
+import { WorkspaceDraft } from "./workspace-draft-store.ts";
 
 export function getPatternSuggestions(pattern?: string): string[] {
   switch (pattern) {

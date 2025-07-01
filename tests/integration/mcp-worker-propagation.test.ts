@@ -1,6 +1,5 @@
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { MCPServerRegistry } from "../../src/core/agents/mcp/mcp-server-registry.ts";
-import { WorkspaceMCPConfigurationService } from "../../src/core/services/mcp-configuration-service.ts";
+import { MCPServerRegistry, WorkspaceMCPConfigurationService } from "@atlas/mcp";
 
 Deno.test("MCP Worker Propagation", async (t) => {
   await t.step("should propagate MCP configuration to worker level", async () => {

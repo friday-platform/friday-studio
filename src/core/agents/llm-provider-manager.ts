@@ -8,7 +8,7 @@ import { AtlasTelemetry } from "../../utils/telemetry.ts";
 import type { Span } from "@opentelemetry/api";
 
 // Import MCP Manager for tool integration
-import { MCPManager, type MCPServerConfig } from "./mcp/mcp-manager.ts";
+import { MCPManager, type MCPServerConfig } from "@atlas/mcp";
 
 // Zod schemas for validation
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);

@@ -4,7 +4,7 @@
  */
 
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { MCPServerRegistry } from "../../src/core/agents/mcp/mcp-server-registry.ts";
+import { MCPServerRegistry } from "@atlas/mcp";
 import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
 import { AgentSupervisor } from "../../src/core/agent-supervisor.ts";
 import { AtlasMemoryConfig } from "../../src/core/memory-config.ts";

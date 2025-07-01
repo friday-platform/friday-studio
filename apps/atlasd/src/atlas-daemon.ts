@@ -1,4 +1,4 @@
-import { ConfigLoader, supervisorDefaults } from "@atlas/config";
+import { ConfigLoader, type MergedConfig, supervisorDefaults } from "@atlas/config";
 import {
   FilesystemConfigAdapter,
   FilesystemTemplateAdapter,
@@ -7,9 +7,6 @@ import {
 import { dirname, join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { WorkspaceMemberRole } from "../../../src/types/core.ts";
-import { AtlasLogger } from "../../../src/utils/logger.ts";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { ConversationSessionManager } from "../../../src/core/conversation-session-manager.ts";
 import {
   type ConversationEvent,
@@ -23,6 +20,9 @@ import {
 } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
+import { WorkspaceMemberRole } from "../../../src/types/core.ts";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -1443,12 +1443,19 @@ export class AtlasDaemon {
       }
 
       // Use cached configuration from workspace registry
-      let mergedConfig: any;
+      let mergedConfig: MergedConfig;
 
       if (workspace.config) {
         // Use pre-cached configuration (preferred - no I/O at signal time)
-        mergedConfig = workspace.config;
-        logger.debug(`Using cached workspace configuration`, {
+        // Normalize cached WorkspaceConfig to MergedConfig structure
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter, workspace.path);
+        const fullConfig = await configLoader.load();
+        mergedConfig = {
+          ...fullConfig,
+          workspace: workspace.config, // Use cached workspace config for performance
+        };
+        logger.debug(`Using cached workspace configuration with fresh platform config`, {
           workspaceId: workspace.id,
           configHash: workspace.configHash?.substring(0, 8) + "...",
         });
@@ -1465,8 +1472,6 @@ export class AtlasDaemon {
       }
 
       logger.debug(`Creating Workspace object from config...`);
-      logger.debug(`Config has workspace: ${!!mergedConfig.workspace}`);
-      logger.debug(`Config has signals: ${!!mergedConfig.signals}`);
       logger.debug(
         `Workspace signals: ${
           mergedConfig.workspace?.signals
@@ -1474,12 +1479,6 @@ export class AtlasDaemon {
             : "none"
         }`,
       );
-      logger.debug(
-        `Top-level signals: ${
-          mergedConfig.signals ? Object.keys(mergedConfig.signals).join(", ") : "none"
-        }`,
-      );
-      logger.debug(`Merged config keys: ${Object.keys(mergedConfig).join(", ")}`);
 
       const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
         id: workspace.id,

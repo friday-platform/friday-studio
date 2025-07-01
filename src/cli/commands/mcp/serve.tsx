@@ -52,11 +52,32 @@ export const handler = async (argv: McpServeArgs): Promise<void> => {
     infoOutput(`Connecting to daemon at: ${daemonUrl}`);
 
     // Import platform MCP server
-    const { PlatformMCPServer } = await import("../../../core/mcp/platform-mcp-server.ts");
+    const { PlatformMCPServer } = await import("@atlas/mcp-server");
+
+    // Create console logger
+    const logger = {
+      info: (message: string, context?: Record<string, unknown>) => {
+        const contextStr = context ? ` ${JSON.stringify(context)}` : "";
+        console.log(`[INFO] ${message}${contextStr}`);
+      },
+      warn: (message: string, context?: Record<string, unknown>) => {
+        const contextStr = context ? ` ${JSON.stringify(context)}` : "";
+        console.warn(`[WARN] ${message}${contextStr}`);
+      },
+      error: (message: string, context?: Record<string, unknown>) => {
+        const contextStr = context ? ` ${JSON.stringify(context)}` : "";
+        console.error(`[ERROR] ${message}${contextStr}`);
+      },
+      debug: (message: string, context?: Record<string, unknown>) => {
+        const contextStr = context ? ` ${JSON.stringify(context)}` : "";
+        console.debug(`[DEBUG] ${message}${contextStr}`);
+      },
+    };
 
     // Create MCP server with platform-level capabilities (no config needed - daemon handles that)
     const mcpServer = new PlatformMCPServer({
       daemonUrl, // All operations go through daemon API
+      logger,
     });
 
     // Handle graceful shutdown
