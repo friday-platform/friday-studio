@@ -42,6 +42,7 @@ import { getAtlasClient } from "@atlas/client";
 import { createTempFileAndOpen } from "../utils/file-opener.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { ChatMessage } from "../components/ChatMessage.tsx";
+import { YamlDisplay } from "../components/yaml-display.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -690,14 +691,13 @@ export default function InteractiveCommand() {
         // Try to connect to daemon - this will auto-start it if needed
         const client = getDaemonClient();
 
-        // Show "starting daemon" message briefly
-        const startingId = `daemon-starting-${Date.now()}`;
+        // Show loading state
         setOutputBuffer([
           {
-            id: startingId,
+            id: `loading-${Date.now()}`,
             component: (
               <Box paddingLeft={1}>
-                <Text dimColor>Connecting to Atlas daemon...</Text>
+                <Spinner label="Loading..." />
               </Box>
             ),
           },
@@ -725,7 +725,7 @@ export default function InteractiveCommand() {
           }
         }
 
-        // Clear the starting message and add welcome message
+        // Replace loading state with welcome message
         const welcomeTimestamp = new Date()
           .toLocaleTimeString([], {
             hour: "numeric",
@@ -1546,6 +1546,50 @@ export default function InteractiveCommand() {
       return;
     }
 
+    if (parsed.command === "yaml") {
+      // Read the example workspace.yml file
+      (async () => {
+        try {
+          const yamlContent = await Deno.readTextFile(
+            "/Users/dwoolf/Documents/atlas/examples/atlas-codebase-analyzer/workspace.yml",
+          );
+          const now = new Date();
+          const timestamp = now
+            .toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })
+            .toLowerCase()
+            .replace(/\s/g, "");
+
+          addOutputEntry({
+            id: `yaml-output-${Date.now()}`,
+            component: (
+              <Box flexDirection="column">
+                <ChatMessage
+                  author="Δ Atlas"
+                  date={timestamp}
+                  message="Here's the example workspace.yml file:"
+                  authorColor="blue"
+                />
+                <YamlDisplay content={yamlContent} />
+              </Box>
+            ),
+          });
+        } catch (error) {
+          addOutputEntry({
+            id: `yaml-error-${Date.now()}`,
+            component: (
+              <Text color="red">
+                Error reading YAML file: {error instanceof Error ? error.message : String(error)}
+              </Text>
+            ),
+          });
+        }
+      })();
+      return;
+    }
+
     if (parsed.command === "clear") {
       setOutputBuffer([]);
       return;
@@ -1623,7 +1667,11 @@ export default function InteractiveCommand() {
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
-              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
+              {outputBuffer.map((entry) => (
+                <Box key={entry.id}>
+                  {entry.component}
+                </Box>
+              ))}
             </Box>
           )}
 
