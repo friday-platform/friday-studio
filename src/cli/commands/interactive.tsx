@@ -1685,11 +1685,7 @@ function InteractiveCommandInner() {
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
-              {outputBuffer.map((entry) => (
-                <Box key={entry.id}>
-                  {entry.component}
-                </Box>
-              ))}
+              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
             </Box>
           )}
 

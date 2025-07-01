@@ -45,6 +45,9 @@ When developing CLI commands:
 11. **Mandatory Client Usage**: ALL CLI operations MUST go through the `@atlas/client` package.
     NEVER use direct file system access, `Deno.cwd()`, or other fallback patterns. Always use the
     appropriate client method to ensure consistent API usage and proper error handling.
+12. **NEVER USE CONSOLE.LOG**: Console.log statements do not work in this environment and are not
+    visible. NEVER add console.log, console.error, console.warn, or any console methods for
+    debugging. Use other debugging strategies instead.
 
 ## TUI Development Guidelines
 
