@@ -4,8 +4,7 @@
  */
 
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { WorkspaceMCPConfigurationService } from "../../src/core/services/mcp-configuration-service.ts";
-import { MCPServerRegistry } from "../../src/core/agents/mcp/mcp-server-registry.ts";
+import { MCPServerRegistry, WorkspaceMCPConfigurationService } from "@atlas/mcp";
 
 Deno.test("MCP End-to-End Integration", async (t) => {
   // Reset registry before test

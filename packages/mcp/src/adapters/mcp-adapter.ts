@@ -6,7 +6,10 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema, ListToolsResultSchema } from "@modelcontextprotocol/sdk/types.js";
-import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./base-remote-adapter.ts";
+import {
+  BaseRemoteAdapter,
+  type BaseRemoteAdapterConfig,
+} from "../../../../src/core/agents/remote/adapters/base-remote-adapter.ts";
 import type {
   HealthStatus,
   RemoteAgentInfo,
@@ -14,8 +17,8 @@ import type {
   RemoteExecutionRequest,
   RemoteExecutionResult,
   RemoteMessagePart,
-} from "../types.ts";
-import { logger } from "../../../../utils/logger.ts";
+} from "../../../../src/core/agents/remote/types.ts";
+import { logger } from "../../../../src/utils/logger.ts";
 
 export interface MCPAdapterConfig extends BaseRemoteAdapterConfig {
   timeout_ms?: number;

@@ -4,8 +4,8 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
-import { logger } from "../../../utils/logger.ts";
-import { type MCPServerConfig } from "./mcp-manager.ts";
+import { logger } from "../../../src/utils/logger.ts";
+import { type MCPServerConfig } from "./manager.ts";
 
 // Type definitions for configuration sources
 export interface AtlasConfig {
