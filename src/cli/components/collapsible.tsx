@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
+import { useAppContext } from "../contexts/app-context.tsx";
 
 interface CollapsibleProps {
   children: React.ReactNode;
@@ -14,14 +15,19 @@ export const Collapsible = ({
 }: CollapsibleProps) => {
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
   const visibleLines = 10;
-  const shouldCollapse = totalLines && totalLines > visibleLines;
+  const shouldCollapse = totalLines != null && totalLines > visibleLines;
   const remainingLines = totalLines ? totalLines - visibleLines : 0;
+  const { isLeaderKeyActive } = useAppContext();
 
-  useInput((input, key) => {
-    if (key.ctrl && input === "r" && shouldCollapse) {
-      setIsCollapsed(!isCollapsed);
-    }
-  });
+  useInput(
+    (input) => {
+      if (input === "r") {
+        console.log(""); // hack to ensure the output rerenders :(
+        setIsCollapsed((prev) => !prev);
+      }
+    },
+    { isActive: isLeaderKeyActive },
+  );
 
   // If content has 10 or fewer lines, don't apply any restrictions
   if (!shouldCollapse) {
@@ -36,7 +42,9 @@ export const Collapsible = ({
           {children}
         </Box>
         <Box paddingTop={1}>
-          <Text dimColor>...+{remainingLines} rows, ctrl+r to see more</Text>
+          <Text dimColor>
+            ...+{remainingLines} rows, press ctrl+x, then r to expand
+          </Text>
         </Box>
       </Box>
     );
@@ -46,7 +54,7 @@ export const Collapsible = ({
     <Box flexDirection="column">
       {children}
       <Box paddingTop={1}>
-        <Text dimColor>ctrl+r to collapse</Text>
+        <Text dimColor>r to collapse</Text>
       </Box>
     </Box>
   );
