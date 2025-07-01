@@ -733,9 +733,16 @@ export class PlatformMCPServer {
    * SECURITY: Respects workspace-level server.mcp.enabled settings
    */
   private async checkWorkspaceMCPEnabled(workspaceId: string): Promise<boolean> {
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
+      response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
       if (!response.ok) {
+        // Consume the response body to prevent leaks
+        try {
+          await response.text();
+        } catch {
+          // Ignore errors when consuming error response body
+        }
         logger.warn("Platform MCP: Failed to check workspace MCP settings", {
           workspaceId,
           status: response.status,
@@ -753,6 +760,14 @@ export class PlatformMCPServer {
 
       return mcpEnabled;
     } catch (error) {
+      // Consume any remaining response body to prevent leaks
+      if (response) {
+        try {
+          await response.text();
+        } catch {
+          // Ignore errors when consuming error response body
+        }
+      }
       logger.error("Platform MCP: Error checking workspace MCP settings", {
         workspaceId,
         error: error instanceof Error ? error.message : String(error),
@@ -766,9 +781,16 @@ export class PlatformMCPServer {
    * SECURITY: Respects workspace-level discoverable.jobs configuration
    */
   private async checkJobDiscoverable(workspaceId: string, jobName: string): Promise<boolean> {
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
+      response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
       if (!response.ok) {
+        // Consume the response body to prevent leaks
+        try {
+          await response.text();
+        } catch {
+          // Ignore errors when consuming error response body
+        }
         return false; // Fail closed
       }
 
@@ -798,6 +820,14 @@ export class PlatformMCPServer {
 
       return false;
     } catch (error) {
+      // Consume any remaining response body to prevent leaks
+      if (response) {
+        try {
+          await response.text();
+        } catch {
+          // Ignore errors when consuming error response body
+        }
+      }
       logger.error("Platform MCP: Error checking job discoverability", {
         workspaceId,
         jobName,
