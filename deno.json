@@ -42,7 +42,6 @@
     "@atlas/client": "./packages/client/mod.ts",
     "@atlas/mcp": "./packages/mcp/mod.ts",
     "@atlas/mcp-server": "./packages/mcp-server/mod.ts",
-    "@atlas/mcp-tools": "./packages/mcp-tools/mod.ts",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@std/assert": "jsr:@std/assert@^1.0.13",

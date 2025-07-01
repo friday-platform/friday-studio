@@ -90,7 +90,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -116,7 +116,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -164,7 +164,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         federationCheck,
       };
     }
@@ -206,7 +206,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -225,8 +225,8 @@ export class MCPProxy {
     return {
       [serverId]: {
         transport: {
-          type: "atlas-proxy",
           ...transport,
+          type: "atlas-proxy",
         },
         timeout_ms: options.timeout_ms || 30000,
         env: options.env || {},
