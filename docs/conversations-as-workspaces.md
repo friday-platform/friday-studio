@@ -29,9 +29,10 @@ Implement conversations as a special "system workspace" that:
 This design extends existing Atlas components rather than replacing them:
 
 - **ConversationSupervisor**: Already provides streaming conversation events
-- **ConversationSessionManager**: Manages sessions, needs KV storage upgrade
+- **ConversationSessionManager**: Currently uses in-memory Maps, upgrade to
+  ConversationStorageAdapter
 - **ConversationSupervisorAgent**: Full Atlas agent, needs scope awareness
-- **KVStorage**: Existing abstraction with Deno implementation ready
+- **KVStorage**: Existing abstraction with Deno KV implementation ready
 - **Session**: Core session class, needs optional I/O channels
 - **SSE Infrastructure**: Existing streaming utilities for response delivery
 
@@ -68,9 +69,36 @@ Each scope:
 
 Conversations require deterministic storage (not the lossy memory system):
 
-- **Internal KV Store** - Private to conversation system workspace
+- **Deno KV Storage** - Using the existing storage adapter pattern
 - **Agent implementation managed** - Storage handled in agent code, not LLM tool calls
 - **Scope-partitioned** - Automatic isolation by conversation scope
+
+```typescript
+// ConversationStorageAdapter following existing patterns
+export class ConversationStorageAdapter {
+  constructor(private storage: KVStorage) {}
+
+  async storeConversation(conversation: ConversationRecord): Promise<void> {
+    const key = ["conversations", conversation.scope.workspaceId || "global", conversation.id];
+    await this.storage.set(key, conversation);
+  }
+
+  async listConversations(userId: string, scope: ConversationScope): Promise<ConversationRecord[]> {
+    const prefix = ["conversations", scope.workspaceId || "global"];
+    const entries = await this.storage.list({ prefix });
+
+    return entries
+      .filter((e) => e.value.userId === userId)
+      .map((e) => e.value)
+      .sort((a, b) => b.lastMessage.getTime() - a.lastMessage.getTime());
+  }
+
+  async getConversation(id: string, scope: ConversationScope): Promise<ConversationRecord | null> {
+    const key = ["conversations", scope.workspaceId || "global", id];
+    return await this.storage.get(key);
+  }
+}
+```
 
 ### 4. Key Differences from Normal Workspaces
 
@@ -180,8 +208,9 @@ Scope determines conversation context:
    - `/src/core/supervisor.ts` - Handle response channels when creating sessions
 
 3. **Conversation Components**:
-   - `/src/core/conversation-session-manager.ts` - Switch from Map to KVStorage
+   - `/src/core/conversation-session-manager.ts` - Switch from Map to ConversationStorageAdapter
    - `/src/core/agents/conversation-supervisor-agent.ts` - Add scope awareness
+   - `/src/core/storage/conversation-storage-adapter.ts` - New storage adapter for conversations
 
 4. **Daemon Changes**:
    - `/apps/atlasd/src/atlas-daemon.ts` - Add system workspace support
@@ -195,8 +224,13 @@ Scope determines conversation context:
 
 1. Add system workspace support to AtlasDaemon
 2. Implement ConversationSystemWorkspace class
-3. Update ConversationSessionManager to use KVStorage instead of in-memory Maps
-4. Extend base Session class with response channel support:
+3. Create ConversationStorageAdapter following existing storage patterns:
+   ```typescript
+   const storage = await createKVStorage(StorageConfigs.defaultKV());
+   const conversationStorage = new ConversationStorageAdapter(storage);
+   ```
+4. Update ConversationSessionManager to use ConversationStorageAdapter instead of in-memory Maps
+5. Extend base Session class with response channel support:
    - Add optional `SessionIOChannel` for response handling
    - Add `stream()` and `respond()` methods
    - Update lifecycle methods to properly close channels
@@ -646,11 +680,20 @@ The existing ConversationSupervisorAgent is extended to handle storage:
 // Extends existing BaseConversationAgent
 class ConversationSupervisorAgent extends BaseConversationAgent {
   private sessionManager: ConversationSessionManager;
+  private storage: ConversationStorageAdapter;
+
+  constructor() {
+    super();
+    // Initialize with Deno KV storage
+    const kvStorage = await createKVStorage(StorageConfigs.defaultKV());
+    this.storage = new ConversationStorageAdapter(kvStorage);
+    this.sessionManager = new ConversationSessionManager(this.storage);
+  }
 
   async execute(task: Task, session: Session) {
     const { message, scope, userId, conversationId } = task.input;
 
-    // Use existing ConversationSessionManager (now KV-backed)
+    // Use existing ConversationSessionManager (now backed by Deno KV)
     const convSession = await this.sessionManager.getOrCreateSession(
       conversationId,
       scope.workspaceId || "atlas-global",
