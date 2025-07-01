@@ -1725,12 +1725,6 @@
           "npm:@modelcontextprotocol/sdk@^1.12.1",
           "npm:zod@^3.21.4"
         ]
-      },
-      "packages/mcp-tools": {
-        "dependencies": [
-          "npm:@modelcontextprotocol/sdk@^1.12.1",
-          "npm:zod@^3.21.4"
-        ]
       }
     }
   }
