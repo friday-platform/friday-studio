@@ -81,13 +81,15 @@ export function GitDiff({
 
             {/* Diff content with appropriate styling */}
             {diffLine.type === "addition" && (
-              <Text backgroundColor="#1A593B" color="white">
+              <Text backgroundColor="#1A593B" color="whiteBright">
                 +{diffLine.content}
               </Text>
             )}
 
             {diffLine.type === "removal" && (
-              <Text backgroundColor="#8F473C">-{diffLine.content}</Text>
+              <Text backgroundColor="#8F473C" color="whiteBright">
+                -{diffLine.content}
+              </Text>
             )}
 
             {diffLine.type === "unchanged" && <Text>{diffLine.content}</Text>}
