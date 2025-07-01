@@ -84,10 +84,26 @@ export class ProviderRegistry implements IProviderRegistry {
       return new HttpWebhookProvider(config);
     });
 
-    registry.registerFactory("timer", async (config) => {
+    // Timer/Cron signal providers (all variants use the same implementation)
+    const createTimerProvider = async (config: ProviderConfig) => {
       const { TimerSignalProvider } = await import("./builtin/timer-signal.ts");
-      return new TimerSignalProvider(config);
-    });
+
+      // Transform ProviderConfig to TimerSignalConfig
+      const timerConfig = {
+        id: config.id,
+        description: config.config?.description || `Timer signal for ${config.id}`,
+        provider: config.provider as "timer" | "schedule" | "cron" | "cron-scheduler",
+        schedule: config.config?.schedule,
+        timezone: config.config?.timezone,
+      };
+
+      return new TimerSignalProvider(timerConfig);
+    };
+
+    registry.registerFactory("timer", createTimerProvider);
+    registry.registerFactory("schedule", createTimerProvider);
+    registry.registerFactory("cron", createTimerProvider);
+    registry.registerFactory("cron-scheduler", createTimerProvider);
 
     registry.registerFactory("stream", async (_config) => {
       const { StreamSignalProvider } = await import("./builtin/stream-signal.ts");

@@ -106,7 +106,7 @@ export class CliSignalProvider implements IProvider {
     return { ...this.state };
   }
 
-  checkHealth(): Promise<HealthStatus> {
+  async checkHealth(): Promise<HealthStatus> {
     return {
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
@@ -197,7 +197,7 @@ export class CliSignalProvider implements IProvider {
       signal.data.metadata = triggerData.metadata;
     }
 
-    return signal;
+    return Promise.resolve(signal);
   }
 
   private validateTriggerData(triggerData: CliTriggerData): void {

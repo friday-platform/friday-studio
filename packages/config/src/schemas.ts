@@ -498,6 +498,9 @@ export const WorkspaceSignalConfigSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
   // CLI provider specific
   command: z.string().optional(),
+  // Timer/Cron provider specific
+  schedule: z.string().optional(), // Cron expression for timer/cron providers
+  timezone: z.string().optional(), // IANA timezone for cron-scheduler provider
 }).catchall(z.any()); // Allow additional provider-specific fields
 
 export const WorkspaceConfigSchema = z.object({

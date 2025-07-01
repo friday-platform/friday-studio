@@ -76,6 +76,7 @@
     "hono/http-exception": "jsr:@hono/hono@^4.6.9/http-exception",
     "hono/streaming": "jsr:@hono/hono@^4.6.9/streaming",
     "eventsource-parser": "npm:eventsource-parser@^3.0.1",
+    "cron-parser": "npm:cron-parser@^4.9.0",
     "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts"
   },
   "fmt": {
