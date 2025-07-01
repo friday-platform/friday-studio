@@ -54,6 +54,7 @@
     "chalk": "npm:chalk@^5.4.1",
     "fullscreen-ink": "npm:fullscreen-ink@^0.0.2",
     "ink": "npm:ink@^5.0.1",
+    "ink-syntax-highlight": "npm:ink-syntax-highlight@^2.0.2",
     "js-levenshtein": "npm:js-levenshtein@^1.1.6",
     "lint-staged": "npm:lint-staged@^16.1.2",
     "openapi-fetch": "npm:openapi-fetch@^0.14.0",

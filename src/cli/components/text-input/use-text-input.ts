@@ -109,7 +109,12 @@ export const useTextInput = ({
       }
 
       if (input) {
-        state.insert(input);
+        // Don't insert characters when modifier keys (except shift) are pressed
+        const hasModifierKeys = key.ctrl || key.meta;
+
+        if (!hasModifierKeys) {
+          state.insert(input);
+        }
       }
     },
     { isActive: !isDisabled },

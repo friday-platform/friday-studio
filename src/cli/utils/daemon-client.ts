@@ -159,7 +159,9 @@ export class DaemonClient {
   /**
    * Create a new workspace
    */
-  async createWorkspace(request: WorkspaceCreateRequest): Promise<WorkspaceCreateResponse> {
+  async createWorkspace(
+    request: WorkspaceCreateRequest,
+  ): Promise<WorkspaceCreateResponse> {
     const response = await this.makeRequest("/api/workspaces", {
       method: "POST",
       headers: {
@@ -173,7 +175,10 @@ export class DaemonClient {
   /**
    * Delete a workspace
    */
-  async deleteWorkspace(workspaceId: string, force: boolean = false): Promise<{ message: string }> {
+  async deleteWorkspace(
+    workspaceId: string,
+    force: boolean = false,
+  ): Promise<{ message: string }> {
     const url = new URL(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
     if (force) {
       url.searchParams.set("force", "true");
@@ -198,13 +203,16 @@ export class DaemonClient {
     workspaceId: string;
     signalId: string;
   }> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals/${signalId}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/signals/${signalId}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
     return response;
   }
 
@@ -249,7 +257,9 @@ export class DaemonClient {
   /**
    * Cancel a session
    */
-  async cancelSession(sessionId: string): Promise<{ message: string; workspaceId: string }> {
+  async cancelSession(
+    sessionId: string,
+  ): Promise<{ message: string; workspaceId: string }> {
     const response = await this.makeRequest(`/api/sessions/${sessionId}`, {
       method: "DELETE",
     });
@@ -266,7 +276,9 @@ export class DaemonClient {
       purpose?: string;
     }>
   > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/agents`,
+    );
     return response;
   }
 
@@ -274,7 +286,9 @@ export class DaemonClient {
    * Describe a specific agent in a workspace
    */
   async describeAgent(workspaceId: string, agentId: string): Promise<any> {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/agents/${agentId}`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/agents/${agentId}`,
+    );
     return response;
   }
 
@@ -287,7 +301,9 @@ export class DaemonClient {
       description?: string;
     }>
   > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/signals`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/signals`,
+    );
     return response;
   }
 
@@ -300,7 +316,9 @@ export class DaemonClient {
       description?: string;
     }>
   > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/jobs`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/jobs`,
+    );
     return response;
   }
 
@@ -314,7 +332,9 @@ export class DaemonClient {
       startedAt: string;
     }>
   > {
-    const response = await this.makeRequest(`/api/workspaces/${workspaceId}/sessions`);
+    const response = await this.makeRequest(
+      `/api/workspaces/${workspaceId}/sessions`,
+    );
     return response;
   }
 
@@ -325,7 +345,9 @@ export class DaemonClient {
   /**
    * List library items
    */
-  async listLibraryItems(query?: Partial<LibrarySearchQuery>): Promise<LibrarySearchResult> {
+  async listLibraryItems(
+    query?: Partial<LibrarySearchQuery>,
+  ): Promise<LibrarySearchResult> {
     const params = new URLSearchParams();
     if (query?.query) params.set("q", query.query);
     if (query?.type) {
@@ -348,7 +370,10 @@ export class DaemonClient {
   /**
    * Get specific library item
    */
-  async getLibraryItem(itemId: string, includeContent: boolean = false): Promise<{
+  async getLibraryItem(
+    itemId: string,
+    includeContent: boolean = false,
+  ): Promise<{
     item: LibraryItem;
     content?: string | Uint8Array;
   }> {
@@ -446,7 +471,10 @@ export class DaemonClient {
   /**
    * Make a request to the daemon API with error handling
    */
-  private async makeRequest(path: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequest(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<any> {
     try {
       // Try the request first
       return await this.makeRequestInternal(path, options);
@@ -472,7 +500,10 @@ export class DaemonClient {
   /**
    * Internal request method without auto-start logic
    */
-  private async makeRequestInternal(path: string, options: RequestInit = {}): Promise<any> {
+  private async makeRequestInternal(
+    path: string,
+    options: RequestInit = {},
+  ): Promise<any> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
@@ -488,7 +519,8 @@ export class DaemonClient {
         let errorMessage: string;
         try {
           const errorData = await response.json();
-          errorMessage = errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+          errorMessage = errorData.error ||
+            `HTTP ${response.status}: ${response.statusText}`;
         } catch {
           errorMessage = `HTTP ${response.status}: ${response.statusText}`;
         }
@@ -535,15 +567,10 @@ export class DaemonClient {
     this.attemptedStart = true;
 
     try {
-      // Import output utilities dynamically to avoid circular dependencies
-      const { infoOutput, successOutput } = await import("./output.ts");
-
       // Check one more time if daemon is running (in case another process started it)
       if (await this.isHealthy()) {
         return;
       }
-
-      infoOutput("Starting Atlas daemon...");
 
       // Get the port from the daemon URL
       const url = new URL(this.daemonUrl);
@@ -583,10 +610,10 @@ export class DaemonClient {
       }
 
       if (!isReady) {
-        throw new Error("Failed to start daemon - timeout waiting for it to become healthy");
+        throw new Error(
+          "Failed to start daemon - timeout waiting for it to become healthy",
+        );
       }
-
-      successOutput("Atlas daemon started successfully");
     } catch (error) {
       // Reset the flag so user can try manually
       this.attemptedStart = false;
