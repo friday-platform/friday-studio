@@ -22,7 +22,7 @@ export const Collapsible = ({
   useInput(
     (input) => {
       if (input === "r") {
-        console.log(""); // hack to ensure the output rerenders :(
+        console.log(""); // hack to ensure the output rerenders :( // CLAUDE_IGNORE: Required for rendering
         setIsCollapsed((prev) => !prev);
       }
     },

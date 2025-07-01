@@ -1,6 +1,7 @@
-import { Text } from "ink";
+import { Box, Text } from "ink";
 import { useTextInputState } from "./use-text-input-state.ts";
 import { useTextInput } from "./use-text-input.ts";
+import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 
 export type TextInputProps = {
   /** When disabled, user input is ignored. @default false */
@@ -34,6 +35,8 @@ export function TextInput({
   onSubmit,
   onTabFocus,
 }: TextInputProps) {
+  const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
+
   const state = useTextInputState({
     defaultValue,
     suggestions,
@@ -48,5 +51,16 @@ export function TextInput({
     onTabFocus,
   });
 
-  return <Text>{inputValue}</Text>;
+  // Split the input value by both \n and \r and render each line separately
+  const lines = inputValue.split(/[\n\r]/);
+
+  return (
+    <Box
+      flexDirection="column"
+      width={dimensions.paddedWidth - 6}
+      flexWrap="wrap"
+    >
+      {lines.map((line, index) => <Text key={index}>{line}&nbsp;</Text>)}
+    </Box>
+  );
 }

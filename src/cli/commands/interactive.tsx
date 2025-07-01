@@ -43,6 +43,7 @@ import { createTempFileAndOpen } from "../utils/file-opener.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { ChatMessage } from "../components/ChatMessage.tsx";
 import { YamlDisplay } from "../components/yaml-display.tsx";
+import { GitDiff } from "../components/git-diff.tsx";
 import { AppProvider, useAppContext } from "../contexts/app-context.tsx";
 import { CommandInput } from "../components/command-input.tsx";
 
@@ -1608,6 +1609,54 @@ function InteractiveCommandInner() {
       return;
     }
 
+    if (parsed.command === "diff") {
+      // Show example git diff
+      const exampleDiff = `function calculateTotal(items) {
+-  let total = 0;
+-  for (let i = 0; i < items.length; i++) {
+-    total += items[i].price;
+-  }
++  return items.reduce((total, item) => total + item.price, 0);
+ }
+
+ function processOrder(order) {
+   const total = calculateTotal(order.items);
++  const tax = total * 0.08;
++  const finalTotal = total + tax;
+-  return { total };
++  return { total, tax, finalTotal };
+ }`;
+
+      const now = new Date();
+      const timestamp = now
+        .toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+        .toLowerCase()
+        .replace(/\s/g, "");
+
+      addOutputEntry({
+        id: `diff-output-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author="Δ Atlas"
+              date={timestamp}
+              message="Here's an example git diff:"
+              authorColor="blue"
+            />
+            <GitDiff
+              diffContent={exampleDiff}
+              startingLine={1}
+              endingLine={15}
+            />
+          </Box>
+        ),
+      });
+      return;
+    }
+
     if (parsed.command === "clear") {
       setOutputBuffer([]);
       return;
@@ -1685,11 +1734,7 @@ function InteractiveCommandInner() {
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
-              {outputBuffer.map((entry) => (
-                <Box key={entry.id}>
-                  {entry.component}
-                </Box>
-              ))}
+              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
             </Box>
           )}
 
