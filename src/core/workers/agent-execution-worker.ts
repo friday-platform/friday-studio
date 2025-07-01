@@ -6,7 +6,7 @@ import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { LLMProviderManager } from "../agents/llm-provider-manager.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
 import type { Span } from "@opentelemetry/api";
-import { WorkspaceMCPConfigurationService } from "../services/mcp-configuration-service.ts";
+import { WorkspaceMCPConfigurationService } from "../../../packages/mcp/src/configuration-service.ts";
 import {
   type AgentExecutePayload,
   type AgentExecutionCompletePayload,
