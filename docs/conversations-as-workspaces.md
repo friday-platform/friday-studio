@@ -98,13 +98,14 @@ class AtlasDaemon {
       this.systemWorkspaces.set("conversation", conversationWorkspace);
 
       // System workspaces register special routes
-      this.setupSystemWorkspaceRoutes(conversationWorkspace);
+      this.setupSystemWorkspaceRoutes("conversation", conversationWorkspace);
     }
   }
 
-  private setupSystemWorkspaceRoutes(workspace: SystemWorkspace) {
-    // Conversation streaming endpoint
-    this.app.post("/system/conversation/stream", async (c) => {
+  private setupSystemWorkspaceRoutes(workspaceName: string, workspace: SystemWorkspace) {
+    // System workspace streaming endpoint
+    // Materialized path: /system/conversation/stream
+    this.app.post(`/system/${workspaceName}/stream`, async (c) => {
       const payload = await c.req.json();
 
       // Create response channel for streaming
@@ -113,7 +114,7 @@ class AtlasDaemon {
       this.activeChannels.set(sessionId, channel);
 
       // Trigger signal with response channel
-      await workspace.triggerSignal("conversation-stream", payload, channel);
+      await workspace.triggerSignal(`${workspaceName}-stream`, payload, channel);
 
       // Return SSE endpoint URL immediately
       return c.json({
@@ -121,13 +122,14 @@ class AtlasDaemon {
         session_id: sessionId,
         response_channel: {
           type: "sse",
-          url: `/system/conversation/sessions/${sessionId}/stream`,
+          url: `/system/${workspaceName}/sessions/${sessionId}/stream`,
         },
       });
     });
 
     // SSE endpoint for streaming responses
-    this.app.get("/system/conversation/sessions/:sessionId/stream", (c) => {
+    // Materialized path: /system/conversation/sessions/:sessionId/stream
+    this.app.get(`/system/${workspaceName}/sessions/:sessionId/stream`, (c) => {
       const channel = this.activeChannels.get(c.req.param("sessionId"));
       if (!channel) return c.notFound();
 
@@ -146,7 +148,7 @@ the need for separate conversation management infrastructure.
 
 ```typescript
 // Client API for conversations
-POST /system/conversation/stream
+// Endpoint: POST /system/conversation/stream
 {
   "message": "Hello Atlas",
   "userId": "cli-user",
@@ -246,7 +248,7 @@ jobs:
 1. **Fire-and-forget** (default) - Traditional Atlas behavior, no response channel
 2. **Unary** - Single request/response, daemon waits for completion
 3. **Streaming** - Server-sent events for progressive responses
-4. **Interactive** - Bidirectional communication (future)
+4. **Interactive** - Bidirectional communication for conversations
 
 #### Session I/O Channels
 
