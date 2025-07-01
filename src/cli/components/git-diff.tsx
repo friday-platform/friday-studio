@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { Collapsible } from "./collapsible.tsx";
 
 export interface GitDiffProps {
   /** The diff content as a formatted text blob */
@@ -67,29 +68,32 @@ export function GitDiff({
   }
 
   return (
-    <Box flexDirection="column">
-      {diffLines.map((diffLine, index) => (
-        <Box key={index} flexDirection="row">
-          {/* Line number column */}
-          <Box width={4} justifyContent="flex-end" marginRight={1}>
-            <Text dimColor>
-              {diffLine.lineNumber.toString().padStart(3, " ")}
-            </Text>
+    <Collapsible totalLines={diffLines.length}>
+      <Box flexDirection="column" flexShrink={0}>
+        {diffLines.map((diffLine, index) => (
+          <Box key={index} flexDirection="row" flexShrink={0}>
+            {/* Line number column */}
+            <Box width={4} justifyContent="flex-end" marginRight={1}>
+              <Text dimColor>
+                {diffLine.lineNumber.toString().padStart(3, " ")}
+              </Text>
+            </Box>
+
+            {/* Diff content with appropriate styling */}
+            {diffLine.type === "addition" && (
+              <Text backgroundColor="#1A593B" color="white">
+                +{diffLine.content}
+              </Text>
+            )}
+
+            {diffLine.type === "removal" && (
+              <Text backgroundColor="#8F473C">-{diffLine.content}</Text>
+            )}
+
+            {diffLine.type === "unchanged" && <Text>{diffLine.content}</Text>}
           </Box>
-
-          {/* Diff content with appropriate styling */}
-          {diffLine.type === "addition" && (
-            <Text backgroundColor="#1A593B" color="white">
-              +{diffLine.content}
-            </Text>
-          )}
-
-          {diffLine.type === "removal" && <Text backgroundColor="#8F473C">-{diffLine.content}
-          </Text>}
-
-          {diffLine.type === "unchanged" && <Text>{diffLine.content}</Text>}
-        </Box>
-      ))}
-    </Box>
+        ))}
+      </Box>
+    </Collapsible>
   );
 }
