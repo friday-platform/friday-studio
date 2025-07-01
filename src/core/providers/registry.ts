@@ -94,9 +94,25 @@ export class ProviderRegistry implements IProviderRegistry {
       return new StreamSignalProvider();
     });
 
-    registry.registerFactory("k8s-events", async (config) => {
+    registry.registerFactory("k8s-events", async (_config) => {
       const { K8sEventsSignalProvider } = await import("./builtin/k8s-events.ts");
       return new K8sEventsSignalProvider();
+    });
+
+    registry.registerFactory("cli", async (config) => {
+      const { CliSignalProvider } = await import("./builtin/cli-signal.ts");
+
+      // Transform ProviderConfig to CliSignalConfig
+      const cliConfig = {
+        id: config.id,
+        description: config.config?.description || `CLI signal for ${config.id}`,
+        provider: "cli" as const,
+        command: config.config?.command,
+        args: config.config?.args,
+        flags: config.config?.flags,
+      };
+
+      return new CliSignalProvider(cliConfig);
     });
 
     // Register built-in agent providers
