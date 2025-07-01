@@ -53,8 +53,11 @@ jobs:
       strategy: "sequential"
       agents:
         - id: "linear-writer" # Step 1: Process ticket, set to In Progress, coordinate K8s task
+          input_source: "signal"
         - id: "standalone-coordinator" # Step 2: Execute K8s operations, return structured results
+          input_source: "signal"
         - id: "linear-writer" # Step 3: Process K8s results, update Linear ticket with outcomes
+          input_source: "previous"
 
   # devops-comment-automation:
   #   name: "devops-comment-automation"
@@ -316,6 +319,8 @@ signals:
 memory:
   enabled: true
   scope: "workspace"
+  session:
+    include_in_context: false # Prevents execution history contamination
   retention:
     max_age_days: 7 # Keep operation history for 7 days
     max_entries: 500
