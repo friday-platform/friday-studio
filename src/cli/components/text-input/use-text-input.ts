@@ -97,25 +97,48 @@ export const useTextInput = ({
   }, [state.value.length, renderedValue, renderedPlaceholder]);
 
   useInput((input, key) => {
-    if (key.leftArrow) {
-      if (key.meta) {
-        // Meta + left arrow: move to previous word
+    // Handle Meta+b (backward word) and Meta+f (forward word)
+    if (key.meta && input) {
+      if (input === "b") {
+        // Meta+b: move to previous word
         state.moveCursorWordLeft();
-      } else {
-        // Normal left arrow
-        state.moveCursorLeft();
+        return;
       }
+      if (input === "f") {
+        // Meta+f: move to next word
+        state.moveCursorWordRight();
+        return;
+      }
+    }
+
+    // Handle Ctrl+a (beginning of line) and Ctrl+e (end of line)
+    if (key.ctrl && input) {
+      if (input === "a") {
+        // Ctrl+a: move to beginning of line
+        state.moveCursorLineStart();
+        return;
+      }
+      if (input === "e") {
+        // Ctrl+e: move to end of line
+        state.moveCursorLineEnd();
+        return;
+      }
+      if (input === "u") {
+        // Ctrl+u: delete from cursor to beginning of line
+        state.deleteToLineStart();
+        return;
+      }
+    }
+
+    if (key.leftArrow) {
+      // Normal left arrow
+      state.moveCursorLeft();
       return;
     }
 
     if (key.rightArrow) {
-      if (key.meta) {
-        // Meta + right arrow: move to next word
-        state.moveCursorWordRight();
-      } else {
-        // Normal right arrow
-        state.moveCursorRight();
-      }
+      // Normal right arrow
+      state.moveCursorRight();
       return;
     }
 
@@ -145,7 +168,13 @@ export const useTextInput = ({
     }
 
     if (key.backspace || key.delete) {
-      state.delete();
+      if (key.meta) {
+        // Meta+delete: delete word
+        state.deleteWord();
+      } else {
+        // Normal delete
+        state.delete();
+      }
       return;
     }
 
