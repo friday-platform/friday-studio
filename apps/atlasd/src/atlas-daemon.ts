@@ -1,6 +1,10 @@
 import { ConfigLoader, supervisorDefaults } from "@atlas/config";
-import { FilesystemConfigAdapter, FilesystemTemplateAdapter } from "@atlas/storage";
-import { join } from "@std/path";
+import {
+  FilesystemConfigAdapter,
+  FilesystemTemplateAdapter,
+  FilesystemWorkspaceCreationAdapter,
+} from "@atlas/storage";
+import { dirname, join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
@@ -46,6 +50,7 @@ export class AtlasDaemon {
   private libraryStorage: any = null; // LibraryStorageAdapter
   private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
   private templateAdapter: FilesystemTemplateAdapter | null = null;
+  private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -93,6 +98,10 @@ export class AtlasDaemon {
     const templatePath = join(atlasRoot, "packages", "starters");
     logger.info(`Template path: ${templatePath}`);
     this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
+
+    // Initialize workspace creation adapter
+    logger.info("Initializing workspace creation adapter...");
+    this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -538,6 +547,72 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to create workspace from template: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Create workspace from configuration YAML
+    this.app.post("/api/workspaces/create-from-config", async (c) => {
+      try {
+        const body = await c.req.json() as {
+          name: string;
+          description: string;
+          config: string;
+          path?: string;
+          cwd?: string; // Add CWD to body type
+        };
+
+        const { name, description, config, path, cwd } = body;
+
+        if (!name || !description || !config) {
+          return c.json({ error: "name, description, and config are required" }, 400);
+        }
+
+        if (!this.workspaceCreationAdapter) {
+          return c.json({ error: "Workspace creation adapter not initialized" }, 500);
+        }
+
+        // Determine base path
+        let basePath: string;
+        if (path) {
+          // Explicit path provided - use its parent directory
+          basePath = dirname(path);
+        } else if (cwd) {
+          // Use provided CWD
+          basePath = cwd;
+        } else {
+          // Fallback to ~/.atlas/workspaces
+          basePath = join(Deno.env.get("HOME") || "/tmp", ".atlas/workspaces");
+        }
+
+        // Create workspace directory with collision detection
+        const workspacePath = await this.workspaceCreationAdapter.createWorkspaceDirectory(
+          basePath,
+          name,
+        );
+
+        // Write workspace files
+        await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
+
+        // Register the new workspace
+        const manager = getWorkspaceManager();
+        const entry = await manager.registerWorkspace(workspacePath, {
+          name,
+          description,
+        });
+
+        return c.json({
+          id: entry.id,
+          name: entry.name,
+          path: entry.path,
+          description,
+          message: `Workspace created successfully from configuration`,
+        }, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to create workspace from config: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);

@@ -63,6 +63,10 @@ export type {
 } from "./src/adapters/template-adapter.ts";
 export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-adapter.ts";
 
+// Export workspace creation adapters
+export type { WorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
+export { FilesystemWorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
+
 // TODO: Export actual implementations as we migrate:
 // - LocalStorage
 // - DenoKVStorage
