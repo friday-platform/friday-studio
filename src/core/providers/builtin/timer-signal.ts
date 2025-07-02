@@ -108,11 +108,20 @@ export class TimerSignalProvider implements IProvider {
 
   // IProvider interface methods
   setup(): void {
-    this.state.status = ProviderStatus.READY;
+    this.state.status = ProviderStatus.CONFIGURING;
     this.state.config = this.config;
 
     // Handle async operations in background
-    this.setupAsync().catch((error) => {
+    this.setupAsync().then(() => {
+      // Only set to READY after async setup completes successfully
+      this.state.status = ProviderStatus.READY;
+      logger.info("Timer signal provider setup completed", {
+        signalId: this.config.id,
+        schedule: this.config.schedule,
+        timezone: this.config.timezone,
+        nextExecution: this.nextExecution?.toISOString(),
+      });
+    }).catch((error) => {
       logger.error("Failed to complete timer signal provider async setup", {
         signalId: this.config.id,
         error: error instanceof Error ? error.message : String(error),
@@ -145,12 +154,14 @@ export class TimerSignalProvider implements IProvider {
   }
 
   teardown(): void {
+    // Set status to disabled first to prevent new operations
+    this.state.status = ProviderStatus.DISABLED;
+
     if (this.cronInterval) {
       clearTimeout(this.cronInterval);
       this.cronInterval = undefined;
     }
 
-    this.state.status = ProviderStatus.DISABLED;
     this.nextExecution = undefined;
 
     // Persist state before shutdown in background
@@ -342,6 +353,14 @@ export class TimerSignalProvider implements IProvider {
       logger.warn("Timer signal execution skipped - provider not ready", {
         signalId: this.config.id,
         status: this.state.status,
+      });
+      return;
+    }
+
+    // Double-check status hasn't changed during execution
+    if (this.state.status === ProviderStatus.DISABLED) {
+      logger.debug("Timer signal execution skipped - provider disabled", {
+        signalId: this.config.id,
       });
       return;
     }

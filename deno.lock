@@ -3,6 +3,7 @@
   "specifiers": {
     "jsr:@hono/hono@^4.6.9": "4.7.11",
     "jsr:@std/assert@*": "1.0.13",
+    "jsr:@std/assert@1": "1.0.13",
     "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@1": "1.0.13",
     "jsr:@std/dotenv@0.225": "0.225.5",
@@ -1872,6 +1873,12 @@
       "npm:zod@^3.25.62"
     ],
     "members": {
+      "packages/cron": {
+        "dependencies": [
+          "jsr:@std/assert@1",
+          "jsr:@std/path@1"
+        ]
+      },
       "packages/mcp": {
         "dependencies": [
           "npm:@modelcontextprotocol/sdk@^1.12.1",

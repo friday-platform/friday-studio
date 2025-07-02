@@ -277,9 +277,9 @@ agents:
 signals:
   # Automated Timer-Based Discovery
   timer-github-scan:
-    description: "Automated timer signal for GitHub AI repository discovery every 30 minutes"
+    description: "Automated timer signal for GitHub AI repository discovery every 5 minutes"
     provider: "cron-scheduler"
-    schedule: "*/30 * * * *" # Every 30 minutes
+    schedule: "*/5 * * * *" # Every 5 minutes
     timezone: "UTC"
     schema:
       type: "object"
