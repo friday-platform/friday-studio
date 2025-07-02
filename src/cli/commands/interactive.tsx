@@ -25,7 +25,7 @@ import { SignalDetails } from "../components/signal-details.tsx";
 import { SignalSelection } from "../components/signal-selection.tsx";
 import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
 
-import { AppProvider } from "../contexts/app-context.tsx";
+import { AppProvider, useAppContext } from "../contexts/app-context.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
 import { fetchLibraryItems } from "../modules/library/fetcher.ts";
@@ -621,6 +621,7 @@ interface OutputEntry {
 }
 
 function InteractiveCommandInner() {
+  const { config } = useAppContext();
   const [_inputValue, _setInputValue] = useState("");
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -691,11 +692,11 @@ function InteractiveCommandInner() {
 
   const [isInitializing, setIsInitializing] = useState(true);
   const [sseStream, setSseStream] = useState<AsyncIterable<any> | null>(null);
-  const [pendingMessageSpinner, setPendingMessageSpinner] = useState<
-    string | null
-  >(null);
-  const pendingMessageSpinnerRef = useRef<string | null>(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingStartTime, setTypingStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerIntervalRef = useRef<number | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -704,6 +705,38 @@ function InteractiveCommandInner() {
     const requiredHeight = Math.max(35, availableHeight + 8);
     setMinHeight(requiredHeight);
   }, [availableHeight]);
+
+  // Timer effect for non-streaming mode
+  useEffect(() => {
+    if (isTyping && !config.streamMessages) {
+      const startTime = Date.now();
+      setTypingStartTime(startTime);
+      setElapsedSeconds(0);
+
+      const interval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setElapsedSeconds(elapsed);
+      }, 1000);
+
+      timerIntervalRef.current = interval;
+
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+      };
+    } else if (!isTyping) {
+      // Clean up timer when typing stops
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setTypingStartTime(null);
+      setElapsedSeconds(0);
+    }
+  }, [isTyping, config.streamMessages]);
 
   // Add intro message on startup and check daemon status
   useEffect(() => {
@@ -781,57 +814,53 @@ function InteractiveCommandInner() {
                   const responseMessage = event.data.content;
                   const isPartial = event.data.partial;
 
-                  // Update streaming message
-                  const responseTimestamp = new Date()
-                    .toLocaleTimeString([], {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })
-                    .toLowerCase()
-                    .replace(/\s/g, "");
+                  // If streaming is enabled, show all chunks
+                  // If streaming is disabled, only show when partial is false (complete message)
+                  if (config.streamMessages || !isPartial) {
+                    // Update streaming message
+                    const responseTimestamp = new Date()
+                      .toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                      .toLowerCase()
+                      .replace(/\s/g, "");
 
-                  const streamingMessageId = `llm-response-current`;
+                    const streamingMessageId = `llm-response-current`;
 
-                  setOutputBuffer((prev) => {
-                    const filtered = prev.filter(
-                      (entry) => entry.id !== streamingMessageId,
-                    );
-                    return [
-                      ...filtered,
-                      {
-                        id: streamingMessageId,
-                        component: (
-                          <Box flexDirection="column">
-                            <Box flexDirection="row" gap={1}>
-                              <Text color="blue" bold>
-                                Δ Atlas
-                              </Text>
-                              <Text color="blue" dimColor bold>
-                                [{responseTimestamp}]
-                              </Text>
+                    setOutputBuffer((prev) => {
+                      const filtered = prev.filter(
+                        (entry) => entry.id !== streamingMessageId,
+                      );
+                      return [
+                        ...filtered,
+                        {
+                          id: streamingMessageId,
+                          component: (
+                            <Box flexDirection="column">
+                              <Box flexDirection="row" gap={1}>
+                                <Text color="blue" bold>
+                                  Δ Atlas
+                                </Text>
+                                <Text color="blue" dimColor bold>
+                                  [{responseTimestamp}]
+                                </Text>
+                              </Box>
+                              <Box>
+                                <Text wrap="wrap" color="white">
+                                  {responseMessage}
+                                </Text>
+                              </Box>
                             </Box>
-                            <Box>
-                              <Text wrap="wrap" color="white">
-                                {responseMessage}
-                              </Text>
-                            </Box>
-                          </Box>
-                        ),
-                      },
-                    ];
-                  });
+                          ),
+                        },
+                      ];
+                    });
+                  }
                 }
 
                 if (event.type === "message_complete") {
                   console.log("[Interactive] Message completed");
-                  console.log(
-                    "[Interactive] Current pendingMessageSpinner (state):",
-                    pendingMessageSpinner,
-                  );
-                  console.log(
-                    "[Interactive] Current pendingMessageSpinner (ref):",
-                    pendingMessageSpinnerRef.current,
-                  );
 
                   // Update streaming message ID to make it permanent
                   const streamingMessageId = `llm-response-current`;
@@ -849,30 +878,8 @@ function InteractiveCommandInner() {
                     });
                   });
 
-                  // Remove spinner when message is complete - use ref to avoid closure issues
-                  const spinnerId = pendingMessageSpinnerRef.current;
-                  if (spinnerId) {
-                    console.log(
-                      "[Interactive] Removing spinner on message_complete:",
-                      spinnerId,
-                    );
-                    setOutputBuffer((prev) => {
-                      const filtered = prev.filter(
-                        (entry) => entry.id !== spinnerId,
-                      );
-                      console.log(
-                        "[Interactive] Filtered out spinner, remaining entries:",
-                        filtered.length,
-                      );
-                      return filtered;
-                    });
-                    setPendingMessageSpinner(null);
-                    pendingMessageSpinnerRef.current = null;
-                  } else {
-                    console.log(
-                      "[Interactive] No pendingMessageSpinner to remove",
-                    );
-                  }
+                  // Stop typing indicator
+                  setIsTyping(false);
                 }
               }
             } catch (error) {
@@ -976,7 +983,7 @@ function InteractiveCommandInner() {
         sseAbortControllerRef.current = null;
       }
     };
-  }, []);
+  }, [config]);
 
   // Add entry to output buffer
   const addOutputEntry = (entry: OutputEntry) => {
@@ -1592,13 +1599,9 @@ function InteractiveCommandInner() {
       },
     ]);
 
-    // Show processing indicator (using existing Spinner pattern)
+    // Show typing indicator
     setIsLLMProcessing(true);
-    const spinnerId = `llm-processing-${Date.now()}`;
-    addOutputEntry({
-      id: spinnerId,
-      component: <Spinner label="Typing..." />,
-    });
+    setIsTyping(true);
 
     try {
       console.log(
@@ -1606,20 +1609,13 @@ function InteractiveCommandInner() {
         conversationSessionId,
       );
 
-      // Store the spinner ID so the persistent SSE listener can remove it
-      console.log("[Interactive] Setting pendingMessageSpinner to:", spinnerId);
-      setPendingMessageSpinner(spinnerId);
-      pendingMessageSpinnerRef.current = spinnerId;
-
       // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
-      // The persistent SSE listener will handle the response and remove the spinner
+      // The persistent SSE listener will handle the response
     } catch (error) {
       setIsLLMProcessing(false);
-      setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
-      setPendingMessageSpinner(null);
-      pendingMessageSpinnerRef.current = null;
+      setIsTyping(false);
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
@@ -2015,6 +2011,15 @@ console.log(greet("Atlas"));
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" gap={1}>
               {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
+            </Box>
+          )}
+
+          {/* Typing indicator */}
+          {isTyping && (
+            <Box marginTop={1}>
+              {config.streamMessages
+                ? <Spinner label="Typing..." />
+                : <Spinner label={`Typing... (${elapsedSeconds}s)`} />}
             </Box>
           )}
 
