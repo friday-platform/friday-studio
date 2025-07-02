@@ -329,14 +329,15 @@ jobs:
             
             # Auto-detect signing identity for installer signing
             if [ -z "${{ secrets.MACOS_SIGN_IDENTITY }}" ]; then
-              SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+              echo "Auto-detecting signing identity..."
+              SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
               if [ -z "$SIGN_IDENTITY" ]; then
                 echo "No Developer ID Installer certificate found, trying Developer ID Application"
-                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
               fi
               if [ -z "$SIGN_IDENTITY" ]; then
                 echo "No suitable certificate found, trying any valid identity"
-                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
               fi
               echo "Auto-detected signing identity: $SIGN_IDENTITY"
             else
