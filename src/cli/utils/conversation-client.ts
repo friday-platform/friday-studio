@@ -1,5 +1,6 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
 import type { ConversationEvent } from "../../core/conversation-supervisor.ts";
+import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
   sessionId: string;
@@ -24,12 +25,16 @@ export interface ConversationMessage {
  */
 export class ConversationClient {
   public sseUrl?: string; // Store the SSE URL from createSession
+  private daemonClient: DaemonClient;
+  private conversationWorkspaceId?: string; // Cache the conversation workspace ID
 
   constructor(
     private daemonUrl: string,
     private workspaceId: string,
     private userId: string = "atlas-user",
-  ) {}
+  ) {
+    this.daemonClient = new DaemonClient({ daemonUrl });
+  }
 
   /**
    * Create a new conversation session using direct daemon API
@@ -88,45 +93,57 @@ export class ConversationClient {
   }
 
   /**
+   * Find the conversation workspace ID by looking for workspace with name "conversation"
+   */
+  private async getConversationWorkspaceId(): Promise<string> {
+    if (this.conversationWorkspaceId) {
+      return this.conversationWorkspaceId;
+    }
+
+    try {
+      const workspaces = await this.daemonClient.listWorkspaces();
+      const conversationWorkspace = workspaces.find((w) => w.name === "conversation");
+
+      if (!conversationWorkspace) {
+        throw new Error(
+          "Conversation workspace not found - install conversation workspace to use chat features",
+        );
+      }
+
+      this.conversationWorkspaceId = conversationWorkspace.id;
+      return this.conversationWorkspaceId;
+    } catch (error) {
+      console.error(`[ConversationClient] Failed to find conversation workspace:`, error);
+      throw new Error(`Failed to find conversation workspace: ${error}`);
+    }
+  }
+
+  /**
    * Send a message to the conversation session
    */
   async sendMessage(sessionId: string, message: string): Promise<ConversationMessage> {
-    // Use the new stream API to trigger the conversation workspace directly
-    const response = await fetch(
-      `${this.daemonUrl}/api/streams`,
+    // Get the conversation workspace ID and trigger the conversation-stream signal
+    const conversationWorkspaceId = await this.getConversationWorkspaceId();
+
+    // Use DaemonClient to trigger the conversation signal properly
+    const response = await this.daemonClient.triggerSignal(
+      conversationWorkspaceId,
+      "conversation-stream",
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workspaceId: "conversation", // Use the conversation workspace
-          signal: "conversation-stream", // Trigger the conversation-stream signal
-          streamId: sessionId, // Use the existing stream ID
-          message,
-          userId: this.userId,
-          createOnly: false, // Explicitly set to false for message sending
-          scope: {
-            workspaceId: this.workspaceId,
-          },
-        }),
+        streamId: sessionId, // Use the existing stream ID
+        message, // The message content
+        userId: this.userId,
+        scope: {
+          workspaceId: this.workspaceId,
+        },
       },
     );
 
-    if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-
-    // Update the SSE URL if a new session was created
-    if (result.session_id) {
-      this.sseUrl = `${this.daemonUrl}/system/conversation/sessions/${result.session_id}/stream`;
-    }
-
-    // Return a message object with the new session info
+    // DaemonClient.triggerSignal returns a success response, not HTTP response
     return {
-      messageId: crypto.randomUUID(),
+      messageId: crypto.randomUUID(), // Generate a message ID for this request
       status: "processing",
-    };
+    } as ConversationMessage;
   }
 
   /**

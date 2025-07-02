@@ -1014,7 +1014,7 @@ export class AtlasDaemon {
     this.app.post("/api/streams", async (c) => {
       try {
         const body = await c.req.json();
-        const streamId = crypto.randomUUID();
+        const streamId = body.streamId || crypto.randomUUID(); // Use existing streamId if provided
 
         // For createOnly requests, just return the stream info
         if (body.createOnly) {
@@ -1025,6 +1025,7 @@ export class AtlasDaemon {
           });
         }
 
+        // No special conversation logic - client should use regular workspace triggers
         // For requests that include a workspace and signal, trigger the signal
         if (body.workspaceId && body.signal) {
           const runtime = this.runtimes.get(body.workspaceId);
@@ -1043,7 +1044,7 @@ export class AtlasDaemon {
 
         return c.json({
           success: true,
-          stream_id: streamId,
+          stream_id: streamId, // Return the same streamId that was used
           sse_url: `/api/stream/${streamId}/stream`,
         });
       } catch (error) {
