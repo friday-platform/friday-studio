@@ -427,7 +427,7 @@ jobs:
               <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
                 <Component Id="AtlasExecutable" Guid="{87654321-4321-4321-4321-210987654321}">
                   <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
-                  <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="suffix" Action="set" System="yes" />
+                  <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="last" Action="set" System="yes" />
                 </Component>
               </ComponentGroup>
             </Product>
