@@ -19,6 +19,9 @@ import {
 } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
+import { SystemWorkspace } from "../../../src/core/system-workspace.ts";
+import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
+import type { ResponseChannel } from "../../../src/core/session.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -46,6 +49,9 @@ export class AtlasDaemon {
   private libraryStorage: any = null; // LibraryStorageAdapter
   private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
   private templateAdapter: FilesystemTemplateAdapter | null = null;
+  private systemWorkspaces: Map<string, any> = new Map(); // SystemWorkspace instances
+  private activeChannels: Map<string, any> = new Map(); // ResponseChannel instances
+  private sessionToChannelMap: Map<string, string> = new Map(); // Maps sessionId to channelId
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -94,6 +100,10 @@ export class AtlasDaemon {
     logger.info(`Template path: ${templatePath}`);
     this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
 
+    // Initialize system workspaces
+    logger.info("Initializing system workspaces...");
+    await this.initializeSystemWorkspaces();
+
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
   }
@@ -115,11 +125,355 @@ export class AtlasDaemon {
   }
 
   /**
+   * Initialize system workspaces
+   */
+  private async initializeSystemWorkspaces(): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    // Load system workspaces generically
+    await this.loadSystemWorkspaces();
+
+    logger.info("System workspaces initialized");
+  }
+
+  /**
+   * Load all system workspaces from packages/system/
+   */
+  private async loadSystemWorkspaces(): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    try {
+      const systemPath = join(
+        new URL(import.meta.url).pathname,
+        "..",
+        "..",
+        "..",
+        "..",
+        "packages",
+        "system",
+      );
+
+      logger.info(`Loading system workspaces from: ${systemPath}`);
+
+      // Discover all system workspace directories
+      for await (const entry of Deno.readDir(systemPath)) {
+        if (entry.isDirectory) {
+          await this.loadSystemWorkspace(join(systemPath, entry.name), entry.name);
+        }
+      }
+
+      logger.info("All system workspaces loaded");
+    } catch (error) {
+      logger.error("Failed to load system workspaces", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
+  }
+
+  private async loadSystemWorkspace(workspacePath: string, workspaceId: string): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    try {
+      logger.info(`Loading system workspace: ${workspaceId} from ${workspacePath}`);
+
+      // Load workspace config
+      const { ConfigLoader } = await import("@atlas/config");
+      const { FilesystemConfigAdapter } = await import("@atlas/storage");
+
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, workspacePath);
+      const config = await configLoader.load();
+
+      // Create workspace object with proper Workspace class
+      const owner = {
+        id: "system",
+        name: "System",
+        role: "owner" as const,
+      };
+
+      const workspace = new Workspace(owner);
+      // Set additional properties
+      (workspace as any).id = workspaceId;
+      (workspace as any).name = config.workspace.name;
+      (workspace as any).description = config.workspace.description;
+      (workspace as any).path = workspacePath;
+      (workspace as any).config = config;
+      (workspace as any).supervisorDefaults = this.getSupervisorDefaults();
+
+      // Create workspace runtime
+      const runtime = new WorkspaceRuntime(
+        workspace,
+        config,
+        {
+          lazy: true,
+        },
+      );
+      this.runtimes.set(workspaceId, runtime);
+
+      // Register capabilities dynamically from workspace config
+      await this.registerWorkspaceCapabilities(workspace, config);
+
+      // Set up workspace-specific routes
+      await this.setupWorkspaceRoutes(workspace, config);
+
+      logger.info(`System workspace loaded: ${workspaceId}`);
+    } catch (error) {
+      logger.error(`Failed to load system workspace: ${workspaceId}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't throw here - allow other system workspaces to load
+    }
+  }
+
+  /**
+   * Register capabilities dynamically from workspace config
+   */
+  private async registerWorkspaceCapabilities(workspace: any, config: any): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    // For now, handle known system workspace capabilities
+    // TODO: Make this fully generic by reading from workspace capability definitions
+    if (workspace.id === "conversation") {
+      // Register session_reply capability for conversation workspace
+      WorkspaceCapabilityRegistry.registerCapability({
+        id: "session_reply",
+        name: "Send Reply",
+        description: "Send a streaming reply to the user through the conversation channel",
+        category: "sessions",
+        implementation: async (
+          context: any,
+          message: string,
+          metadata?: any,
+          conversationId?: string,
+        ) => {
+          return await this.handleSessionReply(context, message, metadata, conversationId);
+        },
+      });
+
+      logger.info("Registered conversation workspace capabilities", {
+        workspaceId: workspace.id,
+        capabilities: ["session_reply"],
+      });
+    } else {
+      logger.info(`No specific capabilities registered for workspace: ${workspace.id}`);
+    }
+  }
+
+  private async handleSessionReply(
+    context: any,
+    message: string,
+    metadata?: any,
+    providedConversationId?: string,
+  ): Promise<any> {
+    const logger = AtlasLogger.getInstance();
+
+    logger.debug("session_reply capability called", {
+      sessionId: context.sessionId,
+      conversationId: context.conversationId,
+      providedConversationId,
+      messageLength: message?.length,
+    });
+
+    // Get the conversationId from parameter, context, or fall back to sessionId
+    const conversationId = providedConversationId || context.conversationId || context.sessionId;
+    if (!conversationId) {
+      throw new Error("No conversationId available in context");
+    }
+
+    // Find all active SSE sessions for this conversation
+    const activeSessions: string[] = [];
+    for (const [sessionId, channelConvId] of this.sessionToChannelMap) {
+      if (channelConvId === conversationId) {
+        activeSessions.push(sessionId);
+      }
+    }
+
+    if (activeSessions.length === 0) {
+      logger.warn(`No active SSE sessions found for conversation ${conversationId}`);
+      return { success: true, message: "No active sessions" };
+    }
+
+    // Send message chunks to all active sessions
+    const words = message.split(" ");
+    for (let i = 0; i < words.length; i++) {
+      const content = words.slice(0, i + 1).join(" ");
+      const isLast = i === words.length - 1;
+
+      for (const sessionId of activeSessions) {
+        this.emitConversationEvent(sessionId, {
+          type: "message_chunk",
+          data: {
+            content,
+            partial: !isLast,
+          },
+          timestamp: new Date().toISOString(),
+          sessionId,
+          messageId: crypto.randomUUID(),
+        });
+      }
+
+      // Small delay for realistic typing
+      if (!isLast) {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+      }
+    }
+
+    // Send metadata if provided
+    if (metadata) {
+      for (const sessionId of activeSessions) {
+        this.emitConversationEvent(sessionId, {
+          type: "transparency",
+          data: metadata,
+          timestamp: new Date().toISOString(),
+          sessionId,
+          messageId: crypto.randomUUID(),
+        });
+      }
+    }
+
+    // Send completion
+    for (const sessionId of activeSessions) {
+      this.emitConversationEvent(sessionId, {
+        type: "message_complete",
+        data: { complete: true },
+        timestamp: new Date().toISOString(),
+        sessionId,
+        messageId: crypto.randomUUID(),
+      });
+    }
+
+    return { success: true, message };
+  }
+
+  /**
+   * Generic streaming response handler based on jobs.triggers.response config
+   */
+  private async handleStreamingResponse(
+    c: any,
+    workspaceId: string,
+    signalName: string,
+    payload: any,
+    responseConfig: any,
+  ): Promise<any> {
+    const logger = AtlasLogger.getInstance();
+
+    try {
+      // Generate session ID for SSE streaming
+      const sessionId = crypto.randomUUID();
+
+      logger.info("Creating streaming session", {
+        workspaceId,
+        signalName,
+        sessionId,
+        responseConfig,
+        createOnly: payload.createOnly,
+      });
+
+      // If createOnly, just return session info without triggering signal
+      if (payload.createOnly) {
+        return c.json({
+          session_id: sessionId,
+          response_channel: {
+            type: responseConfig.format || "sse",
+            url: `/system/${workspaceId}/sessions/${sessionId}/stream`,
+          },
+        });
+      }
+
+      // Get workspace runtime
+      const runtime = this.runtimes.get(workspaceId);
+      if (!runtime) {
+        throw new Error(`Workspace runtime not found: ${workspaceId}`);
+      }
+
+      // Trigger the signal with session context
+      await runtime.triggerSignal(signalName, {
+        ...payload,
+        sessionId,
+      });
+
+      // Return streaming endpoint info
+      return c.json({
+        session_id: sessionId,
+        response_channel: {
+          type: responseConfig.format || "sse",
+          url: `/system/${workspaceId}/sessions/${sessionId}/stream`,
+        },
+      });
+    } catch (error) {
+      logger.error("Error handling streaming response", {
+        error,
+        workspaceId,
+        signalName,
+      });
+      return c.json({ error: "Failed to create streaming session" }, 500);
+    }
+  }
+
+  /**
+   * Set up routes dynamically based on workspace job triggers
+   */
+  private async setupWorkspaceRoutes(workspace: any, config: any): Promise<void> {
+    const logger = AtlasLogger.getInstance();
+
+    if (!config.jobs) {
+      logger.debug(`No jobs found for workspace: ${workspace.id}`);
+      return;
+    }
+
+    for (const [jobName, jobConfig] of Object.entries(config.jobs)) {
+      if (!jobConfig.triggers) continue;
+
+      for (const trigger of jobConfig.triggers) {
+        if (trigger.response?.format === "sse") {
+          // Create SSE streaming route based on signal name
+          const signalName = trigger.signal;
+          // Extract the last part of signal name for route (conversation-stream -> stream)
+          const routePart = signalName.split("-").pop();
+          const routePath = `/system/${workspace.id}/${routePart}`;
+
+          // POST endpoint for triggering the signal
+          this.app.post(routePath, async (c) => {
+            try {
+              const payload = await c.req.json();
+
+              // Generic streaming response handler based on trigger.response config
+              return await this.handleStreamingResponse(
+                c,
+                workspace.id,
+                signalName,
+                payload,
+                trigger.response,
+              );
+            } catch (error) {
+              logger.error(`Error in ${routePath}`, { error });
+              return c.json({ error: "Internal server error" }, 500);
+            }
+          });
+
+          // GET endpoint for SSE streaming
+          const sseRoutePath = `/system/${workspace.id}/sessions/:sessionId/stream`;
+          this.app.get(sseRoutePath, (c) => {
+            const sessionId = c.req.param("sessionId");
+            return this.handleSSERequest(c, sessionId);
+          });
+
+          logger.info(
+            `Created routes: ${routePath} (POST) and ${sseRoutePath} (GET) for job ${jobName} signal ${signalName}`,
+          );
+        }
+      }
+    }
+  }
+
+  /**
    * Get cached supervisor defaults
    */
   getSupervisorDefaults(): any {
-    if (!this.isInitialized) {
-      throw new Error("Daemon not initialized - call initialize() first");
+    if (!this.supervisorDefaults) {
+      throw new Error("Supervisor defaults not loaded");
     }
     return this.supervisorDefaults;
   }
@@ -1560,6 +1914,140 @@ export class AtlasDaemon {
     }
 
     AtlasLogger.getInstance().info(`Workspace runtime destroyed: ${workspaceId}`);
+  }
+
+  /**
+   * Setup routes for system workspaces
+   */
+  private setupSystemWorkspaceRoutes(name: string, workspace: SystemWorkspace): void {
+    const logger = AtlasLogger.getInstance();
+
+    // System workspace route prefix
+    const routePrefix = `/system/${name}`;
+
+    // Create streaming endpoint
+    this.app.post(`${routePrefix}/stream`, async (c) => {
+      try {
+        const payload = await c.req.json();
+
+        // Use conversationId from payload if provided, otherwise create new one
+        const conversationId = payload.conversationId || payload.sessionId || crypto.randomUUID();
+
+        // Always create a new sessionId for this specific request/response cycle
+        const sessionId = crypto.randomUUID();
+
+        // Handle createOnly flag - just create session without sending message
+        if (payload.createOnly) {
+          return c.json({
+            success: true,
+            session_id: conversationId, // Return conversationId as the session_id for client compatibility
+            response_channel: {
+              type: "sse",
+              url: `${routePrefix}/sessions/${sessionId}/stream`,
+            },
+          });
+        }
+
+        // Create response channel
+        const channel: ResponseChannel = {
+          send: async (data: any) => {
+            // Store in active channels for SSE delivery
+            if (!this.activeChannels.has(sessionId)) {
+              this.activeChannels.set(sessionId, []);
+            }
+            this.activeChannels.get(sessionId)!.push({
+              type: data.type || "message",
+              data: data,
+              timestamp: new Date().toISOString(),
+              sessionId,
+              messageId: crypto.randomUUID(),
+            });
+
+            // Emit to SSE clients
+            this.emitConversationEvent(sessionId, {
+              type: data.type || "message",
+              data: data,
+              timestamp: new Date().toISOString(),
+              sessionId,
+              messageId: crypto.randomUUID(),
+            });
+          },
+          close: async () => {
+            // Cleanup
+            this.activeChannels.delete(sessionId);
+            this.sessionToChannelMap.delete(sessionId);
+          },
+        };
+
+        // Map conversationId to this SSE sessionId
+        this.sessionToChannelMap.set(sessionId, conversationId);
+
+        // Get the workspace runtime
+        const runtime = await this.getOrCreateSystemWorkspaceRuntime(workspace);
+
+        // Trigger the signal with response channel
+        await runtime.triggerSignal("conversation-stream", {
+          ...payload,
+          conversationId, // Ensure conversationId is passed
+          sessionId, // This is the SSE session ID
+          _responseChannel: channel,
+        });
+
+        // Return SSE endpoint
+        return c.json({
+          success: true,
+          session_id: conversationId, // Return conversationId for client to reuse
+          response_channel: {
+            type: "sse",
+            url: `${routePrefix}/sessions/${sessionId}/stream`,
+          },
+        });
+      } catch (error) {
+        logger.error(`Failed to handle system workspace stream: ${error}`);
+        return c.json({
+          error: error instanceof Error ? error.message : String(error),
+        }, 500);
+      }
+    });
+
+    // SSE endpoint for streaming responses
+    this.app.get(`${routePrefix}/sessions/:sessionId/stream`, (c) => {
+      const sessionId = c.req.param("sessionId");
+      return this.handleSSERequest(c, sessionId);
+    });
+
+    logger.info(`System workspace routes registered for: ${name}`, {
+      routes: [`${routePrefix}/stream`, `${routePrefix}/sessions/:sessionId/stream`],
+    });
+  }
+
+  /**
+   * Get or create a system workspace runtime
+   */
+  private async getOrCreateSystemWorkspaceRuntime(
+    workspace: SystemWorkspace,
+  ): Promise<WorkspaceRuntime> {
+    const workspaceId = workspace.getName();
+
+    // Check if runtime already exists
+    let runtime = this.runtimes.get(workspaceId);
+    if (runtime) {
+      return runtime;
+    }
+
+    // Create new runtime for system workspace
+    const workspaceConfig = await workspace.getWorkspaceConfig();
+    runtime = new WorkspaceRuntime(
+      workspaceId,
+      workspace.workspacePath,
+      workspaceConfig,
+      this.getSupervisorDefaults(),
+    );
+
+    await runtime.initialize();
+    this.runtimes.set(workspaceId, runtime);
+
+    return runtime;
   }
 
   private setupSignalHandlers() {
