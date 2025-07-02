@@ -1,13 +1,15 @@
 # Vendor-Reviewer Workspace
 
-A comprehensive SOC 2 vendor security evaluation workspace that uses strict template formatting to ensure consistent, structured output perfect for compliance workflows.
+A comprehensive SOC 2 vendor security evaluation workspace that uses strict template formatting to
+ensure consistent, structured output perfect for compliance workflows.
 
 ## Overview
 
 This workspace demonstrates Atlas's advanced capabilities for compliance automation:
 
 - **Strict Template Formatting** - "Template Filling System" approach ensures consistent output
-- **Three-Agent Workflow** - Specialized document analysis, questionnaire evaluation, and vendor assessment
+- **Three-Agent Workflow** - Specialized document analysis, questionnaire evaluation, and vendor
+  assessment
 - **SOC 2 Compliance Focus** - Evaluates 10 critical security questions with supporting evidence
 - **Atlas Library Integration** - Automatically stores evaluation reports for audit trails
 - **Memory Learning** - Workspace learns evaluation patterns and improves over time
@@ -114,34 +116,36 @@ The workspace produces structured reports in exactly this format:
 
 ```markdown
 # Vendor Security Questionnaire (Cloudflare)
+
 The answers are based on the best-in-class documentation provided for the Cloudflare platform.
 
-| # | Question | Response | Supporting Evidence |
-|---|----------|----------|-------------------|
-| 1 | Does the vendor have a SOC 2 Type II report? | Yes | Cloudflare has SOC 2 Type II certification with clean audit opinion. |
-| 2 | Does your company have an ISO 27001 certification? | Yes | Cloudflare holds ISO/IEC 27001:2022 certificate valid until January 6, 2028. |
-| 3 | Does your company perform annual penetration testing? | Yes | Regular penetration testing performed with zero findings. |
-| 4 | Does your company have a Data Processing Agreement (DPA)? | Yes | Comprehensive DPA available updated February 15, 2024. |
-| 5 | Does your company have a Business Continuity/Disaster Recovery plan? | Yes | Documented incident response plan in place. |
-| 6 | Does your company have an incident response plan? | Yes | Documented incident response plan in place. |
-| 7 | Are your employees required to undergo security awareness training? | Yes | Security training required for employees. |
-| 8 | Does your company encrypt data at rest and in transit? | Yes | Strong encryption practices (AES-256, TLS 1.2+). |
-| 9 | Are you compliant with GDPR? | Yes | GDPR compliant with appropriate SCCs. |
-| 10 | Are you compliant with CCPA? | Yes | CCPA compliant with appropriate SCCs. |
+| #  | Question                                                             | Response | Supporting Evidence                                                          |
+| -- | -------------------------------------------------------------------- | -------- | ---------------------------------------------------------------------------- |
+| 1  | Does the vendor have a SOC 2 Type II report?                         | Yes      | Cloudflare has SOC 2 Type II certification with clean audit opinion.         |
+| 2  | Does your company have an ISO 27001 certification?                   | Yes      | Cloudflare holds ISO/IEC 27001:2022 certificate valid until January 6, 2028. |
+| 3  | Does your company perform annual penetration testing?                | Yes      | Regular penetration testing performed with zero findings.                    |
+| 4  | Does your company have a Data Processing Agreement (DPA)?            | Yes      | Comprehensive DPA available updated February 15, 2024.                       |
+| 5  | Does your company have a Business Continuity/Disaster Recovery plan? | Yes      | Documented incident response plan in place.                                  |
+| 6  | Does your company have an incident response plan?                    | Yes      | Documented incident response plan in place.                                  |
+| 7  | Are your employees required to undergo security awareness training?  | Yes      | Security training required for employees.                                    |
+| 8  | Does your company encrypt data at rest and in transit?               | Yes      | Strong encryption practices (AES-256, TLS 1.2+).                             |
+| 9  | Are you compliant with GDPR?                                         | Yes      | GDPR compliant with appropriate SCCs.                                        |
+| 10 | Are you compliant with CCPA?                                         | Yes      | CCPA compliant with appropriate SCCs.                                        |
 
 ## Summary of Findings (Cloudflare)
 
-**Documents & Resources Reviewed:**
-Cloudflare SOC 2 documents and security questionnaire
+**Documents & Resources Reviewed:** Cloudflare SOC 2 documents and security questionnaire
 
-**Evaluation Summary:**
-Based on analysis of Cloudflare SOC 2 documents and security questionnaire: SOC 2 Type II certified with clean audit opinion, ISO 27001:2022 certified, regular penetration testing performed with zero findings, comprehensive DPA available, documented incident response plan, security training required for employees, strong encryption practices (AES-256, TLS 1.2+), GDPR and CCPA compliant with appropriate SCCs
+**Evaluation Summary:** Based on analysis of Cloudflare SOC 2 documents and security questionnaire:
+SOC 2 Type II certified with clean audit opinion, ISO 27001:2022 certified, regular penetration
+testing performed with zero findings, comprehensive DPA available, documented incident response
+plan, security training required for employees, strong encryption practices (AES-256, TLS 1.2+),
+GDPR and CCPA compliant with appropriate SCCs
 
-**Identified Gaps for Follow-up:**
-None identified based on current analysis.
+**Identified Gaps for Follow-up:** None identified based on current analysis.
 
-**Conclusion & Recommendation:**
-Cloudflare demonstrates excellent security posture and compliance. Recommend proceeding with engagement.
+**Conclusion & Recommendation:** Cloudflare demonstrates excellent security posture and compliance.
+Recommend proceeding with engagement.
 ```
 
 ## Project Structure
@@ -197,7 +201,8 @@ The `workspace.yml` file defines:
 
 ### Key Innovation: Template Formatting System
 
-The vendor-evaluator agent uses a revolutionary "EMERGENCY OVERRIDE: TEMPLATE FILLING SYSTEM" approach:
+The vendor-evaluator agent uses a revolutionary "EMERGENCY OVERRIDE: TEMPLATE FILLING SYSTEM"
+approach:
 
 - **Forces consistency**: LLM acts as form-filling robot, not creative writer
 - **Eliminates variation**: Same structure every time, different content
@@ -259,7 +264,8 @@ atlas library list | grep vendor
 
 ### Using the Included Template
 
-The workspace includes `security_questionnaire_template.xlsx` - a ready-to-use questionnaire template:
+The workspace includes `security_questionnaire_template.xlsx` - a ready-to-use questionnaire
+template:
 
 ```bash
 # Copy template for your vendor evaluation
@@ -370,6 +376,7 @@ All evaluation reports are automatically stored in Atlas Library with:
 - **Audit Trail**: Full provenance and execution history
 
 Access reports via:
+
 ```bash
 # List vendor evaluation reports
 atlas library list | grep vendor
@@ -422,4 +429,5 @@ atlas signal trigger cli-vendor-final-evaluation \
 - [MCP Filesystem Provider](https://github.com/modelcontextprotocol/servers/tree/main/src/filesystem)
 - [Atlas Memory System](../../../docs/memory-model-flow.md)
 
-This workspace demonstrates how Atlas can automate compliance workflows while ensuring consistent, audit-ready documentation that meets SOC 2 requirements.
+This workspace demonstrates how Atlas can automate compliance workflows while ensuring consistent,
+audit-ready documentation that meets SOC 2 requirements.
