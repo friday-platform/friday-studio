@@ -317,8 +317,7 @@ const WorkspaceAddUI = ({
           <Text bold>
             {successCount > 0 && failedCount === 0 && (
               <Text color="green">
-                ✓ Successfully added {successCount} workspace{successCount !== 1 ? "s" : ""}{" "}
-                to Atlas
+                ✓ Successfully added {successCount} workspace{successCount !== 1 ? "s" : ""} to Atlas
               </Text>
             )}
             {successCount > 0 && failedCount > 0 && (
@@ -372,16 +371,13 @@ const WorkspaceAddUI = ({
           <Box marginTop={1} flexDirection="column">
             <Text bold color="cyan">Next steps:</Text>
             <Box marginLeft={2}>
-              <Text>• Run</Text> <Text color="cyan">atlas workspace list</Text>{" "}
-              <Text>to see all workspaces</Text>
+              <Text>• Run <Text color="cyan">atlas workspace list</Text> to see all workspaces</Text>
             </Box>
             <Box marginLeft={2}>
-              <Text>• Run</Text> <Text color="cyan">atlas tui</Text>{" "}
-              <Text>to open the interactive interface</Text>
+              <Text>• Run <Text color="cyan">atlas tui</Text> to open the interactive interface</Text>
             </Box>
             <Box marginLeft={2}>
-              <Text>• Run</Text> <Text color="cyan">atlas daemon start</Text>{" "}
-              <Text>to start the Atlas daemon</Text>
+              <Text>• Run <Text color="cyan">atlas daemon start</Text> to start the Atlas daemon</Text>
             </Box>
           </Box>
         )}
