@@ -342,15 +342,18 @@ jobs:
                 mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
                 echo "✅ pkg signed successfully with Developer ID Installer certificate"
                 
-                # Notarize the pkg for full Gatekeeper approval
-                if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_APP_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
-                  echo "🍎 Notarizing pkg with Apple..."
+                # Notarize the pkg using existing API key setup
+                if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+                  echo "🍎 Notarizing pkg with Apple API key..."
                   
-                  # Submit for notarization
+                  # Create private key file from base64 encoded secret (same as binary notarization)
+                  echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
+                  
+                  # Submit pkg for notarization using API key method
                   if xcrun notarytool submit "./dist/${pkg_name}" \
-                    --apple-id "${{ secrets.APPLE_ID }}" \
-                    --password "${{ secrets.APPLE_APP_PASSWORD }}" \
-                    --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+                    --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
+                    --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
+                    --key notary_key.p8 \
                     --wait; then
                     
                     echo "✅ pkg notarized successfully"
@@ -370,11 +373,13 @@ jobs:
                     fi
                   else
                     echo "⚠️ pkg notarization failed - will have Gatekeeper warnings"
-                    echo "💡 Check Apple ID credentials and team ID"
                   fi
+                  
+                  # Clean up private key file
+                  rm -f notary_key.p8
                 else
-                  echo "⚠️ Notarization skipped - missing Apple ID credentials"
-                  echo "💡 Add APPLE_ID, APPLE_APP_PASSWORD, and APPLE_TEAM_ID secrets for full Gatekeeper approval"
+                  echo "⚠️ Notarization skipped - missing notary API key credentials"
+                  echo "💡 MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
                   
                   # Verify signature without notarization
                   if spctl -a -v --type install "./dist/${pkg_name}"; then
