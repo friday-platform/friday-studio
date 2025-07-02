@@ -43,7 +43,7 @@ export const Collapsible = ({
         </Box>
         <Box paddingTop={1}>
           <Text dimColor>
-            ...+{remainingLines} rows, press ctrl+x, then r to expand
+            ...+{remainingLines} rows, press ctrl+a, then r to expand
           </Text>
         </Box>
       </Box>

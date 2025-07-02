@@ -25,9 +25,7 @@ export const ChatMessage = ({
         </Text>
       </Box>
       <Box>
-        <Text wrap="wrap" color="white">
-          {message}
-        </Text>
+        <Text wrap="wrap">{message}</Text>
       </Box>
     </>
   );

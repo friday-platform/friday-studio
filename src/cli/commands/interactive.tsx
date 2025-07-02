@@ -689,7 +689,7 @@ function InteractiveCommandInner() {
 
   // Leader key input handler
   useInput((input, key) => {
-    if (key.ctrl && input === "x") {
+    if (key.ctrl && input === "a") {
       setLeaderKeyActive(!isLeaderKeyActive);
       // Reset selection when entering leader key mode
       if (!isLeaderKeyActive) {
@@ -781,7 +781,7 @@ function InteractiveCommandInner() {
                   </Text>
                 </Box>
                 <Box>
-                  <Text wrap="wrap" color="white">
+                  <Text wrap="wrap">
                     How can I help you today? Here are some options to get started:
                   </Text>
                 </Box>
@@ -1752,25 +1752,8 @@ function InteractiveCommandInner() {
         <>
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
-            <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
-              {outputBuffer.map((entry, index) => (
-                <Box
-                  key={entry.id}
-                  borderStyle={{
-                    topLeft: "",
-                    top: "",
-                    topRight: "",
-                    bottomLeft: "",
-                    bottom: "",
-                    bottomRight: "",
-                    right: "",
-                    left: isLeaderKeyActive && selectedOutputIndex === index ? "│" : "",
-                  }}
-                  paddingLeft={isLeaderKeyActive && selectedOutputIndex === index ? 1 : 0}
-                >
-                  {entry.component}
-                </Box>
-              ))}
+            <Box flexDirection="column" gap={1}>
+              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
             </Box>
           )}
 

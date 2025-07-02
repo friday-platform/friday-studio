@@ -108,10 +108,24 @@ export class MCPManager {
           // Process environment variables and resolve "auto" values
           const processedEnv: Record<string, string> = {};
           if (env) {
+            logger.debug(`Processing environment variables for MCP server: ${config.id}`, {
+              operation: "mcp_env_setup",
+              serverId: config.id,
+              envConfig: env,
+            });
             for (const [key, value] of Object.entries(env)) {
               if (value === "auto" || value === "from_environment") {
                 // Read the actual environment variable
                 const envValue = Deno.env.get(key);
+                logger.debug(
+                  `Looking up environment variable: ${key} = ${envValue ? "FOUND" : "NOT_FOUND"}`,
+                  {
+                    operation: "mcp_env_setup",
+                    serverId: config.id,
+                    envVar: key,
+                    found: !!envValue,
+                  },
+                );
                 if (envValue) {
                   processedEnv[key] = envValue;
                   logger.debug(`Using environment variable for MCP server: ${key}`, {
@@ -131,6 +145,15 @@ export class MCPManager {
               }
             }
           }
+
+          logger.info(`Creating MCP client with command: ${command}, args: ${args?.join(" ")}`, {
+            operation: "mcp_client_creation",
+            serverId: config.id,
+          });
+          logger.info(`Processed environment variables: ${JSON.stringify(processedEnv)}`, {
+            operation: "mcp_env_processing",
+            serverId: config.id,
+          });
 
           mcpClient = await createMCPClient({
             transport: new StdioMCPTransport({

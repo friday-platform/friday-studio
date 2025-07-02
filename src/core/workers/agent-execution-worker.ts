@@ -507,14 +507,90 @@ class AgentExecutionWorker {
 
     // Initialize MCP servers if specified - CLEAN ENCAPSULATION ✅
     if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
+      // Load workspace .env file in worker context for MCP server environment variables
+      try {
+        const { load } = await import("@std/dotenv");
+        const { join } = await import("@std/path");
+        const { exists } = await import("@std/fs");
+
+        // Get workspace path from request environment or construct it
+        const workspacePath = (request.environment as any)?.workspace_path;
+        if (workspacePath) {
+          const envFilePath = join(workspacePath, ".env");
+          if (await exists(envFilePath)) {
+            await load({ export: true, envPath: envFilePath });
+            this.log(`Loaded workspace .env file for MCP servers: ${envFilePath}`, "debug");
+
+            // Verify environment variables are accessible after load
+            const slackToken = Deno.env.get("SLACK_BOT_TOKEN");
+            const slackTeamId = Deno.env.get("SLACK_TEAM_ID");
+            this.log(
+              `Environment variables after load - SLACK_BOT_TOKEN: ${
+                slackToken ? "SET" : "NOT_SET"
+              }, SLACK_TEAM_ID: ${slackTeamId ? "SET" : "NOT_SET"}`,
+              "debug",
+            );
+          }
+        }
+      } catch (error) {
+        this.log(`Could not load workspace .env file: ${error}`, "debug");
+      }
+
       // Get MCP server configurations from environment
       const workspaceMcpServerConfigs = (request.environment as any)?.mcp_server_configs;
+      this.log(`Raw MCP server configs: ${JSON.stringify(workspaceMcpServerConfigs)}`, "debug");
+      this.log(
+        `Agent config MCP server configs: ${
+          JSON.stringify((request.agent_config as any)?.mcp_server_configs)
+        }`,
+        "debug",
+      );
 
-      // Use configuration service instead of direct workspace config access
+      // Pre-resolve environment variables in worker context before passing to MCP service
+      let resolvedMcpServerConfigs = workspaceMcpServerConfigs;
+      if (workspaceMcpServerConfigs) {
+        resolvedMcpServerConfigs = {};
+        for (const [serverId, config] of Object.entries(workspaceMcpServerConfigs)) {
+          const configCopy = JSON.parse(JSON.stringify(config)); // Deep copy
+
+          // Fix missing env field for Slack MCP server
+          if (serverId === "slack" && configCopy.transport && !configCopy.transport.env) {
+            this.log(`Adding missing environment variables to Slack MCP server config`, "debug");
+            configCopy.transport.env = {
+              SLACK_BOT_TOKEN: "auto",
+              SLACK_TEAM_ID: "auto",
+            };
+          }
+
+          if (configCopy.transport && configCopy.transport.env) {
+            // Pre-resolve "auto" environment variables in worker context
+            for (const [envKey, envValue] of Object.entries(configCopy.transport.env)) {
+              if (envValue === "auto" || envValue === "from_environment") {
+                const resolvedValue = Deno.env.get(envKey);
+                if (resolvedValue) {
+                  configCopy.transport.env[envKey] = resolvedValue;
+                  this.log(
+                    `Pre-resolved environment variable for MCP server ${serverId}: ${envKey} = SET`,
+                    "debug",
+                  );
+                } else {
+                  this.log(
+                    `Environment variable not found for MCP server ${serverId}: ${envKey}`,
+                    "warn",
+                  );
+                }
+              }
+            }
+          }
+          resolvedMcpServerConfigs[serverId] = configCopy;
+        }
+      }
+
+      // Use configuration service with pre-resolved environment variables
       const mcpConfigService = new WorkspaceMCPConfigurationService(
         this.workspaceId!,
         this.sessionId,
-        workspaceMcpServerConfigs, // Pass configurations directly to worker service
+        resolvedMcpServerConfigs, // Pass pre-resolved configurations to worker service
       );
 
       // Get properly resolved and filtered server configurations

@@ -26,7 +26,8 @@ export const formatBytes = (bytes: number): string => {
 };
 
 export const formatDate = (dateString: string): string => {
-  return new Date(dateString).toLocaleDateString();
+  const date = new Date(dateString);
+  return date.toLocaleDateString() + " " + date.toLocaleTimeString();
 };
 
 // Component that renders the library list
@@ -52,7 +53,7 @@ export function LibraryListComponent({
           { key: "Type", label: "Type", width: 12 },
           { key: "Name", label: "Name", width: 25 },
           { key: "Size", label: "Size", width: 10 },
-          { key: "Created", label: "Created", width: 12 },
+          { key: "Created", label: "Created", width: 20 },
           { key: "Tags", label: "Tags", width: 20 },
         ]}
         data={items.map((item) => ({

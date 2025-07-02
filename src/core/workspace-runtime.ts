@@ -857,8 +857,35 @@ const workspaceRuntimeMachine = setup({
         workspaceId: context.workspace.id,
       });
 
+      // Load workspace .env file globally for MCP server environment variables
+      if (context.options.workspacePath) {
+        try {
+          const { load } = await import("@std/dotenv");
+          const { join } = await import("@std/path");
+          const { exists } = await import("@std/fs");
+
+          const envFilePath = join(context.options.workspacePath, ".env");
+          if (await exists(envFilePath)) {
+            await load({ export: true, envPath: envFilePath });
+            logger.debug("Loaded workspace .env file for global environment", {
+              workspaceId: context.workspace.id,
+              envPath: envFilePath,
+            });
+          }
+        } catch (error) {
+          logger.debug("Could not load workspace .env file", {
+            workspaceId: context.workspace.id,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
       // Use pre-loaded configuration or load as fallback
       let mergedConfig: any;
+
+      logger.info(`Loading workspace config from context: ${JSON.stringify(context.config)}`, {
+        workspaceId: context.workspace.id,
+      });
 
       if (context.config) {
         // Use pre-loaded configuration (preferred - no I/O)
@@ -924,6 +951,7 @@ const workspaceRuntimeMachine = setup({
           workspaceTools: mergedConfig.workspace.tools,
           jobs: mergedConfig.jobs,
           supervisorDefaults: mergedConfig.supervisorDefaults, // Pass supervisor defaults to workers
+          workspacePath: context.options.workspacePath, // Pass workspace path for .env loading in workers
         },
       };
 
