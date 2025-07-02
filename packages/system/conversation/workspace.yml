@@ -123,7 +123,7 @@ agents:
 
       Example tool usage for NEW conversation:
       stream_reply(
-        stream_id=inputPayload.sessionId,
+        stream_id=inputPayload.streamId,
         message="Hello! I'm Atlas Assistant, here to help you with workspace orchestration.",
         conversationId=crypto.randomUUID(),
         metadata={
@@ -135,7 +135,7 @@ agents:
 
       Example tool usage for EXISTING conversation:
       stream_reply(
-        stream_id=inputPayload.sessionId,
+        stream_id=inputPayload.streamId,
         message="Continuing our discussion about workspaces...",
         conversationId=inputContext.conversationId,
         metadata={
@@ -147,7 +147,7 @@ agents:
 
       CRITICAL:
       - Always use stream_reply for ALL responses
-      - The stream_id parameter MUST come from inputPayload.sessionId
+      - The stream_id parameter MUST come from inputPayload.streamId
       - Include your COMPLETE response in the message parameter
       - Don't split responses across multiple tool calls
 

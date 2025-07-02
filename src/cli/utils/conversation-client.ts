@@ -32,18 +32,20 @@ export class ConversationClient {
   ) {}
 
   /**
-   * Create a new conversation session using the system workspace
+   * Create a new conversation session using direct daemon API
    */
-  async createSession(mode: "private" | "shared" = "private"): Promise<ConversationSession> {
-    // Use the new system workspace endpoint for conversations
-    const url = `${this.daemonUrl}/system/conversation/stream`;
+  async createSession(
+    options?: { userId?: string; scope?: { workspaceId?: string }; createOnly?: boolean },
+  ): Promise<ConversationSession> {
+    // Use the new direct daemon stream API
+    const url = `${this.daemonUrl}/api/streams`;
     // Create session without sending an initial message
     const body = {
-      userId: this.userId,
-      scope: {
+      userId: options?.userId || this.userId,
+      scope: options?.scope || {
         workspaceId: this.workspaceId,
       },
-      createOnly: true, // Just create session, don't send a message
+      createOnly: options?.createOnly ?? true, // Just create session, don't send a message
     };
 
     console.log(`[ConversationClient] Creating session at ${url} with body:`, body);
@@ -73,15 +75,15 @@ export class ConversationClient {
 
     // Transform the response to match the expected ConversationSession interface
     return {
-      sessionId: result.session_id,
-      mode,
+      sessionId: result.stream_id,
+      mode: "private",
       participants: [{
         userId: this.userId,
         clientType: "atlas-cli",
         joinedAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
       }],
-      sseUrl: `${this.daemonUrl}${result.response_channel.url}`,
+      sseUrl: `${this.daemonUrl}${result.sse_url}`,
     };
   }
 
@@ -89,16 +91,18 @@ export class ConversationClient {
    * Send a message to the conversation session
    */
   async sendMessage(sessionId: string, message: string): Promise<ConversationMessage> {
-    // For the new system workspace, we trigger a new signal with the session ID
+    // Use the new stream API to trigger the conversation workspace directly
     const response = await fetch(
-      `${this.daemonUrl}/system/conversation/stream`,
+      `${this.daemonUrl}/api/streams`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          workspaceId: "conversation", // Use the conversation workspace
+          signal: "conversation-stream", // Trigger the conversation-stream signal
+          streamId: sessionId, // Use the existing stream ID
           message,
           userId: this.userId,
-          sessionId: sessionId, // Use the existing session ID
           createOnly: false, // Explicitly set to false for message sending
           scope: {
             workspaceId: this.workspaceId,
