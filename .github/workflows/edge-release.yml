@@ -399,8 +399,8 @@ jobs:
           # Create WiX source file
           @"
           <?xml version="1.0" encoding="UTF-8"?>
-          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="Atlas" Language="1033" Version="${{ needs.check-changes.outputs.version }}" 
+          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+            <Product Id="*" Name="Atlas" Language="1033" Version="1.0.0" 
                      Manufacturer="Tempest Team" UpgradeCode="{12345678-1234-1234-1234-123456789012}">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
               
