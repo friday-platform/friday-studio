@@ -110,7 +110,7 @@ export class DaemonCapabilityRegistry {
             success: true,
             message: "Reply sent successfully",
             conversationId,
-            messageId,
+            messageId: result.messageId || crypto.randomUUID(),
             stream_id,
           };
         } catch (error) {

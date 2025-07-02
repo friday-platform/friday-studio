@@ -673,7 +673,8 @@ export default function InteractiveCommand() {
   >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [sseEventSource, setSseEventSource] = useState<any>(null);
+  const [sseStream, setSseStream] = useState<AsyncIterable<any> | null>(null);
+  const [pendingMessageSpinner, setPendingMessageSpinner] = useState<string | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -726,6 +727,84 @@ export default function InteractiveCommand() {
           setConversationSessionId(session.sessionId);
           // Store the SSE URL for later use
           conversationClient.sseUrl = session.sseUrl;
+
+          // Start persistent SSE listener
+          console.log("[Interactive] Starting persistent SSE listener...");
+          const sseIterator = conversationClient.streamEvents(session.sessionId, session.sseUrl);
+          setSseStream(sseIterator);
+
+          // Start listening for SSE events in background
+          (async () => {
+            try {
+              for await (const event of sseIterator) {
+                console.log("[Interactive] Received SSE event:", event.type, event.data);
+
+                if (event.type === "connection_opened") {
+                  // Ignore connection events
+                  continue;
+                }
+
+                if (event.type === "message_chunk") {
+                  const responseMessage = event.data.content;
+                  const isPartial = event.data.partial;
+
+                  // Remove pending spinner if this is the first chunk
+                  if (pendingMessageSpinner) {
+                    setOutputBuffer((prev) =>
+                      prev.filter((entry) => entry.id !== pendingMessageSpinner)
+                    );
+                    setPendingMessageSpinner(null);
+                  }
+
+                  // Update streaming message
+                  const responseTimestamp = new Date()
+                    .toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                    .toLowerCase()
+                    .replace(/\s/g, "");
+
+                  const streamingMessageId = `llm-response-current`;
+
+                  setOutputBuffer((prev) => {
+                    const filtered = prev.filter((entry) => entry.id !== streamingMessageId);
+                    return [
+                      ...filtered,
+                      {
+                        id: streamingMessageId,
+                        component: (
+                          <Box flexDirection="column">
+                            <Box flexDirection="row" gap={1}>
+                              <Text color="blue" bold>
+                                Δ Atlas
+                              </Text>
+                              <Text color="blue" dimColor bold>
+                                [{responseTimestamp}]
+                              </Text>
+                            </Box>
+                            <Box>
+                              <Text wrap="wrap" color="white">
+                                {responseMessage}
+                              </Text>
+                            </Box>
+                          </Box>
+                        ),
+                      },
+                    ];
+                  });
+                }
+
+                if (event.type === "message_complete") {
+                  // Message is complete - no additional action needed
+                  console.log("[Interactive] Message completed");
+                }
+              }
+            } catch (error) {
+              console.error("[Interactive] SSE stream error:", error);
+            }
+          })();
+
           console.log("[Interactive] ConversationClient initialized successfully");
         } catch (error) {
           // Log the full error for debugging
@@ -1387,116 +1466,14 @@ export default function InteractiveCommand() {
 
     try {
       console.log("[Interactive] Sending message with sessionId:", conversationSessionId);
+
+      // Store the spinner ID so the persistent SSE listener can remove it
+      setPendingMessageSpinner(spinnerId);
+
+      // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
-      let responseMessage = "";
-      let streamingMessageId = `llm-response-${Date.now()}`;
-
-      // Listen for streaming events
-      // Pass the SSE URL if available
-      console.log("[Interactive] Starting to listen for SSE events on:", conversationClient.sseUrl);
-      for await (
-        const event of conversationClient.streamEvents(
-          conversationSessionId,
-          conversationClient.sseUrl,
-        )
-      ) {
-        console.log("[Interactive] Received event:", event.type, event.data);
-        if (event.type === "message_chunk") {
-          responseMessage = event.data.content;
-
-          // Update streaming message
-          const responseTimestamp = new Date()
-            .toLocaleTimeString([], {
-              hour: "numeric",
-              minute: "2-digit",
-            })
-            .toLowerCase()
-            .replace(/\s/g, "");
-
-          // Remove spinner if it exists
-          setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
-
-          // Update or add the streaming response
-          setOutputBuffer((prev) => {
-            const existingIndex = prev.findIndex((entry) => entry.id === streamingMessageId);
-            const messageComponent = (
-              <ChatMessage
-                type="assistant"
-                message={responseMessage}
-                timestamp={responseTimestamp}
-              />
-            );
-
-            if (existingIndex >= 0) {
-              // Update existing entry
-              const newBuffer = [...prev];
-              newBuffer[existingIndex] = {
-                id: streamingMessageId,
-                component: messageComponent,
-              };
-              return newBuffer;
-            } else {
-              // Add new entry
-              return [...prev, {
-                id: streamingMessageId,
-                component: messageComponent,
-              }];
-            }
-          });
-        } else if (event.type === "message_complete") {
-          setIsLLMProcessing(false);
-
-          // Final update with complete message
-          if (responseMessage) {
-            const responseTimestamp = new Date()
-              .toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })
-              .toLowerCase()
-              .replace(/\s/g, "");
-            setOutputBuffer((prev) => {
-              const existingIndex = prev.findIndex((entry) => entry.id === streamingMessageId);
-              const messageComponent = (
-                <ChatMessage
-                  type="assistant"
-                  message={responseMessage}
-                  timestamp={responseTimestamp}
-                />
-              );
-
-              if (existingIndex >= 0) {
-                // Update existing entry with final message
-                const newBuffer = [...prev];
-                newBuffer[existingIndex] = {
-                  id: streamingMessageId,
-                  component: messageComponent,
-                };
-                return newBuffer;
-              } else {
-                // Add new entry if somehow it doesn't exist
-                return [...prev, {
-                  id: streamingMessageId,
-                  component: messageComponent,
-                }];
-              }
-            });
-          }
-
-          if (event.data.error) {
-            addOutputEntry({
-              id: `llm-error-${Date.now()}`,
-              component: (
-                <Box paddingLeft={1}>
-                  <Text color="red">Error: {event.data.error}</Text>
-                </Box>
-              ),
-            });
-          }
-          return; // Exit stream
-        }
-      }
+      // The persistent SSE listener will handle the response and remove the spinner
     } catch (error) {
       setIsLLMProcessing(false);
       setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
