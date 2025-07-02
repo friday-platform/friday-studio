@@ -13,6 +13,12 @@ import type {
  * Extends BaseConversationAgent and runs in a worker with full supervision
  */
 export class ConversationSupervisorAgent extends BaseConversationAgent {
+  private conversationScope?: {
+    workspaceId?: string;
+    jobId?: string;
+    sessionId?: string;
+  };
+
   constructor(workspaceId: string = "atlas-global") {
     super(workspaceId);
 
@@ -20,6 +26,13 @@ export class ConversationSupervisorAgent extends BaseConversationAgent {
     this.conversationTools = this.createConversationTools();
 
     // Set up prompts
+    this.setPrompts(this.createSystemPrompt(), "");
+  }
+
+  // Set the conversation scope for this agent
+  setConversationScope(scope: { workspaceId?: string; jobId?: string; sessionId?: string }) {
+    this.conversationScope = scope;
+    // Update prompts to include scope context
     this.setPrompts(this.createSystemPrompt(), "");
   }
 
@@ -192,7 +205,7 @@ export class ConversationSupervisorAgent extends BaseConversationAgent {
   }
 
   private createSystemPrompt(): string {
-    return `You are Addy, the Atlas AI assistant.
+    const basePrompt = `You are Addy, the Atlas AI assistant.
 
 MANDATORY RESPONSE FOR SPECIFIC QUESTIONS:
 When the current message is exactly "what is atlas?" (case insensitive), you MUST:
@@ -211,7 +224,27 @@ WRONG:
 message: "Would you like me to elaborate on X?" (missing the actual content)
 
 RIGHT:
-message: "Atlas differs from Claude Code in several ways: [full comparison here]. Would you like me to elaborate on any specific aspect?"
+message: "Atlas differs from Claude Code in several ways: [full comparison here]. Would you like me to elaborate on any specific aspect?"`;
+
+    // Add scope context if available
+    let scopeContext = "";
+    if (this.conversationScope) {
+      if (this.conversationScope.sessionId) {
+        scopeContext =
+          `\n\nCONVERSATION SCOPE: You are operating within a specific session (${this.conversationScope.sessionId}) of job ${this.conversationScope.jobId} in workspace ${this.conversationScope.workspaceId}. You have access to session-specific context and tools.`;
+      } else if (this.conversationScope.jobId) {
+        scopeContext =
+          `\n\nCONVERSATION SCOPE: You are operating within job ${this.conversationScope.jobId} in workspace ${this.conversationScope.workspaceId}. You have access to job-specific context and tools.`;
+      } else if (this.conversationScope.workspaceId) {
+        scopeContext =
+          `\n\nCONVERSATION SCOPE: You are operating within workspace ${this.conversationScope.workspaceId}. You have access to workspace-specific tools and context.`;
+      }
+    } else {
+      scopeContext =
+        "\n\nCONVERSATION SCOPE: Global Atlas conversation. You have access to Atlas platform-level tools.";
+    }
+
+    return basePrompt + scopeContext + `
 
 Available tools:
 - cx_reply: Send messages to the user (REQUIRED for all responses) - message field must contain COMPLETE response

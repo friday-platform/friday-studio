@@ -14,6 +14,11 @@ import type {
   SessionContext,
 } from "./session-supervisor.ts";
 import {
+  type AgentExecutionContext,
+  WorkspaceCapabilityRegistry,
+} from "./workspace-capabilities.ts";
+import { capabilitiesToTools } from "./utils/capability-to-tool.ts";
+import {
   type AgentExecutePayload,
   type AgentExecutionCompletePayload,
   ATLAS_MESSAGE_TYPES,
@@ -193,6 +198,8 @@ export class AgentSupervisor extends BaseAgent {
   private supervisionConfig: SupervisionConfig;
   private cacheEnabled: boolean;
   private sessionSupervisor?: any; // Reference to SessionSupervisor for MCP registry access
+  private onStreamMessage?: (message: any) => void; // Callback for stream messages
+  private responseChannel?: any; // Response channel for streaming
   private workerStats: Map<
     string,
     {
@@ -276,6 +283,15 @@ export class AgentSupervisor extends BaseAgent {
       canValidate: true,
       canRecover: true,
     };
+  }
+
+  // Set callback for stream messages from agents
+  setStreamCallback(callback: (message: any) => void): void {
+    this.onStreamMessage = callback;
+  }
+
+  setResponseChannel(responseChannel: any): void {
+    this.responseChannel = responseChannel;
   }
 
   // Analyze agent before loading using LLM intelligence
@@ -552,6 +568,9 @@ Focus on safety, efficiency, and reliability.`;
       },
     };
 
+    // Note: Workspace tools are now prepared as metadata only (see below)
+    // to avoid DataCloneError when passing functions to workers
+
     // Add agent-type specific configuration
     if (agent.type === "remote") {
       const remoteConfig = agent.config as RemoteAgentConfig;
@@ -589,6 +608,23 @@ Focus on safety, efficiency, and reliability.`;
 
     // Add MCP server configurations for worker access
     environment.mcp_server_configs = this.prepareAgentMcpServerConfigs(agent);
+
+    // Add workspace tools metadata if agent has tools configured
+    const llmConfig = agent.config as LLMAgentConfig;
+    this.log(`Agent ${agent.id} config tools: ${JSON.stringify(llmConfig.tools)}`, "debug");
+    if (llmConfig.tools && llmConfig.tools.length > 0) {
+      const workspaceToolsMetadata = this.prepareWorkspaceToolsMetadata(agent, llmConfig.tools);
+      if (workspaceToolsMetadata) {
+        environment.workspace_tools_metadata = workspaceToolsMetadata;
+        this.log(
+          `Added ${
+            Object.keys(workspaceToolsMetadata).length
+          } workspace tools metadata to agent environment`,
+        );
+      } else {
+        this.log(`No workspace tools prepared for agent ${agent.id}`, "warn");
+      }
+    }
 
     return environment;
   }
@@ -759,6 +795,17 @@ Focus on safety, efficiency, and reliability.`;
               (async () => {
                 const currentTraceHeaders = traceHeaders ||
                   await AtlasTelemetry.createTraceHeaders();
+                // Debug: check for non-serializable data
+                try {
+                  // Test if environment can be cloned
+                  const testClone = structuredClone(environment);
+                  this.log(`Environment is serializable`);
+                } catch (e) {
+                  this.log(`Environment contains non-serializable data: ${e}`, "error");
+                  // Log the keys of environment to debug
+                  this.log(`Environment keys: ${Object.keys(environment).join(", ")}`, "error");
+                }
+
                 const initMessage = createAgentMessage(
                   ATLAS_MESSAGE_TYPES.LIFECYCLE.INIT,
                   {
@@ -1147,6 +1194,114 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return ["output_exists", "task_completed", "format_valid"];
   }
 
+  // Prepare workspace capability tools metadata for agent (serializable)
+  private prepareWorkspaceToolsMetadata(
+    agent: AgentMetadata,
+    requestedTools: string[],
+  ): Record<string, any> | undefined {
+    this.log(
+      `Preparing workspace tools metadata for agent ${agent.id}, requested: ${
+        JSON.stringify(requestedTools)
+      }`,
+      "debug",
+    );
+
+    if (!this.sessionSupervisor) {
+      this.log(`No session supervisor available for workspace tools`, "warn");
+      return undefined;
+    }
+
+    // Filter capabilities based on what the agent has declared
+    const capabilities = WorkspaceCapabilityRegistry.filterCapabilitiesForAgent({
+      agentId: agent.id,
+      agentConfig: agent.config as any,
+      grantedTools: requestedTools,
+    });
+
+    this.log(`Filtered ${capabilities.length} capabilities for agent ${agent.id}`, "debug");
+
+    if (capabilities.length === 0) {
+      return undefined;
+    }
+
+    // Create metadata-only tools (serializable)
+    const toolsMetadata: Record<string, any> = {};
+
+    for (const capability of capabilities) {
+      toolsMetadata[capability.id] = {
+        description: capability.description,
+        inputSchema: capability.inputSchema || {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      };
+    }
+
+    this.log(
+      `Created ${Object.keys(toolsMetadata).length} workspace tools metadata for agent ${agent.id}`,
+      "debug",
+      {
+        tools: Object.keys(toolsMetadata),
+      },
+    );
+
+    return toolsMetadata;
+  }
+
+  // Prepare workspace capability tools for agent
+  private prepareWorkspaceTools(
+    agent: AgentMetadata,
+    requestedTools: string[],
+  ): Record<string, any> | undefined {
+    this.log(
+      `Preparing workspace tools for agent ${agent.id}, requested: ${
+        JSON.stringify(requestedTools)
+      }`,
+      "debug",
+    );
+
+    if (!this.sessionSupervisor) {
+      this.log(`No session supervisor available for workspace tools`, "warn");
+      return undefined;
+    }
+
+    // Create agent execution context for capabilities
+    const context: AgentExecutionContext = {
+      workspaceId: this.workspaceId || "",
+      sessionId: this.sessionId || "",
+      agentId: agent.id,
+      sessionSupervisor: this.sessionSupervisor,
+      responseChannel: this.responseChannel,
+    };
+
+    // Filter capabilities based on what the agent has declared
+    const capabilities = WorkspaceCapabilityRegistry.filterCapabilitiesForAgent({
+      agentId: agent.id,
+      agentConfig: agent.config as any,
+      grantedTools: requestedTools,
+    });
+
+    this.log(`Filtered ${capabilities.length} capabilities for agent ${agent.id}`, "debug");
+
+    if (capabilities.length === 0) {
+      return undefined;
+    }
+
+    // Convert capabilities to AI SDK tools
+    const tools = capabilitiesToTools(capabilities, context);
+
+    this.log(
+      `Converted ${capabilities.length} workspace capabilities to tools for agent ${agent.id}`,
+      "debug",
+      {
+        capabilities: capabilities.map((c) => c.id),
+      },
+    );
+
+    return tools;
+  }
+
   private calculatePermissions(
     agent: AgentMetadata,
     analysis: AgentAnalysis,
@@ -1267,6 +1422,13 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
           event.data && typeof event.data === "object" && event.data.type && event.data.domain
         ) {
           envelope = event.data as AtlasMessageEnvelope;
+        } else if (event.data && typeof event.data === "object" && event.data.type === "stream") {
+          // Forward stream messages to session supervisor
+          // Forward the stream message up the chain
+          if (this.onStreamMessage) {
+            this.onStreamMessage(event.data);
+          }
+          return;
         } else {
           this.logger.debug(
             `Received non-envelope response, ignoring: ${JSON.stringify(event.data)}`,

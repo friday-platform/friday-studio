@@ -92,6 +92,8 @@ class SessionSupervisorWorker extends BaseWorker {
     );
     this.log("SessionSupervisor created successfully");
 
+    // Stream callback is now handled by the session_reply tool via workspace capabilities
+
     // Join session broadcast channel (async, non-blocking)
     this.actor.send({
       type: "JOIN_CHANNEL",
@@ -271,20 +273,33 @@ class SessionSupervisorWorker extends BaseWorker {
               results,
             );
 
-            // Extract semantic facts from signal and store in knowledge graph
-            try {
-              await this.supervisor!.extractAndStoreSemanticFacts();
-              this.log("Semantic facts extracted and stored in knowledge graph");
-            } catch (error) {
-              this.log(`Warning: Failed to extract semantic facts: ${error}`);
-            }
+            // Check if memory operations are enabled based on job configuration
+            const jobSpec = sessionContext?.jobSpec;
+            const memoryConfig = jobSpec?.memory;
+            const memoryEnabled = memoryConfig?.enabled !== false;
 
-            // Generate and store working memory summary in episodic memory
-            try {
-              await this.supervisor!.generateWorkingMemorySummary();
-              this.log("Working memory summary generated and stored in episodic memory");
-            } catch (error) {
-              this.log(`Warning: Failed to generate working memory summary: ${error}`);
+            if (memoryEnabled) {
+              // Extract semantic facts from signal and store in knowledge graph
+              if (memoryConfig?.fact_extraction !== false) {
+                try {
+                  await this.supervisor!.extractAndStoreSemanticFacts();
+                  this.log("Semantic facts extracted and stored in knowledge graph");
+                } catch (error) {
+                  this.log(`Warning: Failed to extract semantic facts: ${error}`);
+                }
+              }
+
+              // Generate and store working memory summary in episodic memory
+              if (memoryConfig?.working_memory_summary !== false) {
+                try {
+                  await this.supervisor!.generateWorkingMemorySummary();
+                  this.log("Working memory summary generated and stored in episodic memory");
+                } catch (error) {
+                  this.log(`Warning: Failed to generate working memory summary: ${error}`);
+                }
+              }
+            } else {
+              this.log("Memory operations disabled based on job configuration");
             }
 
             // Log structured session results
@@ -312,6 +327,8 @@ class SessionSupervisorWorker extends BaseWorker {
             });
 
             this.log("AI Summary", { summary: sessionSummary });
+
+            // Streaming is now handled by the session_reply tool via workspace capabilities
 
             return {
               status: summary.status,

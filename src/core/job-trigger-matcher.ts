@@ -18,6 +18,11 @@ export interface JobTrigger {
   signal: string;
   condition?: string | object;
   naturalLanguageCondition?: string;
+  response?: {
+    mode: "unary" | "streaming" | "interactive";
+    format?: "json" | "sse" | "websocket";
+    timeout?: number;
+  };
 }
 
 export interface JobSpec {

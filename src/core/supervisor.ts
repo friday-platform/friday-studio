@@ -11,7 +11,7 @@ import { BaseAgent } from "./agents/base-agent.ts";
 import { MCPServerRegistry } from "./agents/mcp/mcp-server-registry.ts";
 import { type JobMatch, JobTriggerMatcher } from "./job-trigger-matcher.ts";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
-import { Session, SessionIntent, SessionPlan } from "./session.ts";
+import { type ResponseConfig, Session, SessionIntent, SessionPlan } from "./session.ts";
 import {
   type AgentInfo,
   type EnhancedTask,
@@ -26,6 +26,7 @@ interface SupervisorContext {
   executionPlan: any;
   activeSessions: Map<string, IWorkspaceSession>;
   error: Error | null;
+  currentJobMatch?: JobMatch; // Store the matched job and trigger
 }
 
 type SupervisorEvent =
@@ -108,7 +109,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 input.payload,
               );
 
-              // Create session with intent
+              // Create session with intent (response channels handled at daemon layer)
               const session = new Session(
                 supervisor.id,
                 {
@@ -119,6 +120,8 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                 undefined, // workflows
                 undefined, // sources
                 intent,
+                undefined, // storageAdapter
+                true, // enableCognitiveLoop
               );
 
               supervisor.addSession(session);
@@ -224,6 +227,7 @@ export class WorkspaceSupervisor extends BaseAgent
   private stateActor: any; // XState actor type
   private signalProcessor: SignalProcessor;
   private jobTriggerMatcher: JobTriggerMatcher;
+  private currentJobMatch?: JobMatch; // Store current job match for session creation
 
   constructor(workspaceId: string, config: any = {}) {
     // Provide default memoryConfig if not provided
@@ -1073,7 +1077,8 @@ Provide a structured analysis.`;
         mergedConfigAvailable: !!this.mergedConfig,
       });
 
-      const selectedJob = await this.selectJobForSignal(signal, payload, signalData);
+      const selectedJobMatch = await this.selectJobForSignal(signal, payload, signalData);
+      const selectedJob = selectedJobMatch?.job;
       const jobTime = Date.now() - jobStart;
       this.logger.debug(`[PERF] Job selection took ${jobTime}ms`, {
         selectedJob: selectedJob?.name || "none",
@@ -1169,7 +1174,7 @@ Provide a structured analysis.`;
     signal: IWorkspaceSignal,
     payload: any,
     signalData?: { signalConfig?: any; jobs?: any },
-  ): Promise<any | null> {
+  ): Promise<{ job: any; trigger: any } | null> {
     try {
       const availableJobs = signalData?.jobs || this.mergedConfig?.jobs || {};
 
@@ -1243,7 +1248,14 @@ Provide a structured analysis.`;
                 [],
             },
           });
-          return job;
+          // Store the current job match for session creation
+          this.currentJobMatch = {
+            job,
+            trigger,
+            evaluationResult: { matched: true },
+            matchedAt: Date.now(),
+          } as JobMatch;
+          return { job, trigger };
         }
       }
 
@@ -1346,7 +1358,8 @@ Provide a structured analysis.`;
     // Try to use cached plan from advanced planning first
     if (this.planningEngine) {
       try {
-        const selectedJob = await this.selectJobForSignal(signal, payload);
+        const selectedJobMatch = await this.selectJobForSignal(signal, payload);
+        const selectedJob = selectedJobMatch?.job;
         if (selectedJob) {
           this.log(`Using cached plan for job: ${selectedJob.name}`);
           const task = {

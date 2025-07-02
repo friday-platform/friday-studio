@@ -17,10 +17,12 @@ export interface AgentExecutionContext {
   workspaceId: string;
   sessionId: string;
   agentId: string;
+  conversationId?: string; // For conversation workspaces
   // Runtime services
   workspaceRuntime?: any;
   sessionSupervisor?: any;
   memoryManager?: any;
+  responseChannel?: any; // For streaming responses
 }
 
 export interface CapabilityFilter {

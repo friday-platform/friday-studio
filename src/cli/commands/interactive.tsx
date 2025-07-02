@@ -672,6 +672,8 @@ export default function InteractiveCommand() {
     string | null
   >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [sseEventSource, setSseEventSource] = useState<any>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -706,23 +708,34 @@ export default function InteractiveCommand() {
         // Try to list workspaces - this will trigger auto-start if needed
         const workspaces = await client.listWorkspaces();
 
-        // Initialize ConversationClient if workspaces available (Phase 1)
-        if (workspaces.length > 0) {
-          try {
-            const defaultWorkspace = workspaces[0];
-            const conversationClient = new ConversationClient(
-              "http://localhost:8080",
-              defaultWorkspace.id,
-              "cli-user",
-            );
+        // Initialize ConversationClient for system workspace
+        try {
+          console.log("[Interactive] Initializing ConversationClient...");
+          // Use "system" as the workspace ID for the conversation system workspace
+          const conversationClient = new ConversationClient(
+            "http://localhost:8080",
+            "system",
+            "cli-user",
+          );
 
-            const session = await conversationClient.createSession();
-            setConversationClient(conversationClient);
-            setConversationSessionId(session.sessionId);
-          } catch (error) {
-            // Silent fail for ConversationClient - LLM features just won't be available
-            console.warn("Failed to initialize conversation client:", error);
-          }
+          console.log("[Interactive] Creating conversation session...");
+          const session = await conversationClient.createSession();
+          console.log("[Interactive] Session created:", session);
+
+          setConversationClient(conversationClient);
+          setConversationSessionId(session.sessionId);
+          // Store the SSE URL for later use
+          conversationClient.sseUrl = session.sseUrl;
+          console.log("[Interactive] ConversationClient initialized successfully");
+        } catch (error) {
+          // Log the full error for debugging
+          console.error("[Interactive] Failed to initialize conversation client:", error);
+          console.error("[Interactive] Full error details:", {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        } finally {
+          setIsInitializing(false);
         }
 
         // Clear the starting message and add welcome message
@@ -787,6 +800,7 @@ export default function InteractiveCommand() {
             ),
           },
         ]);
+        setIsInitializing(false);
       }
     };
 
@@ -1313,12 +1327,24 @@ export default function InteractiveCommand() {
 
   // Handle LLM input (Phase 2.1)
   const handleLLMInput = async (input: string) => {
+    if (isInitializing) {
+      addOutputEntry({
+        id: `llm-initializing-${Date.now()}`,
+        component: (
+          <Text color="yellow">
+            Initializing conversation system, please wait...
+          </Text>
+        ),
+      });
+      return;
+    }
+
     if (!conversationClient || !conversationSessionId) {
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
           <Text color="red">
-            LLM not available. Try a workspace command first.
+            Failed to initialize conversation system. Please restart the CLI.
           </Text>
         ),
       });
@@ -1335,7 +1361,9 @@ export default function InteractiveCommand() {
       .toLowerCase()
       .replace(/\s/g, "");
     const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
-    addOutputEntry({
+
+    // Force immediate render by using setOutputBuffer directly
+    setOutputBuffer((prev) => [...prev, {
       id: `user-${Date.now()}`,
       component: (
         <Box flexDirection="column">
@@ -1347,7 +1375,7 @@ export default function InteractiveCommand() {
           />
         </Box>
       ),
-    });
+    }]);
 
     // Show processing indicator (using existing Spinner pattern)
     setIsLLMProcessing(true);
@@ -1358,25 +1386,68 @@ export default function InteractiveCommand() {
     });
 
     try {
+      console.log("[Interactive] Sending message with sessionId:", conversationSessionId);
       await conversationClient.sendMessage(conversationSessionId, input);
 
       let responseMessage = "";
+      let streamingMessageId = `llm-response-${Date.now()}`;
 
-      // Listen ONLY for message_complete events (simplified from cx-client)
+      // Listen for streaming events
+      // Pass the SSE URL if available
+      console.log("[Interactive] Starting to listen for SSE events on:", conversationClient.sseUrl);
       for await (
         const event of conversationClient.streamEvents(
           conversationSessionId,
+          conversationClient.sseUrl,
         )
       ) {
+        console.log("[Interactive] Received event:", event.type, event.data);
         if (event.type === "message_chunk") {
           responseMessage = event.data.content;
+
+          // Update streaming message
+          const responseTimestamp = new Date()
+            .toLocaleTimeString([], {
+              hour: "numeric",
+              minute: "2-digit",
+            })
+            .toLowerCase()
+            .replace(/\s/g, "");
+
+          // Remove spinner if it exists
+          setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
+
+          // Update or add the streaming response
+          setOutputBuffer((prev) => {
+            const existingIndex = prev.findIndex((entry) => entry.id === streamingMessageId);
+            const messageComponent = (
+              <ChatMessage
+                type="assistant"
+                message={responseMessage}
+                timestamp={responseTimestamp}
+              />
+            );
+
+            if (existingIndex >= 0) {
+              // Update existing entry
+              const newBuffer = [...prev];
+              newBuffer[existingIndex] = {
+                id: streamingMessageId,
+                component: messageComponent,
+              };
+              return newBuffer;
+            } else {
+              // Add new entry
+              return [...prev, {
+                id: streamingMessageId,
+                component: messageComponent,
+              }];
+            }
+          });
         } else if (event.type === "message_complete") {
           setIsLLMProcessing(false);
 
-          // Remove spinner (following existing pattern)
-          setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
-
-          // Add response using ChatMessage component
+          // Final update with complete message
           if (responseMessage) {
             const responseTimestamp = new Date()
               .toLocaleTimeString([], {
@@ -1385,18 +1456,31 @@ export default function InteractiveCommand() {
               })
               .toLowerCase()
               .replace(/\s/g, "");
-            addOutputEntry({
-              id: `llm-response-${Date.now()}`,
-              component: (
-                <Box flexDirection="column">
-                  <ChatMessage
-                    author="Δ Atlas"
-                    date={responseTimestamp}
-                    message={responseMessage}
-                    authorColor="blue"
-                  />
-                </Box>
-              ),
+            setOutputBuffer((prev) => {
+              const existingIndex = prev.findIndex((entry) => entry.id === streamingMessageId);
+              const messageComponent = (
+                <ChatMessage
+                  type="assistant"
+                  message={responseMessage}
+                  timestamp={responseTimestamp}
+                />
+              );
+
+              if (existingIndex >= 0) {
+                // Update existing entry with final message
+                const newBuffer = [...prev];
+                newBuffer[existingIndex] = {
+                  id: streamingMessageId,
+                  component: messageComponent,
+                };
+                return newBuffer;
+              } else {
+                // Add new entry if somehow it doesn't exist
+                return [...prev, {
+                  id: streamingMessageId,
+                  component: messageComponent,
+                }];
+              }
             });
           }
 

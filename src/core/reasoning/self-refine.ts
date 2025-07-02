@@ -4,106 +4,166 @@ import {
   type ReasoningResult,
 } from "./base-reasoning.ts";
 
+export interface RefinementStep {
+  approach: string;
+  strengths: string[];
+  weaknesses: string[];
+  improvements: string[];
+  qualityCriteria: string[];
+}
+
+/**
+ * Self-Refine reasoning provides iterative improvement of approaches.
+ * It generates, critiques, and refines thinking about a problem.
+ */
 export class SelfRefineReasoning extends BaseReasoningMethod {
   name = "self-refine";
-  cost = "medium" as const;
+  cost = "low" as const; // Single LLM call now
   reliability = 0.89;
 
   async reason(context: ReasoningContext): Promise<ReasoningResult> {
-    let totalCost = 0;
-    let totalDuration = 0;
-    const refinements: any[] = [];
+    const startTime = Date.now();
 
-    // Generate initial solution
-    const initialPrompt = `
+    // Single LLM call that does the refinement process internally
+    const refinementPrompt = `Analyze this problem using self-refinement methodology.
+
 Task: ${context.task}
 Context: ${context.context}
 
-Generate an initial solution to this task. Focus on correctness and completeness.
-Initial Solution:`;
+Think through multiple approaches and refine them. For each approach:
+1. Describe the approach
+2. Identify its strengths
+3. Identify its weaknesses  
+4. Suggest improvements
+5. Define quality criteria for success
 
-    const initialResult = await this.generateLLM(initialPrompt);
-    totalCost += initialResult.cost;
-    totalDuration += initialResult.duration;
+Provide your analysis as a JSON array of refinement steps:
+[
+  {
+    "approach": "Initial approach description",
+    "strengths": ["What works well"],
+    "weaknesses": ["What could be better"],
+    "improvements": ["How to make it better"],
+    "qualityCriteria": ["How to measure success"]
+  },
+  ...
+]
 
-    let currentSolution = initialResult.text.trim();
-    refinements.push({ iteration: 0, solution: currentSolution, critique: "Initial solution" });
+Considerations:
+- Quality Critical: ${context.qualityCritical}
+- Complexity: ${context.complexity}
+- Generate 2-3 refinement iterations
+- Each iteration should improve on the previous`;
 
-    // Iterative refinement (3 iterations max)
-    for (let iteration = 1; iteration <= 3; iteration++) {
-      // Critique current solution
-      const critiquePrompt = `
-Task: ${context.task}
-Current Solution: ${currentSolution}
+    const result = await this.generateLLM(refinementPrompt);
 
-Critically analyze this solution. What are its weaknesses? What could be improved?
-Is it good enough as-is, or does it need refinement?
+    try {
+      const refinements: RefinementStep[] = JSON.parse(result.text);
 
-Critique:`;
+      // Extract insights from refinements
+      const finalApproach = refinements[refinements.length - 1];
+      const allImprovements = refinements.flatMap((r) => r.improvements);
+      const qualityCriteria = [...new Set(refinements.flatMap((r) => r.qualityCriteria))];
 
-      const critiqueResult = await this.generateLLM(critiquePrompt);
-      totalCost += critiqueResult.cost;
-      totalDuration += critiqueResult.duration;
+      // Determine required capabilities from the approaches
+      const requiredCapabilities = this.extractCapabilitiesFromRefinements(refinements);
 
-      const critique = critiqueResult.text.trim();
-
-      // Check if good enough
-      if (this.isGoodEnough(critique)) {
-        refinements.push({ iteration, critique, solution: currentSolution, status: "accepted" });
-        break;
-      }
-
-      // Improve based on critique
-      const improvePrompt = `
-Task: ${context.task}
-Current Solution: ${currentSolution}
-Critique: ${critique}
-
-Based on this critique, provide an improved solution that addresses the identified issues.
-Improved Solution:`;
-
-      const improveResult = await this.generateLLM(improvePrompt);
-      totalCost += improveResult.cost;
-      totalDuration += improveResult.duration;
-
-      currentSolution = improveResult.text.trim();
-      refinements.push({
-        iteration,
-        critique,
-        solution: currentSolution,
-        status: "refined",
-      });
+      return {
+        solution: {
+          refinementChain: refinements,
+          finalApproach: finalApproach.approach,
+          qualityCriteria,
+          keyImprovements: allImprovements,
+        },
+        reasoning: refinements.map((r, i) =>
+          `Iteration ${i + 1}: ${r.approach}\nStrengths: ${r.strengths.join(", ")}\nWeaknesses: ${
+            r.weaknesses.join(", ")
+          }`
+        ).join("\n\n"),
+        confidence: this.calculateRefinementConfidence(refinements),
+        method: this.name,
+        cost: result.cost,
+        duration: Date.now() - startTime,
+        requiredCapabilities,
+        recommendations: allImprovements,
+      };
+    } catch (error) {
+      // Fallback
+      return {
+        solution: {
+          refinementChain: [{
+            approach: "Direct problem solving",
+            strengths: ["Straightforward"],
+            weaknesses: ["May miss nuances"],
+            improvements: ["Add validation steps"],
+            qualityCriteria: ["Task completion"],
+          }],
+          finalApproach: "Direct problem solving with validation",
+          qualityCriteria: ["Task completion", "Validation passed"],
+        },
+        reasoning: "Single-pass analysis with basic refinement",
+        confidence: 0.7,
+        method: this.name,
+        cost: result.cost,
+        duration: Date.now() - startTime,
+        requiredCapabilities: ["execution", "validation"],
+        recommendations: ["Execute task", "Validate results"],
+      };
     }
-
-    return {
-      solution: {
-        type: "self-refined-solution",
-        finalSolution: currentSolution,
-        refinements,
-        iterationCount: refinements.length,
-      },
-      reasoning: refinements.map((r) =>
-        `Iteration ${r.iteration}: ${r.critique} → ${r.solution.substring(0, 100)}...`
-      ).join("\n"),
-      confidence: 0.89,
-      method: this.name,
-      cost: totalCost,
-      duration: totalDuration,
-    };
   }
 
-  private isGoodEnough(critique: string): boolean {
-    const goodIndicators = [
-      "good enough",
-      "satisfactory",
-      "adequate",
-      "no major issues",
-      "acceptable",
-      "well done",
-      "solid solution",
-    ];
+  private extractCapabilitiesFromRefinements(refinements: RefinementStep[]): string[] {
+    const capabilities = new Set<string>();
 
-    const lowerCritique = critique.toLowerCase();
-    return goodIndicators.some((indicator) => lowerCritique.includes(indicator));
+    refinements.forEach((r) => {
+      // Analyze approach text for capability hints
+      const text = `${r.approach} ${r.improvements.join(" ")}`;
+
+      if (text.includes("analyze") || text.includes("examine")) {
+        capabilities.add("analysis");
+      }
+      if (text.includes("search") || text.includes("find")) {
+        capabilities.add("search");
+      }
+      if (text.includes("modify") || text.includes("change")) {
+        capabilities.add("modification");
+      }
+      if (text.includes("validate") || text.includes("verify")) {
+        capabilities.add("validation");
+      }
+      if (text.includes("monitor") || text.includes("observe")) {
+        capabilities.add("monitoring");
+      }
+    });
+
+    return Array.from(capabilities);
+  }
+
+  private calculateRefinementConfidence(refinements: RefinementStep[]): number {
+    if (refinements.length === 0) return 0.5;
+
+    let confidence = 0.7;
+
+    // Bonus for iterative improvement
+    if (refinements.length > 1) {
+      confidence += 0.1;
+    }
+
+    // Bonus for specific quality criteria
+    const lastRefinement = refinements[refinements.length - 1];
+    if (lastRefinement.qualityCriteria.length > 2) {
+      confidence += 0.1;
+    }
+
+    // Bonus if weaknesses decrease over iterations
+    if (refinements.length > 1) {
+      const firstWeaknesses = refinements[0].weaknesses.length;
+      const lastWeaknesses = lastRefinement.weaknesses.length;
+      if (lastWeaknesses < firstWeaknesses) {
+        confidence += 0.1;
+      }
+    }
+
+    return Math.min(confidence, 1.0);
   }
 }

@@ -13,12 +13,14 @@ export interface ReasoningContext {
 }
 
 export interface ReasoningResult {
-  solution: any;
-  reasoning: string;
+  solution: any; // Method-specific solution format
+  reasoning: string; // Human-readable reasoning trace
   confidence: number;
   method: string;
   cost: number;
   duration: number;
+  requiredCapabilities?: string[]; // What capabilities/tools are needed
+  recommendations?: string[]; // Actionable recommendations
   selectionReasoning?: string;
   selectionConfidence?: number;
 }
