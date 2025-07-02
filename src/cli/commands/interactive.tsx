@@ -7,7 +7,7 @@ import {
   UnorderedList,
 } from "@inkjs/ui";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
@@ -681,6 +681,7 @@ function InteractiveCommandInner() {
   const [sseStream, setSseStream] = useState<AsyncIterable<any> | null>(null);
   const [pendingMessageSpinner, setPendingMessageSpinner] = useState<string | null>(null);
   const [selectedOutputIndex, setSelectedOutputIndex] = useState(-1);
+  const pendingMessageSpinnerRef = useRef<string | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -822,14 +823,31 @@ function InteractiveCommandInner() {
 
                 if (event.type === "message_complete") {
                   console.log("[Interactive] Message completed");
+                  console.log(
+                    "[Interactive] Current pendingMessageSpinner (state):",
+                    pendingMessageSpinner,
+                  );
+                  console.log(
+                    "[Interactive] Current pendingMessageSpinner (ref):",
+                    pendingMessageSpinnerRef.current,
+                  );
 
-                  // Remove spinner when message is complete
-                  if (pendingMessageSpinner) {
-                    console.log("[Interactive] Removing spinner on message_complete");
-                    setOutputBuffer((prev) =>
-                      prev.filter((entry) => entry.id !== pendingMessageSpinner)
-                    );
+                  // Remove spinner when message is complete - use ref to avoid closure issues
+                  const spinnerId = pendingMessageSpinnerRef.current;
+                  if (spinnerId) {
+                    console.log("[Interactive] Removing spinner on message_complete:", spinnerId);
+                    setOutputBuffer((prev) => {
+                      const filtered = prev.filter((entry) => entry.id !== spinnerId);
+                      console.log(
+                        "[Interactive] Filtered out spinner, remaining entries:",
+                        filtered.length,
+                      );
+                      return filtered;
+                    });
                     setPendingMessageSpinner(null);
+                    pendingMessageSpinnerRef.current = null;
+                  } else {
+                    console.log("[Interactive] No pendingMessageSpinner to remove");
                   }
                 }
               }
@@ -1501,7 +1519,9 @@ function InteractiveCommandInner() {
       console.log("[Interactive] Sending message with streamId:", conversationSessionId);
 
       // Store the spinner ID so the persistent SSE listener can remove it
+      console.log("[Interactive] Setting pendingMessageSpinner to:", spinnerId);
       setPendingMessageSpinner(spinnerId);
+      pendingMessageSpinnerRef.current = spinnerId;
 
       // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
@@ -1510,6 +1530,8 @@ function InteractiveCommandInner() {
     } catch (error) {
       setIsLLMProcessing(false);
       setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
+      setPendingMessageSpinner(null);
+      pendingMessageSpinnerRef.current = null;
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
