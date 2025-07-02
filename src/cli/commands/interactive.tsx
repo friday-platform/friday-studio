@@ -1,3 +1,4 @@
+import { getAtlasClient } from "@atlas/client";
 import {
   defaultTheme,
   extendTheme,
@@ -8,44 +9,41 @@ import {
 } from "@inkjs/ui";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { YargsInstance } from "../utils/yargs.ts";
-import Help from "../views/help.tsx";
-import { InitView } from "../views/InitView.tsx";
-import { ConfigView } from "../views/ConfigView.tsx";
-import CreditsView from "../views/CreditsView.tsx";
-import { getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
-import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
+import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
+import { AgentDetails } from "../components/agent-details.tsx";
+import { AgentSelection } from "../components/agent-selection.tsx";
+import { ChatMessage } from "../components/ChatMessage.tsx";
+import { CommandInput } from "../components/command-input.tsx";
+import { GitDiff } from "../components/git-diff.tsx";
+import { JobDetails } from "../components/job-details.tsx";
+import { JobSelection } from "../components/job-selection.tsx";
+import { SessionDetails } from "../components/session-details.tsx";
+import { SessionSelection } from "../components/session-selection.tsx";
+import { SignalActionSelection } from "../components/signal-action-selection.tsx";
+import { SignalDetails } from "../components/signal-details.tsx";
+import { SignalSelection } from "../components/signal-selection.tsx";
+import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+import { YamlDisplay } from "../components/yaml-display.tsx";
+import { AppProvider } from "../contexts/app-context.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
-import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchLibraryItems } from "../modules/library/fetcher.ts";
-import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
+import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
-import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
-import { SignalSelection } from "../components/signal-selection.tsx";
-import { SessionSelection } from "../components/session-selection.tsx";
-import { AgentSelection } from "../components/agent-selection.tsx";
-import { JobSelection } from "../components/job-selection.tsx";
-import { SignalDetails } from "../components/signal-details.tsx";
-import { SignalActionSelection } from "../components/signal-action-selection.tsx";
-import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
+import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
-import { AgentDetails } from "../components/agent-details.tsx";
-import { JobDetails } from "../components/job-details.tsx";
-import { SessionDetails } from "../components/session-details.tsx";
-import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
-import { TextInput } from "../components/text-input/text-input.tsx";
-import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
-import { getAtlasClient } from "@atlas/client";
-import { createTempFileAndOpen } from "../utils/file-opener.ts";
+import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
-import { ChatMessage } from "../components/ChatMessage.tsx";
-import { YamlDisplay } from "../components/yaml-display.tsx";
-import { GitDiff } from "../components/git-diff.tsx";
-import { AppProvider, useAppContext } from "../contexts/app-context.tsx";
-import { CommandInput } from "../components/command-input.tsx";
+import { getDaemonClient } from "../utils/daemon-client.ts";
+import { createTempFileAndOpen } from "../utils/file-opener.ts";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { YargsInstance } from "../utils/yargs.ts";
+import { ConfigView } from "../views/ConfigView.tsx";
+import CreditsView from "../views/CreditsView.tsx";
+import Help from "../views/help.tsx";
+import { InitView } from "../views/InitView.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -670,6 +668,18 @@ function InteractiveCommandInner() {
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
+  // Handle Ctrl+C for graceful shutdown
+  useInput((_input, key) => {
+    if (key.ctrl && _input === "c") {
+      console.log("[Interactive] Ctrl+C detected, cleaning up...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+      exit();
+    }
+  });
+
   // LLM conversation state (Phase 1 - Core Integration)
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
   const [conversationSessionId, setConversationSessionId] = useState<
@@ -682,8 +692,8 @@ function InteractiveCommandInner() {
   const [pendingMessageSpinner, setPendingMessageSpinner] = useState<
     string | null
   >(null);
-  const [selectedOutputIndex, setSelectedOutputIndex] = useState(-1);
   const pendingMessageSpinnerRef = useRef<string | null>(null);
+  const sseAbortControllerRef = useRef<AbortController | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -736,11 +746,15 @@ function InteractiveCommandInner() {
           // Store the SSE URL for later use
           conversationClient.sseUrl = session.sseUrl;
 
-          // Start persistent SSE listener
+          // Start persistent SSE listener with AbortController
           console.log("[Interactive] Starting persistent SSE listener...");
+          const abortController = new AbortController();
+          sseAbortControllerRef.current = abortController;
+
           const sseIterator = conversationClient.streamEvents(
             session.sessionId,
             session.sseUrl,
+            abortController.signal,
           );
           setSseStream(sseIterator);
 
@@ -748,16 +762,16 @@ function InteractiveCommandInner() {
           (async () => {
             try {
               for await (const event of sseIterator) {
+                // Check if we should stop
+                if (abortController.signal.aborted) {
+                  console.log("[Interactive] SSE stream aborted, stopping listener");
+                  break;
+                }
                 console.log(
                   "[Interactive] Received SSE event:",
                   event.type,
                   event.data,
                 );
-
-                if (event.type === "connection_opened") {
-                  // Ignore connection events
-                  continue;
-                }
 
                 if (event.type === "message_chunk") {
                   const responseMessage = event.data.content;
@@ -842,7 +856,10 @@ function InteractiveCommandInner() {
                 }
               }
             } catch (error) {
-              console.error("[Interactive] SSE stream error:", error);
+              // Only log error if not aborted
+              if (!abortController.signal.aborted) {
+                console.error("[Interactive] SSE stream error:", error);
+              }
             }
           })();
 
@@ -930,6 +947,15 @@ function InteractiveCommandInner() {
     };
 
     checkDaemonAndInitialize();
+
+    // Cleanup function
+    return () => {
+      console.log("[Interactive] Cleaning up SSE connection...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+    };
   }, []);
 
   // Add entry to output buffer
@@ -1608,7 +1634,15 @@ function InteractiveCommandInner() {
       parsed.command === "quit" ||
       parsed.command === "q"
     ) {
-      Deno.exit(0);
+      // Clean up SSE connection before exit
+      console.log("[Interactive] Exit command received, cleaning up...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+      // Use Ink's exit function for graceful shutdown
+      exit();
+      return;
     }
 
     if (parsed.command === "help") {

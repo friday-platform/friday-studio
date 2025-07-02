@@ -42,6 +42,7 @@ export {
   type WorkspaceDraft,
   WorkspaceDraftStorageAdapter,
 } from "./workspace-draft-storage-adapter.ts";
+export { type ConversationDraft, ConversationDraftAdapter } from "./conversation-draft-adapter.ts";
 
 // Factory functions for common configurations
 export async function createRegistryStorage(
