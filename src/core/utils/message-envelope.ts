@@ -12,6 +12,7 @@ import { z } from "zod/v4";
 export const WorkerTypeSchema = z.enum([
   "workspace-supervisor",
   "session-supervisor",
+  "agent-supervisor",
   "agent-execution",
   "manager",
 ]);

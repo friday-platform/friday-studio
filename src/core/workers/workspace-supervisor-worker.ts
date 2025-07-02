@@ -6,6 +6,15 @@ import { WorkspaceSupervisor } from "../supervisor.ts";
 import type { IWorkspace, IWorkspaceSignal } from "../../types/core.ts";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
 import type { AtlasMemoryConfig } from "../memory-config.ts";
+import {
+  assign,
+  createActor,
+  createMachine,
+  fromPromise,
+  sendParent,
+  spawnChild,
+  stopChild,
+} from "xstate";
 
 interface WorkspaceSupervisorConfig {
   id: string;
@@ -49,6 +58,99 @@ interface SetWorkspaceData {
 type WorkspaceWorkerData = ProcessSignalData | GetStatusData;
 type WorkspaceWorkerMessage = SetWorkspaceData | Record<string, unknown>;
 
+// XState 5 Session Worker Machine for Concurrent Processing
+const sessionWorkerMachine = createMachine({
+  id: "sessionWorker",
+  initial: "spawning",
+  context: ({ input }: { input: any }) => ({
+    sessionId: input.sessionId,
+    signal: input.signal,
+    payload: input.payload,
+    workerId: input.workerId,
+    worker: null as Worker | null,
+    port: null as MessagePort | null,
+  }),
+  states: {
+    spawning: {
+      invoke: {
+        src: fromPromise(async ({ context }: { context: any }) => {
+          // Create session worker with permissions to use BroadcastChannel
+          const sessionWorker = new Worker(
+            new URL("./session-supervisor-worker.ts", import.meta.url).href,
+            {
+              type: "module",
+              deno: {
+                permissions: "inherit",
+              },
+            } as WorkerOptions,
+          );
+
+          // Create message channel for direct communication
+          const { port1, port2 } = new MessageChannel();
+
+          // Set up worker communication
+          sessionWorker.postMessage({ type: "setPort" }, [port2]);
+
+          return {
+            worker: sessionWorker,
+            port: port1,
+            sessionId: context.sessionId,
+          };
+        }),
+        onDone: {
+          target: "processing",
+          actions: assign({
+            worker: ({ event }) => event.output.worker,
+            port: ({ event }) => event.output.port,
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: sendParent(({ context }) => ({
+            type: "SESSION_SPAWN_FAILED",
+            sessionId: context.sessionId,
+          })),
+        },
+      },
+    },
+    processing: {
+      entry: sendParent(({ context }) => ({
+        type: "SESSION_WORKER_SPAWNED",
+        sessionId: context.sessionId,
+        worker: context.worker,
+        port: context.port,
+      })),
+      on: {
+        COMPLETE: "completed",
+        TERMINATE: "terminating",
+      },
+    },
+    completed: {
+      entry: sendParent(({ context }) => ({
+        type: "SESSION_COMPLETED",
+        sessionId: context.sessionId,
+      })),
+      type: "final",
+    },
+    failed: {
+      type: "final",
+    },
+    terminating: {
+      invoke: {
+        src: fromPromise(async ({ context }: { context: any }) => {
+          if (context.worker) {
+            context.worker.terminate();
+          }
+        }),
+        onDone: "terminated",
+      },
+    },
+    terminated: {
+      type: "final",
+    },
+  },
+});
+
 class WorkspaceSupervisorWorker extends BaseWorker {
   private supervisor: WorkspaceSupervisor | null = null;
   private workspace: IWorkspace | null = null;
@@ -61,6 +163,82 @@ class WorkspaceSupervisorWorker extends BaseWorker {
 
   private error(message: string, context?: Record<string, unknown>): void {
     this.logger.error(message, context);
+  }
+
+  private async analyzeSignalAsync(
+    signal: IWorkspaceSignal,
+    payload: Record<string, unknown>,
+    sessionId: string,
+    traceHeaders?: Record<string, string>,
+  ) {
+    if (!this.supervisor) {
+      throw new Error("Supervisor not initialized");
+    }
+
+    try {
+      await AtlasTelemetry.withWorkerSpan(
+        {
+          operation: "analyzeSignal",
+          component: "workspace",
+          traceHeaders,
+          workerId: this.context.id,
+          sessionId,
+          signalId: signal.id,
+          signalType: signal.provider?.name || "unknown",
+          workspaceId: this.workspace?.id,
+        },
+        async (_span) => {
+          // Join the session's broadcast channel
+          this.actor.send({
+            type: "JOIN_CHANNEL",
+            channel: `session-${sessionId}`,
+          });
+
+          // Use WorkspaceSupervisor's intelligence to analyze the signal
+          this.log(`Analyzing signal with WorkspaceSupervisor for session ${sessionId}...`);
+          const intent = await AtlasTelemetry.withSpan(
+            "supervisor.analyzeSignal",
+            async () => {
+              return await this.supervisor!.analyzeSignal(signal, payload);
+            },
+            { "signal.id": signal.id },
+          );
+          this.log(`Signal analysis complete for session ${sessionId}`);
+
+          // Create filtered context for this specific session
+          this.log(`Creating session context for ${sessionId}...`);
+          const sessionContext = await AtlasTelemetry.withSpan(
+            "supervisor.createSessionContext",
+            async () => {
+              return await this.supervisor!.createSessionContext(intent, signal, payload);
+            },
+            { "signal.id": signal.id },
+          );
+          this.log(`Session context created for ${sessionId}`);
+
+          // Send session context directly to the already initialized session worker
+          const sessionInfo = this.sessions.get(sessionId);
+          if (sessionInfo) {
+            this.log(`Sending session context to initialized worker ${sessionId}...`);
+
+            // Send the session context to begin processing
+            const processMessage = {
+              type: "processSession",
+              sessionContext,
+              traceHeaders,
+            };
+
+            sessionInfo.port.postMessage(processMessage);
+            this.log(`Session processing started for ${sessionId}`);
+          } else {
+            throw new Error(`Session worker not found for ${sessionId}`);
+          }
+        },
+      );
+    } catch (error) {
+      this.error(`Signal analysis failed for session ${sessionId}:`, { error: error.message });
+      throw error; // Re-throw to ensure proper error handling
+    }
   }
 
   protected async initialize(config: WorkspaceSupervisorConfig): Promise<void> {
@@ -134,107 +312,21 @@ class WorkspaceSupervisorWorker extends BaseWorker {
         const processData = data as ProcessSignalData;
         const { signal, payload, sessionId, signalConfig, jobs, traceHeaders } = processData;
 
-        return await AtlasTelemetry.withWorkerSpan(
-          {
-            operation: "processSignal",
-            component: "workspace",
-            traceHeaders,
-            workerId: this.context.id,
-            sessionId,
-            signalId: signal.id,
-            signalType: signal.provider?.name || "unknown",
-            workspaceId: this.workspace?.id,
-          },
-          async (_span) => {
-            // Spawn session worker
-            this.spawnSessionWorker(sessionId);
+        // ✅ IMMEDIATE session worker spawning (non-blocking)
+        this.log(`Processing signal concurrently: ${signal.id} for session: ${sessionId}`);
+        const sessionInfo = this.spawnSessionWorker(sessionId);
 
-            // Join the session's broadcast channel
-            this.actor.send({
-              type: "JOIN_CHANNEL",
-              channel: `session-${sessionId}`,
-            });
+        // ✅ Start background analysis (fire-and-forget)
+        this.analyzeSignalAsync(signal, payload, sessionId, traceHeaders).catch((error) => {
+          this.error(`Signal analysis failed for session ${sessionId}:`, { error: error.message });
+        });
 
-            // Use WorkspaceSupervisor's intelligence to analyze the signal
-            this.log("Analyzing signal with WorkspaceSupervisor...");
-            const intent = await AtlasTelemetry.withSpan(
-              "supervisor.analyzeSignal",
-              async () => {
-                return await this.supervisor!.analyzeSignal(signal, payload);
-              },
-              { "signal.id": signal.id },
-            );
-            this.log(`Signal analysis complete`);
-
-            // Create filtered context for this specific session
-            this.log("Creating session context...");
-            const sessionContext = await AtlasTelemetry.withSpan(
-              "supervisor.createSessionContext",
-              async () => {
-                return await this.supervisor!.createSessionContext(intent, signal, payload, {
-                  signalConfig,
-                  jobs,
-                });
-              },
-              { "session.id": sessionId },
-            );
-            this.log(`Session context created`);
-
-            // Create trace headers for session worker communication
-            const sessionTraceHeaders = await AtlasTelemetry.createTraceHeaders();
-
-            // Send filtered initialization data to session worker
-            this.log(`Sending initialization to session worker ${sessionId}...`);
-            const initTaskId = crypto.randomUUID();
-            await this.sendToSessionWorker(sessionId, {
-              type: "task",
-              taskId: initTaskId,
-              data: {
-                action: "initialize",
-                intent,
-                signal,
-                payload,
-                workspaceId: this.workspace?.id,
-                workspacePath: this.config?.config?.workspacePath, // Pass workspace path for .env loading
-                agents: sessionContext.availableAgents || [],
-                filteredMemory: sessionContext.filteredMemory || [],
-                jobSpec: sessionContext.jobSpec, // Pass job specification to session
-                constraints: sessionContext.constraints,
-                additionalPrompts: sessionContext.additionalPrompts,
-                workspaceTools: this.config?.config?.workspaceTools, // Pass workspace tools to session
-                traceHeaders: sessionTraceHeaders, // Pass trace context to session
-              },
-            });
-            this.log(`Initialization sent to session worker`);
-
-            // Start session execution in worker (SessionSupervisor will create the plan)
-            const executionTaskId = crypto.randomUUID();
-            const result = await this.sendToSessionWorker(sessionId, {
-              type: "task",
-              taskId: executionTaskId,
-              data: {
-                action: "executeSession",
-                traceHeaders: sessionTraceHeaders, // Pass trace context
-              },
-            });
-
-            // Check if session completed and notify runtime
-            if (result && (result as any).status === "completed") {
-              this.log(`Session ${sessionId} completed, notifying runtime`);
-              self.postMessage({
-                type: "sessionComplete",
-                sessionId,
-                result,
-              });
-            }
-
-            return {
-              sessionId,
-              status: "started",
-              result,
-            };
-          },
-        );
+        // ✅ IMMEDIATE return - worker can accept next signal right away
+        return {
+          sessionId,
+          status: "session_spawned",
+          sessionWorkerCreated: true,
+        };
       }
 
       case "getStatus": {

@@ -143,7 +143,7 @@ export class WorkspaceRuntime {
    */
   private setupMessageHandlers(): void {
     // Set up global message handler for worker messages
-    this.workerManager.setGlobalMessageHandler(async (workerId: string, message: any) => {
+    this.workerManager.setGlobalMessageHandler(async (_workerId: string, message: any) => {
       if (message.type === "sessionComplete") {
         await this.handleSessionComplete(message.sessionId, message.result);
       }
@@ -360,10 +360,12 @@ export class WorkspaceRuntime {
 
         // Generate task ID for tracking
         const taskId = crypto.randomUUID();
-        const sessionId = crypto.randomUUID();
 
-        // Create session
-        const session = new Session(this.workspace.id, {
+        // Use session ID from payload (for conversation continuity), otherwise generate new one
+        const sessionId = payload?.sessionId || crypto.randomUUID();
+
+        // Create session options
+        const sessionOptions: any = {
           triggers: [signal],
           // deno-lint-ignore require-await
           callback: async (result) => {
@@ -373,13 +375,34 @@ export class WorkspaceRuntime {
               result,
             });
           },
-        });
+        };
+
+        // Create session without response config (sessions no longer handle response channels directly)
+        const session = new Session(
+          this.workspace.id,
+          sessionOptions,
+          undefined, // agents
+          undefined, // workflows
+          undefined, // sources
+          undefined, // intent
+          undefined, // storageAdapter
+          true, // enableCognitiveLoop
+        );
+
+        // Store original session ID for debugging
+        const originalSessionId = session.id;
 
         // Override session ID
         (session as any).id = sessionId;
 
         // Store session
         this.sessions.set(sessionId, session);
+        logger.debug("Session stored", {
+          sessionId,
+          originalSessionId,
+          sessionIdAfterOverride: session.id,
+          sessionCount: this.sessions.size,
+        });
 
         // Send event to state machine
         this.stateMachine.send({ type: "PROCESS_SIGNAL", signal, payload });
@@ -909,8 +932,8 @@ const workspaceRuntimeMachine = setup({
 
       // Load all agents (platform + user)
       const allAgents: Record<string, RuntimeAgentConfig> = {
-        ...mergedConfig.atlas.agents,
-        ...mergedConfig.workspace.agents,
+        ...(mergedConfig.atlas?.agents || {}),
+        ...(mergedConfig.workspace?.agents || {}),
       };
 
       if (allAgents && Object.keys(allAgents).length > 0) {

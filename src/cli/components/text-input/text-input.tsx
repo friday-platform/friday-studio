@@ -60,7 +60,11 @@ export function TextInput({
       width={dimensions.paddedWidth - 6}
       flexWrap="wrap"
     >
-      {lines.map((line, index) => <Text key={index}>{line}&nbsp;</Text>)}
+      {lines.map((line, index) => (
+        <Box key={index} overflow="hidden" width="100%">
+          <Text wrap="wrap">{line}&nbsp;</Text>
+        </Box>
+      ))}
     </Box>
   );
 }

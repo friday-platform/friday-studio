@@ -9,6 +9,7 @@ import {
   validateCrossReferences,
 } from "./services/workspace-conversation-helpers.ts";
 import { createKVStorage, StorageConfigs, WorkspaceDraftStorageAdapter } from "./storage/index.ts";
+import { AtlasClient } from "@atlas/client";
 
 // MCP tool name validation - dots are illegal in MCP tool names
 const MCPToolNameSchema = z.string().regex(
@@ -829,6 +830,290 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
       }
     },
   },
+
+  // =================================================================
+  // LIBRARY ACCESS TOOLS
+  // =================================================================
+
+  library_list: {
+    description: "List library items with optional filtering by type, tags, or date range",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        type: {
+          type: "string",
+          enum: ["report", "session_archive", "template", "artifact", "user_upload"],
+          description: "Filter by library item type",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Filter by tags (e.g., ['session-report', 'analysis'])",
+        },
+        limit: {
+          type: "number",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+          description: "Maximum number of items to return",
+        },
+        workspaceId: {
+          type: "string",
+          description: "Optional workspace ID to filter results to specific workspace",
+        },
+      },
+      additionalProperties: false,
+    }),
+    execute: async ({ type, tags, limit = 20, workspaceId }) => {
+      const client = new AtlasClient();
+
+      try {
+        const query = {
+          type,
+          tags,
+          limit,
+        };
+
+        const result = workspaceId
+          ? await client.listWorkspaceLibraryItems(workspaceId, query)
+          : await client.listLibraryItems(query);
+
+        return {
+          success: true,
+          items: result.items.map((item) => ({
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            size: item.size_bytes,
+            created: item.created_at,
+            tags: item.tags,
+            description: item.description,
+          })),
+          total: result.total,
+          message: `Found ${result.items.length} library items${
+            workspaceId ? ` in workspace ${workspaceId}` : ""
+          }`,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to list library items: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
+
+  library_get: {
+    description: "Get specific library item with full content for analysis and discussion",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        itemId: {
+          type: "string",
+          description: "The ID of the library item to retrieve",
+        },
+        includeContent: {
+          type: "boolean",
+          default: true,
+          description: "Whether to include the full content of the item",
+        },
+        workspaceId: {
+          type: "string",
+          description: "Optional workspace ID if this is a workspace-specific item",
+        },
+      },
+      required: ["itemId"],
+      additionalProperties: false,
+    }),
+    execute: async ({ itemId, includeContent = true, workspaceId }) => {
+      const client = new AtlasClient();
+
+      try {
+        const item = workspaceId
+          ? await client.getWorkspaceLibraryItem(workspaceId, itemId, includeContent)
+          : await client.getLibraryItem(itemId, includeContent);
+
+        return {
+          success: true,
+          item: {
+            id: item.item.id,
+            type: item.item.type,
+            name: item.item.name,
+            size: item.item.size_bytes,
+            created: item.item.created_at,
+            tags: item.item.tags,
+            description: item.item.description,
+            format: item.item.metadata.format,
+            content: item.content,
+          },
+          message: `Retrieved library item: ${item.item.name}`,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to get library item: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
+
+  library_search: {
+    description: "Search library items across all workspaces or globally",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query to find in item names, descriptions, or content",
+        },
+        type: {
+          type: "string",
+          enum: ["report", "session_archive", "template", "artifact", "user_upload"],
+          description: "Filter by library item type",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Filter by tags",
+        },
+        since: {
+          type: "string",
+          description: "ISO date string - only items created after this date",
+        },
+        until: {
+          type: "string",
+          description: "ISO date string - only items created before this date",
+        },
+        limit: {
+          type: "number",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+          description: "Maximum number of results to return",
+        },
+      },
+      required: ["query"],
+      additionalProperties: false,
+    }),
+    execute: async ({ query, type, tags, since, until, limit = 20 }) => {
+      const client = new AtlasClient();
+
+      try {
+        const searchQuery = {
+          query,
+          type,
+          tags,
+          since,
+          until,
+          limit,
+        };
+
+        const result = await client.searchLibrary(searchQuery);
+
+        return {
+          success: true,
+          items: result.items.map((item) => ({
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            size: item.size_bytes,
+            created: item.created_at,
+            tags: item.tags,
+            description: item.description,
+          })),
+          total: result.total,
+          query: query,
+          message: `Found ${result.items.length} items matching "${query}"`,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to search library: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
+
+  library_search_workspace: {
+    description: "Search library items within a specific workspace",
+    parameters: jsonSchema({
+      type: "object",
+      properties: {
+        workspaceId: {
+          type: "string",
+          description: "Workspace ID to search within",
+        },
+        query: {
+          type: "string",
+          description: "Search query to find in item names, descriptions, or content",
+        },
+        type: {
+          type: "string",
+          enum: ["report", "session_archive", "template", "artifact", "user_upload"],
+          description: "Filter by library item type",
+        },
+        tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Filter by tags",
+        },
+        limit: {
+          type: "number",
+          minimum: 1,
+          maximum: 100,
+          default: 20,
+          description: "Maximum number of results to return",
+        },
+      },
+      required: ["workspaceId", "query"],
+      additionalProperties: false,
+    }),
+    execute: async ({ workspaceId, query, type, tags, limit = 20 }) => {
+      const client = new AtlasClient();
+
+      try {
+        const searchQuery = {
+          query,
+          type,
+          tags,
+          limit,
+        };
+
+        const result = await client.searchWorkspaceLibrary(workspaceId, searchQuery);
+
+        return {
+          success: true,
+          workspaceId,
+          items: result.items.map((item) => ({
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            size: item.size_bytes,
+            created: item.created_at,
+            tags: item.tags,
+            description: item.description,
+          })),
+          total: result.total,
+          query: query,
+          message:
+            `Found ${result.items.length} items matching "${query}" in workspace ${workspaceId}`,
+        };
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to search workspace library: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        };
+      }
+    },
+  },
 });
 
 export class ConversationSupervisor {
@@ -907,6 +1192,22 @@ export class ConversationSupervisor {
   <capability name="workspace_creation">
   <description>Create and configure multi-agent workspaces</description>
   <module>workspace_creation_module</module>
+  </capability>
+
+  <capability name="library_access">
+  <description>Access and search the Atlas library for reports, session archives, and other workspace artifacts</description>
+  <tools>
+  - library_list: List library items with filtering options
+  - library_get: Retrieve specific items with full content for discussion
+  - library_search: Search across all libraries with flexible queries
+  - library_search_workspace: Search within specific workspaces
+  </tools>
+  <use_cases>
+  - Analyze AI agent discovery reports
+  - Review session execution details
+  - Compare findings across time periods
+  - Explore workspace artifacts and templates
+  </use_cases>
   </capability>
 
   <!-- Future capabilities can be added here -->

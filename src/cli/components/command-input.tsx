@@ -3,8 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { TextInput } from "./text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
-import { useAppContext } from "../contexts/app-context.tsx";
-import { LeaderKeyOverlay } from "./leader-key-overlay.tsx";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
@@ -23,7 +21,6 @@ export const CommandInput = ({
   const [inputKey, setInputKey] = useState(0);
   const [lastEscapeTime, setLastEscapeTime] = useState(0);
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
-  const { isLeaderKeyActive } = useAppContext();
 
   // Get all available suggestions with descriptions
   const getAllSuggestionsWithDescriptions = () => COMMAND_DEFINITIONS;
@@ -126,19 +123,17 @@ export const CommandInput = ({
         borderColor={isDisabled ? "gray" : "gray"}
         paddingX={1}
       >
-        {isLeaderKeyActive ? <LeaderKeyOverlay /> : (
-          <>
-            <Text dimColor>→&nbsp;</Text>
-            <TextInput
-              key={inputKey}
-              suggestions={getAllSuggestions()}
-              placeholder="Enter a message or type / for commands..."
-              onChange={handleInputChange}
-              onSubmit={handleSubmit}
-              isDisabled={isDisabled}
-            />
-          </>
-        )}
+        <>
+          <Text dimColor>→&nbsp;</Text>
+          <TextInput
+            key={inputKey}
+            suggestions={getAllSuggestions()}
+            placeholder="Enter a message or type / for commands..."
+            onChange={handleInputChange}
+            onSubmit={handleSubmit}
+            isDisabled={isDisabled}
+          />
+        </>
       </Box>
 
       {/* Always show row with conditional contents */}

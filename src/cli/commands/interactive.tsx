@@ -7,7 +7,7 @@ import {
   UnorderedList,
 } from "@inkjs/ui";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { YargsInstance } from "../utils/yargs.ts";
 import Help from "../views/help.tsx";
@@ -669,7 +669,6 @@ function InteractiveCommandInner() {
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
-  const { isLeaderKeyActive, setLeaderKeyActive } = useAppContext();
 
   // LLM conversation state (Phase 1 - Core Integration)
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
@@ -677,7 +676,14 @@ function InteractiveCommandInner() {
     string | null
   >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
+
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [sseStream, setSseStream] = useState<AsyncIterable<any> | null>(null);
+  const [pendingMessageSpinner, setPendingMessageSpinner] = useState<
+    string | null
+  >(null);
   const [selectedOutputIndex, setSelectedOutputIndex] = useState(-1);
+  const pendingMessageSpinnerRef = useRef<string | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -686,34 +692,6 @@ function InteractiveCommandInner() {
     const requiredHeight = Math.max(35, availableHeight + 8);
     setMinHeight(requiredHeight);
   }, [availableHeight]);
-
-  // Leader key input handler
-  useInput((input, key) => {
-    if (key.ctrl && input === "a") {
-      setLeaderKeyActive(!isLeaderKeyActive);
-      // Reset selection when entering leader key mode
-      if (!isLeaderKeyActive) {
-        setSelectedOutputIndex(outputBuffer.length - 1);
-      } else {
-        setSelectedOutputIndex(-1);
-      }
-    }
-
-    if (isLeaderKeyActive && (key.escape || input === "i")) {
-      setLeaderKeyActive(false);
-      setSelectedOutputIndex(-1);
-    }
-
-    // Arrow key navigation in leader key mode
-    if (isLeaderKeyActive && outputBuffer.length > 0) {
-      if (key.upArrow) {
-        setSelectedOutputIndex((prev) => prev <= 0 ? outputBuffer.length - 1 : prev - 1);
-      }
-      if (key.downArrow) {
-        setSelectedOutputIndex((prev) => prev >= outputBuffer.length - 1 ? 0 : prev + 1);
-      }
-    }
-  });
 
   // Add intro message on startup and check daemon status
   useEffect(() => {
@@ -739,23 +717,150 @@ function InteractiveCommandInner() {
         // Try to list workspaces - this will trigger auto-start if needed
         const workspaces = await client.listWorkspaces();
 
-        // Initialize ConversationClient if workspaces available (Phase 1)
-        if (workspaces.length > 0) {
-          try {
-            const defaultWorkspace = workspaces[0];
-            const conversationClient = new ConversationClient(
-              "http://localhost:8080",
-              defaultWorkspace.id,
-              "cli-user",
-            );
+        // Initialize ConversationClient for system workspace
+        try {
+          console.log("[Interactive] Initializing ConversationClient...");
+          // Use "system" as the workspace ID for the conversation system workspace
+          const conversationClient = new ConversationClient(
+            "http://localhost:8080",
+            "system",
+            "cli-user",
+          );
 
-            const session = await conversationClient.createSession();
-            setConversationClient(conversationClient);
-            setConversationSessionId(session.sessionId);
-          } catch (error) {
-            // Silent fail for ConversationClient - LLM features just won't be available
-            console.warn("Failed to initialize conversation client:", error);
-          }
+          console.log("[Interactive] Creating conversation session...");
+          const session = await conversationClient.createSession();
+          console.log("[Interactive] Session created:", session);
+
+          setConversationClient(conversationClient);
+          setConversationSessionId(session.sessionId);
+          // Store the SSE URL for later use
+          conversationClient.sseUrl = session.sseUrl;
+
+          // Start persistent SSE listener
+          console.log("[Interactive] Starting persistent SSE listener...");
+          const sseIterator = conversationClient.streamEvents(
+            session.sessionId,
+            session.sseUrl,
+          );
+          setSseStream(sseIterator);
+
+          // Start listening for SSE events in background
+          (async () => {
+            try {
+              for await (const event of sseIterator) {
+                console.log(
+                  "[Interactive] Received SSE event:",
+                  event.type,
+                  event.data,
+                );
+
+                if (event.type === "connection_opened") {
+                  // Ignore connection events
+                  continue;
+                }
+
+                if (event.type === "message_chunk") {
+                  const responseMessage = event.data.content;
+                  const isPartial = event.data.partial;
+
+                  // Update streaming message
+                  const responseTimestamp = new Date()
+                    .toLocaleTimeString([], {
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                    .toLowerCase()
+                    .replace(/\s/g, "");
+
+                  const streamingMessageId = `llm-response-current`;
+
+                  setOutputBuffer((prev) => {
+                    const filtered = prev.filter(
+                      (entry) => entry.id !== streamingMessageId,
+                    );
+                    return [
+                      ...filtered,
+                      {
+                        id: streamingMessageId,
+                        component: (
+                          <Box flexDirection="column">
+                            <Box flexDirection="row" gap={1}>
+                              <Text color="blue" bold>
+                                Δ Atlas
+                              </Text>
+                              <Text color="blue" dimColor bold>
+                                [{responseTimestamp}]
+                              </Text>
+                            </Box>
+                            <Box>
+                              <Text wrap="wrap" color="white">
+                                {responseMessage}
+                              </Text>
+                            </Box>
+                          </Box>
+                        ),
+                      },
+                    ];
+                  });
+                }
+
+                if (event.type === "message_complete") {
+                  console.log("[Interactive] Message completed");
+                  console.log(
+                    "[Interactive] Current pendingMessageSpinner (state):",
+                    pendingMessageSpinner,
+                  );
+                  console.log(
+                    "[Interactive] Current pendingMessageSpinner (ref):",
+                    pendingMessageSpinnerRef.current,
+                  );
+
+                  // Remove spinner when message is complete - use ref to avoid closure issues
+                  const spinnerId = pendingMessageSpinnerRef.current;
+                  if (spinnerId) {
+                    console.log(
+                      "[Interactive] Removing spinner on message_complete:",
+                      spinnerId,
+                    );
+                    setOutputBuffer((prev) => {
+                      const filtered = prev.filter(
+                        (entry) => entry.id !== spinnerId,
+                      );
+                      console.log(
+                        "[Interactive] Filtered out spinner, remaining entries:",
+                        filtered.length,
+                      );
+                      return filtered;
+                    });
+                    setPendingMessageSpinner(null);
+                    pendingMessageSpinnerRef.current = null;
+                  } else {
+                    console.log(
+                      "[Interactive] No pendingMessageSpinner to remove",
+                    );
+                  }
+                }
+              }
+            } catch (error) {
+              console.error("[Interactive] SSE stream error:", error);
+            }
+          })();
+
+          console.log(
+            "[Interactive] ConversationClient initialized successfully",
+          );
+        } catch (error) {
+          // Log the full error for debugging
+          console.error(
+            "[Interactive] Failed to initialize conversation client:",
+            error,
+          );
+          console.error("[Interactive] Full error details:", {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+        } finally {
+          setIsInitializing(false);
         }
 
         // Replace loading state with welcome message
@@ -820,6 +925,7 @@ function InteractiveCommandInner() {
             ),
           },
         ]);
+        setIsInitializing(false);
       }
     };
 
@@ -835,10 +941,51 @@ function InteractiveCommandInner() {
   const handleWorkspaceSelectForWorkspaces = async (workspaceId: string) => {
     setShowWorkspacesWorkspaceSelection(false);
 
+    // Handle special "none" case to exit workspace
+    if (workspaceId === "none") {
+      setSelectedWorkspace(null);
+
+      // Add workspace exit message to output buffer
+      const terminalWidth = dimensions.paddedWidth;
+      const messageText = ` Exited workspace `;
+      const totalDashes = Math.max(0, terminalWidth - messageText.length);
+      const leftDashes = Math.floor(totalDashes / 2);
+      const rightDashes = totalDashes - leftDashes;
+      const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+
+      addOutputEntry({
+        id: `workspace-exited-${Date.now()}`,
+        component: (
+          <Box width={terminalWidth}>
+            <Text dimColor>{formattedMessage}</Text>
+          </Box>
+        ),
+      });
+      return;
+    }
+
     try {
       const workspace = await getWorkspaceById(workspaceId);
       if (workspace) {
         setSelectedWorkspace(workspace.name);
+
+        // Add workspace selection message to output buffer
+        const workspaceName = workspace.name;
+        const terminalWidth = dimensions.paddedWidth;
+        const messageText = ` Entered: ${workspaceName} `;
+        const totalDashes = Math.max(0, terminalWidth - messageText.length);
+        const leftDashes = Math.floor(totalDashes / 2);
+        const rightDashes = totalDashes - leftDashes;
+        const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+
+        addOutputEntry({
+          id: `workspace-selected-${Date.now()}`,
+          component: (
+            <Box width={terminalWidth}>
+              <Text dimColor>{formattedMessage}</Text>
+            </Box>
+          ),
+        });
       }
     } catch (error) {
       addOutputEntry({
@@ -1346,12 +1493,24 @@ function InteractiveCommandInner() {
 
   // Handle LLM input (Phase 2.1)
   const handleLLMInput = async (input: string) => {
+    if (isInitializing) {
+      addOutputEntry({
+        id: `llm-initializing-${Date.now()}`,
+        component: (
+          <Text color="yellow">
+            Initializing conversation system, please wait...
+          </Text>
+        ),
+      });
+      return;
+    }
+
     if (!conversationClient || !conversationSessionId) {
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
           <Text color="red">
-            LLM not available. Try a workspace command first.
+            Failed to initialize conversation system. Please restart the CLI.
           </Text>
         ),
       });
@@ -1368,19 +1527,24 @@ function InteractiveCommandInner() {
       .toLowerCase()
       .replace(/\s/g, "");
     const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
-    addOutputEntry({
-      id: `user-${Date.now()}`,
-      component: (
-        <Box flexDirection="column">
-          <ChatMessage
-            author={currentUser}
-            date={userTimestamp}
-            message={input}
-            authorColor="green"
-          />
-        </Box>
-      ),
-    });
+
+    // Force immediate render by using setOutputBuffer directly
+    setOutputBuffer((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author={currentUser}
+              date={userTimestamp}
+              message={input}
+              authorColor="green"
+            />
+          </Box>
+        ),
+      },
+    ]);
 
     // Show processing indicator (using existing Spinner pattern)
     setIsLLMProcessing(true);
@@ -1391,64 +1555,25 @@ function InteractiveCommandInner() {
     });
 
     try {
+      console.log(
+        "[Interactive] Sending message with streamId:",
+        conversationSessionId,
+      );
+
+      // Store the spinner ID so the persistent SSE listener can remove it
+      console.log("[Interactive] Setting pendingMessageSpinner to:", spinnerId);
+      setPendingMessageSpinner(spinnerId);
+      pendingMessageSpinnerRef.current = spinnerId;
+
+      // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
-      let responseMessage = "";
-
-      // Listen ONLY for message_complete events (simplified from cx-client)
-      for await (
-        const event of conversationClient.streamEvents(
-          conversationSessionId,
-        )
-      ) {
-        if (event.type === "message_chunk") {
-          responseMessage = event.data.content;
-        } else if (event.type === "message_complete") {
-          setIsLLMProcessing(false);
-
-          // Remove spinner (following existing pattern)
-          setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
-
-          // Add response using ChatMessage component
-          if (responseMessage) {
-            const responseTimestamp = new Date()
-              .toLocaleTimeString([], {
-                hour: "numeric",
-                minute: "2-digit",
-              })
-              .toLowerCase()
-              .replace(/\s/g, "");
-            addOutputEntry({
-              id: `llm-response-${Date.now()}`,
-              component: (
-                <Box flexDirection="column">
-                  <ChatMessage
-                    author="Δ Atlas"
-                    date={responseTimestamp}
-                    message={responseMessage}
-                    authorColor="blue"
-                  />
-                </Box>
-              ),
-            });
-          }
-
-          if (event.data.error) {
-            addOutputEntry({
-              id: `llm-error-${Date.now()}`,
-              component: (
-                <Box paddingLeft={1}>
-                  <Text color="red">Error: {event.data.error}</Text>
-                </Box>
-              ),
-            });
-          }
-          return; // Exit stream
-        }
-      }
+      // The persistent SSE listener will handle the response and remove the spinner
     } catch (error) {
       setIsLLMProcessing(false);
       setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
+      setPendingMessageSpinner(null);
+      pendingMessageSpinnerRef.current = null;
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
@@ -1703,15 +1828,6 @@ function InteractiveCommandInner() {
     outputs.forEach(addOutputEntry);
   };
 
-  // Enhanced navigation handler
-  useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === "c") {
-      // Force immediate exit to avoid waiting for API timeouts
-      Deno.exit(0);
-      return;
-    }
-  });
-
   return (
     <Box
       flexDirection="column"
@@ -1879,7 +1995,6 @@ function InteractiveCommandInner() {
               <CommandInput
                 onSubmit={handleCommand}
                 selectedWorkspace={selectedWorkspace}
-                isDisabled={isLeaderKeyActive}
               />
             )}
         </>
@@ -1976,10 +2091,18 @@ const WorkspaceSelection = ({
   }
 
   // Create options for Select component
-  const options = workspaces.map((workspace) => ({
-    label: `${workspace.name} (${workspace.id})`,
-    value: workspace.id,
-  }));
+  const options = [
+    // Add "none" option first
+    {
+      label: "(none)",
+      value: "none",
+    },
+    // Then add all workspaces
+    ...workspaces.map((workspace) => ({
+      label: `${workspace.name} (${workspace.id})`,
+      value: workspace.id,
+    })),
+  ];
 
   const handleSelect = (value: string) => {
     onWorkspaceSelect(value);

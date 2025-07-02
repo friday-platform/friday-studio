@@ -445,9 +445,17 @@ export const JobExecutionSchema = z.object({
 });
 
 // Trigger specification schema for job-owns-relationship
+// Response configuration for triggers that support request/response patterns
+export const TriggerResponseConfigSchema = z.object({
+  mode: z.enum(["unary", "streaming", "interactive"]),
+  format: z.enum(["json", "sse", "websocket"]).optional().default("json"),
+  timeout: z.number().positive().optional().default(300000), // 5 min default
+});
+
 export const TriggerSpecificationSchema = z.object({
   signal: z.string(), // Signal name this job listens to
   condition: z.union([z.string(), z.record(z.string(), z.any())]).optional(), // Optional condition for triggering (string or JSONLogic object)
+  response: TriggerResponseConfigSchema.optional(), // Optional response configuration for request/response patterns
 });
 
 // Job specification schema for top-level jobs section
@@ -480,6 +488,14 @@ export const JobSpecificationSchema = z.object({
     estimated_duration_seconds: z.number().optional(),
     max_memory_mb: z.number().optional(),
     required_capabilities: z.array(z.string()).optional(),
+  }).optional(),
+  supervision: z.object({
+    level: z.enum(["minimal", "standard", "paranoid"]).optional(),
+  }).optional(),
+  memory: z.object({
+    enabled: z.boolean().optional().default(true),
+    fact_extraction: z.boolean().optional().default(true),
+    working_memory_summary: z.boolean().optional().default(true),
   }).optional(),
 });
 
@@ -579,6 +595,16 @@ export const AtlasConfigSchema = z.object({
 
   // Federation configuration (cross-workspace sharing and policies)
   federation: FederationConfigSchema.optional(),
+
+  // System workspaces - special workspaces for Atlas features
+  system_workspaces: z.record(
+    z.string(),
+    z.object({
+      enabled: z.boolean(),
+      workspace_path: z.string(), // Path to workspace definition (e.g., "@atlas/system/conversation")
+      config: z.record(z.string(), z.any()).optional(), // Workspace-specific configuration
+    }),
+  ).optional(),
 
   // Platform capabilities as jobs, signals, and agents (same as workspace.yml)
   jobs: z.record(z.string(), JobSpecificationSchema).optional(),
@@ -751,6 +777,7 @@ export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;
 export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type WorkspaceMCPServerConfig = z.infer<typeof WorkspaceMCPServerConfigSchema>;
 export type TriggerSpecification = z.infer<typeof TriggerSpecificationSchema>;
+export type TriggerResponseConfig = z.infer<typeof TriggerResponseConfigSchema>;
 export type JobSpecification = z.infer<typeof JobSpecificationSchema>;
 export type SupervisorDefaults = z.infer<typeof SupervisorDefaultsSchema>;
 

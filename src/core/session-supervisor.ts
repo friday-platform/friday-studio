@@ -14,6 +14,8 @@ import {
 } from "./memory/streaming/streaming-memory-manager.ts";
 import { ContextProvisioner } from "./context/context-provisioner.ts";
 import { parse } from "https://deno.land/std@0.208.0/yaml/mod.ts";
+import { ReasoningEngine } from "./reasoning/reasoning-engine.ts";
+import type { ReasoningContext } from "./reasoning/base-reasoning.ts";
 
 // Job specification types
 export interface JobSpecification {
@@ -37,12 +39,25 @@ export interface JobSpecification {
     max_memory_mb?: number;
     required_capabilities?: string[];
   };
+  supervision?: {
+    level?: "minimal" | "standard" | "paranoid";
+  };
+  memory?: {
+    enabled?: boolean;
+    fact_extraction?: boolean;
+    working_memory_summary?: boolean;
+  };
 }
 
 export interface JobTrigger {
   signal: string;
   condition?: string | object;
   naturalLanguageCondition?: string;
+  response?: {
+    mode: "unary" | "streaming" | "interactive";
+    format?: "json" | "sse" | "websocket";
+    timeout?: number;
+  };
 }
 
 export interface JobExecution {
@@ -175,6 +190,7 @@ export interface SessionContext {
     session?: string; // Session-specific prompt
     evaluation?: string; // Evaluation-specific prompt
   };
+  responseChannel?: any; // Response channel for streaming
 }
 
 export type AgentMetadata =
@@ -233,12 +249,14 @@ export class SessionSupervisor extends BaseAgent {
   private memoryConfig: AtlasMemoryConfig; // Store for AgentSupervisor
   private factExtractor?: FactExtractor;
   private knowledgeGraph?: KnowledgeGraphManager;
-  private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
+  private supervisionLevel: SupervisionLevel = SupervisionLevel.MINIMAL; // Skip expensive fake reasoning
   private streamingMemory?: StreamingMemoryManager;
   private workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Tools configuration from workspace
   private precomputedPlans: Record<string, any>; // Shared planning cache from WorkspaceSupervisor
   private contextProvisioner?: ContextProvisioner;
   private supervisorDefaults?: any; // Supervisor configuration defaults
+  private session?: any; // Reference to the Session instance for streaming
+  private reasoningEngine?: ReasoningEngine; // For thinking strategies
 
   constructor(
     memoryConfig: AtlasMemoryConfig,
@@ -263,16 +281,8 @@ export class SessionSupervisor extends BaseAgent {
     // Initialize knowledge graph and fact extractor for semantic memory
     this.initializeSemanticFactExtraction();
 
-    // Enable advanced planning and reasoning for complex decision making
-    this.enableAdvancedPlanning({
-      cacheDir: Deno.cwd(),
-      enableCaching: true,
-      enablePatternMatching: true,
-      reasoningConfig: {
-        allowLLMSelection: true,
-        defaultMethod: "react", // ReAct is good for session coordination with tool use
-      },
-    });
+    // Initialize reasoning engine for thinking strategies
+    this.initializeReasoningEngine();
 
     // Set supervisor-specific prompts
     this.prompts = {
@@ -340,6 +350,8 @@ You can use advanced reasoning methods to make complex decisions about agent coo
     );
   }
 
+  // Streaming is now handled through workspace capabilities (session_reply tool)
+
   // Get MCP server configurations for specific agent using workspace MCP servers
   getMcpServerConfigsForAgent(agentId: string, requestedServerIds: string[]): any[] {
     const workspaceMcpServers = this.workspaceTools?.mcp?.servers;
@@ -372,6 +384,19 @@ You can use advanced reasoning methods to make complex decisions about agent coo
   initializeAgentSupervisor(agentSupervisorConfig: any): void {
     this.agentSupervisor = new AgentSupervisor(agentSupervisorConfig, this.id);
     this.agentSupervisor.setSessionSupervisor(this); // Set reference for MCP registry access
+
+    // Set response channel if available
+    if (this.sessionContext?.responseChannel) {
+      this.agentSupervisor.setResponseChannel(this.sessionContext.responseChannel);
+      this.log("Set response channel on AgentSupervisor for streaming");
+    }
+
+    // Set up stream callback to forward messages
+    this.agentSupervisor.setStreamCallback((message: any) => {
+      // Forward stream messages through worker to runtime
+      self.postMessage(message);
+    });
+
     this.log("AgentSupervisor initialized for supervised agent execution");
   }
 
@@ -751,19 +776,19 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       }`,
     );
 
-    // Use advanced reasoning for complex planning decisions
-    if (this.planningEngine) {
+    // STEP 3: Use reasoning for complex tasks, direct execution for simple ones
+    if (this.shouldUseReasoning()) {
+      this.log("Using reasoning engine for complex task planning");
       try {
-        this.log("Using advanced reasoning for execution planning");
-        return await this.createAdvancedReasoningPlan();
+        return await this.useReasoningForPlanning();
       } catch (error) {
-        this.log(`Advanced reasoning failed: ${error}`);
+        this.log(`Reasoning failed, falling back to direct planning: ${error}`);
       }
     }
 
-    // Fallback to LLM-based planning
-    this.log("Using LLM-based planning fallback");
-    return await this.createLLMBasedPlan();
+    // STEP 4: Direct execution plan creation for simple tasks
+    this.log("Creating direct execution plan");
+    return await this.createDirectExecutionPlan();
   }
 
   // Create execution plan from job specification
@@ -1374,37 +1399,214 @@ Create a well-formatted task following the specified format requirements.`;
     return plan;
   }
 
-  // Create execution plan using advanced reasoning methods
-  private async createAdvancedReasoningPlan(): Promise<ExecutionPlan> {
-    if (!this.planningEngine || !this.sessionContext) {
-      throw new Error("Advanced planning not available");
+  // Initialize reasoning engine for thinking strategies
+  private initializeReasoningEngine(): void {
+    this.reasoningEngine = new ReasoningEngine({
+      defaultMethod: "react", // Good default for session coordination
+      allowLLMSelection: false, // Use heuristics for performance
+    });
+    this.log("Reasoning engine initialized", {
+      availableMethods: this.reasoningEngine.getAvailableMethods(),
+    });
+  }
+
+  // Use reasoning to think through complex problems
+  private async useReasoningForPlanning(): Promise<ExecutionPlan> {
+    if (!this.reasoningEngine || !this.sessionContext) {
+      throw new Error("Reasoning engine or session context not available");
     }
 
-    // Create a planning task for the session
-    const planningTask = {
-      id: `session-plan-${this.sessionContext.sessionId}`,
-      description: `Create execution plan for ${this.sessionContext.signal.id} signal`,
-      context: {
+    // Build reasoning context
+    const reasoningContext: ReasoningContext = {
+      task: `Process ${this.sessionContext.signal.id} signal with available agents`,
+      context: JSON.stringify({
         signal: this.sessionContext.signal,
         payload: this.sessionContext.payload,
-        availableAgents: this.sessionContext.availableAgents,
-        constraints: this.sessionContext.constraints,
-      },
-      agentType: "session" as const,
-      complexity: this.determineTaskComplexity(),
-      requiresToolUse: this.requiresToolUsage(),
+        availableAgents: this.sessionContext.availableAgents.map((a) => ({
+          id: a.id,
+          type: a.type,
+          purpose: a.purpose,
+          capabilities: a.capabilities,
+        })),
+        availableTools: Object.keys(this.workspaceTools?.mcp?.servers || {}),
+      }),
+      complexity: this.estimateComplexity(),
+      requiresToolUse: this.detectToolUse(),
       qualityCritical: this.isQualityCritical(),
+      agentType: "session",
     };
 
-    // Generate plan using reasoning engine
-    const planResult = await this.planningEngine.generatePlan(planningTask);
+    // Get reasoning result
+    const reasoning = await this.reasoningEngine.reason(reasoningContext);
+    this.log("Reasoning completed", {
+      method: reasoning.method,
+      confidence: reasoning.confidence,
+      requiredCapabilities: reasoning.requiredCapabilities,
+    });
 
-    this.log(
-      `Generated plan using ${planResult.method} reasoning (confidence: ${planResult.confidence})`,
+    // Convert reasoning to execution plan
+    return this.createPlanFromReasoning(reasoning);
+  }
+
+  // Convert reasoning output to executable plan
+  private createPlanFromReasoning(reasoning: any): ExecutionPlan {
+    if (!this.sessionContext) {
+      throw new Error("No session context");
+    }
+
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [],
+      successCriteria: [],
+      adaptationStrategy: "flexible",
+    };
+
+    // Handle different reasoning methods
+    if (reasoning.method === "react" && reasoning.solution.thoughtProcess) {
+      // ReAct: Map thought-action pairs to agent executions
+      const agentTasks = reasoning.solution.thoughtProcess.map((step: any, index: number) => {
+        // Find agent that matches required capability
+        const agent = this.findAgentForCapability(step.requiredCapability);
+        return {
+          agentId: agent?.id || "local-assistant",
+          task: step.thought,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [reasoning.solution.thoughtProcess[index - 1].agentId] : [],
+        };
+      });
+
+      plan.phases.push({
+        id: "react-execution",
+        name: "ReAct-based Execution",
+        agents: agentTasks,
+        executionStrategy: "sequential",
+      });
+      plan.successCriteria = reasoning.recommendations || ["Complete all reasoning steps"];
+    } else if (reasoning.method === "chain-of-thought" && reasoning.solution.thoughtChain) {
+      // Chain-of-Thought: Map logical steps to agents
+      const agentTasks = reasoning.solution.thoughtChain.map((step: any) => {
+        const agent = this.findAgentForStep(step);
+        return {
+          agentId: agent?.id || "local-assistant",
+          task: step.description,
+          inputSource: step.dependencies?.length > 0 ? "previous" : "signal",
+        };
+      });
+
+      plan.phases.push({
+        id: "cot-execution",
+        name: "Chain-of-Thought Execution",
+        agents: agentTasks,
+        executionStrategy: "sequential",
+      });
+      plan.successCriteria = reasoning.solution.qualityCriteria || ["Complete logical steps"];
+    } else if (reasoning.method === "self-refine" && reasoning.solution.refinementChain) {
+      // Self-Refine: Use final approach
+      const finalApproach = reasoning.solution.finalApproach;
+      // Simple execution based on refined approach
+      plan.phases.push({
+        id: "refined-execution",
+        name: "Refined Approach Execution",
+        agents: this.sessionContext.availableAgents.slice(0, 2).map((agent, index) => ({
+          agentId: agent.id,
+          task: finalApproach,
+          inputSource: index === 0 ? "signal" : "previous",
+        })),
+        executionStrategy: "sequential",
+      });
+      plan.successCriteria = reasoning.solution.qualityCriteria || ["Meet quality criteria"];
+    } else {
+      // Fallback: Use all available agents
+      plan.phases.push({
+        id: "default-execution",
+        name: "Default Sequential Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process with ${agent.name || agent.id}`,
+          inputSource: index === 0 ? "signal" : "previous",
+        })),
+        executionStrategy: "sequential",
+      });
+      plan.successCriteria = ["Process through all agents"];
+    }
+
+    this.executionPlan = plan;
+    return plan;
+  }
+
+  // Find agent that provides a capability
+  private findAgentForCapability(capability: string): AgentMetadata | undefined {
+    return this.sessionContext?.availableAgents.find((agent) => {
+      // Check if agent capabilities match
+      if (agent.capabilities?.includes(capability)) return true;
+
+      // Check by agent type/purpose
+      if (
+        capability === "file-access" &&
+        (agent.purpose?.includes("file") || agent.purpose?.includes("code"))
+      ) {
+        return true;
+      }
+      if (capability === "web-search" && agent.purpose?.includes("search")) {
+        return true;
+      }
+      if (capability === "analysis" && agent.purpose?.includes("analy")) {
+        return true;
+      }
+
+      return false;
+    });
+  }
+
+  // Find agent for a reasoning step
+  private findAgentForStep(step: any): AgentMetadata | undefined {
+    const keywords = step.description.toLowerCase();
+    return this.sessionContext?.availableAgents.find((agent) => {
+      const agentText = `${agent.id} ${agent.purpose || ""}`.toLowerCase();
+      return keywords.split(" ").some((keyword) => agentText.includes(keyword));
+    });
+  }
+
+  // Estimate task complexity
+  private estimateComplexity(): number {
+    if (!this.sessionContext) return 0.5;
+
+    let complexity = 0.3; // Base
+
+    // More agents = more complex
+    complexity += Math.min(this.sessionContext.availableAgents.length * 0.1, 0.3);
+
+    // Large payload = more complex
+    const payloadSize = JSON.stringify(this.sessionContext.payload).length;
+    if (payloadSize > 1000) complexity += 0.2;
+
+    // Complex signal types
+    if (
+      this.sessionContext.signal.id.includes("complex") ||
+      this.sessionContext.signal.id.includes("multi")
+    ) {
+      complexity += 0.2;
+    }
+
+    return Math.min(complexity, 1.0);
+  }
+
+  // Detect if tool use is likely needed
+  private detectToolUse(): boolean {
+    if (!this.sessionContext) return false;
+
+    // Check if we have MCP tools available
+    const hasTools = !!(this.workspaceTools?.mcp?.servers &&
+      Object.keys(this.workspaceTools.mcp.servers).length > 0);
+
+    // Check if agents need tools
+    const agentsNeedTools = this.sessionContext.availableAgents.some((agent) =>
+      agent.type === "remote" ||
+      agent.capabilities?.some((c) => c.includes("tool") || c.includes("mcp"))
     );
 
-    // Convert plan result to ExecutionPlan format
-    return this.convertReasoningPlanToExecutionPlan(planResult.plan);
+    return hasTools || agentsNeedTools;
   }
 
   // Determine task complexity for reasoning method selection
@@ -1503,6 +1705,70 @@ Create a well-formatted task following the specified format requirements.`;
 
     this.executionPlan = executionPlan;
     return executionPlan;
+  }
+
+  // Create direct execution plan without fake reasoning
+  private async createDirectExecutionPlan(): Promise<ExecutionPlan> {
+    if (!this.sessionContext) {
+      throw new Error("No session context available");
+    }
+
+    // For conversation signals, use the conversation agent directly
+    if (
+      this.sessionContext.signal.id === "conversation-stream" ||
+      this.sessionContext.signal.id === "conversation-message"
+    ) {
+      const conversationAgent = this.sessionContext.availableAgents.find(
+        (a) => a.id === "conversation-agent",
+      );
+
+      if (conversationAgent) {
+        this.log("Using direct conversation agent execution");
+        const plan: ExecutionPlan = {
+          id: crypto.randomUUID(),
+          sessionId: this.sessionContext.sessionId,
+          phases: [{
+            id: "conversation-phase",
+            name: "Conversation Response",
+            agents: [{
+              agentId: conversationAgent.id,
+              task: "Generate response to user message",
+              inputSource: "signal",
+              dependencies: [],
+            }],
+            executionStrategy: "sequential",
+          }],
+          successCriteria: ["Response generated"],
+          adaptationStrategy: "rigid", // No adaptation needed for conversations
+        };
+
+        this.executionPlan = plan;
+        return plan;
+      }
+    }
+
+    // For other signals, create a simple sequential plan
+    this.log("Creating simple sequential execution plan");
+    const plan: ExecutionPlan = {
+      id: crypto.randomUUID(),
+      sessionId: this.sessionContext.sessionId,
+      phases: [{
+        id: "main-phase",
+        name: "Sequential Agent Execution",
+        agents: this.sessionContext.availableAgents.map((agent, index) => ({
+          agentId: agent.id,
+          task: `Process with ${agent.name || agent.id}`,
+          inputSource: index === 0 ? "signal" : "previous",
+          dependencies: index > 0 ? [this.sessionContext!.availableAgents[index - 1].id] : [],
+        })),
+        executionStrategy: "sequential",
+      }],
+      successCriteria: ["All agents executed successfully"],
+      adaptationStrategy: "flexible",
+    };
+
+    this.executionPlan = plan;
+    return plan;
   }
 
   // Fallback LLM-based planning for backward compatibility
@@ -1638,17 +1904,45 @@ Respond with a structured plan.`;
     nextAction?: "continue" | "retry" | "adapt" | "escalate";
     feedback?: string;
   }> {
-    // Try advanced reasoning first for complex evaluation
-    if (this.planningEngine && this.shouldUseAdvancedReasoning(results)) {
-      try {
-        return await this.evaluateProgressWithReasoning(results);
-      } catch (error) {
-        this.log(`Advanced evaluation failed: ${error}`);
-      }
+    // Skip expensive evaluation in minimal supervision mode
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
+      // Simple check: if we have results and no errors, we're done
+      const hasError = results.some((r) =>
+        !r.output ||
+        (typeof r.output === "object" && "error" in r.output)
+      );
+      return {
+        isComplete: results.length > 0 && !hasError,
+        nextAction: "continue",
+        feedback: "Minimal supervision - basic completion check",
+      };
     }
 
     // Fallback to standard LLM evaluation
     return await this.evaluateProgressWithLLM(results);
+  }
+
+  // Check if we should use reasoning for planning
+  private shouldUseReasoning(): boolean {
+    if (!this.sessionContext || !this.reasoningEngine) return false;
+
+    // Skip reasoning in minimal supervision mode for performance
+    if (this.supervisionLevel === SupervisionLevel.MINIMAL) return false;
+
+    // Use reasoning for complex tasks
+    const complexity = this.estimateComplexity();
+    if (complexity > 0.6) return true;
+
+    // Use reasoning if quality is critical
+    if (this.isQualityCritical()) return true;
+
+    // Use reasoning if we have many agents to coordinate
+    if (this.sessionContext.availableAgents.length > 3) return true;
+
+    // Use reasoning if tools are involved
+    if (this.detectToolUse()) return true;
+
+    return false;
   }
 
   // Check if we should use advanced reasoning for evaluation
@@ -2000,6 +2294,8 @@ Provide a brief evaluation.`;
           },
         );
       }
+
+      // Streaming is now handled through workspace capabilities (session_reply tool)
 
       // Step 7: Record execution in working memory (legacy for dual-write)
       await this.recordExecutionInWorkingMemory(agentId, task, input, result, context);
@@ -3372,4 +3668,6 @@ Overall Session Summary: ${
       });
     }
   }
+
+  // Streaming is now handled through workspace capabilities (session_reply tool)
 }
