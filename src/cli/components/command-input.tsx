@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { TextInput } from "./text-input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
@@ -21,6 +21,7 @@ export const CommandInput = ({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [inputKey, setInputKey] = useState(0);
+  const [lastEscapeTime, setLastEscapeTime] = useState(0);
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
   const { isLeaderKeyActive } = useAppContext();
 
@@ -39,8 +40,26 @@ export const CommandInput = ({
     );
   };
 
+  // Clear input function
+  const clearInput = () => {
+    setCurrentInput("");
+    setShowSuggestions(false);
+    setSelectedSuggestionIndex(-1);
+    setInputKey((prev) => prev + 1);
+  };
+
   // Handle keyboard navigation like SplashScreen
   useInput((input, key) => {
+    // Handle double escape to clear input
+    if (key.escape) {
+      const currentTime = Date.now();
+      if (currentTime - lastEscapeTime < 500) { // 500ms window for double escape
+        clearInput();
+        return;
+      }
+      setLastEscapeTime(currentTime);
+    }
+
     // When we're in suggestion navigation mode
     if (showSuggestions) {
       if (key.upArrow) {
@@ -55,7 +74,6 @@ export const CommandInput = ({
       }
       if (key.escape || key.tab) {
         // Go back to input mode
-
         setSelectedSuggestionIndex(-1);
         return;
       }
