@@ -226,9 +226,9 @@ jobs:
           fi
 
           # Also clean up any previous package receipts to allow downgrades/cross-channel installs
-          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+          if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
             echo "Cleaning up previous Atlas package receipts..."
-            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+            pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
           fi
 
           exit 0
@@ -307,7 +307,7 @@ jobs:
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
-            --identifier "com.tempestteam.atlas" \
+            --identifier "com.tempestdx.atlas" \
             --version "$installer_version" \
             --install-location "/" \
             "./dist/atlas-component.pkg"
@@ -319,8 +319,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
               <title>Tempest ATLAS ${RELEASE_VERSION}</title>
-              <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
-              <welcome file="" mime-type=""/>
+              <welcome file="welcome.txt" mime-type="text/plain"/>
               <license file="license.txt" mime-type="text/plain"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
@@ -337,14 +336,23 @@ jobs:
           }
               </script>
               <choices-outline>
-                  <line choice="com.tempestteam.atlas"/>
+                  <line choice="com.tempestdx.atlas"/>
               </choices-outline>
-              <choice id="com.tempestteam.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
-                  <pkg-ref id="com.tempestteam.atlas"/>
+              <choice id="com.tempestdx.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
-              <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
           </installer-gui-script>
           EOF
+
+          # Create welcome file
+          cat > ./dist/welcome.txt << 'WELCOME_EOF'
+          Welcome to Tempest ATLAS Installation
+          
+          This installer will install the Tempest ATLAS CLI tool on your system.
+          
+          Before proceeding, please read and accept the license agreement.
+          WELCOME_EOF
 
           # Create license file
           cat > ./dist/license.txt << 'LICENSE_EOF'
