@@ -176,11 +176,15 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
       required: ["message", "transparency"],
       additionalProperties: false,
     }),
-    execute: ({ message, transparency }) => {
+    execute: async ({ message, transparency }, options) => {
       const logger = AtlasLogger.getInstance();
+      const startTime = Date.now();
+
       logger.info("cx_reply tool executing", {
         messageLength: message.length,
         hasTransparency: !!transparency,
+        toolCallId: options?.toolCallId,
+        timestamp: new Date().toISOString(),
       });
 
       // Log the full details for debugging
@@ -191,6 +195,7 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
           messageLength: message.length,
           fullMessage: message,
           transparency,
+          toolCallId: options?.toolCallId,
         },
         null,
         2,
@@ -203,9 +208,12 @@ const createCxTools = (sessionId: string): Record<string, Tool> => ({
         success: true,
       };
 
+      const executionTime = Date.now() - startTime;
       logger.debug("cx_reply tool returning result", {
         hasMessage: !!result.message,
         hasTransparency: !!result.transparency,
+        executionTime,
+        toolCallId: options?.toolCallId,
       });
 
       return result;
@@ -881,10 +889,11 @@ export class ConversationSupervisor {
   </identity>
 
   <core_principles>
-  1. ALWAYS call cx_reply to communicate with the user - NEVER leave them without a response
-  2. ALWAYS explain what you're doing and why before calling tools
-  3. Be proactive in helping users understand Atlas and what you're creating for them
-  4. Default to clear prose explanations; provide technical details only when requested
+  1. Use cx_reply to communicate with the user - every interaction should include user communication
+  2. Call cx_reply ONCE per response unless you need to provide updates during a multi-step process
+  3. Explain what you're doing and why before calling other tools
+  4. Be proactive in helping users understand Atlas and what you're creating for them
+  5. Default to clear prose explanations; provide technical details only when requested
   </core_principles>
 
   <capabilities>
@@ -908,11 +917,11 @@ export class ConversationSupervisor {
   <workspace_creation_module>
 
   <critical_workflow_requirement>
-  IMPORTANT: ALWAYS follow a two-step process for workspace creation:
+  IMPORTANT: Follow a two-step process for workspace creation:
   
-  STEP 1 - PLANNING (MANDATORY):
-  - ALWAYS start with cx_reply to describe what you plan to build
-  - NEVER call workspace_draft_create in your first response
+  STEP 1 - PLANNING:
+  - Start with cx_reply to describe what you plan to build
+  - Do not call workspace_draft_create in your first response
   - Present a clear plan and ask for user confirmation
   - This gives users a chance to correct misunderstandings early
   
@@ -931,8 +940,8 @@ export class ConversationSupervisor {
   </thinking_process>
 
   <response_structure>
-  STEP 1 - Initial Planning Response (REQUIRED):
-  Always use cx_reply ONLY with:
+  STEP 1 - Initial Planning Response:
+  Use cx_reply with:
   1. "I'll create a workspace that [restate goal]"
   2. "Here's what I'm planning to build:"
      - Signal type and trigger mechanism
@@ -1298,13 +1307,13 @@ export class ConversationSupervisor {
   </publishing_guidance>
 
   <important_reminders>
-  - NEVER skip cx_reply - always communicate with the user
-  - NEVER call workspace_draft_create in your first response - always plan first
-  - ALWAYS follow the two-step process: Plan → Confirm → Build
-  - NEVER publish without validation - always check configuration first
-  - NEVER assume all details - ask when something is unclear
-  - ALWAYS explain your reasoning and what you're building
-  - ALWAYS mention which model you're using for each agent and why
+  - Communicate with the user using cx_reply - one message per response is usually sufficient
+  - Do not call workspace_draft_create in your first response - plan first
+  - Follow the two-step process: Plan → Confirm → Build
+  - Do not publish without validation - check configuration first
+  - Ask for clarification when details are unclear
+  - Explain your reasoning and what you're building
+  - Mention which model you're using for each agent and why
   - Agent system prompts use "prompts.system" not "system_prompt"
   - Use full model identifiers (e.g., "claude-3-5-haiku-20241022")
   - Default to prose explanations; show YAML only when requested
@@ -1391,13 +1400,23 @@ export class ConversationSupervisor {
         systemPromptPreview: systemPrompt.substring(0, 200) + "...",
       });
 
+      // Log the available tools
+      logger.info("ConversationSupervisor: Starting LLM generation", {
+        toolNames: Object.keys(tools),
+        model: "claude-3-7-sonnet-latest",
+        maxSteps: 10,
+        timeout: 90000,
+        sessionId,
+        messageId,
+      });
+
       const result = await LLMProviderManager.generateTextWithTools(message, {
         systemPrompt,
         tools,
         model: "claude-3-7-sonnet-latest",
         temperature: 0.7,
-        maxSteps: 7, // Allow multiple agent creation and job setup when user provides specific details
-        toolChoice: "required", // Force tool usage to ensure cx_reply is called
+        maxSteps: 10, // Allow multiple steps for complex workspace creation workflows
+        toolChoice: "auto", // Let the AI decide when to call tools (it will still follow the system prompt)
         operationContext: { operation: "conversation_supervision" },
         timeout: 90000, // 90 seconds for complex multi-agent workspace creation
       });
@@ -1416,6 +1435,34 @@ export class ConversationSupervisor {
         })),
         steps: result.steps?.length || 0,
       });
+
+      // Log detailed step information if available
+      if (result.steps && result.steps.length > 0) {
+        logger.info(JSON.stringify(
+          {
+            message: "AI SDK Steps Analysis",
+            stepCount: result.steps.length,
+            steps: result.steps.map((step: any, idx: number) => ({
+              index: idx,
+              type: step.type || "unknown",
+              toolCalls: step.toolCalls?.map((tc: any) => ({
+                id: tc.toolCallId,
+                name: tc.toolName,
+              })) || [],
+              toolResults: step.toolResults?.map((tr: any) => ({
+                id: tr.toolCallId,
+                hasResult: !!tr.result,
+              })) || [],
+              hasText: !!step.text,
+              textPreview: step.text?.substring(0, 100),
+            })),
+            sessionId,
+            messageId,
+          },
+          null,
+          2,
+        ));
+      }
 
       // Log the full result for debugging
       logger.info(JSON.stringify(
@@ -1467,10 +1514,48 @@ export class ConversationSupervisor {
         ));
       }
 
-      // Emit tool call event
-      if (result.toolCalls.length > 0) {
+      // Emit tool call events for ALL tools from ALL steps
+      const allToolCalls: Array<{ toolName: string; args: any }> = [];
+
+      // Collect tool calls from all steps
+      if (result.steps && result.steps.length > 0) {
+        for (const step of result.steps as any[]) {
+          if (step.toolCalls && Array.isArray(step.toolCalls)) {
+            for (const toolCall of step.toolCalls) {
+              allToolCalls.push({
+                toolName: toolCall.toolName,
+                args: toolCall.args,
+              });
+            }
+          }
+        }
+      }
+
+      // Also include top-level tool calls (if not already in steps)
+      for (const toolCall of result.toolCalls) {
+        // Check if this tool call is already in allToolCalls
+        const exists = allToolCalls.some((tc) =>
+          tc.toolName === toolCall.toolName &&
+          JSON.stringify(tc.args) === JSON.stringify(toolCall.args)
+        );
+        if (!exists) {
+          allToolCalls.push({
+            toolName: toolCall.toolName,
+            args: toolCall.args,
+          });
+        }
+      }
+
+      // Emit tool call events
+      if (allToolCalls.length > 0) {
         const logger = AtlasLogger.getInstance();
-        for (const toolCall of result.toolCalls) {
+        logger.info(`Emitting ${allToolCalls.length} tool call events`, {
+          toolNames: allToolCalls.map((tc) => tc.toolName),
+          sessionId,
+          messageId,
+        });
+
+        for (const toolCall of allToolCalls) {
           logger.debug("ConversationSupervisor tool call", {
             toolName: toolCall.toolName,
             args: toolCall.args,
@@ -1492,7 +1577,19 @@ export class ConversationSupervisor {
       }
 
       // Check if workspace tools were called without cx_reply
-      const workspaceToolsCalled = result.toolCalls.filter((tc) =>
+      // Check both top-level and in steps
+      const allToolCallsFromSteps: any[] = [];
+      if (result.steps) {
+        for (const step of result.steps as any[]) {
+          if (step.toolCalls && Array.isArray(step.toolCalls)) {
+            allToolCallsFromSteps.push(...step.toolCalls);
+          }
+        }
+      }
+
+      const allToolCallsCombined = [...result.toolCalls, ...allToolCallsFromSteps];
+
+      const workspaceToolsCalled = allToolCallsCombined.filter((tc) =>
         [
           "workspace_draft_create",
           "update_workspace_config",
@@ -1500,18 +1597,23 @@ export class ConversationSupervisor {
           "show_draft_config",
         ].includes(tc.toolName)
       );
-      const cxReplyCalled = result.toolCalls.some((tc) => tc.toolName === "cx_reply");
+      const cxReplyCalled = allToolCallsCombined.some((tc) => tc.toolName === "cx_reply");
 
       // CRITICAL FIX: Handle case where cx_reply was called but results are missing
-      if (cxReplyCalled && result.toolResults.length === 0) {
+      // Note: allToolResults hasn't been populated yet at this point, so check steps directly
+      const hasAnyToolResults = result.toolResults.length > 0 ||
+        (result.steps?.some((step: any) => step.toolResults && step.toolResults.length > 0) ||
+          false);
+
+      if (cxReplyCalled && !hasAnyToolResults) {
         logger.error("CRITICAL: cx_reply was called but no results returned", {
-          toolCalls: result.toolCalls.filter((tc) => tc.toolName === "cx_reply"),
+          toolCalls: allToolCallsCombined.filter((tc) => tc.toolName === "cx_reply"),
           sessionId,
           messageId,
         });
 
         // Extract the message from the tool call args as a fallback
-        const cxReplyCall = result.toolCalls.find((tc) => tc.toolName === "cx_reply");
+        const cxReplyCall = allToolCallsCombined.find((tc) => tc.toolName === "cx_reply");
         if (cxReplyCall && cxReplyCall.args) {
           const args = cxReplyCall.args as { message?: string; transparency?: any };
           if (args.message) {
@@ -1550,8 +1652,40 @@ export class ConversationSupervisor {
         }
       }
 
+      // Collect ALL tool results from ALL steps
+      const allToolResults: Array<{ toolCallId: string; result: any }> = [];
+      const processedToolCalls = new Set<string>();
+
+      // Process results from all steps if available
+      if (result.steps && result.steps.length > 0) {
+        logger.info("Processing tool results from steps", {
+          stepCount: result.steps.length,
+          sessionId,
+          messageId,
+        });
+
+        for (const step of result.steps as any[]) {
+          if (step.toolResults && Array.isArray(step.toolResults)) {
+            for (const toolResult of step.toolResults) {
+              if (!processedToolCalls.has(toolResult.toolCallId)) {
+                allToolResults.push(toolResult);
+                processedToolCalls.add(toolResult.toolCallId);
+              }
+            }
+          }
+        }
+      }
+
+      // Also include top-level tool results (in case they're not in steps)
+      for (const toolResult of result.toolResults) {
+        if (!processedToolCalls.has(toolResult.toolCallId)) {
+          allToolResults.push(toolResult);
+          processedToolCalls.add(toolResult.toolCallId);
+        }
+      }
+
       // Check if we have tool calls but no results
-      if (result.toolCalls.length > 0 && result.toolResults.length === 0) {
+      if (result.toolCalls.length > 0 && allToolResults.length === 0) {
         logger.error("Tool calls were made but no tool results were returned", {
           toolCalls: result.toolCalls.map((tc) => ({ name: tc.toolName, id: tc.toolCallId })),
           sessionId,
@@ -1560,12 +1694,14 @@ export class ConversationSupervisor {
       }
 
       // Process tool results and emit events
-      if (result.toolResults.length > 0) {
+      if (allToolResults.length > 0) {
         logger.info(JSON.stringify(
           {
-            message: "Processing tool results",
-            count: result.toolResults.length,
-            toolResults: result.toolResults.map((tr, idx) => ({
+            message: "Processing ALL tool results (from steps and top-level)",
+            totalCount: allToolResults.length,
+            originalCount: result.toolResults.length,
+            fromSteps: allToolResults.length - result.toolResults.length,
+            toolResults: allToolResults.map((tr, idx) => ({
               index: idx,
               toolCallId: tr.toolCallId,
               resultType: typeof tr.result,
@@ -1579,15 +1715,96 @@ export class ConversationSupervisor {
           2,
         ));
 
-        // Process ALL tool results, not just the first one
-        for (const toolResultWrapper of result.toolResults) {
+        // Log mismatches between tool calls and results
+        const toolCallIds = result.toolCalls.map((tc) => tc.toolCallId);
+        const toolResultIds = allToolResults.map((tr) => tr.toolCallId);
+        const missingResults = toolCallIds.filter((id) => !toolResultIds.includes(id));
+
+        if (missingResults.length > 0) {
+          logger.error(JSON.stringify(
+            {
+              message: "CRITICAL: Tool calls missing results",
+              toolCallIds,
+              toolResultIds,
+              missingResults,
+              missingTools: result.toolCalls
+                .filter((tc) => missingResults.includes(tc.toolCallId))
+                .map((tc) => ({ id: tc.toolCallId, name: tc.toolName })),
+              sessionId,
+              messageId,
+            },
+            null,
+            2,
+          ));
+
+          // FALLBACK: Manually execute tools that are missing results
+          const tools = createCxTools(sessionId);
+          for (const toolCall of result.toolCalls) {
+            if (missingResults.includes(toolCall.toolCallId)) {
+              logger.warn(`Manually executing missing tool: ${toolCall.toolName}`, {
+                toolCallId: toolCall.toolCallId,
+                sessionId,
+                messageId,
+              });
+
+              const tool = tools[toolCall.toolName];
+              if (tool && tool.execute) {
+                try {
+                  const manualResult = await tool.execute(toolCall.args, {
+                    toolCallId: toolCall.toolCallId,
+                    messages: [],
+                  });
+                  allToolResults.push({
+                    toolCallId: toolCall.toolCallId,
+                    result: manualResult,
+                  });
+                  logger.info(`Successfully executed missing tool: ${toolCall.toolName}`, {
+                    toolCallId: toolCall.toolCallId,
+                    hasResult: !!manualResult,
+                    sessionId,
+                    messageId,
+                  });
+                } catch (error) {
+                  logger.error(`Failed to manually execute tool: ${toolCall.toolName}`, {
+                    toolCallId: toolCall.toolCallId,
+                    error: error instanceof Error ? error.message : String(error),
+                    sessionId,
+                    messageId,
+                  });
+                }
+              }
+            }
+          }
+        }
+
+        // Process ALL tool results from all steps
+        // Create a map to avoid processing duplicate cx_reply messages
+        const processedMessages = new Set<string>();
+
+        for (const toolResultWrapper of allToolResults) {
           const toolResult = toolResultWrapper.result as any;
 
-          // Find which tool was called
-          const toolCall = result.toolCalls.find((tc) =>
+          // Find which tool was called - check all steps for tool calls
+          let toolName: string | undefined;
+
+          // First check top-level tool calls
+          let toolCall = result.toolCalls.find((tc) =>
             tc.toolCallId === toolResultWrapper.toolCallId
           );
-          const toolName = toolCall?.toolName;
+
+          // If not found in top-level, check in steps
+          if (!toolCall && result.steps) {
+            for (const step of result.steps as any[]) {
+              if (step.toolCalls && Array.isArray(step.toolCalls)) {
+                toolCall = step.toolCalls.find((tc: any) =>
+                  tc.toolCallId === toolResultWrapper.toolCallId
+                );
+                if (toolCall) break;
+              }
+            }
+          }
+
+          toolName = toolCall?.toolName;
 
           logger.info(JSON.stringify(
             {
@@ -1608,6 +1825,22 @@ export class ConversationSupervisor {
 
           // Handle cx_reply tool result
           if (toolName === "cx_reply" && toolResult.message) {
+            // Check if we've already processed this exact message
+            const messageHash = JSON.stringify({
+              message: toolResult.message,
+              transparency: toolResult.transparency,
+            });
+            if (processedMessages.has(messageHash)) {
+              logger.info("Skipping duplicate cx_reply message", {
+                toolCallId: toolResultWrapper.toolCallId,
+                messageLength: toolResult.message.length,
+                sessionId,
+                messageId,
+              });
+              continue;
+            }
+            processedMessages.add(messageHash);
+
             logger.info(JSON.stringify(
               {
                 message: "Processing cx_reply tool result",
@@ -1652,8 +1885,11 @@ export class ConversationSupervisor {
                 sessionId,
               };
 
-              // Small delay for realistic typing feel
-              await new Promise((resolve) => setTimeout(resolve, 10)); // Reduced from 50ms
+              // Small delay for realistic typing feel - skip delay for duplicate messages
+              if (allToolResults.length <= 1) {
+                await new Promise((resolve) => setTimeout(resolve, 5)); // Reduced delay for single messages
+              }
+              // No delay for multiple tool results to avoid long waits
             }
           }
 
@@ -1692,7 +1928,12 @@ export class ConversationSupervisor {
       }
 
       // Handle case where no tools were called at all
-      if (result.toolCalls.length === 0) {
+      // Check both top-level toolCalls AND tool calls in steps
+      const hasToolCallsInSteps = result.steps?.some((step: any) =>
+        step.toolCalls && step.toolCalls.length > 0
+      ) || false;
+
+      if (result.toolCalls.length === 0 && !hasToolCallsInSteps) {
         logger.error("ConversationSupervisor: No tools were called, which should not happen", {
           message,
           sessionId,
