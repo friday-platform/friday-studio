@@ -677,6 +677,7 @@ function InteractiveCommandInner() {
     string | null
   >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
+  const [selectedOutputIndex, setSelectedOutputIndex] = useState(-1);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -690,9 +691,27 @@ function InteractiveCommandInner() {
   useInput((input, key) => {
     if (key.ctrl && input === "x") {
       setLeaderKeyActive(!isLeaderKeyActive);
+      // Reset selection when entering leader key mode
+      if (!isLeaderKeyActive) {
+        setSelectedOutputIndex(outputBuffer.length - 1);
+      } else {
+        setSelectedOutputIndex(-1);
+      }
     }
+
     if (isLeaderKeyActive && (key.escape || input === "i")) {
       setLeaderKeyActive(false);
+      setSelectedOutputIndex(-1);
+    }
+
+    // Arrow key navigation in leader key mode
+    if (isLeaderKeyActive && outputBuffer.length > 0) {
+      if (key.upArrow) {
+        setSelectedOutputIndex((prev) => prev <= 0 ? outputBuffer.length - 1 : prev - 1);
+      }
+      if (key.downArrow) {
+        setSelectedOutputIndex((prev) => prev >= outputBuffer.length - 1 ? 0 : prev + 1);
+      }
     }
   });
 
@@ -1734,7 +1753,24 @@ function InteractiveCommandInner() {
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" marginY={1} paddingX={1} gap={1}>
-              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
+              {outputBuffer.map((entry, index) => (
+                <Box
+                  key={entry.id}
+                  borderStyle={{
+                    topLeft: "",
+                    top: "",
+                    topRight: "",
+                    bottomLeft: "",
+                    bottom: "",
+                    bottomRight: "",
+                    right: "",
+                    left: isLeaderKeyActive && selectedOutputIndex === index ? "│" : "",
+                  }}
+                  paddingLeft={isLeaderKeyActive && selectedOutputIndex === index ? 1 : 0}
+                >
+                  {entry.component}
+                </Box>
+              ))}
             </Box>
           )}
 
