@@ -461,6 +461,52 @@ jobs:
             --install-location "/" \
             "./dist/${pkg_name}"
           
+          # Sign the pkg if certificates are available
+          if [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
+            echo "Signing pkg installer..."
+            # Import certificate (reuse existing keychain if available)
+            if ! security list-keychains | grep -q "build.keychain"; then
+              echo "${{ secrets.MACOS_SIGN_P12 }}" | base64 --decode > certificate.p12
+              security create-keychain -p mypassword build.keychain
+              security default-keychain -s build.keychain
+              security unlock-keychain -p mypassword build.keychain
+              security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_SIGN_PASSWORD }}" -T /usr/bin/productsign
+              security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
+            fi
+            
+            # Auto-detect signing identity for installer signing
+            if [ -z "${{ secrets.MACOS_SIGN_IDENTITY }}" ]; then
+              SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+              if [ -z "$SIGN_IDENTITY" ]; then
+                echo "No Developer ID Installer certificate found, trying Developer ID Application"
+                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+              fi
+              if [ -z "$SIGN_IDENTITY" ]; then
+                echo "No suitable certificate found, trying any valid identity"
+                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+              fi
+              echo "Auto-detected signing identity: $SIGN_IDENTITY"
+            else
+              SIGN_IDENTITY="${{ secrets.MACOS_SIGN_IDENTITY }}"
+              echo "Using provided signing identity: $SIGN_IDENTITY"
+            fi
+            
+            if [ -n "$SIGN_IDENTITY" ]; then
+              # Sign the pkg
+              productsign --sign "$SIGN_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"
+              mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
+              echo "✅ pkg signed successfully"
+              
+              # Verify the signature
+              spctl -a -v --type install "./dist/${pkg_name}" && echo "✅ pkg signature verified" || echo "⚠️ pkg signature verification failed"
+            else
+              echo "⚠️ No suitable signing identity found, pkg will be unsigned"
+            fi
+          else
+            echo "⚠️ No signing certificates available, pkg will be unsigned"
+            echo "💡 Users will need to right-click → Open or use 'System Preferences → Security & Privacy' to install"
+          fi
+          
           # Generate checksum for pkg
           shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
           
