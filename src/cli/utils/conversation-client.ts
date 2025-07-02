@@ -102,7 +102,7 @@ export class ConversationClient {
 
     try {
       const workspaces = await this.daemonClient.listWorkspaces();
-      const conversationWorkspace = workspaces.find((w) => w.name === "conversation");
+      const conversationWorkspace = workspaces.find((w) => w.name === "atlas-conversation");
 
       if (!conversationWorkspace) {
         throw new Error(
