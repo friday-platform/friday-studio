@@ -24,7 +24,7 @@ import { SignalActionSelection } from "../components/signal-action-selection.tsx
 import { SignalDetails } from "../components/signal-details.tsx";
 import { SignalSelection } from "../components/signal-selection.tsx";
 import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
-import { YamlDisplay } from "../components/yaml-display.tsx";
+
 import { AppProvider } from "../contexts/app-context.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
@@ -34,6 +34,7 @@ import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update 
 import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
+
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
@@ -44,6 +45,7 @@ import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
 import Help from "../views/help.tsx";
 import { InitView } from "../views/InitView.tsx";
+import { MarkdownDisplay } from "../components/markdown-display.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -764,7 +766,9 @@ function InteractiveCommandInner() {
               for await (const event of sseIterator) {
                 // Check if we should stop
                 if (abortController.signal.aborted) {
-                  console.log("[Interactive] SSE stream aborted, stopping listener");
+                  console.log(
+                    "[Interactive] SSE stream aborted, stopping listener",
+                  );
                   break;
                 }
                 console.log(
@@ -828,6 +832,22 @@ function InteractiveCommandInner() {
                     "[Interactive] Current pendingMessageSpinner (ref):",
                     pendingMessageSpinnerRef.current,
                   );
+
+                  // Update streaming message ID to make it permanent
+                  const streamingMessageId = `llm-response-current`;
+                  const permanentMessageId = `message-received-${Date.now()}`;
+
+                  setOutputBuffer((prev) => {
+                    return prev.map((entry) => {
+                      if (entry.id === streamingMessageId) {
+                        return {
+                          ...entry,
+                          id: permanentMessageId,
+                        };
+                      }
+                      return entry;
+                    });
+                  });
 
                   // Remove spinner when message is complete - use ref to avoid closure issues
                   const spinnerId = pendingMessageSpinnerRef.current;
@@ -1759,6 +1779,11 @@ function InteractiveCommandInner() {
             .toLowerCase()
             .replace(/\s/g, "");
 
+          // Wrap YAML content in markdown code block
+          const markdownYaml = `\`\`\`yaml
+${yamlContent}
+\`\`\``;
+
           addOutputEntry({
             id: `yaml-output-${Date.now()}`,
             component: (
@@ -1769,7 +1794,7 @@ function InteractiveCommandInner() {
                   message="Here's the example workspace.yml file:"
                   authorColor="blue"
                 />
-                <YamlDisplay content={yamlContent} />
+                <MarkdownDisplay content={markdownYaml} />
               </Box>
             ),
           });
@@ -1784,6 +1809,92 @@ function InteractiveCommandInner() {
           });
         }
       })();
+      return;
+    }
+
+    if (parsed.command === "markdown") {
+      // Show example markdown content
+      const exampleMarkdown = `# Atlas Markdown Support
+
+## Features
+
+Atlas now supports rich **markdown** rendering in the terminal using \`ink-markdown\`.
+
+### Text Formatting
+
+- **Bold text** with \`**text**\`
+- *Italic text* with \`*text*\`
+- \`Inline code\` with backticks
+- ~~Strikethrough~~ with \`~~text~~\`
+
+### Lists
+
+#### Unordered Lists
+- Item 1
+- Item 2
+  - Nested item A
+  - Nested item B
+- Item 3
+
+#### Ordered Lists
+1. First item
+2. Second item
+3. Third item
+
+### Links and Code
+
+Visit [Atlas Documentation](https://docs.atlas.dev) for more information.
+
+Here's a code block:
+
+\`\`\`javascript
+function greet(name) {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(greet("Atlas"));
+\`\`\`
+
+### Tables
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| YAML Display | ✅ Complete | Uses collapsible view |
+| Git Diff | ✅ Complete | Syntax highlighted |
+| Markdown | ✅ Complete | Rich formatting |
+
+### Quotes
+
+> Atlas is a comprehensive AI agent orchestration platform
+> that transforms software delivery through human/AI collaboration.
+
+---
+
+**Happy coding with Atlas!** 🚀`;
+
+      const now = new Date();
+      const timestamp = now
+        .toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+        .toLowerCase()
+        .replace(/\s/g, "");
+
+      addOutputEntry({
+        id: `markdown-output-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author="Δ Atlas"
+              date={timestamp}
+              message="Here's an example of markdown rendering:"
+              authorColor="blue"
+            />
+            <MarkdownDisplay content={exampleMarkdown} />
+          </Box>
+        ),
+      });
       return;
     }
 
