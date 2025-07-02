@@ -45,11 +45,27 @@ export const useTextInput = ({
       return state.value;
     }
 
+    // Handle empty input
+    if (state.value.length === 0) {
+      return cursor;
+    }
+
     let index = 0;
-    let result = state.value.length > 0 ? "" : cursor;
+    let result = "";
+    let cursorInserted = false;
 
     for (const char of state.value) {
-      result += index === state.cursorOffset ? chalk.inverse(char) : char;
+      if (index === state.cursorOffset) {
+        if (char === "\n" || char === "\r") {
+          // If cursor is at a newline, insert cursor before the newline
+          result += cursor + char;
+        } else {
+          result += chalk.inverse(char);
+        }
+        cursorInserted = true;
+      } else {
+        result += char;
+      }
       index++;
     }
 
@@ -64,7 +80,8 @@ export const useTextInput = ({
       return result;
     }
 
-    if (state.value.length > 0 && state.cursorOffset === state.value.length) {
+    // Show cursor at the end if we're at the end of the text and haven't inserted cursor yet
+    if (state.cursorOffset === state.value.length && !cursorInserted) {
       result += cursor;
     }
 
@@ -79,46 +96,109 @@ export const useTextInput = ({
     return renderedPlaceholder;
   }, [state.value.length, renderedValue, renderedPlaceholder]);
 
-  useInput(
-    (input, key) => {
-      if (key.leftArrow) {
-        state.moveCursorLeft();
+  useInput((input, key) => {
+    // Handle Meta+b (backward word) and Meta+f (forward word)
+    if (key.meta && input) {
+      if (input === "b") {
+        // Meta+b: move to previous word
+        state.moveCursorWordLeft();
+        return;
       }
-
-      if (key.rightArrow) {
-        state.moveCursorRight();
+      if (input === "f") {
+        // Meta+f: move to next word
+        state.moveCursorWordRight();
+        return;
       }
+    }
 
-      if (key.backspace || key.delete) {
-        state.delete();
+    // Handle Ctrl+a (beginning of line) and Ctrl+e (end of line)
+    if (key.ctrl && input) {
+      if (input === "a") {
+        // Ctrl+a: move to beginning of line
+        state.moveCursorLineStart();
+        return;
       }
+      if (input === "e") {
+        // Ctrl+e: move to end of line
+        state.moveCursorLineEnd();
+        return;
+      }
+      if (input === "u") {
+        // Ctrl+u: delete from cursor to beginning of line
+        state.deleteToLineStart();
+        return;
+      }
+    }
 
-      if (key.return) {
+    if (key.leftArrow) {
+      // Normal left arrow
+      state.moveCursorLeft();
+      return;
+    }
+
+    if (key.rightArrow) {
+      // Normal right arrow
+      state.moveCursorRight();
+      return;
+    }
+
+    if (key.upArrow) {
+      state.moveCursorUp();
+      return;
+    }
+
+    if (key.downArrow) {
+      state.moveCursorDown();
+      return;
+    }
+
+    if (key.return) {
+      // Check for multi-line key combinations
+      if (key.shift) {
+        // Shift+Enter: Insert \n
+        state.insert("\n");
+      } else if (key.meta) {
+        // Option+Enter: Insert \r
+        state.insert("\r");
+      } else {
+        // Normal enter submits
         state.submit();
       }
+      return;
+    }
 
-      if (key.tab) {
-        if (state.suggestion && !state.justAcceptedSuggestion) {
-          // Accept the suggestion
-          state.acceptSuggestion();
-        } else {
-          // Either no suggestion or just accepted one, pass tab through for focus handling
-          state.clearSuggestionFlag();
-          onTabFocus?.();
-        }
+    if (key.backspace || key.delete) {
+      if (key.meta) {
+        // Meta+delete: delete word
+        state.deleteWord();
+      } else {
+        // Normal delete
+        state.delete();
       }
+      return;
+    }
 
-      if (input) {
-        // Don't insert characters when modifier keys (except shift) are pressed
-        const hasModifierKeys = key.ctrl || key.meta;
-
-        if (!hasModifierKeys) {
-          state.insert(input);
-        }
+    if (key.tab) {
+      if (state.suggestion && !state.justAcceptedSuggestion) {
+        // Accept the suggestion
+        state.acceptSuggestion();
+      } else {
+        // Either no suggestion or just accepted one, pass tab through for focus handling
+        state.clearSuggestionFlag();
+        onTabFocus?.();
       }
-    },
-    { isActive: !isDisabled },
-  );
+      return;
+    }
+
+    if (input) {
+      // Don't insert characters when modifier keys (except shift) are pressed
+      const hasModifierKeys = key.ctrl || key.meta;
+
+      if (!hasModifierKeys) {
+        state.insert(input);
+      }
+    }
+  });
 
   return {
     inputValue,
