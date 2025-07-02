@@ -499,7 +499,7 @@ jobs:
 
           # Create license file
           cat > ./dist/license.txt << 'LICENSE_EOF'
-🦝 The Backyard Raccoon License (BRL) v1.0
+The Backyard Raccoon License (BRL) v1.0
 
 Preamble
 In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".
