@@ -322,7 +322,7 @@ jobs:
               <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
               <welcome file="" mime-type=""/>
               <license file="license.txt" mime-type="text/plain"/>
-              <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
               <script>
@@ -337,12 +337,9 @@ jobs:
           }
               </script>
               <choices-outline>
-                  <line choice="default">
-                      <line choice="com.tempestteam.atlas"/>
-                  </line>
+                  <line choice="com.tempestteam.atlas"/>
               </choices-outline>
-              <choice id="default"/>
-              <choice id="com.tempestteam.atlas" visible="false">
+              <choice id="com.tempestteam.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
                   <pkg-ref id="com.tempestteam.atlas"/>
               </choice>
               <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
