@@ -941,6 +941,29 @@ function InteractiveCommandInner() {
   const handleWorkspaceSelectForWorkspaces = async (workspaceId: string) => {
     setShowWorkspacesWorkspaceSelection(false);
 
+    // Handle special "none" case to exit workspace
+    if (workspaceId === "none") {
+      setSelectedWorkspace(null);
+
+      // Add workspace exit message to output buffer
+      const terminalWidth = dimensions.paddedWidth;
+      const messageText = ` Exited workspace `;
+      const totalDashes = Math.max(0, terminalWidth - messageText.length);
+      const leftDashes = Math.floor(totalDashes / 2);
+      const rightDashes = totalDashes - leftDashes;
+      const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+
+      addOutputEntry({
+        id: `workspace-exited-${Date.now()}`,
+        component: (
+          <Box width={terminalWidth}>
+            <Text dimColor>{formattedMessage}</Text>
+          </Box>
+        ),
+      });
+      return;
+    }
+
     try {
       const workspace = await getWorkspaceById(workspaceId);
       if (workspace) {
@@ -949,11 +972,11 @@ function InteractiveCommandInner() {
         // Add workspace selection message to output buffer
         const workspaceName = workspace.name;
         const terminalWidth = dimensions.paddedWidth;
-        const messageText = ` Moved into workspace: ${workspaceName} `;
+        const messageText = ` Entered: ${workspaceName} `;
         const totalDashes = Math.max(0, terminalWidth - messageText.length);
         const leftDashes = Math.floor(totalDashes / 2);
         const rightDashes = totalDashes - leftDashes;
-        const formattedMessage = "-".repeat(leftDashes) + messageText + "-".repeat(rightDashes);
+        const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
 
         addOutputEntry({
           id: `workspace-selected-${Date.now()}`,
@@ -2068,10 +2091,18 @@ const WorkspaceSelection = ({
   }
 
   // Create options for Select component
-  const options = workspaces.map((workspace) => ({
-    label: `${workspace.name} (${workspace.id})`,
-    value: workspace.id,
-  }));
+  const options = [
+    // Add "none" option first
+    {
+      label: "(none)",
+      value: "none",
+    },
+    // Then add all workspaces
+    ...workspaces.map((workspace) => ({
+      label: `${workspace.name} (${workspace.id})`,
+      value: workspace.id,
+    })),
+  ];
 
   const handleSelect = (value: string) => {
     onWorkspaceSelect(value);
