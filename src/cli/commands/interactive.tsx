@@ -7,9 +7,21 @@ import {
   ThemeProvider,
   UnorderedList,
 } from "@inkjs/ui";
-import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
+import {
+  Box,
+  Newline,
+  render,
+  Static,
+  Text,
+  useApp,
+  useInput,
+  useStdout,
+} from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
+import {
+  WorkspaceEntry,
+  WorkspaceStatus,
+} from "../../core/workspace-manager.ts";
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { AgentDetails } from "../components/agent-details.tsx";
 import { AgentSelection } from "../components/agent-selection.tsx";
@@ -24,7 +36,7 @@ import { SignalActionSelection } from "../components/signal-action-selection.tsx
 import { SignalDetails } from "../components/signal-details.tsx";
 import { SignalSelection } from "../components/signal-selection.tsx";
 import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
-import { YamlDisplay } from "../components/yaml-display.tsx";
+
 import { AppProvider } from "../contexts/app-context.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
@@ -34,6 +46,7 @@ import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update 
 import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
 import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
+
 import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
@@ -44,6 +57,7 @@ import { ConfigView } from "../views/ConfigView.tsx";
 import CreditsView from "../views/CreditsView.tsx";
 import Help from "../views/help.tsx";
 import { InitView } from "../views/InitView.tsx";
+import { MarkdownDisplay } from "../components/markdown-display.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -174,7 +188,7 @@ export function builder(yargs: YargsInstance) {
   return yargs
     .example("$0", "Launch interactive Atlas interface")
     .epilogue(
-      "The interactive interface provides a user-friendly way to manage workspaces",
+      "The interactive interface provides a user-friendly way to manage workspaces"
     );
 }
 
@@ -207,7 +221,7 @@ export function handler() {
   render(
     <ThemeProvider theme={customTheme}>
       <InteractiveCommand />
-    </ThemeProvider>,
+    </ThemeProvider>
   );
 }
 
@@ -293,7 +307,7 @@ interface CommandDefinition {
 
 const handleWorkspacesCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
@@ -305,7 +319,7 @@ const handleWorkspacesCommand = (
 
 const handleSignalsCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Switch to workspace selection mode for signals
   context.addEntry({
@@ -317,7 +331,7 @@ const handleSignalsCommand = (
 
 const handleAgentsCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
@@ -329,7 +343,7 @@ const handleAgentsCommand = (
 
 const handleLibraryCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
@@ -341,7 +355,7 @@ const handleLibraryCommand = (
 
 const handleSessionsCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Switch to workspace selection mode
   context.addEntry({
@@ -363,7 +377,7 @@ const handleVersionCommand = (_args: string[]): OutputEntry[] => {
 
 const handleClearCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Clear the output buffer by setting it to empty
   context.addEntry({
@@ -390,7 +404,7 @@ const handleConfigCommand = (_args: string[]): OutputEntry[] => {
 
 const handleStatusCommand = (
   _args: string[],
-  context: CommandContext,
+  context: CommandContext
 ): OutputEntry[] => {
   // Perform async health check
   const checkDaemonStatus = async () => {
@@ -451,7 +465,7 @@ const handleStatusCommand = (
  */
 const handleLibraryOpenCommand = async (
   itemId: string,
-  addOutputEntry: (entry: OutputEntry) => void,
+  addOutputEntry: (entry: OutputEntry) => void
 ) => {
   try {
     const client = getAtlasClient();
@@ -474,7 +488,8 @@ const handleLibraryOpenCommand = async (
         id: `library-open-error-${Date.now()}`,
         component: (
           <Text color="red">
-            Could not find library item '{itemId}'. Library items may be workspace-specific.
+            Could not find library item '{itemId}'. Library items may be
+            workspace-specific.
             {error instanceof Error ? ` Error: ${error.message}` : ""}
           </Text>
         ),
@@ -497,7 +512,7 @@ const handleLibraryOpenCommand = async (
     // Create temporary file and open it
     const openResult = await createTempFileAndOpen(
       libraryItem.item,
-      libraryItem.content,
+      libraryItem.content
     );
 
     if (openResult.success) {
@@ -506,14 +521,18 @@ const handleLibraryOpenCommand = async (
         component: (
           <Text color="green">
             Opened '{libraryItem.item.name}' in default application.
-            {openResult.tempPath && <Text dimColor>(Temporary file: {openResult.tempPath})</Text>}
+            {openResult.tempPath && (
+              <Text dimColor>(Temporary file: {openResult.tempPath})</Text>
+            )}
           </Text>
         ),
       });
     } else {
       addOutputEntry({
         id: `library-open-error-${Date.now()}`,
-        component: <Text color="red">Failed to open file: {openResult.error}</Text>,
+        component: (
+          <Text color="red">Failed to open file: {openResult.error}</Text>
+        ),
       });
     }
   } catch (error) {
@@ -521,7 +540,8 @@ const handleLibraryOpenCommand = async (
       id: `library-open-error-${Date.now()}`,
       component: (
         <Text color="red">
-          Error opening library item: {error instanceof Error ? error.message : String(error)}
+          Error opening library item:{" "}
+          {error instanceof Error ? error.message : String(error)}
         </Text>
       ),
     });
@@ -631,20 +651,24 @@ function InteractiveCommandInner() {
     setShowWorkspacesWorkspaceSelection,
   ] = useState(false);
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
-    null,
+    null
   );
   const [_loadingSignals, setLoadingSignals] = useState(false);
-  const [showAgentWorkspaceSelection, setShowAgentWorkspaceSelection] = useState(false);
+  const [showAgentWorkspaceSelection, setShowAgentWorkspaceSelection] =
+    useState(false);
   const [_loadingAgents, setLoadingAgents] = useState(false);
-  const [showLibraryWorkspaceSelection, setShowLibraryWorkspaceSelection] = useState(false);
+  const [showLibraryWorkspaceSelection, setShowLibraryWorkspaceSelection] =
+    useState(false);
   const [_loadingLibrary, setLoadingLibrary] = useState(false);
-  const [showSessionsWorkspaceSelection, setShowSessionsWorkspaceSelection] = useState(false);
+  const [showSessionsWorkspaceSelection, setShowSessionsWorkspaceSelection] =
+    useState(false);
   const [_loadingSessions, setLoadingSessions] = useState(false);
   const [showSignalSelection, setShowSignalSelection] = useState(false);
   const [showSessionSelection, setShowSessionSelection] = useState(false);
   const [showAgentSelection, setShowAgentSelection] = useState(false);
   const [showJobSelection, setShowJobSelection] = useState(false);
-  const [showSignalActionSelection, setShowSignalActionSelection] = useState(false);
+  const [showSignalActionSelection, setShowSignalActionSelection] =
+    useState(false);
   const [showSignalTriggerInput, setShowSignalTriggerInput] = useState(false);
   const [currentSelectionWorkspace, setCurrentSelectionWorkspace] = useState<
     string | null
@@ -681,7 +705,8 @@ function InteractiveCommandInner() {
   });
 
   // LLM conversation state (Phase 1 - Core Integration)
-  const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
+  const [conversationClient, setConversationClient] =
+    useState<ConversationClient | null>(null);
   const [conversationSessionId, setConversationSessionId] = useState<
     string | null
   >(null);
@@ -734,7 +759,7 @@ function InteractiveCommandInner() {
           const conversationClient = new ConversationClient(
             "http://localhost:8080",
             "system",
-            "cli-user",
+            "cli-user"
           );
 
           console.log("[Interactive] Creating conversation session...");
@@ -754,7 +779,7 @@ function InteractiveCommandInner() {
           const sseIterator = conversationClient.streamEvents(
             session.sessionId,
             session.sseUrl,
-            abortController.signal,
+            abortController.signal
           );
           setSseStream(sseIterator);
 
@@ -764,13 +789,15 @@ function InteractiveCommandInner() {
               for await (const event of sseIterator) {
                 // Check if we should stop
                 if (abortController.signal.aborted) {
-                  console.log("[Interactive] SSE stream aborted, stopping listener");
+                  console.log(
+                    "[Interactive] SSE stream aborted, stopping listener"
+                  );
                   break;
                 }
                 console.log(
                   "[Interactive] Received SSE event:",
                   event.type,
-                  event.data,
+                  event.data
                 );
 
                 if (event.type === "message_chunk") {
@@ -790,7 +817,7 @@ function InteractiveCommandInner() {
 
                   setOutputBuffer((prev) => {
                     const filtered = prev.filter(
-                      (entry) => entry.id !== streamingMessageId,
+                      (entry) => entry.id !== streamingMessageId
                     );
                     return [
                       ...filtered,
@@ -822,11 +849,11 @@ function InteractiveCommandInner() {
                   console.log("[Interactive] Message completed");
                   console.log(
                     "[Interactive] Current pendingMessageSpinner (state):",
-                    pendingMessageSpinner,
+                    pendingMessageSpinner
                   );
                   console.log(
                     "[Interactive] Current pendingMessageSpinner (ref):",
-                    pendingMessageSpinnerRef.current,
+                    pendingMessageSpinnerRef.current
                   );
 
                   // Remove spinner when message is complete - use ref to avoid closure issues
@@ -834,15 +861,15 @@ function InteractiveCommandInner() {
                   if (spinnerId) {
                     console.log(
                       "[Interactive] Removing spinner on message_complete:",
-                      spinnerId,
+                      spinnerId
                     );
                     setOutputBuffer((prev) => {
                       const filtered = prev.filter(
-                        (entry) => entry.id !== spinnerId,
+                        (entry) => entry.id !== spinnerId
                       );
                       console.log(
                         "[Interactive] Filtered out spinner, remaining entries:",
-                        filtered.length,
+                        filtered.length
                       );
                       return filtered;
                     });
@@ -850,7 +877,7 @@ function InteractiveCommandInner() {
                     pendingMessageSpinnerRef.current = null;
                   } else {
                     console.log(
-                      "[Interactive] No pendingMessageSpinner to remove",
+                      "[Interactive] No pendingMessageSpinner to remove"
                     );
                   }
                 }
@@ -864,13 +891,13 @@ function InteractiveCommandInner() {
           })();
 
           console.log(
-            "[Interactive] ConversationClient initialized successfully",
+            "[Interactive] ConversationClient initialized successfully"
           );
         } catch (error) {
           // Log the full error for debugging
           console.error(
             "[Interactive] Failed to initialize conversation client:",
-            error,
+            error
           );
           console.error("[Interactive] Full error details:", {
             message: error instanceof Error ? error.message : String(error),
@@ -904,7 +931,8 @@ function InteractiveCommandInner() {
                 </Box>
                 <Box>
                   <Text wrap="wrap">
-                    How can I help you today? Here are some options to get started:
+                    How can I help you today? Here are some options to get
+                    started:
                   </Text>
                 </Box>
                 <Box marginTop={1}>
@@ -917,7 +945,8 @@ function InteractiveCommandInner() {
                     </UnorderedList.Item>
                     <UnorderedList.Item>
                       <Text>
-                        "Show me any available Workspaces that I can use right now"
+                        "Show me any available Workspaces that I can use right
+                        now"
                       </Text>
                     </UnorderedList.Item>
                   </UnorderedList>
@@ -977,7 +1006,8 @@ function InteractiveCommandInner() {
       const totalDashes = Math.max(0, terminalWidth - messageText.length);
       const leftDashes = Math.floor(totalDashes / 2);
       const rightDashes = totalDashes - leftDashes;
-      const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+      const formattedMessage =
+        "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
 
       addOutputEntry({
         id: `workspace-exited-${Date.now()}`,
@@ -1002,7 +1032,8 @@ function InteractiveCommandInner() {
         const totalDashes = Math.max(0, terminalWidth - messageText.length);
         const leftDashes = Math.floor(totalDashes / 2);
         const rightDashes = totalDashes - leftDashes;
-        const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+        const formattedMessage =
+          "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
 
         addOutputEntry({
           id: `workspace-selected-${Date.now()}`,
@@ -1018,7 +1049,8 @@ function InteractiveCommandInner() {
         id: `workspace-error-${Date.now()}`,
         component: (
           <Text color="red">
-            Error selecting workspace: {error instanceof Error ? error.message : String(error)}
+            Error selecting workspace:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -1073,7 +1105,8 @@ function InteractiveCommandInner() {
         id: `error-${Date.now()}`,
         component: (
           <Text color="red">
-            Error loading signals: {error instanceof Error ? error.message : String(error)}
+            Error loading signals:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -1115,7 +1148,9 @@ function InteractiveCommandInner() {
       });
       addOutputEntry({
         id: `agents-table-${Date.now()}`,
-        component: <AgentListComponent agents={agents} workspaceName={workspace.name} />,
+        component: (
+          <AgentListComponent agents={agents} workspaceName={workspace.name} />
+        ),
       });
     } catch (error) {
       // Remove loading entry and add error
@@ -1125,7 +1160,8 @@ function InteractiveCommandInner() {
         id: `error-${Date.now()}`,
         component: (
           <Text color="red">
-            Error loading agents: {error instanceof Error ? error.message : String(error)}
+            Error loading agents:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -1198,7 +1234,8 @@ function InteractiveCommandInner() {
         id: `error-${Date.now()}`,
         component: (
           <Text dimColor>
-            Cannot fetch library items: {error instanceof Error ? error.message : String(error)}
+            Cannot fetch library items:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -1271,7 +1308,9 @@ function InteractiveCommandInner() {
     if (!workspaceId || !signalId) {
       addOutputEntry({
         id: `signal-error-${Date.now()}`,
-        component: <Text color="red">Error: No workspace or signal selected</Text>,
+        component: (
+          <Text color="red">Error: No workspace or signal selected</Text>
+        ),
       });
       setCurrentSelectionWorkspace(null);
       setCurrentSelectedSignal(null);
@@ -1304,7 +1343,9 @@ function InteractiveCommandInner() {
     if (!workspaceId || !signalId) {
       addOutputEntry({
         id: `signal-trigger-error-${Date.now()}`,
-        component: <Text color="red">Error: No workspace or signal selected</Text>,
+        component: (
+          <Text color="red">Error: No workspace or signal selected</Text>
+        ),
       });
       setCurrentSelectionWorkspace(null);
       setCurrentSelectedSignal(null);
@@ -1328,7 +1369,7 @@ function InteractiveCommandInner() {
       const result = await triggerSignalSimple(
         workspaceId,
         signalId,
-        input.trim() || undefined,
+        input.trim() || undefined
       );
 
       // Remove loading entry and add result
@@ -1344,7 +1385,9 @@ function InteractiveCommandInner() {
                 Workspace: {result.workspaceName || workspaceId}
               </Text>
               <Text dimColor>Signal: {signalId}</Text>
-              {result.sessionId && <Text dimColor>Session ID: {result.sessionId}</Text>}
+              {result.sessionId && (
+                <Text dimColor>Session ID: {result.sessionId}</Text>
+              )}
               {result.status && <Text dimColor>Status: {result.status}</Text>}
               <Text dimColor>Duration: {result.duration.toFixed(2)}ms</Text>
             </Box>
@@ -1441,7 +1484,9 @@ function InteractiveCommandInner() {
     // Add job details to output buffer using the new JobDetailsWithPath component
     addOutputEntry({
       id: `job-details-${Date.now()}`,
-      component: <JobDetailsWithPath workspaceId={workspaceId} jobName={jobName} />,
+      component: (
+        <JobDetailsWithPath workspaceId={workspaceId} jobName={jobName} />
+      ),
     });
 
     // Clear workspace selection context
@@ -1487,7 +1532,9 @@ function InteractiveCommandInner() {
         const errorResult = result as { error: string };
         addOutputEntry({
           id: `sessions-unavailable-${Date.now()}`,
-          component: <Text dimColor>Cannot fetch sessions: {errorResult.error}</Text>,
+          component: (
+            <Text dimColor>Cannot fetch sessions: {errorResult.error}</Text>
+          ),
         });
       } else {
         addOutputEntry({
@@ -1508,7 +1555,8 @@ function InteractiveCommandInner() {
         id: `error-${Date.now()}`,
         component: (
           <Text dimColor>
-            Cannot fetch sessions: {error instanceof Error ? error.message : String(error)}
+            Cannot fetch sessions:{" "}
+            {error instanceof Error ? error.message : String(error)}
           </Text>
         ),
       });
@@ -1552,7 +1600,8 @@ function InteractiveCommandInner() {
       })
       .toLowerCase()
       .replace(/\s/g, "");
-    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
+    const currentUser =
+      Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
 
     // Force immediate render by using setOutputBuffer directly
     setOutputBuffer((prev) => [
@@ -1583,7 +1632,7 @@ function InteractiveCommandInner() {
     try {
       console.log(
         "[Interactive] Sending message with streamId:",
-        conversationSessionId,
+        conversationSessionId
       );
 
       // Store the spinner ID so the persistent SSE listener can remove it
@@ -1605,7 +1654,8 @@ function InteractiveCommandInner() {
         component: (
           <Box paddingLeft={1}>
             <Text color="red">
-              LLM Error: {error instanceof Error ? error.message : String(error)}
+              LLM Error:{" "}
+              {error instanceof Error ? error.message : String(error)}
             </Text>
           </Box>
         ),
@@ -1716,11 +1766,12 @@ function InteractiveCommandInner() {
               id: `library-open-error-${Date.now()}`,
               component: (
                 <Text color="red">
-                  Unexpected error: {error instanceof Error ? error.message : String(error)}
+                  Unexpected error:{" "}
+                  {error instanceof Error ? error.message : String(error)}
                 </Text>
               ),
             });
-          },
+          }
         );
         return;
       }
@@ -1748,7 +1799,7 @@ function InteractiveCommandInner() {
       (async () => {
         try {
           const yamlContent = await Deno.readTextFile(
-            "/Users/dwoolf/Documents/atlas/examples/atlas-codebase-analyzer/workspace.yml",
+            "/Users/dwoolf/Documents/atlas/examples/atlas-codebase-analyzer/workspace.yml"
           );
           const now = new Date();
           const timestamp = now
@@ -1758,6 +1809,11 @@ function InteractiveCommandInner() {
             })
             .toLowerCase()
             .replace(/\s/g, "");
+
+          // Wrap YAML content in markdown code block
+          const markdownYaml = `\`\`\`yaml
+${yamlContent}
+\`\`\``;
 
           addOutputEntry({
             id: `yaml-output-${Date.now()}`,
@@ -1769,7 +1825,7 @@ function InteractiveCommandInner() {
                   message="Here's the example workspace.yml file:"
                   authorColor="blue"
                 />
-                <YamlDisplay content={yamlContent} />
+                <MarkdownDisplay content={markdownYaml} />
               </Box>
             ),
           });
@@ -1778,12 +1834,99 @@ function InteractiveCommandInner() {
             id: `yaml-error-${Date.now()}`,
             component: (
               <Text color="red">
-                Error reading YAML file: {error instanceof Error ? error.message : String(error)}
+                Error reading YAML file:{" "}
+                {error instanceof Error ? error.message : String(error)}
               </Text>
             ),
           });
         }
       })();
+      return;
+    }
+
+    if (parsed.command === "markdown") {
+      // Show example markdown content
+      const exampleMarkdown = `# Atlas Markdown Support
+
+## Features
+
+Atlas now supports rich **markdown** rendering in the terminal using \`ink-markdown\`.
+
+### Text Formatting
+
+- **Bold text** with \`**text**\`
+- *Italic text* with \`*text*\`
+- \`Inline code\` with backticks
+- ~~Strikethrough~~ with \`~~text~~\`
+
+### Lists
+
+#### Unordered Lists
+- Item 1
+- Item 2
+  - Nested item A
+  - Nested item B
+- Item 3
+
+#### Ordered Lists
+1. First item
+2. Second item
+3. Third item
+
+### Links and Code
+
+Visit [Atlas Documentation](https://docs.atlas.dev) for more information.
+
+Here's a code block:
+
+\`\`\`javascript
+function greet(name) {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(greet("Atlas"));
+\`\`\`
+
+### Tables
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| YAML Display | ✅ Complete | Uses collapsible view |
+| Git Diff | ✅ Complete | Syntax highlighted |
+| Markdown | ✅ Complete | Rich formatting |
+
+### Quotes
+
+> Atlas is a comprehensive AI agent orchestration platform
+> that transforms software delivery through human/AI collaboration.
+
+---
+
+**Happy coding with Atlas!** 🚀`;
+
+      const now = new Date();
+      const timestamp = now
+        .toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+        .toLowerCase()
+        .replace(/\s/g, "");
+
+      addOutputEntry({
+        id: `markdown-output-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author="Δ Atlas"
+              date={timestamp}
+              message="Here's an example of markdown rendering:"
+              authorColor="blue"
+            />
+            <MarkdownDisplay content={exampleMarkdown} />
+          </Box>
+        ),
+      });
       return;
     }
 
@@ -1847,7 +1990,8 @@ function InteractiveCommandInner() {
         id: `error-unknown-${Date.now()}`,
         component: (
           <Text color="red">
-            Unknown command: /{parsed.command}. Type /help for available commands.
+            Unknown command: /{parsed.command}. Type /help for available
+            commands.
           </Text>
         ),
       });
@@ -1903,134 +2047,114 @@ function InteractiveCommandInner() {
           {/* Output buffer display */}
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" gap={1}>
-              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
+              {outputBuffer.map((entry) => (
+                <Box key={entry.id}>{entry.component}</Box>
+              ))}
             </Box>
           )}
 
-          {showWorkspacesWorkspaceSelection
-            ? (
-              <WorkspaceSelection
-                onEscape={() => {
-                  setShowWorkspacesWorkspaceSelection(false);
-                  setWorkspaceSelectionContext(null);
-                }}
-                onWorkspaceSelect={handleWorkspaceSelect}
-              />
-            )
-            : showWorkspaceSelection
-            ? (
-              <WorkspaceSelection
-                onEscape={() => {
-                  setShowWorkspaceSelection(false);
-                  setWorkspaceSelectionContext(null);
-                }}
-                onWorkspaceSelect={handleWorkspaceSelect}
-              />
-            )
-            : showAgentWorkspaceSelection
-            ? (
-              <WorkspaceSelection
-                onEscape={() => {
-                  setShowAgentWorkspaceSelection(false);
-                  setWorkspaceSelectionContext(null);
-                }}
-                onWorkspaceSelect={handleWorkspaceSelect}
-              />
-            )
-            : showLibraryWorkspaceSelection
-            ? (
-              <WorkspaceSelection
-                onEscape={() => {
-                  setShowLibraryWorkspaceSelection(false);
-                  setWorkspaceSelectionContext(null);
-                }}
-                onWorkspaceSelect={handleWorkspaceSelect}
-              />
-            )
-            : showSessionsWorkspaceSelection
-            ? (
-              <WorkspaceSelection
-                onEscape={() => {
-                  setShowSessionsWorkspaceSelection(false);
-                  setWorkspaceSelectionContext(null);
-                }}
-                onWorkspaceSelect={handleWorkspaceSelect}
-              />
-            )
-            : showSignalSelection && currentSelectionWorkspace
-            ? (
-              <SignalSelection
-                workspaceId={currentSelectionWorkspace}
-                onEscape={() => {
-                  setShowSignalSelection(false);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onSignalSelect={handleSignalSelect}
-              />
-            )
-            : showSessionSelection && currentSelectionWorkspace
-            ? (
-              <SessionSelection
-                workspaceId={currentSelectionWorkspace}
-                onEscape={() => {
-                  setShowSessionSelection(false);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onSessionSelect={handleSessionSelect}
-              />
-            )
-            : showAgentSelection && currentSelectionWorkspace
-            ? (
-              <AgentSelection
-                workspaceId={currentSelectionWorkspace}
-                onEscape={() => {
-                  setShowAgentSelection(false);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onAgentSelect={handleAgentSelect}
-              />
-            )
-            : showJobSelection && currentSelectionWorkspace
-            ? (
-              <JobSelection
-                workspaceId={currentSelectionWorkspace}
-                onEscape={() => {
-                  setShowJobSelection(false);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onJobSelect={handleJobSelect}
-              />
-            )
-            : showSignalActionSelection && currentSelectedSignal
-            ? (
-              <SignalActionSelection
-                signalId={currentSelectedSignal}
-                onEscape={() => {
-                  setShowSignalActionSelection(false);
-                  setCurrentSelectedSignal(null);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onActionSelect={handleSignalActionSelect}
-              />
-            )
-            : showSignalTriggerInput && currentSelectedSignal
-            ? (
-              <SignalTriggerInput
-                signalId={currentSelectedSignal}
-                onEscape={() => {
-                  setShowSignalTriggerInput(false);
-                  setCurrentSelectedSignal(null);
-                  setCurrentSelectionWorkspace(null);
-                }}
-                onSubmit={handleSignalTriggerSubmit}
-              />
-            )
-            : (
-              <CommandInput
-                onSubmit={handleCommand}
-                selectedWorkspace={selectedWorkspace}
-              />
-            )}
+          {showWorkspacesWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => {
+                setShowWorkspacesWorkspaceSelection(false);
+                setWorkspaceSelectionContext(null);
+              }}
+              onWorkspaceSelect={handleWorkspaceSelect}
+            />
+          ) : showWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => {
+                setShowWorkspaceSelection(false);
+                setWorkspaceSelectionContext(null);
+              }}
+              onWorkspaceSelect={handleWorkspaceSelect}
+            />
+          ) : showAgentWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => {
+                setShowAgentWorkspaceSelection(false);
+                setWorkspaceSelectionContext(null);
+              }}
+              onWorkspaceSelect={handleWorkspaceSelect}
+            />
+          ) : showLibraryWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => {
+                setShowLibraryWorkspaceSelection(false);
+                setWorkspaceSelectionContext(null);
+              }}
+              onWorkspaceSelect={handleWorkspaceSelect}
+            />
+          ) : showSessionsWorkspaceSelection ? (
+            <WorkspaceSelection
+              onEscape={() => {
+                setShowSessionsWorkspaceSelection(false);
+                setWorkspaceSelectionContext(null);
+              }}
+              onWorkspaceSelect={handleWorkspaceSelect}
+            />
+          ) : showSignalSelection && currentSelectionWorkspace ? (
+            <SignalSelection
+              workspaceId={currentSelectionWorkspace}
+              onEscape={() => {
+                setShowSignalSelection(false);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onSignalSelect={handleSignalSelect}
+            />
+          ) : showSessionSelection && currentSelectionWorkspace ? (
+            <SessionSelection
+              workspaceId={currentSelectionWorkspace}
+              onEscape={() => {
+                setShowSessionSelection(false);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onSessionSelect={handleSessionSelect}
+            />
+          ) : showAgentSelection && currentSelectionWorkspace ? (
+            <AgentSelection
+              workspaceId={currentSelectionWorkspace}
+              onEscape={() => {
+                setShowAgentSelection(false);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onAgentSelect={handleAgentSelect}
+            />
+          ) : showJobSelection && currentSelectionWorkspace ? (
+            <JobSelection
+              workspaceId={currentSelectionWorkspace}
+              onEscape={() => {
+                setShowJobSelection(false);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onJobSelect={handleJobSelect}
+            />
+          ) : showSignalActionSelection && currentSelectedSignal ? (
+            <SignalActionSelection
+              signalId={currentSelectedSignal}
+              onEscape={() => {
+                setShowSignalActionSelection(false);
+                setCurrentSelectedSignal(null);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onActionSelect={handleSignalActionSelect}
+            />
+          ) : showSignalTriggerInput && currentSelectedSignal ? (
+            <SignalTriggerInput
+              signalId={currentSelectedSignal}
+              onEscape={() => {
+                setShowSignalTriggerInput(false);
+                setCurrentSelectedSignal(null);
+                setCurrentSelectionWorkspace(null);
+              }}
+              onSubmit={handleSignalTriggerSubmit}
+            />
+          ) : (
+            <CommandInput
+              onSubmit={handleCommand}
+              selectedWorkspace={selectedWorkspace}
+            />
+          )}
         </>
       )}
 

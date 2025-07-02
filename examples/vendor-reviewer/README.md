@@ -7,17 +7,21 @@ ensure consistent, structured output perfect for compliance workflows.
 
 This workspace demonstrates Atlas's advanced capabilities for compliance automation:
 
-- **Automated Document Processing** - Converts PDF and Excel files to text for analysis using `pdftotext` and `in2csv`
+- **Automated Document Processing** - Converts PDF and Excel files to text for analysis using
+  `pdftotext` and `in2csv`
 - **Strict Template Formatting** - "Template Filling System" approach ensures consistent output
-- **Three-Agent Workflow** - Specialized document analysis, questionnaire evaluation, and vendor assessment
+- **Three-Agent Workflow** - Specialized document analysis, questionnaire evaluation, and vendor
+  assessment
 - **SOC 2 Compliance Focus** - Evaluates 10 critical security questions with supporting evidence
 - **Atlas Library Integration** - Automatically stores evaluation reports for audit trails
 - **Memory Learning** - Workspace learns evaluation patterns and improves over time
 
 ### Agent Architecture (SOC 2 Evaluation Workflow)
 
-1. **document-reader** - Extracts text from PDF/Excel files and analyzes vendor documentation (SOC 2 reports, DPAs, policies)
-2. **questionnaire-analyzer** - Processes Excel questionnaires and evaluates security responses against SOC 2 criteria  
+1. **document-reader** - Extracts text from PDF/Excel files and analyzes vendor documentation (SOC 2
+   reports, DPAs, policies)
+2. **questionnaire-analyzer** - Processes Excel questionnaires and evaluates security responses
+   against SOC 2 criteria
 3. **vendor-evaluator** - Creates final recommendation using strict template formatting
 
 ## Quick Start
@@ -131,7 +135,7 @@ This workspace automatically converts binary files to text for analysis:
 ### How It Works
 
 1. **Document Discovery**: Agents scan the specified directory for all PDF and Excel files
-2. **Text Extraction**: 
+2. **Text Extraction**:
    - PDFs processed with `pdftotext "file.pdf" -` (outputs to stdout)
    - Excel files processed with `in2csv "file.xlsx"` (converts to CSV format)
 3. **Content Analysis**: Extracted text is analyzed for SOC 2 compliance criteria
