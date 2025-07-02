@@ -321,6 +321,7 @@ jobs:
               <title>Tempest ATLAS ${RELEASE_VERSION}</title>
               <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
               <welcome file="" mime-type=""/>
+              <license file="license.txt" mime-type="text/plain"/>
               <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -335,7 +336,6 @@ jobs:
               return true;
           }
               </script>
-              <license file="license.txt" mime-type="text/plain"/>
               <choices-outline>
                   <line choice="default">
                       <line choice="com.tempestteam.atlas"/>
