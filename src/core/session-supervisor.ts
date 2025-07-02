@@ -1855,14 +1855,17 @@ Provide a brief evaluation.`;
     return null;
   }
 
-  getExecutionSummary(): {
+  getExecutionSummary(currentResults?: AgentResult[]): {
     plan: ExecutionPlan | null;
     results: AgentResult[];
     status: "planning" | "executing" | "completed" | "failed";
   } {
     let status: "planning" | "executing" | "completed" | "failed" = "planning";
 
-    if (this.executionPlan && this.executionResults.length > 0) {
+    // Use current results if provided, otherwise fall back to internal results
+    const resultsToUse = currentResults || this.executionResults;
+
+    if (this.executionPlan && resultsToUse.length > 0) {
       const totalTasks = this.executionPlan.phases.reduce(
         (sum, phase) => sum + phase.agents.length,
         0,
@@ -1871,12 +1874,14 @@ Provide a brief evaluation.`;
       this.logger.debug("Execution summary status calculation", {
         hasExecutionPlan: !!this.executionPlan,
         executionResultsLength: this.executionResults.length,
+        currentResultsLength: currentResults?.length || 0,
+        resultsToUseLength: resultsToUse.length,
         totalTasks,
         phases: this.executionPlan.phases.length,
         phaseAgentCounts: this.executionPlan.phases.map((p) => p.agents.length),
       });
 
-      if (this.executionResults.length >= totalTasks) {
+      if (resultsToUse.length >= totalTasks) {
         status = "completed";
       } else {
         status = "executing";
@@ -1885,12 +1890,13 @@ Provide a brief evaluation.`;
       this.logger.debug("Execution summary - no plan or results", {
         hasExecutionPlan: !!this.executionPlan,
         executionResultsLength: this.executionResults.length,
+        currentResultsLength: currentResults?.length || 0,
       });
     }
 
     return {
       plan: this.executionPlan,
-      results: this.executionResults,
+      results: resultsToUse,
       status,
     };
   }

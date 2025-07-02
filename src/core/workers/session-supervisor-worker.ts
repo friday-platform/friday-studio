@@ -263,8 +263,8 @@ class SessionSupervisorWorker extends BaseWorker {
               }
             }
 
-            // Get final execution summary
-            const summary = this.supervisor!.getExecutionSummary();
+            // Get final execution summary with current results
+            const summary = this.supervisor!.getExecutionSummary(results.flatMap((r) => r.results));
 
             // Get LLM-generated session summary
             const sessionSummary = await this.supervisor!.generateSessionSummary(
