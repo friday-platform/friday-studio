@@ -94,64 +94,8 @@ export class ReasoningEngine {
       };
     }
 
-    // LLM-based method selection
-    const availableMethods = Array.from(this.methods.entries()).map(([name, method]) => ({
-      name,
-      cost: method.cost,
-      reliability: method.reliability,
-      description: this.getMethodDescription(name),
-    }));
-
-    const selectionPrompt = `
-You are a reasoning method selector. Given a task context, choose the best reasoning approach.
-
-TASK CONTEXT:
-- Task: ${context.task}
-- Agent Type: ${context.agentType}
-- Complexity: ${context.complexity} (0-1 scale)
-- Requires Tools: ${context.requiresToolUse}
-- Quality Critical: ${context.qualityCritical}
-
-AVAILABLE METHODS:
-${
-      availableMethods.map((m) =>
-        `- ${m.name}: ${m.description} (Cost: ${m.cost}, Reliability: ${m.reliability})`
-      ).join("\n")
-    }
-
-SELECTION CRITERIA:
-- Simple tasks (complexity < 0.4): prefer chain-of-thought (fast, reliable)
-- Tool use tasks: prefer react (reasoning → action → observation loops)
-- Quality critical tasks: prefer self-refine (generates → critiques → improves)
-- Complex tasks (complexity > 0.7): consider self-refine or react
-
-Choose the best method and explain why. Respond in JSON format:
-{
-  "method": "method-name",
-  "confidence": 0.95,
-  "reasoning": "explanation of why this method is best"
-}`;
-
-    try {
-      const result = await generateText({
-        model: this.model,
-        prompt: selectionPrompt,
-        temperature: 0.1,
-        maxTokens: 300,
-      });
-
-      const selection = JSON.parse(result.text);
-
-      // Validate the selection
-      if (!this.methods.has(selection.method)) {
-        throw new Error(`Selected method ${selection.method} is not available`);
-      }
-
-      return selection;
-    } catch (error) {
-      this.logger.warn("LLM method selection failed, using heuristics", { error: String(error) });
-      return this.selectMethodHeuristically(context);
-    }
+    // Use heuristics by default - no LLM call for method selection
+    return this.selectMethodHeuristically(context);
   }
 
   private selectMethodHeuristically(context: ReasoningContext): ReasoningSelection {

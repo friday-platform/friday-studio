@@ -4,12 +4,14 @@
  */
 
 import type { WorkspaceAgentConfig } from "@atlas/config";
+import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
 
 export interface WorkspaceCapability {
   id: string;
   name: string;
   description: string;
   category: "jobs" | "sessions" | "memory" | "signals" | "workspace";
+  inputSchema?: any; // JSON Schema for input validation
   implementation: (context: AgentExecutionContext, ...args: any[]) => Promise<any>;
 }
 
@@ -17,10 +19,12 @@ export interface AgentExecutionContext {
   workspaceId: string;
   sessionId: string;
   agentId: string;
+  conversationId?: string; // For conversation workspaces
   // Runtime services
   workspaceRuntime?: any;
   sessionSupervisor?: any;
   memoryManager?: any;
+  responseChannel?: any; // For streaming responses
 }
 
 export interface CapabilityFilter {
@@ -226,24 +230,87 @@ export class WorkspaceCapabilityRegistry {
       ...filter.grantedTools,
     ];
 
+    // DEBUG: Temporary logging to understand filtering issue
+    console.log(`[DEBUG] Filtering capabilities for agent ${filter.agentId}`);
+    console.log(`[DEBUG] Agent config:`, filter.agentConfig);
+    console.log(`[DEBUG] Granted tools:`, filter.grantedTools);
+    console.log(`[DEBUG] All tools combined:`, allTools);
+    console.log(`[DEBUG] Available capabilities:`, Array.from(this.capabilities.keys()));
+
     for (const tool of allTools) {
+      console.log(`[DEBUG] Checking tool: ${tool}`);
       const capability = this.capabilities.get(tool);
       if (capability) {
+        console.log(`[DEBUG] Found workspace capability for tool ${tool}:`, capability.id);
         grantedCapabilities.push(capability);
-      } else if (tool.endsWith("_*")) {
-        // Handle wildcard patterns
-        const prefix = tool.slice(0, -2);
-        for (const [id, cap] of this.capabilities) {
-          if (id.startsWith(prefix + "_")) {
-            grantedCapabilities.push(cap);
-          }
+      } else {
+        // Check if it's a daemon capability
+        const daemonCapability = DaemonCapabilityRegistry.getCapability(tool);
+        if (daemonCapability) {
+          console.log(`[DEBUG] Found daemon capability for tool ${tool}:`, daemonCapability.id);
+          // Convert daemon capability to workspace capability format for compatibility
+          const convertedCapability: WorkspaceCapability = {
+            id: daemonCapability.id,
+            name: daemonCapability.name,
+            description: daemonCapability.description,
+            category: "sessions", // Map daemon categories to workspace categories
+            inputSchema: daemonCapability.inputSchema,
+            implementation: daemonCapability.implementation as any, // Type conversion for compatibility
+          };
+          grantedCapabilities.push(convertedCapability);
+        } else {
+          console.log(`[DEBUG] No capability found for tool: ${tool}`);
         }
-      } else if (tool.endsWith(".*")) {
-        // Handle legacy dot wildcard patterns (convert to underscore)
-        const prefix = tool.slice(0, -2).replace(/\./g, "_");
-        for (const [id, cap] of this.capabilities) {
-          if (id.startsWith(prefix + "_")) {
-            grantedCapabilities.push(cap);
+        if (tool.endsWith("_*")) {
+          // Handle wildcard patterns for workspace capabilities
+          const prefix = tool.slice(0, -2);
+          console.log(`[DEBUG] Checking wildcard pattern: ${prefix}_*`);
+          for (const [id, cap] of this.capabilities) {
+            if (id.startsWith(prefix + "_")) {
+              console.log(`[DEBUG] Wildcard match: ${id}`);
+              grantedCapabilities.push(cap);
+            }
+          }
+          // Also check daemon capabilities for wildcard patterns
+          DaemonCapabilityRegistry.initialize();
+          for (const daemonCap of DaemonCapabilityRegistry.getAllCapabilities()) {
+            if (daemonCap.id.startsWith(prefix + "_")) {
+              console.log(`[DEBUG] Daemon wildcard match: ${daemonCap.id}`);
+              const convertedCapability: WorkspaceCapability = {
+                id: daemonCap.id,
+                name: daemonCap.name,
+                description: daemonCap.description,
+                category: "sessions",
+                inputSchema: daemonCap.inputSchema,
+                implementation: daemonCap.implementation as any,
+              };
+              grantedCapabilities.push(convertedCapability);
+            }
+          }
+        } else if (tool.endsWith(".*")) {
+          // Handle legacy dot wildcard patterns (convert to underscore)
+          const prefix = tool.slice(0, -2).replace(/\./g, "_");
+          console.log(`[DEBUG] Checking legacy wildcard pattern: ${prefix}.*`);
+          for (const [id, cap] of this.capabilities) {
+            if (id.startsWith(prefix + "_")) {
+              console.log(`[DEBUG] Legacy wildcard match: ${id}`);
+              grantedCapabilities.push(cap);
+            }
+          }
+          // Also check daemon capabilities for legacy wildcard patterns
+          for (const daemonCap of DaemonCapabilityRegistry.getAllCapabilities()) {
+            if (daemonCap.id.startsWith(prefix + "_")) {
+              console.log(`[DEBUG] Daemon legacy wildcard match: ${daemonCap.id}`);
+              const convertedCapability: WorkspaceCapability = {
+                id: daemonCap.id,
+                name: daemonCap.name,
+                description: daemonCap.description,
+                category: "sessions",
+                inputSchema: daemonCap.inputSchema,
+                implementation: daemonCap.implementation as any,
+              };
+              grantedCapabilities.push(convertedCapability);
+            }
           }
         }
       }

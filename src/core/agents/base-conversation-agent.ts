@@ -2,7 +2,7 @@ import { BaseAgent } from "./base-agent.ts";
 import { LLMProviderManager } from "./llm-provider-manager.ts";
 import { Tool } from "ai";
 import { AtlasLogger } from "../../utils/logger.ts";
-import { ConversationEvent, ConversationMessage } from "../conversation-supervisor.ts";
+import { ConversationEvent, ConversationMessage } from "../conversation-supervisor.old.ts";
 import { CoALAMemoryType } from "../memory/coala-memory.ts";
 
 /**

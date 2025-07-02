@@ -14,6 +14,12 @@ import type {
   SessionContext,
 } from "./session-supervisor.ts";
 import {
+  type AgentExecutionContext,
+  WorkspaceCapabilityRegistry,
+} from "./workspace-capabilities.ts";
+import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
+import { capabilitiesToTools } from "./utils/capability-to-tool.ts";
+import {
   type AgentExecutePayload,
   type AgentExecutionCompletePayload,
   ATLAS_MESSAGE_TYPES,
@@ -196,6 +202,8 @@ export class AgentSupervisor extends BaseAgent {
   private supervisionConfig: SupervisionConfig;
   private cacheEnabled: boolean;
   private sessionSupervisor?: any; // Reference to SessionSupervisor for MCP registry access
+  private onStreamMessage?: (message: any) => void; // Callback for stream messages
+  private responseChannel?: any; // Response channel for streaming
   private workerStats: Map<
     string,
     {
@@ -279,6 +287,15 @@ export class AgentSupervisor extends BaseAgent {
       canValidate: true,
       canRecover: true,
     };
+  }
+
+  // Set callback for stream messages from agents
+  setStreamCallback(callback: (message: any) => void): void {
+    this.onStreamMessage = callback;
+  }
+
+  setResponseChannel(responseChannel: any): void {
+    this.responseChannel = responseChannel;
   }
 
   // Analyze agent before loading using LLM intelligence
@@ -557,6 +574,9 @@ Focus on safety, efficiency, and reliability.`;
       workspace_path: this.supervisorConfig.workspacePath,
     };
 
+    // Note: Workspace tools are now prepared as metadata only (see below)
+    // to avoid DataCloneError when passing functions to workers
+
     // Add agent-type specific configuration
     if (agent.type === "remote") {
       const remoteConfig = agent.config as RemoteAgentConfig;
@@ -594,6 +614,23 @@ Focus on safety, efficiency, and reliability.`;
 
     // Add MCP server configurations for worker access
     environment.mcp_server_configs = this.prepareAgentMcpServerConfigs(agent);
+
+    // Add workspace tools metadata if agent has tools configured
+    const llmConfig = agent.config as LLMAgentConfig;
+    this.log(`Agent ${agent.id} config tools: ${JSON.stringify(llmConfig.tools)}`, "debug");
+    if (llmConfig.tools && llmConfig.tools.length > 0) {
+      const workspaceToolsMetadata = this.prepareWorkspaceToolsMetadata(agent, llmConfig.tools);
+      if (workspaceToolsMetadata) {
+        environment.workspace_tools_metadata = workspaceToolsMetadata;
+        this.log(
+          `Added ${
+            Object.keys(workspaceToolsMetadata).length
+          } workspace tools metadata to agent environment`,
+        );
+      } else {
+        this.log(`No workspace tools prepared for agent ${agent.id}`, "warn");
+      }
+    }
 
     return environment;
   }
@@ -713,6 +750,16 @@ Focus on safety, efficiency, and reliability.`;
     const worker = new Worker(workerScript, {
       type: "module",
       name: `agent-worker-${agent.id}`,
+      deno: {
+        permissions: {
+          read: true,
+          write: true,
+          net: true, // Allow network access for daemon communication
+          env: true, // Allow environment variable access
+          run: false, // Restrict process execution
+          ffi: false, // Restrict FFI access
+        },
+      },
     });
 
     const workerInstance: AgentWorkerInstance = {
@@ -764,6 +811,17 @@ Focus on safety, efficiency, and reliability.`;
               (async () => {
                 const currentTraceHeaders = traceHeaders ||
                   await AtlasTelemetry.createTraceHeaders();
+                // Debug: check for non-serializable data
+                try {
+                  // Test if environment can be cloned
+                  const testClone = structuredClone(environment);
+                  this.log(`Environment is serializable`);
+                } catch (e) {
+                  this.log(`Environment contains non-serializable data: ${e}`, "error");
+                  // Log the keys of environment to debug
+                  this.log(`Environment keys: ${Object.keys(environment).join(", ")}`, "error");
+                }
+
                 const initMessage = createAgentMessage(
                   ATLAS_MESSAGE_TYPES.LIFECYCLE.INIT,
                   {
@@ -838,7 +896,7 @@ Focus on safety, efficiency, and reliability.`;
   private createMessageSource(): MessageSource {
     return {
       workerId: this.id,
-      workerType: "workspace-supervisor", // AgentSupervisor is part of workspace supervision
+      workerType: "agent-supervisor", // AgentSupervisor is its own worker type
       sessionId: this.sessionId,
       workspaceId: this.workspaceId,
     };
@@ -1152,6 +1210,114 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
     return ["output_exists", "task_completed", "format_valid"];
   }
 
+  // Prepare workspace capability tools metadata for agent (serializable)
+  private prepareWorkspaceToolsMetadata(
+    agent: AgentMetadata,
+    requestedTools: string[],
+  ): Record<string, any> | undefined {
+    this.log(
+      `Preparing workspace tools metadata for agent ${agent.id}, requested: ${
+        JSON.stringify(requestedTools)
+      }`,
+      "debug",
+    );
+
+    if (!this.sessionSupervisor) {
+      this.log(`No session supervisor available for workspace tools`, "warn");
+      return undefined;
+    }
+
+    // Filter capabilities based on what the agent has declared
+    const capabilities = WorkspaceCapabilityRegistry.filterCapabilitiesForAgent({
+      agentId: agent.id,
+      agentConfig: agent.config as any,
+      grantedTools: requestedTools,
+    });
+
+    this.log(`Filtered ${capabilities.length} capabilities for agent ${agent.id}`, "debug");
+
+    if (capabilities.length === 0) {
+      return undefined;
+    }
+
+    // Create metadata-only tools (serializable)
+    const toolsMetadata: Record<string, any> = {};
+
+    for (const capability of capabilities) {
+      toolsMetadata[capability.id] = {
+        description: capability.description,
+        inputSchema: capability.inputSchema || {
+          type: "object",
+          properties: {},
+          required: [],
+        },
+      };
+    }
+
+    this.log(
+      `Created ${Object.keys(toolsMetadata).length} workspace tools metadata for agent ${agent.id}`,
+      "debug",
+      {
+        tools: Object.keys(toolsMetadata),
+      },
+    );
+
+    return toolsMetadata;
+  }
+
+  // Prepare workspace capability tools for agent
+  private prepareWorkspaceTools(
+    agent: AgentMetadata,
+    requestedTools: string[],
+  ): Record<string, any> | undefined {
+    this.log(
+      `Preparing workspace tools for agent ${agent.id}, requested: ${
+        JSON.stringify(requestedTools)
+      }`,
+      "debug",
+    );
+
+    if (!this.sessionSupervisor) {
+      this.log(`No session supervisor available for workspace tools`, "warn");
+      return undefined;
+    }
+
+    // Create agent execution context for capabilities
+    const context: AgentExecutionContext = {
+      workspaceId: this.workspaceId || "",
+      sessionId: this.sessionId || "",
+      agentId: agent.id,
+      sessionSupervisor: this.sessionSupervisor,
+      responseChannel: this.responseChannel,
+    };
+
+    // Filter capabilities based on what the agent has declared
+    const capabilities = WorkspaceCapabilityRegistry.filterCapabilitiesForAgent({
+      agentId: agent.id,
+      agentConfig: agent.config as any,
+      grantedTools: requestedTools,
+    });
+
+    this.log(`Filtered ${capabilities.length} capabilities for agent ${agent.id}`, "debug");
+
+    if (capabilities.length === 0) {
+      return undefined;
+    }
+
+    // Convert capabilities to AI SDK tools
+    const tools = capabilitiesToTools(capabilities, context);
+
+    this.log(
+      `Converted ${capabilities.length} workspace capabilities to tools for agent ${agent.id}`,
+      "debug",
+      {
+        capabilities: capabilities.map((c) => c.id),
+      },
+    );
+
+    return tools;
+  }
+
   private calculatePermissions(
     agent: AgentMetadata,
     analysis: AgentAnalysis,
@@ -1272,6 +1438,13 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
           event.data && typeof event.data === "object" && event.data.type && event.data.domain
         ) {
           envelope = event.data as AtlasMessageEnvelope;
+        } else if (event.data && typeof event.data === "object" && event.data.type === "stream") {
+          // Forward stream messages to session supervisor
+          // Forward the stream message up the chain
+          if (this.onStreamMessage) {
+            this.onStreamMessage(event.data);
+          }
+          return;
         } else {
           this.logger.debug(
             `Received non-envelope response, ignoring: ${JSON.stringify(event.data)}`,
@@ -1320,6 +1493,12 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
             );
             return;
           }
+
+          // Handle workspace capability requests
+          if (envelope.type === "workspace_capability_request") {
+            this.handleWorkspaceCapabilityRequest(instance, envelope);
+            return;
+          }
         }
       };
 
@@ -1328,6 +1507,126 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       // Send envelope message to worker
       instance.worker.postMessage(executeMessage);
     });
+  }
+
+  // Handle workspace capability requests from agent workers
+  private async handleWorkspaceCapabilityRequest(
+    instance: AgentInstance,
+    envelope: AtlasMessageEnvelope,
+  ): Promise<void> {
+    const payload = envelope.payload as {
+      requestId: string;
+      capabilityId: string;
+      args: any;
+      sessionId: string;
+      agentId: string;
+    };
+
+    try {
+      this.log(
+        `Executing capability ${payload.capabilityId} for agent ${payload.agentId}`,
+        "debug",
+      );
+
+      let result: any;
+
+      // Check if it's a daemon capability first
+      const daemonCapability = DaemonCapabilityRegistry.getCapability(payload.capabilityId);
+      if (daemonCapability) {
+        // It's a daemon-level capability - route to daemon via HTTP
+        const daemonContext = {
+          sessionId: payload.sessionId,
+          agentId: payload.agentId,
+          workspaceId: this.workspaceId || "",
+          conversationId: payload.args.conversationId,
+        };
+
+        console.log(
+          `[AgentSupervisor] About to execute daemon capability: ${payload.capabilityId}`,
+        );
+        console.log(`[AgentSupervisor] Daemon context:`, daemonContext);
+        console.log(`[AgentSupervisor] Args:`, Object.values(payload.args));
+
+        result = await DaemonCapabilityRegistry.executeCapability(
+          payload.capabilityId,
+          daemonContext,
+          ...Object.values(payload.args),
+        );
+
+        console.log(`[AgentSupervisor] Daemon capability result:`, result);
+      } else {
+        // It's a workspace capability
+        const context = {
+          workspaceId: this.workspaceId || "",
+          sessionId: payload.sessionId,
+          agentId: payload.agentId,
+          sessionSupervisor: this.sessionSupervisor,
+          conversationId: payload.args.conversationId,
+        };
+
+        result = await WorkspaceCapabilityRegistry.executeCapability(
+          payload.capabilityId,
+          context,
+          ...Object.values(payload.args),
+        );
+      }
+
+      // Send successful response back to worker
+      const responseMessage = createAgentMessage(
+        "workspace_capability_response",
+        {
+          requestId: payload.requestId,
+          success: true,
+          result: result,
+        },
+        this.createMessageSource(),
+        {
+          channel: "direct",
+          priority: "high",
+        },
+      );
+
+      instance.worker.postMessage(responseMessage);
+
+      this.log(`Workspace capability ${payload.capabilityId} executed successfully`, "debug");
+    } catch (error) {
+      this.log(`Workspace capability ${payload.capabilityId} failed: ${error}`, "error");
+
+      // Send error response back to worker
+      const errorResponse = createAgentMessage(
+        "workspace_capability_response",
+        {
+          requestId: payload.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        this.createMessageSource(),
+        {
+          channel: "direct",
+          priority: "high",
+        },
+      );
+
+      instance.worker.postMessage(errorResponse);
+    }
+  }
+
+  // Helper method to create message source for responses
+  private createMessageSource() {
+    return {
+      workerId: this.id,
+      workerType: "agent-supervisor",
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+    };
+  }
+
+  /**
+   * Get reference to the daemon instance for daemon capabilities
+   * TODO: This should be properly passed through the supervision hierarchy
+   */
+  private getDaemonInstance(): any {
+    return DaemonCapabilityRegistry.getDaemonInstance();
   }
 
   private parseValidationResult(llmResponse: string): ValidationResult {
