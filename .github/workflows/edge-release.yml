@@ -53,6 +53,14 @@ jobs:
             os: darwin
             arch: arm64
             target: aarch64-apple-darwin
+          - runner: windows-latest
+            os: windows
+            arch: amd64
+            target: x86_64-pc-windows-msvc
+          - runner: windows-latest
+            os: windows
+            arch: arm64
+            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.runner }}
     steps:
@@ -327,6 +335,120 @@ jobs:
           fi
         shell: bash
 
+      - name: Create macOS pkg installer
+        if: matrix.os == 'darwin'
+        run: |
+          pkg_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.pkg"
+          
+          # Create package directory structure
+          mkdir -p ./pkg/payload/usr/local/bin
+          mkdir -p ./pkg/scripts
+          
+          # Copy binary to package payload
+          cp "./dist/atlas" "./pkg/payload/usr/local/bin/atlas"
+          chmod +x "./pkg/payload/usr/local/bin/atlas"
+          
+          # Create postinstall script to add to PATH
+          cat > ./pkg/scripts/postinstall << 'EOF'
+          #!/bin/bash
+          # Add /usr/local/bin to PATH if not already present
+          if ! echo "$PATH" | grep -q "/usr/local/bin"; then
+            # For bash users
+            if [ -f ~/.bash_profile ]; then
+              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bash_profile
+            fi
+            if [ -f ~/.bashrc ]; then
+              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
+            fi
+            
+            # For zsh users
+            if [ -f ~/.zshrc ]; then
+              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
+            fi
+            
+            # For fish users
+            if [ -d ~/.config/fish ]; then
+              mkdir -p ~/.config/fish/conf.d
+              echo 'set -gx PATH /usr/local/bin $PATH' > ~/.config/fish/conf.d/atlas.fish
+            fi
+          fi
+          
+          echo "Atlas has been installed to /usr/local/bin/atlas"
+          echo "You may need to restart your terminal or run 'source ~/.bash_profile' (or equivalent) to use the 'atlas' command."
+          exit 0
+          EOF
+          
+          chmod +x ./pkg/scripts/postinstall
+          
+          # Build the package
+          pkgbuild \
+            --root ./pkg/payload \
+            --scripts ./pkg/scripts \
+            --identifier "com.tempestteam.atlas" \
+            --version "${{ needs.check-changes.outputs.version }}" \
+            --install-location "/" \
+            "./dist/${pkg_name}"
+          
+          # Generate checksum for pkg
+          shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
+          
+          echo "Created macOS pkg: ${pkg_name}"
+        shell: bash
+
+      - name: Create Windows MSI installer
+        if: matrix.os == 'windows'
+        run: |
+          $msi_name = "atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.msi"
+          
+          # Create WiX source file
+          @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+            <Product Id="*" Name="Atlas" Language="1033" Version="${{ needs.check-changes.outputs.version }}" 
+                     Manufacturer="Tempest Team" UpgradeCode="{12345678-1234-1234-1234-123456789012}">
+              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+              
+              <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+              <MediaTemplate EmbedCab="yes" />
+              
+              <Feature Id="ProductFeature" Title="Atlas" Level="1">
+                <ComponentGroupRef Id="ProductComponents" />
+              </Feature>
+              
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFilesFolder">
+                  <Directory Id="INSTALLFOLDER" Name="Atlas" />
+                </Directory>
+                <Directory Id="ProgramMenuFolder">
+                  <Directory Id="ApplicationProgramsFolder" Name="Atlas"/>
+                </Directory>
+              </Directory>
+              
+              <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+                <Component Id="AtlasExecutable" Guid="{87654321-4321-4321-4321-210987654321}">
+                  <File Id="AtlasEXE" Source=".\dist\atlas.exe" KeyPath="yes" />
+                  <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="suffix" Action="set" System="yes" />
+                </Component>
+              </ComponentGroup>
+            </Product>
+          </Wix>
+          "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
+          
+          # Install WiX Toolset
+          Write-Host "Installing WiX Toolset..."
+          dotnet tool install --global wix --version 4.0.5
+          
+          # Build MSI
+          Write-Host "Building MSI installer..."
+          wix build atlas.wxs -out ".\dist\$msi_name"
+          
+          # Generate checksum for MSI
+          $hash = Get-FileHash ".\dist\$msi_name" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath ".\dist\$msi_name.sha256" -Encoding ASCII
+          
+          Write-Host "Created Windows MSI: $msi_name"
+        shell: pwsh
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -334,6 +456,8 @@ jobs:
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
             ./dist/atlas_*.sha256
           retention-days: 1
 
@@ -368,6 +492,12 @@ jobs:
           fi
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             release_files="$release_files atlas_*.zip"
+          fi
+          if ls atlas_*.pkg 1> /dev/null 2>&1; then
+            release_files="$release_files atlas_*.pkg"
+          fi
+          if ls atlas_*.msi 1> /dev/null 2>&1; then
+            release_files="$release_files atlas_*.msi"
           fi
 
           gh release create "$VERSION" \
@@ -437,6 +567,12 @@ jobs:
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/edge/
           fi
+          if ls atlas_*.pkg 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.pkg gs://tempest-sandbox-atlas-binaries/edge/
+          fi
+          if ls atlas_*.msi 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/edge/
+          fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/edge/checksums-${VERSION}.txt
 
           echo "Uploaded edge artifacts to sandbox GCS bucket"
@@ -475,6 +611,12 @@ jobs:
           fi
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/edge/
+          fi
+          if ls atlas_*.pkg 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.pkg gs://tempest-production-atlas-binaries/edge/
+          fi
+          if ls atlas_*.msi 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.msi gs://tempest-production-atlas-binaries/edge/
           fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/edge/checksums-${VERSION}.txt
 
