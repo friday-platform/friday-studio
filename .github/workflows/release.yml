@@ -316,7 +316,7 @@ jobs:
           cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS</title>
+              <title>Tempest ATLAS ${{ github.ref_name }}</title>
               <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
               <welcome file="" mime-type=""/>
               <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
@@ -333,6 +333,7 @@ jobs:
               return true;
           }
               </script>
+              <license file="license.txt" mime-type="text/plain"/>
               <choices-outline>
                   <line choice="default">
                       <line choice="com.tempestteam.atlas"/>
@@ -345,6 +346,47 @@ jobs:
               <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
           </installer-gui-script>
           EOF
+
+          # Create license file
+          cat > ./dist/license.txt << 'LICENSE_EOF'
+🦝 The Backyard Raccoon License (BRL) v1.0
+
+Preamble
+In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".
+
+1. Grant of Permission
+The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:
+
+• Enter, exit, or dramatically crash through any and all garbage bins, compost containers, or unattended coolers.
+• Hold nightly council meetings under the deck, in the attic, or on top of the garden shed.
+• Treat any bird feeder as a personal buffet.
+• Use reflective windows to check fur fluffiness.
+• Steal cat food "for a friend."
+
+2. Intellectual Property
+All shiny objects discovered in the backyard are hereby declared communal raccoon property. The Provider waives all rights to question the raccoon's taste in treasure.
+
+3. Code of Conduct
+While Licensees are not legally required to behave, it is strongly encouraged (but not enforceable) that:
+
+• Acrobatic trash can raids be recorded for posterity (preferably in slow-motion).
+• No raccoon may organize a coup d'état on the neighborhood possum alliance without a 2/3 majority vote.
+• All raccoon dance-offs must be judged fairly by at least one impartial squirrel.
+
+4. Warranty Disclaimer
+This License comes with absolutely no guarantees. The backyard may contain loud humans, unpredictable sprinklers, or robotic lawnmowers. Proceed at your own risk. The Provider is not liable for any ego damage resulting from failed lid-removal attempts.
+
+5. Termination
+This License is valid until:
+
+• The heat death of the universe,
+• Or the raccoons decide to start their own government and need the land for a ministerial raccoon headquarters,
+
+Whichever comes first.
+
+By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
+
+LICENSE_EOF
 
           # Build final product package with custom title
           productbuild \
