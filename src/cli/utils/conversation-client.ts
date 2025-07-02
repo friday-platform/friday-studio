@@ -122,26 +122,40 @@ export class ConversationClient {
    * Send a message to the conversation session
    */
   async sendMessage(sessionId: string, message: string): Promise<ConversationMessage> {
-    // Get the conversation workspace ID and trigger the conversation-stream signal
-    const conversationWorkspaceId = await this.getConversationWorkspaceId();
+    // Send directly to the stream endpoint, not through workspace signals
+    const url = `${this.daemonUrl}/api/stream/${sessionId}`;
+    console.log(`[ConversationClient] Sending message to stream ${url}`);
 
-    // Use DaemonClient to trigger the conversation signal properly
-    const response = await this.daemonClient.triggerSignal(
-      conversationWorkspaceId,
-      "conversation-stream",
-      {
-        streamId: sessionId, // Use the existing stream ID
-        message, // The message content
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
         userId: this.userId,
         scope: {
           workspaceId: this.workspaceId,
         },
-      },
-    );
+      }),
+    });
 
-    // DaemonClient.triggerSignal returns a success response, not HTTP response
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      console.error(`[ConversationClient] Failed to send message:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        url,
+      });
+      throw new Error(
+        `Failed to send message (${response.status}): ${errorText}`,
+      );
+    }
+
+    const result = await response.json();
+    console.log(`[ConversationClient] Message sent successfully:`, result);
+
     return {
-      messageId: crypto.randomUUID(), // Generate a message ID for this request
+      messageId: result.messageId || crypto.randomUUID(),
       status: "processing",
     } as ConversationMessage;
   }
