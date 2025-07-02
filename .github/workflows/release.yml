@@ -314,16 +314,18 @@ jobs:
           # Sign the pkg if certificates are available
           if [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
             echo "Signing pkg installer..."
-            # Keychain should already exist from binary signing, just unlock it
-            security unlock-keychain -p mypassword build.keychain || {
-              echo "Keychain not found, creating new one for pkg signing..."
+            # Check if keychain exists, if not create it
+            if security list-keychains | grep -q "build.keychain" && security unlock-keychain -p mypassword build.keychain 2>/dev/null; then
+              echo "Using existing keychain"
+            else
+              echo "Creating keychain for pkg signing..."
               echo "${{ secrets.MACOS_SIGN_P12 }}" | base64 --decode > certificate.p12
               security create-keychain -p mypassword build.keychain
               security default-keychain -s build.keychain
               security unlock-keychain -p mypassword build.keychain
               security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_SIGN_PASSWORD }}" -T /usr/bin/productsign
               security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
-            }
+            fi
             
             # Auto-detect signing identity for installer signing
             if [ -z "${{ secrets.MACOS_SIGN_IDENTITY }}" ]; then
