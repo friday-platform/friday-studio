@@ -396,10 +396,17 @@ jobs:
         run: |
           $msi_name = "atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.msi"
           
-          # Create WiX source file
+          # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
+          Write-Host "Installing WiX Toolset..."
+          choco install wixtoolset -y
+          
+          # Add WiX to PATH for this session
+          $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
+          
+          # Create WiX source file (WiX v3 syntax)
           @"
           <?xml version="1.0" encoding="UTF-8"?>
-          <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
             <Product Id="*" Name="Atlas" Language="1033" Version="1.0.0" 
                      Manufacturer="Tempest Team" UpgradeCode="{12345678-1234-1234-1234-123456789012}">
               <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
@@ -415,14 +422,11 @@ jobs:
                 <Directory Id="ProgramFilesFolder">
                   <Directory Id="INSTALLFOLDER" Name="Atlas" />
                 </Directory>
-                <Directory Id="ProgramMenuFolder">
-                  <Directory Id="ApplicationProgramsFolder" Name="Atlas"/>
-                </Directory>
               </Directory>
               
               <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
                 <Component Id="AtlasExecutable" Guid="{87654321-4321-4321-4321-210987654321}">
-                  <File Id="AtlasEXE" Source=".\dist\atlas.exe" KeyPath="yes" />
+                  <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
                   <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="suffix" Action="set" System="yes" />
                 </Component>
               </ComponentGroup>
@@ -430,17 +434,14 @@ jobs:
           </Wix>
           "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
           
-          # Install WiX Toolset
-          Write-Host "Installing WiX Toolset..."
-          dotnet tool install --global wix --version 4.0.5
-          
-          # Build MSI
+          # Build MSI using WiX v3 tools
           Write-Host "Building MSI installer..."
-          wix build atlas.wxs -out ".\dist\$msi_name"
+          candle.exe atlas.wxs
+          light.exe -out "dist\$msi_name" atlas.wixobj
           
           # Generate checksum for MSI
-          $hash = Get-FileHash ".\dist\$msi_name" -Algorithm SHA256
-          "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath ".\dist\$msi_name.sha256" -Encoding ASCII
+          $hash = Get-FileHash "dist\$msi_name" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath "dist\$msi_name.sha256" -Encoding ASCII
           
           Write-Host "Created Windows MSI: $msi_name"
         shell: pwsh
