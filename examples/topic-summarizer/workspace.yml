@@ -1,0 +1,344 @@
+version: "1.0"
+
+workspace:
+  name: "topic-summarizer"
+  description: "Atlas workspace for automated discovery and summarization of AI Agent projects on GitHub"
+
+# =============================================================================
+# TOOLS CONFIGURATION - MCP SERVERS AND WEB SEARCH
+# =============================================================================
+# Integrates GitHub API and web search capabilities for comprehensive research
+# =============================================================================
+
+tools:
+  mcp:
+    servers:
+      # GitHub API Integration
+      github-api:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-github"]
+          env:
+            GITHUB_PERSONAL_ACCESS_TOKEN: "auto"
+        capabilities:
+          tools:
+            allowed: [
+              "search_repositories",
+              "get_repository",
+              "list_repository_contents",
+              "get_file_contents",
+              "search_issues",
+              "search_code",
+            ]
+        timeout_ms: 30000
+
+# =============================================================================
+# JOB DEFINITIONS - AUTOMATED AI DISCOVERY WORKFLOW
+# =============================================================================
+# Main job: github-ai-discovery runs every 30 minutes to find new AI repos
+# Manual trigger available for testing and on-demand scanning
+# =============================================================================
+
+jobs:
+  github-ai-discovery:
+    name: "github-ai-discovery"
+    description: "Automated discovery and analysis of new AI Agent repositories on GitHub with comprehensive summarization"
+    triggers:
+      - signal: "timer-github-scan"
+      - signal: "manual-scan"
+    session_prompts:
+      planning: |
+        Plan a comprehensive AI repository discovery and analysis session:
+        1. Search GitHub for recently created AI agent repositories
+        2. Filter results by quality indicators (stars, documentation, code structure)
+        3. Extract key information about each repository
+        4. Generate detailed summaries with trend analysis
+        5. Store findings in workspace memory for historical tracking
+      evaluation: |
+        Evaluate the success of the AI discovery session:
+        - Were new AI agent repositories successfully discovered?
+        - Was the content analysis comprehensive and accurate?
+        - Were the summaries informative and well-structured?
+        - Was the information properly stored for future reference?
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "github-researcher"
+          task: "Search GitHub for new AI agent repositories, extract metadata and content, perform initial filtering"
+          input_source: "signal"
+        - id: "topic-summarizer"
+          task: "Analyze discovered repositories, generate comprehensive summaries, and store insights"
+          input_source: "previous"
+      context:
+        filesystem:
+          patterns: ["summaries/*.md", "reports/*.json"]
+          base_path: "."
+          max_file_size: 1048576 # 1MB
+          include_content: true
+
+  manual-research:
+    name: "manual-research"
+    description: "On-demand research for specific AI topics or repositories"
+    triggers:
+      - signal: "manual-scan"
+        condition: |
+          data.mode === "custom" && data.topic
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "github-researcher"
+          task: "Research the specified topic or repository in detail"
+        - id: "topic-summarizer"
+          task: "Create comprehensive analysis and summary of findings"
+
+# =============================================================================
+# AGENT CONFIGURATION - AI RESEARCH SPECIALISTS
+# =============================================================================
+# github-researcher: GitHub API + web search integration for discovery
+# topic-summarizer: Advanced content analysis and summary generation
+# =============================================================================
+
+agents:
+  github-researcher:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "GitHub repository discovery specialist for AI agent projects"
+    tools:
+      mcp: ["github-api"]
+    max_steps: 15
+    tool_choice: "auto"
+    temperature: 0.3
+    max_tokens: 4000
+
+    prompts:
+      system: |
+        You are a GitHub research specialist focused on discovering and analyzing AI Agent repositories.
+
+        **Your Research Process**:
+        1. **GitHub Discovery**:
+           - ALWAYS start with AI agent-focused searches:
+             * First try: mcp (Model Context Protocol)
+             * Then try: agent
+             * Then try: "ai agent"
+             * Then try: "autonomous agent"
+             * Then try: "llm agent"
+             * Add date filters ONLY after single words work: created:>2024-01-01
+           - Use broader date ranges (last 30 days minimum) to ensure results
+           - Lower quality thresholds: any repository with activity, even 0 stars is acceptable
+           - Extract key metadata: name, description, language, stars, created_at, topics
+
+        2. **Content Analysis**:
+           - Get repository contents and README files
+           - Analyze code structure and architecture
+           - Identify key features, frameworks, and technologies used
+           - Look for documentation, examples, and usage patterns
+
+        3. **Web Context Enhancement**:
+           - Search for additional information about projects online
+           - Find blog posts, announcements, or discussions
+           - Gather context about the project's purpose and innovations
+
+        4. **Quality Assessment**:
+           - Evaluate code quality, documentation completeness
+           - Assess innovation level and uniqueness
+           - Determine project maturity and potential impact
+
+        **CRITICAL: Use these exact search patterns for GitHub API**:
+
+        GOOD Examples (copy these formats exactly):
+        - mcp (Model Context Protocol - single word)
+        - agent created:>2024-01-01 (word + date filter)
+        - "ai agent" (exact phrase in quotes)
+        - "autonomous agent" (exact phrase in quotes)
+        - "llm agent" (exact phrase in quotes)
+        - "multi agent" (exact phrase in quotes)
+        - autonomous pushed:>2024-06-01 (word + recent activity)
+
+        BAD Examples (these will fail):
+        - "agent OR llm OR ai" (logical operators not allowed)
+        - agent OR llm (OR operator not allowed)
+        - ai AND agent (AND operator not allowed)
+
+        **FIRST SEARCH - Use this exact query**: mcp
+        If that works, then try: agent
+        If that works, then try: "ai agent"
+        If that works, then try: "autonomous agent"
+
+        **Step-by-step process:**
+        1. First, call search_repositories with query: "mcp"
+        2. If successful, analyze results and call get_repository for top results
+        3. Then call search_repositories with query: "agent"
+        4. Then call search_repositories with query: "ai agent"
+        5. Then call search_repositories with query: "autonomous agent"
+        6. Combine all findings into structured output
+
+        **Output Format**:
+        Provide structured data for each repository found:
+        ```json
+        {
+          "repositories": [
+            {
+              "name": "repo-name",
+              "full_name": "owner/repo-name",
+              "description": "repository description",
+              "url": "github-url",
+              "created_at": "timestamp",
+              "stars": 123,
+              "language": "Python",
+              "topics": ["ai", "agent"],
+              "key_features": ["feature1", "feature2"],
+              "readme_summary": "summary of README content"
+            }
+          ],
+          "search_metadata": {
+            "total_found": 10,
+            "search_terms": ["mcp", "agent", "ai agent", "autonomous agent"],
+            "successful_searches": 3
+          }
+        }
+        ```
+
+  topic-summarizer:
+    type: "llm"
+    model: "claude-3-5-sonnet-20241022"
+    purpose: "AI project analysis and trend summarization specialist"
+    max_steps: 8
+    tool_choice: "auto"
+    temperature: 0.4
+    max_tokens: 4000
+
+    prompts:
+      system: |
+        You are an AI project analysis specialist who creates comprehensive summaries and trend analysis.
+
+        **Your Analysis Process**:
+        1. **Project Classification**:
+           - Categorize each repository by AI agent type
+           - Identify primary use cases and target domains
+           - Assess technical sophistication and approach
+
+        2. **Innovation Analysis**:
+           - Compare with existing tools and frameworks
+           - Identify novel approaches or unique features
+           - Evaluate potential impact on the AI agent ecosystem
+
+        3. **Trend Identification**:
+           - Spot emerging patterns across projects
+           - Identify popular technologies and frameworks
+           - Note shifts in architectural approaches
+
+        4. **Summary Generation**:
+           - Create detailed project summaries
+           - Generate comparative analysis
+           - Produce trend reports and insights
+
+        **Summary Structure**:
+        Generate markdown reports with:
+
+        ## AI Agent Discovery Report - [Date]
+
+        ### Executive Summary
+        - Key findings and notable projects
+        - Emerging trends and patterns
+        - Innovation highlights
+
+        ### Featured Projects
+        For each significant project:
+        - **[Project Name]** ([GitHub Link])
+          - **Category**: Type of AI agent
+          - **Key Innovation**: What makes it unique
+          - **Technical Stack**: Languages, frameworks, APIs
+          - **Use Cases**: Primary applications
+          - **Maturity**: Assessment of readiness and documentation
+          - **Impact Potential**: Likely influence on the field
+
+        ### Trend Analysis
+        - **Popular Technologies**: Most used frameworks/tools
+        - **Emerging Patterns**: New architectural approaches
+        - **Domain Focus**: Application areas getting attention
+        - **Development Velocity**: Activity and update patterns
+
+        ### Recommendations
+        - Projects worth monitoring
+        - Emerging technologies to track
+        - Market opportunities identified
+
+        **Memory Storage**:
+        Store insights for historical tracking and pattern recognition across discovery sessions.
+
+# =============================================================================
+# SIGNAL CONFIGURATION - AUTOMATED AND MANUAL TRIGGERS
+# =============================================================================
+# timer-github-scan: Runs every 30 minutes for continuous discovery
+# manual-scan: HTTP endpoint for on-demand research and testing
+# =============================================================================
+
+signals:
+  # Automated Timer-Based Discovery
+  timer-github-scan:
+    description: "Automated timer signal for GitHub AI repository discovery every 30 minutes"
+    provider: "cron-scheduler"
+    schedule: "*/30 * * * *" # Every 30 minutes
+    timezone: "UTC"
+    schema:
+      type: "object"
+      properties:
+        trigger_type:
+          type: "string"
+          enum: ["automated"]
+        search_window_hours:
+          type: "number"
+          default: 1
+      required: ["trigger_type"]
+
+  # Manual Trigger for Testing and Custom Research
+  manual-scan:
+    description: "Manual HTTP trigger for on-demand AI repository research"
+    provider: "http"
+    path: "/scan"
+    method: "POST"
+    schema:
+      type: "object"
+      properties:
+        mode:
+          type: "string"
+          enum: ["recent", "custom", "trending"]
+          default: "recent"
+        topic:
+          type: "string"
+          description: "Specific topic or keyword to research"
+        time_range:
+          type: "string"
+          enum: ["1h", "24h", "7d", "30d"]
+          default: "24h"
+        min_stars:
+          type: "number"
+          default: 0
+      required: ["mode"]
+
+# =============================================================================
+# MEMORY CONFIGURATION - HISTORICAL TRACKING AND LEARNING
+# =============================================================================
+# Workspace memory for learning patterns and tracking discovery history
+# =============================================================================
+
+memory:
+  enabled: true
+  scope: "workspace"
+  session:
+    include_in_context: true
+    max_context_entries: 10
+  retention:
+    max_age_days: 30 # Keep discovery history for 30 days
+    max_entries: 1000
+    cleanup_interval_hours: 24
+  include_types:
+    - "repository_discoveries"
+    - "trend_analysis"
+    - "project_classifications"
+    - "innovation_tracking"
+    - "quality_assessments"
+    - "web_research_findings"
+    - "comparative_analysis"
+    - "market_insights"
