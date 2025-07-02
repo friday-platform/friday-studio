@@ -497,7 +497,7 @@ jobs:
               security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign
               security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
             }
-            
+
             # If keychain already exists, ensure installer certificate is imported
             echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 --decode > installer-certificate.p12
             security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign 2>/dev/null || true
@@ -506,35 +506,35 @@ jobs:
             # Auto-detect Developer ID Installer certificate
             echo "Looking for Developer ID Installer certificate..."
             INSTALLER_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
-            
+
             if [ -n "$INSTALLER_IDENTITY" ]; then
               echo "✅ Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
-              
+
               # Sign the pkg with installer certificate
               if productsign --sign "$INSTALLER_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
                 mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
                 echo "✅ pkg signed successfully with Developer ID Installer certificate"
-                
+
                 # Notarize the pkg using existing API key setup
                 if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
                   echo "🍎 Notarizing pkg with Apple API key..."
-                  
+
                   # Create private key file from base64 encoded secret (same as binary notarization)
                   echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-                  
+
                   # Submit pkg for notarization using API key method
                   if xcrun notarytool submit "./dist/${pkg_name}" \
                     --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
                     --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
                     --key notary_key.p8 \
                     --wait; then
-                    
+
                     echo "✅ pkg notarized successfully"
-                    
+
                     # Staple the notarization ticket
                     if xcrun stapler staple "./dist/${pkg_name}"; then
                       echo "✅ Notarization ticket stapled to pkg"
-                      
+
                       # Final verification - should now pass completely
                       if spctl -a -v --type install "./dist/${pkg_name}"; then
                         echo "🎉 pkg fully approved - NO GATEKEEPER WARNINGS!"
@@ -547,13 +547,13 @@ jobs:
                   else
                     echo "⚠️ pkg notarization failed - will have Gatekeeper warnings"
                   fi
-                  
+
                   # Clean up private key file
                   rm -f notary_key.p8
                 else
                   echo "⚠️ Notarization skipped - missing notary API key credentials"
                   echo "💡 MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
-                  
+
                   # Verify signature without notarization
                   if spctl -a -v --type install "./dist/${pkg_name}"; then
                     echo "✅ pkg signature verified but not notarized"
