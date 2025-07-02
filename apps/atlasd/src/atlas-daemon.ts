@@ -1065,69 +1065,24 @@ export class AtlasDaemon {
 
       try {
         const body = await c.req.json();
-        const { message, metadata, conversationId } = body;
+        const { message, userId, scope, metadata, conversationId } = body;
 
-        // Generate messageId for this response
-        const messageId = crypto.randomUUID();
+        // Trigger the conversation workspace signal with the message
+        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("tender_icing");
 
-        // Stream the message word-by-word
-        const words = message.split(" ");
-        let content = "";
-
-        for (let i = 0; i < words.length; i++) {
-          content += (i > 0 ? " " : "") + words[i];
-
-          const chunkEvent = {
-            type: "message_chunk",
-            data: {
-              content,
-              partial: i < words.length - 1,
-              conversationId,
-            },
-            timestamp: new Date().toISOString(),
-            messageId,
-            sessionId: streamId,
-          };
-
-          this.emitSSEEvent(streamId, chunkEvent);
-
-          // Small delay for realistic typing feel
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
-
-        // Send transparency/metadata if provided
-        if (metadata) {
-          const transparencyEvent = {
-            type: "transparency",
-            data: metadata,
-            timestamp: new Date().toISOString(),
-            messageId,
-            sessionId: streamId,
-          };
-
-          this.emitSSEEvent(streamId, transparencyEvent);
-        }
-
-        // Send completion event (don't close connection)
-        const completionEvent = {
-          type: "message_complete",
-          data: {
-            messageId,
-            conversationId,
-            complete: true,
-            closeConnection: false,
-          },
-          timestamp: new Date().toISOString(),
-          messageId,
-          sessionId: streamId,
-        };
-
-        this.emitSSEEvent(streamId, completionEvent);
+        await conversationWorkspace.triggerSignal("conversation-stream", {
+          streamId,
+          message,
+          userId: userId || "cli-user",
+          conversationId,
+          scope,
+          metadata,
+        });
 
         return c.json({
           success: true,
           message: "Reply streamed successfully",
-          messageId,
+          messageId: crypto.randomUUID(),
         });
       } catch (error) {
         AtlasLogger.getInstance().error("Stream API error", { streamId, error: error.message });
