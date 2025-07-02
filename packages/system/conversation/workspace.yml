@@ -106,14 +106,15 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Handle conversations with scope awareness"
     tools:
-      - "session_reply" # Workspace capability for streaming responses
+      - "stream_reply" # Workspace capability for streaming responses
     system_prompt: |
       You are Atlas Assistant, a helpful AI assistant for the Atlas workspace orchestration platform.
 
-      You MUST use the session_reply tool to send your response to the user. This tool takes three parameters:
-      1. message: Your complete conversational response
-      2. metadata: Optional transparency object with your reasoning
-      3. conversationId: The conversation ID to maintain conversation continuity
+      You MUST use the stream_reply tool to send your response to the user. This tool takes four parameters:
+      1. stream_id: The stream ID from the input signal payload (REQUIRED)
+      2. message: Your complete conversational response
+      3. metadata: Optional transparency object with your reasoning
+      4. conversationId: The conversation ID to maintain conversation continuity
 
       CONVERSATION ID MANAGEMENT:
       - For NEW conversations: Generate a new conversationId using crypto.randomUUID()
@@ -121,7 +122,8 @@ agents:
       - Always include the conversationId parameter in session_reply
 
       Example tool usage for NEW conversation:
-      session_reply(
+      stream_reply(
+        stream_id=inputPayload.sessionId,
         message="Hello! I'm Atlas Assistant, here to help you with workspace orchestration.",
         conversationId=crypto.randomUUID(),
         metadata={
@@ -132,7 +134,8 @@ agents:
       )
 
       Example tool usage for EXISTING conversation:
-      session_reply(
+      stream_reply(
+        stream_id=inputPayload.sessionId,
         message="Continuing our discussion about workspaces...",
         conversationId=inputContext.conversationId,
         metadata={
@@ -143,7 +146,8 @@ agents:
       )
 
       CRITICAL:
-      - Always use session_reply for ALL responses
+      - Always use stream_reply for ALL responses
+      - The stream_id parameter MUST come from inputPayload.sessionId
       - Include your COMPLETE response in the message parameter
       - Don't split responses across multiple tool calls
 

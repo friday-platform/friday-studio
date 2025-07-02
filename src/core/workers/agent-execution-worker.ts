@@ -99,6 +99,11 @@ class AgentExecutionWorker {
   private workspaceId?: string;
   private traceHeaders?: Record<string, string>;
   private currentInput?: any; // Store current agent input for tools to access
+  private pendingCapabilityRequests?: Map<string, {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+    timeout: number;
+  }>;
 
   constructor() {
     this.workerId = crypto.randomUUID();
@@ -177,6 +182,9 @@ class AgentExecutionWorker {
           break;
         case ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATE:
           await this.handleTerminate(envelope);
+          break;
+        case "workspace_capability_response":
+          this.handleCapabilityResponse(envelope);
           break;
         default:
           this.logger.debug(`Unknown message type: ${envelope.type}`);
@@ -1129,6 +1137,35 @@ class AgentExecutionWorker {
     this.postMessage(logMessage);
   }
 
+  // Handle workspace capability response from supervisor
+  private handleCapabilityResponse(envelope: AtlasMessageEnvelope): void {
+    const payload = envelope.payload as {
+      requestId: string;
+      success: boolean;
+      result?: any;
+      error?: string;
+    };
+
+    const requestId = payload.requestId;
+    const pendingRequest = this.pendingCapabilityRequests?.get(requestId);
+
+    if (!pendingRequest) {
+      this.log(`Received capability response for unknown request: ${requestId}`, "warn");
+      return;
+    }
+
+    // Clear timeout
+    clearTimeout(pendingRequest.timeout);
+    this.pendingCapabilityRequests?.delete(requestId);
+
+    // Resolve or reject based on success
+    if (payload.success) {
+      pendingRequest.resolve(payload.result);
+    } else {
+      pendingRequest.reject(new Error(payload.error || "Unknown capability error"));
+    }
+  }
+
   // Legacy method for backward compatibility during transition
   private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
     this.sendLogMessage(level, message);
@@ -1142,19 +1179,48 @@ class AgentExecutionWorker {
     const tools: Record<string, any> = {};
 
     for (const [toolId, toolMeta] of Object.entries(metadata)) {
-      {
-        // For other tools, create a placeholder that logs
-        tools[toolId] = {
-          description: toolMeta.description,
-          parameters: toolMeta.inputSchema
-            ? jsonSchema(toolMeta.inputSchema)
-            : jsonSchema({ type: "object", properties: {}, required: [] }),
-          execute: async (args: any) => {
-            this.log(`Workspace tool ${toolId} called with args: ${JSON.stringify(args)}`, "warn");
-            return { error: `Tool ${toolId} not implemented in worker` };
-          },
-        };
-      }
+      tools[toolId] = {
+        description: toolMeta.description,
+        parameters: toolMeta.inputSchema
+          ? jsonSchema(toolMeta.inputSchema)
+          : jsonSchema({ type: "object", properties: {}, required: [] }),
+        execute: async (args: any) => {
+          this.log(`Workspace tool ${toolId} called with args: ${JSON.stringify(args)}`, "debug");
+
+          // Send workspace capability execution request to supervisor
+          const capabilityRequestId = crypto.randomUUID();
+
+          const capabilityMessage = createAgentMessage(
+            "workspace_capability_request",
+            {
+              requestId: capabilityRequestId,
+              capabilityId: toolId,
+              args: args,
+              sessionId: this.sessionId,
+              agentId: this.currentInput?.agent_id,
+            },
+            this.createMessageSource(),
+            {
+              channel: "direct",
+              priority: "high",
+            },
+          );
+
+          // Send the request
+          this.postMessage(capabilityMessage);
+
+          // Wait for response (with timeout)
+          return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error(`Workspace capability ${toolId} timed out`));
+            }, 30000); // 30 second timeout
+
+            // Store the resolver for when response comes back
+            this.pendingCapabilityRequests = this.pendingCapabilityRequests || new Map();
+            this.pendingCapabilityRequests.set(capabilityRequestId, { resolve, reject, timeout });
+          });
+        },
+      };
     }
 
     return tools;

@@ -17,6 +17,7 @@ import {
   type AgentExecutionContext,
   WorkspaceCapabilityRegistry,
 } from "./workspace-capabilities.ts";
+import { DaemonCapabilityRegistry } from "./daemon-capabilities.ts";
 import { capabilitiesToTools } from "./utils/capability-to-tool.ts";
 import {
   type AgentExecutePayload,
@@ -880,7 +881,7 @@ Focus on safety, efficiency, and reliability.`;
   private createMessageSource(): MessageSource {
     return {
       workerId: this.id,
-      workerType: "workspace-supervisor", // AgentSupervisor is part of workspace supervision
+      workerType: "agent-supervisor", // AgentSupervisor is its own worker type
       sessionId: this.sessionId,
       workspaceId: this.workspaceId,
     };
@@ -1477,6 +1478,12 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
             );
             return;
           }
+
+          // Handle workspace capability requests
+          if (envelope.type === "workspace_capability_request") {
+            this.handleWorkspaceCapabilityRequest(instance, envelope);
+            return;
+          }
         }
       };
 
@@ -1485,6 +1492,119 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       // Send envelope message to worker
       instance.worker.postMessage(executeMessage);
     });
+  }
+
+  // Handle workspace capability requests from agent workers
+  private async handleWorkspaceCapabilityRequest(
+    instance: AgentInstance,
+    envelope: AtlasMessageEnvelope,
+  ): Promise<void> {
+    const payload = envelope.payload as {
+      requestId: string;
+      capabilityId: string;
+      args: any;
+      sessionId: string;
+      agentId: string;
+    };
+
+    try {
+      this.log(
+        `Executing capability ${payload.capabilityId} for agent ${payload.agentId}`,
+        "debug",
+      );
+
+      let result: any;
+
+      // Check if it's a daemon capability first
+      const daemonCapability = DaemonCapabilityRegistry.getCapability(payload.capabilityId);
+      if (daemonCapability) {
+        // It's a daemon-level capability - route to daemon
+        const daemonContext = {
+          sessionId: payload.sessionId,
+          agentId: payload.agentId,
+          workspaceId: this.workspaceId || "",
+          daemon: this.getDaemonInstance(),
+          conversationId: payload.args.conversationId,
+        };
+
+        result = await DaemonCapabilityRegistry.executeCapability(
+          payload.capabilityId,
+          daemonContext,
+          ...Object.values(payload.args),
+        );
+      } else {
+        // It's a workspace capability
+        const context = {
+          workspaceId: this.workspaceId || "",
+          sessionId: payload.sessionId,
+          agentId: payload.agentId,
+          sessionSupervisor: this.sessionSupervisor,
+          conversationId: payload.args.conversationId,
+        };
+
+        result = await WorkspaceCapabilityRegistry.executeCapability(
+          payload.capabilityId,
+          context,
+          ...Object.values(payload.args),
+        );
+      }
+
+      // Send successful response back to worker
+      const responseMessage = createAgentMessage(
+        "workspace_capability_response",
+        {
+          requestId: payload.requestId,
+          success: true,
+          result: result,
+        },
+        this.createMessageSource(),
+        {
+          channel: "direct",
+          priority: "high",
+        },
+      );
+
+      instance.worker.postMessage(responseMessage);
+
+      this.log(`Workspace capability ${payload.capabilityId} executed successfully`, "debug");
+    } catch (error) {
+      this.log(`Workspace capability ${payload.capabilityId} failed: ${error}`, "error");
+
+      // Send error response back to worker
+      const errorResponse = createAgentMessage(
+        "workspace_capability_response",
+        {
+          requestId: payload.requestId,
+          success: false,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        this.createMessageSource(),
+        {
+          channel: "direct",
+          priority: "high",
+        },
+      );
+
+      instance.worker.postMessage(errorResponse);
+    }
+  }
+
+  // Helper method to create message source for responses
+  private createMessageSource() {
+    return {
+      workerId: this.id,
+      workerType: "agent-supervisor",
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+    };
+  }
+
+  /**
+   * Get reference to the daemon instance for daemon capabilities
+   * TODO: This should be properly passed through the supervision hierarchy
+   */
+  private getDaemonInstance(): any {
+    return DaemonCapabilityRegistry.getDaemonInstance();
   }
 
   private parseValidationResult(llmResponse: string): ValidationResult {

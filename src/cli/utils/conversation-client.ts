@@ -153,8 +153,8 @@ export class ConversationClient {
 
           yield event;
 
-          // Close the connection after message_complete
-          if (event.type === "message_complete") {
+          // Only close the connection if explicitly requested
+          if (event.type === "message_complete" && event.data?.closeConnection === true) {
             if (eventSource && eventSource.close) {
               eventSource.close();
             }

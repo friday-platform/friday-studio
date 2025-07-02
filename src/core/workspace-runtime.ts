@@ -41,6 +41,7 @@ interface WorkspaceRuntimeContext {
   runtime?: WorkspaceRuntime; // Reference to runtime instance for signal processing
   error?: Error;
   activeStreamSignals?: Map<string, any>; // Track active stream signal connections
+  streamChannels?: Map<string, any>; // Track response channels by stream ID
   isShuttingDown?: boolean; // Flag to prevent new signal processing during shutdown
   mergedConfig?: {
     atlas: {
@@ -80,7 +81,6 @@ export class WorkspaceRuntime {
   private workspace: IWorkspace;
   private workerManager: WorkerManager;
   private sessions: Map<string, IWorkspaceSession> = new Map();
-  private sessionResponseChannels: Map<string, any> = new Map(); // Map of sessionId to response channels
   private options: WorkspaceRuntimeOptions;
   private config?: any;
   private stateMachine: Actor<typeof workspaceRuntimeMachine>;
@@ -163,8 +163,8 @@ export class WorkspaceRuntime {
       sessionId,
       messageType: message.type,
       hasData: !!message.data,
-      responseChannelsSize: this.sessionResponseChannels?.size || 0,
-      responseChannelKeys: Array.from(this.sessionResponseChannels?.keys() || []),
+      responseChannelsSize: SessionChannelRegistry.getActiveSessions().length,
+      responseChannelKeys: SessionChannelRegistry.getActiveSessions(),
     });
 
     if (!sessionId) {
@@ -172,12 +172,12 @@ export class WorkspaceRuntime {
       return;
     }
 
-    // Get the response channel for this session
-    const responseChannel = this.sessionResponseChannels?.get(sessionId);
+    // Get the response channel for this session from clean registry
+    const responseChannel = SessionChannelRegistry.getResponseChannel(sessionId);
     if (!responseChannel) {
       logger.debug("No response channel found for session", {
         sessionId,
-        availableChannels: Array.from(this.sessionResponseChannels?.keys() || []),
+        availableChannels: SessionChannelRegistry.getActiveSessions(),
       });
       return;
     }
@@ -412,9 +412,13 @@ export class WorkspaceRuntime {
         // Use session ID from payload (for conversation continuity), otherwise generate new one
         const sessionId = payload?.sessionId || crypto.randomUUID();
 
-        // Store the response channel for this session
+        // Store the response channel for this session in context
         if (responseChannel) {
-          this.sessionResponseChannels.set(sessionId, responseChannel);
+          const context = this.stateMachine.getSnapshot().context;
+          if (!context.streamChannels) {
+            context.streamChannels = new Map();
+          }
+          context.streamChannels.set(sessionId, responseChannel);
         }
 
         // Create session options
@@ -453,7 +457,10 @@ export class WorkspaceRuntime {
                 });
               } finally {
                 // Clean up the response channel reference
-                this.sessionResponseChannels.delete(sessionId);
+                const context = this.stateMachine.getSnapshot().context;
+                if (context.streamChannels) {
+                  context.streamChannels.delete(sessionId);
+                }
               }
             }
           },
@@ -797,6 +804,24 @@ export class WorkspaceRuntime {
       throw new Error(`Agent '${agentId}' not found`);
     }
     return agents[agentId];
+  }
+
+  /**
+   * Send a message to a stream by stream ID
+   */
+  async sendToStream(streamId: string, event: any): Promise<void> {
+    const context = this.stateMachine.getSnapshot().context;
+    const responseChannel = context.streamChannels?.get(streamId);
+
+    if (!responseChannel) {
+      throw new Error(`Stream '${streamId}' not found or disconnected`);
+    }
+
+    if (responseChannel.closed || responseChannel.disconnected) {
+      throw new Error(`Stream '${streamId}' is closed`);
+    }
+
+    await responseChannel.send(event);
   }
 
   /**
