@@ -745,6 +745,16 @@ Focus on safety, efficiency, and reliability.`;
     const worker = new Worker(workerScript, {
       type: "module",
       name: `agent-worker-${agent.id}`,
+      deno: {
+        permissions: {
+          read: true,
+          write: true,
+          net: true, // Allow network access for daemon communication
+          env: true, // Allow environment variable access
+          run: false, // Restrict process execution
+          ffi: false, // Restrict FFI access
+        },
+      },
     });
 
     const workerInstance: AgentWorkerInstance = {
