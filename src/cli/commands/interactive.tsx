@@ -748,14 +748,6 @@ export default function InteractiveCommand() {
                   const responseMessage = event.data.content;
                   const isPartial = event.data.partial;
 
-                  // Remove pending spinner if this is the first chunk
-                  if (pendingMessageSpinner) {
-                    setOutputBuffer((prev) =>
-                      prev.filter((entry) => entry.id !== pendingMessageSpinner)
-                    );
-                    setPendingMessageSpinner(null);
-                  }
-
                   // Update streaming message
                   const responseTimestamp = new Date()
                     .toLocaleTimeString([], {
@@ -796,8 +788,16 @@ export default function InteractiveCommand() {
                 }
 
                 if (event.type === "message_complete") {
-                  // Message is complete - no additional action needed
                   console.log("[Interactive] Message completed");
+
+                  // Remove spinner when message is complete
+                  if (pendingMessageSpinner) {
+                    console.log("[Interactive] Removing spinner on message_complete");
+                    setOutputBuffer((prev) =>
+                      prev.filter((entry) => entry.id !== pendingMessageSpinner)
+                    );
+                    setPendingMessageSpinner(null);
+                  }
                 }
               }
             } catch (error) {
@@ -1465,7 +1465,7 @@ export default function InteractiveCommand() {
     });
 
     try {
-      console.log("[Interactive] Sending message with sessionId:", conversationSessionId);
+      console.log("[Interactive] Sending message with streamId:", conversationSessionId);
 
       // Store the spinner ID so the persistent SSE listener can remove it
       setPendingMessageSpinner(spinnerId);

@@ -57,25 +57,28 @@ try {
     });
   })();
 
-  // 3. Send a direct conversation message (no workspace)
-  console.log("3. Sending conversation message...");
+  // 3. Trigger conversation signal via webhook
+  console.log("3. Triggering conversation signal...");
   setTimeout(async () => {
-    const messageResponse = await fetch("http://localhost:8080/api/streams", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        streamId: streamId,
-        message: "Hello! This is a direct conversation test.",
-        userId: "test-user",
-      }),
-    });
+    const signalResponse = await fetch(
+      "http://localhost:8080/api/workspaces/tender_icing/signals/conversation-stream",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          streamId: streamId,
+          message: "Hello! This is a direct conversation test.",
+          userId: "test-user",
+        }),
+      },
+    );
 
-    if (!messageResponse.ok) {
-      throw new Error(`Message failed: ${messageResponse.status} ${messageResponse.statusText}`);
+    if (!signalResponse.ok) {
+      throw new Error(`Signal failed: ${signalResponse.status} ${signalResponse.statusText}`);
     }
 
-    const messageResult = await messageResponse.json();
-    console.log("✓ Message sent:", messageResult);
+    const signalResult = await signalResponse.json();
+    console.log("✓ Signal triggered:", signalResult);
   }, 1000);
 
   // 4. Wait for SSE events

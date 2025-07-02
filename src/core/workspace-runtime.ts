@@ -41,7 +41,6 @@ interface WorkspaceRuntimeContext {
   runtime?: WorkspaceRuntime; // Reference to runtime instance for signal processing
   error?: Error;
   activeStreamSignals?: Map<string, any>; // Track active stream signal connections
-  streamChannels?: Map<string, any>; // Track response channels by stream ID
   isShuttingDown?: boolean; // Flag to prevent new signal processing during shutdown
   mergedConfig?: {
     atlas: {
@@ -144,55 +143,11 @@ export class WorkspaceRuntime {
    */
   private setupMessageHandlers(): void {
     // Set up global message handler for worker messages
-    this.workerManager.setGlobalMessageHandler(async (workerId: string, message: any) => {
+    this.workerManager.setGlobalMessageHandler(async (_workerId: string, message: any) => {
       if (message.type === "sessionComplete") {
         await this.handleSessionComplete(message.sessionId, message.result);
-      } else if (message.type === "stream") {
-        // Handle streaming messages from agents
-        await this.handleStreamMessage(message);
       }
     });
-  }
-
-  /**
-   * Handle stream messages from agents
-   */
-  private async handleStreamMessage(message: any): Promise<void> {
-    const sessionId = message.sessionId || message.data?.sessionId;
-    logger.info("handleStreamMessage called", {
-      sessionId,
-      messageType: message.type,
-      hasData: !!message.data,
-      responseChannelsSize: SessionChannelRegistry.getActiveSessions().length,
-      responseChannelKeys: SessionChannelRegistry.getActiveSessions(),
-    });
-
-    if (!sessionId) {
-      logger.warn("Stream message without sessionId", { message });
-      return;
-    }
-
-    // Get the response channel for this session from clean registry
-    const responseChannel = SessionChannelRegistry.getResponseChannel(sessionId);
-    if (!responseChannel) {
-      logger.debug("No response channel found for session", {
-        sessionId,
-        availableChannels: SessionChannelRegistry.getActiveSessions(),
-      });
-      return;
-    }
-
-    try {
-      // Use the response channel's send method to send the stream data
-      responseChannel.send(message.data);
-      logger.debug("Successfully sent to response channel", { sessionId });
-    } catch (error) {
-      logger.error("Failed to send to response channel", {
-        sessionId,
-        error: error instanceof Error ? error.message : String(error),
-        message: JSON.stringify(message),
-      });
-    }
   }
 
   /**
@@ -406,20 +361,8 @@ export class WorkspaceRuntime {
         // Generate task ID for tracking
         const taskId = crypto.randomUUID();
 
-        // Check if signal has a response channel attached
-        const responseChannel = (signal as any).__responseChannel;
-
         // Use session ID from payload (for conversation continuity), otherwise generate new one
         const sessionId = payload?.sessionId || crypto.randomUUID();
-
-        // Store the response channel for this session in context
-        if (responseChannel) {
-          const context = this.stateMachine.getSnapshot().context;
-          if (!context.streamChannels) {
-            context.streamChannels = new Map();
-          }
-          context.streamChannels.set(sessionId, responseChannel);
-        }
 
         // Create session options
         const sessionOptions: any = {
@@ -431,38 +374,6 @@ export class WorkspaceRuntime {
               sessionId,
               result,
             });
-
-            // Send completion event through response channel if available
-            if (responseChannel) {
-              try {
-                // Get the session from the sessions map
-                const sessionInstance = this.sessions.get(sessionId);
-                if (sessionInstance && sessionInstance.stream) {
-                  // Send final message complete event
-                  await sessionInstance.stream({
-                    type: "message_complete",
-                    data: {
-                      sessionId,
-                      result: result?.final_output?.result || "Session completed",
-                    },
-                  });
-                }
-
-                // Close the response channel
-                await responseChannel.close("complete");
-              } catch (error) {
-                logger.error("Failed to send completion through response channel", {
-                  error: error instanceof Error ? error.message : String(error),
-                  sessionId,
-                });
-              } finally {
-                // Clean up the response channel reference
-                const context = this.stateMachine.getSnapshot().context;
-                if (context.streamChannels) {
-                  context.streamChannels.delete(sessionId);
-                }
-              }
-            }
           },
         };
 
@@ -490,7 +401,6 @@ export class WorkspaceRuntime {
           sessionId,
           originalSessionId,
           sessionIdAfterOverride: session.id,
-          hasResponseChannel: !!responseChannel,
           sessionCount: this.sessions.size,
         });
 
@@ -804,24 +714,6 @@ export class WorkspaceRuntime {
       throw new Error(`Agent '${agentId}' not found`);
     }
     return agents[agentId];
-  }
-
-  /**
-   * Send a message to a stream by stream ID
-   */
-  async sendToStream(streamId: string, event: any): Promise<void> {
-    const context = this.stateMachine.getSnapshot().context;
-    const responseChannel = context.streamChannels?.get(streamId);
-
-    if (!responseChannel) {
-      throw new Error(`Stream '${streamId}' not found or disconnected`);
-    }
-
-    if (responseChannel.closed || responseChannel.disconnected) {
-      throw new Error(`Stream '${streamId}' is closed`);
-    }
-
-    await responseChannel.send(event);
   }
 
   /**

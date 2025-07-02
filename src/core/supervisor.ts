@@ -1121,6 +1121,10 @@ Provide a structured analysis.`;
       });
 
       const context = {
+        sessionId: crypto.randomUUID(), // Will be overridden by session worker
+        workspaceId: this.workspace?.id || "unknown",
+        signal,
+        payload,
         availableAgents,
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,

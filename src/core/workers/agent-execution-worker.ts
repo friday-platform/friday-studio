@@ -1171,6 +1171,26 @@ class AgentExecutionWorker {
     this.sendLogMessage(level, message);
   }
 
+  private handleSSEEmit(sseMessage: { type: string; streamId: string; event: any }) {
+    this.log(`Forwarding SSE emit to main process: ${sseMessage.streamId}`, "debug");
+
+    // Forward SSE emit message to main process via agent message
+    const sseForwardMessage = createAgentMessage(
+      "sse_emit_forward",
+      {
+        streamId: sseMessage.streamId,
+        event: sseMessage.event,
+      },
+      this.createMessageSource(),
+      {
+        channel: "direct",
+        priority: "high",
+      },
+    );
+
+    this.postMessage(sseForwardMessage);
+  }
+
   // Create workspace tools from metadata
   private async createWorkspaceToolsFromMetadata(
     metadata: Record<string, any>,

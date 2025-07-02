@@ -29,13 +29,19 @@ export class DaemonCapabilityRegistry {
    * Set the daemon instance for capability access
    */
   static setDaemonInstance(daemon: any): void {
+    console.log(`[DaemonCapabilityRegistry] Setting daemon instance:`, !!daemon);
     this.daemonInstance = daemon;
+    console.log(
+      `[DaemonCapabilityRegistry] Daemon instance set successfully:`,
+      !!this.daemonInstance,
+    );
   }
 
   /**
    * Get the daemon instance
    */
   static getDaemonInstance(): any {
+    console.log(`[DaemonCapabilityRegistry] Getting daemon instance:`, !!this.daemonInstance);
     return this.daemonInstance;
   }
 
@@ -82,40 +88,131 @@ export class DaemonCapabilityRegistry {
         metadata?: any,
         conversationId?: string,
       ) => {
-        // MCP tool running in worker - make HTTP request to daemon
-        const daemonUrl = "http://localhost:8080";
-
+        // Use HTTP to emit SSE events via daemon API
         try {
-          console.log(`Making stream request to ${daemonUrl}/api/stream/${stream_id}`);
-          const response = await fetch(`${daemonUrl}/api/stream/${stream_id}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              message,
-              metadata,
-              conversationId,
-            }),
-          });
+          console.log(
+            `[stream_reply] START: Streaming message for stream ${stream_id}: "${message}"`,
+          );
 
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          // Generate messageId for this response
+          const messageId = crypto.randomUUID();
+          console.log(`[stream_reply] Generated messageId: ${messageId}`);
+
+          // Stream the message word-by-word for realistic typing feel
+          const words = message.split(" ");
+          console.log(`[stream_reply] Will stream ${words.length} words`);
+          let content = "";
+
+          for (let i = 0; i < words.length; i++) {
+            content += (i > 0 ? " " : "") + words[i];
+            console.log(`[stream_reply] Streaming word ${i + 1}/${words.length}: "${content}"`);
+
+            const chunkEvent = {
+              type: "message_chunk",
+              data: {
+                content,
+                partial: i < words.length - 1,
+                conversationId,
+              },
+              timestamp: new Date().toISOString(),
+              messageId,
+              sessionId: stream_id,
+            };
+
+            // Use HTTP to emit SSE event via daemon API
+            console.log(`[stream_reply] Emitting chunk via HTTP API`);
+            try {
+              const response = await fetch(`http://localhost:8080/api/stream/${stream_id}/emit`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(chunkEvent),
+              });
+
+              if (!response.ok) {
+                throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
+              }
+              console.log(`[stream_reply] Chunk emitted successfully`);
+            } catch (emitError) {
+              console.error(`[stream_reply] Failed to emit SSE chunk:`, emitError);
+              throw emitError;
+            }
+
+            // Small delay for realistic typing feel
+            await new Promise((resolve) => setTimeout(resolve, 25));
           }
 
-          const result = await response.json();
-          console.log("Stream request successful:", result);
+          console.log(`[stream_reply] Finished streaming words`);
 
+          // Send transparency/metadata if provided
+          if (metadata) {
+            console.log(`[stream_reply] Sending transparency metadata:`, metadata);
+            const transparencyEvent = {
+              type: "transparency",
+              data: metadata,
+              timestamp: new Date().toISOString(),
+              messageId,
+              sessionId: stream_id,
+            };
+
+            try {
+              const response = await fetch(`http://localhost:8080/api/stream/${stream_id}/emit`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(transparencyEvent),
+              });
+
+              if (!response.ok) {
+                throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
+              }
+              console.log(`[stream_reply] Transparency event emitted successfully`);
+            } catch (emitError) {
+              console.error(`[stream_reply] Failed to emit transparency event:`, emitError);
+              throw emitError;
+            }
+          }
+
+          // Send completion event (don't close connection)
+          console.log(`[stream_reply] Sending completion event`);
+          const completionEvent = {
+            type: "message_complete",
+            data: {
+              messageId,
+              conversationId,
+              complete: true,
+              closeConnection: false,
+            },
+            timestamp: new Date().toISOString(),
+            messageId,
+            sessionId: stream_id,
+          };
+
+          try {
+            const response = await fetch(`http://localhost:8080/api/stream/${stream_id}/emit`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(completionEvent),
+            });
+
+            if (!response.ok) {
+              throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
+            }
+            console.log(`[stream_reply] Completion event emitted successfully`);
+          } catch (emitError) {
+            console.error(`[stream_reply] Failed to emit completion event:`, emitError);
+            throw emitError;
+          }
+
+          console.log(`[stream_reply] SUCCESS: Completed streaming for message ID ${messageId}`);
           return {
             success: true,
-            message: "Reply sent successfully",
+            message: "Reply streamed successfully",
             conversationId,
-            messageId: result.messageId || crypto.randomUUID(),
+            messageId,
             stream_id,
           };
         } catch (error) {
-          console.error("Stream API request failed:", error);
-          // Stream disconnected or other error
+          console.error(`[stream_reply] ERROR: Stream operation failed:`, error);
+          console.error(`[stream_reply] Error stack:`, error.stack);
           return {
             success: false,
             error: "stream_send_failed",
@@ -163,12 +260,40 @@ export class DaemonCapabilityRegistry {
   ): Promise<any> {
     this.initialize();
 
+    console.log(`[DaemonCapabilityRegistry] Executing capability: ${capabilityId}`);
+    console.log(`[DaemonCapabilityRegistry] Context:`, {
+      sessionId: context.sessionId,
+      agentId: context.agentId,
+      workspaceId: context.workspaceId,
+      hasDaemon: !!context.daemon,
+      conversationId: context.conversationId,
+    });
+    console.log(`[DaemonCapabilityRegistry] Args:`, args);
+
     const capability = this.capabilities.get(capabilityId);
     if (!capability) {
+      console.error(`[DaemonCapabilityRegistry] Unknown daemon capability: ${capabilityId}`);
       throw new Error(`Unknown daemon capability: ${capabilityId}`);
     }
 
-    return await capability.implementation(context, ...args);
+    console.log(`[DaemonCapabilityRegistry] Found capability: ${capability.name}`);
+    const startTime = Date.now();
+
+    try {
+      const result = await capability.implementation(context, ...args);
+      const duration = Date.now() - startTime;
+      console.log(
+        `[DaemonCapabilityRegistry] Capability ${capabilityId} completed in ${duration}ms`,
+      );
+      return result;
+    } catch (error) {
+      const duration = Date.now() - startTime;
+      console.error(
+        `[DaemonCapabilityRegistry] Capability ${capabilityId} failed after ${duration}ms:`,
+        error,
+      );
+      throw error;
+    }
   }
 
   /**

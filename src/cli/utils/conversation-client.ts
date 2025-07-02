@@ -119,23 +119,32 @@ export class ConversationClient {
   }
 
   /**
-   * Send a message to the conversation session
+   * Send a message to the conversation session using workspace signals
    */
-  async sendMessage(sessionId: string, message: string): Promise<ConversationMessage> {
-    // Send directly to the stream endpoint, not through workspace signals
-    const url = `${this.daemonUrl}/api/stream/${sessionId}`;
-    console.log(`[ConversationClient] Sending message to stream ${url}`);
+  async sendMessage(
+    sessionId: string,
+    message: string,
+    conversationId?: string,
+  ): Promise<ConversationMessage> {
+    // Get the conversation workspace ID
+    const conversationWorkspaceId = await this.getConversationWorkspaceId();
+
+    // Use workspace signal instead of direct stream endpoint
+    const url =
+      `${this.daemonUrl}/api/workspaces/${conversationWorkspaceId}/signals/conversation-stream`;
+    console.log(`[ConversationClient] Sending message via signal to ${url}`);
+
+    const body = {
+      streamId: sessionId,
+      message,
+      userId: this.userId,
+      ...(conversationId && { conversationId }), // Include conversationId if provided
+    };
 
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message,
-        userId: this.userId,
-        scope: {
-          workspaceId: this.workspaceId,
-        },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -145,6 +154,7 @@ export class ConversationClient {
         statusText: response.statusText,
         errorText,
         url,
+        body,
       });
       throw new Error(
         `Failed to send message (${response.status}): ${errorText}`,

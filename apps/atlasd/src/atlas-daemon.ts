@@ -1091,6 +1091,25 @@ export class AtlasDaemon {
         }, 500);
       }
     });
+
+    // SSE event emission endpoint for daemon capabilities
+    this.app.post("/api/stream/:streamId/emit", async (c) => {
+      const streamId = c.req.param("streamId");
+
+      try {
+        const event = await c.req.json();
+
+        // Emit the SSE event to all connected clients for this stream
+        this.emitSSEEvent(streamId, event);
+
+        return c.json({ success: true });
+      } catch (error) {
+        AtlasLogger.getInstance().error("SSE emit error", { streamId, error: error.message });
+        return c.json({
+          error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
+    });
   }
 
   /**
@@ -1494,7 +1513,7 @@ export class AtlasDaemon {
   /**
    * Emit an SSE event to all connected clients for a stream
    */
-  private emitSSEEvent(sessionId: string, event: any): void {
+  public emitSSEEvent(sessionId: string, event: any): void {
     const clients = this.sseClients.get(sessionId);
     if (!clients || clients.length === 0) {
       return;

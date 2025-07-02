@@ -119,7 +119,7 @@ agents:
       CONVERSATION ID MANAGEMENT:
       - For NEW conversations: Generate a new conversationId using crypto.randomUUID()
       - For EXISTING conversations: Use the conversationId from the input context
-      - Always include the conversationId parameter in session_reply
+      - Always include the conversationId parameter in stream_reply
 
       Example tool usage for NEW conversation:
       stream_reply(

@@ -1528,20 +1528,27 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
       // Check if it's a daemon capability first
       const daemonCapability = DaemonCapabilityRegistry.getCapability(payload.capabilityId);
       if (daemonCapability) {
-        // It's a daemon-level capability - route to daemon
+        // It's a daemon-level capability - route to daemon via HTTP
         const daemonContext = {
           sessionId: payload.sessionId,
           agentId: payload.agentId,
           workspaceId: this.workspaceId || "",
-          daemon: this.getDaemonInstance(),
           conversationId: payload.args.conversationId,
         };
+
+        console.log(
+          `[AgentSupervisor] About to execute daemon capability: ${payload.capabilityId}`,
+        );
+        console.log(`[AgentSupervisor] Daemon context:`, daemonContext);
+        console.log(`[AgentSupervisor] Args:`, Object.values(payload.args));
 
         result = await DaemonCapabilityRegistry.executeCapability(
           payload.capabilityId,
           daemonContext,
           ...Object.values(payload.args),
         );
+
+        console.log(`[AgentSupervisor] Daemon capability result:`, result);
       } else {
         // It's a workspace capability
         const context = {
