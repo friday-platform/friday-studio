@@ -28,3 +28,4 @@ tasks
 
 lgtm/
 build/
+.claude/
