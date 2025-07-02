@@ -148,11 +148,12 @@ Cloudflare demonstrates excellent security posture and compliance. Recommend pro
 
 ```
 vendor-reviewer/
-├── workspace.yml              # Workspace configuration
-├── README.md                  # This documentation
-└── .atlas/                    # Runtime data (auto-created)
-    ├── memory/                # Evaluation patterns and learning
-    └── logs/                  # Session execution logs
+├── workspace.yml                          # Workspace configuration
+├── README.md                              # This documentation
+├── security_questionnaire_template.xlsx   # Example vendor questionnaire template
+└── .atlas/                                # Runtime data (auto-created)
+    ├── memory/                            # Evaluation patterns and learning
+    └── logs/                              # Session execution logs
 ```
 
 ## Configuration
@@ -255,6 +256,25 @@ atlas library list | grep vendor
 ```
 
 ## Document Preparation Guidelines
+
+### Using the Included Template
+
+The workspace includes `security_questionnaire_template.xlsx` - a ready-to-use questionnaire template:
+
+```bash
+# Copy template for your vendor evaluation
+cp examples/vendor-reviewer/security_questionnaire_template.xlsx ~/vendor-evaluation/cloudflare/security_questionnaire.xlsx
+
+# Edit the Excel file to add vendor responses
+# Then use it in your evaluation:
+atlas signal trigger cli-vendor-review \
+  --workspace vendor-reviewer \
+  --data '{
+    "vendor_name": "Cloudflare",
+    "documents_path": "~/vendor-evaluation/cloudflare",
+    "questionnaire_path": "~/vendor-evaluation/cloudflare/security_questionnaire.xlsx"
+  }'
+```
 
 ### Required Documents
 
