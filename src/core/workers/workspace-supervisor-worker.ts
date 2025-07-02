@@ -195,6 +195,7 @@ class WorkspaceSupervisorWorker extends BaseWorker {
                 signal,
                 payload,
                 workspaceId: this.workspace?.id,
+                workspacePath: this.config?.config?.workspacePath, // Pass workspace path for .env loading
                 agents: sessionContext.availableAgents || [],
                 filteredMemory: sessionContext.filteredMemory || [],
                 jobSpec: sessionContext.jobSpec, // Pass job specification to session

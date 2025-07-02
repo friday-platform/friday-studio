@@ -30,6 +30,7 @@ interface InitializeData {
   signal: IWorkspaceSignal;
   payload: Record<string, unknown>;
   workspaceId: string;
+  workspacePath?: string; // Workspace directory path for .env loading
   agents: AgentMetadata[];
   traceHeaders?: Record<string, string>;
   jobSpec?: JobSpecification;
@@ -117,6 +118,7 @@ class SessionSupervisorWorker extends BaseWorker {
           signal,
           payload,
           workspaceId,
+          workspacePath,
           agents,
           traceHeaders,
           jobSpec,
@@ -137,6 +139,7 @@ class SessionSupervisorWorker extends BaseWorker {
             const sessionContext: SessionContext = {
               sessionId: this.sessionId!,
               workspaceId,
+              workspacePath,
               signal,
               payload,
               availableAgents: agents,

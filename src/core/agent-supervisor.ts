@@ -48,6 +48,7 @@ interface AgentSupervisorConfig {
   memoryConfig: AtlasMemoryConfig;
   sessionId?: string;
   workspaceId?: string;
+  workspacePath?: string; // Workspace directory path for environment loading
   supervisionLevel?: SupervisionLevel;
   cacheEnabled?: boolean;
   workspaceTools?: { mcp?: { servers?: Record<string, any> } }; // Workspace tools configuration
@@ -117,6 +118,8 @@ export interface AgentEnvironment {
   };
   // MCP server configurations for worker access
   mcp_server_configs?: Record<string, any>;
+  // Workspace path for environment loading
+  workspace_path?: string;
 }
 
 // Agent worker instance
@@ -550,6 +553,8 @@ Focus on safety, efficiency, and reliability.`;
         safety_checks: analysis.safety_assessment.mitigations,
         output_validation: true,
       },
+      // Include workspace path for .env file loading in worker context
+      workspace_path: this.supervisorConfig.workspacePath,
     };
 
     // Add agent-type specific configuration

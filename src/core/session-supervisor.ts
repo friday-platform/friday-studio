@@ -158,6 +158,7 @@ export type AgentConfig =
 export interface SessionContext {
   sessionId: string;
   workspaceId: string;
+  workspacePath?: string; // Workspace directory path for environment loading
   signal: IWorkspaceSignal;
   payload: any;
   availableAgents: AgentMetadata[];
@@ -347,11 +348,14 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       return [];
     }
 
+    this.log(`Workspace MCP servers config: ${JSON.stringify(workspaceMcpServers)}`, "debug");
+
     const configs: any[] = [];
     for (const serverId of requestedServerIds) {
       if (workspaceMcpServers[serverId]) {
         // Add server ID to the config if it's missing
         const config = { ...workspaceMcpServers[serverId], id: serverId };
+        this.log(`MCP server config for ${serverId}: ${JSON.stringify(config)}`, "debug");
         configs.push(config);
       } else {
         this.log(`MCP server ${serverId} not found in workspace servers for agent ${agentId}`);
@@ -484,6 +488,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
+        workspacePath: context.workspacePath,
         supervisionLevel: ((supervisionConfig as any).level &&
           SupervisionLevel[
             (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
@@ -507,6 +512,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
+        workspacePath: context.workspacePath,
         supervisionLevel: SupervisionLevel.MINIMAL,
         cacheEnabled: true,
         workspaceTools: this.workspaceTools,
