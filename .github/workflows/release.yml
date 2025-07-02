@@ -215,51 +215,106 @@ jobs:
           cp "./dist/atlas" "./pkg/payload/usr/local/bin/atlas"
           chmod +x "./pkg/payload/usr/local/bin/atlas"
           
-          # Create postinstall script to add to PATH
-          cat > ./pkg/scripts/postinstall << 'EOF'
+          # Create preinstall script to handle cross-channel upgrades
+          cat > ./pkg/scripts/preinstall << 'EOF'
           #!/bin/bash
-          # Add /usr/local/bin to PATH if not already present
-          if ! echo "$PATH" | grep -q "/usr/local/bin"; then
-            # For bash users
-            if [ -f ~/.bash_profile ]; then
-              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bash_profile
-            fi
-            if [ -f ~/.bashrc ]; then
-              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.bashrc
-            fi
-            
-            # For zsh users
-            if [ -f ~/.zshrc ]; then
-              echo 'export PATH="/usr/local/bin:$PATH"' >> ~/.zshrc
-            fi
-            
-            # For fish users
-            if [ -d ~/.config/fish ]; then
-              mkdir -p ~/.config/fish/conf.d
-              echo 'set -gx PATH /usr/local/bin $PATH' > ~/.config/fish/conf.d/atlas.fish
-            fi
+          # Remove any existing atlas binary to ensure clean installation
+          # This allows cross-channel upgrades (edge -> nightly -> regular, etc.)
+          if [ -f "/usr/local/bin/atlas" ]; then
+            echo "Removing existing Atlas installation for upgrade..."
+            rm -f "/usr/local/bin/atlas"
           fi
           
-          echo "Atlas has been installed to /usr/local/bin/atlas"
-          echo "You may need to restart your terminal or run 'source ~/.bash_profile' (or equivalent) to use the 'atlas' command."
+          # Also clean up any previous package receipts to allow downgrades/cross-channel installs
+          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+            echo "Cleaning up previous Atlas package receipts..."
+            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+          fi
+          
           exit 0
           EOF
           
+          # Create postinstall script to add to PATH and verify installation
+          cat > ./pkg/scripts/postinstall << 'EOF'
+          #!/bin/bash
+          # Verify installation
+          if [ ! -f "/usr/local/bin/atlas" ]; then
+            echo "ERROR: Atlas binary not found after installation"
+            exit 1
+          fi
+          
+          # Make sure binary is executable
+          chmod +x "/usr/local/bin/atlas"
+          
+          # Add /usr/local/bin to PATH if not already present
+          # We check all common shell config files for all users
+          for user_home in /Users/*; do
+            if [ -d "$user_home" ] && [ "$user_home" != "/Users/Shared" ]; then
+              user_name=$(basename "$user_home")
+              
+              # Skip system users
+              if [[ "$user_name" =~ ^[._] ]]; then
+                continue
+              fi
+              
+              # For bash users
+              for bash_config in "$user_home/.bash_profile" "$user_home/.bashrc"; do
+                if [ -f "$bash_config" ] && ! grep -q "/usr/local/bin" "$bash_config" 2>/dev/null; then
+                  echo 'export PATH="/usr/local/bin:$PATH"' >> "$bash_config"
+                  chown "$user_name" "$bash_config" 2>/dev/null || true
+                fi
+              done
+              
+              # For zsh users
+              if [ -f "$user_home/.zshrc" ] && ! grep -q "/usr/local/bin" "$user_home/.zshrc" 2>/dev/null; then
+                echo 'export PATH="/usr/local/bin:$PATH"' >> "$user_home/.zshrc"
+                chown "$user_name" "$user_home/.zshrc" 2>/dev/null || true
+              fi
+              
+              # For fish users
+              if [ -d "$user_home/.config/fish" ]; then
+                fish_config_dir="$user_home/.config/fish/conf.d"
+                mkdir -p "$fish_config_dir"
+                if [ ! -f "$fish_config_dir/atlas.fish" ]; then
+                  echo 'set -gx PATH /usr/local/bin $PATH' > "$fish_config_dir/atlas.fish"
+                  chown -R "$user_name" "$user_home/.config/fish" 2>/dev/null || true
+                fi
+              fi
+            fi
+          done
+          
+          # Get the installed version for display
+          version_output=$(/usr/local/bin/atlas --version 2>/dev/null || echo "unknown")
+          
+          echo "✅ Atlas has been successfully installed to /usr/local/bin/atlas"
+          echo "📍 Version: $version_output"
+          echo "🔄 You may need to restart your terminal to use the 'atlas' command"
+          echo "🧪 Test installation: Open Terminal and run 'atlas --help'"
+          
+          exit 0
+          EOF
+          
+          chmod +x ./pkg/scripts/preinstall
           chmod +x ./pkg/scripts/postinstall
           
-          # Build the package
+          # Generate a timestamp-based version for macOS installer
+          # This ensures newer packages can always upgrade older ones regardless of channel
+          timestamp=$(date +%Y%m%d%H%M%S)
+          installer_version="1.${timestamp}"
+          
+          # Build the package with timestamp-based version for proper upgrade handling
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
             --identifier "com.tempestteam.atlas" \
-            --version "${{ steps.version.outputs.version }}" \
+            --version "$installer_version" \
             --install-location "/" \
             "./dist/${pkg_name}"
           
           # Generate checksum for pkg
           shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
           
-          echo "Created macOS pkg: ${pkg_name}"
+          echo "Created macOS pkg: ${pkg_name} (installer version: $installer_version)"
         shell: bash
 
       - name: Create Windows MSI installer
