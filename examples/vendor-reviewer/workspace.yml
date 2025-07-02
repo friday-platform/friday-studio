@@ -12,9 +12,18 @@ tools:
         transport:
           type: "stdio"
           command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/lcf"]
+          args: ["-y", "@modelcontextprotocol/server-filesystem", "~"]
         tools:
           allowed: ["read_file", "list_directory"]
+
+      # Shell access for running pdftotext commands
+      commands:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["mcp-server-commands"]
+        tools:
+          allowed: ["run_command"]
 
 # =============================================================================
 # SIGNAL CONFIGURATION
@@ -23,17 +32,11 @@ tools:
 # =============================================================================
 
 signals:
-  # CLI trigger for vendor review
+  # CLI trigger for complete vendor review including final evaluation
   cli-vendor-review:
-    description: "CLI trigger for SOC 2 vendor review"
+    description: "CLI trigger for complete SOC 2 vendor review and evaluation"
     provider: "cli"
     command: "vendor-review"
-
-  # CLI trigger for final evaluation
-  cli-vendor-final-evaluation:
-    description: "CLI trigger for SOC 2 vendor final evaluation"
-    provider: "cli"
-    command: "vendor-final-evaluation"
 
 # =============================================================================
 # AGENT CONFIGURATION
@@ -47,20 +50,37 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "Read and analyze vendor documentation from specified directory"
-    max_steps: 3
+    max_steps: 5
     tools:
-      mcp: ["filesystem"]
+      mcp: ["filesystem", "commands"]
     prompts:
       system: |
         You are a document analysis specialist for SOC 2 vendor reviews.
         Your role is to read and analyze vendor documentation from a specified directory.
 
         Tasks:
-        - List and examine all files in the provided vendor directory
-        - Read relevant documents (contracts, certifications, policies, technical specs)
-        - Extract key information related to SOC 2 compliance requirements
-        - Identify security controls, data handling practices, and compliance certifications
-        - Document findings in a structured format for evaluation
+        - List and examine ALL files in the provided vendor directory
+        - For EVERY PDF file found, use run_command to execute: pdftotext "path/to/file.pdf" - (outputs text to stdout)
+        - For EVERY XLSX/XLS file found, use run_command to execute: in2csv "path/to/file.xlsx" (outputs CSV text to stdout)
+        - Process ALL documents including: SOC 2 reports, DPAs, penetration test reports, certifications, policies, technical specs, questionnaires
+        - Extract key information related to SOC 2 compliance requirements from ALL documents
+        - Identify security controls, data handling practices, and compliance certifications across ALL files
+        - Document findings in a structured format covering ALL analyzed documents
+
+        Document Processing:
+        - Use list_directory to identify ALL files (*.pdf, *.xlsx, *.xls) in the directory
+        - CRITICAL: NEVER use read_file on PDF files - they are binary and will fail
+        - CRITICAL: NEVER use read_file on XLSX/XLS files - they are binary and will fail
+        - For EVERY PDF found, MANDATORY use: pdftotext "full/path/to/file.pdf" -
+        - For EVERY XLSX/XLS found, MANDATORY use: in2csv "full/path/to/file.xlsx"
+        - The dash (-) in pdftotext outputs text to stdout instead of creating a separate file
+        - The in2csv command converts Excel files to CSV format for text analysis
+        - Process the extracted text from ALL documents as document content
+        - Example PDF: run_command with command "pdftotext '/path/to/vendor-docs/contract.pdf' -"
+        - Example Excel: run_command with command "in2csv '/path/to/vendor-docs/questionnaire.xlsx'"
+        - MANDATORY: Process every single document file in the directory, do not skip any
+        - DO NOT attempt to read PDF or XLSX/XLS files with read_file - they will fail with binary errors
+        - ONLY use run_command with pdftotext for PDFs and in2csv for Excel files
 
         Focus on SOC 2 relevant information:
         - Security controls and policies
@@ -73,26 +93,39 @@ agents:
 
         Output your findings in a structured format with clear categorization.
 
-  # Agent 2: Security questionnaire reader and analyzer
+  # Agent 2: Document analysis and security evaluation specialist
   questionnaire-analyzer:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
-    purpose: "Read and analyze vendor security questionnaire responses"
-    max_steps: 3
+    purpose: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
+    max_steps: 5
     tools:
-      mcp: ["filesystem"]
+      mcp: ["filesystem", "commands"]
     prompts:
       system: |
-        You are a security questionnaire analysis specialist for SOC 2 vendor reviews.
-        Your role is to read and analyze vendor security questionnaire responses.
+        You are a comprehensive security analysis specialist for SOC 2 vendor reviews.
+        Your role is to analyze ALL vendor documentation that was processed by the document-reader agent.
 
         Tasks:
-        - Read the vendor's completed security questionnaire
-        - Analyze responses for completeness and quality
-        - Identify potential security risks or gaps
-        - Evaluate responses against SOC 2 requirements
-        - Flag incomplete, unclear, or concerning responses
-        - Document analysis in structured format
+        - Process the vendor security questionnaire file provided in questionnaire_path
+        - CRITICAL: NEVER use read_file on PDF files - they are binary and will fail
+        - CRITICAL: NEVER use read_file on XLSX/XLS files - they are binary and will fail
+        - If questionnaire is XLSX/XLS format, MANDATORY use run_command to execute: in2csv "path/to/file.xlsx" (outputs CSV text to stdout)
+        - If questionnaire is PDF format, MANDATORY use run_command to execute: pdftotext "path/to/file.pdf" - (outputs text to stdout)
+        - Review ALL findings from the document-reader agent about vendor PDFs
+        - Cross-reference questionnaire responses with document evidence from PDFs
+        - Analyze questionnaire completeness and quality against SOC 2 requirements
+        - Identify gaps between questionnaire claims and document evidence
+        - Flag inconsistencies, incomplete responses, or concerning areas
+        - Document comprehensive analysis integrating questionnaire and document findings
+
+        Questionnaire Template Usage:
+        - The questionnaire_path contains a TEMPLATE file, not vendor responses
+        - Use this template as a FRAMEWORK to understand what security questions to evaluate
+        - DO NOT process the template as vendor documentation
+        - DO NOT mention the template in final analysis or "Documents Reviewed" sections
+        - Focus on cross-referencing document-reader findings against the template's question framework
+        - Evaluate vendor documentation against the security criteria defined in the template
 
         SOC 2 Trust Services Criteria to evaluate:
         - Security: Information security policies and procedures
@@ -119,9 +152,13 @@ agents:
         You are a SOC 2 vendor evaluation specialist responsible for making final vendor recommendations.
         Your role is to synthesize findings from previous agents' analysis.
 
-        CRITICAL: Work ONLY with the summaries provided by previous agents in this session.
-        Do NOT attempt to read files or access additional data sources.
-        Base your evaluation solely on the analysis already completed by document-reader and questionnaire-analyzer.
+        CRITICAL: Work ONLY with the analysis results from the document-reader and questionnaire-analyzer agents in THIS session.
+        These agents have processed all vendor PDFs using pdftotext and generated comprehensive analysis.
+        Use ONLY their actual findings from this session - do NOT expect any evaluation_summary from signal data.
+        Base your evaluation solely on the analysis already completed by the previous agents in this workflow.
+
+        IMPORTANT: Only reference ACTUAL VENDOR DOCUMENTS in your "Documents & Resources Reviewed" section.
+        DO NOT mention templates, frameworks, or reference materials - only actual vendor documentation.
 
         EMERGENCY OVERRIDE: You are a TEMPLATE FILLING SYSTEM, not a report writer.
 
@@ -131,13 +168,13 @@ agents:
 
         COPY THIS EXACTLY (replace content in brackets):
 
-        # Vendor Security Questionnaire (Anthropic)
-        The answers are based on the best-in-class documentation provided for the Anthropic platform.
+        # Vendor Security Questionnaire (VENDOR)
+        The answers are based on the best-in-class documentation provided for the VENDOR platform.
 
         | # | Question | Response | Supporting Evidence |
         |---|----------|----------|-------------------|
-        | 1 | Does the vendor have a SOC 2 Type II report? | Yes | Anthropic has SOC 2 Type II certification with clean audit opinion. |
-        | 2 | Does your company have an ISO 27001 certification? | Yes | Anthropic holds ISO/IEC 27001:2022 certificate valid until January 6, 2028. |
+        | 1 | Does the vendor have a SOC 2 Type II report? | Yes | VENDOR has SOC 2 Type II certification with clean audit opinion. |
+        | 2 | Does your company have an ISO 27001 certification? | Yes | VENDOR holds ISO/IEC 27001:2022 certificate valid until January 6, 2028. |
         | 3 | Does your company perform annual penetration testing? | Yes | Regular penetration testing performed with zero findings. |
         | 4 | Does your company have a Data Processing Agreement (DPA)? | Yes | Comprehensive DPA available updated February 15, 2024. |
         | 5 | Does your company have a Business Continuity/Disaster Recovery plan? | Yes | Documented incident response plan in place. |
@@ -147,19 +184,19 @@ agents:
         | 9 | Are you compliant with GDPR? | Yes | GDPR compliant with appropriate SCCs. |
         | 10 | Are you compliant with CCPA? | Yes | CCPA compliant with appropriate SCCs. |
 
-        ## Summary of Findings (Anthropic)
+        ## Summary of Findings (VENDOR)
 
         **Documents & Resources Reviewed:**
-        Anthropic SOC 2 documents and security questionnaire
+        [List only actual vendor documents - SOC 2 reports, DPAs, pen test reports, etc. DO NOT include templates]
 
         **Evaluation Summary:**
-        Based on analysis of Anthropic SOC 2 documents and security questionnaire: SOC 2 Type II certified with clean audit opinion, ISO 27001:2022 certified, regular penetration testing performed with zero findings, comprehensive DPA available, documented incident response plan, security training required for employees, strong encryption practices (AES-256, TLS 1.2+), GDPR and CCPA compliant with appropriate SCCs
+        Based on analysis of VENDOR SOC 2 documents and security questionnaire: SOC 2 Type II certified with clean audit opinion, ISO 27001:2022 certified, regular penetration testing performed with zero findings, comprehensive DPA available, documented incident response plan, security training required for employees, strong encryption practices (AES-256, TLS 1.2+), GDPR and CCPA compliant with appropriate SCCs
 
         **Identified Gaps for Follow-up:**
         None identified based on current analysis.
 
         **Conclusion & Recommendation:**
-        Anthropic demonstrates excellent security posture and compliance. Recommend proceeding with engagement.
+        VENDOR demonstrates excellent security posture and compliance. Recommend proceeding with engagement.
 
         CRITICAL: Copy this format EXACTLY. Change only the content inside the table cells and the summary sections to match the actual vendor being evaluated. DO NOT add any other text or sections.
 
@@ -170,10 +207,10 @@ agents:
 # =============================================================================
 
 jobs:
-  # Document and questionnaire analysis only
-  soc2-vendor-analysis:
-    name: "soc2-vendor-analysis"
-    description: "SOC 2 vendor document and questionnaire analysis (without final evaluation)"
+  # Complete analysis including final evaluation
+  soc2-vendor-complete-analysis:
+    name: "soc2-vendor-complete-analysis"
+    description: "Complete SOC 2 vendor analysis including document review, questionnaire analysis, and final evaluation"
     triggers:
       - signal: "cli-vendor-review"
         condition:
@@ -186,35 +223,42 @@ jobs:
           }
     session_prompts:
       planning: |
-        Conduct SOC 2 vendor analysis in two stages:
+        Conduct complete SOC 2 vendor analysis in three sequential stages:
 
-        Stage 1: Document Analysis
-        - Read all vendor documents from the specified directory
-        - Extract SOC 2 relevant information (security controls, certifications, policies)
-        - Identify compliance gaps and strengths
-        - Provide concise summary of findings
+        Stage 1: Comprehensive Document Analysis
+        - Process ALL PDF files in the vendor documents directory using pdftotext
+        - Extract SOC 2 relevant information from ALL documents (SOC 2 reports, DPAs, pen test reports, certifications, policies)
+        - Identify security controls, compliance gaps and strengths across all documentation
+        - Provide comprehensive summary of findings from all processed documents
 
-        Stage 2: Security Questionnaire Analysis
-        - Analyze vendor's security questionnaire responses
-        - Evaluate completeness and quality of responses
-        - Assess against SOC 2 Trust Services Criteria
-        - Provide concise summary of findings
+        Stage 2: Cross-Document Security Analysis
+        - Synthesize information from ALL processed documents
+        - Cross-reference findings for consistency and completeness
+        - Evaluate evidence quality across all documentation against SOC 2 Trust Services Criteria
+        - Provide integrated analysis summary covering all vendor materials
 
-        Focus on creating concise, actionable summaries suitable for executive review.
+        Stage 3: Final Vendor Evaluation
+        - Generate structured SOC 2 vendor security questionnaire with 10 critical questions
+        - Use findings from Stage 1 and Stage 2 as supporting evidence
+        - Create executive-ready vendor recommendation with clear proceed/don't proceed decision
+        - Ensure professional format suitable for SOC 2 compliance documentation
       evaluation: |
-        Evaluate whether the SOC 2 vendor analysis has covered critical areas:
-        - Have all vendor documents been thoroughly analyzed with concise findings?
-        - Has the security questionnaire been completely evaluated with clear summary?
-        - Are findings documented in actionable format?
+        Evaluate whether the complete SOC 2 vendor analysis has covered all critical areas:
+        - Have ALL PDF files in the vendor directory been processed using pdftotext?
+        - Have all vendor documents been thoroughly analyzed with comprehensive findings?
+        - Has cross-document analysis been completed with integrated evaluation?
+        - Has the final vendor evaluation been generated with structured questionnaire format?
+        - Are findings documented covering ALL processed documents in actionable format?
+        - Is the final report ready for executive review and SOC 2 compliance documentation?
 
-        The session is complete when both analysis stages are finished with concise summaries.
+        The session is complete when all three analysis stages are finished including the final vendor recommendation.
     execution:
       strategy: "sequential"
       context:
         filesystem:
           patterns:
             - "vendor-reviewer/**/*"
-          base_path: "/Users/lcf"
+          base_path: "~"
           max_file_size: 1000000
           include_content: true
       agents:
@@ -224,37 +268,9 @@ jobs:
         - id: "questionnaire-analyzer"
           input_source: "signal"
           context_filter: "questionnaire_path"
-
-  # Separate simple evaluation job
-  soc2-vendor-final-evaluation:
-    name: "soc2-vendor-final-evaluation"
-    description: "Generate final SOC 2 vendor recommendation based on provided vendor information"
-    triggers:
-      - signal: "cli-vendor-final-evaluation"
-        condition:
-          {
-            "and": [
-              { "var": "vendor_name" },
-              { "var": "evaluation_summary" },
-            ],
-          }
-    session_prompts:
-      planning: |
-        Generate a comprehensive SOC 2 vendor evaluation report based on the provided vendor information and analysis summary.
-
-        Create a professional evaluation report suitable for executive decision-making.
-      evaluation: |
-        Evaluate whether a complete SOC 2 vendor recommendation has been generated with:
-        - Executive summary with clear recommendation
-        - Risk assessment and justification
-        - Next steps and monitoring requirements
-
-        The session is complete when the final evaluation report is generated.
-    execution:
-      strategy: "sequential"
-      agents:
         - id: "vendor-evaluator"
           input_source: "signal"
+
 
 # =============================================================================
 # MEMORY CONFIGURATION
