@@ -16,7 +16,6 @@ tools:
         tools:
           allowed: ["read_file", "list_directory"]
 
-
 # =============================================================================
 # SIGNAL CONFIGURATION
 # =============================================================================
@@ -179,12 +178,11 @@ jobs:
       - signal: "cli-vendor-review"
         condition:
           {
-            "and":
-              [
-                { "var": "vendor_name" },
-                { "var": "documents_path" },
-                { "var": "questionnaire_path" },
-              ],
+            "and": [
+              { "var": "vendor_name" },
+              { "var": "documents_path" },
+              { "var": "questionnaire_path" },
+            ],
           }
     session_prompts:
       planning: |
@@ -235,11 +233,10 @@ jobs:
       - signal: "cli-vendor-final-evaluation"
         condition:
           {
-            "and":
-              [
-                { "var": "vendor_name" },
-                { "var": "evaluation_summary" },
-              ],
+            "and": [
+              { "var": "vendor_name" },
+              { "var": "evaluation_summary" },
+            ],
           }
     session_prompts:
       planning: |
