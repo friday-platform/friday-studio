@@ -6,7 +6,7 @@
 import { expect } from "@std/expect";
 
 // Import MCPManager
-import { MCPManager } from "../../../src/core/agents/mcp/mcp-manager.ts";
+import { MCPManager } from "../src/manager.ts";
 
 Deno.test({
   name: "MCPManager - Server Registration with Real MCP Server",

@@ -1,11 +1,19 @@
-import { ConfigLoader, supervisorDefaults } from "@atlas/config";
-import { FilesystemConfigAdapter, FilesystemTemplateAdapter } from "@atlas/storage";
-import { join } from "@std/path";
+import {
+  ConfigLoader,
+  formatZodError,
+  type MergedConfig,
+  supervisorDefaults,
+  WorkspaceConfigSchema,
+} from "@atlas/config";
+import {
+  FilesystemConfigAdapter,
+  FilesystemTemplateAdapter,
+  FilesystemWorkspaceCreationAdapter,
+} from "@atlas/storage";
+import { dirname, join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { WorkspaceMemberRole } from "../../../src/types/core.ts";
-import { AtlasLogger } from "../../../src/utils/logger.ts";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
+import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import { createLibraryStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
 import {
@@ -14,9 +22,9 @@ import {
 } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
-import { SystemWorkspace } from "../../../src/core/system-workspace.ts";
-import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
-import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
+import { WorkspaceMemberRole } from "../../../src/types/core.ts";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 // ResponseChannel import removed - using direct streaming via daemon capabilities
 
 export interface AtlasDaemonOptions {
@@ -47,6 +55,7 @@ export class AtlasDaemon {
   // System workspace properties removed - using standard workspace pattern
   private sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<any> }>> =
     new Map();
+  private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -101,6 +110,9 @@ export class AtlasDaemon {
     logger.info("Initializing daemon capabilities...");
     DaemonCapabilityRegistry.setDaemonInstance(this);
     DaemonCapabilityRegistry.initialize();
+    // Initialize workspace creation adapter
+    logger.info("Initializing workspace creation adapter...");
+    this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -553,6 +565,107 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to create workspace from template: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Validate workspace configuration
+    this.app.post("/api/workspaces/validate", async (c) => {
+      try {
+        const body = await c.req.json() as { config: unknown };
+        const { config } = body;
+
+        if (!config) {
+          return c.json({ error: "config is required" }, 400);
+        }
+
+        // Validate using the WorkspaceConfigSchema
+        const validationResult = WorkspaceConfigSchema.safeParse(config);
+
+        if (validationResult.success) {
+          return c.json({
+            valid: true,
+            config: validationResult.data,
+            message: "Configuration is valid",
+          });
+        } else {
+          return c.json({
+            valid: false,
+            errors: validationResult.error.issues,
+            formattedError: formatZodError(validationResult.error, "workspace.yml"),
+          });
+        }
+      } catch (error) {
+        return c.json({
+          error: `Failed to validate configuration: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Create workspace from configuration YAML
+    this.app.post("/api/workspaces/create-from-config", async (c) => {
+      try {
+        const body = await c.req.json() as {
+          name: string;
+          description: string;
+          config: string;
+          path?: string;
+          cwd?: string; // Add CWD to body type
+        };
+
+        const { name, description, config, path, cwd } = body;
+
+        if (!name || !description || !config) {
+          return c.json({ error: "name, description, and config are required" }, 400);
+        }
+
+        if (!this.workspaceCreationAdapter) {
+          return c.json({ error: "Workspace creation adapter not initialized" }, 500);
+        }
+
+        // Determine base path
+        let basePath: string;
+        if (path) {
+          // Explicit path provided - use its parent directory
+          basePath = dirname(path);
+        } else if (cwd) {
+          // Use provided CWD
+          basePath = cwd;
+        } else {
+          // Fallback to ~/.atlas/workspaces
+          basePath = join(Deno.env.get("HOME") || "/tmp", ".atlas/workspaces");
+        }
+
+        // Create workspace directory with collision detection
+        const workspacePath = await this.workspaceCreationAdapter.createWorkspaceDirectory(
+          basePath,
+          name,
+        );
+
+        // Write workspace files
+        await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
+
+        // Register the new workspace
+        const manager = getWorkspaceManager();
+        const entry = await manager.registerWorkspace(workspacePath, {
+          name,
+          description,
+        });
+
+        return c.json({
+          id: entry.id,
+          name: entry.name,
+          path: entry.path,
+          description,
+          message: `Workspace created successfully from configuration`,
+        }, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to create workspace from config: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);
@@ -1175,12 +1288,19 @@ export class AtlasDaemon {
       }
 
       // Use cached configuration from workspace registry
-      let mergedConfig: any;
+      let mergedConfig: MergedConfig;
 
       if (workspace.config) {
         // Use pre-cached configuration (preferred - no I/O at signal time)
-        mergedConfig = workspace.config;
-        logger.debug(`Using cached workspace configuration`, {
+        // Normalize cached WorkspaceConfig to MergedConfig structure
+        const adapter = new FilesystemConfigAdapter();
+        const configLoader = new ConfigLoader(adapter, workspace.path);
+        const fullConfig = await configLoader.load();
+        mergedConfig = {
+          ...fullConfig,
+          workspace: workspace.config, // Use cached workspace config for performance
+        };
+        logger.debug(`Using cached workspace configuration with fresh platform config`, {
           workspaceId: workspace.id,
           configHash: workspace.configHash?.substring(0, 8) + "...",
         });
@@ -1197,8 +1317,6 @@ export class AtlasDaemon {
       }
 
       logger.debug(`Creating Workspace object from config...`);
-      logger.debug(`Config has workspace: ${!!mergedConfig.workspace}`);
-      logger.debug(`Config has signals: ${!!mergedConfig.signals}`);
       logger.debug(
         `Workspace signals: ${
           mergedConfig.workspace?.signals
@@ -1206,12 +1324,6 @@ export class AtlasDaemon {
             : "none"
         }`,
       );
-      logger.debug(
-        `Top-level signals: ${
-          mergedConfig.signals ? Object.keys(mergedConfig.signals).join(", ") : "none"
-        }`,
-      );
-      logger.debug(`Merged config keys: ${Object.keys(mergedConfig).join(", ")}`);
 
       const workspaceObj = Workspace.fromConfig(mergedConfig.workspace, {
         id: workspace.id,

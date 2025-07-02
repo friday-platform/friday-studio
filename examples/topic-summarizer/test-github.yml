@@ -1,0 +1,46 @@
+version: "1.0"
+
+workspace:
+  name: "github-test"
+  description: "Simple GitHub API test"
+
+tools:
+  mcp:
+    servers:
+      github-api:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-github"]
+          env:
+            GITHUB_PERSONAL_ACCESS_TOKEN: "auto"
+        tools:
+          allowed: ["search_repositories"]
+        timeout_ms: 30000
+
+agents:
+  simple-searcher:
+    type: "llm"
+    model: "claude-3-5-haiku-20241022"
+    purpose: "Simple GitHub search test"
+    tools:
+      mcp: ["github-api"]
+    max_steps: 3
+
+jobs:
+  simple-search:
+    name: "simple-search"
+    description: "Test GitHub search"
+    triggers:
+      - signal: "test-search"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "simple-searcher"
+
+signals:
+  test-search:
+    description: "Test search signal"
+    provider: "http"
+    path: "/test"
+    method: "POST"

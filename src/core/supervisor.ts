@@ -8,7 +8,7 @@ import type {
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { BaseAgent } from "./agents/base-agent.ts";
-import { MCPServerRegistry } from "./agents/mcp/mcp-server-registry.ts";
+import { MCPServerRegistry } from "../../packages/mcp/src/registry.ts";
 import { type JobMatch, JobTriggerMatcher } from "./job-trigger-matcher.ts";
 import type { AtlasMemoryConfig } from "./memory-config.ts";
 import { type ResponseConfig, Session, SessionIntent, SessionPlan } from "./session.ts";

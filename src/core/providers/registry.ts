@@ -84,19 +84,51 @@ export class ProviderRegistry implements IProviderRegistry {
       return new HttpWebhookProvider(config);
     });
 
-    registry.registerFactory("timer", async (config) => {
+    // Timer/Cron signal providers (all variants use the same implementation)
+    const createTimerProvider = async (config: ProviderConfig) => {
       const { TimerSignalProvider } = await import("./builtin/timer-signal.ts");
-      return new TimerSignalProvider(config);
-    });
+
+      // Transform ProviderConfig to TimerSignalConfig
+      const timerConfig = {
+        id: config.id,
+        description: config.config?.description || `Timer signal for ${config.id}`,
+        provider: config.provider as "timer" | "schedule" | "cron" | "cron-scheduler",
+        schedule: config.config?.schedule,
+        timezone: config.config?.timezone,
+      };
+
+      return new TimerSignalProvider(timerConfig);
+    };
+
+    registry.registerFactory("timer", createTimerProvider);
+    registry.registerFactory("schedule", createTimerProvider);
+    registry.registerFactory("cron", createTimerProvider);
+    registry.registerFactory("cron-scheduler", createTimerProvider);
 
     registry.registerFactory("stream", async (_config) => {
       const { StreamSignalProvider } = await import("./builtin/stream-signal.ts");
       return new StreamSignalProvider();
     });
 
-    registry.registerFactory("k8s-events", async (config) => {
+    registry.registerFactory("k8s-events", async (_config) => {
       const { K8sEventsSignalProvider } = await import("./builtin/k8s-events.ts");
       return new K8sEventsSignalProvider();
+    });
+
+    registry.registerFactory("cli", async (config) => {
+      const { CliSignalProvider } = await import("./builtin/cli-signal.ts");
+
+      // Transform ProviderConfig to CliSignalConfig
+      const cliConfig = {
+        id: config.id,
+        description: config.config?.description || `CLI signal for ${config.id}`,
+        provider: "cli" as const,
+        command: config.config?.command,
+        args: config.config?.args,
+        flags: config.config?.flags,
+      };
+
+      return new CliSignalProvider(cliConfig);
     });
 
     // Register built-in agent providers

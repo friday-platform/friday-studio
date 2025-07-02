@@ -335,6 +335,9 @@ export const WorkspaceAgentConfigSchema = z
 
       const supportedModels = {
         anthropic: [
+          "claude-opus-4-20250514",
+          "claude-sonnet-4-20250514",
+          "claude-3-7-sonnet-20250219",
           "claude-3-5-sonnet-20241022",
           "claude-3-5-haiku-20241022",
           "claude-3-haiku-20240307",
@@ -514,6 +517,9 @@ export const WorkspaceSignalConfigSchema = z.object({
   method: z.enum(["GET", "POST", "PUT", "DELETE", "PATCH"]).optional(),
   // CLI provider specific
   command: z.string().optional(),
+  // Timer/Cron provider specific
+  schedule: z.string().optional(), // Cron expression for timer/cron providers
+  timezone: z.string().optional(), // IANA timezone for cron-scheduler provider
 }).catchall(z.any()); // Allow additional provider-specific fields
 
 export const WorkspaceConfigSchema = z.object({

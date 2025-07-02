@@ -8,20 +8,30 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { AtlasConfig } from "@atlas/config";
-import { logger } from "../../utils/logger.ts";
+
+// Logger interface for dependency injection
+export interface Logger {
+  info(message: string, context?: Record<string, unknown>): void;
+  warn(message: string, context?: Record<string, unknown>): void;
+  error(message: string, context?: Record<string, unknown>): void;
+  debug(message: string, context?: Record<string, unknown>): void;
+}
 
 export interface PlatformMCPServerDependencies {
   atlasConfig?: AtlasConfig; // Optional - MCP server doesn't need local config
   daemonUrl?: string; // Default: http://localhost:8080
+  logger: Logger;
 }
 
 export class PlatformMCPServer {
   private server: McpServer;
   private dependencies: PlatformMCPServerDependencies;
   private daemonUrl: string;
+  private logger: Logger;
 
   constructor(dependencies: PlatformMCPServerDependencies) {
     this.dependencies = dependencies;
+    this.logger = dependencies.logger;
     this.daemonUrl = dependencies.daemonUrl || "http://localhost:8080";
     this.server = new McpServer({
       name: "atlas-platform",
@@ -29,7 +39,7 @@ export class PlatformMCPServer {
     });
     this.setupTools();
 
-    logger.info("Platform MCP Server initialized", {
+    this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,
     });
   }
@@ -43,7 +53,7 @@ export class PlatformMCPServer {
         inputSchema: {},
       },
       async () => {
-        logger.info("MCP workspace_list called - querying daemon API");
+        this.logger.info("MCP workspace_list called - querying daemon API");
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces`);
@@ -53,7 +63,7 @@ export class PlatformMCPServer {
 
           const workspaces = await response.json();
 
-          logger.info("MCP workspace_list response", {
+          this.logger.info("MCP workspace_list response", {
             totalWorkspaces: workspaces.length,
             activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
           });
@@ -76,7 +86,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_list failed", { error });
+          this.logger.error("MCP workspace_list failed", { error });
           throw error;
         }
       },
@@ -95,7 +105,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ name, description, template, config }) => {
-        logger.info("MCP workspace_create called", { name, description, template });
+        this.logger.info("MCP workspace_create called", { name, description, template });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces`, {
@@ -120,7 +130,7 @@ export class PlatformMCPServer {
 
           const workspace = await response.json();
 
-          logger.info("Workspace created via daemon API", workspace);
+          this.logger.info("Workspace created via daemon API", workspace);
 
           return {
             content: [
@@ -140,7 +150,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_create failed", { error });
+          this.logger.error("MCP workspace_create failed", { error });
           throw error;
         }
       },
@@ -157,7 +167,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId, force }) => {
-        logger.info("MCP workspace_delete called", { workspaceId, force });
+        this.logger.info("MCP workspace_delete called", { workspaceId, force });
 
         try {
           const url = new URL(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
@@ -178,7 +188,7 @@ export class PlatformMCPServer {
 
           const result = await response.json();
 
-          logger.info("Workspace deleted via daemon API", { workspaceId });
+          this.logger.info("Workspace deleted via daemon API", { workspaceId });
 
           return {
             content: [
@@ -198,7 +208,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_delete failed", { workspaceId, error });
+          this.logger.error("MCP workspace_delete failed", { workspaceId, error });
           throw error;
         }
       },
@@ -214,7 +224,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId }) => {
-        logger.info("MCP workspace_describe called", { workspaceId });
+        this.logger.info("MCP workspace_describe called", { workspaceId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}`);
@@ -227,7 +237,7 @@ export class PlatformMCPServer {
 
           const workspace = await response.json();
 
-          logger.info("Workspace described via daemon API", {
+          this.logger.info("Workspace described via daemon API", {
             workspaceId,
             hasActiveRuntime: workspace.hasActiveRuntime,
           });
@@ -249,7 +259,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_describe failed", { workspaceId, error });
+          this.logger.error("MCP workspace_describe failed", { workspaceId, error });
           throw error;
         }
       },
@@ -266,7 +276,7 @@ export class PlatformMCPServer {
       },
       async (args) =>
         this.withWorkspaceMCPCheck(args, async ({ workspaceId }) => {
-          logger.info("MCP workspace_jobs_list called", { workspaceId });
+          this.logger.info("MCP workspace_jobs_list called", { workspaceId });
 
           try {
             const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/jobs`);
@@ -288,7 +298,7 @@ export class PlatformMCPServer {
               }
             }
 
-            logger.info("MCP workspace_jobs_list filtered results", {
+            this.logger.info("MCP workspace_jobs_list filtered results", {
               workspaceId,
               totalJobs: allJobs.length,
               discoverableJobs: discoverableJobs.length,
@@ -314,7 +324,7 @@ export class PlatformMCPServer {
               ],
             };
           } catch (error) {
-            logger.error("MCP workspace_jobs_list failed", { workspaceId, error });
+            this.logger.error("MCP workspace_jobs_list failed", { workspaceId, error });
             throw error;
           }
         }),
@@ -332,7 +342,7 @@ export class PlatformMCPServer {
       },
       async (args) =>
         this.withJobDiscoverabilityCheck(args, async ({ workspaceId, jobName }) => {
-          logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
+          this.logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 
           try {
             // Get all jobs and find the specific one
@@ -368,7 +378,11 @@ export class PlatformMCPServer {
               ],
             };
           } catch (error) {
-            logger.error("MCP workspace_jobs_describe failed", { workspaceId, jobName, error });
+            this.logger.error("MCP workspace_jobs_describe failed", {
+              workspaceId,
+              jobName,
+              error,
+            });
             throw error;
           }
         }),
@@ -384,7 +398,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId }) => {
-        logger.info("MCP workspace_sessions_list called", { workspaceId });
+        this.logger.info("MCP workspace_sessions_list called", { workspaceId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/sessions`);
@@ -415,7 +429,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_sessions_list failed", { workspaceId, error });
+          this.logger.error("MCP workspace_sessions_list failed", { workspaceId, error });
           throw error;
         }
       },
@@ -431,7 +445,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ sessionId }) => {
-        logger.info("MCP workspace_sessions_describe called", { sessionId });
+        this.logger.info("MCP workspace_sessions_describe called", { sessionId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/sessions/${sessionId}`);
@@ -460,7 +474,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_sessions_describe failed", { sessionId, error });
+          this.logger.error("MCP workspace_sessions_describe failed", { sessionId, error });
           throw error;
         }
       },
@@ -476,7 +490,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ sessionId }) => {
-        logger.info("MCP workspace_sessions_cancel called", { sessionId });
+        this.logger.info("MCP workspace_sessions_cancel called", { sessionId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/sessions/${sessionId}`, {
@@ -510,7 +524,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_sessions_cancel failed", { sessionId, error });
+          this.logger.error("MCP workspace_sessions_cancel failed", { sessionId, error });
           throw error;
         }
       },
@@ -526,7 +540,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId }) => {
-        logger.info("MCP workspace_signals_list called", { workspaceId });
+        this.logger.info("MCP workspace_signals_list called", { workspaceId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/signals`);
@@ -557,7 +571,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_signals_list failed", { workspaceId, error });
+          this.logger.error("MCP workspace_signals_list failed", { workspaceId, error });
           throw error;
         }
       },
@@ -576,7 +590,7 @@ export class PlatformMCPServer {
       },
       async (args) =>
         this.withWorkspaceMCPCheck(args, async ({ workspaceId, signalName, payload }) => {
-          logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
+          this.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
           try {
             const response = await fetch(
@@ -619,7 +633,7 @@ export class PlatformMCPServer {
               ],
             };
           } catch (error) {
-            logger.error("MCP workspace_signals_trigger failed", {
+            this.logger.error("MCP workspace_signals_trigger failed", {
               workspaceId,
               signalName,
               error,
@@ -639,7 +653,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId }) => {
-        logger.info("MCP workspace_agents_list called", { workspaceId });
+        this.logger.info("MCP workspace_agents_list called", { workspaceId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/workspaces/${workspaceId}/agents`);
@@ -670,7 +684,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_agents_list failed", { workspaceId, error });
+          this.logger.error("MCP workspace_agents_list failed", { workspaceId, error });
           throw error;
         }
       },
@@ -687,7 +701,7 @@ export class PlatformMCPServer {
         },
       },
       async ({ workspaceId, agentId }) => {
-        logger.info("MCP workspace_agents_describe called", { workspaceId, agentId });
+        this.logger.info("MCP workspace_agents_describe called", { workspaceId, agentId });
 
         try {
           const response = await fetch(
@@ -719,7 +733,11 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          logger.error("MCP workspace_agents_describe failed", { workspaceId, agentId, error });
+          this.logger.error("MCP workspace_agents_describe failed", {
+            workspaceId,
+            agentId,
+            error,
+          });
           throw error;
         }
       },
@@ -743,7 +761,7 @@ export class PlatformMCPServer {
         } catch {
           // Ignore errors when consuming error response body
         }
-        logger.warn("Platform MCP: Failed to check workspace MCP settings", {
+        this.logger.warn("Platform MCP: Failed to check workspace MCP settings", {
           workspaceId,
           status: response.status,
         });
@@ -753,7 +771,7 @@ export class PlatformMCPServer {
       const workspace = await response.json();
       const mcpEnabled = workspace.config?.server?.mcp?.enabled ?? false;
 
-      logger.debug("Platform MCP: Checked workspace MCP settings", {
+      this.logger.debug("Platform MCP: Checked workspace MCP settings", {
         workspaceId,
         mcpEnabled,
       });
@@ -768,7 +786,7 @@ export class PlatformMCPServer {
           // Ignore errors when consuming error response body
         }
       }
-      logger.error("Platform MCP: Error checking workspace MCP settings", {
+      this.logger.error("Platform MCP: Error checking workspace MCP settings", {
         workspaceId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -803,7 +821,7 @@ export class PlatformMCPServer {
         const basePattern = isWildcard ? pattern.slice(0, -1) : pattern;
 
         if (isWildcard ? jobName.startsWith(basePattern) : jobName === pattern) {
-          logger.debug("Platform MCP: Job is discoverable", {
+          this.logger.debug("Platform MCP: Job is discoverable", {
             workspaceId,
             jobName,
             pattern,
@@ -812,7 +830,7 @@ export class PlatformMCPServer {
         }
       }
 
-      logger.debug("Platform MCP: Job not discoverable", {
+      this.logger.debug("Platform MCP: Job not discoverable", {
         workspaceId,
         jobName,
         discoverableJobs,
@@ -828,7 +846,7 @@ export class PlatformMCPServer {
           // Ignore errors when consuming error response body
         }
       }
-      logger.error("Platform MCP: Error checking job discoverability", {
+      this.logger.error("Platform MCP: Error checking job discoverability", {
         workspaceId,
         jobName,
         error: error instanceof Error ? error.message : String(error),
@@ -854,7 +872,7 @@ export class PlatformMCPServer {
     // SECURITY: Check if workspace has MCP enabled
     const mcpEnabled = await this.checkWorkspaceMCPEnabled(workspaceId);
     if (!mcpEnabled) {
-      logger.warn("Platform MCP: Blocked workspace operation - MCP disabled", {
+      this.logger.warn("Platform MCP: Blocked workspace operation - MCP disabled", {
         workspaceId,
         operation: operation.name,
       });
@@ -890,7 +908,7 @@ export class PlatformMCPServer {
     // Then check job discoverability
     const isDiscoverable = await this.checkJobDiscoverable(workspaceId, jobName);
     if (!isDiscoverable) {
-      logger.warn("Platform MCP: Blocked job operation - not discoverable", {
+      this.logger.warn("Platform MCP: Blocked job operation - not discoverable", {
         workspaceId,
         jobName,
         operation: operation.name,
@@ -930,7 +948,7 @@ export class PlatformMCPServer {
       );
     }
 
-    logger.info("Daemon health check passed, starting MCP server");
+    this.logger.info("Daemon health check passed, starting MCP server");
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
   }

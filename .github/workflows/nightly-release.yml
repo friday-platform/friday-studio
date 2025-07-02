@@ -352,6 +352,230 @@ jobs:
           fi
         shell: bash
 
+      - name: Create macOS pkg installer
+        if: matrix.platform == 'darwin'
+        run: |
+          pkg_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.pkg"
+
+          # Create package directory structure
+          mkdir -p ./pkg/payload/usr/local/bin
+          mkdir -p ./pkg/scripts
+
+          # Copy binary to package payload
+          cp "./dist/atlas" "./pkg/payload/usr/local/bin/atlas"
+          chmod +x "./pkg/payload/usr/local/bin/atlas"
+
+          # Create preinstall script to handle cross-channel upgrades
+          cat > ./pkg/scripts/preinstall << 'EOF'
+          #!/bin/bash
+          # Remove any existing atlas binary to ensure clean installation
+          # This allows cross-channel upgrades (edge -> nightly -> regular, etc.)
+          if [ -f "/usr/local/bin/atlas" ]; then
+            echo "Removing existing Atlas installation for upgrade..."
+            rm -f "/usr/local/bin/atlas"
+          fi
+
+          # Also clean up any previous package receipts to allow downgrades/cross-channel installs
+          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+            echo "Cleaning up previous Atlas package receipts..."
+            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+          fi
+
+          exit 0
+          EOF
+
+          # Create postinstall script to add to PATH and verify installation
+          cat > ./pkg/scripts/postinstall << 'EOF'
+          #!/bin/bash
+          # Verify installation
+          if [ ! -f "/usr/local/bin/atlas" ]; then
+            echo "ERROR: Atlas binary not found after installation"
+            exit 1
+          fi
+
+          # Make sure binary is executable
+          chmod +x "/usr/local/bin/atlas"
+
+          # Add /usr/local/bin to PATH if not already present
+          # We check all common shell config files for all users
+          for user_home in /Users/*; do
+            if [ -d "$user_home" ] && [ "$user_home" != "/Users/Shared" ]; then
+              user_name=$(basename "$user_home")
+
+              # Skip system users
+              if [[ "$user_name" =~ ^[._] ]]; then
+                continue
+              fi
+
+              # For bash users
+              for bash_config in "$user_home/.bash_profile" "$user_home/.bashrc"; do
+                if [ -f "$bash_config" ] && ! grep -q "/usr/local/bin" "$bash_config" 2>/dev/null; then
+                  echo 'export PATH="/usr/local/bin:$PATH"' >> "$bash_config"
+                  chown "$user_name" "$bash_config" 2>/dev/null || true
+                fi
+              done
+
+              # For zsh users
+              if [ -f "$user_home/.zshrc" ] && ! grep -q "/usr/local/bin" "$user_home/.zshrc" 2>/dev/null; then
+                echo 'export PATH="/usr/local/bin:$PATH"' >> "$user_home/.zshrc"
+                chown "$user_name" "$user_home/.zshrc" 2>/dev/null || true
+              fi
+
+              # For fish users
+              if [ -d "$user_home/.config/fish" ]; then
+                fish_config_dir="$user_home/.config/fish/conf.d"
+                mkdir -p "$fish_config_dir"
+                if [ ! -f "$fish_config_dir/atlas.fish" ]; then
+                  echo 'set -gx PATH /usr/local/bin $PATH' > "$fish_config_dir/atlas.fish"
+                  chown -R "$user_name" "$user_home/.config/fish" 2>/dev/null || true
+                fi
+              fi
+            fi
+          done
+
+          # Get the installed version for display
+          version_output=$(/usr/local/bin/atlas --version 2>/dev/null || echo "unknown")
+
+          echo "✅ Atlas has been successfully installed to /usr/local/bin/atlas"
+          echo "📍 Version: $version_output"
+          echo "🔄 You may need to restart your terminal to use the 'atlas' command"
+          echo "🧪 Test installation: Open Terminal and run 'atlas --help'"
+
+          exit 0
+          EOF
+
+          chmod +x ./pkg/scripts/preinstall
+          chmod +x ./pkg/scripts/postinstall
+
+          # Generate a timestamp-based version for macOS installer
+          # This ensures newer packages can always upgrade older ones regardless of channel
+          timestamp=$(date +%Y%m%d%H%M%S)
+          installer_version="1.${timestamp}"
+
+          # Build the package with timestamp-based version for proper upgrade handling
+          pkgbuild \
+            --root ./pkg/payload \
+            --scripts ./pkg/scripts \
+            --identifier "com.tempestteam.atlas" \
+            --version "$installer_version" \
+            --install-location "/" \
+            "./dist/${pkg_name}"
+
+          # Sign the pkg if certificates are available
+          if [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
+            echo "Signing pkg installer..."
+            # Check if keychain exists, if not create it
+            security unlock-keychain -p mypassword build.keychain || {
+              echo "Keychain not found, creating new one for pkg signing..."
+              echo "${{ secrets.MACOS_SIGN_P12 }}" | base64 --decode > certificate.p12
+              security create-keychain -p mypassword build.keychain
+              security default-keychain -s build.keychain
+              security unlock-keychain -p mypassword build.keychain
+              security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_SIGN_PASSWORD }}" -T /usr/bin/productsign
+              security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
+            }
+
+            # Auto-detect signing identity for installer signing
+            if [ -z "${{ secrets.MACOS_SIGN_IDENTITY }}" ]; then
+              echo "Auto-detecting signing identity..."
+              SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
+              if [ -z "$SIGN_IDENTITY" ]; then
+                echo "❌ No Developer ID Installer certificate found in keychain"
+                echo "💡 pkg signing requires Developer ID Installer certificate (not Developer ID Application)"
+                echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
+                SIGN_IDENTITY=""
+              else
+                echo "✅ Found Developer ID Installer certificate: $SIGN_IDENTITY"
+              fi
+            else
+              SIGN_IDENTITY="${{ secrets.MACOS_SIGN_IDENTITY }}"
+              echo "Using provided signing identity: $SIGN_IDENTITY"
+            fi
+
+            if [ -n "$SIGN_IDENTITY" ]; then
+              # Sign the pkg
+              if productsign --sign "$SIGN_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
+                mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
+                echo "✅ pkg signed successfully"
+
+                # Verify the signature
+                if spctl -a -v --type install "./dist/${pkg_name}"; then
+                  echo "✅ pkg signature verified"
+                else
+                  echo "⚠️ pkg signature verification failed"
+                fi
+              else
+                echo "❌ pkg signing failed"
+              fi
+            else
+              echo "⚠️ pkg will be unsigned - users can still install by right-clicking → Open"
+            fi
+          else
+            echo "⚠️ No signing certificates available, pkg will be unsigned"
+            echo "💡 Users will need to right-click → Open or use 'System Preferences → Security & Privacy' to install"
+          fi
+
+          # Generate checksum for pkg
+          shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
+
+          echo "Created macOS pkg: ${pkg_name} (installer version: $installer_version)"
+        shell: bash
+
+      - name: Create Windows MSI installer
+        if: matrix.platform == 'windows'
+        run: |
+          $msi_name = "atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.msi"
+
+          # Create WiX source file (WiX v3 syntax)
+          @"
+          <?xml version="1.0" encoding="UTF-8"?>
+          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+            <Product Id="*" Name="Atlas" Language="1033" Version="1.0.0"
+                     Manufacturer="Tempest Team" UpgradeCode="{12345678-1234-1234-1234-123456789012}">
+              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+
+              <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+              <MediaTemplate EmbedCab="yes" />
+
+              <Feature Id="ProductFeature" Title="Atlas" Level="1">
+                <ComponentGroupRef Id="ProductComponents" />
+              </Feature>
+
+              <Directory Id="TARGETDIR" Name="SourceDir">
+                <Directory Id="ProgramFilesFolder">
+                  <Directory Id="INSTALLFOLDER" Name="Atlas" />
+                </Directory>
+              </Directory>
+
+              <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+                <Component Id="AtlasExecutable" Guid="{87654321-4321-4321-4321-210987654321}">
+                  <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
+                  <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="last" Action="set" System="yes" />
+                </Component>
+              </ComponentGroup>
+            </Product>
+          </Wix>
+          "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
+
+          # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
+          Write-Host "Installing WiX Toolset..."
+          choco install wixtoolset -y
+
+          # Add WiX to PATH for this session
+          $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
+
+          # Build MSI using WiX v3 tools
+          Write-Host "Building MSI installer..."
+          candle.exe atlas.wxs
+          light.exe -out "dist\$msi_name" atlas.wixobj
+
+          # Generate checksum for MSI
+          $hash = Get-FileHash "dist\$msi_name" -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath "dist\$msi_name.sha256" -Encoding ASCII
+
+          Write-Host "Created Windows MSI: $msi_name"
+        shell: pwsh
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -359,6 +583,8 @@ jobs:
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
             ./dist/atlas_*.sha256
           retention-days: 1
 
@@ -420,6 +646,8 @@ jobs:
           files: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
             ./dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -484,6 +712,12 @@ jobs:
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/nightly/
           fi
+          if ls atlas_*.pkg 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.pkg gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.msi 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/nightly/
+          fi
           gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/nightly/checksums-${VERSION}.txt
 
           echo "Uploaded nightly artifacts to sandbox GCS bucket"
@@ -528,6 +762,12 @@ jobs:
           fi
           if ls atlas_*.zip 1> /dev/null 2>&1; then
             gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.pkg 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.pkg gs://tempest-production-atlas-binaries/nightly/
+          fi
+          if ls atlas_*.msi 1> /dev/null 2>&1; then
+            gsutil -m cp atlas_*.msi gs://tempest-production-atlas-binaries/nightly/
           fi
           gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/nightly/checksums-${VERSION}.txt
 

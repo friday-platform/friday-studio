@@ -310,7 +310,7 @@ export class EnhancedTestEnvironment extends TestEnvironment {
     if (this.registryInitialized) return;
 
     // Import the registry here to avoid circular dependencies
-    const { MCPServerRegistry } = await import("../../src/core/agents/mcp/mcp-server-registry.ts");
+    const { MCPServerRegistry } = await import("@atlas/mcp");
 
     // Reset registry for clean test state
     MCPServerRegistry.reset();

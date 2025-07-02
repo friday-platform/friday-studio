@@ -6,7 +6,7 @@ import type {
   ConversationEvent,
   ConversationMessage,
   ConversationSession,
-} from "../conversation-supervisor.ts";
+} from "../conversation-supervisor.old.ts";
 
 /**
  * ConversationSupervisorAgent: Proper Atlas agent for handling conversations

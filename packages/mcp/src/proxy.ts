@@ -5,7 +5,6 @@
 
 import { z } from "zod/v4";
 import type { AtlasConfig } from "@atlas/config";
-import { FederationManager } from "../federation-manager.ts";
 
 // Atlas proxy transport configuration
 const AtlasProxyTransportSchema = z.object({
@@ -29,6 +28,17 @@ export interface MCPProxyResponse {
   result?: any;
   error?: string;
   federationCheck?: {
+    allowed: boolean;
+    reason: string;
+  };
+}
+
+export interface FederationManager {
+  checkAccess(
+    sourceWorkspace: string,
+    targetWorkspace: string,
+    capability: string,
+  ): {
     allowed: boolean;
     reason: string;
   };
@@ -80,7 +90,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -106,7 +116,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -154,7 +164,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
         federationCheck,
       };
     }
@@ -196,7 +206,7 @@ export class MCPProxy {
     } catch (error) {
       return {
         success: false,
-        error: error.message,
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -215,8 +225,8 @@ export class MCPProxy {
     return {
       [serverId]: {
         transport: {
-          type: "atlas-proxy",
           ...transport,
+          type: "atlas-proxy",
         },
         timeout_ms: options.timeout_ms || 30000,
         env: options.env || {},

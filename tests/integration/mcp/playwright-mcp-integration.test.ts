@@ -9,7 +9,7 @@ import { createEnhancedTestEnvironment } from "../../utils/test-utils.ts";
 
 // Import the actual implementation components
 import { LLMProviderManager } from "../../../src/core/agents/llm-provider-manager.ts";
-import { MCPManager } from "../../../src/core/agents/mcp/mcp-manager.ts";
+import { MCPManager } from "@atlas/mcp";
 
 Deno.test({
   name: "Playwright MCP Integration - Web Analysis Agent Configuration",
@@ -313,7 +313,7 @@ Deno.test({
     };
 
     // Import the schema to validate
-    const { MCPServerConfigSchema } = await import("../../../src/core/agents/mcp/mcp-manager.ts");
+    const { MCPServerConfigSchema } = await import("@atlas/mcp");
 
     // Test schema validation
     const validationResult = MCPServerConfigSchema.safeParse(webAnalysisConfig);

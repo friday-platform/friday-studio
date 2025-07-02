@@ -173,6 +173,7 @@ export type AgentConfig =
 export interface SessionContext {
   sessionId: string;
   workspaceId: string;
+  workspacePath?: string; // Workspace directory path for environment loading
   signal: IWorkspaceSignal;
   payload: any;
   availableAgents: AgentMetadata[];
@@ -359,11 +360,14 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       return [];
     }
 
+    this.log(`Workspace MCP servers config: ${JSON.stringify(workspaceMcpServers)}`, "debug");
+
     const configs: any[] = [];
     for (const serverId of requestedServerIds) {
       if (workspaceMcpServers[serverId]) {
         // Add server ID to the config if it's missing
         const config = { ...workspaceMcpServers[serverId], id: serverId };
+        this.log(`MCP server config for ${serverId}: ${JSON.stringify(config)}`, "debug");
         configs.push(config);
       } else {
         this.log(`MCP server ${serverId} not found in workspace servers for agent ${agentId}`);
@@ -509,6 +513,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
+        workspacePath: context.workspacePath,
         supervisionLevel: ((supervisionConfig as any).level &&
           SupervisionLevel[
             (supervisionConfig as any).level.toUpperCase() as keyof typeof SupervisionLevel
@@ -532,6 +537,7 @@ You can use advanced reasoning methods to make complex decisions about agent coo
         memoryConfig: this.memoryConfig,
         sessionId: context.sessionId,
         workspaceId: context.workspaceId,
+        workspacePath: context.workspacePath,
         supervisionLevel: SupervisionLevel.MINIMAL,
         cacheEnabled: true,
         workspaceTools: this.workspaceTools,
@@ -2149,14 +2155,17 @@ Provide a brief evaluation.`;
     return null;
   }
 
-  getExecutionSummary(): {
+  getExecutionSummary(currentResults?: AgentResult[]): {
     plan: ExecutionPlan | null;
     results: AgentResult[];
     status: "planning" | "executing" | "completed" | "failed";
   } {
     let status: "planning" | "executing" | "completed" | "failed" = "planning";
 
-    if (this.executionPlan && this.executionResults.length > 0) {
+    // Use current results if provided, otherwise fall back to internal results
+    const resultsToUse = currentResults || this.executionResults;
+
+    if (this.executionPlan && resultsToUse.length > 0) {
       const totalTasks = this.executionPlan.phases.reduce(
         (sum, phase) => sum + phase.agents.length,
         0,
@@ -2165,12 +2174,14 @@ Provide a brief evaluation.`;
       this.logger.debug("Execution summary status calculation", {
         hasExecutionPlan: !!this.executionPlan,
         executionResultsLength: this.executionResults.length,
+        currentResultsLength: currentResults?.length || 0,
+        resultsToUseLength: resultsToUse.length,
         totalTasks,
         phases: this.executionPlan.phases.length,
         phaseAgentCounts: this.executionPlan.phases.map((p) => p.agents.length),
       });
 
-      if (this.executionResults.length >= totalTasks) {
+      if (resultsToUse.length >= totalTasks) {
         status = "completed";
       } else {
         status = "executing";
@@ -2179,12 +2190,13 @@ Provide a brief evaluation.`;
       this.logger.debug("Execution summary - no plan or results", {
         hasExecutionPlan: !!this.executionPlan,
         executionResultsLength: this.executionResults.length,
+        currentResultsLength: currentResults?.length || 0,
       });
     }
 
     return {
       plan: this.executionPlan,
-      results: this.executionResults,
+      results: resultsToUse,
       status,
     };
   }

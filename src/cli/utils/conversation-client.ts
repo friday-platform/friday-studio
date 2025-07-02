@@ -1,5 +1,5 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
-import type { ConversationEvent } from "../../core/conversation-supervisor.ts";
+import type { ConversationEvent } from "../../core/conversation-supervisor.old.ts";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
