@@ -4,6 +4,7 @@ import * as status from "./workspace/status.tsx";
 import * as remove from "./workspace/remove.tsx";
 import * as logs from "./workspace/logs.tsx";
 import * as add from "./workspace/add.tsx";
+import * as cleanup from "./workspace/cleanup.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 import { formatResourceHelp } from "../utils/resource-help.ts";
 
@@ -13,7 +14,7 @@ export const aliases = ["work", "w"];
 
 export function builder(y: YargsInstance) {
   return y
-    .command([init, list, status, remove, logs, add])
+    .command([init, list, status, remove, logs, add, cleanup])
     .demandCommand(1)
     .fail((msg: string, _: unknown, yargs: YargsInstance) => {
       if (msg && msg.includes("Not enough non-option arguments")) {
