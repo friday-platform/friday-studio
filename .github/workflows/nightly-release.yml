@@ -463,10 +463,12 @@ jobs:
             "./dist/atlas-component.pkg"
 
           # Create distribution XML for proper product name and title
+          # Set version for XML template
+          NIGHTLY_VERSION="${{ needs.check-changes.outputs.version }}"
           cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS (nightly: ${{ needs.check-changes.outputs.version }})</title>
+              <title>Tempest ATLAS (nightly: ${NIGHTLY_VERSION})</title>
               <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
               <welcome file="" mime-type=""/>
               <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
