@@ -480,14 +480,13 @@ jobs:
               echo "Auto-detecting signing identity..."
               SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
               if [ -z "$SIGN_IDENTITY" ]; then
-                echo "No Developer ID Installer certificate found, trying Developer ID Application"
-                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
+                echo "❌ No Developer ID Installer certificate found in keychain"
+                echo "💡 pkg signing requires Developer ID Installer certificate (not Developer ID Application)"
+                echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
+                SIGN_IDENTITY=""
+              else
+                echo "✅ Found Developer ID Installer certificate: $SIGN_IDENTITY"
               fi
-              if [ -z "$SIGN_IDENTITY" ]; then
-                echo "No suitable certificate found, trying any valid identity"
-                SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
-              fi
-              echo "Auto-detected signing identity: $SIGN_IDENTITY"
             else
               SIGN_IDENTITY="${{ secrets.MACOS_SIGN_IDENTITY }}"
               echo "Using provided signing identity: $SIGN_IDENTITY"
@@ -495,14 +494,21 @@ jobs:
             
             if [ -n "$SIGN_IDENTITY" ]; then
               # Sign the pkg
-              productsign --sign "$SIGN_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"
-              mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
-              echo "✅ pkg signed successfully"
-              
-              # Verify the signature
-              spctl -a -v --type install "./dist/${pkg_name}" && echo "✅ pkg signature verified" || echo "⚠️ pkg signature verification failed"
+              if productsign --sign "$SIGN_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
+                mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
+                echo "✅ pkg signed successfully"
+                
+                # Verify the signature
+                if spctl -a -v --type install "./dist/${pkg_name}"; then
+                  echo "✅ pkg signature verified"
+                else
+                  echo "⚠️ pkg signature verification failed"
+                fi
+              else
+                echo "❌ pkg signing failed"
+              fi
             else
-              echo "⚠️ No suitable signing identity found, pkg will be unsigned"
+              echo "⚠️ pkg will be unsigned - users can still install by right-clicking → Open"
             fi
           else
             echo "⚠️ No signing certificates available, pkg will be unsigned"
