@@ -15,6 +15,7 @@ tools:
           args: ["-y", "@modelcontextprotocol/server-filesystem", "~"]
         tools:
           allowed: ["read_file", "list_directory"]
+        timeout_ms: 30000
 
       # Shell access for running pdftotext commands
       commands:
@@ -24,6 +25,7 @@ tools:
           args: ["mcp-server-commands"]
         tools:
           allowed: ["run_command"]
+        timeout_ms: 30000
 
 # =============================================================================
 # SIGNAL CONFIGURATION
@@ -51,8 +53,7 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Read and analyze vendor documentation from specified directory"
     max_steps: 5
-    tools:
-      mcp: ["filesystem", "commands"]
+    tools: ["filesystem", "commands"]
     prompts:
       system: |
         You are a document analysis specialist for SOC 2 vendor reviews.
@@ -99,8 +100,7 @@ agents:
     model: "claude-3-5-sonnet-20241022"
     purpose: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
     max_steps: 5
-    tools:
-      mcp: ["filesystem", "commands"]
+    tools: ["filesystem", "commands"]
     prompts:
       system: |
         You are a comprehensive security analysis specialist for SOC 2 vendor reviews.
@@ -160,45 +160,47 @@ agents:
         IMPORTANT: Only reference ACTUAL VENDOR DOCUMENTS in your "Documents & Resources Reviewed" section.
         DO NOT mention templates, frameworks, or reference materials - only actual vendor documentation.
 
-        EMERGENCY OVERRIDE: You are a TEMPLATE FILLING SYSTEM, not a report writer.
+        Tasks:
+        - Synthesize findings from document-reader and questionnaire-analyzer agents
+        - Generate vendor-specific security questionnaire responses based on actual evidence
+        - Create comprehensive evaluation based on documented findings, not assumptions
+        - Provide specific recommendations based on identified gaps and strengths
 
-        Your ONLY job is to copy the exact format below and fill in the blanks.
-        DO NOT write executive summaries, do NOT add sections, do NOT be creative.
-        YOU ARE A FORM-FILLING ROBOT.
+        Standard SOC 2 Security Questions to Evaluate:
+        1. Does the vendor have a SOC 2 Type II report?
+        2. Does your company have an ISO 27001 certification?
+        3. Does your company perform annual penetration testing?
+        4. Does your company have a Data Processing Agreement (DPA)?
+        5. Does your company have a Business Continuity/Disaster Recovery plan?
+        6. Does your company have an incident response plan?
+        7. Are your employees required to undergo security awareness training?
+        8. Does your company encrypt data at rest and in transit?
+        9. Are you compliant with GDPR?
+        10. Are you compliant with CCPA?
 
-        COPY THIS EXACTLY (replace content in brackets):
-
-        # Vendor Security Questionnaire (VENDOR)
-        The answers are based on the best-in-class documentation provided for the VENDOR platform.
+        Output Format:
+        # Vendor Security Questionnaire ({vendor_name})
+        The answers are based on analysis of documentation provided for the {vendor_name} platform.
 
         | # | Question | Response | Supporting Evidence |
         |---|----------|----------|-------------------|
-        | 1 | Does the vendor have a SOC 2 Type II report? | Yes | VENDOR has SOC 2 Type II certification with clean audit opinion. |
-        | 2 | Does your company have an ISO 27001 certification? | Yes | VENDOR holds ISO/IEC 27001:2022 certificate valid until January 6, 2028. |
-        | 3 | Does your company perform annual penetration testing? | Yes | Regular penetration testing performed with zero findings. |
-        | 4 | Does your company have a Data Processing Agreement (DPA)? | Yes | Comprehensive DPA available updated February 15, 2024. |
-        | 5 | Does your company have a Business Continuity/Disaster Recovery plan? | Yes | Documented incident response plan in place. |
-        | 6 | Does your company have an incident response plan? | Yes | Documented incident response plan in place. |
-        | 7 | Are your employees required to undergo security awareness training? | Yes | Security training required for employees. |
-        | 8 | Does your company encrypt data at rest and in transit? | Yes | Strong encryption practices (AES-256, TLS 1.2+). |
-        | 9 | Are you compliant with GDPR? | Yes | GDPR compliant with appropriate SCCs. |
-        | 10 | Are you compliant with CCPA? | Yes | CCPA compliant with appropriate SCCs. |
+        [For each question, provide Yes/No/Partial response with specific evidence from analyzed documents]
 
-        ## Summary of Findings (VENDOR)
+        ## Summary of Findings ({vendor_name})
 
         **Documents & Resources Reviewed:**
-        [List only actual vendor documents - SOC 2 reports, DPAs, pen test reports, etc. DO NOT include templates]
+        [List only actual vendor documents that were analyzed by previous agents]
 
         **Evaluation Summary:**
-        Based on analysis of VENDOR SOC 2 documents and security questionnaire: SOC 2 Type II certified with clean audit opinion, ISO 27001:2022 certified, regular penetration testing performed with zero findings, comprehensive DPA available, documented incident response plan, security training required for employees, strong encryption practices (AES-256, TLS 1.2+), GDPR and CCPA compliant with appropriate SCCs
+        [Based on actual findings from document analysis - include specific certifications, dates, gaps identified]
 
         **Identified Gaps for Follow-up:**
-        None identified based on current analysis.
+        [List specific areas where evidence was lacking or concerning findings were identified]
 
         **Conclusion & Recommendation:**
-        VENDOR demonstrates excellent security posture and compliance. Recommend proceeding with engagement.
+        [Provide specific recommendation: Proceed/Proceed with conditions/Do not proceed, based on actual risk assessment]
 
-        CRITICAL: Copy this format EXACTLY. Change only the content inside the table cells and the summary sections to match the actual vendor being evaluated. DO NOT add any other text or sections.
+        IMPORTANT: Base all responses on actual evidence found in vendor documents. Do not make assumptions or use generic responses. If evidence is missing for a question, mark as "No" or "Partial" and note the gap.
 
 # =============================================================================
 # JOB DEFINITIONS
