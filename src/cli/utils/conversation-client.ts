@@ -176,6 +176,7 @@ export class ConversationClient {
   async *streamEvents(
     sessionId: string,
     sseUrl?: string,
+    abortSignal?: AbortSignal,
   ): AsyncIterableIterator<ConversationEvent> {
     // Use the SSE URL from the session if not provided
     const streamUrl = sseUrl ||
@@ -183,9 +184,17 @@ export class ConversationClient {
 
     let eventSource: any = null;
     try {
-      eventSource = await createEventSource({ url: streamUrl });
+      eventSource = await createEventSource({
+        url: streamUrl,
+        options: abortSignal ? { signal: abortSignal } : undefined,
+      });
 
       for await (const message of eventSource.consume()) {
+        // Check if aborted
+        if (abortSignal?.aborted) {
+          break;
+        }
+
         try {
           const parsedData = JSON.parse(message.data);
           const event: ConversationEvent = {
