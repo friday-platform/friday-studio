@@ -1,11 +1,18 @@
-import { ConfigLoader, type MergedConfig, supervisorDefaults } from "@atlas/config";
-import { FilesystemConfigAdapter, FilesystemTemplateAdapter } from "@atlas/storage";
-import { join } from "@std/path";
+import {
+  ConfigLoader,
+  formatZodError,
+  type MergedConfig,
+  supervisorDefaults,
+  WorkspaceConfigSchema,
+} from "@atlas/config";
+import {
+  FilesystemConfigAdapter,
+  FilesystemTemplateAdapter,
+  FilesystemWorkspaceCreationAdapter,
+} from "@atlas/storage";
+import { dirname, join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { WorkspaceMemberRole } from "../../../src/types/core.ts";
-import { AtlasLogger } from "../../../src/utils/logger.ts";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { ConversationSessionManager } from "../../../src/core/conversation-session-manager.ts";
 import {
   type ConversationEvent,
@@ -19,6 +26,9 @@ import {
 } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
+import { WorkspaceMemberRole } from "../../../src/types/core.ts";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -46,6 +56,7 @@ export class AtlasDaemon {
   private libraryStorage: any = null; // LibraryStorageAdapter
   private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
   private templateAdapter: FilesystemTemplateAdapter | null = null;
+  private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -93,6 +104,10 @@ export class AtlasDaemon {
     const templatePath = join(atlasRoot, "packages", "starters");
     logger.info(`Template path: ${templatePath}`);
     this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
+
+    // Initialize workspace creation adapter
+    logger.info("Initializing workspace creation adapter...");
+    this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -538,6 +553,107 @@ export class AtlasDaemon {
       } catch (error) {
         return c.json({
           error: `Failed to create workspace from template: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Validate workspace configuration
+    this.app.post("/api/workspaces/validate", async (c) => {
+      try {
+        const body = await c.req.json() as { config: unknown };
+        const { config } = body;
+
+        if (!config) {
+          return c.json({ error: "config is required" }, 400);
+        }
+
+        // Validate using the WorkspaceConfigSchema
+        const validationResult = WorkspaceConfigSchema.safeParse(config);
+
+        if (validationResult.success) {
+          return c.json({
+            valid: true,
+            config: validationResult.data,
+            message: "Configuration is valid",
+          });
+        } else {
+          return c.json({
+            valid: false,
+            errors: validationResult.error.issues,
+            formattedError: formatZodError(validationResult.error, "workspace.yml"),
+          });
+        }
+      } catch (error) {
+        return c.json({
+          error: `Failed to validate configuration: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Create workspace from configuration YAML
+    this.app.post("/api/workspaces/create-from-config", async (c) => {
+      try {
+        const body = await c.req.json() as {
+          name: string;
+          description: string;
+          config: string;
+          path?: string;
+          cwd?: string; // Add CWD to body type
+        };
+
+        const { name, description, config, path, cwd } = body;
+
+        if (!name || !description || !config) {
+          return c.json({ error: "name, description, and config are required" }, 400);
+        }
+
+        if (!this.workspaceCreationAdapter) {
+          return c.json({ error: "Workspace creation adapter not initialized" }, 500);
+        }
+
+        // Determine base path
+        let basePath: string;
+        if (path) {
+          // Explicit path provided - use its parent directory
+          basePath = dirname(path);
+        } else if (cwd) {
+          // Use provided CWD
+          basePath = cwd;
+        } else {
+          // Fallback to ~/.atlas/workspaces
+          basePath = join(Deno.env.get("HOME") || "/tmp", ".atlas/workspaces");
+        }
+
+        // Create workspace directory with collision detection
+        const workspacePath = await this.workspaceCreationAdapter.createWorkspaceDirectory(
+          basePath,
+          name,
+        );
+
+        // Write workspace files
+        await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
+
+        // Register the new workspace
+        const manager = getWorkspaceManager();
+        const entry = await manager.registerWorkspace(workspacePath, {
+          name,
+          description,
+        });
+
+        return c.json({
+          id: entry.id,
+          name: entry.name,
+          path: entry.path,
+          description,
+          message: `Workspace created successfully from configuration`,
+        }, 201);
+      } catch (error) {
+        return c.json({
+          error: `Failed to create workspace from config: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);
@@ -1163,6 +1279,20 @@ export class AtlasDaemon {
           messageHistory,
         )
       ) {
+        const logger = AtlasLogger.getInstance();
+        logger.debug(JSON.stringify(
+          {
+            message: "Received event from supervisor",
+            eventType: event.type,
+            sessionId,
+            messageId: event.messageId,
+            hasData: !!event.data,
+            dataKeys: event.data ? Object.keys(event.data) : [],
+          },
+          null,
+          2,
+        ));
+
         // QUICK FIX: Track message chunks to reconstruct complete response
         if (event.type === "message_chunk" && event.data.content) {
           this.messageChunks.set(messageId, event.data.content);
@@ -1256,16 +1386,44 @@ export class AtlasDaemon {
    * Emit conversation event to all SSE clients for a session
    */
   private emitConversationEvent(sessionId: string, event: ConversationEvent): void {
+    const logger = AtlasLogger.getInstance();
     const clients = this.sseClients.get(sessionId);
-    if (!clients || clients.length === 0) return;
+
+    logger.info(JSON.stringify(
+      {
+        message: "emitConversationEvent called",
+        sessionId,
+        eventType: event.type,
+        hasClients: !!clients,
+        clientCount: clients?.length || 0,
+        dataKeys: event.data ? Object.keys(event.data) : [],
+      },
+      null,
+      2,
+    ));
+
+    if (!clients || clients.length === 0) {
+      logger.warn("No SSE clients connected for session", { sessionId });
+      return;
+    }
 
     const encoder = new TextEncoder();
     const sseData = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
     const encodedData = encoder.encode(sseData);
 
     // Send to all connected clients for this session
-    clients.forEach(({ writer }) => {
-      writer.write(encodedData).catch(() => {
+    clients.forEach(({ writer }, index) => {
+      writer.write(encodedData).catch((error) => {
+        logger.error(JSON.stringify(
+          {
+            message: "Failed to write to SSE client",
+            sessionId,
+            clientIndex: index,
+            error: error.message,
+          },
+          null,
+          2,
+        ));
         // Client disconnected, will be cleaned up by abort handler
       });
     });

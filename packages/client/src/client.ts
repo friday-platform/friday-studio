@@ -221,6 +221,25 @@ export class AtlasClient {
   }
 
   /**
+   * Create a new workspace from a configuration YAML
+   */
+  async createWorkspaceFromConfig(params: {
+    name: string;
+    description: string;
+    config: string;
+    path?: string;
+  }): Promise<WorkspaceCreateResponse> {
+    const response = await this.makeRequest("/api/workspaces/create-from-config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(params),
+    });
+    return WorkspaceCreateResponseSchema.parse(response);
+  }
+
+  /**
    * Trigger a signal in a workspace
    */
   async triggerSignal(
