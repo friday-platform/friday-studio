@@ -471,11 +471,46 @@ jobs:
                 mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
                 echo "✅ pkg signed successfully with Developer ID Installer certificate"
                 
-                # Verify the signature
-                if spctl -a -v --type install "./dist/${pkg_name}"; then
-                  echo "✅ pkg signature verified - NO GATEKEEPER WARNINGS!"
+                # Notarize the pkg for full Gatekeeper approval
+                if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.APPLE_APP_PASSWORD }}" ] && [ -n "${{ secrets.APPLE_TEAM_ID }}" ]; then
+                  echo "🍎 Notarizing pkg with Apple..."
+                  
+                  # Submit for notarization
+                  if xcrun notarytool submit "./dist/${pkg_name}" \
+                    --apple-id "${{ secrets.APPLE_ID }}" \
+                    --password "${{ secrets.APPLE_APP_PASSWORD }}" \
+                    --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+                    --wait; then
+                    
+                    echo "✅ pkg notarized successfully"
+                    
+                    # Staple the notarization ticket
+                    if xcrun stapler staple "./dist/${pkg_name}"; then
+                      echo "✅ Notarization ticket stapled to pkg"
+                      
+                      # Final verification - should now pass completely
+                      if spctl -a -v --type install "./dist/${pkg_name}"; then
+                        echo "🎉 pkg fully approved - NO GATEKEEPER WARNINGS!"
+                      else
+                        echo "⚠️ pkg signature verification still failed after notarization"
+                      fi
+                    else
+                      echo "⚠️ Failed to staple notarization ticket"
+                    fi
+                  else
+                    echo "⚠️ pkg notarization failed - will have Gatekeeper warnings"
+                    echo "💡 Check Apple ID credentials and team ID"
+                  fi
                 else
-                  echo "⚠️ pkg signature verification failed"
+                  echo "⚠️ Notarization skipped - missing Apple ID credentials"
+                  echo "💡 Add APPLE_ID, APPLE_APP_PASSWORD, and APPLE_TEAM_ID secrets for full Gatekeeper approval"
+                  
+                  # Verify signature without notarization
+                  if spctl -a -v --type install "./dist/${pkg_name}"; then
+                    echo "✅ pkg signature verified but not notarized"
+                  else
+                    echo "⚠️ pkg signature verification failed"
+                  fi
                 fi
               else
                 echo "❌ pkg signing failed"
