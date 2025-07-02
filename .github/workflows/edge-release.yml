@@ -432,13 +432,57 @@ jobs:
           installer_version="1.${timestamp}"
 
           # Build the package with timestamp-based version for proper upgrade handling
+          # First create component package
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
             --identifier "com.tempestteam.atlas" \
             --version "$installer_version" \
             --install-location "/" \
+            "./dist/atlas-component.pkg"
+
+          # Create distribution XML for proper product name and title
+          cat > ./dist/distribution.xml << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="1">
+              <title>Tempest ATLAS (Edge)</title>
+              <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
+              <welcome file="" mime-type=""/>
+              <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+              <installation-check script="pm_install_check();"/>
+              <script>
+          function pm_install_check() {
+              if(!(system.compareVersions(system.version.ProductVersion, '10.9') >= 0)) {
+                  my.result.title = 'Failure';
+                  my.result.message = 'This software requires macOS 10.9 or later.';
+                  my.result.type = 'Fatal';
+                  return false;
+              }
+              return true;
+          }
+              </script>
+              <choices-outline>
+                  <line choice="default">
+                      <line choice="com.tempestteam.atlas"/>
+                  </line>
+              </choices-outline>
+              <choice id="default"/>
+              <choice id="com.tempestteam.atlas" visible="false">
+                  <pkg-ref id="com.tempestteam.atlas"/>
+              </choice>
+              <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+
+          # Build final product package with custom title
+          productbuild \
+            --distribution "./dist/distribution.xml" \
+            --package-path "./dist" \
             "./dist/${pkg_name}"
+
+          # Clean up intermediate files
+          rm -f "./dist/atlas-component.pkg" "./dist/distribution.xml"
 
           # Sign the pkg if installer certificate is available
           if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
