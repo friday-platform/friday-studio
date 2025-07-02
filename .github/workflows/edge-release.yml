@@ -57,10 +57,6 @@ jobs:
             os: windows
             arch: amd64
             target: x86_64-pc-windows-msvc
-          - runner: windows-latest
-            os: windows
-            arch: arm64
-            target: aarch64-pc-windows-msvc
 
     runs-on: ${{ matrix.runner }}
     steps:
