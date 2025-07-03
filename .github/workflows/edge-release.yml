@@ -200,15 +200,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  upload-gcs:
+  upload-sandbox:
     needs: [check-changes, build]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         
-      - name: Upload to GCS buckets
-        uses: ./.github/actions/gcs-upload
+      - name: Upload to sandbox GCS bucket
+        uses: ./.github/actions/gcs-upload-sandbox
+        with:
+          bucket-prefix: "edge/"
+          version: ${{ needs.check-changes.outputs.version }}
+
+  upload-production:
+    needs: [check-changes, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Upload to production GCS bucket
+        uses: ./.github/actions/gcs-upload-production
         with:
           bucket-prefix: "edge/"
           version: ${{ needs.check-changes.outputs.version }}

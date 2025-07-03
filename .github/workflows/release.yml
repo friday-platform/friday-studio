@@ -148,6 +148,8 @@ jobs:
   release:
     needs: build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -270,15 +272,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  upload-gcs:
-    needs: build
+  upload-sandbox:
+    needs: [build, release]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         
-      - name: Upload to GCS buckets
-        uses: ./.github/actions/gcs-upload
+      - name: Upload to sandbox GCS bucket
+        uses: ./.github/actions/gcs-upload-sandbox
         with:
           bucket-prefix: ""
-          version: ${{ steps.version.outputs.version }}
+          version: ${{ needs.release.outputs.version }}
+
+  upload-production:
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
+      - name: Upload to production GCS bucket
+        uses: ./.github/actions/gcs-upload-production
+        with:
+          bucket-prefix: ""
+          version: ${{ needs.release.outputs.version }}

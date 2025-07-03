@@ -1,0 +1,62 @@
+name: 'Upload to Google Cloud Storage (Sandbox)'
+description: 'Uploads artifacts to sandbox GCS bucket'
+
+inputs:
+  bucket-prefix:
+    description: 'Prefix for the bucket path (e.g., edge/, nightly/, or empty for release)'
+    required: false
+    default: ''
+  version:
+    description: 'Version string for the artifacts'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts/
+        merge-multiple: true
+
+    - name: Create checksums file
+      shell: bash
+      run: |
+        cd ./artifacts
+        cat *.sha256 > checksums.txt
+        echo "Generated checksums:"
+        cat checksums.txt
+
+    - name: Authenticate to Google Cloud (Sandbox)
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github
+        service_account: atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com
+        create_credentials_file: true
+        export_environment_variables: true
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Upload artifacts to sandbox GCS
+      shell: bash
+      run: |
+        VERSION="${{ inputs.version }}"
+        cd ./artifacts
+        
+        # Upload all artifacts to sandbox bucket with version prefix (flat structure)
+        if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.zip 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.pkg 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.pkg gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.msi 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${VERSION}.txt
+        
+        echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to sandbox GCS bucket"
