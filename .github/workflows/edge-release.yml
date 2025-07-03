@@ -452,9 +452,14 @@ jobs:
 
           # Create distribution definition file (following Apple's official documentation)
           # Set version for XML template
+          echo "=== DEBUG: Setting version variables ==="
           EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
+          echo "EDGE_VERSION: $EDGE_VERSION"
           # Strip 'edge-' prefix for clean title display
           EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
+          echo "EDGE_VERSION_CLEAN: $EDGE_VERSION_CLEAN"
+          echo "installer_version: $installer_version"
+          echo "=== DEBUG: Creating distribution.dist file ==="
           cat > ./dist/distribution.dist << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
@@ -489,6 +494,11 @@ jobs:
               <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
           </installer-gui-script>
           EOF
+
+          echo "=== DEBUG: Distribution file created successfully ==="
+          echo "Contents of distribution.dist:"
+          cat ./dist/distribution.dist
+          echo "=== DEBUG: Creating welcome and license files ==="
 
           # Create welcome HTML file (as required by Apple docs)
           cat > ./dist/welcome.html << 'WELCOME_EOF'
