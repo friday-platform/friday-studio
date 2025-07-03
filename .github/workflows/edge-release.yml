@@ -503,19 +503,19 @@ jobs:
           # Create welcome HTML file (as required by Apple docs)
           echo "=== DEBUG: Creating welcome.html file ==="
           cat > ./dist/welcome.html << 'WELCOME_EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Welcome</title>
-</head>
-<body>
-    <h1>Welcome to Tempest ATLAS Installation</h1>
-    <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
-    <p>Before proceeding, please read and accept the license agreement.</p>
-</body>
-</html>
-WELCOME_EOF
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Welcome</title>
+          </head>
+          <body>
+              <h1>Welcome to Tempest ATLAS Installation</h1>
+              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <p>Before proceeding, please read and accept the license agreement.</p>
+          </body>
+          </html>
+          WELCOME_EOF
           echo "=== DEBUG: Welcome file created successfully ==="
 
           # Create license HTML file (as required by Apple docs)
