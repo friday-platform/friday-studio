@@ -119,7 +119,6 @@ jobs:
         shell: bash
 
       - name: Strip binary symbols (if available)
-        continue-on-error: true
         run: |
           if [ "${{ matrix.platform }}" == "windows" ]; then
             binary_name="atlas.exe"
@@ -127,11 +126,20 @@ jobs:
             binary_name="atlas"
           fi
           
-          if [ -f "./dist/${binary_name}" ] && command -v strip >/dev/null 2>&1; then
-            echo "Stripping symbols from ${binary_name}"
-            strip "./dist/${binary_name}" || true
+          echo "Looking for binary: ./dist/${binary_name}"
+          ls -la ./dist/
+          
+          if [ -f "./dist/${binary_name}" ]; then
+            if command -v strip >/dev/null 2>&1; then
+              echo "Stripping symbols from ${binary_name}"
+              strip "./dist/${binary_name}"
+              echo "Strip completed successfully"
+            else
+              echo "Strip command not available on this platform"
+            fi
           else
-            echo "Skipping strip - binary not found or strip command unavailable"
+            echo "ERROR: Binary ./dist/${binary_name} not found!"
+            exit 1
           fi
 
       - name: Sign macOS binary (if certificates available)
