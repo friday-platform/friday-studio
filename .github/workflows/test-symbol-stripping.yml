@@ -1,0 +1,153 @@
+name: Test Symbol Stripping
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_description:
+        description: "Description of what you're testing"
+        required: false
+        default: "Testing symbol stripping implementation"
+  pull_request:
+    paths:
+      - '.github/actions/strip-binary/**'
+      - '.github/workflows/test-symbol-stripping.yml'
+      - 'scripts/validate-binary-stripping.sh'
+
+permissions:
+  contents: read
+
+jobs:
+  test-symbol-stripping:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin
+            arch: amd64
+          - os: macos-15-xlarge
+            target: aarch64-apple-darwin
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            arch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.4.0
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Setup cross-compilation for ARM64 (Linux only)
+        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build test binary
+        id: build
+        uses: ./.github/actions/build-binary
+        with:
+          version: "test-strip-v1.0.0"
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+
+      - name: Test symbol stripping
+        id: strip
+        uses: ./.github/actions/strip-binary
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+
+      - name: Report stripping results
+        run: |
+          echo "## Symbol Stripping Results (${{ matrix.platform }}-${{ matrix.arch }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Original Size | ${{ steps.strip.outputs.original-size }} bytes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Stripped Size | ${{ steps.strip.outputs.stripped-size }} bytes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Size Reduction | ${{ steps.strip.outputs.size-reduction }} bytes |" >> $GITHUB_STEP_SUMMARY
+          echo "| Reduction % | ${{ steps.strip.outputs.size-reduction-percent }}% |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Also output to console
+          echo "Symbol Stripping Results for ${{ matrix.platform }}-${{ matrix.arch }}:"
+          echo "  Original Size: ${{ steps.strip.outputs.original-size }} bytes"
+          echo "  Stripped Size: ${{ steps.strip.outputs.stripped-size }} bytes"
+          echo "  Size Reduction: ${{ steps.strip.outputs.size-reduction }} bytes (${{ steps.strip.outputs.size-reduction-percent }}%)"
+
+      - name: Validate with validation script
+        run: |
+          chmod +x ./scripts/validate-binary-stripping.sh
+          ./scripts/validate-binary-stripping.sh "${{ steps.build.outputs.binary-path }}"
+
+      - name: Final binary test
+        run: |
+          binary_path="${{ steps.build.outputs.binary-path }}"
+          echo "Final functional test of stripped binary..."
+          
+          # Skip cross-platform execution tests
+          if [ "${{ matrix.platform }}" == "windows" ] && [[ "$OSTYPE" != "cygwin" ]] && [[ "$OSTYPE" != "msys" ]]; then
+            echo "Skipping execution test for Windows binary on non-Windows runner"
+          elif [ "${{ matrix.platform }}" == "linux" ] && [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "Skipping execution test for Linux binary on macOS runner"  
+          elif [ "${{ matrix.platform }}" == "darwin" ] && [[ "$OSTYPE" != "darwin"* ]]; then
+            echo "Skipping execution test for macOS binary on non-macOS runner"
+          else
+            echo "Testing binary execution..."
+            if chmod +x "$binary_path" && "$binary_path" --version; then
+              echo "✅ Stripped binary works correctly"
+            else
+              echo "❌ Stripped binary failed functional test"
+              exit 1
+            fi
+          fi
+
+  summary:
+    needs: test-symbol-stripping
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Test Summary
+        run: |
+          echo "## Symbol Stripping Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ needs.test-symbol-stripping.result }}" == "success" ]; then
+            echo "✅ **All platform tests passed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Symbol stripping implementation is ready for integration into main build workflows." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some platform tests failed**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Review the individual platform test results above for details." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tested Platforms" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux amd64 (ubuntu-latest)" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux arm64 (ubuntu-latest, cross-compiled)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS amd64 (macos-latest, cross-compiled)" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS arm64 (macos-15-xlarge, native)" >> $GITHUB_STEP_SUMMARY
+          echo "- Windows amd64 (windows-latest, cross-compiled)" >> $GITHUB_STEP_SUMMARY
