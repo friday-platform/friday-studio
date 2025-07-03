@@ -66,6 +66,13 @@ jobs:
           echo "Version: $version"
         shell: bash
 
+      - name: Setup cross-compilation for ARM64 (Linux only)
+        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
       - name: Build binary
         id: build
         uses: ./.github/actions/build-binary
@@ -89,7 +96,6 @@ jobs:
 
       - name: Create archive
         run: |
-          # Set file extensions
           binary_name="${{ steps.build.outputs.binary-name }}"
           if [ "${{ matrix.platform }}" == "windows" ]; then
             archive_ext=".zip"
@@ -97,10 +103,8 @@ jobs:
             archive_ext=".tar.gz"
           fi
 
-          # Create archive name
           archive_name="atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
 
-          # Create archive
           if [ "${{ matrix.platform }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
@@ -128,7 +132,6 @@ jobs:
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
-
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -244,21 +247,16 @@ jobs:
           echo "**Option 2: Manual Installation**" >> changelog.md
           echo "Extract the ZIP file and add the atlas.exe to your PATH." >> changelog.md
 
-          echo "Generated changelog:"
-          cat changelog.md
-
       - name: Create checksums file
         run: |
           cd ./dist
           cat *.sha256 > checksums.txt
-          echo "Generated checksums:"
-          cat checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version }}
-          name: Atlas ${{ steps.version.outputs.version }}
+          name: "Atlas (${{ steps.version.outputs.version }})"
           body_path: changelog.md
           draft: true
           prerelease: false
@@ -271,3 +269,16 @@ jobs:
             ./dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-gcs:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload to GCS buckets
+        uses: ./.github/actions/gcs-upload
+        with:
+          bucket-prefix: ""
+          project-id-sandbox: ${{ secrets.GCP_PROJECT_ID_SANDBOX }}
+          project-id-production: ${{ secrets.GCP_PROJECT_ID_PRODUCTION }}
+          service-account-sandbox: ${{ secrets.GCP_SERVICE_ACCOUNT_SANDBOX }}
+          service-account-production: ${{ secrets.GCP_SERVICE_ACCOUNT_PRODUCTION }}

@@ -78,229 +78,38 @@ jobs:
           sudo apt-get install -y gcc-aarch64-linux-gnu
           echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
 
-      - name: Prepare version information
-        shell: bash
-        run: |
-          # Get version and git information
-          VERSION="${{ needs.check-changes.outputs.version }}"
-          GIT_SHA=$(git rev-parse --short HEAD)
-
-          echo "Building version: $VERSION"
-          echo "Git SHA: $GIT_SHA"
-
-          # Replace version placeholders with cross-platform sed syntax
-          if [[ "$OSTYPE" == "darwin"* ]]; then
-            # macOS sed requires backup extension (empty string for no backup)
-            sed -i "" "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
-            sed -i "" "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
-          else
-            # Linux/Windows with bash sed syntax
-            sed -i "s|__ATLAS_VERSION__|$VERSION|g" src/utils/version.ts
-            sed -i "s|__ATLAS_GIT_SHA__|$GIT_SHA|g" src/utils/version.ts
-          fi
-
-          echo "Version information embedded in source"
-          echo "Verification:"
-          head -10 src/utils/version.ts
-
       - name: Build binary
-        run: |
-          mkdir -p ./dist
+        id: build
+        uses: ./.github/actions/build-binary
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
 
-          # Set binary name based on platform
-          if [ "${{ matrix.os }}" == "windows" ]; then
-            binary_name="atlas.exe"
-          else
-            binary_name="atlas"
-          fi
-
-          # Compile with Deno - use nightly workflow pattern
-          echo "Target: ${{ matrix.target }}"
-          echo "Platform: ${{ matrix.os }}"
-          echo "Arch: ${{ matrix.arch }}"
-          echo "System arch: $(uname -m)"
-
-          # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
-          if [ "${{ matrix.os }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
-            echo "ARM64 macOS compilation on macOS 15"
-
-            # Set memory limits for large compilation only (not embedded in binary)
-            export DENO_V8_FLAGS="--max-old-space-size=8192"
-
-            # Compile WITHOUT embedded V8 flags that restrict runtime memory
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --include=src \
-              --include=examples \
-              --output "./dist/${binary_name}" \
-              ./src/cli.tsx
-          else
-            echo "Cross-compiling for target: ${{ matrix.target }}"
-
-            # Set memory limits for large compilation
-            export DENO_V8_FLAGS="--max-old-space-size=8192"
-
-            deno compile \
-              --no-check \
-              --allow-read \
-              --allow-write \
-              --allow-net \
-              --allow-env \
-              --allow-run \
-              --allow-sys \
-              --allow-ffi \
-              --unstable-broadcast-channel \
-              --unstable-worker-options \
-              --unstable-otel \
-              --include=src \
-              --include=examples \
-              --target ${{ matrix.target }} \
-              --v8-flags="--max-old-space-size=4096,--max-semi-space-size=128" \
-              --output "./dist/${binary_name}" \
-              ./src/cli.tsx
-          fi
-        shell: bash
-
-      - name: Sign macOS binary (if certificates available)
-        if: matrix.os == 'darwin' && env.MACOS_SIGN_P12 != ''
-        env:
-          MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
-          MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
-          MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
-        run: |
-          # Import certificate
-          echo "$MACOS_SIGN_P12" | base64 --decode > certificate.p12
-          security create-keychain -p mypassword build.keychain
-          security default-keychain -s build.keychain
-          security unlock-keychain -p mypassword build.keychain
-          security import certificate.p12 -k build.keychain -P "$MACOS_SIGN_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
-
-          # Auto-detect signing identity if not provided
-          if [ -z "$MACOS_SIGN_IDENTITY" ]; then
-            SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
-            if [ -z "$SIGN_IDENTITY" ]; then
-              echo "No Developer ID Application certificate found, trying any valid identity"
-              SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"')
-            fi
-            echo "Auto-detected signing identity: $SIGN_IDENTITY"
-          else
-            SIGN_IDENTITY="$MACOS_SIGN_IDENTITY"
-            echo "Using provided signing identity: $SIGN_IDENTITY"
-          fi
-
-          # Create entitlements for hardened runtime to allow V8 memory allocation
-          echo '<?xml version="1.0" encoding="UTF-8"?>' > entitlements.plist
-          echo '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' >> entitlements.plist
-          echo '<plist version="1.0">' >> entitlements.plist
-          echo '<dict>' >> entitlements.plist
-          echo '  <key>com.apple.security.cs.allow-jit</key>' >> entitlements.plist
-          echo '  <true/>' >> entitlements.plist
-          echo '  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>' >> entitlements.plist
-          echo '  <true/>' >> entitlements.plist
-          echo '  <key>com.apple.security.cs.disable-executable-page-protection</key>' >> entitlements.plist
-          echo '  <true/>' >> entitlements.plist
-          echo '</dict>' >> entitlements.plist
-          echo '</plist>' >> entitlements.plist
-
-          # Sign binary with entitlements for V8 memory allocation
-          codesign --force --options runtime --entitlements entitlements.plist --deep --sign "$SIGN_IDENTITY" ./dist/atlas
-
-          # Notarize if credentials available
-          if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
-            # Create private key file from base64 encoded secret
-            echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-
-
-            # Create a zip file for notarization (required by Apple)
-            zip atlas-binary.zip ./dist/atlas
-
-            # Try notarization with better error handling
-            if xcrun notarytool submit atlas-binary.zip \
-              --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
-              --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
-              --key notary_key.p8 \
-              --wait; then
-              echo "Notarization successful"
-            else
-              echo "Notarization failed, but continuing build"
-              # Don't fail the build for notarization issues
-            fi
-
-            # Clean up files
-            rm -f notary_key.p8 atlas-binary.zip
-          fi
-
-      - name: Test binary after signing (macOS only)
+      - name: Sign macOS binary
         if: matrix.os == 'darwin'
-        run: |
-          # Check if signed
-          codesign -dv "./dist/atlas" || echo "Binary not signed"
-
-          # Test basic execution
-          if "./dist/atlas" --help >/dev/null 2>&1; then
-            echo "Binary works after signing"
-          else
-            echo "Binary FAILS after signing"
-            exit 1
-          fi
-        shell: bash
-
-      - name: Test binary immediately after compilation
-        run: |
-          binary_name="atlas"
-          if [ "${{ matrix.os }}" == "windows" ]; then
-            binary_name="atlas.exe"
-          fi
-
-          # Only test execution if we're not cross-compiling
-
-          # Check if this is cross-compilation
-          SYSTEM_ARCH=$(uname -m)
-          if ([ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "aarch64" ]) || \
-             ([ "${{ matrix.target }}" == "x86_64-unknown-linux-gnu" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
-             ([ "${{ matrix.target }}" == "aarch64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "arm64" ]) || \
-             ([ "${{ matrix.target }}" == "x86_64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
-             [ "${{ matrix.os }}" == "windows" ]; then
-            echo "Binary compiled successfully (skipping cross-compilation test)"
-          else
-            # Test basic execution for native compilation
-            if "./dist/${binary_name}" --help >/dev/null 2>&1; then
-              echo "Binary works after compilation"
-            else
-              echo "Binary FAILS after compilation"
-              exit 1
-            fi
-          fi
-        shell: bash
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Create archive
         run: |
-          mkdir -p ./dist
-
-          # Set file extensions
+          binary_name="${{ steps.build.outputs.binary-name }}"
           if [ "${{ matrix.os }}" == "windows" ]; then
-            binary_name="atlas.exe"
             archive_ext=".zip"
           else
-            binary_name="atlas"
             archive_ext=".tar.gz"
           fi
 
-          # Create archive name
           archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
 
-          # Create archive
           if [ "${{ matrix.os }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
           else
@@ -315,400 +124,19 @@ jobs:
           fi
         shell: bash
 
-      - name: Create macOS pkg installer
-        if: matrix.os == 'darwin'
-        run: |
-          pkg_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.pkg"
-
-          # Create package directory structure
-          mkdir -p ./pkg/payload/usr/local/bin
-          mkdir -p ./pkg/scripts
-
-          # Copy binary to package payload
-          cp "./dist/atlas" "./pkg/payload/usr/local/bin/atlas"
-          chmod +x "./pkg/payload/usr/local/bin/atlas"
-
-          # Create preinstall script to handle cross-channel upgrades
-          cat > ./pkg/scripts/preinstall << 'EOF'
-          #!/bin/bash
-          # Remove any existing atlas binary to ensure clean installation
-          # This allows cross-channel upgrades (edge -> nightly -> regular, etc.)
-          if [ -f "/usr/local/bin/atlas" ]; then
-            echo "Removing existing Atlas installation for upgrade..."
-            rm -f "/usr/local/bin/atlas"
-          fi
-
-          # Also clean up any previous package receipts to allow downgrades/cross-channel installs
-          if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
-            echo "Cleaning up previous Atlas package receipts..."
-            pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
-          fi
-
-          exit 0
-          EOF
-
-          # Create postinstall script to add to PATH and verify installation
-          cat > ./pkg/scripts/postinstall << 'EOF'
-          #!/bin/bash
-          # Verify installation
-          if [ ! -f "/usr/local/bin/atlas" ]; then
-            echo "ERROR: Atlas binary not found after installation"
-            exit 1
-          fi
-
-          # Make sure binary is executable
-          chmod +x "/usr/local/bin/atlas"
-
-          # Add /usr/local/bin to PATH if not already present
-          # We check all common shell config files for all users
-          for user_home in /Users/*; do
-            if [ -d "$user_home" ] && [ "$user_home" != "/Users/Shared" ]; then
-              user_name=$(basename "$user_home")
-
-              # Skip system users
-              if [[ "$user_name" =~ ^[._] ]]; then
-                continue
-              fi
-
-              # For bash users
-              for bash_config in "$user_home/.bash_profile" "$user_home/.bashrc"; do
-                if [ -f "$bash_config" ] && ! grep -q "/usr/local/bin" "$bash_config" 2>/dev/null; then
-                  echo 'export PATH="/usr/local/bin:$PATH"' >> "$bash_config"
-                  chown "$user_name" "$bash_config" 2>/dev/null || true
-                fi
-              done
-
-              # For zsh users
-              if [ -f "$user_home/.zshrc" ] && ! grep -q "/usr/local/bin" "$user_home/.zshrc" 2>/dev/null; then
-                echo 'export PATH="/usr/local/bin:$PATH"' >> "$user_home/.zshrc"
-                chown "$user_name" "$user_home/.zshrc" 2>/dev/null || true
-              fi
-
-              # For fish users
-              if [ -d "$user_home/.config/fish" ]; then
-                fish_config_dir="$user_home/.config/fish/conf.d"
-                mkdir -p "$fish_config_dir"
-                if [ ! -f "$fish_config_dir/atlas.fish" ]; then
-                  echo 'set -gx PATH /usr/local/bin $PATH' > "$fish_config_dir/atlas.fish"
-                  chown -R "$user_name" "$user_home/.config/fish" 2>/dev/null || true
-                fi
-              fi
-            fi
-          done
-
-          # Get the installed version for display
-          version_output=$(/usr/local/bin/atlas --version 2>/dev/null || echo "unknown")
-
-          echo "Atlas has been successfully installed to /usr/local/bin/atlas"
-          echo "Version: $version_output"
-          echo "You may need to restart your terminal to use the 'atlas' command"
-          echo "Test installation: Open Terminal and run 'atlas --help'"
-
-          exit 0
-          EOF
-
-          chmod +x ./pkg/scripts/preinstall
-          chmod +x ./pkg/scripts/postinstall
-
-          # Generate a timestamp-based version for macOS installer
-          # This ensures newer packages can always upgrade older ones regardless of channel
-          timestamp=$(date +%Y%m%d%H%M%S)
-          installer_version="1.${timestamp}"
-
-          # Build the package with timestamp-based version for proper upgrade handling
-          # First create main component package
-          pkgbuild \
-            --root ./pkg/payload \
-            --scripts ./pkg/scripts \
-            --identifier "com.tempestdx.atlas" \
-            --version "$installer_version" \
-            --install-location "/" \
-            "./dist/atlas-component.pkg"
-
-          # Create empty docs package (optional choice to force customization screen)
-          mkdir -p ./pkg/docs-payload
-          pkgbuild \
-            --root ./pkg/docs-payload \
-            --identifier "com.tempestdx.atlas.docs" \
-            --version "$installer_version" \
-            --install-location "/" \
-            "./dist/atlas-docs.pkg"
-
-          # Create distribution definition file (following Apple's official documentation)
-          # Set version for XML template
-          EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
-          # Strip 'edge-' prefix for clean title display
-          EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
-          cat > ./dist/distribution.xml << EOF
-          <?xml version="1.0" encoding="utf-8"?>
-          <installer-gui-script minSpecVersion="1">
-              <title>Atlas (edge: ${EDGE_VERSION_CLEAN})</title>
-              <welcome file="welcome.html"/>
-              <license file="license.html"/>
-              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
-              <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
-              <installation-check script="pm_install_check();"/>
-              <script>
-          function pm_install_check() {
-              if(!(system.compareVersions(system.version.ProductVersion, '10.9') >= 0)) {
-                  my.result.title = 'Failure';
-                  my.result.message = 'This software requires macOS 10.9 or later.';
-                  my.result.type = 'Fatal';
-                  return false;
-              }
-              return true;
-          }
-              </script>
-              <choices-outline>
-                  <line choice="com.tempestdx.atlas"/>
-                  <line choice="com.tempestdx.atlas.docs"/>
-              </choices-outline>
-              <choice id="com.tempestdx.atlas" title="Atlas CLI" description="Core Atlas command-line tool (Required)" start_selected="true" start_enabled="true" start_visible="true">
-                  <pkg-ref id="com.tempestdx.atlas"/>
-              </choice>
-              <choice id="com.tempestdx.atlas.docs" title="Documentation" description="Install example configurations and documentation (Optional)" start_selected="false" start_enabled="true" start_visible="true">
-                  <pkg-ref id="com.tempestdx.atlas.docs"/>
-              </choice>
-              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
-              <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
-          </installer-gui-script>
-          EOF
-
-          # Create welcome HTML file (as required by Apple docs)
-          cat > ./dist/welcome.html << 'WELCOME_EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="utf-8">
-              <title>Welcome to Atlas</title>
-              <style>
-                  body { font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; margin: 20px; }
-                  h1 { color: #1a1a1a; }
-                  p { line-height: 1.5; }
-              </style>
-          </head>
-          <body>
-              <h1>Welcome to Atlas Installation</h1>
-              <p>This installer will install the Atlas CLI tool on your system.</p>
-              <p>The Atlas CLI provides comprehensive AI agent orchestration capabilities for software engineering teams.</p>
-              <p>Click Continue to proceed with the installation.</p>
-          </body>
-          </html>
-          WELCOME_EOF
-
-          # Copy EULA license file for macOS pkg installer (HTML format)
-          cp LICENSE-EULA.html ./dist/license.html
-
-          # Build final product package with custom title
-          echo "Building final pkg with productbuild..."
-          if productbuild \
-            --distribution "./dist/distribution.xml" \
-            --package-path "./dist" \
-            --resources "./dist" \
-            "./dist/${pkg_name}"; then
-            echo "productbuild succeeded"
-          else
-            echo "productbuild failed with exit code $?"
-            exit 1
-          fi
-
-          # Clean up intermediate files
-          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.xml"
-
-          # Sign the pkg if installer certificate is available
-          if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
-            echo "Signing pkg installer with Developer ID Installer certificate..."
-            # Check if keychain exists, if not create it
-            security unlock-keychain -p mypassword build.keychain || {
-              echo "Keychain not found, creating new one for pkg signing..."
-              echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 --decode > installer-certificate.p12
-              security create-keychain -p mypassword build.keychain
-              security default-keychain -s build.keychain
-              security unlock-keychain -p mypassword build.keychain
-              security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign
-              security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
-            }
-
-            # If keychain already exists, ensure installer certificate is imported
-            echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 --decode > installer-certificate.p12
-            security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign 2>/dev/null || true
-            security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain 2>/dev/null || true
-
-            # Auto-detect Developer ID Installer certificate
-            echo "Looking for Developer ID Installer certificate..."
-            INSTALLER_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
-
-            if [ -n "$INSTALLER_IDENTITY" ]; then
-              echo "Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
-
-              # Sign the pkg with installer certificate
-              if productsign --sign "$INSTALLER_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
-                mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
-                echo "pkg signed successfully with Developer ID Installer certificate"
-
-                # Notarize the pkg using existing API key setup
-                if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
-                  echo "Notarizing pkg with Apple API key..."
-
-                  # Create private key file from base64 encoded secret (same as binary notarization)
-                  echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
-
-                  # Submit pkg for notarization using API key method
-                  if xcrun notarytool submit "./dist/${pkg_name}" \
-                    --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
-                    --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
-                    --key notary_key.p8 \
-                    --wait; then
-
-                    echo "pkg notarized successfully"
-
-                    # Staple the notarization ticket
-                    if xcrun stapler staple "./dist/${pkg_name}"; then
-                      echo "Notarization ticket stapled to pkg"
-
-                      # Final verification - should now pass completely
-                      if spctl -a -v --type install "./dist/${pkg_name}"; then
-                        echo "pkg fully approved - NO GATEKEEPER WARNINGS!"
-                      else
-                        echo "pkg signature verification still failed after notarization"
-                      fi
-                    else
-                      echo "Failed to staple notarization ticket"
-                    fi
-                  else
-                    echo "pkg notarization failed - will have Gatekeeper warnings"
-                  fi
-
-                  # Clean up private key file
-                  rm -f notary_key.p8
-                else
-                  echo "Notarization skipped - missing notary API key credentials"
-                  echo "MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
-
-                  # Verify signature without notarization
-                  if spctl -a -v --type install "./dist/${pkg_name}"; then
-                    echo "pkg signature verified but not notarized"
-                  else
-                    echo "pkg signature verification failed"
-                  fi
-                fi
-              else
-                echo "pkg signing failed"
-              fi
-            else
-              echo "No Developer ID Installer certificate found in keychain"
-              echo "Make sure MACOS_INSTALLER_P12 contains the correct Developer ID Installer certificate"
-              echo "pkg will be unsigned - users will need to right-click → Open to install"
-            fi
-          elif [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
-            echo "Only Developer ID Application certificate available (MACOS_SIGN_P12)"
-            echo "MACOS_INSTALLER_P12 secret is required for pkg signing"
-            echo "pkg will be unsigned - users will need to right-click → Open to install"
-          else
-            echo "No signing certificates available"
-            echo "Add MACOS_INSTALLER_P12 and MACOS_INSTALLER_PASSWORD secrets for pkg signing"
-            echo "pkg will be unsigned - users will need to right-click → Open to install"
-          fi
-
-          # Generate checksum for pkg
-          shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
-
-          echo "Created macOS pkg: ${pkg_name} (installer version: $installer_version)"
-        shell: bash
-
-      - name: Create Windows MSI installer
-        if: matrix.os == 'windows'
-        run: |
-          $msi_name = "atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}.msi"
-
-          # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
-          Write-Host "Installing WiX Toolset..."
-          choco install wixtoolset -y
-
-          # Add WiX to PATH for this session
-          $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
-
-          # Convert HTML EULA to RTF for Windows MSI installer (WiX requires RTF)
-          # Simple conversion: strip HTML tags and convert to basic RTF format
-          $htmlContent = Get-Content "LICENSE-EULA.html" -Raw
-
-          # Strip HTML tags and convert to plain text
-          $textContent = $htmlContent -replace '<[^>]+>', '' -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>'
-          $textContent = $textContent -replace '\s+', ' ' -replace '^\s+|\s+$', ''
-
-          # Create RTF with system font
-          $rtfHeader = "{\rtf1\ansi\deff0 {\fonttbl {\f0 \fswiss Arial;}}\f0\fs20"
-          $rtfFooter = "}"
-          $rtfText = $textContent -replace '\n', '\par ' -replace '\r', ''
-
-          $rtfContent = $rtfHeader + $rtfText + $rtfFooter
-          $rtfContent | Out-File -FilePath "license.rtf" -Encoding UTF8
-
-          # Get edge version and extract clean version for installer title
-          $version = "${{ needs.check-changes.outputs.version }}"
-          $clean_version = $version -replace "^edge-", ""
-
-          # Create WiX source file with EULA license agreement (WiX v3 syntax)
-          @"
-          <?xml version="1.0" encoding="UTF-8"?>
-          <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="Atlas (edge: $clean_version)" Language="1033" Version="1.0.0"
-                     Manufacturer="Tempest Labs, Inc." UpgradeCode="{12345678-1234-1234-1234-123456789012}">
-              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
-                       Description="Atlas CLI - AI Agent Orchestration Platform"
-                       Comments="Atlas enables seamless human/AI collaboration through specialized, autonomous agents." />
-
-              <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
-              <MediaTemplate EmbedCab="yes" />
-
-              <!-- License Agreement -->
-              <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
-
-              <!-- UI Configuration -->
-              <UIRef Id="WixUI_Minimal" />
-              <UIRef Id="WixUI_ErrorProgressText" />
-
-              <Feature Id="ProductFeature" Title="Atlas CLI" Level="1">
-                <ComponentGroupRef Id="ProductComponents" />
-              </Feature>
-
-              <Directory Id="TARGETDIR" Name="SourceDir">
-                <Directory Id="ProgramFilesFolder">
-                  <Directory Id="INSTALLFOLDER" Name="Atlas" />
-                </Directory>
-                <Directory Id="ProgramMenuFolder">
-                  <Directory Id="ApplicationProgramsFolder" Name="Atlas" />
-                </Directory>
-              </Directory>
-
-              <ComponentGroup Id="ProductComponents">
-                <Component Id="AtlasExecutable" Directory="INSTALLFOLDER" Guid="{87654321-4321-4321-4321-210987654321}">
-                  <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
-                  <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="last" Action="set" System="yes" />
-                </Component>
-                <!-- Program Menu Shortcut -->
-                <Component Id="ProgramMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{11111111-2222-3333-4444-555555555555}">
-                  <Shortcut Id="AtlasShortcut" Name="Atlas CLI" Description="Atlas AI Agent Orchestration Platform"
-                           Target="[INSTALLFOLDER]atlas.exe" WorkingDirectory="INSTALLFOLDER" />
-                  <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
-                  <RegistryValue Root="HKCU" Key="Software\Tempest Labs\Atlas" Name="installed" Type="integer" Value="1" KeyPath="yes" />
-                </Component>
-              </ComponentGroup>
-            </Product>
-          </Wix>
-          "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
-
-          # Build MSI using WiX v3 tools
-          Write-Host "Building MSI installer with EULA license agreement..."
-          candle.exe atlas.wxs
-          light.exe -ext WixUIExtension -out "dist\$msi_name" atlas.wixobj
-
-          # Generate checksum for MSI
-          $hash = Get-FileHash "dist\$msi_name" -Algorithm SHA256
-          "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath "dist\$msi_name.sha256" -Encoding ASCII
-
-          Write-Host "Created Windows MSI with EULA: $msi_name"
-        shell: pwsh
+      - name: Create installers
+        uses: ./.github/actions/create-installers
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+          channel: edge
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -728,221 +156,59 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
+          path: ./dist/
           merge-multiple: true
+
+      - name: Generate changelog
+        run: |
+          echo "## Edge Build ${{ needs.check-changes.outputs.version }}" > changelog.md
+          echo "" >> changelog.md
+          echo "This is an automated edge build from the latest changes on the main branch." >> changelog.md
+          echo "" >> changelog.md
+          echo "### Recent Changes" >> changelog.md
+          git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
+          echo "" >> changelog.md
+          echo "" >> changelog.md
+          echo "**Warning:** Edge builds are experimental and may contain unstable features." >> changelog.md
 
       - name: Create checksums file
         run: |
+          cd ./dist
           cat *.sha256 > checksums.txt
-          echo "Generated checksums:"
-          cat checksums.txt
 
-      - name: Create release
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-changes.outputs.version }}
+          name: "Atlas (edge: ${{ needs.check-changes.outputs.version }})"
+          body_path: changelog.md
+          draft: false
+          prerelease: true
+          make_latest: false
+          files: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
+            ./dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
 
-          # Create release with only existing files
-          release_files=""
-          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
-            release_files="$release_files atlas_*.tar.gz"
-          fi
-          if ls atlas_*.zip 1> /dev/null 2>&1; then
-            release_files="$release_files atlas_*.zip"
-          fi
-          if ls atlas_*.pkg 1> /dev/null 2>&1; then
-            release_files="$release_files atlas_*.pkg"
-          fi
-          if ls atlas_*.msi 1> /dev/null 2>&1; then
-            release_files="$release_files atlas_*.msi"
-          fi
-
-          gh release create "$VERSION" \
-            --title "Atlas Edge $VERSION" \
-            --notes "Edge release - bleeding edge build from commit $(git rev-parse --short HEAD)
-
-          **Warning**: This is an edge release built from the latest commit. Use with caution.
-
-          **Installation via Homebrew:**
-          \`\`\`bash
-          HOMEBREW_GITHUB_API_TOKEN=\$(gh auth token) brew install tempest-atlas-edge
-          \`\`\`
-
-          **Direct download:** Download the appropriate binary for your platform below.
-
-          **Changes:** See commit history for latest changes.
-          " \
-            --prerelease \
-            $release_files \
-            checksums.txt
-
-      - name: Update Homebrew tap
-        env:
-          GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
-
-          # Trigger homebrew tap update for edge channel via repository dispatch
-          curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/tempestteam/homebrew-tap/dispatches" \
-            -d "{\"event_type\":\"atlas-release\",\"client_payload\":{\"tag\":\"$VERSION\",\"channel\":\"edge\"}}"
-
-  upload-sandbox:
+  upload-gcs:
     needs: [check-changes, build]
     runs-on: ubuntu-latest
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Upload to GCS buckets
+        uses: ./.github/actions/gcs-upload
         with:
-          merge-multiple: true
-
-      - name: Create checksums file
-        run: |
-          cat *.sha256 > checksums.txt
-          echo "Generated checksums:"
-          cat checksums.txt
-
-      - name: Authenticate to Google Cloud (Sandbox)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: "projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github"
-          service_account: "atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Upload artifacts to sandbox GCS
-        run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
-
-          # Upload all artifacts to sandbox bucket with edge/ prefix (flat structure)
-          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/edge/
-          fi
-          if ls atlas_*.zip 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/edge/
-          fi
-          if ls atlas_*.pkg 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.pkg gs://tempest-sandbox-atlas-binaries/edge/
-          fi
-          if ls atlas_*.msi 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/edge/
-          fi
-          gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/edge/checksums-${VERSION}.txt
-
-          echo "Uploaded edge artifacts to sandbox GCS bucket"
-
-  upload-production:
-    needs: [check-changes, build]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          merge-multiple: true
-
-      - name: Create checksums file
-        run: |
-          cat *.sha256 > checksums.txt
-          echo "Generated checksums:"
-          cat checksums.txt
-
-      - name: Authenticate to Google Cloud (Production)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: "projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github"
-          service_account: "atlas-github-ci@tempest-production.iam.gserviceaccount.com"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Upload artifacts to production GCS
-        run: |
-          VERSION="${{ needs.check-changes.outputs.version }}"
-
-          # Upload all artifacts to production bucket with edge/ prefix (flat structure)
-          if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/edge/
-          fi
-          if ls atlas_*.zip 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/edge/
-          fi
-          if ls atlas_*.pkg 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.pkg gs://tempest-production-atlas-binaries/edge/
-          fi
-          if ls atlas_*.msi 1> /dev/null 2>&1; then
-            gsutil -m cp atlas_*.msi gs://tempest-production-atlas-binaries/edge/
-          fi
-          gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/edge/checksums-${VERSION}.txt
-
-          echo "Uploaded edge artifacts to production GCS bucket"
-
-  cleanup-sandbox:
-    needs: [check-changes, upload-sandbox]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Authenticate to Google Cloud (Sandbox)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: "projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github"
-          service_account: "atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Cleanup old edge artifacts (sandbox)
-        run: |
-          # Cleanup: Keep only last 7 edge versions
-          echo "Cleaning up old edge versions in sandbox (keeping last 7)..."
-          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/atlas_edge-*.tar.gz | \
-            sort -r | \
-            tail -n +29 | \
-            head -20 | \
-            xargs -r gsutil -m rm || echo "No old edge artifacts to clean"
-
-          # Also cleanup old checksums
-          gsutil ls gs://tempest-sandbox-atlas-binaries/edge/checksums-edge-*.txt | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old edge checksums to clean"
-
-          echo "Sandbox edge cleanup completed"
-
-  cleanup-production:
-    needs: [check-changes, upload-production]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Authenticate to Google Cloud (Production)
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: "projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github"
-          service_account: "atlas-github-ci@tempest-production.iam.gserviceaccount.com"
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Cleanup old edge artifacts (production)
-        run: |
-          # Cleanup: Keep only last 7 edge versions
-          echo "Cleaning up old edge versions in production (keeping last 7)..."
-          gsutil ls gs://tempest-production-atlas-binaries/edge/atlas_edge-*.tar.gz | \
-            sort -r | \
-            tail -n +29 | \
-            head -20 | \
-            xargs -r gsutil -m rm || echo "No old edge artifacts to clean"
-
-          # Also cleanup old checksums
-          gsutil ls gs://tempest-production-atlas-binaries/edge/checksums-edge-*.txt | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old edge checksums to clean"
-
-          echo "Production edge cleanup completed"
+          bucket-prefix: "edge/"
+          project-id-sandbox: ${{ secrets.GCP_PROJECT_ID_SANDBOX }}
+          project-id-production: ${{ secrets.GCP_PROJECT_ID_PRODUCTION }}
+          service-account-sandbox: ${{ secrets.GCP_SERVICE_ACCOUNT_SANDBOX }}
+          service-account-production: ${{ secrets.GCP_SERVICE_ACCOUNT_PRODUCTION }}
