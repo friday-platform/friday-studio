@@ -192,30 +192,6 @@ jobs:
           fi
         shell: bash
 
-      - name: Strip binary symbols (if available)
-        run: |
-          if [ "${{ matrix.platform }}" == "windows" ]; then
-            binary_name="atlas.exe"
-          else
-            binary_name="atlas"
-          fi
-          
-          echo "Looking for binary: ./dist/${binary_name}"
-          ls -la ./dist/
-          
-          if [ -f "./dist/${binary_name}" ]; then
-            if command -v strip >/dev/null 2>&1; then
-              echo "Stripping symbols from ${binary_name}"
-              strip "./dist/${binary_name}"
-              echo "Strip completed successfully"
-            else
-              echo "Strip command not available on this platform"
-            fi
-          else
-            echo "ERROR: Binary ./dist/${binary_name} not found!"
-            exit 1
-          fi
-
       - name: Test binary immediately after compilation
         run: |
           binary_name="atlas"
