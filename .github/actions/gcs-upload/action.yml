@@ -6,17 +6,8 @@ inputs:
     description: 'Prefix for the bucket path (e.g., edge/, nightly/, or empty for release)'
     required: false
     default: ''
-  project-id-sandbox:
-    description: 'Google Cloud project ID for sandbox environment'
-    required: true
-  project-id-production:
-    description: 'Google Cloud project ID for production environment'
-    required: true
-  service-account-sandbox:
-    description: 'Service account key for sandbox environment'
-    required: true
-  service-account-production:
-    description: 'Service account key for production environment'
+  version:
+    description: 'Version string for the artifacts'
     required: true
 
 runs:
@@ -28,93 +19,78 @@ runs:
         path: ./artifacts/
         merge-multiple: true
 
-    - name: Setup Google Cloud SDK
+    - name: Create checksums file
+      shell: bash
+      run: |
+        cd ./artifacts
+        cat *.sha256 > checksums.txt
+        echo "Generated checksums:"
+        cat checksums.txt
+
+    - name: Authenticate to Google Cloud (Sandbox)
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github
+        service_account: atlas-github-ci@tempest-sandbox.iam.gserviceaccount.com
+        create_credentials_file: true
+        export_environment_variables: true
+
+    - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
-    - name: Upload to sandbox bucket
+    - name: Upload artifacts to sandbox GCS
       shell: bash
       run: |
-        # Authenticate with sandbox service account
-        echo '${{ inputs.service-account-sandbox }}' > /tmp/sandbox-key.json
-        gcloud auth activate-service-account --key-file=/tmp/sandbox-key.json
-        gcloud config set project ${{ inputs.project-id-sandbox }}
-
-        # Upload artifacts to sandbox bucket
-        echo "Uploading to sandbox bucket with prefix: ${{ inputs.bucket-prefix }}"
-        if [ -n "${{ inputs.bucket-prefix }}" ]; then
-          gsutil -m cp -r ./artifacts/* gs://atlas-sandbox-releases/${{ inputs.bucket-prefix }}
-        else
-          gsutil -m cp -r ./artifacts/* gs://atlas-sandbox-releases/
+        VERSION="${{ inputs.version }}"
+        cd ./artifacts
+        
+        # Upload all artifacts to sandbox bucket with version prefix (flat structure)
+        if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.tar.gz gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
+        if ls atlas_*.zip 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.zip gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.pkg 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.pkg gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.msi 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${VERSION}.txt
+        
+        echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to sandbox GCS bucket"
 
-        # Clean up credentials
-        rm -f /tmp/sandbox-key.json
+    - name: Authenticate to Google Cloud (Production)
+      uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github
+        service_account: atlas-github-ci@tempest-production.iam.gserviceaccount.com
+        create_credentials_file: true
+        export_environment_variables: true
 
-    - name: Upload to production bucket
+    - name: Set up Cloud SDK (Production)
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Upload artifacts to production GCS
       shell: bash
       run: |
-        # Authenticate with production service account
-        echo '${{ inputs.service-account-production }}' > /tmp/production-key.json
-        gcloud auth activate-service-account --key-file=/tmp/production-key.json
-        gcloud config set project ${{ inputs.project-id-production }}
-
-        # Upload artifacts to production bucket
-        echo "Uploading to production bucket with prefix: ${{ inputs.bucket-prefix }}"
-        if [ -n "${{ inputs.bucket-prefix }}" ]; then
-          gsutil -m cp -r ./artifacts/* gs://atlas-releases/${{ inputs.bucket-prefix }}
-        else
-          gsutil -m cp -r ./artifacts/* gs://atlas-releases/
+        VERSION="${{ inputs.version }}"
+        cd ./artifacts
+        
+        # Upload all artifacts to production bucket with version prefix (flat structure)
+        if ls atlas_*.tar.gz 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.tar.gz gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
-
-        # Clean up credentials
-        rm -f /tmp/production-key.json
-
-    - name: Cleanup old artifacts (sandbox)
-      shell: bash
-      run: |
-        # Authenticate with sandbox service account
-        echo '${{ inputs.service-account-sandbox }}' > /tmp/sandbox-key.json
-        gcloud auth activate-service-account --key-file=/tmp/sandbox-key.json
-        gcloud config set project ${{ inputs.project-id-sandbox }}
-
-        # Keep only the latest 10 builds for edge/nightly channels
-        if [ "${{ inputs.bucket-prefix }}" == "edge/" ] || [ "${{ inputs.bucket-prefix }}" == "nightly/" ]; then
-          echo "Cleaning up old ${{ inputs.bucket-prefix }} artifacts in sandbox..."
-          
-          # List all directories in the bucket prefix, sort by creation time, keep only the latest 10
-          gsutil ls -d gs://atlas-sandbox-releases/${{ inputs.bucket-prefix }}*/ | \
-            sort -r | \
-            tail -n +11 | \
-            while read dir; do
-              echo "Removing old artifact directory: $dir"
-              gsutil -m rm -r "$dir" || true
-            done
+        if ls atlas_*.zip 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.zip gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
-
-        # Clean up credentials
-        rm -f /tmp/sandbox-key.json
-
-    - name: Cleanup old artifacts (production)
-      shell: bash
-      run: |
-        # Authenticate with production service account
-        echo '${{ inputs.service-account-production }}' > /tmp/production-key.json
-        gcloud auth activate-service-account --key-file=/tmp/production-key.json
-        gcloud config set project ${{ inputs.project-id-production }}
-
-        # Keep only the latest 10 builds for edge/nightly channels
-        if [ "${{ inputs.bucket-prefix }}" == "edge/" ] || [ "${{ inputs.bucket-prefix }}" == "nightly/" ]; then
-          echo "Cleaning up old ${{ inputs.bucket-prefix }} artifacts in production..."
-          
-          # List all directories in the bucket prefix, sort by creation time, keep only the latest 10
-          gsutil ls -d gs://atlas-releases/${{ inputs.bucket-prefix }}*/ | \
-            sort -r | \
-            tail -n +11 | \
-            while read dir; do
-              echo "Removing old artifact directory: $dir"
-              gsutil -m rm -r "$dir" || true
-            done
+        if ls atlas_*.pkg 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.pkg gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
-
-        # Clean up credentials
-        rm -f /tmp/production-key.json
+        if ls atlas_*.msi 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.msi gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        gsutil -m cp checksums.txt gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${VERSION}.txt
+        
+        echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to production GCS bucket"

@@ -211,7 +211,4 @@ jobs:
         uses: ./.github/actions/gcs-upload
         with:
           bucket-prefix: "edge/"
-          project-id-sandbox: ${{ secrets.GCP_PROJECT_ID_SANDBOX }}
-          project-id-production: ${{ secrets.GCP_PROJECT_ID_PRODUCTION }}
-          service-account-sandbox: ${{ secrets.GCP_SERVICE_ACCOUNT_SANDBOX }}
-          service-account-production: ${{ secrets.GCP_SERVICE_ACCOUNT_PRODUCTION }}
+          version: ${{ needs.check-changes.outputs.version }}
