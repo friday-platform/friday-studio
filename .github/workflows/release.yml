@@ -375,6 +375,7 @@ jobs:
           if productbuild \
             --distribution "./dist/distribution.xml" \
             --package-path "./dist" \
+            --resources "./dist" \
             "./dist/${pkg_name}"; then
             echo "✅ productbuild succeeded"
           else
