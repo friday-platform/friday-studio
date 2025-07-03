@@ -501,22 +501,25 @@ jobs:
           echo "=== DEBUG: Creating welcome and license files ==="
 
           # Create welcome HTML file (as required by Apple docs)
+          echo "=== DEBUG: Creating welcome.html file ==="
           cat > ./dist/welcome.html << 'WELCOME_EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <meta charset="utf-8">
-              <title>Welcome</title>
-          </head>
-          <body>
-              <h1>Welcome to Tempest ATLAS Installation</h1>
-              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
-              <p>Before proceeding, please read and accept the license agreement.</p>
-          </body>
-          </html>
-          WELCOME_EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Welcome</title>
+</head>
+<body>
+    <h1>Welcome to Tempest ATLAS Installation</h1>
+    <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+    <p>Before proceeding, please read and accept the license agreement.</p>
+</body>
+</html>
+WELCOME_EOF
+          echo "=== DEBUG: Welcome file created successfully ==="
 
           # Create license HTML file (as required by Apple docs)
+          echo "=== DEBUG: Creating license.html file ==="
           cat > ./dist/license.html << 'LICENSE_EOF'
           <!DOCTYPE html>
           <html>
@@ -566,8 +569,10 @@ jobs:
           </body>
           </html>
           LICENSE_EOF
+          echo "=== DEBUG: License HTML file created successfully ==="
 
           # Also create old text files for backward compatibility
+          echo "=== DEBUG: Creating license.txt file ==="
           cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
           The Backyard Raccoon License (BRL) v1.0
 
@@ -607,6 +612,8 @@ jobs:
           By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
 
           LICENSE_EOF
+          echo "=== DEBUG: License TXT file created successfully ==="
+          echo "=== DEBUG: All license files created, proceeding to productbuild ==="
 
           # Build final product package with custom title
           echo "=== DEBUG: About to run productbuild ==="
