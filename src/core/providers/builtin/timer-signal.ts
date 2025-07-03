@@ -158,7 +158,7 @@ export class TimerSignalProvider implements IProvider {
     this.state.status = ProviderStatus.DISABLED;
 
     // Clear any active timer
-    if (this.cronInterval) {
+    if (this.cronInterval !== undefined) {
       clearTimeout(this.cronInterval);
       this.cronInterval = undefined;
     }
@@ -168,6 +168,9 @@ export class TimerSignalProvider implements IProvider {
 
     // Clear callback to prevent further executions
     this.signalCallback = undefined;
+
+    // Clear any error state
+    this.state.error = undefined;
 
     // Persist state before shutdown in background
     this.persistState().catch((error) => {
@@ -251,6 +254,11 @@ export class TimerSignalProvider implements IProvider {
    * Schedule the next execution based on cron expression
    */
   private async scheduleNext(): Promise<void> {
+    // Don't schedule if already disabled
+    if (this.state.status === ProviderStatus.DISABLED) {
+      return;
+    }
+
     try {
       const timezone = this.config.timezone || "UTC";
       const cronExpression = cronParser.parseExpression(this.config.schedule, {
@@ -270,8 +278,14 @@ export class TimerSignalProvider implements IProvider {
       });
 
       // Clear any existing timer
-      if (this.cronInterval) {
+      if (this.cronInterval !== undefined) {
         clearTimeout(this.cronInterval);
+        this.cronInterval = undefined;
+      }
+
+      // Don't schedule if disabled during the process
+      if (this.state.status === ProviderStatus.DISABLED) {
+        return;
       }
 
       // Schedule the next execution
@@ -290,8 +304,10 @@ export class TimerSignalProvider implements IProvider {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      this.state.status = ProviderStatus.ERROR;
-      this.state.error = error instanceof Error ? error.message : String(error);
+      if (this.state.status !== ProviderStatus.DISABLED) {
+        this.state.status = ProviderStatus.ERROR;
+        this.state.error = error instanceof Error ? error.message : String(error);
+      }
     }
   }
 

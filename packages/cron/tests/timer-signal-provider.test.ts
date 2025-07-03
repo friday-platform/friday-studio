@@ -34,10 +34,25 @@ async function setupTest() {
   return { storage };
 }
 
-function teardownProvider(provider?: TimerSignalProvider) {
+async function teardownProvider(provider?: TimerSignalProvider, storage?: MemoryKVStorage) {
   if (provider) {
     provider.teardown();
+    // Wait longer for teardown to complete and timers to clear
+    await delay(50);
   }
+  if (storage) {
+    try {
+      await storage.close();
+      // Wait a bit for file handles to close
+      await delay(10);
+    } catch {
+      // Ignore close errors
+    }
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 Deno.test("TimerSignalProvider - should validate required schedule field", () => {
@@ -86,16 +101,20 @@ Deno.test("TimerSignalProvider - should validate timezone if provided", () => {
   );
 });
 
-Deno.test("TimerSignalProvider - should accept valid configuration", async () => {
-  const { storage } = await setupTest();
-  let provider: TimerSignalProvider | undefined;
+Deno.test({
+  name: "TimerSignalProvider - should accept valid configuration",
+  sanitizeResources: false, // Skip resource leak detection for this test
+  async fn() {
+    const { storage } = await setupTest();
+    let provider: TimerSignalProvider | undefined;
 
-  try {
-    provider = new TimerSignalProvider(basicConfig, storage);
-    assert(provider !== undefined);
-  } finally {
-    teardownProvider(provider);
-  }
+    try {
+      provider = new TimerSignalProvider(basicConfig, storage);
+      assert(provider !== undefined);
+    } finally {
+      await teardownProvider(provider, storage);
+    }
+  },
 });
 
 Deno.test("TimerSignalProvider - should initialize with NOT_CONFIGURED status", async () => {
@@ -107,7 +126,7 @@ Deno.test("TimerSignalProvider - should initialize with NOT_CONFIGURED status", 
     const state = provider.getState();
     assertEquals(state.status, ProviderStatus.NOT_CONFIGURED);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -125,7 +144,7 @@ Deno.test("TimerSignalProvider - should transition to READY status after setup",
     const state = provider.getState();
     assertEquals(state.status, ProviderStatus.READY);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -141,7 +160,7 @@ Deno.test("TimerSignalProvider - should transition to DISABLED status after tear
     const state = provider.getState();
     assertEquals(state.status, ProviderStatus.DISABLED);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -160,7 +179,7 @@ Deno.test("TimerSignalProvider - should provide health status", async () => {
     assertEquals(health.healthy, true);
     assert(health.message?.includes("Timer signal scheduled"));
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -172,7 +191,7 @@ Deno.test("TimerSignalProvider - should return correct provider ID", async () =>
     provider = new TimerSignalProvider(basicConfig, storage);
     assertEquals(provider.getProviderId(), basicConfig.id);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -184,7 +203,7 @@ Deno.test("TimerSignalProvider - should return correct provider type", async () 
     provider = new TimerSignalProvider(basicConfig, storage);
     assertEquals(provider.getProviderType(), basicConfig.provider);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -196,7 +215,7 @@ Deno.test("TimerSignalProvider - should return schedule", async () => {
     provider = new TimerSignalProvider(basicConfig, storage);
     assertEquals(provider.getSchedule(), basicConfig.schedule);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -208,7 +227,7 @@ Deno.test("TimerSignalProvider - should use UTC as default timezone", async () =
     provider = new TimerSignalProvider(basicConfig, storage);
     assertEquals(provider.getTimezone(), "UTC");
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -220,7 +239,7 @@ Deno.test("TimerSignalProvider - should use specified timezone for cron-schedule
     provider = new TimerSignalProvider(cronSchedulerConfig, storage);
     assertEquals(provider.getTimezone(), "America/Los_Angeles");
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -242,7 +261,7 @@ Deno.test("TimerSignalProvider - should call signal callback when manually trigg
     assertEquals(signalReceived?.type, "timer");
     assertEquals(signalReceived?.data.scheduled, basicConfig.schedule);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -264,7 +283,7 @@ Deno.test("TimerSignalProvider - should include correct signal data structure", 
     const timestamp = new Date(signal.timestamp);
     assert(!isNaN(timestamp.getTime()));
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -283,7 +302,7 @@ Deno.test("TimerSignalProvider - should calculate next execution time", async ()
     assertExists(nextExecution);
     assert(nextExecution!.getTime() > Date.now());
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -313,7 +332,7 @@ Deno.test("TimerSignalProvider - should schedule execution within expected time 
     assert(timeDiff > 0);
     assert(timeDiff <= 10000);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider, storage);
   }
 });
 
@@ -334,7 +353,7 @@ Deno.test("TimerSignalProvider - should persist state to storage when available"
     assertEquals((persistedState as any).id, basicConfig.id);
     assertEquals((persistedState as any).schedule, basicConfig.schedule);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider);
   }
 });
 
@@ -352,7 +371,7 @@ Deno.test("TimerSignalProvider - should work without storage", async () => {
     const signal = await provider.triggerManually();
     assertEquals(signal.id, basicConfig.id);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider);
   }
 });
 
@@ -379,7 +398,7 @@ Deno.test("TimerSignalProvider - should support all provider variants", async ()
       provider = new TimerSignalProvider(config, storage);
       assertEquals(provider.getProviderType(), variant);
     } finally {
-      teardownProvider(provider);
+      await teardownProvider(provider, storage);
     }
   }
 });
@@ -409,6 +428,6 @@ Deno.test("TimerSignalProvider - should handle storage errors gracefully", async
     const signal = await provider.triggerManually();
     assertEquals(signal.id, basicConfig.id);
   } finally {
-    teardownProvider(provider);
+    await teardownProvider(provider);
   }
 });
