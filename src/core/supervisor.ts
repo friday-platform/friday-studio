@@ -1129,6 +1129,7 @@ Provide a structured analysis.`;
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,
         jobSpec: selectedJob, // Include job specification for SessionSupervisor
+        workspaceTools: this.config?.workspaceTools, // Pass workspace tools configuration
         additionalContext: {
           workspaceId: this.workspace?.id,
           sessionIntent: intent,

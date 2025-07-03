@@ -984,7 +984,13 @@ const workspaceRuntimeMachine = setup({
           ...(context.config?.supervisor || {}),
           // Pass only serializable parts of the merged configuration
           workspaceSignals: mergedConfig.workspace.signals,
-          workspaceTools: mergedConfig.workspace.tools,
+          workspaceTools: mergedConfig.workspace.tools?.mcp?.servers
+            ? {
+              mcp: {
+                servers: mergedConfig.workspace.tools.mcp.servers,
+              },
+            }
+            : undefined,
           jobs: mergedConfig.jobs,
           supervisorDefaults: mergedConfig.supervisorDefaults, // Pass supervisor defaults to workers
           workspacePath: context.options.workspacePath, // Pass workspace path for .env loading in workers

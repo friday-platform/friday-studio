@@ -555,6 +555,11 @@ You can use advanced reasoning methods to make complex decisions about agent coo
       `Initializing session ${context.sessionId} for signal ${context.signal.id}`,
     );
 
+    // Set workspace tools configuration if provided
+    if ((context as any).workspaceTools) {
+      this.setWorkspaceTools((context as any).workspaceTools);
+    }
+
     // Initialize AgentSupervisor for supervised execution using atlas.yml config
     await this.initializeAgentSupervisorFromConfig(context);
 
