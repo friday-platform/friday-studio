@@ -92,13 +92,26 @@ runs:
           "darwin")
             echo "Stripping symbols using macOS strip command..."
             if command -v strip >/dev/null 2>&1; then
-              if strip -S "$binary_path" 2>/dev/null; then
-                echo " macOS strip succeeded"
+              # Try aggressive stripping first for maximum size reduction
+              if strip -x "$binary_path" 2>/dev/null; then
+                echo "macOS aggressive strip (-x) succeeded"
               else
-                echo "WARNING:  macOS strip failed, continuing with unstripped binary"
+                echo "WARNING: Aggressive strip (-x) failed, trying fallback methods"
                 cp "${binary_path}.backup" "$binary_path"
+                if strip -u -r "$binary_path" 2>/dev/null; then
+                  echo "macOS strip (-u -r) succeeded" 
+                else
+                  echo "WARNING: Strip (-u -r) failed, trying debug-only strip"
+                  cp "${binary_path}.backup" "$binary_path"
+                  if strip -S "$binary_path" 2>/dev/null; then
+                    echo "macOS strip (-S) succeeded (fallback)"
+                  else
+                    echo "WARNING: All macOS strip attempts failed, continuing with unstripped binary"
+                    cp "${binary_path}.backup" "$binary_path"
+                  fi
+                fi
               fi
-              echo " macOS symbol stripping completed"
+              echo "macOS symbol stripping completed"
             else
               echo "ERROR: strip command not available on macOS"
               exit 1
@@ -106,18 +119,20 @@ runs:
             ;;
           "windows")
             echo "Checking Windows symbol stripping options..."
+            # Note: MSVC binaries typically have minimal strippable symbols
+            # GNU strip on MSVC binaries often shows 0% size reduction
             if command -v strip >/dev/null 2>&1; then
-              echo "Using MinGW strip for Windows binary"
+              echo "Using MinGW strip for Windows binary (limited effectiveness on MSVC builds)"
               if strip --strip-all "$binary_path" 2>/dev/null; then
-                echo " Windows strip succeeded"
+                echo "Windows strip succeeded (may show minimal size reduction)"
               else
-                echo "WARNING:  Windows strip failed, continuing with unstripped binary"
+                echo "WARNING: Windows strip failed, continuing with unstripped binary"
                 cp "${binary_path}.backup" "$binary_path"
               fi
-              echo " Windows symbol stripping completed"
+              echo "Windows symbol stripping completed"
             else
-              echo "WARNING:  No strip tool available on Windows"
-              echo "INFO:  This may be expected for MSVC builds"
+              echo "WARNING: No strip tool available on Windows"
+              echo "INFO: This may be expected for MSVC builds"
               echo "stripped-size=$original_size" >> $GITHUB_OUTPUT
               echo "size-reduction=0" >> $GITHUB_OUTPUT
               echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
