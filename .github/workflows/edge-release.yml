@@ -186,50 +186,20 @@ jobs:
             exit 0
           fi
 
-          # Get binary size before stripping (cross-platform)
-          if command -v stat >/dev/null 2>&1; then
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-              before_size=$(stat -f%z "./dist/${binary_name}")
-            else
-              before_size=$(stat -c%s "./dist/${binary_name}")
-            fi
-          else
-            before_size=$(wc -c < "./dist/${binary_name}" | tr -d ' ')
-          fi
-          echo "Binary size before stripping: $before_size bytes"
+          echo "Attempting to strip symbols from ./dist/${binary_name}"
 
           # Strip symbols to reduce binary size
           if [ "${{ matrix.os }}" == "windows" ]; then
             # Windows: Use strip if available (usually from mingw)
             if command -v strip >/dev/null 2>&1; then
-              if strip "./dist/${binary_name}" 2>/dev/null; then
-                echo "Windows strip successful"
-              else
-                echo "Windows strip failed, continuing..."
-              fi
+              strip "./dist/${binary_name}" 2>/dev/null || echo "Windows strip failed, continuing..."
             else
               echo "Strip not available on Windows, skipping symbol stripping"
             fi
           else
             # macOS/Linux: Use native strip command
             if command -v strip >/dev/null 2>&1; then
-              if strip "./dist/${binary_name}" 2>/dev/null; then
-                # Get binary size after stripping (cross-platform)
-                if command -v stat >/dev/null 2>&1; then
-                  if [[ "$OSTYPE" == "darwin"* ]]; then
-                    after_size=$(stat -f%z "./dist/${binary_name}")
-                  else
-                    after_size=$(stat -c%s "./dist/${binary_name}")
-                  fi
-                else
-                  after_size=$(wc -c < "./dist/${binary_name}" | tr -d ' ')
-                fi
-                echo "Binary stripped successfully"
-                echo "Binary size after stripping: $after_size bytes"
-                echo "Size reduction: $((before_size - after_size)) bytes"
-              else
-                echo "Strip command failed, continuing..."
-              fi
+              strip "./dist/${binary_name}" 2>/dev/null && echo "Binary stripped successfully" || echo "Strip command failed, continuing..."
             else
               echo "Strip command not found, skipping symbol stripping"
             fi
