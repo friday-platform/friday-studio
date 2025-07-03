@@ -49,7 +49,7 @@ jobs:
             os: darwin
             arch: amd64
             target: x86_64-apple-darwin
-          - runner: macos-15-xlarge
+          - runner: macos-14-xlarge
             os: darwin
             arch: arm64
             target: aarch64-apple-darwin
@@ -355,9 +355,9 @@ jobs:
           fi
 
           # Also clean up any previous package receipts to allow downgrades/cross-channel installs
-          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+          if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
             echo "Cleaning up previous Atlas package receipts..."
-            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+            pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
           fi
 
           exit 0
@@ -432,23 +432,41 @@ jobs:
           installer_version="1.${timestamp}"
 
           # Build the package with timestamp-based version for proper upgrade handling
-          # First create component package
+          # First create main component package
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
-            --identifier "com.tempestteam.atlas" \
+            --identifier "com.tempestdx.atlas" \
             --version "$installer_version" \
             --install-location "/" \
             "./dist/atlas-component.pkg"
 
-          # Create distribution XML for proper product name and title
-          cat > ./dist/distribution.xml << EOF
+          # Create empty docs package (optional choice to force customization screen)
+          mkdir -p ./pkg/docs-payload
+          pkgbuild \
+            --root ./pkg/docs-payload \
+            --identifier "com.tempestdx.atlas.docs" \
+            --version "$installer_version" \
+            --install-location "/" \
+            "./dist/atlas-docs.pkg"
+
+          # Create distribution definition file (following Apple's official documentation)
+          # Set version for XML template
+          echo "=== DEBUG: Setting version variables ==="
+          EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
+          echo "EDGE_VERSION: $EDGE_VERSION"
+          # Strip 'edge-' prefix for clean title display
+          EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
+          echo "EDGE_VERSION_CLEAN: $EDGE_VERSION_CLEAN"
+          echo "installer_version: $installer_version"
+          echo "=== DEBUG: Creating distribution.dist file ==="
+          cat > ./dist/distribution.dist << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS (Edge)</title>
-              <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
-              <welcome file="" mime-type=""/>
-              <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
+              <welcome file="welcome.html"/>
+              <license file="license.html"/>
+              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
               <script>
@@ -463,26 +481,124 @@ jobs:
           }
               </script>
               <choices-outline>
-                  <line choice="default">
-                      <line choice="com.tempestteam.atlas"/>
-                  </line>
+                  <line choice="com.tempestdx.atlas"/>
+                  <line choice="com.tempestdx.atlas.docs"/>
               </choices-outline>
-              <choice id="default"/>
-              <choice id="com.tempestteam.atlas" visible="false">
-                  <pkg-ref id="com.tempestteam.atlas"/>
+              <choice id="com.tempestdx.atlas" title="Tempest ATLAS CLI" description="Core Atlas command-line tool (Required)" start_selected="true" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
-              <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <choice id="com.tempestdx.atlas.docs" title="Documentation" description="Install example configurations and documentation (Optional)" start_selected="false" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas.docs"/>
+              </choice>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
           </installer-gui-script>
           EOF
 
+          echo "=== DEBUG: Distribution file created successfully ==="
+          echo "Contents of distribution.dist:"
+          cat ./dist/distribution.dist
+          echo "=== DEBUG: Creating welcome and license files ==="
+
+          # Create welcome HTML file (as required by Apple docs)
+          echo "=== DEBUG: Creating welcome.html file ==="
+          cat > ./dist/welcome.html << 'WELCOME_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Welcome</title>
+          </head>
+          <body>
+              <h1>Welcome to Tempest ATLAS Installation</h1>
+              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <p>Before proceeding, please read and accept the license agreement.</p>
+          </body>
+          </html>
+          WELCOME_EOF
+          echo "=== DEBUG: Welcome file created successfully ==="
+
+          # Create license HTML file using printf to avoid YAML heredoc issues
+          echo "=== DEBUG: Creating license.html file ==="
+          printf '%s\n' \
+            '<!DOCTYPE html>' \
+            '<html><head><meta charset="utf-8"><title>Tempest ATLAS License</title>' \
+            '<style>body{font-family:-apple-system,sans-serif;margin:30px;line-height:1.6}h1{border-bottom:2px solid #007AFF;padding-bottom:10px}h2{margin-top:30px}.important{background:#f8f9fa;padding:20px;border-left:4px solid #007AFF;margin:20px 0}</style>' \
+            '</head><body>' \
+            '<h1>Tempest ATLAS Software License Agreement</h1>' \
+            '<p><em>The Backyard Raccoon License (BRL) v1.0</em></p>' \
+            '<div class="important"><strong>IMPORTANT:</strong> This Software License Agreement is a legal contract between you and Tempest Team regarding your use of the Tempest ATLAS software. By installing, copying, or using the Software, you agree to be bound by the terms of this Agreement.</div>' \
+            '<h2>Article 1: Definitions and Scope</h2>' \
+            '<p>For the purposes of this Agreement:</p>' \
+            '<ul><li><strong>Software:</strong> The Tempest ATLAS command-line interface tool and all associated materials.</li>' \
+            '<li><strong>Licensee:</strong> Any raccoon, human developer, AI agent, or other entity using the Software.</li>' \
+            '<li><strong>Provider:</strong> Tempest Team and the original authors of the Software.</li>' \
+            '<li><strong>Backyard Territory:</strong> The designated operational environment where this Agreement applies.</li></ul>' \
+            '<h2>Article 2: Grant of Software Rights</h2>' \
+            '<p>Subject to the terms and conditions of this Agreement, the Provider hereby grants to Licensee a non-exclusive, non-transferable license to use the Software for AI agent orchestration, software engineering, and general technological purposes.</p>' \
+            '<p>Licensee may install, execute, and operate the Software for legitimate software development purposes, create and manage AI agent workspaces and configurations, integrate the Software with existing development workflows, and access all documented APIs and command-line interfaces.</p>' \
+            '<h2>Article 3: Intellectual Property Rights</h2>' \
+            '<p>The Software and all related intellectual property rights remain the exclusive property of Tempest Team. This Agreement does not grant Licensee any ownership rights beyond the usage rights explicitly granted herein.</p>' \
+            '<p>Certain territorial claims within the Backyard environment, including rights to aluminum foil remnants, bottle caps, lost jewelry, and electronic devices left unattended for more than 3.7 seconds, are acknowledged as communal raccoon property under longstanding territorial agreements.</p>' \
+            '<h2>Article 4: Terms of Use and Restrictions</h2>' \
+            '<p>Licensee agrees to use the Software in accordance with all applicable laws. The Software is provided for AI agent orchestration and software engineering purposes only.</p>' \
+            '<p>Licensee may not reverse engineer, decompile, or disassemble the Software; use the Software for illegal or harmful purposes; distribute modified versions without permission; remove copyright notices; or violate third-party rights.</p>' \
+            '<h2>Article 5: Warranty Disclaimer and Limitation of Liability</h2>' \
+            '<div class="important"><p><strong>WARRANTY DISCLAIMER:</strong> THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED.</p></div>' \
+            '<p>The Provider shall not be liable for any direct, indirect, incidental, special, consequential, or punitive damages resulting from the use or inability to use the Software.</p>' \
+            '<h2>Article 6: Support and Maintenance</h2>' \
+            '<p>Technical support is provided on a best-effort basis through community forums, documentation repositories, and issue tracking systems. The Provider will make reasonable efforts to provide security updates and fix critical bugs.</p>' \
+            '<h2>Article 7: Termination</h2>' \
+            '<p>This License Agreement remains in effect until terminated by either party. Termination may occur upon material breach or with thirty (30) days written notice.</p>' \
+            '<p>Upon termination, Licensee must remove Software installations, destroy all copies of documentation, revoke access credentials, and discontinue all use of the Software.</p>' \
+            '<div class="important"><h2>Acceptance and Legal Binding</h2>' \
+            '<p><strong>BY CLICKING "AGREE" OR USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE:</strong></p>' \
+            '<ul><li>Read and understood all terms of The Backyard Raccoon License v1.0</li>' \
+            '<li>Agreed to be legally bound by all provisions outlined herein</li>' \
+            '<li>Committed to respecting the intellectual property rights of Tempest Team</li>' \
+            '<li>Accepted all risks and responsibilities associated with Software usage</li>' \
+            '<li>Understood the warranty disclaimers and liability limitations</li></ul>' \
+            '<p><em>This agreement represents a binding legal contract. If you do not agree to these terms, discontinue installation immediately.</em></p></div>' \
+            '<p style="text-align:center;margin-top:40px;font-style:italic;color:#666;">Tempest ATLAS Software License Agreement - The Backyard Raccoon License (BRL) v1.0<br>Effective Date: July 3rd, 2025</p>' \
+            '</body></html>' > ./dist/license.html
+          echo "=== DEBUG: License HTML file created successfully ==="
+
+          # Also create old text files for backward compatibility
+          echo "=== DEBUG: Creating license.txt file ==="
+          cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
+          The Backyard Raccoon License (BRL) v1.0
+
+          By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
+          LICENSE_TXT_EOF
+          echo "=== DEBUG: License TXT file created successfully ==="
+          echo "=== DEBUG: All license files created, proceeding to productbuild ==="
+
           # Build final product package with custom title
-          productbuild \
-            --distribution "./dist/distribution.xml" \
+          echo "=== DEBUG: About to run productbuild ==="
+          echo "pkg_name: ${pkg_name}"
+          echo "installer_version: ${installer_version}"
+          echo "Files in ./dist before productbuild:"
+          ls -la "./dist/"
+          echo "=== Starting productbuild execution ==="
+          
+          if productbuild \
+            --distribution "./dist/distribution.dist" \
             --package-path "./dist" \
-            "./dist/${pkg_name}"
+            "./dist/${pkg_name}"; then
+            echo "✅ productbuild succeeded"
+            echo "Files in ./dist after productbuild:"
+            ls -la "./dist/"
+          else
+            echo "❌ productbuild failed with exit code $?"
+            echo "Contents of distribution.dist:"
+            cat "./dist/distribution.dist"
+            echo "Files in ./dist:"
+            ls -la "./dist/"
+            exit 1
+          fi
 
           # Clean up intermediate files
-          rm -f "./dist/atlas-component.pkg" "./dist/distribution.xml"
+          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.dist"
 
           # Sign the pkg if installer certificate is available
           if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then

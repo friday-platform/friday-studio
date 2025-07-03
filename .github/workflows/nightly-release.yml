@@ -376,9 +376,9 @@ jobs:
           fi
 
           # Also clean up any previous package receipts to allow downgrades/cross-channel installs
-          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+          if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
             echo "Cleaning up previous Atlas package receipts..."
-            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+            pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
           fi
 
           exit 0
@@ -457,18 +457,20 @@ jobs:
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
-            --identifier "com.tempestteam.atlas" \
+            --identifier "com.tempestdx.atlas" \
             --version "$installer_version" \
             --install-location "/" \
             "./dist/atlas-component.pkg"
 
           # Create distribution XML for proper product name and title
+          # Set version for XML template
+          NIGHTLY_VERSION="${{ needs.check-changes.outputs.version }}"
           cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS (Nightly)</title>
-              <background file="" mime-type="" alignment="topleft" scaling="proportional"/>
-              <welcome file="" mime-type=""/>
+              <title>Tempest ATLAS (nightly: ${NIGHTLY_VERSION#nightly-})</title>
+              <license file="license.html"/>
+              <welcome file="welcome.html"/>
               <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -484,23 +486,172 @@ jobs:
           }
               </script>
               <choices-outline>
-                  <line choice="default">
-                      <line choice="com.tempestteam.atlas"/>
-                  </line>
+                  <line choice="com.tempestdx.atlas"/>
               </choices-outline>
-              <choice id="default"/>
-              <choice id="com.tempestteam.atlas" visible="false">
-                  <pkg-ref id="com.tempestteam.atlas"/>
+              <choice id="com.tempestdx.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
-              <pkg-ref id="com.tempestteam.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="RequireRestart">atlas-component.pkg</pkg-ref>
           </installer-gui-script>
           EOF
 
+          # Create welcome HTML file (as required by Apple docs)
+          cat > ./dist/welcome.html << 'WELCOME_EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="utf-8">
+              <title>Welcome to Tempest ATLAS</title>
+              <style>
+                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; }
+                  h1 { color: #1a1a1a; }
+                  p { line-height: 1.5; }
+              </style>
+          </head>
+          <body>
+              <h1>Welcome to Tempest ATLAS Installation</h1>
+              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <p>The Atlas CLI provides comprehensive AI agent orchestration capabilities for software engineering teams.</p>
+              <p>Click Continue to proceed with the installation.</p>
+          </body>
+          </html>
+          WELCOME_EOF
+
+          # Create license HTML file (as required by Apple docs)
+          cat > ./dist/license.html << 'LICENSE_EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="utf-8">
+              <title>Tempest ATLAS License Agreement</title>
+              <style>
+                  body { 
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                      margin: 20px; 
+                      line-height: 1.6;
+                      max-width: 800px;
+                  }
+                  h1 { color: #1a1a1a; border-bottom: 2px solid #007AFF; padding-bottom: 10px; }
+                  h2 { color: #333; margin-top: 30px; }
+                  p { margin: 15px 0; }
+                  ul { margin: 15px 0; padding-left: 30px; }
+                  li { margin: 8px 0; }
+                  .important { background-color: #f8f9fa; padding: 15px; border-left: 4px solid #007AFF; margin: 20px 0; }
+                  .section { margin: 30px 0; }
+              </style>
+          </head>
+          <body>
+              <h1>The Backyard Raccoon License (BRL) v1.0</h1>
+              
+              <div class="important">
+                  <strong>IMPORTANT:</strong> Please read this license agreement carefully before installing Tempest ATLAS. 
+                  By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of this license.
+              </div>
+              
+              <div class="section">
+                  <h2>Preamble</h2>
+                  <p>In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".</p>
+                  <p>This license governs the use of Tempest ATLAS software and establishes the rights and responsibilities of all parties involved in the ongoing backyard ecosystem management.</p>
+              </div>
+              
+              <div class="section">
+                  <h2>1. Grant of Permission</h2>
+                  <p>The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:</p>
+                  <ul>
+                      <li>Enter, exit, or dramatically crash through any and all garbage bins, compost containers, or unattended coolers.</li>
+                      <li>Hold nightly council meetings under the deck, in the attic, or on top of the garden shed.</li>
+                      <li>Treat any bird feeder as a personal buffet, regardless of posted "For Birds Only" signage.</li>
+                      <li>Use reflective windows to check fur fluffiness and practice intimidating stares.</li>
+                      <li>Steal cat food "for a friend" (no questions asked about the identity of said friend).</li>
+                      <li>Conduct reconnaissance missions on neighboring properties for intelligence gathering purposes.</li>
+                      <li>Establish temporary or permanent den sites in inconvenient locations.</li>
+                  </ul>
+              </div>
+              
+              <div class="section">
+                  <h2>2. Intellectual Property Rights</h2>
+                  <p>All shiny objects discovered in the backyard are hereby declared communal raccoon property. The Provider waives all rights to question the raccoon's taste in treasure, including but not limited to:</p>
+                  <ul>
+                      <li>Bottle caps and aluminum foil remnants</li>
+                      <li>Lost jewelry and small automotive parts</li>
+                      <li>Anything that glints in moonlight or streetlights</li>
+                      <li>Electronic devices left unattended for more than 3.7 seconds</li>
+                  </ul>
+                  <p>The raccoon community retains perpetual rights to all collected items, with no statute of limitations on possession claims.</p>
+              </div>
+              
+              <div class="section">
+                  <h2>3. Code of Conduct and Best Practices</h2>
+                  <p>While Licensees are not legally required to behave, it is strongly encouraged (but not enforceable) that:</p>
+                  <ul>
+                      <li>Acrobatic trash can raids be recorded for posterity (preferably in slow-motion with dramatic music).</li>
+                      <li>No raccoon may organize a coup d'état on the neighborhood possum alliance without a 2/3 majority vote and proper documentation.</li>
+                      <li>All raccoon dance-offs must be judged fairly by at least one impartial squirrel, with appeals handled by the local crow council.</li>
+                      <li>Midnight food preparation sessions should maintain reasonable noise levels (under 85 decibels).</li>
+                      <li>Territory disputes should be resolved through rock-paper-scissors or interpretive dance competitions.</li>
+                      <li>Educational seminars on lid-removal techniques should be conducted monthly for apprentice raccoons.</li>
+                  </ul>
+              </div>
+              
+              <div class="section">
+                  <h2>4. Safety and Warranty Disclaimer</h2>
+                  <p>This License comes with absolutely no guarantees. The backyard may contain loud humans, unpredictable sprinklers, robotic lawnmowers, or worse yet, motion-activated lights. Proceed at your own risk and always maintain proper situational awareness.</p>
+                  <p>The Provider is not liable for any damages including but not limited to:</p>
+                  <ul>
+                      <li>Ego damage resulting from failed lid-removal attempts</li>
+                      <li>Embarrassment from being caught mid-raid by humans with cameras</li>
+                      <li>Temporary blindness from outdoor security lighting</li>
+                      <li>Indigestion from consuming expired human food items</li>
+                      <li>Territorial disputes arising from resource competition</li>
+                  </ul>
+              </div>
+              
+              <div class="section">
+                  <h2>5. Software Usage Terms</h2>
+                  <p>The Tempest ATLAS software is provided under this license for AI agent orchestration and software engineering purposes. Users acknowledge that:</p>
+                  <ul>
+                      <li>The software is provided "as is" without warranty of any kind</li>
+                      <li>Users are responsible for proper configuration and usage</li>
+                      <li>Support is provided on a best-effort basis by the development team</li>
+                      <li>Regular updates and security patches will be provided</li>
+                  </ul>
+              </div>
+              
+              <div class="section">
+                  <h2>6. Termination Conditions</h2>
+                  <p>This License is valid until the earlier of:</p>
+                  <ul>
+                      <li>The heat death of the universe</li>
+                      <li>The raccoons decide to start their own government and need the land for a ministerial raccoon headquarters</li>
+                      <li>The invention of truly raccoon-proof garbage can technology</li>
+                      <li>User violation of the terms and conditions outlined herein</li>
+                  </ul>
+                  <p>Upon termination, all parties must return to their original territories and surrender any accumulated shiny objects (exceptions may be made for items of significant sentimental value).</p>
+              </div>
+              
+              <div class="important">
+                  <p><strong>By clicking "Agree" or proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License v1.0, and you promise to leave out the occasional snack for our fuzzy overlords.</strong></p>
+                  <p>This agreement constitutes the entire understanding between all parties and supersedes any previous agreements, verbal understandings, or territorial treaties previously established.</p>
+              </div>
+          </body>
+          </html>
+          LICENSE_EOF
+
           # Build final product package with custom title
-          productbuild \
+          echo "Building final pkg with productbuild..."
+          if productbuild \
             --distribution "./dist/distribution.xml" \
             --package-path "./dist" \
-            "./dist/${pkg_name}"
+            "./dist/${pkg_name}"; then
+            echo "✅ productbuild succeeded"
+          else
+            echo "❌ productbuild failed with exit code $?"
+            echo "Contents of distribution.xml:"
+            cat "./dist/distribution.xml"
+            echo "Files in ./dist:"
+            ls -la "./dist/"
+            exit 1
+          fi
 
           # Clean up intermediate files
           rm -f "./dist/atlas-component.pkg" "./dist/distribution.xml"

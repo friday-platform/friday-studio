@@ -3,7 +3,7 @@
  */
 
 import { expect } from "@std/expect";
-import { AtlasApiError, AtlasClient, getAtlasClient } from "../mod.ts";
+import { AtlasApiError, AtlasClient, getAtlasClient } from "@atlas/client";
 
 // Helper to create response mocks
 function mockResponse(body: unknown, options: ResponseInit = {}): Response {
