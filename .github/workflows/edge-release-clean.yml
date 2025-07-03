@@ -1,0 +1,199 @@
+name: Edge Release (Clean)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate edge version
+        id: version
+        run: |
+          date_part=$(date -u +%Y%m%d)
+          time_part=$(date -u +%H%M%S)
+          git_sha=$(git rev-parse --short HEAD)
+          version="edge-${date_part}-${time_part}-${git_sha}"
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "Edge version: ${version}"
+
+  build:
+    needs: check-changes
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            os: linux
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-latest
+            os: linux
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+          - runner: macos-latest
+            os: darwin
+            arch: amd64
+            target: x86_64-apple-darwin
+          - runner: macos-15-xlarge
+            os: darwin
+            arch: arm64
+            target: aarch64-apple-darwin
+          - runner: windows-latest
+            os: windows
+            arch: amd64
+            target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.4.0
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Setup cross-compilation for ARM64 (Linux only)
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build binary
+        id: build
+        uses: ./.github/actions/build-binary
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+
+      - name: Sign macOS binary
+        if: matrix.os == 'darwin'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Create archive
+        run: |
+          binary_name="${{ steps.build.outputs.binary-name }}"
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            archive_ext=".zip"
+          else
+            archive_ext=".tar.gz"
+          fi
+
+          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.os }}_${{ matrix.arch }}${archive_ext}"
+
+          if [ "${{ matrix.os }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+          fi
+
+          if [ "${{ matrix.os }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+        shell: bash
+
+      - name: Create installers
+        uses: ./.github/actions/create-installers
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+          channel: edge
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
+            ./dist/atlas_*.sha256
+          retention-days: 1
+
+  release:
+    needs: [check-changes, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Generate changelog
+        run: |
+          echo "## Edge Build ${{ needs.check-changes.outputs.version }}" > changelog.md
+          echo "" >> changelog.md
+          echo "This is an automated edge build from the latest changes on the main branch." >> changelog.md
+          echo "" >> changelog.md
+          echo "### Recent Changes" >> changelog.md
+          git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
+          echo "" >> changelog.md
+          echo "" >> changelog.md
+          echo "**Warning:** Edge builds are experimental and may contain unstable features." >> changelog.md
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-changes.outputs.version }}
+          name: "Atlas (edge: ${{ needs.check-changes.outputs.version }})"
+          body_path: changelog.md
+          draft: false
+          prerelease: true
+          make_latest: false
+          files: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
+            ./dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
