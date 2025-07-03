@@ -191,7 +191,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-changes.outputs.version }}
-          name: "Atlas (edge: ${{ needs.check-changes.outputs.version }})"
+          name: "Atlas Edge (${{ needs.check-changes.outputs.version }})"
           body_path: changelog.md
           draft: false
           prerelease: true
