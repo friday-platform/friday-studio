@@ -168,15 +168,19 @@ jobs:
 
       - name: Generate changelog
         run: |
-          echo "## Edge Build ${{ needs.check-changes.outputs.version }}" > changelog.md
-          echo "" >> changelog.md
-          echo "This is an automated edge build from the latest changes on the main branch." >> changelog.md
-          echo "" >> changelog.md
-          echo "### Recent Changes" >> changelog.md
+          {
+            echo "## Edge Build ${{ needs.check-changes.outputs.version }}"
+            echo ""
+            echo "This is an automated edge build from the latest changes on the main branch."
+            echo ""
+            echo "### Recent Changes"
+          } > changelog.md
           git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
-          echo "" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Warning:** Edge builds are experimental and may contain unstable features." >> changelog.md
+          {
+            echo ""
+            echo ""
+            echo "**Warning:** Edge builds are experimental and may contain unstable features."
+          } >> changelog.md
 
       - name: Create checksums file
         run: |

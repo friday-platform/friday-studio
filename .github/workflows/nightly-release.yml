@@ -197,11 +197,13 @@ jobs:
 
       - name: Generate changelog
         run: |
-          echo "## Nightly Build ${{ needs.check-changes.outputs.version }}" > changelog.md
-          echo "" >> changelog.md
-          echo "This is an automated nightly build with the latest stable changes." >> changelog.md
-          echo "" >> changelog.md
-          echo "### Recent Changes" >> changelog.md
+          {
+            echo "## Nightly Build ${{ needs.check-changes.outputs.version }}"
+            echo ""
+            echo "This is an automated nightly build with the latest stable changes."
+            echo ""
+            echo "### Recent Changes"
+          } > changelog.md
 
           # Get the previous nightly for changelog
           previous_nightly=$(git tag -l "nightly-*" | sort -V | tail -n2 | head -n1)
@@ -211,9 +213,11 @@ jobs:
             git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
           fi
 
-          echo "" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features." >> changelog.md
+          {
+            echo ""
+            echo ""
+            echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features."
+          } >> changelog.md
 
       - name: Create checksums file
         run: |
