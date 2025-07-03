@@ -318,7 +318,7 @@ jobs:
           cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS ${RELEASE_VERSION}</title>
+              <title>Atlas ${RELEASE_VERSION}</title>
               <welcome file="welcome.html"/>
               <license file="license.html"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
@@ -338,7 +338,7 @@ jobs:
               <choices-outline>
                   <line choice="com.tempestdx.atlas"/>
               </choices-outline>
-              <choice id="com.tempestdx.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
+              <choice id="com.tempestdx.atlas" title="Atlas CLI" description="Install Atlas CLI tool" start_selected="true" start_enabled="true" start_visible="true">
                   <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
               <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
@@ -351,7 +351,7 @@ jobs:
           <html lang="en">
           <head>
               <meta charset="utf-8">
-              <title>Welcome to Tempest ATLAS</title>
+              <title>Welcome to Atlas</title>
               <style>
                   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 20px; }
                   h1 { color: #1a1a1a; }
@@ -359,8 +359,8 @@ jobs:
               </style>
           </head>
           <body>
-              <h1>Welcome to Tempest ATLAS Installation</h1>
-              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <h1>Welcome to Atlas Installation</h1>
+              <p>This installer will install the Atlas CLI tool on your system.</p>
               <p>The Atlas CLI provides comprehensive AI agent orchestration capabilities for software engineering teams.</p>
               <p>Click Continue to proceed with the installation.</p>
           </body>
@@ -373,7 +373,7 @@ jobs:
           <html lang="en">
           <head>
               <meta charset="utf-8">
-              <title>Tempest ATLAS License Agreement</title>
+              <title>Atlas License Agreement</title>
               <style>
                   body {
                       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -391,97 +391,76 @@ jobs:
               </style>
           </head>
           <body>
-              <h1>The Backyard Raccoon License (BRL) v1.0</h1>
+              <h1>End-User License Agreement (EULA) for Atlas</h1>
 
               <div class="important">
-                  <strong>IMPORTANT:</strong> Please read this license agreement carefully before installing Tempest ATLAS.
-                  By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of this license.
+                  <strong>IMPORTANT - READ CAREFULLY:</strong> This End-User License Agreement ("Agreement") is a legal agreement between you (either an individual or a single entity, hereinafter "You" or "Licensee") and Tempest Labs, Inc. ("Licensor") for the software product named Atlas, including any associated media, printed materials, and "online" or electronic documentation (collectively, the "Software").
+              </div>
+
+              <p>By installing, copying, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not install or use the Software.</p>
+
+              <div class="section">
+                  <h2>1. Definitions</h2>
+                  <p><strong>"Software"</strong> refers to the CLI tool "Atlas" and all related files and documentation provided by Tempest Labs, Inc.</p>
+                  <p><strong>"Internal Use"</strong> means the use of the Software by the Licensee's employees or authorized contractors for the Licensee's own internal business purposes. It explicitly excludes use for the benefit of any third party or for any commercial purpose.</p>
+                  <p><strong>"Commercial Use"</strong> means any use of the Software for direct or indirect financial gain, including but not limited to, embedding it in a commercial product, using it to provide paid services, or distributing it for a fee.</p>
               </div>
 
               <div class="section">
-                  <h2>Preamble</h2>
-                  <p>In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".</p>
-                  <p>This license governs the use of Tempest ATLAS software and establishes the rights and responsibilities of all parties involved in the ongoing backyard ecosystem management.</p>
+                  <h2>2. Grant of License</h2>
+                  <p>Subject to the terms and conditions of this Agreement, Tempest Labs, Inc. hereby grants you a non-exclusive, non-transferable, non-sublicensable, revocable license to install and use the Software on devices owned or controlled by you, solely for your Internal Use.</p>
               </div>
 
               <div class="section">
-                  <h2>1. Grant of Permission</h2>
-                  <p>The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:</p>
+                  <h2>3. License Restrictions</h2>
+                  <p>You may not, and shall not permit any third party to, do any of the following:</p>
                   <ul>
-                      <li>Enter, exit, or dramatically crash through any and all garbage bins, compost containers, or unattended coolers.</li>
-                      <li>Hold nightly council meetings under the deck, in the attic, or on top of the garden shed.</li>
-                      <li>Treat any bird feeder as a personal buffet, regardless of posted "For Birds Only" signage.</li>
-                      <li>Use reflective windows to check fur fluffiness and practice intimidating stares.</li>
-                      <li>Steal cat food "for a friend" (no questions asked about the identity of said friend).</li>
-                      <li>Conduct reconnaissance missions on neighboring properties for intelligence gathering purposes.</li>
-                      <li>Establish temporary or permanent den sites in inconvenient locations.</li>
+                      <li><strong>(a) Commercial Use:</strong> Use the Software for any Commercial Use.</li>
+                      <li><strong>(b) Reverse Engineering:</strong> Reverse engineer, decompile, disassemble, or otherwise attempt to discover the source code or underlying ideas or algorithms of the Software.</li>
+                      <li><strong>(c) Modification:</strong> Modify, translate, or create derivative works based on the Software.</li>
+                      <li><strong>(d) Redistribution:</strong> Sell, rent, lease, lend, redistribute, or sublicense the Software to any third party.</li>
+                      <li><strong>(e) Proprietary Notices:</strong> Remove, alter, or obscure any proprietary notices (including copyright and trademark notices) of Tempest Labs, Inc. or its suppliers on the Software.</li>
+                      <li><strong>(f) Competitive Use:</strong> Use the Software to develop a competing product or service.</li>
                   </ul>
               </div>
 
               <div class="section">
-                  <h2>2. Intellectual Property Rights</h2>
-                  <p>All shiny objects discovered in the backyard are hereby declared communal raccoon property. The Provider waives all rights to question the raccoon's taste in treasure, including but not limited to:</p>
-                  <ul>
-                      <li>Bottle caps and aluminum foil remnants</li>
-                      <li>Lost jewelry and small automotive parts</li>
-                      <li>Anything that glints in moonlight or streetlights</li>
-                      <li>Electronic devices left unattended for more than 3.7 seconds</li>
-                  </ul>
-                  <p>The raccoon community retains perpetual rights to all collected items, with no statute of limitations on possession claims.</p>
+                  <h2>4. Intellectual Property Ownership</h2>
+                  <p>The Software is licensed, not sold. Tempest Labs, Inc. and its licensors retain all right, title, and interest in and to the Software, including all copyrights, patents, trade secrets, trademarks, and other intellectual property rights. No rights are granted to you hereunder other than as expressly set forth herein.</p>
               </div>
 
               <div class="section">
-                  <h2>3. Code of Conduct and Best Practices</h2>
-                  <p>While Licensees are not legally required to behave, it is strongly encouraged (but not enforceable) that:</p>
-                  <ul>
-                      <li>Acrobatic trash can raids be recorded for posterity (preferably in slow-motion with dramatic music).</li>
-                      <li>No raccoon may organize a coup d'état on the neighborhood possum alliance without a 2/3 majority vote and proper documentation.</li>
-                      <li>All raccoon dance-offs must be judged fairly by at least one impartial squirrel, with appeals handled by the local crow council.</li>
-                      <li>Midnight food preparation sessions should maintain reasonable noise levels (under 85 decibels).</li>
-                      <li>Territory disputes should be resolved through rock-paper-scissors or interpretive dance competitions.</li>
-                      <li>Educational seminars on lid-removal techniques should be conducted monthly for apprentice raccoons.</li>
-                  </ul>
+                  <h2>5. Termination</h2>
+                  <p>This Agreement is effective until terminated. Your rights under this license will terminate automatically without notice from Tempest Labs, Inc. if you fail to comply with any term(s) of this Agreement. Upon termination, you shall cease all use of the Software and destroy all copies, full or partial, of the Software in your possession or control.</p>
               </div>
 
               <div class="section">
-                  <h2>4. Safety and Warranty Disclaimer</h2>
-                  <p>This License comes with absolutely no guarantees. The backyard may contain loud humans, unpredictable sprinklers, robotic lawnmowers, or worse yet, motion-activated lights. Proceed at your own risk and always maintain proper situational awareness.</p>
-                  <p>The Provider is not liable for any damages including but not limited to:</p>
-                  <ul>
-                      <li>Ego damage resulting from failed lid-removal attempts</li>
-                      <li>Embarrassment from being caught mid-raid by humans with cameras</li>
-                      <li>Temporary blindness from outdoor security lighting</li>
-                      <li>Indigestion from consuming expired human food items</li>
-                      <li>Territorial disputes arising from resource competition</li>
-                  </ul>
+                  <h2>6. Disclaimer of Warranties</h2>
+                  <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. TEMPEST LABS, INC. HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS WITH RESPECT TO THE SOFTWARE, EITHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES AND/OR CONDITIONS OF MERCHANTABILITY, OF SATISFACTORY QUALITY, OF FITNESS FOR A PARTICULAR PURPOSE, OF ACCURACY, AND OF NON-INFRINGEMENT OF THIRD-PARTY RIGHTS.</p>
               </div>
 
               <div class="section">
-                  <h2>5. Software Usage Terms</h2>
-                  <p>The Tempest ATLAS software is provided under this license for AI agent orchestration and software engineering purposes. Users acknowledge that:</p>
-                  <ul>
-                      <li>The software is provided "as is" without warranty of any kind</li>
-                      <li>Users are responsible for proper configuration and usage</li>
-                      <li>Support is provided on a best-effort basis by the development team</li>
-                      <li>Regular updates and security patches will be provided</li>
-                  </ul>
+                  <h2>7. Limitation of Liability</h2>
+                  <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL TEMPEST LABS, INC. BE LIABLE FOR ANY INCIDENTAL, SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER, INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF PROFITS, LOSS OF DATA, BUSINESS INTERRUPTION, OR ANY OTHER COMMERCIAL DAMAGES OR LOSSES, ARISING OUT OF OR RELATED TO YOUR USE OR INABILITY TO USE THE SOFTWARE, HOWEVER CAUSED, REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, OR OTHERWISE) AND EVEN IF TEMPEST LABS, INC. HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.</p>
               </div>
 
               <div class="section">
-                  <h2>6. Termination Conditions</h2>
-                  <p>This License is valid until the earlier of:</p>
-                  <ul>
-                      <li>The heat death of the universe</li>
-                      <li>The raccoons decide to start their own government and need the land for a ministerial raccoon headquarters</li>
-                      <li>The invention of truly raccoon-proof garbage can technology</li>
-                      <li>User violation of the terms and conditions outlined herein</li>
-                  </ul>
-                  <p>Upon termination, all parties must return to their original territories and surrender any accumulated shiny objects (exceptions may be made for items of significant sentimental value).</p>
+                  <h2>8. Governing Law and Jurisdiction</h2>
+                  <p>This Agreement will be governed by and construed in accordance with the laws of the State of Delaware, without regard to its conflict of law principles. Any legal action or proceeding arising under this Agreement will be brought exclusively in the federal or state courts located in Wilmington, Delaware, and the parties hereby irrevocably consent to the personal jurisdiction and venue therein.</p>
+              </div>
+
+              <div class="section">
+                  <h2>9. Entire Agreement</h2>
+                  <p>This Agreement constitutes the entire agreement between you and Tempest Labs, Inc. regarding the use of the Software and supersedes all prior or contemporaneous understandings, communications, or agreements, whether oral or written.</p>
+              </div>
+
+              <div class="section">
+                  <h2>10. Acknowledgement</h2>
+                  <p>BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.</p>
               </div>
 
               <div class="important">
-                  <p><strong>By clicking "Agree" or proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License v1.0, and you promise to leave out the occasional snack for our fuzzy overlords.</strong></p>
-                  <p>This agreement constitutes the entire understanding between all parties and supersedes any previous agreements, verbal understandings, or territorial treaties previously established.</p>
+                  <p><strong>By clicking "Agree" or proceeding with this installation, you acknowledge that you have read this End-User License Agreement, understand it, and agree to be bound by its terms and conditions.</strong></p>
               </div>
           </body>
           </html>
