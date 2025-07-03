@@ -493,13 +493,6 @@ jobs:
           # Copy EULA license file for macOS pkg installer (HTML format)
           cp LICENSE-EULA.html ./dist/license.html
 
-          # Also create old text files for backward compatibility
-          cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
-          End-User License Agreement (EULA) for Atlas
-
-          By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of this End-User License Agreement between you and Tempest Labs, Inc. for the Atlas software.
-          LICENSE_TXT_EOF
-
           # Build final product package with custom title
           echo "Building final pkg with productbuild..."
           if productbuild \
