@@ -171,40 +171,21 @@ jobs:
           fi
         shell: bash
 
-      - name: Strip binary symbols
+      - name: Strip binary symbols (if available)
+        continue-on-error: true
         run: |
-          # Set binary name based on platform
           if [ "${{ matrix.os }}" == "windows" ]; then
             binary_name="atlas.exe"
           else
             binary_name="atlas"
           fi
-
-          # Check if binary exists before attempting to strip
-          if [ ! -f "./dist/${binary_name}" ]; then
-            echo "Binary ./dist/${binary_name} not found, skipping symbol stripping"
-            exit 0
-          fi
-
-          echo "Attempting to strip symbols from ./dist/${binary_name}"
-
-          # Strip symbols to reduce binary size
-          if [ "${{ matrix.os }}" == "windows" ]; then
-            # Windows: Use strip if available (usually from mingw)
-            if command -v strip >/dev/null 2>&1; then
-              strip "./dist/${binary_name}" 2>/dev/null || echo "Windows strip failed, continuing..."
-            else
-              echo "Strip not available on Windows, skipping symbol stripping"
-            fi
+          
+          if [ -f "./dist/${binary_name}" ] && command -v strip >/dev/null 2>&1; then
+            echo "Stripping symbols from ${binary_name}"
+            strip "./dist/${binary_name}" || true
           else
-            # macOS/Linux: Use native strip command
-            if command -v strip >/dev/null 2>&1; then
-              strip "./dist/${binary_name}" 2>/dev/null && echo "Binary stripped successfully" || echo "Strip command failed, continuing..."
-            else
-              echo "Strip command not found, skipping symbol stripping"
-            fi
+            echo "Skipping strip - binary not found or strip command unavailable"
           fi
-        shell: bash
 
       - name: Sign macOS binary (if certificates available)
         if: matrix.os == 'darwin' && env.MACOS_SIGN_P12 != ''
