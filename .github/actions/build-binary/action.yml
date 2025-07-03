@@ -103,10 +103,16 @@ runs:
             ./src/cli.tsx
         fi
 
-        # Test the built binary (skip on Windows due to signal handling issues in CI)
+        # Test the built binary (skip on Windows and cross-compiled targets)
         echo "Testing built binary..."
         if [ "${{ inputs.platform }}" == "windows" ]; then
           echo "Skipping binary test on Windows (signal handling in CI)"
+          echo "Binary built successfully"
+        elif [ "${{ inputs.platform }}" == "linux" ] && [ "${{ inputs.arch }}" == "arm64" ]; then
+          echo "Skipping binary test for cross-compiled ARM64 Linux (cannot run on x86_64 runner)"
+          echo "Binary built successfully"
+        elif [ "${{ inputs.platform }}" == "linux" ] && [ "${{ inputs.arch }}" == "amd64" ] && [ "${{ inputs.target }}" != "x86_64-unknown-linux-gnu" ]; then
+          echo "Skipping binary test for cross-compiled target: ${{ inputs.target }}"
           echo "Binary built successfully"
         else
           if "./dist/${binary_name}" --version; then
