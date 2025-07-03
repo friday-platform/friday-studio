@@ -118,6 +118,34 @@ jobs:
           fi
         shell: bash
 
+      - name: Strip binary symbols
+        run: |
+          # Set binary name based on platform
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            binary_name="atlas.exe"
+          else
+            binary_name="atlas"
+          fi
+
+          # Strip symbols to reduce binary size
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            # Windows: Use strip if available (usually from mingw)
+            if command -v strip >/dev/null 2>&1; then
+              strip "./dist/${binary_name}" || echo "Windows strip failed, continuing..."
+            else
+              echo "Strip not available on Windows, skipping symbol stripping"
+            fi
+          else
+            # macOS/Linux: Use native strip command
+            if command -v strip >/dev/null 2>&1; then
+              strip "./dist/${binary_name}"
+              echo "Binary stripped successfully"
+            else
+              echo "Strip command not found, skipping symbol stripping"
+            fi
+          fi
+        shell: bash
+
       - name: Sign macOS binary (if certificates available)
         if: matrix.platform == 'darwin' && env.MACOS_SIGN_P12 != ''
         env:
