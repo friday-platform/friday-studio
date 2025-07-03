@@ -1,6 +1,7 @@
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
+import { getAtlasClient } from "@atlas/client";
 
 interface CancelArgs {
   id: string;
@@ -42,20 +43,21 @@ export const builder = {
 export const handler = async (argv: CancelArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
+    const client = getAtlasClient({ url: `http://localhost:${port}` });
 
     // First, check if the session exists and is running
-    const checkResponse = await fetch(`http://localhost:${port}/sessions/${argv.id}`);
-
-    if (!checkResponse.ok) {
-      if (checkResponse.status === 404) {
+    let session;
+    try {
+      session = await client.getSession(argv.id);
+    } catch (error) {
+      const errorResult = client.handleFetchError(error);
+      if (errorResult.reason === "api_error") {
         errorOutput(`Session '${argv.id}' not found`);
       } else {
-        errorOutput(`Failed to fetch session: ${checkResponse.statusText}`);
+        errorOutput(`Failed to fetch session: ${errorResult.error}`);
       }
       Deno.exit(1);
     }
-
-    const session = await checkResponse.json();
 
     // Check if session is already completed
     if (
@@ -82,18 +84,7 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
     s.start(`Cancelling session '${argv.id}'...`);
 
     try {
-      const response = await fetch(
-        `http://localhost:${port}/sessions/${argv.id}/cancel`,
-        {
-          method: "POST",
-        },
-      );
-
-      if (!response.ok) {
-        throw new Error(`Failed to cancel session: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await client.cancelSession(argv.id);
 
       s.stop(`Session cancelled`);
       successOutput(`Session '${argv.id}' has been cancelled`);

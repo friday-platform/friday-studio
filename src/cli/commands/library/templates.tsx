@@ -4,6 +4,8 @@ import React from "react";
 import { z } from "zod/v4";
 import { Table } from "../../components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
+import type { TemplateConfig } from "@atlas/client";
 import process from "node:process";
 
 interface TemplatesArgs {
@@ -42,25 +44,8 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for template
-const TemplateSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  format: z.string(),
-  engine: z.string(),
-  description: z.string().optional(),
-  category: z.string().optional(),
-  examples: z
-    .array(
-      z.object({
-        name: z.string(),
-        description: z.string().optional(),
-      }),
-    )
-    .optional(),
-});
-
-type Template = z.infer<typeof TemplateSchema>;
+// Use the type from the client
+type Template = TemplateConfig;
 
 export async function handler(argv: TemplatesArgs) {
   const s = spinner();
@@ -68,21 +53,8 @@ export async function handler(argv: TemplatesArgs) {
   try {
     s.start("Fetching templates...");
 
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (argv.workspace) params.append("workspace", "true");
-    if (argv.platform) params.append("platform", "true");
-
-    const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/api/library/templates?${params}`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const templates = z.array(TemplateSchema).parse(data);
+    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
+    const templates = await client.listTemplates();
 
     s.stop("Templates fetched");
 

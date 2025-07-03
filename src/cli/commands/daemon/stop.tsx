@@ -1,5 +1,6 @@
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface StopArgs {
   port?: number;
@@ -31,20 +32,12 @@ export function builder(y: YargsInstance) {
 export const handler = async (argv: StopArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
+    const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 5000 });
 
     // First check if daemon is running
     let status;
     try {
-      const response = await fetch(`http://localhost:${port}/api/daemon/status`, {
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) {
-        errorOutput(`Atlas daemon is not running on port ${port}`);
-        Deno.exit(1);
-      }
-
-      status = await response.json();
+      status = await client.getDaemonStatus();
     } catch {
       errorOutput(`Atlas daemon is not running on port ${port}`);
       Deno.exit(1);
@@ -64,31 +57,23 @@ export const handler = async (argv: StopArgs): Promise<void> => {
     infoOutput(`Stopping Atlas daemon on port ${port}...`);
 
     try {
-      const response = await fetch(`http://localhost:${port}/api/daemon/shutdown`, {
-        method: "POST",
-        signal: AbortSignal.timeout(10000),
-      });
+      await client.shutdown();
 
-      if (response.ok) {
-        // Wait a moment for graceful shutdown
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Wait a moment for graceful shutdown
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
-        // Verify it's actually stopped
-        const stillRunning = await checkDaemonRunning(port);
-        if (stillRunning) {
-          errorOutput("Daemon did not stop gracefully");
-          Deno.exit(1);
-        } else {
-          successOutput("Atlas daemon stopped successfully");
-        }
-      } else {
-        errorOutput("Failed to send shutdown signal to daemon");
+      // Verify it's actually stopped
+      const stillRunning = await client.isHealthy();
+      if (stillRunning) {
+        errorOutput("Daemon did not stop gracefully");
         Deno.exit(1);
+      } else {
+        successOutput("Atlas daemon stopped successfully");
       }
     } catch (error) {
       // If the request fails, the daemon might have already stopped
       await new Promise((resolve) => setTimeout(resolve, 1000));
-      const stillRunning = await checkDaemonRunning(port);
+      const stillRunning = await client.isHealthy();
 
       if (stillRunning) {
         errorOutput(
@@ -106,12 +91,6 @@ export const handler = async (argv: StopArgs): Promise<void> => {
 };
 
 async function checkDaemonRunning(port: number): Promise<boolean> {
-  try {
-    const response = await fetch(`http://localhost:${port}/health`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 2000 });
+  return await client.isHealthy();
 }

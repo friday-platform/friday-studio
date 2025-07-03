@@ -4,6 +4,8 @@ import { Box, Text } from "ink";
 import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
+import type { LibraryItemWithContent } from "@atlas/client";
 import process from "node:process";
 
 interface GetArgs {
@@ -41,29 +43,8 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for library item with content
-const LibraryItemDetailSchema = z.object({
-  item: z.object({
-    id: z.string(),
-    type: z.string(),
-    name: z.string(),
-    created_at: z.string(),
-    tags: z.array(z.string()),
-    size_bytes: z.number(),
-    description: z.string().optional(),
-    metadata: z
-      .object({
-        format: z.string(),
-        engine: z.string().optional(),
-        template_id: z.string().optional(),
-        created_by: z.string().optional(),
-      })
-      .optional(),
-  }),
-  content: z.string().optional(),
-});
-
-type LibraryItemDetail = z.infer<typeof LibraryItemDetailSchema>;
+// Type already imported from client
+type LibraryItemDetail = LibraryItemWithContent;
 
 export async function handler(argv: GetArgs) {
   const s = spinner();
@@ -76,41 +57,28 @@ export async function handler(argv: GetArgs) {
   try {
     s.start(`Fetching item ${argv.id}...`);
 
-    // Build query parameters
-    const params = new URLSearchParams();
-    if (argv.content) params.append("content", "true");
+    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
 
-    const serverUrl = `http://localhost:${argv.port}`;
-
-    // First, try with the exact ID
-    let response = await fetch(`${serverUrl}/api/library/${argv.id}?${params}`);
-
-    // If not found and ID looks like a partial ID (short), try to find by prefix
-    if (!response.ok && response.status === 404 && argv.id.length < 20) {
-      // Get all items and find one that starts with this ID
-      const listResponse = await fetch(`${serverUrl}/api/library`);
-      if (listResponse.ok) {
-        const items = await listResponse.json();
-        const matchingItem = items.items.find((item: { id: string }) =>
-          item.id.startsWith(argv.id)
-        );
+    let itemDetail;
+    try {
+      // First, try with the exact ID
+      itemDetail = await client.getLibraryItem(argv.id, argv.content);
+    } catch (error) {
+      // If not found and ID looks like a partial ID (short), try to find by prefix
+      if (argv.id.length < 20) {
+        const listResult = await client.listLibraryItems({ limit: 1000 });
+        const matchingItem = listResult.items.find((item) => item.id.startsWith(argv.id));
 
         if (matchingItem) {
           // Try again with the full ID
-          response = await fetch(
-            `${serverUrl}/api/library/${matchingItem.id}?${params}`,
-          );
+          itemDetail = await client.getLibraryItem(matchingItem.id, argv.content);
+        } else {
+          throw error;
         }
+      } else {
+        throw error;
       }
     }
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const itemDetail = LibraryItemDetailSchema.parse(data);
 
     s.stop("Item fetched successfully");
 
