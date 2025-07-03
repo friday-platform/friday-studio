@@ -1,5 +1,5 @@
 import { Box, render, Text } from "ink";
-import { StatusBadge } from "../../../cli/components/StatusBadge.tsx";
+import { StatusBadge } from "../../../cli/components/status-badge.tsx";
 import { getAtlasClient } from "@atlas/client";
 
 interface GetArgs {

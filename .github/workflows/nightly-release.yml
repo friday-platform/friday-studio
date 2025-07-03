@@ -639,16 +639,16 @@ jobs:
           # Convert HTML EULA to RTF for Windows MSI installer (WiX requires RTF)
           # Simple conversion: strip HTML tags and convert to basic RTF format
           $htmlContent = Get-Content "LICENSE-EULA.html" -Raw
-          
+
           # Strip HTML tags and convert to plain text
           $textContent = $htmlContent -replace '<[^>]+>', '' -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>'
           $textContent = $textContent -replace '\s+', ' ' -replace '^\s+|\s+$', ''
-          
+
           # Create RTF with system font
           $rtfHeader = "{\rtf1\ansi\deff0 {\fonttbl {\f0 \fswiss Arial;}}\f0\fs20"
           $rtfFooter = "}"
           $rtfText = $textContent -replace '\n', '\par ' -replace '\r', ''
-          
+
           $rtfContent = $rtfHeader + $rtfText + $rtfFooter
           $rtfContent | Out-File -FilePath "license.rtf" -Encoding UTF8
 
@@ -662,8 +662,8 @@ jobs:
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
             <Product Id="*" Name="Atlas (nightly: $clean_version)" Language="1033" Version="1.0.0"
                      Manufacturer="Tempest Labs, Inc." UpgradeCode="{12345678-1234-1234-1234-123456789012}">
-              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" 
-                       Description="Atlas CLI - AI Agent Orchestration Platform" 
+              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
+                       Description="Atlas CLI - AI Agent Orchestration Platform"
                        Comments="Atlas enables seamless human/AI collaboration through specialized, autonomous agents." />
 
               <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
@@ -696,7 +696,7 @@ jobs:
                 </Component>
                 <!-- Program Menu Shortcut -->
                 <Component Id="ProgramMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{11111111-2222-3333-4444-555555555555}">
-                  <Shortcut Id="AtlasShortcut" Name="Atlas CLI" Description="Atlas AI Agent Orchestration Platform" 
+                  <Shortcut Id="AtlasShortcut" Name="Atlas CLI" Description="Atlas AI Agent Orchestration Platform"
                            Target="[INSTALLFOLDER]atlas.exe" WorkingDirectory="INSTALLFOLDER" />
                   <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
                   <RegistryValue Root="HKCU" Key="Software\Tempest Labs\Atlas" Name="installed" Type="integer" Value="1" KeyPath="yes" />

@@ -2,7 +2,7 @@ import { spinner } from "../../utils/prompts.tsx";
 import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
-import { Table } from "../../components/Table.tsx";
+import { Table } from "../../components/table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { getAtlasClient } from "@atlas/client";
 import type { TemplateConfig } from "@atlas/client";
