@@ -521,137 +521,117 @@ jobs:
           # Create license HTML file (as required by Apple docs)
           echo "=== DEBUG: Creating license.html file ==="
           cat > ./dist/license.html << 'LICENSE_EOF'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="utf-8">
-              <title>Tempest ATLAS Software License Agreement</title>
-              <style>
-                  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; margin: 30px; color: #1d1d1f; }
-                  h1 { color: #1d1d1f; border-bottom: 2px solid #007AFF; padding-bottom: 10px; }
-                  h2 { color: #1d1d1f; margin-top: 30px; }
-                  .important { background: #f8f9fa; padding: 20px; border-left: 4px solid #007AFF; margin: 20px 0; border-radius: 4px; }
-                  .section { margin: 30px 0; }
-                  ul { margin: 15px 0; padding-left: 30px; }
-                  li { margin: 8px 0; }
-                  p { margin: 15px 0; }
-              </style>
-          </head>
-          <body>
-              <h1>Tempest ATLAS Software License Agreement</h1>
-              <p><em>The Backyard Raccoon License (BRL) v1.0</em></p>
-              
-              <div class="important">
-                  <strong>IMPORTANT:</strong> This Software License Agreement is a legal contract between you and Tempest Team regarding your use of the Tempest ATLAS software. By installing, copying, or using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to these terms, do not install or use the Software.
-              </div>
-              
-              <div class="section">
-                  <h2>Article 1: Definitions</h2>
-                  <p>For the purposes of this Agreement, the following definitions apply:</p>
-                  <ul>
-                      <li><strong>"Software"</strong> means the Tempest ATLAS command-line interface tool, including all associated documentation, examples, and related materials.</li>
-                      <li><strong>"Licensee"</strong> refers to any raccoon, sentient or otherwise, human developer, AI agent, or other entity using the Software.</li>
-                      <li><strong>"Provider"</strong> refers to Tempest Team and the original authors of the Software.</li>
-                      <li><strong>"Backyard"</strong> means the designated operational environment, whether physical, virtual, or metaphysical.</li>
-                      <li><strong>"Fuzzy Overlords"</strong> refers to the raccoon community and their designated representatives.</li>
-                  </ul>
-              </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Tempest ATLAS Software License Agreement</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; line-height: 1.6; margin: 30px; color: #1d1d1f; }
+        h1 { color: #1d1d1f; border-bottom: 2px solid #007AFF; padding-bottom: 10px; }
+        h2 { color: #1d1d1f; margin-top: 30px; }
+        .important { background: #f8f9fa; padding: 20px; border-left: 4px solid #007AFF; margin: 20px 0; border-radius: 4px; }
+        .section { margin: 30px 0; }
+        ul { margin: 15px 0; padding-left: 30px; }
+        li { margin: 8px 0; }
+        p { margin: 15px 0; }
+    </style>
+</head>
+<body>
+    <h1>Tempest ATLAS Software License Agreement</h1>
+    <p><em>The Backyard Raccoon License (BRL) v1.0</em></p>
+    
+    <div class="important">
+        <strong>IMPORTANT:</strong> This Software License Agreement is a legal contract between you and Tempest Team regarding your use of the Tempest ATLAS software. By installing, copying, or using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to these terms, do not install or use the Software.
+    </div>
+    
+    <div class="section">
+        <h2>Article 1: Definitions and Scope</h2>
+        <p>For the purposes of this Agreement, the following definitions apply:</p>
+        <ul>
+            <li><strong>Software:</strong> The Tempest ATLAS command-line interface tool, including all associated documentation, examples, and related materials provided by Tempest Team.</li>
+            <li><strong>Licensee:</strong> Any raccoon (sentient or otherwise), human developer, AI agent, or other entity using the Software under the terms of this Agreement.</li>
+            <li><strong>Provider:</strong> Tempest Team and the original authors of the Software who grant this license.</li>
+            <li><strong>Backyard Territory:</strong> The designated operational environment, whether physical, virtual, or metaphysical, where this Agreement applies.</li>
+            <li><strong>Fuzzy Overlords:</strong> The raccoon community and their designated representatives who hold certain territorial rights.</li>
+        </ul>
+    </div>
 
-              <div class="section">
-                  <h2>Article 2: Grant of Rights and Permissions</h2>
-                  <p>In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby grants the following irrevocable rights for usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".</p>
-                  
-                  <h3>2.1 Software Usage Rights</h3>
-                  <p>Subject to the terms and conditions of this Agreement, the Provider hereby grants to Licensee a non-exclusive, non-transferable license to use the Software for AI agent orchestration, software engineering, and general mischief-making purposes.</p>
-                  
-                  <h3>2.2 Raccoon Community Rights</h3>
-                  <p>The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:</p>
-                  <ul>
-                      <li>Enter, exit, or dramatically crash through any and all garbage bins, compost containers, recycling receptacles, or unattended coolers within the designated territory.</li>
-                      <li>Hold nightly council meetings under the deck, in the attic, on top of the garden shed, or in any elevated position suitable for surveillance and strategic planning.</li>
-                      <li>Treat any bird feeder as a personal buffet, regardless of posted "For Birds Only" signage or other exclusionary notices.</li>
-                      <li>Use reflective windows, car mirrors, and other shiny surfaces for fur fluffiness verification and intimidating stare practice.</li>
-                      <li>Steal cat food "for a friend," with no questions asked regarding the identity, existence, or dietary requirements of said friend.</li>
-                      <li>Conduct reconnaissance missions on neighboring properties, including but not limited to intelligence gathering, route mapping, and resource assessment.</li>
-                      <li>Establish temporary or permanent den sites in inconvenient but strategically advantageous locations.</li>
-                  </ul>
-              </div>
+    <div class="section">
+        <h2>Article 2: Grant of Software Rights</h2>
+        <p>Subject to the terms and conditions of this Agreement, the Provider hereby grants to Licensee a non-exclusive, non-transferable license to use the Software for AI agent orchestration, software engineering, and general technological purposes within the scope of this license.</p>
+        
+        <h3>2.1 Permitted Uses</h3>
+        <p>Licensee may install, execute, and operate the Software for legitimate software development purposes, create and manage AI agent workspaces and configurations, integrate the Software with existing development workflows, and access all documented APIs and command-line interfaces.</p>
+        
+        <h3>2.2 Territorial Considerations</h3>
+        <p>In recognition of the established territorial rights within the Backyard ecosystem, Licensee acknowledges that certain areas may be subject to concurrent usage by the local raccoon community, who retain historical claims to garbage bins, compost containers, recycling receptacles, bird feeders, and various shiny objects discovered within the territory.</p>
+    </div>
 
-              <div class="section">
-                  <h2>Article 3: Intellectual Property and Territorial Claims</h2>
-                  <p>All shiny objects discovered within the Backyard territory are hereby declared communal raccoon property. This includes, but is not limited to, bottle caps, aluminum foil remnants, lost jewelry, small automotive parts, and electronic devices left unattended for more than 3.7 seconds. The Provider waives all rights to question the raccoon community's taste in treasure, aesthetic choices, or collection methodologies.</p>
-                  
-                  <p>The Software and all related intellectual property rights remain the property of Tempest Team. This Agreement does not grant Licensee any rights to the source code, proprietary algorithms, or underlying architecture beyond the usage rights explicitly granted herein.</p>
-              </div>
+    <div class="section">
+        <h2>Article 3: Intellectual Property Rights</h2>
+        <p>The Software and all related intellectual property rights, including but not limited to source code, algorithms, documentation, trademarks, and proprietary technologies, remain the exclusive property of Tempest Team. This Agreement does not grant Licensee any ownership rights or claims to the underlying intellectual property beyond the usage rights explicitly granted herein.</p>
+        
+        <p>Certain territorial claims within the Backyard environment, including rights to aluminum foil remnants, bottle caps, lost jewelry, small automotive parts, and electronic devices left unattended for more than 3.7 seconds, are hereby acknowledged as communal raccoon property under longstanding territorial agreements.</p>
+    </div>
 
-              <div class="section">
-                  <h2>Article 4: Code of Conduct and Behavioral Guidelines</h2>
-                  <p>While Licensees are not legally required to behave in any particular manner, the following practices are strongly encouraged (though not enforceable through legal means):</p>
-                  <ul>
-                      <li>All acrobatic trash can raids should be recorded for posterity, preferably in slow-motion with dramatic musical accompaniment and appropriate lighting.</li>
-                      <li>No raccoon may organize a coup d'état against the neighborhood possum alliance without first securing a 2/3 majority vote and filing proper documentation with the local wildlife council.</li>
-                      <li>All raccoon dance-offs must be judged fairly by at least one impartial squirrel, with appeals handled by the local crow council according to established precedent.</li>
-                      <li>Midnight food preparation sessions should maintain reasonable noise levels (recommended: under 85 decibels) to preserve neighborly relations.</li>
-                      <li>Territory disputes should be resolved through rock-paper-scissors competitions, interpretive dance battles, or other culturally appropriate methods.</li>
-                      <li>Educational seminars on advanced lid-removal techniques should be conducted monthly for apprentice raccoons and interested parties.</li>
-                  </ul>
-                  
-                  <p>Users of the Software are expected to follow responsible development practices, respect system resources and security boundaries, report bugs and security issues through appropriate channels, contribute to the community through documentation and examples, and maintain compatibility with established AI agent protocols.</p>
-              </div>
+    <div class="section">
+        <h2>Article 4: Terms of Use and Restrictions</h2>
+        <p>Licensee agrees to use the Software in accordance with all applicable laws and regulations. The Software is provided for AI agent orchestration and software engineering purposes only.</p>
+        
+        <h3>4.1 Prohibited Activities</h3>
+        <p>Licensee may not reverse engineer, decompile, or disassemble the Software; use the Software for illegal, harmful, or malicious purposes; distribute modified versions without explicit written permission; remove or alter copyright notices, license information, or attribution; or use the Software to violate third-party rights or terms of service.</p>
+        
+        <h3>4.2 Community Guidelines</h3>
+        <p>While not legally enforceable, Licensee is encouraged to follow responsible development practices, maintain compatibility with established AI agent protocols, report bugs and security issues through appropriate channels, and contribute to the community through documentation and examples when possible.</p>
+    </div>
 
-              <div class="section">
-                  <h2>Article 5: Warranty Disclaimer and Liability Limitations</h2>
-                  <div class="important">
-                      <p><strong>WARRANTY DISCLAIMER:</strong> This License and Software come with absolutely no guarantees, warranties, or assurances of any kind, express or implied.</p>
-                  </div>
-                  
-                  <p>The Backyard operational environment may contain numerous hazards including, but not limited to, loud humans with unpredictable behavioral patterns, motion-activated sprinkler systems with hair-trigger sensitivity, robotic lawnmowers operating on irregular schedules, motion-activated security lighting designed to cause temporary blindness, guard dogs of various sizes and temperaments, and homeowners with security cameras and social media accounts.</p>
-                  
-                  <p>All Licensees proceed at their own risk and should maintain proper situational awareness at all times. The Provider shall not be liable for any damages, injuries, or losses including but not limited to ego damage resulting from failed lid-removal attempts, embarrassment from being caught mid-raid by humans with cameras, temporary blindness from outdoor security lighting, digestive issues from consuming expired or questionable items, territorial disputes arising from resource competition, software bugs, system crashes, data loss, or integration issues with third-party systems.</p>
-              </div>
+    <div class="section">
+        <h2>Article 5: Warranty Disclaimer and Limitation of Liability</h2>
+        <div class="important">
+            <p><strong>WARRANTY DISCLAIMER:</strong> THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.</p>
+        </div>
+        
+        <p>The Provider shall not be liable for any direct, indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, use, goodwill, or other intangible losses, resulting from the use or inability to use the Software, even if the Provider has been advised of the possibility of such damages.</p>
+        
+        <p>Licensee acknowledges that the operational environment may contain various hazards and challenges, including but not limited to system compatibility issues, network connectivity problems, third-party integration complexities, and other technical or environmental factors that may affect Software performance.</p>
+    </div>
 
-              <div class="section">
-                  <h2>Article 6: Software Terms and Restrictions</h2>
-                  <p>The Tempest ATLAS software is provided for AI agent orchestration and software engineering purposes. Users acknowledge that the software is provided "as is" without warranty of any kind, users are responsible for proper configuration and usage, technical support is provided on a best-effort basis, and regular updates will be provided when available.</p>
-                  
-                  <p>Users may not reverse engineer, decompile, or disassemble the Software, use the Software for illegal or harmful purposes, distribute modified versions without permission, remove copyright notices, or violate third-party rights.</p>
-              </div>
+    <div class="section">
+        <h2>Article 6: Support and Maintenance</h2>
+        <p>Technical support is provided on a best-effort basis through community forums, documentation repositories, issue tracking systems, and regular developer engagement activities. The Provider will make reasonable efforts to provide security updates, fix critical bugs affecting core functionality, maintain compatibility with evolving standards, and communicate breaking changes with adequate notice.</p>
+    </div>
 
-              <div class="section">
-                  <h2>Article 7: Termination Conditions</h2>
-                  <p>This License Agreement remains valid until the earliest occurrence of:</p>
-                  <ul>
-                      <li>The heat death of the universe and cessation of all thermodynamic processes</li>
-                      <li>The raccoons successfully establishing their own sovereign government and requiring the territory for ministerial raccoon headquarters</li>
-                      <li>The invention and widespread deployment of truly raccoon-proof garbage can technology</li>
-                      <li>Material breach of this Agreement by the Licensee</li>
-                      <li>Voluntary termination by either party with thirty (30) days written notice</li>
-                  </ul>
-                  
-                  <p>Upon termination, all parties must return to their original territories within a reasonable timeframe, surrender accumulated shiny objects (exceptions may be made for items of significant sentimental value), remove software installations from all systems, destroy all copies of documentation and related materials, and revoke access credentials and API keys.</p>
-              </div>
+    <div class="section">
+        <h2>Article 7: Termination</h2>
+        <p>This License Agreement remains in effect until terminated by either party. Termination may occur upon material breach of this Agreement by the Licensee, voluntary termination by either party with thirty (30) days written notice, or mutual agreement between the parties to dissolve the licensing arrangement.</p>
+        
+        <p>Upon termination, Licensee must remove Software installations from all systems, destroy all copies of documentation and related materials, revoke access credentials and API keys, and discontinue all use of the Software and related services.</p>
+    </div>
 
-              <div class="important">
-                  <h2>Final Acknowledgment and Acceptance</h2>
-                  <p><strong>BY CLICKING "AGREE," PROCEEDING WITH THIS INSTALLATION, OR OTHERWISE USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE:</strong></p>
-                  <ul>
-                      <li>Read and understood all terms and conditions of The Backyard Raccoon License v1.0</li>
-                      <li>Agreed to be legally bound by all provisions outlined herein</li>
-                      <li>Committed to respecting the rights and territories of all parties involved</li>
-                      <li>Promised to leave out occasional snacks for our fuzzy overlords as a gesture of goodwill and mutual respect</li>
-                      <li>Accepted all risks and responsibilities associated with Software usage</li>
-                      <li>Understood the liability limitations and warranty disclaimers</li>
-                  </ul>
-                  <p><em>This agreement represents a binding legal contract. If you do not agree to these terms, discontinue installation immediately and remove any downloaded materials from your system.</em></p>
-              </div>
+    <div class="important">
+        <h2>Acceptance and Legal Binding</h2>
+        <p><strong>BY CLICKING "AGREE," PROCEEDING WITH THIS INSTALLATION, OR OTHERWISE USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE:</strong></p>
+        <ul>
+            <li>Read and understood all terms and conditions of The Backyard Raccoon License v1.0</li>
+            <li>Agreed to be legally bound by all provisions outlined in this Agreement</li>
+            <li>Committed to respecting the intellectual property rights of Tempest Team</li>
+            <li>Acknowledged the territorial considerations within the Backyard ecosystem</li>
+            <li>Accepted all risks and responsibilities associated with Software usage</li>
+            <li>Understood the warranty disclaimers and liability limitations set forth herein</li>
+            <li>Agreed to comply with all usage restrictions and community guidelines</li>
+        </ul>
+        <p><em>This agreement represents a binding legal contract. If you do not agree to these terms, discontinue installation immediately and remove any downloaded materials from your system.</em></p>
+    </div>
 
-              <p style="text-align: center; margin-top: 40px; font-style: italic; color: #666;">
-                  Tempest ATLAS Software License Agreement - The Backyard Raccoon License (BRL) v1.0<br>
-                  Effective Date: July 3rd, 2025
-              </p>
-          </body>
-          </html>
-          LICENSE_EOF
+    <p style="text-align: center; margin-top: 40px; font-style: italic; color: #666;">
+        Tempest ATLAS Software License Agreement<br>
+        The Backyard Raccoon License (BRL) v1.0<br>
+        Effective Date: July 3rd, 2025
+    </p>
+</body>
+</html>
+LICENSE_EOF
           echo "=== DEBUG: License HTML file created successfully ==="
 
           # Also create old text files for backward compatibility
