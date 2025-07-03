@@ -224,6 +224,108 @@ export class DaemonCapabilityRegistry {
       },
     });
 
+    // Conversation storage capability for conversation agent to manage its own history
+    this.registerCapability({
+      id: "conversation_storage",
+      name: "Conversation Storage",
+      description: "Manage conversation history using stream_id as key",
+      category: "system",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["load_history", "save_message"],
+            description: "The storage action to perform",
+          },
+          stream_id: {
+            type: "string",
+            description: "The stream ID (conversation identifier)",
+          },
+          message: {
+            type: "object",
+            properties: {
+              role: { type: "string", enum: ["user", "assistant"] },
+              content: { type: "string" },
+              userId: { type: "string" },
+            },
+            description: "Message to save (for save_message action)",
+          },
+        },
+        required: ["action", "stream_id"],
+        additionalProperties: false,
+      },
+      implementation: async (
+        context,
+        action: string,
+        stream_id: string,
+        message?: { role: "user" | "assistant"; content: string; userId: string },
+      ) => {
+        try {
+          console.log(`[conversation_storage] ${action} for stream ${stream_id}`);
+
+          // Import conversation storage
+          const { getConversationStorage } = await import("./agents/conversation-storage.ts");
+          const conversationStorage = getConversationStorage();
+
+          if (action === "load_history") {
+            const history = await conversationStorage.getConversationHistory(stream_id);
+            const messages = history?.messages || [];
+
+            console.log(
+              `[conversation_storage] Loaded ${messages.length} messages for stream ${stream_id}`,
+            );
+
+            return {
+              success: true,
+              messages,
+              messageCount: messages.length,
+              historyContext: messages.length > 0
+                ? conversationStorage.formatHistoryForContext(messages)
+                : "",
+            };
+          }
+
+          if (action === "save_message" && message) {
+            const messageObj = {
+              messageId: crypto.randomUUID(),
+              userId: message.userId,
+              content: message.content,
+              timestamp: new Date().toISOString(),
+              role: message.role,
+              metadata: {
+                streamId: stream_id,
+                workspaceContext: context.workspaceId,
+              },
+            };
+
+            await conversationStorage.saveMessage(stream_id, messageObj);
+
+            console.log(
+              `[conversation_storage] Saved ${message.role} message to stream ${stream_id}`,
+            );
+
+            return {
+              success: true,
+              messageId: messageObj.messageId,
+              saved: true,
+            };
+          }
+
+          return {
+            success: false,
+            error: "Invalid action or missing message data",
+          };
+        } catch (error) {
+          console.error(`[conversation_storage] Error:`, error);
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      },
+    });
+
     this.initialized = true;
   }
 

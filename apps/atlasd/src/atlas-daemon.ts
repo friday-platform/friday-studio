@@ -1,4 +1,5 @@
 import {
+  atlasDefaults,
   ConfigLoader,
   formatZodError,
   type MergedConfig,
@@ -1408,9 +1409,10 @@ export class AtlasDaemon {
       if (workspace.metadata?.virtual && workspace.config) {
         // For virtual workspaces, construct MergedConfig without filesystem access
         mergedConfig = {
-          atlas: this.supervisorDefaults!, // Use daemon's cached supervisor defaults
+          atlas: atlasDefaults, // Use full atlas defaults which includes memory config
           workspace: workspace.config, // Use embedded workspace config
           jobs: workspace.config.jobs || {},
+          supervisorDefaults: this.supervisorDefaults!, // Keep supervisor defaults for compatibility
         };
         logger.debug(`Using embedded virtual workspace configuration`, {
           workspaceId: workspace.id,

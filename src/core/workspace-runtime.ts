@@ -931,10 +931,23 @@ const workspaceRuntimeMachine = setup({
       // Memory configuration is already loaded in mergedConfig.atlas
 
       // Load all agents (platform + user)
+      console.log("[DEBUG] Agent config before merging:", {
+        atlasAgents: Object.keys(mergedConfig.atlas?.agents || {}),
+        workspaceAgents: Object.keys(mergedConfig.workspace?.agents || {}),
+        conversationAgentType: mergedConfig.workspace?.agents?.["conversation-agent"]?.type,
+        conversationAgentConfig: mergedConfig.workspace?.agents?.["conversation-agent"],
+      });
+
       const allAgents: Record<string, RuntimeAgentConfig> = {
         ...(mergedConfig.atlas?.agents || {}),
         ...(mergedConfig.workspace?.agents || {}),
       };
+
+      console.log("[DEBUG] Agent config after merging:", {
+        allAgents: Object.keys(allAgents),
+        conversationAgentType: allAgents["conversation-agent"]?.type,
+        conversationAgentConfig: allAgents["conversation-agent"],
+      });
 
       if (allAgents && Object.keys(allAgents).length > 0) {
         const { AgentLoader } = await import("./agent-loader.ts");

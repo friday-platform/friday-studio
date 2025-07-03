@@ -136,8 +136,14 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
   },
   agents: {
     "conversation-agent": {
-      type: "llm",
-      model: "claude-3-5-sonnet-20241022",
+      type: "tempest",
+      agent: "conversation-agent",
+      version: "1.0.0",
+      config: {
+        model: "claude-3-5-sonnet-20241022",
+        temperature: 0.7,
+        max_tokens: 4000,
+      },
       purpose: "Handle conversations with scope awareness and workspace creation",
       tools: [
         "stream_reply",
