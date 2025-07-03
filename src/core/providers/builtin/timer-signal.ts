@@ -51,7 +51,7 @@ export class TimerSignalProvider implements IProvider {
   private state: ProviderState;
   private cronInterval?: number; // Timer reference for cleanup
   private nextExecution?: Date;
-  private signalCallback?: (signal: TimerSignalData) => void;
+  private signalCallback?: (signal: TimerSignalData) => void | Promise<void>;
   private storage?: KVStorage;
   private storageKey: string[];
 
@@ -102,17 +102,26 @@ export class TimerSignalProvider implements IProvider {
   /**
    * Set the callback function to call when signal is triggered
    */
-  setSignalCallback(callback: (signal: TimerSignalData) => void): void {
+  setSignalCallback(callback: (signal: TimerSignalData) => void | Promise<void>): void {
     this.signalCallback = callback;
   }
 
   // IProvider interface methods
   setup(): void {
-    this.state.status = ProviderStatus.READY;
+    this.state.status = ProviderStatus.CONFIGURING;
     this.state.config = this.config;
 
     // Handle async operations in background
-    this.setupAsync().catch((error) => {
+    this.setupAsync().then(() => {
+      // Only set to READY after async setup completes successfully
+      this.state.status = ProviderStatus.READY;
+      logger.info("Timer signal provider setup completed", {
+        signalId: this.config.id,
+        schedule: this.config.schedule,
+        timezone: this.config.timezone,
+        nextExecution: this.nextExecution?.toISOString(),
+      });
+    }).catch((error) => {
       logger.error("Failed to complete timer signal provider async setup", {
         signalId: this.config.id,
         error: error instanceof Error ? error.message : String(error),
@@ -145,13 +154,23 @@ export class TimerSignalProvider implements IProvider {
   }
 
   teardown(): void {
-    if (this.cronInterval) {
+    // Set status to disabled first to prevent new operations
+    this.state.status = ProviderStatus.DISABLED;
+
+    // Clear any active timer
+    if (this.cronInterval !== undefined) {
       clearTimeout(this.cronInterval);
       this.cronInterval = undefined;
     }
 
-    this.state.status = ProviderStatus.DISABLED;
+    // Clear next execution
     this.nextExecution = undefined;
+
+    // Clear callback to prevent further executions
+    this.signalCallback = undefined;
+
+    // Clear any error state
+    this.state.error = undefined;
 
     // Persist state before shutdown in background
     this.persistState().catch((error) => {
@@ -235,6 +254,11 @@ export class TimerSignalProvider implements IProvider {
    * Schedule the next execution based on cron expression
    */
   private async scheduleNext(): Promise<void> {
+    // Don't schedule if already disabled
+    if (this.state.status === ProviderStatus.DISABLED) {
+      return;
+    }
+
     try {
       const timezone = this.config.timezone || "UTC";
       const cronExpression = cronParser.parseExpression(this.config.schedule, {
@@ -254,13 +278,22 @@ export class TimerSignalProvider implements IProvider {
       });
 
       // Clear any existing timer
-      if (this.cronInterval) {
+      if (this.cronInterval !== undefined) {
         clearTimeout(this.cronInterval);
+        this.cronInterval = undefined;
+      }
+
+      // Don't schedule if disabled during the process
+      if (this.state.status === ProviderStatus.DISABLED) {
+        return;
       }
 
       // Schedule the next execution
       this.cronInterval = setTimeout(async () => {
-        await this.executeSignal();
+        // Check if still ready before executing
+        if (this.state.status === ProviderStatus.READY) {
+          await this.executeSignal();
+        }
       }, delay);
 
       // Persist state after scheduling
@@ -271,8 +304,10 @@ export class TimerSignalProvider implements IProvider {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      this.state.status = ProviderStatus.ERROR;
-      this.state.error = error instanceof Error ? error.message : String(error);
+      if (this.state.status !== ProviderStatus.DISABLED) {
+        this.state.status = ProviderStatus.ERROR;
+        this.state.error = error instanceof Error ? error.message : String(error);
+      }
     }
   }
 
@@ -346,6 +381,15 @@ export class TimerSignalProvider implements IProvider {
       return;
     }
 
+    // Double-check status hasn't changed during execution
+    if (this.state.status !== ProviderStatus.READY) {
+      logger.debug("Timer signal execution skipped - provider not ready", {
+        signalId: this.config.id,
+        status: this.state.status,
+      });
+      return;
+    }
+
     try {
       const signal: TimerSignalData = {
         id: this.config.id,
@@ -375,9 +419,17 @@ export class TimerSignalProvider implements IProvider {
         timestamp: signal.timestamp,
       });
 
-      // Call the signal callback if set
+      // Call the signal callback if set (with error handling)
       if (this.signalCallback) {
-        this.signalCallback(signal);
+        try {
+          await this.signalCallback(signal);
+        } catch (callbackError) {
+          logger.error("Timer signal callback failed", {
+            signalId: this.config.id,
+            error: callbackError instanceof Error ? callbackError.message : String(callbackError),
+          });
+          // Continue execution despite callback error
+        }
       } else {
         logger.warn("Timer signal triggered but no callback set", {
           signalId: this.config.id,

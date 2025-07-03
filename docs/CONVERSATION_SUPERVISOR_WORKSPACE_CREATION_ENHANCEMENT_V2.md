@@ -132,7 +132,11 @@ export class WorkspaceDraftStore {
       id: crypto.randomUUID(),
       name: params.name,
       description: params.description,
-      config: this.getInitialConfig(params.name, params.description, params.pattern),
+      config: this.getInitialConfig(
+        params.name,
+        params.description,
+        params.pattern,
+      ),
       iterations: [],
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -145,7 +149,11 @@ export class WorkspaceDraftStore {
     await this.kv.set(key, draft);
 
     // Also index by session for easy retrieval
-    const sessionKey = ["workspace_drafts_by_session", params.sessionId, draft.id];
+    const sessionKey = [
+      "workspace_drafts_by_session",
+      params.sessionId,
+      draft.id,
+    ];
     await this.kv.set(sessionKey, draft.id);
 
     return draft;
@@ -195,9 +203,11 @@ export class WorkspaceDraftStore {
         // Create agent config using WorkspaceAgentConfig type
         const agentConfig: WorkspaceAgentConfig = {
           type: (config.type as "llm" | "tempest" | "remote") || "llm",
-          model: config.model as string || "claude-3-5-haiku-20241022",
+          model: (config.model as string) || "claude-3-5-haiku-20241022",
           purpose: config.purpose as string,
-          ...(config.system_prompt && { prompts: { system: config.system_prompt as string } }),
+          ...(config.system_prompt && {
+            prompts: { system: config.system_prompt as string },
+          }),
           ...(config.tools && { tools: { mcp: config.tools as string[] } }),
         };
 
@@ -206,7 +216,10 @@ export class WorkspaceDraftStore {
 
       case "update_agent":
         if (draft.config.agents[config.id as string]) {
-          Object.assign(draft.config.agents[config.id as string], config.updates);
+          Object.assign(
+            draft.config.agents[config.id as string],
+            config.updates,
+          );
         }
         break;
 
@@ -218,7 +231,9 @@ export class WorkspaceDraftStore {
         const jobConfig: JobSpecification = {
           name: config.id as string,
           description: config.description as string,
-          triggers: config.triggers as any || [{ signal: `${draft.name}-trigger` }],
+          triggers: (config.triggers as any) || [
+            { signal: `${draft.name}-trigger` },
+          ],
           execution: config.execution as any,
         };
 
@@ -232,7 +247,7 @@ export class WorkspaceDraftStore {
         const signalId = `${draft.name}-trigger`;
         // Create signal config using WorkspaceSignalConfig type
         const signalConfig: WorkspaceSignalConfig = {
-          description: config.description as string || `Trigger for ${draft.name}`,
+          description: (config.description as string) || `Trigger for ${draft.name}`,
           provider: config.provider as string,
           ...(config.providerConfig as Record<string, any>),
         };
@@ -296,7 +311,10 @@ export class WorkspaceDraftStore {
 
     for await (const entry of this.kv.list({ prefix })) {
       const draftId = entry.value as string;
-      const draftEntry = await this.kv.get<WorkspaceDraft>(["workspace_drafts", draftId]);
+      const draftEntry = await this.kv.get<WorkspaceDraft>([
+        "workspace_drafts",
+        draftId,
+      ]);
       if (draftEntry.value && draftEntry.value.status === "draft") {
         drafts.push(draftEntry.value);
       }
@@ -324,12 +342,21 @@ const workspaceTools: Record<string, Tool> = {
   workspace_draft_create: {
     description: "Create a new workspace draft that can be iteratively refined",
     parameters: z.object({
-      name: MCPToolNameSchema.describe("Workspace name (lowercase with hyphens, no dots)"),
-      description: z.string().describe("Clear description of the workspace's purpose"),
-      pattern: z.enum(["pipeline", "ensemble", "hierarchy", "custom"]).optional()
+      name: MCPToolNameSchema.describe(
+        "Workspace name (lowercase with hyphens, no dots)",
+      ),
+      description: z
+        .string()
+        .describe("Clear description of the workspace's purpose"),
+      pattern: z
+        .enum(["pipeline", "ensemble", "hierarchy", "custom"])
+        .optional()
         .describe("Workspace pattern to use as starting template"),
     }),
-    execute: async ({ name, description, pattern }, { sessionId, userId, atlasContext }) => {
+    execute: async (
+      { name, description, pattern },
+      { sessionId, userId, atlasContext },
+    ) => {
       const kv = await Deno.openKv();
       const store = new WorkspaceDraftStore(kv);
 
@@ -360,18 +387,20 @@ const workspaceTools: Record<string, Tool> = {
   update_workspace_config: {
     description: "Update the draft workspace configuration by adding or modifying components",
     parameters: z.object({
-      draftId: z.string().uuid().describe("Draft workspace ID"),
-      operation: z.enum([
-        "add_agent",
-        "update_agent",
-        "remove_agent",
-        "add_job",
-        "update_job",
-        "remove_job",
-        "set_trigger",
-        "add_tool",
-        "remove_tool",
-      ]).describe("Type of update operation"),
+      draftId: z.uuid().describe("Draft workspace ID"),
+      operation: z
+        .enum([
+          "add_agent",
+          "update_agent",
+          "remove_agent",
+          "add_job",
+          "update_job",
+          "remove_job",
+          "set_trigger",
+          "add_tool",
+          "remove_tool",
+        ])
+        .describe("Type of update operation"),
       config: z.record(z.unknown()).describe("Configuration for the operation"),
     }),
     execute: async ({ draftId, operation, config }, { atlasContext }) => {
@@ -399,8 +428,11 @@ const workspaceTools: Record<string, Tool> = {
   publish_workspace: {
     description: "Publish a draft workspace to the filesystem, making it available for use",
     parameters: z.object({
-      draftId: z.string().uuid().describe("Draft workspace ID to publish"),
-      path: z.string().optional().describe("Optional path where workspace should be created"),
+      draftId: z.uuid().describe("Draft workspace ID to publish"),
+      path: z
+        .string()
+        .optional()
+        .describe("Optional path where workspace should be created"),
     }),
     execute: async ({ draftId, path }, { atlasContext }) => {
       const kv = await Deno.openKv();
@@ -463,8 +495,10 @@ const workspaceTools: Record<string, Tool> = {
   show_draft_config: {
     description: "Display the current draft workspace configuration in YAML format",
     parameters: z.object({
-      draftId: z.string().uuid().describe("Draft workspace ID"),
-      format: z.enum(["yaml", "summary"]).default("summary")
+      draftId: z.uuid().describe("Draft workspace ID"),
+      format: z
+        .enum(["yaml", "summary"])
+        .default("summary")
         .describe("Output format"),
     }),
     execute: async ({ draftId, format }, { atlasContext }) => {
@@ -495,16 +529,20 @@ const workspaceTools: Record<string, Tool> = {
             summary: {
               name: draft.name,
               description: draft.description,
-              agents: Object.entries(draft.config.agents).map(([id, agent]: [string, any]) => ({
-                id,
-                purpose: agent.purpose,
-                type: agent.type,
-              })),
-              jobs: Object.entries(draft.config.jobs).map(([id, job]: [string, any]) => ({
-                id,
-                description: job.description,
-                agentCount: job.execution?.agents?.length || 0,
-              })),
+              agents: Object.entries(draft.config.agents).map(
+                ([id, agent]: [string, any]) => ({
+                  id,
+                  purpose: agent.purpose,
+                  type: agent.type,
+                }),
+              ),
+              jobs: Object.entries(draft.config.jobs).map(
+                ([id, job]: [string, any]) => ({
+                  id,
+                  description: job.description,
+                  agentCount: job.execution?.agents?.length || 0,
+                }),
+              ),
               signals: Object.keys(draft.config.signals),
               tools: Object.keys(draft.config.tools || {}),
             },
@@ -680,7 +718,10 @@ export function suggestNextSteps(draft: WorkspaceDraft): string[] {
   return suggestions;
 }
 
-export function generateUpdateMessage(operation: string, config: Record<string, unknown>): string {
+export function generateUpdateMessage(
+  operation: string,
+  config: Record<string, unknown>,
+): string {
   switch (operation) {
     case "add_agent":
       return `Added agent '${config.id}' with purpose: ${config.purpose}`;

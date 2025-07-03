@@ -1,3 +1,4 @@
+import { getAtlasClient } from "@atlas/client";
 import {
   defaultTheme,
   extendTheme,
@@ -8,44 +9,43 @@ import {
 } from "@inkjs/ui";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useRef, useState } from "react";
-import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { YargsInstance } from "../utils/yargs.ts";
-import Help from "../views/help.tsx";
-import { InitView } from "../views/InitView.tsx";
-import { ConfigView } from "../views/ConfigView.tsx";
-import CreditsView from "../views/CreditsView.tsx";
-import { getDaemonClient } from "../utils/daemon-client.ts";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
-import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
+import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
+import { AgentDetails } from "../components/agent-details.tsx";
+import { AgentSelection } from "../components/agent-selection.tsx";
+import { ChatMessage } from "../components/ChatMessage.tsx";
+import { CommandInput } from "../components/command-input.tsx";
+import { GitDiff } from "../components/git-diff.tsx";
+import { JobDetails } from "../components/job-details.tsx";
+import { JobSelection } from "../components/job-selection.tsx";
+import { SessionDetails } from "../components/session-details.tsx";
+import { SessionSelection } from "../components/session-selection.tsx";
+import { SignalActionSelection } from "../components/signal-action-selection.tsx";
+import { SignalDetails } from "../components/signal-details.tsx";
+import { SignalSelection } from "../components/signal-selection.tsx";
+import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+
+import { AppProvider, useAppContext } from "../contexts/app-context.tsx";
 import { AgentListComponent } from "../modules/agents/agent-list-component.tsx";
 import { processAgentsFromConfig } from "../modules/agents/processor.ts";
-import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchLibraryItems } from "../modules/library/fetcher.ts";
-import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
+import { LibraryListComponent } from "../modules/library/library-list-component.tsx";
 import { fetchSessions } from "../modules/sessions/fetcher.ts"; // TODO: Update to use daemon API
-import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
-import { SignalSelection } from "../components/signal-selection.tsx";
-import { SessionSelection } from "../components/session-selection.tsx";
-import { AgentSelection } from "../components/agent-selection.tsx";
-import { JobSelection } from "../components/job-selection.tsx";
-import { SignalDetails } from "../components/signal-details.tsx";
-import { SignalActionSelection } from "../components/signal-action-selection.tsx";
-import { SignalTriggerInput } from "../components/signal-trigger-input.tsx";
+import { SessionListComponent } from "../modules/sessions/session-list-component.tsx";
+import { SignalListComponent } from "../modules/signals/SignalListComponent.tsx";
 import { triggerSignalSimple } from "../modules/signals/trigger.ts";
-import { AgentDetails } from "../components/agent-details.tsx";
-import { JobDetails } from "../components/job-details.tsx";
-import { SessionDetails } from "../components/session-details.tsx";
-import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
-import { TextInput } from "../components/text-input/text-input.tsx";
-import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
-import { getAtlasClient } from "@atlas/client";
-import { createTempFileAndOpen } from "../utils/file-opener.ts";
+
+import { loadWorkspaceConfigNoCwd } from "../modules/workspaces/resolver.ts";
 import { ConversationClient } from "../utils/conversation-client.ts";
-import { ChatMessage } from "../components/ChatMessage.tsx";
-import { YamlDisplay } from "../components/yaml-display.tsx";
-import { GitDiff } from "../components/git-diff.tsx";
-import { AppProvider, useAppContext } from "../contexts/app-context.tsx";
-import { CommandInput } from "../components/command-input.tsx";
+import { getDaemonClient } from "../utils/daemon-client.ts";
+import { createTempFileAndOpen } from "../utils/file-opener.ts";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { YargsInstance } from "../utils/yargs.ts";
+import { ConfigView } from "../views/ConfigView.tsx";
+import CreditsView from "../views/CreditsView.tsx";
+import Help from "../views/help.tsx";
+import { InitView } from "../views/InitView.tsx";
+import { MarkdownDisplay } from "../components/markdown-display.tsx";
 
 // Wrapper component that fetches workspace path via client
 const SignalDetailsWithPath = ({
@@ -621,6 +621,7 @@ interface OutputEntry {
 }
 
 function InteractiveCommandInner() {
+  const { config } = useAppContext();
   const [_inputValue, _setInputValue] = useState("");
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -669,7 +670,18 @@ function InteractiveCommandInner() {
   const { stdout } = useStdout();
   const { exit } = useApp();
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
-  const { isLeaderKeyActive, setLeaderKeyActive } = useAppContext();
+
+  // Handle Ctrl+C for graceful shutdown
+  useInput((_input, key) => {
+    if (key.ctrl && _input === "c") {
+      console.log("[Interactive] Ctrl+C detected, cleaning up...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+      exit();
+    }
+  });
 
   // LLM conversation state (Phase 1 - Core Integration)
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
@@ -677,11 +689,14 @@ function InteractiveCommandInner() {
     string | null
   >(null);
   const [_isLLMProcessing, setIsLLMProcessing] = useState(false);
+
   const [isInitializing, setIsInitializing] = useState(true);
   const [sseStream, setSseStream] = useState<AsyncIterable<any> | null>(null);
-  const [pendingMessageSpinner, setPendingMessageSpinner] = useState<string | null>(null);
-  const [selectedOutputIndex, setSelectedOutputIndex] = useState(-1);
-  const pendingMessageSpinnerRef = useRef<string | null>(null);
+  const sseAbortControllerRef = useRef<AbortController | null>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const [typingStartTime, setTypingStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const timerIntervalRef = useRef<number | null>(null);
 
   // Calculate available height for conversation display
   const availableHeight = Math.max(20, (stdout.rows || 24) - 8); // Reserve space for input
@@ -691,33 +706,37 @@ function InteractiveCommandInner() {
     setMinHeight(requiredHeight);
   }, [availableHeight]);
 
-  // Leader key input handler
-  useInput((input, key) => {
-    if (key.ctrl && input === "a") {
-      setLeaderKeyActive(!isLeaderKeyActive);
-      // Reset selection when entering leader key mode
-      if (!isLeaderKeyActive) {
-        setSelectedOutputIndex(outputBuffer.length - 1);
-      } else {
-        setSelectedOutputIndex(-1);
-      }
-    }
+  // Timer effect for non-streaming mode
+  useEffect(() => {
+    if (isTyping && !config.streamMessages) {
+      const startTime = Date.now();
+      setTypingStartTime(startTime);
+      setElapsedSeconds(0);
 
-    if (isLeaderKeyActive && (key.escape || input === "i")) {
-      setLeaderKeyActive(false);
-      setSelectedOutputIndex(-1);
-    }
+      const interval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setElapsedSeconds(elapsed);
+      }, 1000);
 
-    // Arrow key navigation in leader key mode
-    if (isLeaderKeyActive && outputBuffer.length > 0) {
-      if (key.upArrow) {
-        setSelectedOutputIndex((prev) => prev <= 0 ? outputBuffer.length - 1 : prev - 1);
+      timerIntervalRef.current = interval;
+
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+      };
+    } else if (!isTyping) {
+      // Clean up timer when typing stops
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
       }
-      if (key.downArrow) {
-        setSelectedOutputIndex((prev) => prev >= outputBuffer.length - 1 ? 0 : prev + 1);
-      }
+      setTypingStartTime(null);
+      setElapsedSeconds(0);
     }
-  });
+  }, [isTyping, config.streamMessages]);
 
   // Add intro message on startup and check daemon status
   useEffect(() => {
@@ -762,126 +781,124 @@ function InteractiveCommandInner() {
           // Store the SSE URL for later use
           conversationClient.sseUrl = session.sseUrl;
 
-          // Start persistent SSE listener
+          // Start persistent SSE listener with AbortController
           console.log("[Interactive] Starting persistent SSE listener...");
-          const sseIterator = conversationClient.streamEvents(session.sessionId, session.sseUrl);
+          const abortController = new AbortController();
+          sseAbortControllerRef.current = abortController;
+
+          const sseIterator = conversationClient.streamEvents(
+            session.sessionId,
+            session.sseUrl,
+            abortController.signal,
+          );
           setSseStream(sseIterator);
 
           // Start listening for SSE events in background
           (async () => {
             try {
               for await (const event of sseIterator) {
-                console.log("[Interactive] Received SSE event:", event.type, event.data);
-
-                if (event.type === "connection_opened") {
-                  // Ignore connection events
-                  continue;
+                // Check if we should stop
+                if (abortController.signal.aborted) {
+                  console.log(
+                    "[Interactive] SSE stream aborted, stopping listener",
+                  );
+                  break;
                 }
+                console.log(
+                  "[Interactive] Received SSE event:",
+                  event.type,
+                  event.data,
+                );
 
                 if (event.type === "message_chunk") {
                   const responseMessage = event.data.content;
                   const isPartial = event.data.partial;
 
-                  // Update streaming message
-                  const responseTimestamp = new Date()
-                    .toLocaleTimeString([], {
-                      hour: "numeric",
-                      minute: "2-digit",
-                    })
-                    .toLowerCase()
-                    .replace(/\s/g, "");
+                  // If streaming is enabled, show all chunks
+                  // If streaming is disabled, only show when partial is false (complete message)
+                  if (config.streamMessages || !isPartial) {
+                    // Update streaming message
+                    const responseTimestamp = new Date()
+                      .toLocaleTimeString([], {
+                        hour: "numeric",
+                        minute: "2-digit",
+                      })
+                      .toLowerCase()
+                      .replace(/\s/g, "");
 
-                  const streamingMessageId = `llm-response-current`;
+                    const streamingMessageId = `llm-response-current`;
 
-                  setOutputBuffer((prev) => {
-                    const filtered = prev.filter((entry) => entry.id !== streamingMessageId);
-                    return [
-                      ...filtered,
-                      {
-                        id: streamingMessageId,
-                        component: (
-                          <Box flexDirection="column">
-                            <Box flexDirection="row" gap={1}>
-                              <Text color="blue" bold>
-                                Δ Atlas
-                              </Text>
-                              <Text color="blue" dimColor bold>
-                                [{responseTimestamp}]
-                              </Text>
+                    setOutputBuffer((prev) => {
+                      const filtered = prev.filter(
+                        (entry) => entry.id !== streamingMessageId,
+                      );
+                      return [
+                        ...filtered,
+                        {
+                          id: streamingMessageId,
+                          component: (
+                            <Box flexDirection="column">
+                              <Box flexDirection="row" gap={1}>
+                                <Text color="blue" bold>
+                                  Δ Atlas
+                                </Text>
+                                <Text color="blue" dimColor bold>
+                                  [{responseTimestamp}]
+                                </Text>
+                              </Box>
+                              <Box>
+                                <Text wrap="wrap" color="white">
+                                  {responseMessage}
+                                </Text>
+                              </Box>
                             </Box>
-                            <Box>
-                              <Text wrap="wrap" color="white">
-                                {responseMessage}
-                              </Text>
-                            </Box>
-                          </Box>
-                        ),
-                      },
-                    ];
-                  });
+                          ),
+                        },
+                      ];
+                    });
+                  }
                 }
 
                 if (event.type === "message_complete") {
                   console.log("[Interactive] Message completed");
-                  console.log(
-                    "[Interactive] Current pendingMessageSpinner (state):",
-                    pendingMessageSpinner,
-                  );
-                  console.log(
-                    "[Interactive] Current pendingMessageSpinner (ref):",
-                    pendingMessageSpinnerRef.current,
-                  );
 
-                  // Convert streaming message to permanent message and remove spinner
-                  const spinnerId = pendingMessageSpinnerRef.current;
+                  // Update streaming message ID to make it permanent
                   const streamingMessageId = `llm-response-current`;
+                  const permanentMessageId = `message-received-${Date.now()}`;
 
                   setOutputBuffer((prev) => {
-                    // Find the streaming message to preserve its content
-                    const streamingMessage = prev.find((entry) => entry.id === streamingMessageId);
-
-                    // Filter out both spinner and streaming message
-                    let filtered = prev.filter((entry) =>
-                      entry.id !== spinnerId && entry.id !== streamingMessageId
-                    );
-
-                    // Add permanent message if we had streaming content
-                    if (streamingMessage) {
-                      const permanentMessageId = `llm-response-${Date.now()}`;
-                      filtered = [
-                        ...filtered,
-                        {
+                    return prev.map((entry) => {
+                      if (entry.id === streamingMessageId) {
+                        return {
+                          ...entry,
                           id: permanentMessageId,
-                          component: streamingMessage.component, // Preserve the content
-                        },
-                      ];
-                    }
-
-                    console.log(
-                      "[Interactive] Filtered out spinner and converted streaming message, remaining entries:",
-                      filtered.length,
-                    );
-                    return filtered;
+                        };
+                      }
+                      return entry;
+                    });
                   });
 
-                  if (spinnerId) {
-                    console.log("[Interactive] Removing spinner on message_complete:", spinnerId);
-                    setPendingMessageSpinner(null);
-                    pendingMessageSpinnerRef.current = null;
-                  } else {
-                    console.log("[Interactive] No pendingMessageSpinner to remove");
-                  }
+                  // Stop typing indicator
+                  setIsTyping(false);
                 }
               }
             } catch (error) {
-              console.error("[Interactive] SSE stream error:", error);
+              // Only log error if not aborted
+              if (!abortController.signal.aborted) {
+                console.error("[Interactive] SSE stream error:", error);
+              }
             }
           })();
 
-          console.log("[Interactive] ConversationClient initialized successfully");
+          console.log(
+            "[Interactive] ConversationClient initialized successfully",
+          );
         } catch (error) {
           // Log the full error for debugging
-          console.error("[Interactive] Failed to initialize conversation client:", error);
+          console.error(
+            "[Interactive] Failed to initialize conversation client:",
+            error,
+          );
           console.error("[Interactive] Full error details:", {
             message: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
@@ -957,7 +974,16 @@ function InteractiveCommandInner() {
     };
 
     checkDaemonAndInitialize();
-  }, []);
+
+    // Cleanup function
+    return () => {
+      console.log("[Interactive] Cleaning up SSE connection...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+    };
+  }, [config]);
 
   // Add entry to output buffer
   const addOutputEntry = (entry: OutputEntry) => {
@@ -968,10 +994,51 @@ function InteractiveCommandInner() {
   const handleWorkspaceSelectForWorkspaces = async (workspaceId: string) => {
     setShowWorkspacesWorkspaceSelection(false);
 
+    // Handle special "none" case to exit workspace
+    if (workspaceId === "none") {
+      setSelectedWorkspace(null);
+
+      // Add workspace exit message to output buffer
+      const terminalWidth = dimensions.paddedWidth;
+      const messageText = ` Exited workspace `;
+      const totalDashes = Math.max(0, terminalWidth - messageText.length);
+      const leftDashes = Math.floor(totalDashes / 2);
+      const rightDashes = totalDashes - leftDashes;
+      const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+
+      addOutputEntry({
+        id: `workspace-exited-${Date.now()}`,
+        component: (
+          <Box width={terminalWidth}>
+            <Text dimColor>{formattedMessage}</Text>
+          </Box>
+        ),
+      });
+      return;
+    }
+
     try {
       const workspace = await getWorkspaceById(workspaceId);
       if (workspace) {
         setSelectedWorkspace(workspace.name);
+
+        // Add workspace selection message to output buffer
+        const workspaceName = workspace.name;
+        const terminalWidth = dimensions.paddedWidth;
+        const messageText = ` Entered: ${workspaceName} `;
+        const totalDashes = Math.max(0, terminalWidth - messageText.length);
+        const leftDashes = Math.floor(totalDashes / 2);
+        const rightDashes = totalDashes - leftDashes;
+        const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+
+        addOutputEntry({
+          id: `workspace-selected-${Date.now()}`,
+          component: (
+            <Box width={terminalWidth}>
+              <Text dimColor>{formattedMessage}</Text>
+            </Box>
+          ),
+        });
       }
     } catch (error) {
       addOutputEntry({
@@ -1515,45 +1582,40 @@ function InteractiveCommandInner() {
     const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
 
     // Force immediate render by using setOutputBuffer directly
-    setOutputBuffer((prev) => [...prev, {
-      id: `user-${Date.now()}`,
-      component: (
-        <Box flexDirection="column">
-          <ChatMessage
-            author={currentUser}
-            date={userTimestamp}
-            message={input}
-            authorColor="green"
-          />
-        </Box>
-      ),
-    }]);
+    setOutputBuffer((prev) => [
+      ...prev,
+      {
+        id: `user-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author={currentUser}
+              date={userTimestamp}
+              message={input}
+              authorColor="green"
+            />
+          </Box>
+        ),
+      },
+    ]);
 
-    // Show processing indicator (using existing Spinner pattern)
+    // Show typing indicator
     setIsLLMProcessing(true);
-    const spinnerId = `llm-processing-${Date.now()}`;
-    addOutputEntry({
-      id: spinnerId,
-      component: <Spinner label="Typing..." />,
-    });
+    setIsTyping(true);
 
     try {
-      console.log("[Interactive] Sending message with streamId:", conversationSessionId);
-
-      // Store the spinner ID so the persistent SSE listener can remove it
-      console.log("[Interactive] Setting pendingMessageSpinner to:", spinnerId);
-      setPendingMessageSpinner(spinnerId);
-      pendingMessageSpinnerRef.current = spinnerId;
+      console.log(
+        "[Interactive] Sending message with streamId:",
+        conversationSessionId,
+      );
 
       // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
-      // The persistent SSE listener will handle the response and remove the spinner
+      // The persistent SSE listener will handle the response
     } catch (error) {
       setIsLLMProcessing(false);
-      setOutputBuffer((prev) => prev.filter((entry) => entry.id !== spinnerId));
-      setPendingMessageSpinner(null);
-      pendingMessageSpinnerRef.current = null;
+      setIsTyping(false);
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
@@ -1588,7 +1650,15 @@ function InteractiveCommandInner() {
       parsed.command === "quit" ||
       parsed.command === "q"
     ) {
-      Deno.exit(0);
+      // Clean up SSE connection before exit
+      console.log("[Interactive] Exit command received, cleaning up...");
+      if (sseAbortControllerRef.current) {
+        sseAbortControllerRef.current.abort();
+        sseAbortControllerRef.current = null;
+      }
+      // Use Ink's exit function for graceful shutdown
+      exit();
+      return;
     }
 
     if (parsed.command === "help") {
@@ -1705,6 +1775,11 @@ function InteractiveCommandInner() {
             .toLowerCase()
             .replace(/\s/g, "");
 
+          // Wrap YAML content in markdown code block
+          const markdownYaml = `\`\`\`yaml
+${yamlContent}
+\`\`\``;
+
           addOutputEntry({
             id: `yaml-output-${Date.now()}`,
             component: (
@@ -1715,7 +1790,7 @@ function InteractiveCommandInner() {
                   message="Here's the example workspace.yml file:"
                   authorColor="blue"
                 />
-                <YamlDisplay content={yamlContent} />
+                <MarkdownDisplay content={markdownYaml} />
               </Box>
             ),
           });
@@ -1730,6 +1805,92 @@ function InteractiveCommandInner() {
           });
         }
       })();
+      return;
+    }
+
+    if (parsed.command === "markdown") {
+      // Show example markdown content
+      const exampleMarkdown = `# Atlas Markdown Support
+
+## Features
+
+Atlas now supports rich **markdown** rendering in the terminal using \`ink-markdown\`.
+
+### Text Formatting
+
+- **Bold text** with \`**text**\`
+- *Italic text* with \`*text*\`
+- \`Inline code\` with backticks
+- ~~Strikethrough~~ with \`~~text~~\`
+
+### Lists
+
+#### Unordered Lists
+- Item 1
+- Item 2
+  - Nested item A
+  - Nested item B
+- Item 3
+
+#### Ordered Lists
+1. First item
+2. Second item
+3. Third item
+
+### Links and Code
+
+Visit [Atlas Documentation](https://docs.atlas.dev) for more information.
+
+Here's a code block:
+
+\`\`\`javascript
+function greet(name) {
+  return \`Hello, \${name}!\`;
+}
+
+console.log(greet("Atlas"));
+\`\`\`
+
+### Tables
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| YAML Display | ✅ Complete | Uses collapsible view |
+| Git Diff | ✅ Complete | Syntax highlighted |
+| Markdown | ✅ Complete | Rich formatting |
+
+### Quotes
+
+> Atlas is a comprehensive AI agent orchestration platform
+> that transforms software delivery through human/AI collaboration.
+
+---
+
+**Happy coding with Atlas!** 🚀`;
+
+      const now = new Date();
+      const timestamp = now
+        .toLocaleTimeString([], {
+          hour: "numeric",
+          minute: "2-digit",
+        })
+        .toLowerCase()
+        .replace(/\s/g, "");
+
+      addOutputEntry({
+        id: `markdown-output-${Date.now()}`,
+        component: (
+          <Box flexDirection="column">
+            <ChatMessage
+              author="Δ Atlas"
+              date={timestamp}
+              message="Here's an example of markdown rendering:"
+              authorColor="blue"
+            />
+            <MarkdownDisplay content={exampleMarkdown} />
+          </Box>
+        ),
+      });
       return;
     }
 
@@ -1808,15 +1969,6 @@ function InteractiveCommandInner() {
     outputs.forEach(addOutputEntry);
   };
 
-  // Enhanced navigation handler
-  useInput((inputChar, key) => {
-    if (key.ctrl && inputChar === "c") {
-      // Force immediate exit to avoid waiting for API timeouts
-      Deno.exit(0);
-      return;
-    }
-  });
-
   return (
     <Box
       flexDirection="column"
@@ -1859,6 +2011,15 @@ function InteractiveCommandInner() {
           {outputBuffer.length > 0 && (
             <Box flexDirection="column" gap={1}>
               {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
+            </Box>
+          )}
+
+          {/* Typing indicator */}
+          {isTyping && (
+            <Box marginTop={1}>
+              {config.streamMessages
+                ? <Spinner label="Typing..." />
+                : <Spinner label={`Typing... (${elapsedSeconds}s)`} />}
             </Box>
           )}
 
@@ -1984,7 +2145,6 @@ function InteractiveCommandInner() {
               <CommandInput
                 onSubmit={handleCommand}
                 selectedWorkspace={selectedWorkspace}
-                isDisabled={isLeaderKeyActive}
               />
             )}
         </>
@@ -2081,10 +2241,18 @@ const WorkspaceSelection = ({
   }
 
   // Create options for Select component
-  const options = workspaces.map((workspace) => ({
-    label: `${workspace.name} (${workspace.id})`,
-    value: workspace.id,
-  }));
+  const options = [
+    // Add "none" option first
+    {
+      label: "(none)",
+      value: "none",
+    },
+    // Then add all workspaces
+    ...workspaces.map((workspace) => ({
+      label: `${workspace.name} (${workspace.id})`,
+      value: workspace.id,
+    })),
+  ];
 
   const handleSelect = (value: string) => {
     onWorkspaceSelect(value);

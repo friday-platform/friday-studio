@@ -233,7 +233,11 @@ export class WorkspaceManager {
       if (error.issues && Array.isArray(error.issues)) {
         logger.debug("Workspace config validation issues", {
           workspace: workspaceName,
-          issues: error.issues.map((issue: any) => ({
+          issues: error.issues.map((issue: {
+            path?: (string | number)[];
+            message: string;
+            code?: string;
+          }) => ({
             path: issue.path?.join(".") || "root",
             message: issue.message,
             code: issue.code,
@@ -341,6 +345,100 @@ export class WorkspaceManager {
 
     await this.registry!.updateWorkspaceStatus(id, status, updates);
     logger.debug("Workspace status updated", { id, status });
+  }
+
+  /**
+   * Register a virtual workspace (no filesystem path)
+   * Used for system workspaces with embedded configurations
+   */
+  async registerVirtualWorkspace(
+    id: string,
+    config: WorkspaceConfig,
+    metadata?: {
+      name?: string;
+      description?: string;
+      system?: boolean;
+      tags?: string[];
+    },
+  ): Promise<WorkspaceEntry> {
+    if (!this.registry) await this.initialize();
+
+    // Check if already registered
+    const existing = await this.findById(id);
+    if (existing) {
+      logger.info(`Virtual workspace '${id}' already registered`);
+      return existing;
+    }
+
+    // Create workspace entry with embedded config
+    const workspaceName = metadata?.name || config.workspace.name || id;
+
+    // Generate config hash for change detection
+    const configJson = JSON.stringify(config, Object.keys(config).sort());
+    const encoder = new TextEncoder();
+    const data = encoder.encode(configJson);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+    const entry: WorkspaceEntry = {
+      id,
+      name: workspaceName,
+      path: `virtual://${id}`, // Special path format for virtual workspaces
+      configPath: `virtual://${id}/workspace.yml`,
+      status: WorkspaceStatus.STOPPED,
+      createdAt: new Date().toISOString(),
+      lastSeen: new Date().toISOString(),
+      configHash,
+      config, // Store the entire config
+      metadata: {
+        description: metadata?.description || config.workspace.description,
+        system: metadata?.system || false,
+        tags: metadata?.tags || [],
+        virtual: true, // Flag to indicate virtual workspace
+      },
+    };
+
+    // Store in registry
+    await this.registry!.registerWorkspace(entry);
+
+    logger.info("Virtual workspace registered", {
+      id: entry.id,
+      name: entry.name,
+      system: entry.metadata?.system,
+    });
+
+    return entry;
+  }
+
+  /**
+   * Register all system workspaces
+   * Called during daemon initialization
+   */
+  async registerSystemWorkspaces(): Promise<void> {
+    logger.info("Registering system workspaces...");
+
+    // Import conversation workspace config
+    const { ATLAS_CONVERSATION_CONFIG } = await import(
+      "@atlas/system-workspaces"
+    );
+
+    await this.registerVirtualWorkspace(
+      "atlas-conversation", // Fixed ID matching workspace name
+      ATLAS_CONVERSATION_CONFIG,
+      {
+        name: "Atlas Conversation",
+        description: "System workspace for Atlas conversations",
+        system: true,
+        tags: ["system", "conversation", "interactive"],
+      },
+    );
+
+    // Future system workspaces can be added here
+    // const { ATLAS_MONITORING_CONFIG } = await import("./system-workspaces/monitoring-config.ts");
+    // await this.registerVirtualWorkspace("atlas-monitoring", ATLAS_MONITORING_CONFIG, {...});
+
+    logger.info("System workspaces registered successfully");
   }
 
   // ============================================================================

@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { defaultTheme, extendTheme, TextInput, ThemeProvider } from "@inkjs/ui";
 import { useCallback, useState } from "react";
+import { useAppContext } from "../contexts/app-context.tsx";
 
 // Custom theme with yellow highlights for TextInput components
 const customTheme = extendTheme(defaultTheme, {
@@ -15,24 +16,18 @@ const customTheme = extendTheme(defaultTheme, {
   },
 });
 
-interface AtlasConfig {
-  apiKey: string;
-  daemonPort: string;
-}
-
 interface ConfigViewProps {
   onExit: () => void;
 }
 
 const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
-  const [config, setConfig] = useState<AtlasConfig>({
-    apiKey: "",
-    daemonPort: "8080",
-  });
+  const { config, updateConfig } = useAppContext();
+  const [localConfig, setLocalConfig] = useState(config);
 
   const [focusedField, setFocusedField] = useState<
     | "apiKey"
     | "daemonPort"
+    | "streamMessages"
     | "submit"
     | "yes"
     | "no"
@@ -40,7 +35,7 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  useInput((_, key) => {
+  useInput((input, key) => {
     if (key.escape) {
       onExit();
       return;
@@ -69,9 +64,15 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
       if (key.tab) {
         setFocusedField((prev) => {
           if (prev === "apiKey") return "daemonPort";
-          if (prev === "daemonPort") return "submit";
+          if (prev === "daemonPort") return "streamMessages";
+          if (prev === "streamMessages") return "submit";
           return "apiKey";
         });
+        return;
+      }
+
+      if (focusedField === "streamMessages" && input === " ") {
+        setLocalConfig((prev) => ({ ...prev, streamMessages: !prev.streamMessages }));
         return;
       }
 
@@ -84,16 +85,17 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
   });
 
   const confirmSave = () => {
-    // For now, we just show success without actually storing
+    // Update the app context with the new config
+    updateConfig(localConfig);
     setShowSuccess(true);
   };
 
   const handleApiKeyChange = useCallback((value: string) => {
-    setConfig((prev) => ({ ...prev, apiKey: value }));
+    setLocalConfig((prev) => ({ ...prev, apiKey: value }));
   }, []);
 
   const handleDaemonPortChange = useCallback((value: string) => {
-    setConfig((prev) => ({ ...prev, daemonPort: value }));
+    setLocalConfig((prev) => ({ ...prev, daemonPort: value }));
   }, []);
 
   if (showSuccess) {
@@ -103,10 +105,13 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
           Configuration saved successfully!
         </Text>
         <Box marginTop={1}>
-          <Text>API Key: {config.apiKey ? "••••••••" : "(not set)"}</Text>
+          <Text>API Key: {localConfig.apiKey ? "••••••••" : "(not set)"}</Text>
         </Box>
         <Box>
-          <Text>Daemon Port: {config.daemonPort}</Text>
+          <Text>Daemon Port: {localConfig.daemonPort}</Text>
+        </Box>
+        <Box>
+          <Text>Stream Messages: {localConfig.streamMessages ? "Enabled" : "Disabled"}</Text>
         </Box>
         <Box marginTop={2}>
           <Text dimColor>Press Enter to continue...</Text>
@@ -120,10 +125,13 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
       <Box flexDirection="column" padding={2}>
         <Text bold>Review Configuration</Text>
         <Box marginTop={1}>
-          <Text>API Key: {config.apiKey ? "••••••••" : "(not set)"}</Text>
+          <Text>API Key: {localConfig.apiKey ? "••••••••" : "(not set)"}</Text>
         </Box>
         <Box>
-          <Text>Daemon Port: {config.daemonPort}</Text>
+          <Text>Daemon Port: {localConfig.daemonPort}</Text>
+        </Box>
+        <Box>
+          <Text>Stream Messages: {localConfig.streamMessages ? "Enabled" : "Disabled"}</Text>
         </Box>
 
         <Box marginTop={2} flexDirection="row" gap={4}>
@@ -163,7 +171,7 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
           isDisabled={focusedField !== "apiKey"}
           placeholder="Enter your Anthropic API key..."
           onChange={handleApiKeyChange}
-          defaultValue={config.apiKey}
+          defaultValue={localConfig.apiKey}
         />
       </Box>
 
@@ -176,8 +184,21 @@ const ConfigViewContent = ({ onExit }: ConfigViewProps) => {
           isDisabled={focusedField !== "daemonPort"}
           placeholder="8080"
           onChange={handleDaemonPortChange}
-          defaultValue={config.daemonPort}
+          defaultValue={localConfig.daemonPort}
         />
+      </Box>
+
+      <Box marginTop={2}>
+        <Text bold>Stream Messages:</Text>
+      </Box>
+
+      <Box>
+        <Text
+          backgroundColor={focusedField === "streamMessages" ? "yellow" : undefined}
+          color={focusedField === "streamMessages" ? "black" : undefined}
+        >
+          {localConfig.streamMessages ? "✓ Enabled" : "✗ Disabled"}
+        </Text>
       </Box>
 
       <Box marginTop={2}>

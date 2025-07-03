@@ -7,6 +7,8 @@ ensure consistent, structured output perfect for compliance workflows.
 
 This workspace demonstrates Atlas's advanced capabilities for compliance automation:
 
+- **Automated Document Processing** - Converts PDF and Excel files to text for analysis using
+  `pdftotext` and `in2csv`
 - **Strict Template Formatting** - "Template Filling System" approach ensures consistent output
 - **Three-Agent Workflow** - Specialized document analysis, questionnaire evaluation, and vendor
   assessment
@@ -16,8 +18,10 @@ This workspace demonstrates Atlas's advanced capabilities for compliance automat
 
 ### Agent Architecture (SOC 2 Evaluation Workflow)
 
-1. **document-reader** - Analyzes vendor documentation (SOC 2 reports, DPAs, policies)
-2. **questionnaire-analyzer** - Evaluates security questionnaire responses against SOC 2 criteria
+1. **document-reader** - Extracts text from PDF/Excel files and analyzes vendor documentation (SOC 2
+   reports, DPAs, policies)
+2. **questionnaire-analyzer** - Processes Excel questionnaires and evaluates security responses
+   against SOC 2 criteria
 3. **vendor-evaluator** - Creates final recommendation using strict template formatting
 
 ## Quick Start
@@ -63,11 +67,11 @@ Create a directory structure for vendor evaluation:
 mkdir -p ~/vendor-evaluation/cloudflare
 
 # Place vendor documents in the directory:
-# - SOC 2 Type II reports
-# - Data Processing Agreements (DPA)
-# - Penetration test reports
-# - Security questionnaires
-# - Compliance certifications
+# - SOC 2 Type II reports (PDF)
+# - Data Processing Agreements (DPA) (PDF)  
+# - Penetration test reports (PDF)
+# - Security questionnaires (XLSX/XLS)
+# - Compliance certifications (PDF)
 ```
 
 ### 5. Run Vendor Evaluation
@@ -108,6 +112,48 @@ atlas workspace logs vendor-reviewer
 
 # Check Atlas Library for completed reports
 atlas library list
+```
+
+## Document Processing Capabilities
+
+This workspace automatically converts binary files to text for analysis:
+
+### Supported File Types
+
+- **PDF Documents**: Automatically converted using `pdftotext` command
+  - SOC 2 Type II reports
+  - Data Processing Agreements (DPAs)
+  - Penetration test reports
+  - Security policies and procedures
+  - Compliance certifications
+
+- **Excel Files**: Automatically converted using `in2csv` command
+  - Security questionnaires (.xlsx, .xls)
+  - Compliance checklists
+  - Risk assessment templates
+
+### How It Works
+
+1. **Document Discovery**: Agents scan the specified directory for all PDF and Excel files
+2. **Text Extraction**:
+   - PDFs processed with `pdftotext "file.pdf" -` (outputs to stdout)
+   - Excel files processed with `in2csv "file.xlsx"` (converts to CSV format)
+3. **Content Analysis**: Extracted text is analyzed for SOC 2 compliance criteria
+4. **Cross-Reference**: Information from all documents is synthesized for comprehensive evaluation
+
+### Prerequisites
+
+Ensure these tools are installed:
+
+```bash
+# Install pdftotext (usually part of poppler-utils)
+brew install poppler          # macOS
+apt-get install poppler-utils  # Ubuntu/Debian
+
+# Install csvkit for in2csv
+brew install csvkit           # macOS
+pip install csvkit           # Alternative via pip
+apt-get install csvkit        # Ubuntu/Debian
 ```
 
 ## Expected Output Format
@@ -165,10 +211,10 @@ vendor-reviewer/
 The `workspace.yml` file defines:
 
 - **Signal Configurations** - CLI triggers for different evaluation types
-- **Agent Definitions** - Three specialized agents with specific prompts
-- **Job Workflows** - Sequential execution strategies
+- **Agent Definitions** - Three specialized agents with specific prompts for PDF/Excel processing
+- **Job Workflows** - Sequential execution strategies combining all three agents
 - **Memory Settings** - Pattern learning and retention (2 years)
-- **MCP Tools** - Filesystem access for document reading
+- **MCP Tools** - Filesystem access and shell commands for `pdftotext` and `in2csv`
 
 ### Available Signals & Workflows
 
@@ -214,7 +260,7 @@ approach:
 ### Comprehensive Vendor Analysis
 
 ```bash
-# Full analysis of Cloudflare vendor
+# Full analysis of Cloudflare vendor with automatic PDF/Excel processing
 atlas signal trigger cli-vendor-review \
   --workspace vendor-reviewer \
   --data '{
@@ -223,13 +269,11 @@ atlas signal trigger cli-vendor-review \
     "questionnaire_path": "/Users/username/vendor-docs/cloudflare/questionnaire.xlsx"
   }'
 
-# After analysis completes, generate final report
-atlas signal trigger cli-vendor-final-evaluation \
-  --workspace vendor-reviewer \
-  --data '{
-    "vendor_name": "Cloudflare", 
-    "evaluation_summary": "Analysis completed: SOC 2 certified, strong security controls identified"
-  }'
+# The workspace will automatically:
+# 1. Extract text from all PDFs using pdftotext
+# 2. Convert Excel questionnaire to CSV using in2csv  
+# 3. Analyze all content and generate comprehensive report
+# 4. Store final evaluation in Atlas Library
 ```
 
 ### Quick Template Generation

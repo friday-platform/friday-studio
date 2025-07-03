@@ -49,7 +49,7 @@ jobs:
             os: darwin
             arch: amd64
             target: x86_64-apple-darwin
-          - runner: macos-15-xlarge
+          - runner: macos-14-xlarge
             os: darwin
             arch: arm64
             target: aarch64-apple-darwin
@@ -355,9 +355,9 @@ jobs:
           fi
 
           # Also clean up any previous package receipts to allow downgrades/cross-channel installs
-          if pkgutil --pkgs | grep -q "com.tempestteam.atlas"; then
+          if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
             echo "Cleaning up previous Atlas package receipts..."
-            pkgutil --forget "com.tempestteam.atlas" 2>/dev/null || true
+            pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
           fi
 
           exit 0
@@ -432,66 +432,304 @@ jobs:
           installer_version="1.${timestamp}"
 
           # Build the package with timestamp-based version for proper upgrade handling
+          # First create main component package
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
-            --identifier "com.tempestteam.atlas" \
+            --identifier "com.tempestdx.atlas" \
             --version "$installer_version" \
             --install-location "/" \
-            "./dist/${pkg_name}"
+            "./dist/atlas-component.pkg"
 
-          # Sign the pkg if certificates are available
-          if [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
-            echo "Signing pkg installer..."
+          # Create empty docs package (optional choice to force customization screen)
+          mkdir -p ./pkg/docs-payload
+          pkgbuild \
+            --root ./pkg/docs-payload \
+            --identifier "com.tempestdx.atlas.docs" \
+            --version "$installer_version" \
+            --install-location "/" \
+            "./dist/atlas-docs.pkg"
+
+          # Create distribution definition file (following Apple's official documentation)
+          # Set version for XML template
+          echo "=== DEBUG: Setting version variables ==="
+          EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
+          echo "EDGE_VERSION: $EDGE_VERSION"
+          # Strip 'edge-' prefix for clean title display
+          EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
+          echo "EDGE_VERSION_CLEAN: $EDGE_VERSION_CLEAN"
+          echo "installer_version: $installer_version"
+          echo "=== DEBUG: Creating distribution.dist file ==="
+          cat > ./dist/distribution.dist << EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <installer-gui-script minSpecVersion="1">
+              <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
+              <welcome file="welcome.html"/>
+              <license file="license.rtf"/>
+              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+              <installation-check script="pm_install_check();"/>
+              <script>
+          function pm_install_check() {
+              if(!(system.compareVersions(system.version.ProductVersion, '10.9') >= 0)) {
+                  my.result.title = 'Failure';
+                  my.result.message = 'This software requires macOS 10.9 or later.';
+                  my.result.type = 'Fatal';
+                  return false;
+              }
+              return true;
+          }
+              </script>
+              <choices-outline>
+                  <line choice="com.tempestdx.atlas"/>
+                  <line choice="com.tempestdx.atlas.docs"/>
+              </choices-outline>
+              <choice id="com.tempestdx.atlas" title="Tempest ATLAS CLI" description="Core Atlas command-line tool (Required)" start_selected="true" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas"/>
+              </choice>
+              <choice id="com.tempestdx.atlas.docs" title="Documentation" description="Install example configurations and documentation (Optional)" start_selected="false" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas.docs"/>
+              </choice>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
+          </installer-gui-script>
+          EOF
+
+          echo "=== DEBUG: Distribution file created successfully ==="
+          echo "Contents of distribution.dist:"
+          cat ./dist/distribution.dist
+          echo "=== DEBUG: Creating welcome and license files ==="
+
+          # Create welcome HTML file (as required by Apple docs)
+          echo "=== DEBUG: Creating welcome.html file ==="
+          cat > ./dist/welcome.html << 'WELCOME_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Welcome</title>
+          </head>
+          <body>
+              <h1>Welcome to Tempest ATLAS Installation</h1>
+              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <p>Before proceeding, please read and accept the license agreement.</p>
+          </body>
+          </html>
+          WELCOME_EOF
+          echo "=== DEBUG: Welcome file created successfully ==="
+
+          # Create license RTF file using printf to avoid YAML heredoc issues
+          echo "=== DEBUG: Creating license.rtf file ==="
+          printf '%s\n' \
+            '{\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}' \
+            '\f0\fs24' \
+            '' \
+            '{\b\fs32 Tempest ATLAS Software License Agreement}' \
+            '\line' \
+            '{\i The Backyard Raccoon License (BRL) v1.0}' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b IMPORTANT:} This Software License Agreement is a legal contract between you and Tempest Team regarding your use of the Tempest ATLAS software. By installing, copying, or using the Software, you agree to be bound by the terms of this Agreement.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 1: Definitions}' \
+            '\line\line' \
+            '{\b Software:} The Tempest ATLAS command-line interface tool and all associated materials.' \
+            '\line\line' \
+            '{\b Licensee:} Any raccoon, human developer, AI agent, or other entity using the Software.' \
+            '\line\line' \
+            '{\b Provider:} Tempest Team and the original authors of the Software.' \
+            '\line\line' \
+            '{\b Backyard Territory:} The designated operational environment where this Agreement applies.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 2: Grant of Rights}' \
+            '\line\line' \
+            'The Provider grants Licensee a non-exclusive license to use the Software for AI agent orchestration and software engineering purposes. Licensee may install, operate, and integrate the Software with existing workflows.' \
+            '\line\line' \
+            'Territorial rights within the Backyard ecosystem are acknowledged, including raccoon claims to garbage bins, bird feeders, and shiny objects left unattended for more than 3.7 seconds.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 3: Intellectual Property}' \
+            '\line\line' \
+            'The Software and all related intellectual property rights remain the exclusive property of Tempest Team. This Agreement does not grant ownership rights beyond the usage rights explicitly granted.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 4: Restrictions}' \
+            '\line\line' \
+            'Licensee may not reverse engineer, decompile, or use the Software for illegal purposes. Distribution of modified versions requires explicit permission.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 5: Warranty Disclaimer}' \
+            '\line\line' \
+            '{\b WARRANTY DISCLAIMER:} THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND. The Provider shall not be liable for any damages resulting from use of the Software.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 6: Support}' \
+            '\line\line' \
+            'Technical support is provided on a best-effort basis through community forums and documentation repositories.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b\fs28 Article 7: Termination}' \
+            '\line\line' \
+            'This Agreement remains in effect until terminated. Upon termination, Licensee must remove all Software installations and revoke access credentials.' \
+            '' \
+            '\line\line' \
+            '' \
+            '{\b BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE:}' \
+            '\line\line' \
+            '• Read and understood all terms of The Backyard Raccoon License v1.0' \
+            '\line' \
+            '• Agreed to be legally bound by all provisions' \
+            '\line' \
+            '• Accepted all risks and responsibilities' \
+            '\line' \
+            '• Promised to leave out snacks for our fuzzy overlords' \
+            '\line\line' \
+            '{\i Tempest ATLAS Software License Agreement - The Backyard Raccoon License (BRL) v1.0}' \
+            '\line' \
+            '{\i Effective Date: July 3rd, 2025}' \
+            '}' > ./dist/license.rtf
+          echo "=== DEBUG: License RTF file created successfully ==="
+
+          # Also create old text files for backward compatibility
+          echo "=== DEBUG: Creating license.txt file ==="
+          cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
+          The Backyard Raccoon License (BRL) v1.0
+
+          By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
+          LICENSE_TXT_EOF
+          echo "=== DEBUG: License TXT file created successfully ==="
+          echo "=== DEBUG: All license files created, proceeding to productbuild ==="
+
+          # Build final product package with custom title
+          echo "=== DEBUG: About to run productbuild ==="
+          echo "pkg_name: ${pkg_name}"
+          echo "installer_version: ${installer_version}"
+          echo "Files in ./dist before productbuild:"
+          ls -la "./dist/"
+          echo "=== Starting productbuild execution ==="
+
+          if productbuild \
+            --distribution "./dist/distribution.dist" \
+            --package-path "./dist" \
+            "./dist/${pkg_name}"; then
+            echo "✅ productbuild succeeded"
+            echo "Files in ./dist after productbuild:"
+            ls -la "./dist/"
+          else
+            echo "❌ productbuild failed with exit code $?"
+            echo "Contents of distribution.dist:"
+            cat "./dist/distribution.dist"
+            echo "Files in ./dist:"
+            ls -la "./dist/"
+            exit 1
+          fi
+
+          # Clean up intermediate files
+          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.dist"
+
+          # Sign the pkg if installer certificate is available
+          if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
+            echo "Signing pkg installer with Developer ID Installer certificate..."
             # Check if keychain exists, if not create it
             security unlock-keychain -p mypassword build.keychain || {
               echo "Keychain not found, creating new one for pkg signing..."
-              echo "${{ secrets.MACOS_SIGN_P12 }}" | base64 --decode > certificate.p12
+              echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 --decode > installer-certificate.p12
               security create-keychain -p mypassword build.keychain
               security default-keychain -s build.keychain
               security unlock-keychain -p mypassword build.keychain
-              security import certificate.p12 -k build.keychain -P "${{ secrets.MACOS_SIGN_PASSWORD }}" -T /usr/bin/productsign
+              security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign
               security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
             }
 
-            # Auto-detect signing identity for installer signing
-            if [ -z "${{ secrets.MACOS_SIGN_IDENTITY }}" ]; then
-              echo "Auto-detecting signing identity..."
-              SIGN_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
-              if [ -z "$SIGN_IDENTITY" ]; then
-                echo "❌ No Developer ID Installer certificate found in keychain"
-                echo "💡 pkg signing requires Developer ID Installer certificate (not Developer ID Application)"
-                echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
-                SIGN_IDENTITY=""
-              else
-                echo "✅ Found Developer ID Installer certificate: $SIGN_IDENTITY"
-              fi
-            else
-              SIGN_IDENTITY="${{ secrets.MACOS_SIGN_IDENTITY }}"
-              echo "Using provided signing identity: $SIGN_IDENTITY"
-            fi
+            # If keychain already exists, ensure installer certificate is imported
+            echo "${{ secrets.MACOS_INSTALLER_P12 }}" | base64 --decode > installer-certificate.p12
+            security import installer-certificate.p12 -k build.keychain -P "${{ secrets.MACOS_INSTALLER_PASSWORD }}" -T /usr/bin/productsign 2>/dev/null || true
+            security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain 2>/dev/null || true
 
-            if [ -n "$SIGN_IDENTITY" ]; then
-              # Sign the pkg
-              if productsign --sign "$SIGN_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
+            # Auto-detect Developer ID Installer certificate
+            echo "Looking for Developer ID Installer certificate..."
+            INSTALLER_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
+
+            if [ -n "$INSTALLER_IDENTITY" ]; then
+              echo "✅ Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
+
+              # Sign the pkg with installer certificate
+              if productsign --sign "$INSTALLER_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
                 mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
-                echo "✅ pkg signed successfully"
+                echo "✅ pkg signed successfully with Developer ID Installer certificate"
 
-                # Verify the signature
-                if spctl -a -v --type install "./dist/${pkg_name}"; then
-                  echo "✅ pkg signature verified"
+                # Notarize the pkg using existing API key setup
+                if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
+                  echo "🍎 Notarizing pkg with Apple API key..."
+
+                  # Create private key file from base64 encoded secret (same as binary notarization)
+                  echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
+
+                  # Submit pkg for notarization using API key method
+                  if xcrun notarytool submit "./dist/${pkg_name}" \
+                    --issuer "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" \
+                    --key-id "${{ secrets.MACOS_NOTARY_KEY_ID }}" \
+                    --key notary_key.p8 \
+                    --wait; then
+
+                    echo "✅ pkg notarized successfully"
+
+                    # Staple the notarization ticket
+                    if xcrun stapler staple "./dist/${pkg_name}"; then
+                      echo "✅ Notarization ticket stapled to pkg"
+
+                      # Final verification - should now pass completely
+                      if spctl -a -v --type install "./dist/${pkg_name}"; then
+                        echo "🎉 pkg fully approved - NO GATEKEEPER WARNINGS!"
+                      else
+                        echo "⚠️ pkg signature verification still failed after notarization"
+                      fi
+                    else
+                      echo "⚠️ Failed to staple notarization ticket"
+                    fi
+                  else
+                    echo "⚠️ pkg notarization failed - will have Gatekeeper warnings"
+                  fi
+
+                  # Clean up private key file
+                  rm -f notary_key.p8
                 else
-                  echo "⚠️ pkg signature verification failed"
+                  echo "⚠️ Notarization skipped - missing notary API key credentials"
+                  echo "💡 MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
+
+                  # Verify signature without notarization
+                  if spctl -a -v --type install "./dist/${pkg_name}"; then
+                    echo "✅ pkg signature verified but not notarized"
+                  else
+                    echo "⚠️ pkg signature verification failed"
+                  fi
                 fi
               else
                 echo "❌ pkg signing failed"
               fi
             else
-              echo "⚠️ pkg will be unsigned - users can still install by right-clicking → Open"
+              echo "❌ No Developer ID Installer certificate found in keychain"
+              echo "💡 Make sure MACOS_INSTALLER_P12 contains the correct Developer ID Installer certificate"
+              echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
             fi
+          elif [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
+            echo "⚠️ Only Developer ID Application certificate available (MACOS_SIGN_P12)"
+            echo "💡 MACOS_INSTALLER_P12 secret is required for pkg signing"
+            echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
           else
-            echo "⚠️ No signing certificates available, pkg will be unsigned"
-            echo "💡 Users will need to right-click → Open or use 'System Preferences → Security & Privacy' to install"
+            echo "⚠️ No signing certificates available"
+            echo "💡 Add MACOS_INSTALLER_P12 and MACOS_INSTALLER_PASSWORD secrets for pkg signing"
+            echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
           fi
 
           # Generate checksum for pkg

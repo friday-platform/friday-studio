@@ -4,6 +4,7 @@ import React from "react";
 import { z } from "zod/v4";
 import { Table } from "../../../cli/components/Table.tsx";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
 import process from "node:process";
 
 interface SearchArgs {
@@ -52,25 +53,8 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for search response
-const SearchResultSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.string(),
-      type: z.string(),
-      name: z.string(),
-      created_at: z.string(),
-      tags: z.array(z.string()),
-      size_bytes: z.number(),
-      description: z.string().optional(),
-      relevance_score: z.number().optional(),
-    }),
-  ),
-  total_results: z.number().optional(),
-  query: z.string().optional(),
-});
-
-type SearchResult = z.infer<typeof SearchResultSchema>;
+// Import the type from the client
+import type { LibrarySearchResult } from "@atlas/client";
 
 export async function handler(argv: SearchArgs) {
   const s = spinner();
@@ -83,23 +67,17 @@ export async function handler(argv: SearchArgs) {
   try {
     s.start(`Searching for "${argv.query}"...`);
 
-    // Build query parameters
-    const params = new URLSearchParams();
-    params.append("q", argv.query);
-    if (argv.type) params.append("type", argv.type);
-    if (argv.tags) params.append("tags", argv.tags);
-    if (argv.limit) params.append("limit", argv.limit.toString());
+    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
 
-    const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/api/library/search?${params}`);
+    // Build query object
+    const query = {
+      query: argv.query,
+      type: argv.type,
+      tags: argv.tags ? argv.tags.split(",").map((tag: string) => tag.trim()) : undefined,
+      limit: argv.limit,
+    };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const data = await response.json();
-    const result = SearchResultSchema.parse(data);
+    const result = await client.searchLibrary(query);
 
     s.stop(`Found ${result.items.length} results`);
 
@@ -124,7 +102,7 @@ export async function handler(argv: SearchArgs) {
 }
 
 interface SearchResultsDisplayProps {
-  result: SearchResult;
+  result: LibrarySearchResult;
   query: string;
 }
 

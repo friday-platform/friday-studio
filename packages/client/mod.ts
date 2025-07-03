@@ -13,6 +13,7 @@ export type {
   DaemonStatus,
   JobDetailedInfo,
   LibraryItem,
+  LibraryItemWithContent,
   LibrarySearchQuery,
   LibrarySearchResult,
   LibraryStats,
