@@ -353,7 +353,7 @@ jobs:
               <meta charset="utf-8">
               <title>Welcome to Atlas</title>
               <style>
-                  body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; }
+                  body { font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; margin: 20px; }
                   h1 { color: #1a1a1a; }
                   p { line-height: 1.5; }
               </style>
