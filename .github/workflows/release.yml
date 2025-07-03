@@ -127,19 +127,40 @@ jobs:
             binary_name="atlas"
           fi
 
+          # Check if binary exists before attempting to strip
+          if [ ! -f "./dist/${binary_name}" ]; then
+            echo "Binary ./dist/${binary_name} not found, skipping symbol stripping"
+            exit 0
+          fi
+
+          # Get binary size before stripping
+          before_size=$(ls -la "./dist/${binary_name}" | awk '{print $5}')
+          echo "Binary size before stripping: $before_size bytes"
+
           # Strip symbols to reduce binary size
           if [ "${{ matrix.platform }}" == "windows" ]; then
             # Windows: Use strip if available (usually from mingw)
             if command -v strip >/dev/null 2>&1; then
-              strip "./dist/${binary_name}" || echo "Windows strip failed, continuing..."
+              if strip "./dist/${binary_name}" 2>/dev/null; then
+                echo "Windows strip successful"
+              else
+                echo "Windows strip failed, continuing..."
+              fi
             else
               echo "Strip not available on Windows, skipping symbol stripping"
             fi
           else
             # macOS/Linux: Use native strip command
             if command -v strip >/dev/null 2>&1; then
-              strip "./dist/${binary_name}"
-              echo "Binary stripped successfully"
+              if strip "./dist/${binary_name}" 2>/dev/null; then
+                # Get binary size after stripping
+                after_size=$(ls -la "./dist/${binary_name}" | awk '{print $5}')
+                echo "Binary stripped successfully"
+                echo "Binary size after stripping: $after_size bytes"
+                echo "Size reduction: $((before_size - after_size)) bytes"
+              else
+                echo "Strip command failed, continuing..."
+              fi
             else
               echo "Strip command not found, skipping symbol stripping"
             fi
