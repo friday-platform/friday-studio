@@ -487,8 +487,8 @@ You have access to the full workspace context and configuration. Create structur
           mcpServerIds: Object.keys(workspaceMcpServers),
         });
 
-        // Create a minimal workspace config object for the registry
-        const workspaceConfig = { mcp_servers: workspaceMcpServers };
+        // Create a minimal workspace config object for the registry using new format
+        const workspaceConfig = { tools: { mcp: { servers: workspaceMcpServers } } };
 
         // Initialize the MCP Server Registry with workspace configuration only
         // (atlas config not needed since it wasn't being used anyway)

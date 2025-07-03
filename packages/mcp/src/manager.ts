@@ -146,15 +146,6 @@ export class MCPManager {
             }
           }
 
-          logger.info(`Creating MCP client with command: ${command}, args: ${args?.join(" ")}`, {
-            operation: "mcp_client_creation",
-            serverId: config.id,
-          });
-          logger.info(`Processed environment variables: ${JSON.stringify(processedEnv)}`, {
-            operation: "mcp_env_processing",
-            serverId: config.id,
-          });
-
           mcpClient = await createMCPClient({
             transport: new StdioMCPTransport({
               command,
