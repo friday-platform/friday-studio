@@ -33,7 +33,7 @@ jobs:
             target: x86_64-apple-darwin
             platform: darwin
             arch: amd64
-          - os: macos-14-xlarge
+          - os: macos-15-xlarge
             target: aarch64-apple-darwin
             platform: darwin
             arch: arm64
@@ -77,7 +77,7 @@ jobs:
             binary_name="atlas"
           fi
 
-          # Native compilation for ARM64 macOS (using macos-14-xlarge), cross-compilation for others
+          # Native compilation for ARM64 macOS (using macos-15-xlarge), cross-compilation for others
           if [ "${{ matrix.platform }}" == "darwin" ] && [ "${{ matrix.arch }}" == "arm64" ]; then
             echo "Native compilation for ARM64 macOS (no --target flag)"
             deno compile \

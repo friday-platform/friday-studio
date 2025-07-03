@@ -49,7 +49,7 @@ jobs:
             os: darwin
             arch: amd64
             target: x86_64-apple-darwin
-          - runner: macos-14-xlarge
+          - runner: macos-15-xlarge
             os: darwin
             arch: arm64
             target: aarch64-apple-darwin
