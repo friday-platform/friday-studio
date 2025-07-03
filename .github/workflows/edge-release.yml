@@ -599,12 +599,20 @@ jobs:
           LICENSE_EOF
 
           # Build final product package with custom title
-          echo "Building final pkg with productbuild..."
+          echo "=== DEBUG: About to run productbuild ==="
+          echo "pkg_name: ${pkg_name}"
+          echo "installer_version: ${installer_version}"
+          echo "Files in ./dist before productbuild:"
+          ls -la "./dist/"
+          echo "=== Starting productbuild execution ==="
+          
           if productbuild \
             --distribution "./dist/distribution.dist" \
             --package-path "./dist" \
             "./dist/${pkg_name}"; then
             echo "✅ productbuild succeeded"
+            echo "Files in ./dist after productbuild:"
+            ls -la "./dist/"
           else
             echo "❌ productbuild failed with exit code $?"
             echo "Contents of distribution.dist:"
