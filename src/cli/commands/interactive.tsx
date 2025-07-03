@@ -847,10 +847,7 @@ function InteractiveCommandInner() {
                                 </Text>
                               </Box>
                               <Box>
-                                <MarkdownDisplay
-                                  content={responseMessage}
-                                  showCollapsible={false}
-                                />
+                                <MarkdownDisplay content={responseMessage} />
                               </Box>
                             </Box>
                           ),
@@ -1791,7 +1788,7 @@ ${yamlContent}
                   message="Here's the example workspace.yml file:"
                   authorColor="blue"
                 />
-                <MarkdownDisplay content={markdownYaml} />
+                <MarkdownDisplay content={markdownYaml} showCollapsible />
               </Box>
             ),
           });
@@ -1888,7 +1885,7 @@ console.log(greet("Atlas"));
               message="Here's an example of markdown rendering:"
               authorColor="blue"
             />
-            <MarkdownDisplay content={exampleMarkdown} />
+            <MarkdownDisplay content={exampleMarkdown} showCollapsible />
           </Box>
         ),
       });
