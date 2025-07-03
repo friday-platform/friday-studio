@@ -465,7 +465,7 @@ jobs:
           <installer-gui-script minSpecVersion="1">
               <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
               <welcome file="welcome.html"/>
-              <license file="license.rtf"/>
+              <license file="license.rtf" mime-type="text/rtf"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
