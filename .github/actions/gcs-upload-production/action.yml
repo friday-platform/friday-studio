@@ -30,7 +30,7 @@ runs:
     - name: Authenticate to Google Cloud (Production)
       uses: google-github-actions/auth@v2
       with:
-        workload_identity_provider: projects/415092695556/locations/global/workloadIdentityPools/github/providers/atlas-github
+        workload_identity_provider: projects/180211378242/locations/global/workloadIdentityPools/github-actions/providers/atlas-github
         service_account: atlas-github-ci@tempest-production.iam.gserviceaccount.com
         create_credentials_file: true
         export_environment_variables: true
