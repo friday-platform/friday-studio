@@ -51,7 +51,7 @@ export class TimerSignalProvider implements IProvider {
   private state: ProviderState;
   private cronInterval?: number; // Timer reference for cleanup
   private nextExecution?: Date;
-  private signalCallback?: (signal: TimerSignalData) => void;
+  private signalCallback?: (signal: TimerSignalData) => void | Promise<void>;
   private storage?: KVStorage;
   private storageKey: string[];
 
@@ -102,7 +102,7 @@ export class TimerSignalProvider implements IProvider {
   /**
    * Set the callback function to call when signal is triggered
    */
-  setSignalCallback(callback: (signal: TimerSignalData) => void): void {
+  setSignalCallback(callback: (signal: TimerSignalData) => void | Promise<void>): void {
     this.signalCallback = callback;
   }
 
@@ -157,12 +157,17 @@ export class TimerSignalProvider implements IProvider {
     // Set status to disabled first to prevent new operations
     this.state.status = ProviderStatus.DISABLED;
 
+    // Clear any active timer
     if (this.cronInterval) {
       clearTimeout(this.cronInterval);
       this.cronInterval = undefined;
     }
 
+    // Clear next execution
     this.nextExecution = undefined;
+
+    // Clear callback to prevent further executions
+    this.signalCallback = undefined;
 
     // Persist state before shutdown in background
     this.persistState().catch((error) => {
@@ -271,7 +276,10 @@ export class TimerSignalProvider implements IProvider {
 
       // Schedule the next execution
       this.cronInterval = setTimeout(async () => {
-        await this.executeSignal();
+        // Check if still ready before executing
+        if (this.state.status === ProviderStatus.READY) {
+          await this.executeSignal();
+        }
       }, delay);
 
       // Persist state after scheduling
@@ -358,9 +366,10 @@ export class TimerSignalProvider implements IProvider {
     }
 
     // Double-check status hasn't changed during execution
-    if (this.state.status === ProviderStatus.DISABLED) {
-      logger.debug("Timer signal execution skipped - provider disabled", {
+    if (this.state.status !== ProviderStatus.READY) {
+      logger.debug("Timer signal execution skipped - provider not ready", {
         signalId: this.config.id,
+        status: this.state.status,
       });
       return;
     }
@@ -394,9 +403,17 @@ export class TimerSignalProvider implements IProvider {
         timestamp: signal.timestamp,
       });
 
-      // Call the signal callback if set
+      // Call the signal callback if set (with error handling)
       if (this.signalCallback) {
-        this.signalCallback(signal);
+        try {
+          await this.signalCallback(signal);
+        } catch (callbackError) {
+          logger.error("Timer signal callback failed", {
+            signalId: this.config.id,
+            error: callbackError instanceof Error ? callbackError.message : String(callbackError),
+          });
+          // Continue execution despite callback error
+        }
       } else {
         logger.warn("Timer signal triggered but no callback set", {
           signalId: this.config.id,

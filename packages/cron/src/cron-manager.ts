@@ -105,6 +105,7 @@ export class CronManager {
   private logger: CronLogger;
   private timers = new Map<string, TimerInfo>();
   private activeIntervals = new Map<string, number>();
+  private wakeupTimeouts = new Map<string, number>();
   private wakeupCallback?: WorkspaceWakeupCallback;
   private isRunning = false;
   private isShuttingDown = false;
@@ -179,6 +180,12 @@ export class CronManager {
     for (const [timerKey, intervalId] of this.activeIntervals.entries()) {
       clearTimeout(intervalId);
       this.activeIntervals.delete(timerKey);
+    }
+
+    // Clear all wakeup timeouts
+    for (const [timerKey, timeoutId] of this.wakeupTimeouts.entries()) {
+      clearTimeout(timeoutId);
+      this.wakeupTimeouts.delete(timerKey);
     }
 
     // Persist current state
@@ -290,6 +297,13 @@ export class CronManager {
       if (intervalId) {
         clearTimeout(intervalId);
         this.activeIntervals.delete(timerKey);
+      }
+
+      // Clear any pending wakeup timeout
+      const timeoutId = this.wakeupTimeouts.get(timerKey);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        this.wakeupTimeouts.delete(timerKey);
       }
 
       // Remove from memory
@@ -436,7 +450,10 @@ export class CronManager {
       delayMs: delay,
     });
 
+    // Atomically create and track the timer to prevent race conditions
     const intervalId = setTimeout(async () => {
+      // Remove from active intervals when execution starts
+      this.activeIntervals.delete(timerKey);
       await this.executeTimer(timerKey, timer);
     }, delay);
 
@@ -497,14 +514,26 @@ export class CronManager {
         if (this.wakeupCallback) {
           try {
             // Add timeout to prevent hanging
-            const timeoutPromise = new Promise((_, reject) =>
-              setTimeout(() => reject(new Error("Wakeup callback timeout")), 30000)
-            );
+            let timeoutId: number;
+            const timeoutPromise = new Promise((_, reject) => {
+              timeoutId = setTimeout(() => reject(new Error("Wakeup callback timeout")), 30000);
+            });
 
-            await Promise.race([
-              this.wakeupCallback(timer.workspaceId, timer.signalId, signalData),
-              timeoutPromise,
-            ]);
+            // Track the timeout so it can be cleared
+            this.wakeupTimeouts.set(timerKey, timeoutId!);
+
+            try {
+              await Promise.race([
+                this.wakeupCallback(timer.workspaceId, timer.signalId, signalData),
+                timeoutPromise,
+              ]);
+            } finally {
+              // Clear the timeout regardless of outcome
+              if (this.wakeupTimeouts.has(timerKey)) {
+                clearTimeout(this.wakeupTimeouts.get(timerKey)!);
+                this.wakeupTimeouts.delete(timerKey);
+              }
+            }
           } catch (callbackError) {
             this.logger.error("Wakeup callback failed", {
               error: callbackError,
@@ -560,7 +589,7 @@ export class CronManager {
     try {
       const timerEntries = this.storage.list([`cron_timers`]);
 
-      const timers = [];
+      const timers: Array<{ key: string[]; value: unknown }> = [];
       for await (const { key, value } of timerEntries) {
         timers.push({ key, value });
       }
