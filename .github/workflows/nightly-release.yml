@@ -453,7 +453,7 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
               <title>Atlas (nightly: ${NIGHTLY_VERSION#nightly-})</title>
-              <license file="license.html"/>
+              <license file="license.rtf" mime-type="text/rtf"/>
               <welcome file="welcome.html"/>
               <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
@@ -501,9 +501,8 @@ jobs:
           </html>
           WELCOME_EOF
 
-          # Create license HTML file (as required by Apple docs)
-          # Copy EULA license file for macOS pkg installer (HTML format)
-          cp LICENSE-EULA.html ./dist/license.html
+          # Copy EULA license file for macOS pkg installer (RTF format)
+          cp LICENSE-EULA.rtf ./dist/license.rtf
 
           # Build final product package with custom title
           echo "Building final pkg with productbuild..."

@@ -320,7 +320,7 @@ jobs:
           <installer-gui-script minSpecVersion="1">
               <title>Atlas ${RELEASE_VERSION}</title>
               <welcome file="welcome.html"/>
-              <license file="license.html"/>
+              <license file="license.rtf" mime-type="text/rtf"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -367,8 +367,8 @@ jobs:
           </html>
           WELCOME_EOF
 
-          # Copy EULA license file for macOS pkg installer (HTML format)
-          cp LICENSE-EULA.html ./dist/license.html
+          # Copy EULA license file for macOS pkg installer (RTF format)
+          cp LICENSE-EULA.rtf ./dist/license.rtf
 
           # Build final product package with custom title
           echo "Building final pkg with productbuild..."
