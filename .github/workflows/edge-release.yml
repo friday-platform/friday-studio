@@ -574,10 +574,10 @@ jobs:
           # Also create old text files for backward compatibility
           echo "=== DEBUG: Creating license.txt file ==="
           cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
-The Backyard Raccoon License (BRL) v1.0
+          The Backyard Raccoon License (BRL) v1.0
 
-By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
-LICENSE_TXT_EOF
+          By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.
+          LICENSE_TXT_EOF
           echo "=== DEBUG: License TXT file created successfully ==="
           echo "=== DEBUG: All license files created, proceeding to productbuild ==="
 
