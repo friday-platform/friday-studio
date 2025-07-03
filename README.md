@@ -22,7 +22,7 @@ autonomous agents in a secure, auditable, and scalable environment.
 
 ### Prerequisites
 
-- [Deno](https://deno.land/) 1.40+ installed
+- [Deno](https://deno.land/) 2.4.0+ installed
 - Anthropic API key (for Claude) - [Get one here](https://console.anthropic.com/)
 
 ### Installation
@@ -53,7 +53,21 @@ atlas --version  # Shows channel-specific version info
 
 #### Option 2: Direct Binary
 
-Download from [releases](https://github.com/tempestteam/atlas/releases) and add to PATH.
+Download from [releases](https://github.com/tempestteam/atlas/releases):
+
+**macOS:**
+- Download the `.pkg` installer (recommended) - supports both Intel and Apple Silicon
+- Or download the `.tar.gz` archive and extract to `/usr/local/bin/`
+
+**Linux:**
+- Download the `.tar.gz` archive for your architecture (amd64 or arm64)
+- Extract and move to `/usr/local/bin/`
+
+**Windows:**
+- Download the `.msi` installer (recommended) 
+- Or download the `.zip` archive and add to PATH
+
+All binaries are signed and notarized for security.
 
 #### Option 3: From Source
 
