@@ -450,64 +450,17 @@ jobs:
             --install-location "/" \
             "./dist/atlas-docs.pkg"
 
-          # Create distribution XML for proper product name and title
+          # Create distribution definition file (following Apple's official documentation)
           # Set version for XML template
           EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
           # Strip 'edge-' prefix for clean title display
           EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
-          
-          # Create XML header
-          cat > ./dist/distribution.xml << 'XML_HEADER'
+          cat > ./dist/distribution.dist << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-          XML_HEADER
-          
-          # Add dynamic title
-          echo "    <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>" >> ./dist/distribution.xml
-          
-          # Add license with CDATA
-          cat >> ./dist/distribution.xml << 'LICENSE_SECTION'
-              <license mime-type="text/plain"><![CDATA[The Backyard Raccoon License (BRL) v1.0
-
-Preamble
-In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".
-
-1. Grant of Permission
-The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:
-
-• Enter, exit, or dramatically crash through any and all garbage bins, compost containers, or unattended coolers.
-• Hold nightly council meetings under the deck, in the attic, or on top of the garden shed.
-• Treat any bird feeder as a personal buffet.
-• Use reflective windows to check fur fluffiness.
-• Steal cat food "for a friend."
-
-2. Intellectual Property
-All shiny objects discovered in the backyard are hereby declared communal raccoon property. The Provider waives all rights to question the raccoon's taste in treasure.
-
-3. Code of Conduct
-While Licensees are not legally required to behave, it is strongly encouraged (but not enforceable) that:
-
-• Acrobatic trash can raids be recorded for posterity (preferably in slow-motion).
-• No raccoon may organize a coup d'état on the neighborhood possum alliance without a 2/3 majority vote.
-• All raccoon dance-offs must be judged fairly by at least one impartial squirrel.
-
-4. Warranty Disclaimer
-This License comes with absolutely no guarantees. The backyard may contain loud humans, unpredictable sprinklers, or robotic lawnmowers. Proceed at your own risk. The Provider is not liable for any ego damage resulting from failed lid-removal attempts.
-
-5. Termination
-This License is valid until:
-
-• The heat death of the universe,
-• Or the raccoons decide to start their own government and need the land for a ministerial raccoon headquarters,
-
-Whichever comes first.
-
-By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.]]></license>
-              <welcome file="welcome.txt" mime-type="text/plain"/>
-LICENSE_SECTION
-          
-          # Add rest of XML
-          cat >> ./dist/distribution.xml << XML_FOOTER
+              <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
+              <welcome file="welcome.html" mime-type="text/html"/>
+              <license file="license.html" mime-type="text/html"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -535,19 +488,77 @@ LICENSE_SECTION
               <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
               <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
           </installer-gui-script>
-XML_FOOTER
+          EOF
 
-          # Create welcome file
-          cat > ./dist/welcome.txt << 'WELCOME_EOF'
-          Welcome to Tempest ATLAS Installation
-          
-          This installer will install the Tempest ATLAS CLI tool on your system.
-          
-          Before proceeding, please read and accept the license agreement.
+          # Create welcome HTML file (as required by Apple docs)
+          cat > ./dist/welcome.html << 'WELCOME_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>Welcome</title>
+          </head>
+          <body>
+              <h1>Welcome to Tempest ATLAS Installation</h1>
+              <p>This installer will install the Tempest ATLAS CLI tool on your system.</p>
+              <p>Before proceeding, please read and accept the license agreement.</p>
+          </body>
+          </html>
           WELCOME_EOF
 
-          # Create license file
-          cat > ./dist/license.txt << 'LICENSE_EOF'
+          # Create license HTML file (as required by Apple docs)
+          cat > ./dist/license.html << 'LICENSE_EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+              <meta charset="utf-8">
+              <title>License Agreement</title>
+          </head>
+          <body>
+              <h1>The Backyard Raccoon License (BRL) v1.0</h1>
+              
+              <h2>Preamble</h2>
+              <p>In recognition of the undeniable cleverness, persistence, and fluffiness of the raccoon community (hereafter referred to as "the Licensees"), the undersigned Human (hereafter referred to as "the Provider") hereby issues the following irrevocable license for the usage, enjoyment, and general mischief-making within the designated geographical region known as "The Backyard".</p>
+              
+              <h2>1. Grant of Permission</h2>
+              <p>The Provider hereby grants to all raccoons, sentient or not, full and unrestricted rights to:</p>
+              <ul>
+                  <li>Enter, exit, or dramatically crash through any and all garbage bins, compost containers, or unattended coolers.</li>
+                  <li>Hold nightly council meetings under the deck, in the attic, or on top of the garden shed.</li>
+                  <li>Treat any bird feeder as a personal buffet.</li>
+                  <li>Use reflective windows to check fur fluffiness.</li>
+                  <li>Steal cat food "for a friend."</li>
+              </ul>
+              
+              <h2>2. Intellectual Property</h2>
+              <p>All shiny objects discovered in the backyard are hereby declared communal raccoon property. The Provider waives all rights to question the raccoon's taste in treasure.</p>
+              
+              <h2>3. Code of Conduct</h2>
+              <p>While Licensees are not legally required to behave, it is strongly encouraged (but not enforceable) that:</p>
+              <ul>
+                  <li>Acrobatic trash can raids be recorded for posterity (preferably in slow-motion).</li>
+                  <li>No raccoon may organize a coup d'état on the neighborhood possum alliance without a 2/3 majority vote.</li>
+                  <li>All raccoon dance-offs must be judged fairly by at least one impartial squirrel.</li>
+              </ul>
+              
+              <h2>4. Warranty Disclaimer</h2>
+              <p>This License comes with absolutely no guarantees. The backyard may contain loud humans, unpredictable sprinklers, or robotic lawnmowers. Proceed at your own risk. The Provider is not liable for any ego damage resulting from failed lid-removal attempts.</p>
+              
+              <h2>5. Termination</h2>
+              <p>This License is valid until:</p>
+              <ul>
+                  <li>The heat death of the universe,</li>
+                  <li>Or the raccoons decide to start their own government and need the land for a ministerial raccoon headquarters,</li>
+              </ul>
+              <p>Whichever comes first.</p>
+              
+              <p><strong>By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.</strong></p>
+          </body>
+          </html>
+          LICENSE_EOF
+
+          # Also create old text files for backward compatibility
+          cat > ./dist/license.txt << 'LICENSE_TXT_EOF'
           The Backyard Raccoon License (BRL) v1.0
 
           Preamble
@@ -589,12 +600,12 @@ XML_FOOTER
 
           # Build final product package with custom title
           productbuild \
-            --distribution "./dist/distribution.xml" \
+            --distribution "./dist/distribution.dist" \
             --package-path "./dist" \
             "./dist/${pkg_name}"
 
           # Clean up intermediate files
-          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.xml"
+          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.dist"
 
           # Sign the pkg if installer certificate is available
           if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
