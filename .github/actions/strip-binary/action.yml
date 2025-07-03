@@ -12,19 +12,6 @@ inputs:
     description: 'Target architecture (amd64, arm64)'
     required: true
 
-outputs:
-  original-size:
-    description: 'Original binary size in bytes'
-    value: ${{ steps.strip.outputs.original-size }}
-  stripped-size:
-    description: 'Stripped binary size in bytes'
-    value: ${{ steps.strip.outputs.stripped-size }}
-  size-reduction:
-    description: 'Size reduction in bytes'
-    value: ${{ steps.strip.outputs.size-reduction }}
-  size-reduction-percent:
-    description: 'Size reduction percentage'
-    value: ${{ steps.strip.outputs.size-reduction-percent }}
 
 runs:
   using: 'composite'
@@ -45,10 +32,6 @@ runs:
           exit 1
         fi
         
-        # Get original size
-        original_size=$(stat -c%s "$binary_path" 2>/dev/null || stat -f%z "$binary_path" 2>/dev/null || echo "0")
-        echo " Original binary size: $original_size bytes"
-        echo "original-size=$original_size" >> $GITHUB_OUTPUT
         
         # Create backup for safety
         cp "$binary_path" "${binary_path}.backup"
@@ -59,31 +42,25 @@ runs:
           "linux")
             echo "Stripping symbols using Linux strip command..."
             if command -v strip >/dev/null 2>&1; then
-              # For cross-compiled ARM64, try arch-specific strip first
+              # Use arch-specific strip for ARM64 if available, otherwise regular strip
               if [ "$arch" == "arm64" ] && command -v aarch64-linux-gnu-strip >/dev/null 2>&1; then
                 echo "Using aarch64-linux-gnu-strip for ARM64 binary"
                 if aarch64-linux-gnu-strip --strip-all "$binary_path" 2>/dev/null; then
-                  echo " aarch64-linux-gnu-strip succeeded"
+                  echo "aarch64-linux-gnu-strip succeeded"
                 else
-                  echo "WARNING:  aarch64-linux-gnu-strip failed, trying regular strip"
+                  echo "WARNING: aarch64-linux-gnu-strip failed, continuing with unstripped binary"
                   cp "${binary_path}.backup" "$binary_path"
-                  if strip --strip-all "$binary_path" 2>/dev/null; then
-                    echo "Regular strip succeeded"
-                  else
-                    echo "WARNING:  Regular strip also failed, continuing with unstripped binary"
-                    cp "${binary_path}.backup" "$binary_path"
-                  fi
                 fi
               else
                 echo "Using regular strip for Linux binary"
                 if strip --strip-all "$binary_path" 2>/dev/null; then
                   echo "Regular strip succeeded"
                 else
-                  echo "WARNING:  Strip failed, continuing with unstripped binary"
+                  echo "WARNING: Strip failed, continuing with unstripped binary"
                   cp "${binary_path}.backup" "$binary_path"
                 fi
               fi
-              echo " Linux symbol stripping completed"
+              echo "Linux symbol stripping completed"
             else
               echo "ERROR: strip command not available on Linux"
               exit 1
@@ -92,24 +69,11 @@ runs:
           "darwin")
             echo "Stripping symbols using macOS strip command..."
             if command -v strip >/dev/null 2>&1; then
-              # Try aggressive stripping first for maximum size reduction
               if strip -x "$binary_path" 2>/dev/null; then
-                echo "macOS aggressive strip (-x) succeeded"
+                echo "macOS strip (-x) succeeded"
               else
-                echo "WARNING: Aggressive strip (-x) failed, trying fallback methods"
+                echo "WARNING: macOS strip (-x) failed, continuing with unstripped binary"
                 cp "${binary_path}.backup" "$binary_path"
-                if strip -u -r "$binary_path" 2>/dev/null; then
-                  echo "macOS strip (-u -r) succeeded" 
-                else
-                  echo "WARNING: Strip (-u -r) failed, trying debug-only strip"
-                  cp "${binary_path}.backup" "$binary_path"
-                  if strip -S "$binary_path" 2>/dev/null; then
-                    echo "macOS strip (-S) succeeded (fallback)"
-                  else
-                    echo "WARNING: All macOS strip attempts failed, continuing with unstripped binary"
-                    cp "${binary_path}.backup" "$binary_path"
-                  fi
-                fi
               fi
               echo "macOS symbol stripping completed"
             else
@@ -133,11 +97,7 @@ runs:
             else
               echo "WARNING: No strip tool available on Windows"
               echo "INFO: This may be expected for MSVC builds"
-              echo "stripped-size=$original_size" >> $GITHUB_OUTPUT
-              echo "size-reduction=0" >> $GITHUB_OUTPUT
-              echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
               rm "${binary_path}.backup"
-              exit 0
             fi
             ;;
           *)
@@ -146,28 +106,6 @@ runs:
             ;;
         esac
         
-        # Get stripped size and calculate reduction
-        stripped_size=$(stat -c%s "$binary_path" 2>/dev/null || stat -f%z "$binary_path" 2>/dev/null || echo "0")
-        echo " Stripped binary size: $stripped_size bytes"
-        echo "stripped-size=$stripped_size" >> $GITHUB_OUTPUT
-        
-        if [ "$original_size" -gt 0 ] && [ "$stripped_size" -gt 0 ]; then
-          size_reduction=$((original_size - stripped_size))
-          if [ "$size_reduction" -gt 0 ]; then
-            size_reduction_percent=$((size_reduction * 100 / original_size))
-            echo " Size reduction: $size_reduction bytes ($size_reduction_percent%)"
-            echo "size-reduction=$size_reduction" >> $GITHUB_OUTPUT
-            echo "size-reduction-percent=$size_reduction_percent" >> $GITHUB_OUTPUT
-          else
-            echo "INFO:  No size reduction (may be expected for Deno binaries)"
-            echo "size-reduction=0" >> $GITHUB_OUTPUT
-            echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
-          fi
-        else
-          echo "WARNING:  Could not calculate size reduction"
-          echo "size-reduction=0" >> $GITHUB_OUTPUT
-          echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
-        fi
         
         # Validate stripping results
         echo " Validating symbol stripping results..."
