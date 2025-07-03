@@ -618,8 +618,14 @@ jobs:
           ls -la "./dist/"
           echo "=== Starting productbuild execution ==="
 
+          # Create Resources directory for license and welcome files
+          mkdir -p "./dist/Resources"
+          mv "./dist/license.rtf" "./dist/Resources/"
+          mv "./dist/welcome.html" "./dist/Resources/"
+          
           if productbuild \
             --distribution "./dist/distribution.dist" \
+            --resources "./dist/Resources" \
             --package-path "./dist" \
             "./dist/${pkg_name}"; then
             echo "✅ productbuild succeeded"
