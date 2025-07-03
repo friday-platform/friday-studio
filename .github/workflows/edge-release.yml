@@ -432,7 +432,7 @@ jobs:
           installer_version="1.${timestamp}"
 
           # Build the package with timestamp-based version for proper upgrade handling
-          # First create component package
+          # First create main component package
           pkgbuild \
             --root ./pkg/payload \
             --scripts ./pkg/scripts \
@@ -440,6 +440,15 @@ jobs:
             --version "$installer_version" \
             --install-location "/" \
             "./dist/atlas-component.pkg"
+
+          # Create empty docs package (optional choice to force customization screen)
+          mkdir -p ./pkg/docs-payload
+          pkgbuild \
+            --root ./pkg/docs-payload \
+            --identifier "com.tempestdx.atlas.docs" \
+            --version "$installer_version" \
+            --install-location "/" \
+            "./dist/atlas-docs.pkg"
 
           # Create distribution XML for proper product name and title
           # Set version for XML template
@@ -452,7 +461,7 @@ jobs:
               <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
               <license file="license.txt" mime-type="text/plain"/>
               <welcome file="welcome.txt" mime-type="text/plain"/>
-              <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
               <script>
@@ -468,11 +477,16 @@ jobs:
               </script>
               <choices-outline>
                   <line choice="com.tempestdx.atlas"/>
+                  <line choice="com.tempestdx.atlas.docs"/>
               </choices-outline>
-              <choice id="com.tempestdx.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
+              <choice id="com.tempestdx.atlas" title="Tempest ATLAS CLI" description="Core Atlas command-line tool (Required)" start_selected="true" start_enabled="true" start_visible="true">
                   <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
-              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="RequireRestart">atlas-component.pkg</pkg-ref>
+              <choice id="com.tempestdx.atlas.docs" title="Documentation" description="Install example configurations and documentation (Optional)" start_selected="false" start_enabled="true" start_visible="true">
+                  <pkg-ref id="com.tempestdx.atlas.docs"/>
+              </choice>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
           </installer-gui-script>
           EOF
 
@@ -533,7 +547,7 @@ jobs:
             "./dist/${pkg_name}"
 
           # Clean up intermediate files
-          rm -f "./dist/atlas-component.pkg" "./dist/distribution.xml"
+          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.xml"
 
           # Sign the pkg if installer certificate is available
           if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
