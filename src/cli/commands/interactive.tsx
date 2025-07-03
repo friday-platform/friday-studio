@@ -832,18 +832,40 @@ function InteractiveCommandInner() {
                     pendingMessageSpinnerRef.current,
                   );
 
-                  // Remove spinner when message is complete - use ref to avoid closure issues
+                  // Convert streaming message to permanent message and remove spinner
                   const spinnerId = pendingMessageSpinnerRef.current;
+                  const streamingMessageId = `llm-response-current`;
+
+                  setOutputBuffer((prev) => {
+                    // Find the streaming message to preserve its content
+                    const streamingMessage = prev.find((entry) => entry.id === streamingMessageId);
+
+                    // Filter out both spinner and streaming message
+                    let filtered = prev.filter((entry) =>
+                      entry.id !== spinnerId && entry.id !== streamingMessageId
+                    );
+
+                    // Add permanent message if we had streaming content
+                    if (streamingMessage) {
+                      const permanentMessageId = `llm-response-${Date.now()}`;
+                      filtered = [
+                        ...filtered,
+                        {
+                          id: permanentMessageId,
+                          component: streamingMessage.component, // Preserve the content
+                        },
+                      ];
+                    }
+
+                    console.log(
+                      "[Interactive] Filtered out spinner and converted streaming message, remaining entries:",
+                      filtered.length,
+                    );
+                    return filtered;
+                  });
+
                   if (spinnerId) {
                     console.log("[Interactive] Removing spinner on message_complete:", spinnerId);
-                    setOutputBuffer((prev) => {
-                      const filtered = prev.filter((entry) => entry.id !== spinnerId);
-                      console.log(
-                        "[Interactive] Filtered out spinner, remaining entries:",
-                        filtered.length,
-                      );
-                      return filtered;
-                    });
                     setPendingMessageSpinner(null);
                     pendingMessageSpinnerRef.current = null;
                   } else {

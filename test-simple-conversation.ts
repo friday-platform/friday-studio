@@ -61,7 +61,7 @@ try {
   console.log("3. Triggering conversation signal...");
   setTimeout(async () => {
     const signalResponse = await fetch(
-      "http://localhost:8080/api/workspaces/tender_icing/signals/conversation-stream",
+      "http://localhost:8080/api/workspaces/atlas-conversation/signals/conversation-stream",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,7 +74,11 @@ try {
     );
 
     if (!signalResponse.ok) {
-      throw new Error(`Signal failed: ${signalResponse.status} ${signalResponse.statusText}`);
+      const errorText = await signalResponse.text();
+      console.error("❌ Signal error response:", errorText);
+      throw new Error(
+        `Signal failed: ${signalResponse.status} ${signalResponse.statusText} - ${errorText}`,
+      );
     }
 
     const signalResult = await signalResponse.json();

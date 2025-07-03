@@ -635,47 +635,6 @@ class AgentExecutionWorker {
     const systemPrompt = prompts.system || "You are a helpful AI assistant.";
     let userPrompt = this.buildUserPrompt(task, input, prompts);
 
-    // Special handling for conversation-agent to manage its own history
-    let conversationMessages: Array<{ role: string; content: string }> = [];
-    const conversationId = input?.conversationId || input?.sessionId;
-    if (request.agent_id === "conversation-agent" && conversationId) {
-      try {
-        // Open KV directly in the agent
-        const kv = await Deno.openKv();
-        const historyKey = ["conversation", conversationId, "messages"];
-
-        // Get existing messages
-        const existingMessages = await kv.get<Array<{ role: string; content: string }>>(historyKey);
-        conversationMessages = existingMessages.value || [];
-
-        // Format history for context
-        if (conversationMessages.length > 0) {
-          const historyContext = conversationMessages
-            .map((m) => `${m.role}: ${m.content}`)
-            .join("\n");
-
-          // Modify the user prompt to include history
-          userPrompt =
-            `Previous conversation:\n${historyContext}\n\nCurrent message: ${userPrompt}`;
-
-          this.log(
-            `Loaded ${conversationMessages.length} historical messages for conversation ${conversationId}`,
-            "debug",
-          );
-        }
-
-        // Add current user message to history
-        if (input.message) {
-          conversationMessages.push({ role: "user", content: input.message });
-          await kv.set(historyKey, conversationMessages);
-        }
-
-        kv.close();
-      } catch (error) {
-        this.log(`Failed to load conversation history: ${error}`, "error");
-      }
-    }
-
     // Add telemetry attributes for prompt details
     span?.setAttribute("agent.task", task || "unknown");
     span?.setAttribute("agent.input_type", typeof input);
@@ -820,38 +779,6 @@ class AgentExecutionWorker {
         span?.setAttribute("agent.tools_used", toolNames);
       }
 
-      // Store assistant response for conversation-agent
-      if (
-        request.agent_id === "conversation-agent" && conversationId &&
-        conversationMessages.length > 0
-      ) {
-        try {
-          // Extract the actual message from tool results if session_reply was used
-          let assistantMessage = result.text;
-          if (result.toolResults && result.toolResults.length > 0) {
-            for (const toolResult of result.toolResults as any[]) {
-              if (toolResult.result?.message) {
-                assistantMessage = toolResult.result.message;
-                break;
-              }
-            }
-          }
-
-          // Add assistant response to history
-          conversationMessages.push({ role: "assistant", content: assistantMessage });
-
-          // Store updated history
-          const kv = await Deno.openKv();
-          const historyKey = ["conversation", conversationId, "messages"];
-          await kv.set(historyKey, conversationMessages);
-          kv.close();
-
-          this.log(`Stored assistant response for conversation ${conversationId}`, "debug");
-        } catch (error) {
-          this.log(`Failed to store assistant response: ${error}`, "error");
-        }
-      }
-
       return {
         agent_type: "llm",
         agent_id: request.agent_id,
@@ -899,27 +826,83 @@ class AgentExecutionWorker {
   private async executeTempestAgent(
     request: AgentExecutePayload,
   ): Promise<Record<string, unknown>> {
-    // For Tempest agents, we would load the specific agent from the catalog
-    // For now, simulate the execution
-    const { parameters } = request.agent_config;
-    const params = parameters as Record<string, unknown> || {};
-    const agentName = params.agent;
-    const version = params.version;
+    try {
+      console.log(`[executeTempestAgent] Starting execution...`);
+      const agentConfig = request.agent_config;
+      console.log(`[executeTempestAgent] Agent config type:`, typeof agentConfig);
 
-    this.log(`Loading Tempest agent: ${agentName}@${version}`, "info");
+      // Get agent info from direct config fields (new structure) or fallback to parameters (legacy)
+      const agentName = (agentConfig as any).agent as string ||
+        (agentConfig.parameters as any)?.agent as string;
+      const version = (agentConfig as any).version as string ||
+        (agentConfig.parameters as any)?.version as string;
+      const config = (agentConfig as any).config || {};
+      const prompts = (agentConfig as any).prompts || {};
 
-    // Simulate Tempest agent execution
-    await this.simulateWork(200);
+      console.log(`[executeTempestAgent] Extracted: agentName=${agentName}, version=${version}`);
 
-    return {
-      agent_type: "tempest",
-      agent_id: request.agent_id,
-      agent_name: agentName,
-      version: version,
-      result: `Tempest agent ${agentName} processed: ${JSON.stringify(request.input)}`,
-      input: request.input,
-      execution_time: Date.now(),
-    };
+      this.log(`Loading Tempest agent: ${agentName}@${version}`, "info");
+      console.log(`[executeTempestAgent] Loading Tempest agent: ${agentName}@${version}`);
+      console.log(`[executeTempestAgent] Agent config:`, JSON.stringify(agentConfig, null, 2));
+      console.log(`[executeTempestAgent] Request input:`, JSON.stringify(request.input, null, 2));
+
+      // Handle conversation agent specifically
+      if (agentName === "conversation-agent") {
+        console.log(`[executeTempestAgent] Handling conversation-agent specifically`);
+        console.log(`[executeTempestAgent] About to import ConversationAgent...`);
+        const { ConversationAgent } = await import("../agents/conversation-agent.ts");
+        console.log(`[executeTempestAgent] ConversationAgent imported successfully`);
+
+        // Create conversation agent config from request
+        const conversationConfig = {
+          model: config.model as string || "claude-3-5-sonnet-20241022",
+          temperature: config.temperature as number || 0.7,
+          max_tokens: config.max_tokens as number || 4000,
+          system_prompt: prompts.system as string || "You are a helpful AI assistant.",
+          tools: agentConfig.tools as string[] || [],
+          parameters: config,
+        };
+
+        const conversationAgent = new ConversationAgent(
+          request.agent_id,
+          conversationConfig,
+          this.workspaceId,
+        );
+
+        // Execute the conversation agent
+        const result = await conversationAgent.execute(request.input as any);
+
+        return {
+          agent_type: "tempest",
+          agent_id: request.agent_id,
+          agent_name: agentName,
+          version: version,
+          result: result.result,
+          tool_calls: result.tool_calls,
+          tool_results: result.tool_results,
+          conversation_metadata: result.conversation_metadata,
+          input: request.input,
+          execution_time: Date.now(),
+        };
+      }
+
+      // For other Tempest agents, simulate the execution for now
+      await this.simulateWork(200);
+
+      return {
+        agent_type: "tempest",
+        agent_id: request.agent_id,
+        agent_name: agentName,
+        version: version,
+        result: `Tempest agent ${agentName} processed: ${JSON.stringify(request.input)}`,
+        input: request.input,
+        execution_time: Date.now(),
+      };
+    } catch (error) {
+      console.error(`[executeTempestAgent] Error:`, error);
+      console.error(`[executeTempestAgent] Error stack:`, error.stack);
+      throw error;
+    }
   }
 
   private async executeRemoteAgent(request: AgentExecutePayload): Promise<Record<string, unknown>> {

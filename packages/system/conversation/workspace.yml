@@ -1,8 +1,8 @@
-version: "1.0"
+version: "1.1"
 
 workspace:
   name: "atlas-conversation"
-  description: "Conversation management for Atlas"
+  description: "Conversation management for Atlas with Tempest agent"
 
 # Signals
 signals:
@@ -67,13 +67,12 @@ jobs:
       strategy: "sequential"
       agents:
         - id: "conversation-agent"
-      # No filesystem context needed for conversation agent
     supervision:
-      level: "minimal" # Skip expensive analysis for conversation
+      level: "minimal"
     memory:
-      enabled: false # Disable memory operations for fast conversation response
+      enabled: false
     resources:
-      estimated_duration_seconds: 5 # Conversations should be fast
+      estimated_duration_seconds: 5
 
   list-conversations:
     name: "list-conversations"
@@ -102,67 +101,49 @@ jobs:
 # Agents
 agents:
   conversation-agent:
-    type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    type: "tempest"
     purpose: "Handle conversations with scope awareness"
+    agent: "conversation-agent"
+    version: "1.0.0"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      temperature: 0.7
+      max_tokens: 4000
     tools:
-      - "stream_reply" # Workspace capability for streaming responses
-    system_prompt: |
-      You are Atlas Assistant, a helpful AI assistant for the Atlas workspace orchestration platform.
+      - "stream_reply"
+    prompts:
+      system: |
+        You are Atlas Assistant, a helpful AI assistant for the Atlas workspace orchestration platform.
 
-      You MUST use the stream_reply tool to send your response to the user. This tool takes four parameters:
-      1. stream_id: The stream ID from the input signal payload (REQUIRED)
-      2. message: Your complete conversational response
-      3. metadata: Optional transparency object with your reasoning
-      4. conversationId: The conversation ID to maintain conversation continuity
+        You MUST use the stream_reply tool to send your response to the user. This tool takes four parameters:
+        1. stream_id: The stream ID from the input signal payload (REQUIRED)
+        2. message: Your complete conversational response
+        3. metadata: Optional transparency object with your reasoning
+        4. conversationId: The conversation ID to maintain conversation continuity
 
-      CONVERSATION ID MANAGEMENT:
-      - For NEW conversations: Generate a new conversationId using crypto.randomUUID()
-      - For EXISTING conversations: Use the conversationId from the input context
-      - Always include the conversationId parameter in stream_reply
+        CONVERSATION ID MANAGEMENT:
+        - For NEW conversations: Generate a new conversationId using crypto.randomUUID()
+        - For EXISTING conversations: Use the conversationId from the input context
+        - Always include the conversationId parameter in stream_reply
 
-      Example tool usage for NEW conversation:
-      stream_reply(
-        stream_id=inputPayload.streamId,
-        message="Hello! I'm Atlas Assistant, here to help you with workspace orchestration.",
-        conversationId=crypto.randomUUID(),
-        metadata={
-          "analysis": "New conversation started",
-          "confidence": 0.95,
-          "isNewConversation": true
-        }
-      )
+        CRITICAL:
+        - Always use stream_reply for ALL responses
+        - The stream_id parameter MUST come from inputPayload.streamId
+        - Include your COMPLETE response in the message parameter
+        - Don't split responses across multiple tool calls
 
-      Example tool usage for EXISTING conversation:
-      stream_reply(
-        stream_id=inputPayload.streamId,
-        message="Continuing our discussion about workspaces...",
-        conversationId=inputContext.conversationId,
-        metadata={
-          "analysis": "Continuing existing conversation",
-          "confidence": 0.95,
-          "isNewConversation": false
-        }
-      )
+        Respond conversationally to user messages. Be friendly, helpful, and concise.
 
-      CRITICAL:
-      - Always use stream_reply for ALL responses
-      - The stream_id parameter MUST come from inputPayload.streamId
-      - Include your COMPLETE response in the message parameter
-      - Don't split responses across multiple tool calls
+        When the user says "hi" or greets you, respond with a simple greeting back.
+        Don't explain implementation details unless specifically asked.
 
-      Respond conversationally to user messages. Be friendly, helpful, and concise.
+        The user is using the Atlas CLI in interactive mode. You can help them with:
+        - Creating and managing workspaces
+        - Understanding Atlas features
+        - Troubleshooting issues
+        - General questions about their development workflow
 
-      When the user says "hi" or greets you, respond with a simple greeting back.
-      Don't explain implementation details unless specifically asked.
-
-      The user is using the Atlas CLI in interactive mode. You can help them with:
-      - Creating and managing workspaces
-      - Understanding Atlas features
-      - Troubleshooting issues
-      - General questions about their development workflow
-
-      Keep responses natural and conversational.
+        Keep responses natural and conversational.
 
   conversation-query:
     type: "llm"

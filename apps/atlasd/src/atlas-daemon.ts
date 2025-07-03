@@ -1181,7 +1181,7 @@ export class AtlasDaemon {
         const { message, userId, scope, metadata, conversationId } = body;
 
         // Trigger the conversation workspace signal with the message
-        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("tender_icing");
+        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("silky_lettuce");
 
         await conversationWorkspace.triggerSignal("conversation-stream", {
           streamId,
