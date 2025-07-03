@@ -320,7 +320,7 @@ jobs:
           <installer-gui-script minSpecVersion="1">
               <title>Atlas ${RELEASE_VERSION}</title>
               <welcome file="welcome.html"/>
-              <license file="license.rtf" mime-type="text/rtf"/>
+              <license file="license.html"/>
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -367,8 +367,8 @@ jobs:
           </html>
           WELCOME_EOF
 
-          # Copy EULA license file for macOS pkg installer (RTF format)
-          cp LICENSE-EULA.rtf ./dist/license.rtf
+          # Copy EULA license file for macOS pkg installer (HTML format)
+          cp LICENSE-EULA.html ./dist/license.html
 
           # Build final product package with custom title
           echo "Building final pkg with productbuild..."
@@ -502,8 +502,21 @@ jobs:
           # Add WiX to PATH for this session
           $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
 
-          # Copy EULA license file for Windows MSI installer
-          Copy-Item "LICENSE-EULA.rtf" -Destination "license.rtf"
+          # Convert HTML EULA to RTF for Windows MSI installer (WiX requires RTF)
+          # Simple conversion: strip HTML tags and convert to basic RTF format
+          $htmlContent = Get-Content "LICENSE-EULA.html" -Raw
+          
+          # Strip HTML tags and convert to plain text
+          $textContent = $htmlContent -replace '<[^>]+>', '' -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>'
+          $textContent = $textContent -replace '\s+', ' ' -replace '^\s+|\s+$', ''
+          
+          # Create RTF with system font
+          $rtfHeader = "{\rtf1\ansi\deff0 {\fonttbl {\f0 \fswiss Arial;}}\f0\fs20"
+          $rtfFooter = "}"
+          $rtfText = $textContent -replace '\n', '\par ' -replace '\r', ''
+          
+          $rtfContent = $rtfHeader + $rtfText + $rtfFooter
+          $rtfContent | Out-File -FilePath "license.rtf" -Encoding UTF8
 
           # Get release version for installer title (remove 'v' prefix if present)
           $version = "${{ steps.version.outputs.version }}"
