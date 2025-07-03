@@ -60,3 +60,34 @@ runs:
         gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${VERSION}.txt
         
         echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to sandbox GCS bucket"
+
+    - name: Cleanup old artifacts (sandbox)
+      shell: bash
+      run: |
+        cd ./artifacts
+        
+        # Only cleanup for edge and nightly channels to prevent removing stable releases
+        if [ "${{ inputs.bucket-prefix }}" == "edge/" ] || [ "${{ inputs.bucket-prefix }}" == "nightly/" ]; then
+          echo "Cleaning up old ${{ inputs.bucket-prefix }} versions in sandbox (keeping last 7)..."
+          
+          # Extract channel prefix for file matching (e.g., "edge" or "nightly")
+          CHANNEL=$(echo "${{ inputs.bucket-prefix }}" | sed 's/\///g')
+          
+          # Cleanup artifacts: Keep last 7 versions (28 files = 4 platforms × 7 versions)
+          gsutil ls gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}atlas_${CHANNEL}-*.tar.gz | \
+            sort -r | \
+            tail -n +29 | \
+            head -20 | \
+            xargs -r gsutil -m rm || echo "No old ${CHANNEL} artifacts to clean"
+          
+          # Also cleanup old checksums: Keep last 7 versions
+          gsutil ls gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${CHANNEL}-*.txt | \
+            sort -r | \
+            tail -n +8 | \
+            head -10 | \
+            xargs -r gsutil -m rm || echo "No old ${CHANNEL} checksums to clean"
+          
+          echo "Sandbox ${{ inputs.bucket-prefix }} cleanup completed"
+        else
+          echo "Skipping cleanup for release channel (stable releases preserved)"
+        fi
