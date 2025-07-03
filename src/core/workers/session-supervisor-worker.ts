@@ -93,6 +93,8 @@ class SessionSupervisorWorker extends BaseWorker {
     );
     this.log("SessionSupervisor created successfully");
 
+    // Stream callback is now handled by the session_reply tool via workspace capabilities
+
     // Join session broadcast channel (async, non-blocking)
     this.actor.send({
       type: "JOIN_CHANNEL",
@@ -274,20 +276,33 @@ class SessionSupervisorWorker extends BaseWorker {
               results,
             );
 
-            // Extract semantic facts from signal and store in knowledge graph
-            try {
-              await this.supervisor!.extractAndStoreSemanticFacts();
-              this.log("Semantic facts extracted and stored in knowledge graph");
-            } catch (error) {
-              this.log(`Warning: Failed to extract semantic facts: ${error}`);
-            }
+            // Check if memory operations are enabled based on job configuration
+            const jobSpec = sessionContext?.jobSpec;
+            const memoryConfig = jobSpec?.memory;
+            const memoryEnabled = memoryConfig?.enabled !== false;
 
-            // Generate and store working memory summary in episodic memory
-            try {
-              await this.supervisor!.generateWorkingMemorySummary();
-              this.log("Working memory summary generated and stored in episodic memory");
-            } catch (error) {
-              this.log(`Warning: Failed to generate working memory summary: ${error}`);
+            if (memoryEnabled) {
+              // Extract semantic facts from signal and store in knowledge graph
+              if (memoryConfig?.fact_extraction !== false) {
+                try {
+                  await this.supervisor!.extractAndStoreSemanticFacts();
+                  this.log("Semantic facts extracted and stored in knowledge graph");
+                } catch (error) {
+                  this.log(`Warning: Failed to extract semantic facts: ${error}`);
+                }
+              }
+
+              // Generate and store working memory summary in episodic memory
+              if (memoryConfig?.working_memory_summary !== false) {
+                try {
+                  await this.supervisor!.generateWorkingMemorySummary();
+                  this.log("Working memory summary generated and stored in episodic memory");
+                } catch (error) {
+                  this.log(`Warning: Failed to generate working memory summary: ${error}`);
+                }
+              }
+            } else {
+              this.log("Memory operations disabled based on job configuration");
             }
 
             // Log structured session results
@@ -315,6 +330,20 @@ class SessionSupervisorWorker extends BaseWorker {
             });
 
             this.log("AI Summary", { summary: sessionSummary });
+
+            // Notify runtime that session is complete
+            self.postMessage({
+              type: "sessionComplete",
+              sessionId: this.sessionId,
+              result: {
+                status: summary.status,
+                timing: timing,
+                phases: results.length,
+                agents: results.flatMap((r) => r.results).length,
+              },
+            });
+
+            // Streaming is now handled by the session_reply tool via workspace capabilities
 
             return {
               status: summary.status,
@@ -495,6 +524,170 @@ class SessionSupervisorWorker extends BaseWorker {
     } catch (error) {
       this.log(`Error executing agent ${agentId}: ${error}`);
       throw error;
+    }
+  }
+
+  // Handle direct messages from workspace supervisor
+  protected override handleDirectMessage(peerId: string, data: Record<string, unknown>): void {
+    this.log(`Direct message received from ${peerId}`, {
+      messageType: data.type,
+      sessionId: this.sessionId,
+    });
+
+    switch (data.type) {
+      case "processSession":
+        // Extract session context and start execution
+        this.handleProcessSession(data as any);
+        break;
+
+      default:
+        super.handleDirectMessage(peerId, data);
+    }
+  }
+
+  private async handleProcessSession(
+    message: { sessionContext: any; traceHeaders?: Record<string, string> },
+  ) {
+    if (!this.supervisor) {
+      this.log(`Session supervisor not initialized for processSession`);
+      return;
+    }
+
+    try {
+      this.log(`Processing session context for ${this.sessionId}`);
+
+      const { sessionContext, traceHeaders } = message;
+
+      // Override sessionId with the actual session ID
+      sessionContext.sessionId = this.sessionId!;
+
+      this.log(`Initializing session context for ${this.sessionId}`, {
+        hasSignal: !!sessionContext.signal?.id,
+        signalId: sessionContext.signal?.id,
+        agentsCount: sessionContext.availableAgents?.length || 0,
+        workspaceId: sessionContext.workspaceId,
+      });
+
+      // Initialize the session with the provided context
+      await this.supervisor.initializeSession(sessionContext);
+
+      // Execute the session
+      const result = await AtlasTelemetry.withWorkerSpan(
+        {
+          operation: "processSession",
+          component: "session",
+          traceHeaders,
+          workerId: this.context.id,
+          sessionId: this.sessionId!,
+        },
+        async (_span) => {
+          // Create execution plan
+          const plan = await this.supervisor!.createExecutionPlan();
+          this.log(
+            `Execution plan created for ${this.sessionId} with ${plan.phases.length} phases`,
+          );
+
+          const results: { phaseId: string; phaseName: string; results: AgentResult[] }[] = [];
+
+          // Execute each phase of the plan
+          for (const [phaseIndex, phase] of plan.phases.entries()) {
+            this.log(`Executing phase: ${phase.name} for session ${this.sessionId}`);
+
+            const phaseResults: AgentResult[] = [];
+            const agentTraceHeaders = await AtlasTelemetry.createTraceHeaders();
+
+            // Execute agents in the phase based on strategy
+            if (phase.executionStrategy === "sequential") {
+              for (const [agentIndex, agentTask] of phase.agents.entries()) {
+                const result = await this.executeAgentTask(
+                  agentTask,
+                  phaseResults,
+                  agentTraceHeaders,
+                );
+                phaseResults.push(result);
+
+                // Let supervisor evaluate progress
+                const evaluation = await this.supervisor!.evaluateProgress(phaseResults);
+                if (evaluation.isComplete) {
+                  this.log(`Session ${this.sessionId} evaluation determined completion`, {
+                    phase: phaseIndex + 1,
+                    agent: agentIndex + 1,
+                    reason: evaluation.feedback || "Goals satisfied",
+                  });
+                  break;
+                }
+              }
+            } else {
+              // Parallel execution
+              const promises = phase.agents.map((agentTask) =>
+                this.executeAgentTask(agentTask, phaseResults, agentTraceHeaders)
+              );
+              const parallelResults = await Promise.all(promises);
+              phaseResults.push(...parallelResults);
+            }
+
+            results.push({
+              phaseId: phase.id,
+              phaseName: phase.name,
+              results: phaseResults,
+            });
+
+            // Check if we should continue to next phase
+            const evaluation = await this.supervisor!.evaluateProgress(
+              results.flatMap((r) => r.results),
+            );
+            if (evaluation.isComplete) {
+              this.log(`Session ${this.sessionId} complete after phase ${phaseIndex + 1}`);
+              break;
+            }
+          }
+
+          // Create session summary
+          const summary = this.supervisor!.getExecutionSummary();
+
+          this.log(`Session ${this.sessionId} execution complete`, {
+            status: summary?.status,
+            phases: results.length,
+            agents: results.flatMap((r) => r.results).length,
+          });
+
+          return {
+            status: summary?.status || "completed",
+            sessionId: this.sessionId,
+            phases_executed: results.length,
+            total_agents_invoked: results.flatMap((r) => r.results).length,
+            results,
+          };
+        },
+      );
+
+      // Notify runtime that session is complete
+      self.postMessage({
+        type: "sessionComplete",
+        sessionId: this.sessionId,
+        result: {
+          status: result.status,
+          timing: { completed: Date.now() },
+          phases: result.phases_executed,
+          agents: result.total_agents_invoked,
+        },
+      });
+
+      this.log(`Session ${this.sessionId} completed successfully`);
+    } catch (error) {
+      this.log(`Session ${this.sessionId} failed with error:`, {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        errorType: typeof error,
+        errorConstructor: error?.constructor?.name,
+      });
+
+      // Notify runtime of failure
+      self.postMessage({
+        type: "sessionError",
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 

@@ -48,6 +48,9 @@ When developing CLI commands:
 12. **NEVER USE CONSOLE.LOG**: Console.log statements do not work in this environment and are not
     visible. NEVER add console.log, console.error, console.warn, or any console methods for
     debugging. Use other debugging strategies instead.
+13. **Clean up test files**: Always clean up test files created during debugging or development.
+    Remove any test-_.ts, test-_.sh, or other temporary test files before completing a task. Use
+    `rm -f test-*` to clean up test files.
 
 ## TUI Development Guidelines
 

@@ -5,6 +5,7 @@ import { spinner } from "../../utils/prompts.tsx";
 import { z } from "zod/v4";
 import { promises as fs } from "node:fs";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
 import process from "node:process";
 
 interface GenerateArgs {
@@ -71,20 +72,16 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for generation result
-const GenerationResultSchema = z.object({
-  content: z.string(),
-  id: z.string().optional(),
-  metadata: z
-    .object({
-      template_id: z.string(),
-      generated_at: z.string(),
-      input_data_hash: z.string().optional(),
-    })
-    .optional(),
-});
-
-type GenerationResult = z.infer<typeof GenerationResultSchema>;
+// Define the result type based on what the client returns
+interface GenerationResult {
+  content: string;
+  id?: string;
+  metadata?: {
+    template_id: string;
+    generated_at: string;
+    input_data_hash?: string;
+  };
+}
 
 export async function handler(argv: GenerateArgs) {
   const s = spinner();
@@ -116,33 +113,23 @@ export async function handler(argv: GenerateArgs) {
       );
     }
 
-    // s.message("Generating content..."); // Spinner doesn't have message method
+    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
 
-    // Prepare request body
-    const requestBody = {
-      template: argv.template,
+    // Prepare options for client call
+    const options = argv.store
+      ? {
+        store: true,
+        name: argv.name,
+        description: argv.description,
+        tags: argv.tags ? argv.tags.split(",").map((t: string) => t.trim()) : undefined,
+      }
+      : undefined;
+
+    const result = await client.generateFromTemplate(
+      argv.template,
       data,
-      store: argv.store,
-      name: argv.name,
-      description: argv.description,
-      tags: argv.tags ? argv.tags.split(",").map((t: string) => t.trim()) : undefined,
-    };
-
-    const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/api/library/generate`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const result = GenerationResultSchema.parse(await response.json());
+      options,
+    ) as GenerationResult;
 
     s.stop("Content generated successfully");
 

@@ -22,6 +22,9 @@ export interface LibraryItem {
     source: string;
     session_id?: string;
     agent_ids?: string[];
+    engine?: string;
+    template_id?: string;
+    created_by?: string;
     custom_fields?: Record<string, unknown>;
   };
   created_at: string;
@@ -42,11 +45,18 @@ export interface LibraryStats {
   total_items: number;
   total_size_bytes: number;
   types: Record<string, number>;
+  tags?: Record<string, number>;
   recent_activity: Array<{
     date: string;
     items_added: number;
     items_modified: number;
+    size_added_bytes?: number;
   }>;
+  storage_stats?: {
+    used_bytes: number;
+    limit_bytes?: number;
+    percentage_used?: number;
+  };
 }
 
 export interface TemplateConfig {
@@ -55,6 +65,7 @@ export interface TemplateConfig {
   description?: string;
   format: string;
   engine: string;
+  category?: string;
   config: Record<string, unknown>;
   schema?: Record<string, unknown>;
 }

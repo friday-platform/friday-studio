@@ -1,5 +1,6 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
-import type { ConversationEvent } from "../../core/conversation-supervisor.ts";
+import type { ConversationEvent } from "../../core/conversation-supervisor.old.ts";
+import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
   sessionId: string;
@@ -23,87 +24,196 @@ export interface ConversationMessage {
  * Handles HTTP requests and SSE streaming for real-time chat experience
  */
 export class ConversationClient {
+  public sseUrl?: string; // Store the SSE URL from createSession
+  private daemonClient: DaemonClient;
+  private conversationWorkspaceId?: string; // Cache the conversation workspace ID
+
   constructor(
     private daemonUrl: string,
     private workspaceId: string,
     private userId: string = "atlas-user",
-  ) {}
+  ) {
+    this.daemonClient = new DaemonClient({ daemonUrl });
+  }
 
   /**
-   * Create a new conversation session
+   * Create a new conversation session using direct daemon API
    */
-  async createSession(mode: "private" | "shared" = "private"): Promise<ConversationSession> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          metadata: {
-            userId: this.userId,
-            clientType: "atlas-cli",
-            capabilities: ["streaming", "transparency"],
-          },
-        }),
+  async createSession(
+    options?: { userId?: string; scope?: { workspaceId?: string }; createOnly?: boolean },
+  ): Promise<ConversationSession> {
+    // Use the new direct daemon stream API
+    const url = `${this.daemonUrl}/api/streams`;
+    // Create session without sending an initial message
+    const body = {
+      userId: options?.userId || this.userId,
+      scope: options?.scope || {
+        workspaceId: this.workspaceId,
       },
-    );
+      createOnly: options?.createOnly ?? true, // Just create session, don't send a message
+    };
+
+    console.log(`[ConversationClient] Creating session at ${url} with body:`, body);
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
+      console.error(`[ConversationClient] Failed to create session:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        url,
+        body,
+      });
       throw new Error(
         `Failed to create conversation session (${response.status}): ${errorText}`,
       );
     }
 
-    return await response.json();
+    const result = await response.json();
+    console.log(`[ConversationClient] Session created successfully:`, result);
+
+    // Transform the response to match the expected ConversationSession interface
+    return {
+      sessionId: result.stream_id,
+      mode: "private",
+      participants: [{
+        userId: this.userId,
+        clientType: "atlas-cli",
+        joinedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      }],
+      sseUrl: `${this.daemonUrl}${result.sse_url}`,
+    };
   }
 
   /**
-   * Send a message to the conversation session
+   * Find the conversation workspace ID by looking for workspace with name "conversation"
    */
-  async sendMessage(sessionId: string, message: string): Promise<ConversationMessage> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}/messages`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          fromUser: this.userId,
-          timestamp: new Date().toISOString(),
-        }),
-      },
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.status} ${response.statusText}`);
+  private async getConversationWorkspaceId(): Promise<string> {
+    if (this.conversationWorkspaceId) {
+      return this.conversationWorkspaceId;
     }
 
-    return await response.json();
+    try {
+      const workspaces = await this.daemonClient.listWorkspaces();
+      const conversationWorkspace = workspaces.find((w) => w.name === "atlas-conversation");
+
+      if (!conversationWorkspace) {
+        throw new Error(
+          "Conversation workspace not found - install conversation workspace to use chat features",
+        );
+      }
+
+      this.conversationWorkspaceId = conversationWorkspace.id;
+      return this.conversationWorkspaceId;
+    } catch (error) {
+      console.error(`[ConversationClient] Failed to find conversation workspace:`, error);
+      throw new Error(`Failed to find conversation workspace: ${error}`);
+    }
+  }
+
+  /**
+   * Send a message to the conversation session using workspace signals
+   */
+  async sendMessage(
+    sessionId: string,
+    message: string,
+    conversationId?: string,
+  ): Promise<ConversationMessage> {
+    // Get the conversation workspace ID
+    const conversationWorkspaceId = await this.getConversationWorkspaceId();
+
+    // Use workspace signal instead of direct stream endpoint
+    const url =
+      `${this.daemonUrl}/api/workspaces/${conversationWorkspaceId}/signals/conversation-stream`;
+    console.log(`[ConversationClient] Sending message via signal to ${url}`);
+
+    const body = {
+      streamId: sessionId,
+      message,
+      userId: this.userId,
+      ...(conversationId && { conversationId }), // Include conversationId if provided
+    };
+
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      console.error(`[ConversationClient] Failed to send message:`, {
+        status: response.status,
+        statusText: response.statusText,
+        errorText,
+        url,
+        body,
+      });
+      throw new Error(
+        `Failed to send message (${response.status}): ${errorText}`,
+      );
+    }
+
+    const result = await response.json();
+    console.log(`[ConversationClient] Message sent successfully:`, result);
+
+    return {
+      messageId: result.messageId || crypto.randomUUID(),
+      status: "processing",
+    } as ConversationMessage;
   }
 
   /**
    * Stream conversation events via Server-Sent Events
    */
-  async *streamEvents(sessionId: string): AsyncIterableIterator<ConversationEvent> {
-    const sseUrl =
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}/stream`;
+  async *streamEvents(
+    sessionId: string,
+    sseUrl?: string,
+    abortSignal?: AbortSignal,
+  ): AsyncIterableIterator<ConversationEvent> {
+    // Use the SSE URL from the session if not provided
+    const streamUrl = sseUrl ||
+      `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
 
+    let eventSource: any = null;
     try {
-      const eventSource = await createEventSource({ url: sseUrl });
+      eventSource = await createEventSource({
+        url: streamUrl,
+        options: abortSignal ? { signal: abortSignal } : undefined,
+      });
 
       for await (const message of eventSource.consume()) {
+        // Check if aborted
+        if (abortSignal?.aborted) {
+          break;
+        }
+
         try {
+          const parsedData = JSON.parse(message.data);
           const event: ConversationEvent = {
-            type: (message.event || "unknown") as ConversationEvent["type"],
-            data: JSON.parse(message.data),
-            timestamp: new Date().toISOString(),
-            sessionId,
+            type: parsedData.type || "unknown" as ConversationEvent["type"],
+            data: parsedData.data || parsedData,
+            timestamp: parsedData.timestamp || new Date().toISOString(),
+            sessionId: parsedData.sessionId || sessionId,
             messageId: message.id,
           };
 
           yield event;
+
+          // Only close the connection if explicitly requested
+          if (event.type === "message_complete" && event.data?.closeConnection === true) {
+            if (eventSource && eventSource.close) {
+              eventSource.close();
+            }
+            break;
+          }
         } catch (error) {
           console.error("Failed to parse SSE message:", error, message);
           // Continue processing other messages
@@ -113,6 +223,11 @@ export class ConversationClient {
       throw new Error(
         `SSE connection failed: ${error instanceof Error ? error.message : String(error)}`,
       );
+    } finally {
+      // Ensure the connection is closed
+      if (eventSource && eventSource.close) {
+        eventSource.close();
+      }
     }
   }
 

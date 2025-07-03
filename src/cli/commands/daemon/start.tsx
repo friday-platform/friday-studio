@@ -4,6 +4,7 @@ import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { displayDaemonStatus, fetchDaemonStatus } from "../../utils/daemon-status.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface StartArgs {
   port?: number;
@@ -75,7 +76,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Check if daemon is already running
     const port = argv.port || 8080;
-    const isRunning = await checkDaemonRunning(port);
+    const client = getAtlasClient({ url: `http://localhost:${port}` });
+    const isRunning = await client.isHealthy();
     if (isRunning) {
       infoOutput(`Atlas daemon is already running on port ${port}`);
       const status = await fetchDaemonStatus(port);
@@ -104,14 +106,8 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 };
 
 async function checkDaemonRunning(port: number): Promise<boolean> {
-  try {
-    const response = await fetch(`http://localhost:${port}/health`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 2000 });
+  return await client.isHealthy();
 }
 
 async function startDetached(argv: StartArgs): Promise<void> {
@@ -153,7 +149,8 @@ async function startDetached(argv: StartArgs): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   // Check if it's running
-  const isRunning = await checkDaemonRunning(argv.port || 8080);
+  const client = getAtlasClient({ url: `http://localhost:${argv.port || 8080}` });
+  const isRunning = await client.isHealthy();
   if (isRunning) {
     successOutput(`Atlas daemon started in background`);
     successOutput(`PID: ${pid}`);

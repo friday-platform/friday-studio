@@ -1,6 +1,5 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
-import { useAppContext } from "../contexts/app-context.tsx";
 
 interface CollapsibleProps {
   children: React.ReactNode;
@@ -17,16 +16,15 @@ export const Collapsible = ({
   const visibleLines = 10;
   const shouldCollapse = totalLines != null && totalLines > visibleLines;
   const remainingLines = totalLines ? totalLines - visibleLines : 0;
-  const { isLeaderKeyActive } = useAppContext();
 
   useInput(
-    (input) => {
-      if (input === "r") {
+    (input, key) => {
+      if (key.ctrl && input === "r") {
         console.log(""); // hack to ensure the output rerenders :( // CLAUDE_IGNORE: Required for rendering
         setIsCollapsed((prev) => !prev);
       }
     },
-    { isActive: isLeaderKeyActive },
+    { isActive: true },
   );
 
   // If content has 10 or fewer lines, don't apply any restrictions
@@ -43,7 +41,7 @@ export const Collapsible = ({
         </Box>
         <Box paddingTop={1}>
           <Text dimColor>
-            ...+{remainingLines} rows, press ctrl+a, then r to expand
+            ...+{remainingLines} rows, press ctrl+r to expand
           </Text>
         </Box>
       </Box>
@@ -54,7 +52,7 @@ export const Collapsible = ({
     <Box flexDirection="column">
       {children}
       <Box paddingTop={1}>
-        <Text dimColor>r to collapse</Text>
+        <Text dimColor>ctrl+r to collapse</Text>
       </Box>
     </Box>
   );

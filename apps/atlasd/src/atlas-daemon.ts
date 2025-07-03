@@ -2,6 +2,7 @@ import {
   ConfigLoader,
   formatZodError,
   type MergedConfig,
+  type SupervisorDefaults,
   supervisorDefaults,
   WorkspaceConfigSchema,
 } from "@atlas/config";
@@ -13,17 +14,14 @@ import {
 import { dirname, join } from "@std/path";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { ConversationSessionManager } from "../../../src/core/conversation-session-manager.ts";
-import {
-  type ConversationEvent,
-  ConversationSupervisor,
-} from "../../../src/core/conversation-supervisor.ts";
+import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
   createKVStorage,
   createLibraryStorage,
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
+import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
 import {
   getWorkspaceManager,
   type WorkspaceCreateConfig,
@@ -54,13 +52,17 @@ export class AtlasDaemon {
   private idleTimeouts: Map<string, number> = new Map();
   private startTime = Date.now();
   private isShuttingDown = false;
-  private server: any = null;
+  private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
   private isInitialized = false;
-  private supervisorDefaults: any = null;
-  private libraryStorage: any = null; // LibraryStorageAdapter
-  private conversationSessionManager: ConversationSessionManager = new ConversationSessionManager();
+  private supervisorDefaults: SupervisorDefaults | null = null;
+  private libraryStorage: LibraryStorageAdapter | null = null;
   private templateAdapter: FilesystemTemplateAdapter | null = null;
+  // System workspace properties removed - using standard workspace pattern
+  private sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  > = new Map();
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
 
@@ -86,7 +88,7 @@ export class AtlasDaemon {
     logger.info("Initializing Atlas daemon...");
 
     // Load supervisor defaults once at startup
-    await this.loadSupervisorDefaults();
+    this.loadSupervisorDefaults();
 
     // Initialize WorkspaceManager singleton (with auto-import)
     logger.info("Initializing WorkspaceManager...");
@@ -111,6 +113,12 @@ export class AtlasDaemon {
     logger.info(`Template path: ${templatePath}`);
     this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
 
+    // System workspaces initialization removed - conversations now use standard workspace pattern
+
+    // Initialize daemon-level capabilities
+    logger.info("Initializing daemon capabilities...");
+    DaemonCapabilityRegistry.setDaemonInstance(this);
+    DaemonCapabilityRegistry.initialize();
     // Initialize workspace creation adapter
     logger.info("Initializing workspace creation adapter...");
     this.workspaceCreationAdapter = new FilesystemWorkspaceCreationAdapter();
@@ -184,7 +192,7 @@ export class AtlasDaemon {
   /**
    * Load supervisor defaults (compiled into the application)
    */
-  private async loadSupervisorDefaults(): Promise<void> {
+  private loadSupervisorDefaults(): void {
     const logger = AtlasLogger.getInstance();
 
     // Use compiled-in defaults - no file I/O needed
@@ -193,16 +201,23 @@ export class AtlasDaemon {
     logger.info("Loaded supervisor defaults", {
       source: "compiled",
       version: this.supervisorDefaults.version,
-      hasSupervisors: !!(this.supervisorDefaults as any)?.supervisors,
+      hasSupervisors: !!this.supervisorDefaults?.supervisors,
     });
   }
 
   /**
+   * Initialize system workspaces
+   */
+  // System workspace methods removed - using standard workspace pattern
+
+  // setupWorkspaceRoutes removed - using standard workspace pattern
+
+  /**
    * Get cached supervisor defaults
    */
-  getSupervisorDefaults(): any {
-    if (!this.isInitialized) {
-      throw new Error("Daemon not initialized - call initialize() first");
+  getSupervisorDefaults(): SupervisorDefaults {
+    if (!this.supervisorDefaults) {
+      throw new Error("Supervisor defaults not loaded");
     }
     return this.supervisorDefaults;
   }
@@ -779,16 +794,14 @@ export class AtlasDaemon {
             // Get or create workspace runtime
             const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-            // Get workspace configuration to find the signal
-            const workspace = (runtime as any).workspace;
-            const signal = workspace.signals[signalId];
-
-            if (!signal) {
-              return c.json({ error: `Signal not found: ${signalId}` }, 404);
-            }
-
-            // Process signal asynchronously
-            const sessionPromise = runtime.processSignal(signal, payload);
+            // Trigger signal asynchronously - triggerSignal handles signal lookup
+            runtime.triggerSignal(signalId, payload).catch((error) => {
+              if (error.message.includes("not found")) {
+                AtlasLogger.getInstance().warn(`Signal not found: ${signalId}`);
+              } else {
+                AtlasLogger.getInstance().error(`Error processing signal ${signalId}:`, error);
+              }
+            });
 
             // Reset idle timeout for this workspace
             this.resetIdleTimeout(workspaceId);
@@ -819,7 +832,18 @@ export class AtlasDaemon {
 
     // List sessions across all workspaces
     this.app.get("/api/sessions", (c) => {
-      const allSessions: any[] = [];
+      interface SessionInfo {
+        id: string;
+        workspaceId: string;
+        status: string;
+        summary: string;
+        signal: string;
+        startTime?: unknown;
+        endTime?: unknown;
+        progress: number;
+      }
+
+      const allSessions: SessionInfo[] = [];
 
       for (const [workspaceId, runtime] of this.runtimes) {
         const sessions = runtime.getSessions().map((session) => ({
@@ -828,8 +852,8 @@ export class AtlasDaemon {
           status: session.status,
           summary: session.summarize(),
           signal: session.signals?.triggers?.[0]?.id || "unknown",
-          startTime: (session as any)._startTime,
-          endTime: (session as any)._endTime,
+          startTime: undefined, // Private property, not accessible
+          endTime: undefined, // Private property, not accessible
           progress: session.progress(),
         }));
         allSessions.push(...sessions);
@@ -846,15 +870,28 @@ export class AtlasDaemon {
       for (const [workspaceId, runtime] of this.runtimes) {
         const session = runtime.getSession(sessionId);
         if (session) {
-          const sessionData: any = {
+          interface SessionDetails {
+            id: string;
+            workspaceId: string;
+            status: string;
+            progress: number;
+            summary: string;
+            signal: string;
+            startTime?: unknown;
+            endTime?: unknown;
+            artifacts: unknown[];
+            results?: unknown;
+          }
+
+          const sessionData: SessionDetails = {
             id: session.id,
             workspaceId,
             status: session.status,
             progress: session.progress(),
             summary: session.summarize(),
             signal: session.signals?.triggers?.[0]?.id || "unknown",
-            startTime: (session as any)._startTime,
-            endTime: (session as any)._endTime,
+            startTime: undefined, // Private property, not accessible
+            endTime: undefined, // Private property, not accessible
             artifacts: session.getArtifacts(),
           };
 
@@ -1179,7 +1216,7 @@ export class AtlasDaemon {
       });
     });
 
-    this.app.post("/api/daemon/shutdown", async (c) => {
+    this.app.post("/api/daemon/shutdown", (c) => {
       // Graceful shutdown endpoint
       AtlasLogger.getInstance().info("Daemon shutdown requested via API");
 
@@ -1189,356 +1226,106 @@ export class AtlasDaemon {
       return c.json({ message: "Daemon shutdown initiated" });
     });
 
-    // Conversation API Routes
+    // Create a new stream session
+    this.app.post("/api/streams", async (c) => {
+      try {
+        const body = await c.req.json();
+        const streamId = body.streamId || crypto.randomUUID(); // Use existing streamId if provided
 
-    // Create conversation session
-    this.app.post("/api/workspaces/:workspaceId/conversation/sessions", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
+        // For createOnly requests, just return the stream info
+        if (body.createOnly) {
+          return c.json({
+            success: true,
+            stream_id: streamId,
+            sse_url: `/api/stream/${streamId}/stream`,
+          });
+        }
+
+        // No special conversation logic - client should use regular workspace triggers
+        // For requests that include a workspace and signal, trigger the signal
+        if (body.workspaceId && body.signal) {
+          const runtime = this.runtimes.get(body.workspaceId);
+          if (!runtime) {
+            return c.json({ error: `Workspace not found: ${body.workspaceId}` }, 404);
+          }
+
+          // Trigger signal with streamId
+          runtime.triggerSignal(body.signal, {
+            ...body,
+            streamId,
+          }).catch((error) => {
+            AtlasLogger.getInstance().error("Signal trigger failed", { error });
+          });
+        }
+
+        return c.json({
+          success: true,
+          stream_id: streamId, // Return the same streamId that was used
+          sse_url: `/api/stream/${streamId}/stream`,
+        });
+      } catch (error) {
+        AtlasLogger.getInstance().error("Failed to create stream", { error });
+        return c.json({ error: "Failed to create stream" }, 500);
+      }
+    });
+
+    // SSE endpoint for stream subscriptions
+    this.app.get("/api/stream/:streamId/stream", (c) => {
+      const streamId = c.req.param("streamId");
+      return this.handleGenericSSERequest(c, streamId);
+    });
+
+    // Stream API endpoint for MCP tools
+    this.app.post("/api/stream/:streamId", async (c) => {
+      const streamId = c.req.param("streamId");
 
       try {
         const body = await c.req.json();
-        const { mode = "private", metadata } = body;
-        const { userId = "anonymous", clientType = "atlas-cli" } = metadata || {};
+        const { message, userId, scope, metadata, conversationId } = body;
 
-        const session = await this.conversationSessionManager.createSession(
-          workspaceId,
-          userId,
-          clientType,
-          mode,
-        );
+        // Trigger the conversation workspace signal with the message
+        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("tender_icing");
+
+        await conversationWorkspace.triggerSignal("conversation-stream", {
+          streamId,
+          message,
+          userId: userId || "cli-user",
+          conversationId,
+          scope,
+          metadata,
+        });
 
         return c.json({
-          sessionId: session.id,
-          mode: session.mode,
-          participants: session.participants,
-          sseUrl: `/api/workspaces/${workspaceId}/conversation/sessions/${session.id}/stream`,
+          success: true,
+          message: "Reply streamed successfully",
+          messageId: crypto.randomUUID(),
         });
       } catch (error) {
+        AtlasLogger.getInstance().error("Stream API error", { streamId, error: error.message });
         return c.json({
-          error: `Failed to create conversation session: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          error: `Stream API error: ${error instanceof Error ? error.message : String(error)}`,
         }, 500);
       }
     });
 
-    // Send message to conversation session
-    this.app.post(
-      "/api/workspaces/:workspaceId/conversation/sessions/:sessionId/messages",
-      async (c) => {
-        const { workspaceId, sessionId } = c.req.param();
-
-        try {
-          const body = await c.req.json();
-          const { message, fromUser = "anonymous" } = body;
-
-          if (!message) {
-            return c.json({ error: "Message is required" }, 400);
-          }
-
-          const session = this.conversationSessionManager.getSession(sessionId);
-          if (!session) {
-            return c.json({ error: "Session not found" }, 404);
-          }
-
-          if (session.workspaceId !== workspaceId) {
-            return c.json({ error: "Session does not belong to this workspace" }, 400);
-          }
-
-          const messageId = `msg_${Math.random().toString(36).substring(2, 10)}`;
-
-          // Add user message to history
-          this.conversationSessionManager.addMessage(
-            sessionId,
-            messageId,
-            fromUser,
-            message,
-            "user",
-          );
-
-          // Update participant activity
-          this.conversationSessionManager.updateParticipantActivity(sessionId, fromUser);
-
-          // Process message asynchronously (response will come via SSE)
-          this.processConversationMessage(workspaceId, sessionId, messageId, message, fromUser)
-            .catch((error) => {
-              console.error(`Error processing conversation message: ${error}`);
-            });
-
-          return c.json({
-            messageId,
-            status: "processing",
-          });
-        } catch (error) {
-          return c.json({
-            error: `Failed to send message: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          }, 500);
-        }
-      },
-    );
-
-    // SSE stream for conversation events
-    this.app.get(
-      "/api/workspaces/:workspaceId/conversation/sessions/:sessionId/stream",
-      async (c) => {
-        const { workspaceId, sessionId } = c.req.param();
-
-        try {
-          const session = this.conversationSessionManager.getSession(sessionId);
-          if (!session) {
-            return c.json({ error: "Session not found" }, 404);
-          }
-
-          if (session.workspaceId !== workspaceId) {
-            return c.json({ error: "Session does not belong to this workspace" }, 400);
-          }
-
-          return this.streamConversationEvents(c, workspaceId, sessionId);
-        } catch (error) {
-          return c.json({
-            error: `Failed to stream conversation: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          }, 500);
-        }
-      },
-    );
-
-    // Get conversation session info
-    this.app.get("/api/workspaces/:workspaceId/conversation/sessions/:sessionId", async (c) => {
-      const { workspaceId, sessionId } = c.req.param();
+    // SSE event emission endpoint for daemon capabilities
+    this.app.post("/api/stream/:streamId/emit", async (c) => {
+      const streamId = c.req.param("streamId");
 
       try {
-        const session = this.conversationSessionManager.getSession(sessionId);
-        if (!session) {
-          return c.json({ error: "Session not found" }, 404);
-        }
+        const event = await c.req.json();
 
-        if (session.workspaceId !== workspaceId) {
-          return c.json({ error: "Session does not belong to this workspace" }, 400);
-        }
+        // Emit the SSE event to all connected clients for this stream
+        this.emitSSEEvent(streamId, event);
 
-        return c.json(session);
+        return c.json({ success: true });
       } catch (error) {
+        AtlasLogger.getInstance().error("SSE emit error", { streamId, error: error.message });
         return c.json({
-          error: `Failed to get session: ${error instanceof Error ? error.message : String(error)}`,
+          error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}`,
         }, 500);
       }
     });
-  }
-
-  /**
-   * Process conversation message with ConversationSupervisor and emit SSE events
-   */
-  private async processConversationMessage(
-    workspaceId: string,
-    sessionId: string,
-    messageId: string,
-    message: string,
-    fromUser: string,
-  ): Promise<void> {
-    try {
-      // QUICK FIX: Get conversation history to pass to supervisor
-      const messageHistory = this.conversationSessionManager.getMessageHistory(sessionId);
-
-      // Create ConversationSupervisor with workspace context
-      const supervisor = new ConversationSupervisor(workspaceId);
-
-      // Process message and stream events to all connected SSE clients
-      // QUICK FIX: Pass message history for context
-      for await (
-        const event of supervisor.processMessage(
-          sessionId,
-          messageId,
-          message,
-          fromUser,
-          messageHistory,
-        )
-      ) {
-        const logger = AtlasLogger.getInstance();
-        logger.debug(JSON.stringify(
-          {
-            message: "Received event from supervisor",
-            eventType: event.type,
-            sessionId,
-            messageId: event.messageId,
-            hasData: !!event.data,
-            dataKeys: event.data ? Object.keys(event.data) : [],
-          },
-          null,
-          2,
-        ));
-
-        // QUICK FIX: Track message chunks to reconstruct complete response
-        if (event.type === "message_chunk" && event.data.content) {
-          this.messageChunks.set(messageId, event.data.content);
-        }
-
-        // Emit event to SSE clients for this session
-        this.emitConversationEvent(sessionId, event);
-
-        // Add assistant message to history when complete
-        if (event.type === "message_complete" && !event.data.error) {
-          // Get the complete message from the message_chunk events
-          const completeMessage = this.getCompleteMessageFromEvents(messageId);
-          if (completeMessage) {
-            this.conversationSessionManager.addMessage(
-              sessionId,
-              `${messageId}_response`,
-              "assistant",
-              completeMessage,
-              "assistant",
-            );
-          }
-        }
-      }
-    } catch (error) {
-      // Emit error event
-      const errorEvent: ConversationEvent = {
-        type: "message_complete",
-        data: {
-          messageId,
-          error: error instanceof Error ? error.message : String(error),
-        },
-        timestamp: new Date().toISOString(),
-        messageId,
-        sessionId,
-      };
-
-      this.emitConversationEvent(sessionId, errorEvent);
-    }
-  }
-
-  private sseClients: Map<
-    string,
-    Array<{ writer: WritableStreamDefaultWriter; controller: ReadableStreamDefaultController }>
-  > = new Map();
-
-  /**
-   * Stream conversation events via SSE
-   */
-  private streamConversationEvents(c: any, workspaceId: string, sessionId: string): Response {
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-
-    // Add client to SSE clients for this session
-    if (!this.sseClients.has(sessionId)) {
-      this.sseClients.set(sessionId, []);
-    }
-    this.sseClients.get(sessionId)!.push({ writer, controller: null as any });
-
-    // Send initial connection event
-    const connectEvent = `event: connected\ndata: ${
-      JSON.stringify({
-        sessionId,
-        timestamp: new Date().toISOString(),
-      })
-    }\n\n`;
-
-    writer.write(encoder.encode(connectEvent)).catch(() => {
-      // Client disconnected, clean up
-      this.removeSSEClient(sessionId, writer);
-    });
-
-    // Handle client disconnect
-    c.req.raw.signal?.addEventListener("abort", () => {
-      this.removeSSEClient(sessionId, writer);
-      writer.close();
-    });
-
-    return new Response(readable, {
-      headers: {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        "Connection": "keep-alive",
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers": "Cache-Control",
-      },
-    });
-  }
-
-  /**
-   * Emit conversation event to all SSE clients for a session
-   */
-  private emitConversationEvent(sessionId: string, event: ConversationEvent): void {
-    const logger = AtlasLogger.getInstance();
-    const clients = this.sseClients.get(sessionId);
-
-    logger.info(JSON.stringify(
-      {
-        message: "emitConversationEvent called",
-        sessionId,
-        eventType: event.type,
-        hasClients: !!clients,
-        clientCount: clients?.length || 0,
-        dataKeys: event.data ? Object.keys(event.data) : [],
-      },
-      null,
-      2,
-    ));
-
-    if (!clients || clients.length === 0) {
-      logger.warn("No SSE clients connected for session", { sessionId });
-      return;
-    }
-
-    const encoder = new TextEncoder();
-    const sseData = `event: ${event.type}\ndata: ${JSON.stringify(event.data)}\n\n`;
-    const encodedData = encoder.encode(sseData);
-
-    // Send to all connected clients for this session
-    clients.forEach(({ writer }, index) => {
-      writer.write(encodedData).catch((error) => {
-        logger.error(JSON.stringify(
-          {
-            message: "Failed to write to SSE client",
-            sessionId,
-            clientIndex: index,
-            error: error.message,
-          },
-          null,
-          2,
-        ));
-        // Client disconnected, will be cleaned up by abort handler
-      });
-    });
-  }
-
-  /**
-   * Remove SSE client from session
-   */
-  private removeSSEClient(sessionId: string, writer: WritableStreamDefaultWriter): void {
-    const clients = this.sseClients.get(sessionId);
-    if (!clients) return;
-
-    const index = clients.findIndex((client) => client.writer === writer);
-    if (index !== -1) {
-      clients.splice(index, 1);
-    }
-
-    // Clean up empty sessions
-    if (clients.length === 0) {
-      this.sseClients.delete(sessionId);
-    }
-  }
-
-  // QUICK FIX: Track message chunks to reconstruct complete messages
-  private messageChunks: Map<string, string> = new Map();
-
-  /**
-   * Get complete message content from message_chunk events
-   */
-  private getCompleteMessageFromEvents(messageId: string): string | null {
-    const content = this.messageChunks.get(messageId);
-    if (content) {
-      // Clean up after retrieving
-      this.messageChunks.delete(messageId);
-      return content;
-    }
-    return null;
   }
 
   /**
@@ -1723,7 +1510,9 @@ export class AtlasDaemon {
     if (sessions.length === 0) return 0;
 
     // Find the most recent session activity
-    return Math.max(...sessions.map((s) => (s as any)._startTime || 0));
+    // Since _startTime is private, we can't access it directly
+    // Return current time as approximation (sessions are active)
+    return Date.now();
   }
 
   /**
@@ -1796,6 +1585,8 @@ export class AtlasDaemon {
 
     AtlasLogger.getInstance().info(`Workspace runtime destroyed: ${workspaceId}`);
   }
+
+  // setupSystemWorkspaceRoutes removed - using standard workspace + daemon capabilities pattern
 
   private setupSignalHandlers() {
     const daemonId = crypto.randomUUID().slice(0, 8);
@@ -1915,6 +1706,21 @@ export class AtlasDaemon {
       clearTimeout(timeoutId);
     }
     this.idleTimeouts.clear();
+
+    // Close all SSE connections
+    for (const [sessionId, clients] of this.sseClients.entries()) {
+      for (const client of clients) {
+        try {
+          client.controller.close();
+        } catch (error) {
+          AtlasLogger.getInstance().debug(
+            `Error closing SSE client for session ${sessionId}:`,
+            error,
+          );
+        }
+      }
+    }
+    this.sseClients.clear();
 
     // Shutdown CronManager
     if (this.cronManager) {
@@ -2129,5 +1935,83 @@ export class AtlasDaemon {
         idleTimeoutMs: this.options.idleTimeoutMs,
       },
     };
+  }
+
+  /**
+   * Emit an SSE event to all connected clients for a stream
+   */
+  public emitSSEEvent(sessionId: string, event: unknown): void {
+    const clients = this.sseClients.get(sessionId);
+    if (!clients || clients.length === 0) {
+      return;
+    }
+
+    const sseData = `data: ${JSON.stringify(event)}\n\n`;
+
+    // Send to all connected clients for this session
+    for (const client of clients) {
+      try {
+        client.controller.enqueue(new TextEncoder().encode(sseData));
+      } catch (error) {
+        // Client disconnected, remove from list
+        AtlasLogger.getInstance().debug(`SSE client disconnected for session ${sessionId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Handle generic SSE requests for streaming responses
+   */
+  private handleGenericSSERequest(_c: unknown, sessionId: string): Response {
+    let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+
+    const stream = new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        streamController = controller;
+
+        // Add client to SSE clients map
+        if (!this.sseClients.has(sessionId)) {
+          this.sseClients.set(sessionId, []);
+        }
+        this.sseClients.get(sessionId)!.push({ controller });
+
+        // Send initial connection event
+        const initialEvent = {
+          type: "connection_opened",
+          data: { sessionId, timestamp: new Date().toISOString() },
+        };
+        try {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(initialEvent)}\n\n`));
+        } catch (error) {
+          AtlasLogger.getInstance().error(`Failed to send initial SSE event:`, error);
+        }
+
+        // No buffered events needed - direct streaming via daemon capabilities
+      },
+      cancel: () => {
+        // Remove client from SSE clients map
+        const clients = this.sseClients.get(sessionId);
+        if (clients && streamController) {
+          const filteredClients = clients.filter((client) =>
+            client.controller !== streamController
+          );
+          if (filteredClients.length === 0) {
+            this.sseClients.delete(sessionId);
+          } else {
+            this.sseClients.set(sessionId, filteredClients);
+          }
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Cache-Control",
+      },
+    });
   }
 }

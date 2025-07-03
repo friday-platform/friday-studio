@@ -3,6 +3,8 @@ import { Box, render, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
+import type { LibraryStats } from "@atlas/client";
 import process from "node:process";
 
 interface StatsArgs {
@@ -28,31 +30,7 @@ export function builder(y: YargsInstance) {
     });
 }
 
-// Schema for library statistics
-const LibraryStatsSchema = z.object({
-  total_items: z.number(),
-  total_size_bytes: z.number(),
-  types: z.record(z.string(), z.number()),
-  tags: z.record(z.string(), z.number()).optional(),
-  recent_activity: z
-    .array(
-      z.object({
-        date: z.string(),
-        items_added: z.number(),
-        size_added_bytes: z.number(),
-      }),
-    )
-    .optional(),
-  storage_stats: z
-    .object({
-      used_bytes: z.number(),
-      limit_bytes: z.number().optional(),
-      percentage_used: z.number().optional(),
-    })
-    .optional(),
-});
-
-type LibraryStats = z.infer<typeof LibraryStatsSchema>;
+// Type already imported from client
 
 export async function handler(argv: StatsArgs) {
   const s = spinner();
@@ -60,15 +38,8 @@ export async function handler(argv: StatsArgs) {
   try {
     s.start("Fetching library statistics...");
 
-    const serverUrl = `http://localhost:${argv.port}`;
-    const response = await fetch(`${serverUrl}/api/library/stats`);
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-
-    const stats = LibraryStatsSchema.parse(await response.json());
+    const client = getAtlasClient({ url: `http://localhost:${argv.port}` });
+    const stats = await client.getLibraryStats();
 
     s.stop("Statistics fetched");
 

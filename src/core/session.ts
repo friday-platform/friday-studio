@@ -11,6 +11,10 @@ import { AtlasScope } from "./scope.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type ChildLogger, logger } from "../utils/logger.ts";
+import type { TriggerResponseConfig } from "@atlas/config";
+
+// Response channel interfaces - moved to daemon layer
+// Sessions no longer handle response channels directly
 
 // Session Intent types
 export interface SessionIntent {
@@ -583,6 +587,8 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
   protected logger: ChildLogger;
 
+  // Response channels now handled at daemon layer
+
   constructor(
     workspaceId: string,
     signals: {
@@ -597,6 +603,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       | import("../types/core.ts").ITempestMemoryStorageAdapter
       | import("../types/core.ts").ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
+    // Response config removed - handled at daemon layer
   ) {
     super(workspaceId, undefined, storageAdapter, enableCognitiveLoop);
 
@@ -748,6 +755,12 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       }
     });
 
+    // Response channels now handled at daemon layer
+    this.logger.debug("Session created without response channel", {
+      sessionId: this.id,
+      info: "Response channels are managed at the daemon layer",
+    });
+
     // Start the state machine
     this._stateMachine.start();
   }
@@ -826,6 +839,10 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     this.signals.callback.onComplete();
   }
 
+  fail(error: Error): void {
+    this.signals.callback.onError(error);
+  }
+
   updateProgress(step: string, data: any): void {
     const snapshot = this._stateMachine.getSnapshot();
     const state = snapshot.value;
@@ -854,6 +871,8 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   getStateMachineContext(): SessionContext {
     return this._stateMachine.getSnapshot().context;
   }
+
+  // Response channel methods removed - handled at daemon layer
 }
 
 // For backwards compatibility

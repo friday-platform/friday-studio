@@ -9,7 +9,17 @@ export const DaemonStatusSchema = z.object({
   status: z.string(),
   activeWorkspaces: z.number(),
   uptime: z.number(),
+  memoryUsage: z.object({
+    rss: z.number(),
+    heapTotal: z.number(),
+    heapUsed: z.number(),
+    external: z.number(),
+  }),
   workspaces: z.array(z.string()),
+  configuration: z.object({
+    maxConcurrentWorkspaces: z.number(),
+    idleTimeoutMs: z.number(),
+  }),
 });
 
 // Workspace schemas
@@ -114,6 +124,9 @@ export const LibraryItemSchema = z.object({
     source: z.string(),
     session_id: z.string().optional(),
     agent_ids: z.array(z.string()).optional(),
+    engine: z.string().optional(),
+    template_id: z.string().optional(),
+    created_by: z.string().optional(),
     custom_fields: z.record(z.string(), z.unknown()).optional(),
   }),
   created_at: z.string(),
@@ -134,13 +147,20 @@ export const LibraryStatsSchema = z.object({
   total_items: z.number(),
   total_size_bytes: z.number(),
   types: z.record(z.string(), z.number()),
+  tags: z.record(z.string(), z.number()).optional(),
   recent_activity: z.array(
     z.object({
       date: z.string(),
       items_added: z.number(),
       items_modified: z.number(),
+      size_added_bytes: z.number().optional(),
     }),
   ),
+  storage_stats: z.object({
+    used_bytes: z.number(),
+    limit_bytes: z.number().optional(),
+    percentage_used: z.number().optional(),
+  }).optional(),
 });
 
 export const TemplateConfigSchema = z.object({
@@ -149,6 +169,7 @@ export const TemplateConfigSchema = z.object({
   description: z.string().optional(),
   format: z.string(),
   engine: z.string(),
+  category: z.string().optional(),
   config: z.record(z.string(), z.unknown()),
   schema: z.record(z.string(), z.unknown()).optional(),
 });

@@ -12,6 +12,7 @@ import { z } from "zod/v4";
 export const WorkerTypeSchema = z.enum([
   "workspace-supervisor",
   "session-supervisor",
+  "agent-supervisor",
   "agent-execution",
   "manager",
 ]);
@@ -44,14 +45,14 @@ export const MessageErrorSchema = z.object({
 });
 
 export const AtlasMessageEnvelopeSchema = z.object({
-  id: z.string().uuid(),
+  id: z.uuid(),
   type: z.string(),
   domain: MessageDomainSchema,
   source: MessageSourceSchema,
   destination: MessageDestinationSchema.optional(),
   timestamp: z.number().positive(),
-  correlationId: z.string().uuid().optional(),
-  parentMessageId: z.string().uuid().optional(),
+  correlationId: z.uuid().optional(),
+  parentMessageId: z.uuid().optional(),
   sequence: z.number().optional(),
   channel: MessageChannelSchema,
   broadcastChannel: z.string().optional(),

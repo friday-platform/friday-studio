@@ -23,6 +23,7 @@ import {
   type MessageSource,
   validateAgentExecutePayload,
 } from "../utils/message-envelope.ts";
+import { z } from "zod/v4";
 
 // Legacy interface for backward compatibility during transition
 interface LegacyWorkerMessage {
@@ -97,6 +98,12 @@ class AgentExecutionWorker {
   private sessionId?: string;
   private workspaceId?: string;
   private traceHeaders?: Record<string, string>;
+  private currentInput?: any; // Store current agent input for tools to access
+  private pendingCapabilityRequests?: Map<string, {
+    resolve: (value: any) => void;
+    reject: (error: Error) => void;
+    timeout: number;
+  }>;
 
   constructor() {
     this.workerId = crypto.randomUUID();
@@ -175,6 +182,9 @@ class AgentExecutionWorker {
           break;
         case ATLAS_MESSAGE_TYPES.LIFECYCLE.TERMINATE:
           await this.handleTerminate(envelope);
+          break;
+        case "workspace_capability_response":
+          this.handleCapabilityResponse(envelope);
           break;
         default:
           this.logger.debug(`Unknown message type: ${envelope.type}`);
@@ -387,6 +397,9 @@ class AgentExecutionWorker {
           );
 
           this.postMessage(errorResponse);
+        } finally {
+          // Clear current input after execution
+          this.currentInput = undefined;
         }
       },
     );
@@ -492,6 +505,9 @@ class AgentExecutionWorker {
     } | undefined;
 
     const { task, input } = request;
+
+    // Store current input for tools to access
+    this.currentInput = input;
 
     if (!model) {
       throw new Error("LLM agent requires model specification");
@@ -617,7 +633,48 @@ class AgentExecutionWorker {
 
     // Prepare prompts
     const systemPrompt = prompts.system || "You are a helpful AI assistant.";
-    const userPrompt = this.buildUserPrompt(task, input, prompts);
+    let userPrompt = this.buildUserPrompt(task, input, prompts);
+
+    // Special handling for conversation-agent to manage its own history
+    let conversationMessages: Array<{ role: string; content: string }> = [];
+    const conversationId = input?.conversationId || input?.sessionId;
+    if (request.agent_id === "conversation-agent" && conversationId) {
+      try {
+        // Open KV directly in the agent
+        const kv = await Deno.openKv();
+        const historyKey = ["conversation", conversationId, "messages"];
+
+        // Get existing messages
+        const existingMessages = await kv.get<Array<{ role: string; content: string }>>(historyKey);
+        conversationMessages = existingMessages.value || [];
+
+        // Format history for context
+        if (conversationMessages.length > 0) {
+          const historyContext = conversationMessages
+            .map((m) => `${m.role}: ${m.content}`)
+            .join("\n");
+
+          // Modify the user prompt to include history
+          userPrompt =
+            `Previous conversation:\n${historyContext}\n\nCurrent message: ${userPrompt}`;
+
+          this.log(
+            `Loaded ${conversationMessages.length} historical messages for conversation ${conversationId}`,
+            "debug",
+          );
+        }
+
+        // Add current user message to history
+        if (input.message) {
+          conversationMessages.push({ role: "user", content: input.message });
+          await kv.set(historyKey, conversationMessages);
+        }
+
+        kv.close();
+      } catch (error) {
+        this.log(`Failed to load conversation history: ${error}`, "error");
+      }
+    }
 
     // Add telemetry attributes for prompt details
     span?.setAttribute("agent.task", task || "unknown");
@@ -633,9 +690,45 @@ class AgentExecutionWorker {
         steps: unknown[];
       };
 
-      // Use tool-enabled generation if MCP servers are specified
-      if (mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0) {
-        this.log(`Using MCP tool-enabled generation with ${mcp_servers.length} servers`, "debug");
+      // Check if agent has any tools configured (workspace capabilities or MCP servers)
+      const hasWorkspaceTools = agentConfig.tools && Array.isArray(agentConfig.tools) &&
+        agentConfig.tools.length > 0;
+      const hasMcpServers = mcp_servers && Array.isArray(mcp_servers) && mcp_servers.length > 0;
+
+      if (hasWorkspaceTools || hasMcpServers) {
+        this.log(
+          `Using tool-enabled generation - Workspace tools: ${hasWorkspaceTools}, MCP servers: ${hasMcpServers}`,
+          "debug",
+        );
+
+        // Build tools object from workspace capabilities metadata
+        let workspaceTools = {};
+        if (hasWorkspaceTools && request.environment) {
+          const env = request.environment as any;
+          if (env.workspace_tools_metadata) {
+            // Create proxy tools that send messages for session_reply
+            workspaceTools = await this.createWorkspaceToolsFromMetadata(
+              env.workspace_tools_metadata,
+            );
+            this.log(
+              `Created ${Object.keys(workspaceTools).length} workspace tools from metadata`,
+              "debug",
+            );
+            // Debug log the tools structure
+            for (const [toolId, tool] of Object.entries(workspaceTools)) {
+              this.log(
+                `Tool ${toolId} structure: ${
+                  JSON.stringify({
+                    description: (tool as any).description,
+                    parametersType: typeof (tool as any).parameters,
+                    hasExecute: typeof (tool as any).execute === "function",
+                  })
+                }`,
+                "debug",
+              );
+            }
+          }
+        }
 
         result = await LLMProviderManager.generateTextWithTools(
           userPrompt,
@@ -649,6 +742,7 @@ class AgentExecutionWorker {
               string,
               unknown
             >)?.timeout as number || 30000,
+            tools: workspaceTools, // Pass workspace capability tools
             mcpServers: mcp_servers,
             maxSteps: max_steps || 1,
             toolChoice: tool_choice,
@@ -724,6 +818,38 @@ class AgentExecutionWorker {
             : "unknown"
         );
         span?.setAttribute("agent.tools_used", toolNames);
+      }
+
+      // Store assistant response for conversation-agent
+      if (
+        request.agent_id === "conversation-agent" && conversationId &&
+        conversationMessages.length > 0
+      ) {
+        try {
+          // Extract the actual message from tool results if session_reply was used
+          let assistantMessage = result.text;
+          if (result.toolResults && result.toolResults.length > 0) {
+            for (const toolResult of result.toolResults as any[]) {
+              if (toolResult.result?.message) {
+                assistantMessage = toolResult.result.message;
+                break;
+              }
+            }
+          }
+
+          // Add assistant response to history
+          conversationMessages.push({ role: "assistant", content: assistantMessage });
+
+          // Store updated history
+          const kv = await Deno.openKv();
+          const historyKey = ["conversation", conversationId, "messages"];
+          await kv.set(historyKey, conversationMessages);
+          kv.close();
+
+          this.log(`Stored assistant response for conversation ${conversationId}`, "debug");
+        } catch (error) {
+          this.log(`Failed to store assistant response: ${error}`, "error");
+        }
       }
 
       return {
@@ -1087,9 +1213,113 @@ class AgentExecutionWorker {
     this.postMessage(logMessage);
   }
 
+  // Handle workspace capability response from supervisor
+  private handleCapabilityResponse(envelope: AtlasMessageEnvelope): void {
+    const payload = envelope.payload as {
+      requestId: string;
+      success: boolean;
+      result?: any;
+      error?: string;
+    };
+
+    const requestId = payload.requestId;
+    const pendingRequest = this.pendingCapabilityRequests?.get(requestId);
+
+    if (!pendingRequest) {
+      this.log(`Received capability response for unknown request: ${requestId}`, "warn");
+      return;
+    }
+
+    // Clear timeout
+    clearTimeout(pendingRequest.timeout);
+    this.pendingCapabilityRequests?.delete(requestId);
+
+    // Resolve or reject based on success
+    if (payload.success) {
+      pendingRequest.resolve(payload.result);
+    } else {
+      pendingRequest.reject(new Error(payload.error || "Unknown capability error"));
+    }
+  }
+
   // Legacy method for backward compatibility during transition
   private log(message: string, level: "debug" | "info" | "warn" | "error" = "info") {
     this.sendLogMessage(level, message);
+  }
+
+  private handleSSEEmit(sseMessage: { type: string; streamId: string; event: any }) {
+    this.log(`Forwarding SSE emit to main process: ${sseMessage.streamId}`, "debug");
+
+    // Forward SSE emit message to main process via agent message
+    const sseForwardMessage = createAgentMessage(
+      "sse_emit_forward",
+      {
+        streamId: sseMessage.streamId,
+        event: sseMessage.event,
+      },
+      this.createMessageSource(),
+      {
+        channel: "direct",
+        priority: "high",
+      },
+    );
+
+    this.postMessage(sseForwardMessage);
+  }
+
+  // Create workspace tools from metadata
+  private async createWorkspaceToolsFromMetadata(
+    metadata: Record<string, any>,
+  ): Promise<Record<string, any>> {
+    const { jsonSchema } = await import("ai");
+    const tools: Record<string, any> = {};
+
+    for (const [toolId, toolMeta] of Object.entries(metadata)) {
+      tools[toolId] = {
+        description: toolMeta.description,
+        parameters: toolMeta.inputSchema
+          ? jsonSchema(toolMeta.inputSchema)
+          : jsonSchema({ type: "object", properties: {}, required: [] }),
+        execute: async (args: any) => {
+          this.log(`Workspace tool ${toolId} called with args: ${JSON.stringify(args)}`, "debug");
+
+          // Send workspace capability execution request to supervisor
+          const capabilityRequestId = crypto.randomUUID();
+
+          const capabilityMessage = createAgentMessage(
+            "workspace_capability_request",
+            {
+              requestId: capabilityRequestId,
+              capabilityId: toolId,
+              args: args,
+              sessionId: this.sessionId,
+              agentId: this.currentInput?.agent_id,
+            },
+            this.createMessageSource(),
+            {
+              channel: "direct",
+              priority: "high",
+            },
+          );
+
+          // Send the request
+          this.postMessage(capabilityMessage);
+
+          // Wait for response (with timeout)
+          return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+              reject(new Error(`Workspace capability ${toolId} timed out`));
+            }, 30000); // 30 second timeout
+
+            // Store the resolver for when response comes back
+            this.pendingCapabilityRequests = this.pendingCapabilityRequests || new Map();
+            this.pendingCapabilityRequests.set(capabilityRequestId, { resolve, reject, timeout });
+          });
+        },
+      };
+    }
+
+    return tools;
   }
 }
 
