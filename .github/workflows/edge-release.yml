@@ -455,10 +455,18 @@ jobs:
           EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
           # Strip 'edge-' prefix for clean title display
           EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
-          cat > ./dist/distribution.xml << EOF
+          
+          # Create XML header
+          cat > ./dist/distribution.xml << 'XML_HEADER'
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
+          XML_HEADER
+          
+          # Add dynamic title
+          echo "    <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>" >> ./dist/distribution.xml
+          
+          # Add license with CDATA
+          cat >> ./dist/distribution.xml << 'LICENSE_SECTION'
               <license mime-type="text/plain"><![CDATA[The Backyard Raccoon License (BRL) v1.0
 
 Preamble
@@ -496,6 +504,10 @@ Whichever comes first.
 
 By proceeding with this installation, you acknowledge that you have read, understood, and agree to be bound by the terms of The Backyard Raccoon License, and you promise to leave out the occasional snack for our fuzzy overlords.]]></license>
               <welcome file="welcome.txt" mime-type="text/plain"/>
+LICENSE_SECTION
+          
+          # Add rest of XML
+          cat >> ./dist/distribution.xml << XML_FOOTER
               <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
@@ -523,7 +535,7 @@ By proceeding with this installation, you acknowledge that you have read, unders
               <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
               <pkg-ref id="com.tempestdx.atlas.docs" version="$installer_version" onConclusion="none">atlas-docs.pkg</pkg-ref>
           </installer-gui-script>
-          EOF
+XML_FOOTER
 
           # Create welcome file
           cat > ./dist/welcome.txt << 'WELCOME_EOF'
