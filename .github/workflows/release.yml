@@ -62,7 +62,7 @@ jobs:
           else
             version="${{ github.ref_name }}"
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
         shell: bash
 
@@ -71,7 +71,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build binary
         id: build
@@ -165,7 +165,7 @@ jobs:
           else
             version="${{ github.ref_name }}"
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
       - name: Download all artifacts
@@ -195,19 +195,19 @@ jobs:
 
             # Categorize commits
             echo "###  Features" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Bug Fixes" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Documentation" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Other Changes" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
           fi
 
           echo "" >> changelog.md
@@ -254,7 +254,7 @@ jobs:
       - name: Create checksums file
         run: |
           cd ./dist
-          cat *.sha256 > checksums.txt
+          cat ./*.sha256 > checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2

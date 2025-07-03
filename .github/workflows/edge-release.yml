@@ -29,7 +29,7 @@ jobs:
           time_part=$(date -u +%H%M%S)
           git_sha=$(git rev-parse --short HEAD)
           version="edge-${date_part}-${time_part}-${git_sha}"
-          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Edge version: ${version}"
 
   build:
@@ -76,7 +76,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build binary
         id: build
@@ -181,7 +181,7 @@ jobs:
       - name: Create checksums file
         run: |
           cd ./dist
-          cat *.sha256 > checksums.txt
+          cat ./*.sha256 > checksums.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
