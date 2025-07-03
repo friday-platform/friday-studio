@@ -286,10 +286,10 @@ jobs:
           # Get the installed version for display
           version_output=$(/usr/local/bin/atlas --version 2>/dev/null || echo "unknown")
 
-          echo "✅ Atlas has been successfully installed to /usr/local/bin/atlas"
-          echo "📍 Version: $version_output"
-          echo "🔄 You may need to restart your terminal to use the 'atlas' command"
-          echo "🧪 Test installation: Open Terminal and run 'atlas --help'"
+          echo "Atlas has been successfully installed to /usr/local/bin/atlas"
+          echo "Version: $version_output"
+          echo "You may need to restart your terminal to use the 'atlas' command"
+          echo "Test installation: Open Terminal and run 'atlas --help'"
 
           exit 0
           EOF
@@ -377,9 +377,9 @@ jobs:
             --package-path "./dist" \
             --resources "./dist" \
             "./dist/${pkg_name}"; then
-            echo "✅ productbuild succeeded"
+            echo "productbuild succeeded"
           else
-            echo "❌ productbuild failed with exit code $?"
+            echo "productbuild failed with exit code $?"
             echo "Contents of distribution.xml:"
             cat "./dist/distribution.xml"
             echo "Files in ./dist:"
@@ -414,16 +414,16 @@ jobs:
             INSTALLER_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
 
             if [ -n "$INSTALLER_IDENTITY" ]; then
-              echo "✅ Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
+              echo "Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
 
               # Sign the pkg with installer certificate
               if productsign --sign "$INSTALLER_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
                 mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
-                echo "✅ pkg signed successfully with Developer ID Installer certificate"
+                echo "pkg signed successfully with Developer ID Installer certificate"
 
                 # Notarize the pkg using existing API key setup
                 if [ -n "${{ secrets.MACOS_NOTARY_ISSUER_ID }}" ]; then
-                  echo "🍎 Notarizing pkg with Apple API key..."
+                  echo "Notarizing pkg with Apple API key..."
 
                   # Create private key file from base64 encoded secret (same as binary notarization)
                   echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
@@ -435,54 +435,54 @@ jobs:
                     --key notary_key.p8 \
                     --wait; then
 
-                    echo "✅ pkg notarized successfully"
+                    echo "pkg notarized successfully"
 
                     # Staple the notarization ticket
                     if xcrun stapler staple "./dist/${pkg_name}"; then
-                      echo "✅ Notarization ticket stapled to pkg"
+                      echo "Notarization ticket stapled to pkg"
 
                       # Final verification - should now pass completely
                       if spctl -a -v --type install "./dist/${pkg_name}"; then
-                        echo "🎉 pkg fully approved - NO GATEKEEPER WARNINGS!"
+                        echo "pkg fully approved - NO GATEKEEPER WARNINGS!"
                       else
-                        echo "⚠️ pkg signature verification still failed after notarization"
+                        echo "pkg signature verification still failed after notarization"
                       fi
                     else
-                      echo "⚠️ Failed to staple notarization ticket"
+                      echo "Failed to staple notarization ticket"
                     fi
                   else
-                    echo "⚠️ pkg notarization failed - will have Gatekeeper warnings"
+                    echo "pkg notarization failed - will have Gatekeeper warnings"
                   fi
 
                   # Clean up private key file
                   rm -f notary_key.p8
                 else
-                  echo "⚠️ Notarization skipped - missing notary API key credentials"
-                  echo "💡 MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
+                  echo "Notarization skipped - missing notary API key credentials"
+                  echo "MACOS_NOTARY_ISSUER_ID, MACOS_NOTARY_KEY_ID, and MACOS_NOTARY_KEY secrets are required"
 
                   # Verify signature without notarization
                   if spctl -a -v --type install "./dist/${pkg_name}"; then
-                    echo "✅ pkg signature verified but not notarized"
+                    echo "pkg signature verified but not notarized"
                   else
-                    echo "⚠️ pkg signature verification failed"
+                    echo "pkg signature verification failed"
                   fi
                 fi
               else
-                echo "❌ pkg signing failed"
+                echo "pkg signing failed"
               fi
             else
-              echo "❌ No Developer ID Installer certificate found in keychain"
-              echo "💡 Make sure MACOS_INSTALLER_P12 contains the correct Developer ID Installer certificate"
-              echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
+              echo "No Developer ID Installer certificate found in keychain"
+              echo "Make sure MACOS_INSTALLER_P12 contains the correct Developer ID Installer certificate"
+              echo "pkg will be unsigned - users will need to right-click → Open to install"
             fi
           elif [ -n "${{ secrets.MACOS_SIGN_P12 }}" ]; then
-            echo "⚠️ Only Developer ID Application certificate available (MACOS_SIGN_P12)"
-            echo "💡 MACOS_INSTALLER_P12 secret is required for pkg signing"
-            echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
+            echo "Only Developer ID Application certificate available (MACOS_SIGN_P12)"
+            echo "MACOS_INSTALLER_P12 secret is required for pkg signing"
+            echo "pkg will be unsigned - users will need to right-click → Open to install"
           else
-            echo "⚠️ No signing certificates available"
-            echo "💡 Add MACOS_INSTALLER_P12 and MACOS_INSTALLER_PASSWORD secrets for pkg signing"
-            echo "⚠️ pkg will be unsigned - users will need to right-click → Open to install"
+            echo "No signing certificates available"
+            echo "Add MACOS_INSTALLER_P12 and MACOS_INSTALLER_PASSWORD secrets for pkg signing"
+            echo "pkg will be unsigned - users will need to right-click → Open to install"
           fi
 
           # Generate checksum for pkg
