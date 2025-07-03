@@ -1,7 +1,7 @@
 import { Box, Text } from "ink";
 import React from "react";
 import { z } from "zod/v4";
-import { Table } from "../../components/Table.tsx";
+import { Table } from "../../components/table.tsx";
 
 // Schema for library item
 export const LibraryItemSchema = z.object({

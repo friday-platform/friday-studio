@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { StatusBadge } from "../../components/StatusBadge.tsx";
+import { StatusBadge } from "../../components/status-badge.tsx";
 
 export interface Session {
   id: string;

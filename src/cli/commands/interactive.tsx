@@ -13,7 +13,7 @@ import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts
 import { formatVersionDisplay, getVersionInfo } from "../../utils/version.ts";
 import { AgentDetails } from "../components/agent-details.tsx";
 import { AgentSelection } from "../components/agent-selection.tsx";
-import { ChatMessage } from "../components/ChatMessage.tsx";
+import { ChatMessage } from "../components/chat-message.tsx";
 import { CommandInput } from "../components/command-input.tsx";
 import { GitDiff } from "../components/git-diff.tsx";
 import { JobDetails } from "../components/job-details.tsx";
