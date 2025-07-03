@@ -6,7 +6,7 @@ import chalk from "chalk";
 
 interface MarkdownDisplayProps {
   content: string;
-  showCollapsible: boolean;
+  showCollapsible?: boolean;
 }
 
 // Configure marked with terminal renderer
@@ -41,7 +41,7 @@ marked.setOptions({
 
 export const MarkdownDisplay = ({
   content,
-  showCollapsible,
+  showCollapsible = false,
 }: MarkdownDisplayProps) => {
   const markdown = marked(content) as string;
   const lines = markdown.split("\n");
