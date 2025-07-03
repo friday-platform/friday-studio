@@ -591,24 +591,116 @@ jobs:
         run: |
           $msi_name = "atlas_${{ steps.version.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}.msi"
 
-          # Create WiX source file (WiX v3 syntax)
+          # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
+          Write-Host "Installing WiX Toolset..."
+          choco install wixtoolset -y
+
+          # Add WiX to PATH for this session
+          $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
+
+          # Create EULA license file in RTF format (matching macOS version)
+          @"
+          {\rtf1\ansi\deff0 {\fonttbl {\f0 Times New Roman;}}
+          \f0\fs24
+
+          {\b\fs32 End-User License Agreement (EULA) for Atlas}
+          \line\line
+          {\b IMPORTANT - READ CAREFULLY:} This End-User License Agreement ("Agreement") is a legal agreement between you (either an individual or a single entity, hereinafter "You" or "Licensee") and Tempest Labs, Inc. ("Licensor") for the software product named Atlas, including any associated media, printed materials, and "online" or electronic documentation (collectively, the "Software").
+          \line\line
+          By installing, copying, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not install or use the Software.
+          \line\line
+          {\b\fs28 1. Definitions}
+          \line\line
+          "Software" refers to the CLI tool "Atlas" and all related files and documentation provided by Tempest Labs, Inc.
+          \line\line
+          "Internal Use" means the use of the Software by the Licensee's employees or authorized contractors for the Licensee's own internal business purposes. It explicitly excludes use for the benefit of any third party or for any commercial purpose.
+          \line\line
+          "Commercial Use" means any use of the Software for direct or indirect financial gain, including but not limited to, embedding it in a commercial product, using it to provide paid services, or distributing it for a fee.
+          \line\line
+          {\b\fs28 2. Grant of License}
+          \line\line
+          Subject to the terms and conditions of this Agreement, Tempest Labs, Inc. hereby grants you a non-exclusive, non-transferable, non-sublicensable, revocable license to install and use the Software on devices owned or controlled by you, solely for your Internal Use.
+          \line\line
+          {\b\fs28 3. License Restrictions}
+          \line\line
+          You may not, and shall not permit any third party to, do any of the following:
+          \line\line
+          (a) Commercial Use: Use the Software for any Commercial Use.
+          \line\line
+          (b) Reverse Engineering: Reverse engineer, decompile, disassemble, or otherwise attempt to discover the source code or underlying ideas or algorithms of the Software.
+          \line\line
+          (c) Modification: Modify, translate, or create derivative works based on the Software.
+          \line\line
+          (d) Redistribution: Sell, rent, lease, lend, redistribute, or sublicense the Software to any third party.
+          \line\line
+          (e) Proprietary Notices: Remove, alter, or obscure any proprietary notices (including copyright and trademark notices) of Tempest Labs, Inc. or its suppliers on the Software.
+          \line\line
+          (f) Competitive Use: Use the Software to develop a competing product or service.
+          \line\line
+          {\b\fs28 4. Intellectual Property Ownership}
+          \line\line
+          The Software is licensed, not sold. Tempest Labs, Inc. and its licensors retain all right, title, and interest in and to the Software, including all copyrights, patents, trade secrets, trademarks, and other intellectual property rights. No rights are granted to you hereunder other than as expressly set forth herein.
+          \line\line
+          {\b\fs28 5. Termination}
+          \line\line
+          This Agreement is effective until terminated. Your rights under this license will terminate automatically without notice from Tempest Labs, Inc. if you fail to comply with any term(s) of this Agreement. Upon termination, you shall cease all use of the Software and destroy all copies, full or partial, of the Software in your possession or control.
+          \line\line
+          {\b\fs28 6. Disclaimer of Warranties}
+          \line\line
+          TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND. TEMPEST LABS, INC. HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS WITH RESPECT TO THE SOFTWARE, EITHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES AND/OR CONDITIONS OF MERCHANTABILITY, OF SATISFACTORY QUALITY, OF FITNESS FOR A PARTICULAR PURPOSE, OF ACCURACY, AND OF NON-INFRINGEMENT OF THIRD-PARTY RIGHTS.
+          \line\line
+          {\b\fs28 7. Limitation of Liability}
+          \line\line
+          TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL TEMPEST LABS, INC. BE LIABLE FOR ANY INCIDENTAL, SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER, INCLUDING, WITHOUT LIMITATION, DAMAGES FOR LOSS OF PROFITS, LOSS OF DATA, BUSINESS INTERRUPTION, OR ANY OTHER COMMERCIAL DAMAGES OR LOSSES, ARISING OUT OF OR RELATED TO YOUR USE OR INABILITY TO USE THE SOFTWARE, HOWEVER CAUSED, REGARDLESS OF THE THEORY OF LIABILITY (CONTRACT, TORT, OR OTHERWISE) AND EVEN IF TEMPEST LABS, INC. HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES.
+          \line\line
+          {\b\fs28 8. Governing Law and Jurisdiction}
+          \line\line
+          This Agreement will be governed by and construed in accordance with the laws of the State of Delaware, without regard to its conflict of law principles. Any legal action or proceeding arising under this Agreement will be brought exclusively in the federal or state courts located in Wilmington, Delaware, and the parties hereby irrevocably consent to the personal jurisdiction and venue therein.
+          \line\line
+          {\b\fs28 9. Entire Agreement}
+          \line\line
+          This Agreement constitutes the entire agreement between you and Tempest Labs, Inc. regarding the use of the Software and supersedes all prior or contemporaneous understandings, communications, or agreements, whether oral or written.
+          \line\line
+          {\b\fs28 10. Acknowledgement}
+          \line\line
+          BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.
+          }
+          "@ | Out-File -FilePath "license.rtf" -Encoding UTF8
+
+          # Get release version for installer title (remove 'v' prefix if present)
+          $version = "${{ steps.version.outputs.version }}"
+          $clean_version = $version -replace "^v", ""
+
+          # Create WiX source file with EULA license agreement (WiX v3 syntax)
           @"
           <?xml version="1.0" encoding="UTF-8"?>
           <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
-            <Product Id="*" Name="Atlas" Language="1033" Version="1.0.0"
-                     Manufacturer="Tempest Team" UpgradeCode="{12345678-1234-1234-1234-123456789012}">
-              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+            <Product Id="*" Name="Atlas ($clean_version)" Language="1033" Version="1.0.0"
+                     Manufacturer="Tempest Labs, Inc." UpgradeCode="{12345678-1234-1234-1234-123456789012}">
+              <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" 
+                       Description="Atlas CLI - AI Agent Orchestration Platform" 
+                       Comments="Atlas enables seamless human/AI collaboration through specialized, autonomous agents." />
 
               <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
               <MediaTemplate EmbedCab="yes" />
 
-              <Feature Id="ProductFeature" Title="Atlas" Level="1">
+              <!-- License Agreement -->
+              <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+
+              <!-- UI Configuration -->
+              <UIRef Id="WixUI_Minimal" />
+              <UIRef Id="WixUI_ErrorProgressText" />
+
+              <Feature Id="ProductFeature" Title="Atlas CLI" Level="1">
                 <ComponentGroupRef Id="ProductComponents" />
               </Feature>
 
               <Directory Id="TARGETDIR" Name="SourceDir">
                 <Directory Id="ProgramFilesFolder">
                   <Directory Id="INSTALLFOLDER" Name="Atlas" />
+                </Directory>
+                <Directory Id="ProgramMenuFolder">
+                  <Directory Id="ApplicationProgramsFolder" Name="Atlas" />
                 </Directory>
               </Directory>
 
@@ -617,28 +709,28 @@ jobs:
                   <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
                   <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="last" Action="set" System="yes" />
                 </Component>
+                <!-- Program Menu Shortcut -->
+                <Component Id="ProgramMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{11111111-2222-3333-4444-555555555555}">
+                  <Shortcut Id="AtlasShortcut" Name="Atlas CLI" Description="Atlas AI Agent Orchestration Platform" 
+                           Target="[INSTALLFOLDER]atlas.exe" WorkingDirectory="INSTALLFOLDER" />
+                  <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+                  <RegistryValue Root="HKCU" Key="Software\Tempest Labs\Atlas" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+                </Component>
               </ComponentGroup>
             </Product>
           </Wix>
           "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
 
-          # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
-          Write-Host "Installing WiX Toolset..."
-          choco install wixtoolset -y
-
-          # Add WiX to PATH for this session
-          $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
-
           # Build MSI using WiX v3 tools
-          Write-Host "Building MSI installer..."
+          Write-Host "Building MSI installer with EULA license agreement..."
           candle.exe atlas.wxs
-          light.exe -out "dist\$msi_name" atlas.wixobj
+          light.exe -ext WixUIExtension -out "dist\$msi_name" atlas.wixobj
 
           # Generate checksum for MSI
           $hash = Get-FileHash "dist\$msi_name" -Algorithm SHA256
           "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath "dist\$msi_name.sha256" -Encoding ASCII
 
-          Write-Host "Created Windows MSI: $msi_name"
+          Write-Host "Created Windows MSI with EULA: $msi_name"
         shell: pwsh
 
       - name: Upload artifacts
