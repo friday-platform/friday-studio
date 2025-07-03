@@ -83,16 +83,16 @@ export class AtlasMemoryLoader implements MemoryStorage {
         entries[key] = {
           id: key,
           content: entry.content,
-          timestamp: new Date(entry.timestamp),
-          accessCount: entry.accessCount || 0,
-          lastAccessed: new Date(entry.lastAccessed || entry.timestamp),
+          timestamp: new Date(entry.timestamp as string),
+          accessCount: (entry.accessCount as number) || 0,
+          lastAccessed: new Date((entry.lastAccessed as string) || (entry.timestamp as string)),
           memoryType: type,
-          relevanceScore: entry.relevanceScore || 0.5,
-          sourceScope: entry.sourceScope || "unknown",
-          associations: entry.associations || [],
-          tags: entry.tags || [],
-          confidence: entry.confidence || 1.0,
-          decayRate: entry.decayRate || 0.1,
+          relevanceScore: (entry.relevanceScore as number) || 0.5,
+          sourceScope: (entry.sourceScope as string) || "unknown",
+          associations: (entry.associations as string[]) || [],
+          tags: (entry.tags as string[]) || [],
+          confidence: (entry.confidence as number) || 1.0,
+          decayRate: (entry.decayRate as number) || 0.1,
         };
       }
 

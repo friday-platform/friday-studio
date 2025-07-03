@@ -9,11 +9,21 @@
  *   deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts [workspace-path]
  */
 
-import { parseArgs } from "@std/cli";
+import { parseArgs } from "jsr:@std/cli";
 import { join as _join } from "@std/path";
 import { AtlasMemoryLoader } from "./utils/memory-loader.ts";
 import { AtlasMemoryOperations } from "./utils/memory-operations.ts";
 import { MemoryManagerTUI } from "./src/tui.ts";
+
+interface Args {
+  help?: boolean;
+  stats?: boolean;
+  export?: boolean;
+  import?: boolean;
+  validate?: boolean;
+  workspace?: string;
+  _: (string | number)[];
+}
 
 async function main() {
   const args = parseArgs(Deno.args, {
@@ -27,7 +37,7 @@ async function main() {
       i: "import",
       v: "validate",
     },
-  });
+  }) as Args;
 
   if (args.help) {
     showHelp();
