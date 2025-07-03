@@ -1,20 +1,19 @@
-name: 'Strip Binary Symbols'
-description: 'Strips debug symbols from built binaries for size optimization'
+name: "Strip Binary Symbols"
+description: "Strips debug symbols from built binaries for size optimization"
 
 inputs:
   binary-path:
-    description: 'Path to the binary to strip'
+    description: "Path to the binary to strip"
     required: true
   platform:
-    description: 'Target platform (darwin, windows, linux)'
+    description: "Target platform (darwin, windows, linux)"
     required: true
   arch:
-    description: 'Target architecture (amd64, arm64)'
+    description: "Target architecture (amd64, arm64)"
     required: true
 
-
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Strip symbols from binary
       id: strip
@@ -23,19 +22,19 @@ runs:
         binary_path="${{ inputs.binary-path }}"
         platform="${{ inputs.platform }}"
         arch="${{ inputs.arch }}"
-        
+
         echo " Stripping symbols from binary: $binary_path"
         echo "Platform: $platform, Architecture: $arch"
-        
+
         if [ ! -f "$binary_path" ]; then
           echo "ERROR: Binary not found: $binary_path"
           exit 1
         fi
-        
-        
+
+
         # Create backup for safety
         cp "$binary_path" "${binary_path}.backup"
-        
+
         # Apply platform-specific stripping
         echo " Applying platform-specific symbol stripping..."
         case "$platform" in
@@ -105,15 +104,15 @@ runs:
             exit 1
             ;;
         esac
-        
-        
+
+
         # Validate stripping results
         echo " Validating symbol stripping results..."
         if command -v nm >/dev/null 2>&1; then
           symbol_count=$(nm "$binary_path" 2>/dev/null | wc -l || echo "0")
           echo "Symbol count after stripping: $symbol_count"
         fi
-        
+
         if command -v objdump >/dev/null 2>&1; then
           debug_sections=$(objdump -h "$binary_path" 2>/dev/null | grep -c "debug" || echo "0")
           # Clean up any extra newlines or spaces in the count
@@ -127,12 +126,12 @@ runs:
             echo "INFO:  Debug section analysis inconclusive"
           fi
         fi
-        
+
         # Test binary functionality
         echo " Testing binary functionality..."
         chmod +x "$binary_path" 2>/dev/null || true
-        
-        # Platform-specific functionality tests  
+
+        # Platform-specific functionality tests
         case "$platform" in
           "windows")
             # On Windows, just check if the binary exists and is non-empty
@@ -172,7 +171,7 @@ runs:
             echo "WARNING:  Unknown platform, skipping functionality test"
             ;;
         esac
-        
+
         # Clean up backup
         rm "${binary_path}.backup"
         echo " Symbol stripping completed successfully"

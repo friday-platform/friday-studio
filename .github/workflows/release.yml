@@ -120,6 +120,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ steps.version.outputs.version }}
@@ -248,6 +249,7 @@ jobs:
           echo "" >> changelog.md
           echo "**Option 2: Manual Installation**" >> changelog.md
           echo "Extract the ZIP file and add the atlas.exe to your PATH." >> changelog.md
+          echo "" >> changelog.md
 
       - name: Create checksums file
         run: |
@@ -278,7 +280,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -291,7 +293,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:

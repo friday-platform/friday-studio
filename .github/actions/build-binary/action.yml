@@ -1,30 +1,30 @@
-name: 'Build Atlas Binary'
-description: 'Builds Atlas binary with version information and cross-platform support'
+name: "Build Atlas Binary"
+description: "Builds Atlas binary with version information and cross-platform support"
 
 inputs:
   version:
-    description: 'Version string to embed in the binary'
+    description: "Version string to embed in the binary"
     required: true
   platform:
-    description: 'Target platform (darwin, windows, linux)'
+    description: "Target platform (darwin, windows, linux)"
     required: true
   arch:
-    description: 'Target architecture (amd64, arm64)'
+    description: "Target architecture (amd64, arm64)"
     required: true
   target:
-    description: 'Deno compilation target (e.g., x86_64-unknown-linux-gnu)'
+    description: "Deno compilation target (e.g., x86_64-unknown-linux-gnu)"
     required: true
 
 outputs:
   binary-path:
-    description: 'Path to the built binary'
+    description: "Path to the built binary"
     value: ${{ steps.build.outputs.binary-path }}
   binary-name:
-    description: 'Name of the built binary'
+    description: "Name of the built binary"
     value: ${{ steps.build.outputs.binary-name }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Prepare version information
       shell: bash

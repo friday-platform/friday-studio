@@ -125,6 +125,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
@@ -206,7 +207,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -219,7 +220,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:

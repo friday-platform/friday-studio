@@ -153,6 +153,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
@@ -201,7 +202,7 @@ jobs:
           echo "This is an automated nightly build with the latest stable changes." >> changelog.md
           echo "" >> changelog.md
           echo "### Recent Changes" >> changelog.md
-          
+
           # Get the previous nightly for changelog
           previous_nightly=$(git tag -l "nightly-*" | sort -V | tail -n2 | head -n1)
           if [ -n "$previous_nightly" ]; then
@@ -209,7 +210,7 @@ jobs:
           else
             git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
           fi
-          
+
           echo "" >> changelog.md
           echo "" >> changelog.md
           echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features." >> changelog.md
@@ -244,7 +245,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -258,7 +259,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:
