@@ -439,7 +439,7 @@ jobs:
           EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
           # Strip 'edge-' prefix for clean title display
           EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
-          cat > ./dist/distribution.dist << EOF
+          cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
               <title>Atlas (edge: ${EDGE_VERSION_CLEAN})</title>
@@ -501,15 +501,9 @@ jobs:
           LICENSE_TXT_EOF
 
           # Build final product package with custom title
-
-          # Create Resources directory for license and welcome files
-          mkdir -p "./dist/Resources"
-          mv "./dist/license.rtf" "./dist/Resources/"
-          mv "./dist/welcome.html" "./dist/Resources/"
-
+          echo "Building final pkg with productbuild..."
           if productbuild \
-            --distribution "./dist/distribution.dist" \
-            --resources "./dist/Resources" \
+            --distribution "./dist/distribution.xml" \
             --package-path "./dist" \
             "./dist/${pkg_name}"; then
             echo "✅ productbuild succeeded"
@@ -519,7 +513,7 @@ jobs:
           fi
 
           # Clean up intermediate files
-          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.dist"
+          rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.xml"
 
           # Sign the pkg if installer certificate is available
           if [ -n "${{ secrets.MACOS_INSTALLER_P12 }}" ]; then
