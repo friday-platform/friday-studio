@@ -599,10 +599,20 @@ jobs:
           LICENSE_EOF
 
           # Build final product package with custom title
-          productbuild \
+          echo "Building final pkg with productbuild..."
+          if productbuild \
             --distribution "./dist/distribution.dist" \
             --package-path "./dist" \
-            "./dist/${pkg_name}"
+            "./dist/${pkg_name}"; then
+            echo "✅ productbuild succeeded"
+          else
+            echo "❌ productbuild failed with exit code $?"
+            echo "Contents of distribution.dist:"
+            cat "./dist/distribution.dist"
+            echo "Files in ./dist:"
+            ls -la "./dist/"
+            exit 1
+          fi
 
           # Clean up intermediate files
           rm -f "./dist/atlas-component.pkg" "./dist/atlas-docs.pkg" "./dist/distribution.dist"
