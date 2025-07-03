@@ -477,15 +477,21 @@ jobs:
           # Create welcome HTML file (as required by Apple docs)
           cat > ./dist/welcome.html << 'WELCOME_EOF'
           <!DOCTYPE html>
-          <html>
+          <html lang="en">
           <head>
               <meta charset="utf-8">
-              <title>Welcome</title>
+              <title>Welcome to Atlas</title>
+              <style>
+                  body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; margin: 20px; }
+                  h1 { color: #1a1a1a; }
+                  p { line-height: 1.5; }
+              </style>
           </head>
           <body>
               <h1>Welcome to Atlas Installation</h1>
               <p>This installer will install the Atlas CLI tool on your system.</p>
-              <p>Before proceeding, please read and accept the license agreement.</p>
+              <p>The Atlas CLI provides comprehensive AI agent orchestration capabilities for software engineering teams.</p>
+              <p>Click Continue to proceed with the installation.</p>
           </body>
           </html>
           WELCOME_EOF
