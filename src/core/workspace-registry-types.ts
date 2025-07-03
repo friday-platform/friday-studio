@@ -16,6 +16,8 @@ export const WorkspaceMetadataSchema = z.object({
   description: z.string().optional(),
   tags: z.array(z.string()).optional(),
   environment: z.string().optional(),
+  system: z.boolean().optional(),
+  virtual: z.boolean().optional(),
 }).optional();
 
 export const WorkspaceEntrySchema = z.object({

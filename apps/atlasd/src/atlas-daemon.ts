@@ -95,6 +95,10 @@ export class AtlasDaemon {
     const manager = getWorkspaceManager();
     await manager.initialize();
 
+    // NEW: Register system workspaces
+    logger.info("Registering system workspaces...");
+    await manager.registerSystemWorkspaces();
+
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
     this.libraryStorage = await createLibraryStorage(StorageConfigs.defaultKV(), {
@@ -1284,7 +1288,7 @@ export class AtlasDaemon {
         const { message, userId, scope, metadata, conversationId } = body;
 
         // Trigger the conversation workspace signal with the message
-        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("tender_icing");
+        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("atlas-conversation");
 
         await conversationWorkspace.triggerSignal("conversation-stream", {
           streamId,
@@ -1379,21 +1383,40 @@ export class AtlasDaemon {
         `Creating runtime for workspace: ${workspace.name} (${workspace.id}) at path: ${workspace.path}`,
       );
 
-      // Validate workspace path exists
-      try {
-        const stat = await Deno.stat(workspace.path);
-        if (!stat.isDirectory) {
-          throw new Error(`Workspace path is not a directory: ${workspace.path}`);
+      // Virtual workspace check - skip filesystem validation
+      if (!workspace.metadata?.virtual) {
+        // Validate workspace path exists
+        try {
+          const stat = await Deno.stat(workspace.path);
+          if (!stat.isDirectory) {
+            throw new Error(`Workspace path is not a directory: ${workspace.path}`);
+          }
+        } catch (error) {
+          logger.error(`Failed to access workspace path: ${workspace.path}`, error);
+          throw new Error(`Workspace path does not exist: ${workspace.path}`);
         }
-      } catch (error) {
-        logger.error(`Failed to access workspace path: ${workspace.path}`, error);
-        throw new Error(`Workspace path does not exist: ${workspace.path}`);
+      } else {
+        logger.debug("Loading virtual workspace", {
+          workspaceId: workspace.id,
+          system: workspace.metadata?.system,
+        });
       }
 
       // Use cached configuration from workspace registry
       let mergedConfig: MergedConfig;
 
-      if (workspace.config) {
+      if (workspace.metadata?.virtual && workspace.config) {
+        // For virtual workspaces, construct MergedConfig without filesystem access
+        mergedConfig = {
+          atlas: this.supervisorDefaults!, // Use daemon's cached supervisor defaults
+          workspace: workspace.config, // Use embedded workspace config
+          jobs: workspace.config.jobs || {},
+        };
+        logger.debug(`Using embedded virtual workspace configuration`, {
+          workspaceId: workspace.id,
+          system: workspace.metadata?.system,
+        });
+      } else if (workspace.config) {
         // Use pre-cached configuration (preferred - no I/O at signal time)
         // Normalize cached WorkspaceConfig to MergedConfig structure
         const adapter = new FilesystemConfigAdapter();
@@ -1443,7 +1466,7 @@ export class AtlasDaemon {
       logger.debug(`Creating WorkspaceRuntime...`);
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
-        workspacePath: workspace.path, // Pass workspace path for daemon mode
+        workspacePath: workspace.metadata?.virtual ? undefined : workspace.path, // Pass workspace path for daemon mode
         libraryStorage: this.libraryStorage, // Share daemon's library storage
       });
       logger.debug(`WorkspaceRuntime created successfully`);
