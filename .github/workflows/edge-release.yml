@@ -444,13 +444,15 @@ jobs:
           # Create distribution XML for proper product name and title
           # Set version for XML template
           EDGE_VERSION="${{ needs.check-changes.outputs.version }}"
+          # Strip 'edge-' prefix for clean title display
+          EDGE_VERSION_CLEAN="${EDGE_VERSION#edge-}"
           cat > ./dist/distribution.xml << EOF
           <?xml version="1.0" encoding="utf-8"?>
           <installer-gui-script minSpecVersion="1">
-              <title>Tempest ATLAS (edge: ${EDGE_VERSION})</title>
-              <welcome file="welcome.txt" mime-type="text/plain"/>
+              <title>Tempest ATLAS (edge: ${EDGE_VERSION_CLEAN})</title>
               <license file="license.txt" mime-type="text/plain"/>
-              <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+              <welcome file="welcome.txt" mime-type="text/plain"/>
+              <options customize="never" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
               <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
               <installation-check script="pm_install_check();"/>
               <script>
@@ -470,7 +472,7 @@ jobs:
               <choice id="com.tempestdx.atlas" title="Tempest ATLAS" description="Install Tempest ATLAS CLI tool" start_selected="true" start_enabled="true" start_visible="true">
                   <pkg-ref id="com.tempestdx.atlas"/>
               </choice>
-              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+              <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="RequireRestart">atlas-component.pkg</pkg-ref>
           </installer-gui-script>
           EOF
 
