@@ -27,7 +27,25 @@ autonomous agents in a secure, auditable, and scalable environment.
 
 ### Installation
 
-#### Option 1: Homebrew (Recommended)
+#### Option 1: Direct Binary (Recommended)
+
+Download from [releases](https://github.com/tempestteam/atlas/releases):
+
+**macOS:**
+- Download the `.pkg` installer (recommended) - supports both Intel and Apple Silicon
+- Or download the `.tar.gz` archive and extract to `/usr/local/bin/`
+
+**Linux:**
+- Download the `.tar.gz` archive for your architecture (amd64 or arm64)
+- Extract and move to `/usr/local/bin/`
+
+**Windows:**
+- Download the `.msi` installer (recommended) 
+- Or download the `.zip` archive and add to PATH
+
+All binaries are signed and notarized for security.
+
+#### Option 2: Homebrew
 
 Atlas is available in three channels to suit different usage patterns:
 
@@ -50,24 +68,6 @@ HOMEBREW_GITHUB_API_TOKEN=$(gh auth token) brew install tempest-atlas-edge
 atlas --help
 atlas --version  # Shows channel-specific version info
 ```
-
-#### Option 2: Direct Binary
-
-Download from [releases](https://github.com/tempestteam/atlas/releases):
-
-**macOS:**
-- Download the `.pkg` installer (recommended) - supports both Intel and Apple Silicon
-- Or download the `.tar.gz` archive and extract to `/usr/local/bin/`
-
-**Linux:**
-- Download the `.tar.gz` archive for your architecture (amd64 or arm64)
-- Extract and move to `/usr/local/bin/`
-
-**Windows:**
-- Download the `.msi` installer (recommended) 
-- Or download the `.zip` archive and add to PATH
-
-All binaries are signed and notarized for security.
 
 #### Option 3: From Source
 
@@ -110,13 +110,10 @@ atlas init
 cd examples/workspaces/telephone
 ```
 
-4. **Launch Atlas TUI**
+4. **Launch Atlas Interactive Mode**
 
 ```bash
 # Interactive terminal interface
-atlas tui
-
-# Or use interactive mode
 atlas
 ```
 
@@ -165,7 +162,6 @@ atlas daemon restart               # Restart daemon
 
 ```bash
 atlas                              # Launch interactive mode
-atlas tui                          # Launch terminal UI
 # Features: workspace detection, dual-panel logs, vi navigation, slash commands
 ```
 
@@ -328,7 +324,7 @@ atlas daemon logs
 ### Getting Help
 
 - Use `atlas --help` for command reference
-- Use `help` command in interactive TUI
+- Use `help` command in interactive mode
 - Check [`CLAUDE.md`](CLAUDE.md) for development guidelines
 - View example workspaces for configuration patterns
 
