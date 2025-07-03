@@ -113,37 +113,37 @@ jobs:
             "windows-amd64")
               echo "Testing Windows binary (file integrity check)..."
               if [ -f "$binary_path" ] && [ -s "$binary_path" ]; then
-                echo "✅ Windows binary is valid (exists and non-empty)"
+                echo " Windows binary is valid (exists and non-empty)"
               else
-                echo "⚠️  Windows binary validation failed (may be expected after stripping)"
+                echo "WARNING:  Windows binary validation failed (may be expected after stripping)"
               fi
               ;;
             "linux-arm64")
               echo "Testing Linux ARM64 binary (cross-compiled - file integrity only)..."
               if [ -f "$binary_path" ] && [ -s "$binary_path" ]; then
-                echo "✅ Linux ARM64 binary is valid (exists and non-empty)"
+                echo " Linux ARM64 binary is valid (exists and non-empty)"
               else
-                echo "⚠️  Linux ARM64 binary validation failed (may be expected after stripping)"
+                echo "WARNING:  Linux ARM64 binary validation failed (may be expected after stripping)"
               fi
               ;;
             "linux-amd64")
               echo "Testing Linux AMD64 binary (native execution)..."
               if chmod +x "$binary_path" && "$binary_path" --version; then
-                echo "✅ Linux AMD64 binary execution test passed"
+                echo " Linux AMD64 binary execution test passed"
               else
-                echo "⚠️  Linux AMD64 binary execution test failed (may be normal after stripping)"
+                echo "WARNING:  Linux AMD64 binary execution test failed (may be normal after stripping)"
               fi
               ;;
             "darwin-"*)
               echo "Testing macOS binary (native execution)..."
               if chmod +x "$binary_path" && "$binary_path" --version; then
-                echo "✅ macOS binary execution test passed"
+                echo " macOS binary execution test passed"
               else
-                echo "⚠️  macOS binary execution test failed (may be normal after stripping)"
+                echo "WARNING:  macOS binary execution test failed (may be normal after stripping)"
               fi
               ;;
             *)
-              echo "⚠️  Unknown platform/arch combination, skipping test"
+              echo "WARNING:  Unknown platform/arch combination, skipping test"
               ;;
           esac
 
@@ -158,11 +158,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [ "${{ needs.test-symbol-stripping.result }}" == "success" ]; then
-            echo "✅ **All platform tests passed successfully**" >> $GITHUB_STEP_SUMMARY
+            echo " **All platform tests passed successfully**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Symbol stripping implementation is ready for integration into main build workflows." >> $GITHUB_STEP_SUMMARY
           else
-            echo "❌ **Some platform tests failed**" >> $GITHUB_STEP_SUMMARY
+            echo " **Some platform tests failed**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "Review the individual platform test results above for details." >> $GITHUB_STEP_SUMMARY
           fi

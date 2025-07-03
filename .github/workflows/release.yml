@@ -193,19 +193,19 @@ jobs:
             echo "" >> changelog.md
 
             # Categorize commits
-            echo "### ✨ Features" >> changelog.md
+            echo "###  Features" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
             echo "" >> changelog.md
 
-            echo "### 🐛 Bug Fixes" >> changelog.md
+            echo "###  Bug Fixes" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
             echo "" >> changelog.md
 
-            echo "### 📚 Documentation" >> changelog.md
+            echo "###  Documentation" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
             echo "" >> changelog.md
 
-            echo "### 🔧 Other Changes" >> changelog.md
+            echo "###  Other Changes" >> changelog.md
             git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
           fi
 

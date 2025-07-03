@@ -37,24 +37,24 @@ runs:
         platform="${{ inputs.platform }}"
         arch="${{ inputs.arch }}"
         
-        echo "🔧 Stripping symbols from binary: $binary_path"
+        echo " Stripping symbols from binary: $binary_path"
         echo "Platform: $platform, Architecture: $arch"
         
         if [ ! -f "$binary_path" ]; then
-          echo "❌ Binary not found: $binary_path"
+          echo "ERROR: Binary not found: $binary_path"
           exit 1
         fi
         
         # Get original size
         original_size=$(stat -c%s "$binary_path" 2>/dev/null || stat -f%z "$binary_path" 2>/dev/null || echo "0")
-        echo "📏 Original binary size: $original_size bytes"
+        echo " Original binary size: $original_size bytes"
         echo "original-size=$original_size" >> $GITHUB_OUTPUT
         
         # Create backup for safety
         cp "$binary_path" "${binary_path}.backup"
         
         # Apply platform-specific stripping
-        echo "🎯 Applying platform-specific symbol stripping..."
+        echo " Applying platform-specific symbol stripping..."
         case "$platform" in
           "linux")
             echo "Stripping symbols using Linux strip command..."
@@ -63,29 +63,29 @@ runs:
               if [ "$arch" == "arm64" ] && command -v aarch64-linux-gnu-strip >/dev/null 2>&1; then
                 echo "Using aarch64-linux-gnu-strip for ARM64 binary"
                 if aarch64-linux-gnu-strip --strip-all "$binary_path" 2>/dev/null; then
-                  echo "✅ aarch64-linux-gnu-strip succeeded"
+                  echo " aarch64-linux-gnu-strip succeeded"
                 else
-                  echo "⚠️  aarch64-linux-gnu-strip failed, trying regular strip"
+                  echo "WARNING:  aarch64-linux-gnu-strip failed, trying regular strip"
                   cp "${binary_path}.backup" "$binary_path"
                   if strip --strip-all "$binary_path" 2>/dev/null; then
-                    echo "✅ Regular strip succeeded"
+                    echo "Regular strip succeeded"
                   else
-                    echo "⚠️  Regular strip also failed, continuing with unstripped binary"
+                    echo "WARNING:  Regular strip also failed, continuing with unstripped binary"
                     cp "${binary_path}.backup" "$binary_path"
                   fi
                 fi
               else
                 echo "Using regular strip for Linux binary"
                 if strip --strip-all "$binary_path" 2>/dev/null; then
-                  echo "✅ Regular strip succeeded"
+                  echo "Regular strip succeeded"
                 else
-                  echo "⚠️  Strip failed, continuing with unstripped binary"
+                  echo "WARNING:  Strip failed, continuing with unstripped binary"
                   cp "${binary_path}.backup" "$binary_path"
                 fi
               fi
-              echo "✅ Linux symbol stripping completed"
+              echo " Linux symbol stripping completed"
             else
-              echo "❌ strip command not available on Linux"
+              echo "ERROR: strip command not available on Linux"
               exit 1
             fi
             ;;
@@ -93,14 +93,14 @@ runs:
             echo "Stripping symbols using macOS strip command..."
             if command -v strip >/dev/null 2>&1; then
               if strip -S "$binary_path" 2>/dev/null; then
-                echo "✅ macOS strip succeeded"
+                echo " macOS strip succeeded"
               else
-                echo "⚠️  macOS strip failed, continuing with unstripped binary"
+                echo "WARNING:  macOS strip failed, continuing with unstripped binary"
                 cp "${binary_path}.backup" "$binary_path"
               fi
-              echo "✅ macOS symbol stripping completed"
+              echo " macOS symbol stripping completed"
             else
-              echo "❌ strip command not available on macOS"
+              echo "ERROR: strip command not available on macOS"
               exit 1
             fi
             ;;
@@ -109,15 +109,15 @@ runs:
             if command -v strip >/dev/null 2>&1; then
               echo "Using MinGW strip for Windows binary"
               if strip --strip-all "$binary_path" 2>/dev/null; then
-                echo "✅ Windows strip succeeded"
+                echo " Windows strip succeeded"
               else
-                echo "⚠️  Windows strip failed, continuing with unstripped binary"
+                echo "WARNING:  Windows strip failed, continuing with unstripped binary"
                 cp "${binary_path}.backup" "$binary_path"
               fi
-              echo "✅ Windows symbol stripping completed"
+              echo " Windows symbol stripping completed"
             else
-              echo "⚠️  No strip tool available on Windows"
-              echo "ℹ️  This may be expected for MSVC builds"
+              echo "WARNING:  No strip tool available on Windows"
+              echo "INFO:  This may be expected for MSVC builds"
               echo "stripped-size=$original_size" >> $GITHUB_OUTPUT
               echo "size-reduction=0" >> $GITHUB_OUTPUT
               echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
@@ -126,36 +126,36 @@ runs:
             fi
             ;;
           *)
-            echo "❌ Unknown platform: $platform"
+            echo "ERROR: Unknown platform: $platform"
             exit 1
             ;;
         esac
         
         # Get stripped size and calculate reduction
         stripped_size=$(stat -c%s "$binary_path" 2>/dev/null || stat -f%z "$binary_path" 2>/dev/null || echo "0")
-        echo "📏 Stripped binary size: $stripped_size bytes"
+        echo " Stripped binary size: $stripped_size bytes"
         echo "stripped-size=$stripped_size" >> $GITHUB_OUTPUT
         
         if [ "$original_size" -gt 0 ] && [ "$stripped_size" -gt 0 ]; then
           size_reduction=$((original_size - stripped_size))
           if [ "$size_reduction" -gt 0 ]; then
             size_reduction_percent=$((size_reduction * 100 / original_size))
-            echo "📉 Size reduction: $size_reduction bytes ($size_reduction_percent%)"
+            echo " Size reduction: $size_reduction bytes ($size_reduction_percent%)"
             echo "size-reduction=$size_reduction" >> $GITHUB_OUTPUT
             echo "size-reduction-percent=$size_reduction_percent" >> $GITHUB_OUTPUT
           else
-            echo "ℹ️  No size reduction (may be expected for Deno binaries)"
+            echo "INFO:  No size reduction (may be expected for Deno binaries)"
             echo "size-reduction=0" >> $GITHUB_OUTPUT
             echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
           fi
         else
-          echo "⚠️  Could not calculate size reduction"
+          echo "WARNING:  Could not calculate size reduction"
           echo "size-reduction=0" >> $GITHUB_OUTPUT
           echo "size-reduction-percent=0" >> $GITHUB_OUTPUT
         fi
         
         # Validate stripping results
-        echo "🔍 Validating symbol stripping results..."
+        echo " Validating symbol stripping results..."
         if command -v nm >/dev/null 2>&1; then
           symbol_count=$(nm "$binary_path" 2>/dev/null | wc -l || echo "0")
           echo "Symbol count after stripping: $symbol_count"
@@ -167,16 +167,16 @@ runs:
           debug_sections=$(echo "$debug_sections" | tr -d '\n' | xargs)
           echo "Debug sections found: $debug_sections"
           if [ "$debug_sections" -eq 0 ] 2>/dev/null; then
-            echo "✅ No debug sections detected"
+            echo " No debug sections detected"
           elif [ -n "$debug_sections" ] && [ "$debug_sections" != "0" ]; then
-            echo "ℹ️  Found $debug_sections debug sections (may be expected for some binary types)"
+            echo "INFO:  Found $debug_sections debug sections (may be expected for some binary types)"
           else
-            echo "ℹ️  Debug section analysis inconclusive"
+            echo "INFO:  Debug section analysis inconclusive"
           fi
         fi
         
         # Test binary functionality
-        echo "🧪 Testing binary functionality..."
+        echo " Testing binary functionality..."
         chmod +x "$binary_path" 2>/dev/null || true
         
         # Platform-specific functionality tests  
@@ -184,9 +184,9 @@ runs:
           "windows")
             # On Windows, just check if the binary exists and is non-empty
             if [ -f "$binary_path" ] && [ -s "$binary_path" ]; then
-              echo "✅ Binary functional test passed (Windows: file exists and non-empty)"
+              echo " Binary functional test passed (Windows: file exists and non-empty)"
             else
-              echo "⚠️  Windows binary file integrity check failed, but continuing"
+              echo "WARNING:  Windows binary file integrity check failed, but continuing"
             fi
             ;;
           "linux")
@@ -194,32 +194,32 @@ runs:
             if [ "$arch" == "arm64" ]; then
               # ARM64 Linux binaries can't run on x86_64 runners - just check file exists
               if [ -f "$binary_path" ] && [ -s "$binary_path" ]; then
-                echo "✅ Binary functional test passed (ARM64 Linux: file exists and non-empty)"
+                echo " Binary functional test passed (ARM64 Linux: file exists and non-empty)"
               else
-                echo "⚠️  ARM64 Linux binary file check failed, but continuing"
+                echo "WARNING:  ARM64 Linux binary file check failed, but continuing"
               fi
             else
               # Native Linux binaries should be executable
               if "$binary_path" --version >/dev/null 2>&1; then
-                echo "✅ Binary functional test passed (execution test)"
+                echo " Binary functional test passed (execution test)"
               else
-                echo "⚠️  Binary execution test failed, but continuing (may be normal after stripping)"
+                echo "WARNING:  Binary execution test failed, but continuing (may be normal after stripping)"
               fi
             fi
             ;;
           "darwin")
             # macOS binaries should be executable on macOS runners
             if "$binary_path" --version >/dev/null 2>&1; then
-              echo "✅ Binary functional test passed (execution test)"
+              echo " Binary functional test passed (execution test)"
             else
-              echo "⚠️  Binary execution test failed, but continuing (may be normal after stripping)"
+              echo "WARNING:  Binary execution test failed, but continuing (may be normal after stripping)"
             fi
             ;;
           *)
-            echo "⚠️  Unknown platform, skipping functionality test"
+            echo "WARNING:  Unknown platform, skipping functionality test"
             ;;
         esac
         
         # Clean up backup
         rm "${binary_path}.backup"
-        echo "🎉 Symbol stripping completed successfully"
+        echo " Symbol stripping completed successfully"
