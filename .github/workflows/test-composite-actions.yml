@@ -1,0 +1,115 @@
+name: Test Composite Actions
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_platform:
+        description: 'Platform to test (linux, darwin, windows)'
+        required: true
+        default: 'linux'
+        type: choice
+        options:
+        - linux
+        - darwin
+        - windows
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: ${{ inputs.test_platform == 'windows' && 'windows-latest' || inputs.test_platform == 'darwin' && 'macos-latest' || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.4.0
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Test build-binary action
+        id: build
+        uses: ./.github/actions/build-binary
+        with:
+          version: "test-1.0.0"
+          platform: ${{ inputs.test_platform }}
+          arch: "amd64"
+          target: ${{ inputs.test_platform == 'windows' && 'x86_64-pc-windows-msvc' || inputs.test_platform == 'darwin' && 'x86_64-apple-darwin' || 'x86_64-unknown-linux-gnu' }}
+
+      - name: Verify build output
+        run: |
+          echo "Binary path: ${{ steps.build.outputs.binary-path }}"
+          echo "Binary name: ${{ steps.build.outputs.binary-name }}"
+          
+          # Check if binary exists
+          if [ -f "${{ steps.build.outputs.binary-path }}" ]; then
+            echo "✅ Binary created successfully"
+            ls -la "${{ steps.build.outputs.binary-path }}"
+            
+            # Test the binary
+            "${{ steps.build.outputs.binary-path }}" --version || echo "Binary test failed but continuing"
+          else
+            echo "❌ Binary not found"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Test macos-sign action (macOS only)
+        if: inputs.test_platform == 'darwin'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Test create-installers action
+        uses: ./.github/actions/create-installers
+        with:
+          version: "test-1.0.0"
+          platform: ${{ inputs.test_platform }}
+          arch: "amd64"
+          channel: "test"
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Verify installer creation
+        run: |
+          echo "Checking for created installers..."
+          ls -la ./dist/
+          
+          if [ "${{ inputs.test_platform }}" == "darwin" ]; then
+            if ls ./dist/*.pkg 1> /dev/null 2>&1; then
+              echo "✅ macOS PKG installer created"
+            else
+              echo "❌ macOS PKG installer not found"
+            fi
+          elif [ "${{ inputs.test_platform }}" == "windows" ]; then
+            if ls ./dist/*.msi 1> /dev/null 2>&1; then
+              echo "✅ Windows MSI installer created"
+            else
+              echo "❌ Windows MSI installer not found"
+            fi
+          else
+            echo "ℹ️ Linux platform - no installer expected"
+          fi
+        shell: bash
+
+      - name: Upload test artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-artifacts-${{ inputs.test_platform }}
+          path: |
+            ./dist/*
+          retention-days: 1

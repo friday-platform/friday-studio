@@ -1,0 +1,443 @@
+name: 'Create Platform Installers'
+description: 'Creates PKG installers for macOS and MSI installers for Windows'
+
+inputs:
+  version:
+    description: 'Version string for the installer'
+    required: true
+  platform:
+    description: 'Target platform (darwin, windows, linux)'
+    required: true
+  arch:
+    description: 'Target architecture (amd64, arm64)'
+    required: true
+  channel:
+    description: 'Release channel (release, edge, nightly)'
+    required: true
+  binary-path:
+    description: 'Path to the binary to package'
+    required: true
+  macos-installer-p12:
+    description: 'Base64 encoded P12 certificate for installer signing'
+    required: false
+  macos-installer-password:
+    description: 'Password for the installer P12 certificate'
+    required: false
+  macos-notary-issuer-id:
+    description: 'Apple Notary API issuer ID'
+    required: false
+  macos-notary-key-id:
+    description: 'Apple Notary API key ID'
+    required: false
+  macos-notary-key:
+    description: 'Base64 encoded Apple Notary API private key'
+    required: false
+
+outputs:
+  installer-path:
+    description: 'Path to the created installer'
+    value: ${{ steps.create.outputs.installer-path }}
+  checksum-path:
+    description: 'Path to the installer checksum file'
+    value: ${{ steps.create.outputs.checksum-path }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Create macOS PKG installer
+      id: create
+      if: inputs.platform == 'darwin'
+      shell: bash
+      run: |
+        # Generate installer name and title based on channel
+        if [ "${{ inputs.channel }}" == "release" ]; then
+          pkg_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.pkg"
+          installer_title="Atlas (${{ inputs.version }})"
+        else
+          pkg_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.pkg"
+          installer_title="Atlas (${{ inputs.channel }}: ${{ inputs.version }})"
+        fi
+
+        # Create package directory structure
+        mkdir -p ./pkg/payload/usr/local/bin
+        mkdir -p ./pkg/scripts
+
+        # Copy binary to package payload
+        cp "${{ inputs.binary-path }}" "./pkg/payload/usr/local/bin/atlas"
+        chmod +x "./pkg/payload/usr/local/bin/atlas"
+
+        # Create preinstall script to handle cross-channel upgrades
+        cat > ./pkg/scripts/preinstall << 'EOF'
+        #!/bin/bash
+        # Remove any existing atlas binary to ensure clean installation
+        # This allows cross-channel upgrades (edge -> nightly -> regular, etc.)
+        if [ -f "/usr/local/bin/atlas" ]; then
+          echo "Removing existing Atlas installation for upgrade..."
+          rm -f "/usr/local/bin/atlas"
+        fi
+
+        # Also clean up any previous package receipts to allow downgrades/cross-channel installs
+        if pkgutil --pkgs | grep -q "com.tempestdx.atlas"; then
+          echo "Cleaning up previous Atlas package receipts..."
+          pkgutil --forget "com.tempestdx.atlas" 2>/dev/null || true
+        fi
+
+        exit 0
+        EOF
+
+        # Create postinstall script to add to PATH and verify installation
+        cat > ./pkg/scripts/postinstall << 'EOF'
+        #!/bin/bash
+        # Verify installation
+        if [ ! -f "/usr/local/bin/atlas" ]; then
+          echo "ERROR: Atlas binary not found after installation"
+          exit 1
+        fi
+
+        # Make sure binary is executable
+        chmod +x "/usr/local/bin/atlas"
+
+        # Add /usr/local/bin to PATH if not already present
+        # We check all common shell config files for all users
+        for user_home in /Users/*; do
+          if [ -d "$user_home" ] && [ "$user_home" != "/Users/Shared" ]; then
+            user_name=$(basename "$user_home")
+
+            # Skip system users
+            if [[ "$user_name" =~ ^[._] ]]; then
+              continue
+            fi
+
+            # For bash users
+            for bash_config in "$user_home/.bash_profile" "$user_home/.bashrc"; do
+              if [ -f "$bash_config" ] && ! grep -q "/usr/local/bin" "$bash_config" 2>/dev/null; then
+                echo 'export PATH="/usr/local/bin:$PATH"' >> "$bash_config"
+                chown "$user_name" "$bash_config" 2>/dev/null || true
+              fi
+            done
+
+            # For zsh users
+            if [ -f "$user_home/.zshrc" ] && ! grep -q "/usr/local/bin" "$user_home/.zshrc" 2>/dev/null; then
+              echo 'export PATH="/usr/local/bin:$PATH"' >> "$user_home/.zshrc"
+              chown "$user_name" "$user_home/.zshrc" 2>/dev/null || true
+            fi
+
+            # For fish users
+            if [ -d "$user_home/.config/fish" ]; then
+              fish_config_dir="$user_home/.config/fish/conf.d"
+              mkdir -p "$fish_config_dir"
+              if [ ! -f "$fish_config_dir/atlas.fish" ]; then
+                echo 'set -gx PATH /usr/local/bin $PATH' > "$fish_config_dir/atlas.fish"
+                chown -R "$user_name" "$user_home/.config/fish" 2>/dev/null || true
+              fi
+            fi
+          fi
+        done
+
+        # Get the installed version for display
+        version_output=$(/usr/local/bin/atlas --version 2>/dev/null || echo "unknown")
+
+        echo "Atlas has been successfully installed to /usr/local/bin/atlas"
+        echo "Version: $version_output"
+        echo "You may need to restart your terminal to use the 'atlas' command"
+        echo "Test installation: Open Terminal and run 'atlas --help'"
+
+        exit 0
+        EOF
+
+        chmod +x ./pkg/scripts/preinstall
+        chmod +x ./pkg/scripts/postinstall
+
+        # Generate a timestamp-based version for macOS installer
+        # This ensures newer packages can always upgrade older ones regardless of channel
+        timestamp=$(date +%Y%m%d%H%M%S)
+        installer_version="1.${timestamp}"
+
+        # Build the package with timestamp-based version for proper upgrade handling
+        # First create component package
+        pkgbuild \
+          --root ./pkg/payload \
+          --scripts ./pkg/scripts \
+          --identifier "com.tempestdx.atlas" \
+          --version "$installer_version" \
+          --install-location "/" \
+          "./dist/atlas-component.pkg"
+
+        # Create distribution XML for proper product name and title
+        # Set version for XML template
+        RELEASE_VERSION="${{ inputs.version }}"
+        cat > ./dist/distribution.xml << EOF
+        <?xml version="1.0" encoding="utf-8"?>
+        <installer-gui-script minSpecVersion="1">
+            <title>${installer_title}</title>
+            <welcome file="welcome.html"/>
+            <license file="license.html"/>
+            <options customize="allow" require-scripts="false" rootVolumeOnly="true" hostArchitectures="arm64,x86_64"/>
+            <domains enable_anywhere="false" enable_currentUserHome="false" enable_localSystem="true"/>
+            <installation-check script="pm_install_check();"/>
+            <script>
+        function pm_install_check() {
+            if(!(system.compareVersions(system.version.ProductVersion, '10.9') >= 0)) {
+                my.result.title = 'Failure';
+                my.result.message = 'This software requires macOS 10.9 or later.';
+                my.result.type = 'Fatal';
+                return false;
+            }
+            return true;
+        }
+            </script>
+            <choices-outline>
+                <line choice="com.tempestdx.atlas"/>
+            </choices-outline>
+            <choice id="com.tempestdx.atlas" title="Atlas CLI" description="Install Atlas CLI tool" start_selected="true" start_enabled="true" start_visible="true">
+                <pkg-ref id="com.tempestdx.atlas"/>
+            </choice>
+            <pkg-ref id="com.tempestdx.atlas" version="$installer_version" onConclusion="none">atlas-component.pkg</pkg-ref>
+        </installer-gui-script>
+        EOF
+
+        # Create welcome HTML file (as required by Apple docs)
+        cat > ./dist/welcome.html << 'WELCOME_EOF'
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="utf-8">
+            <title>Welcome to Atlas</title>
+            <style>
+                body { font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; margin: 20px; }
+                h1 { color: #1a1a1a; }
+                p { line-height: 1.5; }
+            </style>
+        </head>
+        <body>
+            <h1>Welcome to Atlas Installation</h1>
+            <p>This installer will install the Atlas CLI tool on your system.</p>
+            <p>The Atlas CLI provides comprehensive AI agent orchestration capabilities for software engineering teams.</p>
+            <p>Click Continue to proceed with the installation.</p>
+        </body>
+        </html>
+        WELCOME_EOF
+
+        # Copy EULA license file for macOS pkg installer (HTML format)
+        cp LICENSE-EULA.html ./dist/license.html
+
+        # Build final product package with custom title
+        echo "Building final pkg with productbuild..."
+        if productbuild \
+          --distribution "./dist/distribution.xml" \
+          --package-path "./dist" \
+          --resources "./dist" \
+          "./dist/${pkg_name}"; then
+          echo "productbuild succeeded"
+        else
+          echo "productbuild failed with exit code $?"
+          echo "Contents of distribution.xml:"
+          cat "./dist/distribution.xml"
+          echo "Files in ./dist:"
+          ls -la "./dist/"
+          exit 1
+        fi
+
+        # Clean up intermediate files
+        rm -f "./dist/atlas-component.pkg" "./dist/distribution.xml"
+
+        # Generate checksum for pkg
+        shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
+
+        echo "installer-path=./dist/${pkg_name}" >> $GITHUB_OUTPUT
+        echo "checksum-path=./dist/${pkg_name}.sha256" >> $GITHUB_OUTPUT
+        echo "Created macOS pkg: ${pkg_name} (installer version: $installer_version)"
+
+    - name: Sign macOS PKG installer
+      if: inputs.platform == 'darwin' && inputs.macos-installer-p12 != ''
+      shell: bash
+      run: |
+        pkg_name=$(basename "${{ steps.create.outputs.installer-path }}")
+        
+        echo "Signing pkg installer with Developer ID Installer certificate..."
+        # Check if keychain exists, if not create it
+        security unlock-keychain -p mypassword build.keychain || {
+          echo "Keychain not found, creating new one for pkg signing..."
+          echo "${{ inputs.macos-installer-p12 }}" | base64 --decode > installer-certificate.p12
+          security create-keychain -p mypassword build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p mypassword build.keychain
+          security import installer-certificate.p12 -k build.keychain -P "${{ inputs.macos-installer-password }}" -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain
+        }
+
+        # If keychain already exists, ensure installer certificate is imported
+        echo "${{ inputs.macos-installer-p12 }}" | base64 --decode > installer-certificate.p12
+        security import installer-certificate.p12 -k build.keychain -P "${{ inputs.macos-installer-password }}" -T /usr/bin/productsign 2>/dev/null || true
+        security set-key-partition-list -S apple-tool:,apple:,productsign: -s -k mypassword build.keychain 2>/dev/null || true
+
+        # Auto-detect Developer ID Installer certificate
+        echo "Looking for Developer ID Installer certificate..."
+        INSTALLER_IDENTITY=$(security find-identity -v -p basic build.keychain | grep "Developer ID Installer" | head -1 | grep -o '"[^"]*"' | tr -d '"' || true)
+
+        if [ -n "$INSTALLER_IDENTITY" ]; then
+          echo "Found Developer ID Installer certificate: $INSTALLER_IDENTITY"
+
+          # Sign the pkg with installer certificate
+          if productsign --sign "$INSTALLER_IDENTITY" "./dist/${pkg_name}" "./dist/${pkg_name}.signed"; then
+            mv "./dist/${pkg_name}.signed" "./dist/${pkg_name}"
+            echo "pkg signed successfully with Developer ID Installer certificate"
+
+            # Notarize the pkg using existing API key setup
+            if [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
+              echo "Notarizing pkg with Apple API key..."
+
+              # Create private key file from base64 encoded secret (same as binary notarization)
+              echo "${{ inputs.macos-notary-key }}" | base64 --decode > notary_key.p8
+
+              # Submit pkg for notarization using API key method
+              if xcrun notarytool submit "./dist/${pkg_name}" \
+                --issuer "${{ inputs.macos-notary-issuer-id }}" \
+                --key-id "${{ inputs.macos-notary-key-id }}" \
+                --key notary_key.p8 \
+                --wait; then
+
+                echo "pkg notarized successfully"
+
+                # Staple the notarization ticket
+                if xcrun stapler staple "./dist/${pkg_name}"; then
+                  echo "Notarization ticket stapled to pkg"
+
+                  # Final verification - should now pass completely
+                  if spctl -a -v --type install "./dist/${pkg_name}"; then
+                    echo "pkg fully approved - NO GATEKEEPER WARNINGS!"
+                  else
+                    echo "pkg signature verification still failed after notarization"
+                  fi
+                else
+                  echo "Failed to staple notarization ticket"
+                fi
+              else
+                echo "pkg notarization failed - will have Gatekeeper warnings"
+              fi
+
+              # Clean up private key file
+              rm -f notary_key.p8
+            else
+              echo "Notarization skipped - missing notary API key credentials"
+            fi
+          else
+            echo "pkg signing failed"
+          fi
+        else
+          echo "No Developer ID Installer certificate found in keychain"
+        fi
+
+        # Regenerate checksum after signing
+        shasum -a 256 "./dist/${pkg_name}" > "./dist/${pkg_name}.sha256"
+
+    - name: Create Windows MSI installer
+      if: inputs.platform == 'windows'
+      shell: pwsh
+      run: |
+        # Generate installer name and title based on channel
+        if ("${{ inputs.channel }}" -eq "release") {
+          $msi_name = "atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.msi"
+          $installer_title = "Atlas (${{ inputs.version }})"
+        } else {
+          $msi_name = "atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.msi"
+          $installer_title = "Atlas (${{ inputs.channel }}: ${{ inputs.version }})"
+        }
+
+        # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
+        Write-Host "Installing WiX Toolset..."
+        choco install wixtoolset -y
+
+        # Add WiX to PATH for this session
+        $env:PATH += ";C:\Program Files (x86)\WiX Toolset v3.11\bin"
+
+        # Convert HTML EULA to RTF for Windows MSI installer (WiX requires RTF)
+        # Simple conversion: strip HTML tags and convert to basic RTF format
+        $htmlContent = Get-Content "LICENSE-EULA.html" -Raw
+
+        # Strip HTML tags and convert to plain text
+        $textContent = $htmlContent -replace '<[^>]+>', '' -replace '&nbsp;', ' ' -replace '&amp;', '&' -replace '&lt;', '<' -replace '&gt;', '>'
+        $textContent = $textContent -replace '\s+', ' ' -replace '^\s+|\s+$', ''
+
+        # Create RTF with system font
+        $rtfHeader = "{\rtf1\ansi\deff0 {\fonttbl {\f0 \fswiss Arial;}}\f0\fs20"
+        $rtfFooter = "}"
+        $rtfText = $textContent -replace '\n', '\par ' -replace '\r', ''
+
+        $rtfContent = $rtfHeader + $rtfText + $rtfFooter
+        $rtfContent | Out-File -FilePath "license.rtf" -Encoding UTF8
+
+        # Get release version for installer title (remove 'v' prefix if present)
+        $version = "${{ inputs.version }}"
+        $clean_version = $version -replace "^v", ""
+
+        # Create WiX source file with EULA license agreement (WiX v3 syntax)
+        @"
+        <?xml version="1.0" encoding="UTF-8"?>
+        <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+          <Product Id="*" Name="$installer_title" Language="1033" Version="1.0.0"
+                   Manufacturer="Tempest Labs, Inc." UpgradeCode="{12345678-1234-1234-1234-123456789012}">
+            <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine"
+                     Description="Atlas CLI - AI Agent Orchestration Platform"
+                     Comments="Atlas enables seamless human/AI collaboration through specialized, autonomous agents." />
+
+            <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+            <MediaTemplate EmbedCab="yes" />
+
+            <!-- License Agreement -->
+            <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+
+            <!-- UI Configuration -->
+            <UIRef Id="WixUI_Minimal" />
+            <UIRef Id="WixUI_ErrorProgressText" />
+
+            <Feature Id="ProductFeature" Title="Atlas CLI" Level="1">
+              <ComponentGroupRef Id="ProductComponents" />
+            </Feature>
+
+            <Directory Id="TARGETDIR" Name="SourceDir">
+              <Directory Id="ProgramFilesFolder">
+                <Directory Id="INSTALLFOLDER" Name="Atlas" />
+              </Directory>
+              <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="Atlas" />
+              </Directory>
+            </Directory>
+
+            <ComponentGroup Id="ProductComponents">
+              <Component Id="AtlasExecutable" Directory="INSTALLFOLDER" Guid="{87654321-4321-4321-4321-210987654321}">
+                <File Id="AtlasEXE" Source="dist\atlas.exe" KeyPath="yes" />
+                <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="yes" Part="last" Action="set" System="yes" />
+              </Component>
+              <!-- Program Menu Shortcut -->
+              <Component Id="ProgramMenuShortcut" Directory="ApplicationProgramsFolder" Guid="{11111111-2222-3333-4444-555555555555}">
+                <Shortcut Id="AtlasShortcut" Name="Atlas CLI" Description="Atlas AI Agent Orchestration Platform"
+                         Target="[INSTALLFOLDER]atlas.exe" WorkingDirectory="INSTALLFOLDER" />
+                <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
+                <RegistryValue Root="HKCU" Key="Software\Tempest Labs\Atlas" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+              </Component>
+            </ComponentGroup>
+          </Product>
+        </Wix>
+        "@ | Out-File -FilePath "atlas.wxs" -Encoding UTF8
+
+        # Build MSI using WiX v3 tools
+        Write-Host "Building MSI installer with EULA license agreement..."
+        candle.exe atlas.wxs
+        light.exe -ext WixUIExtension -out "dist\$msi_name" atlas.wixobj
+
+        # Generate checksum for MSI
+        $hash = Get-FileHash "dist\$msi_name" -Algorithm SHA256
+        "$($hash.Hash.ToLower())  $msi_name" | Out-File -FilePath "dist\$msi_name.sha256" -Encoding ASCII
+
+        Write-Host "installer-path=./dist/$msi_name" >> $env:GITHUB_OUTPUT
+        Write-Host "checksum-path=./dist/$msi_name.sha256" >> $env:GITHUB_OUTPUT
+        Write-Host "Created Windows MSI with EULA: $msi_name"
+
+    - name: Skip installer creation for Linux
+      if: inputs.platform == 'linux'
+      shell: bash
+      run: |
+        echo "installer-path=" >> $GITHUB_OUTPUT
+        echo "checksum-path=" >> $GITHUB_OUTPUT
+        echo "Skipping installer creation for Linux platform"

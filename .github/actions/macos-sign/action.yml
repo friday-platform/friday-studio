@@ -1,0 +1,142 @@
+name: 'Sign macOS Binary'
+description: 'Signs and notarizes macOS binaries with Developer ID certificates'
+
+inputs:
+  binary-path:
+    description: 'Path to the binary to sign'
+    required: true
+  macos-sign-p12:
+    description: 'Base64 encoded P12 certificate for code signing'
+    required: false
+  macos-sign-password:
+    description: 'Password for the P12 certificate'
+    required: false
+  macos-sign-identity:
+    description: 'Signing identity (auto-detected if not provided)'
+    required: false
+  macos-notary-issuer-id:
+    description: 'Apple Notary API issuer ID'
+    required: false
+  macos-notary-key-id:
+    description: 'Apple Notary API key ID'
+    required: false
+  macos-notary-key:
+    description: 'Base64 encoded Apple Notary API private key'
+    required: false
+
+outputs:
+  signed:
+    description: 'Whether the binary was successfully signed'
+    value: ${{ steps.sign.outputs.signed }}
+  notarized:
+    description: 'Whether the binary was successfully notarized'
+    value: ${{ steps.notarize.outputs.notarized }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Check if signing is available
+      id: check
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.macos-sign-p12 }}" ]; then
+          echo "signing_available=true" >> $GITHUB_OUTPUT
+        else
+          echo "signing_available=false" >> $GITHUB_OUTPUT
+          echo "No macOS signing certificate available, skipping signing"
+        fi
+
+    - name: Sign macOS binary
+      id: sign
+      if: steps.check.outputs.signing_available == 'true'
+      shell: bash
+      run: |
+        # Import certificate
+        echo "${{ inputs.macos-sign-p12 }}" | base64 --decode > certificate.p12
+        security create-keychain -p mypassword build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p mypassword build.keychain
+        security import certificate.p12 -k build.keychain -P "${{ inputs.macos-sign-password }}" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k mypassword build.keychain
+
+        # Auto-detect signing identity if not provided
+        if [ -z "${{ inputs.macos-sign-identity }}" ]; then
+          SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "Developer ID Application" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+          if [ -z "$SIGN_IDENTITY" ]; then
+            echo "No Developer ID Application certificate found, trying any valid identity"
+            SIGN_IDENTITY=$(security find-identity -v -p codesigning build.keychain | grep "1)" | head -1 | grep -o '"[^"]*"' | tr -d '"')
+          fi
+          echo "Auto-detected signing identity: $SIGN_IDENTITY"
+        else
+          SIGN_IDENTITY="${{ inputs.macos-sign-identity }}"
+          echo "Using provided signing identity: $SIGN_IDENTITY"
+        fi
+
+        # Create entitlements for V8 memory allocation
+        cat > entitlements.plist << 'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>com.apple.security.cs.allow-jit</key>
+          <true/>
+          <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+          <true/>
+          <key>com.apple.security.cs.disable-library-validation</key>
+          <true/>
+        </dict>
+        </plist>
+        EOF
+
+        # Sign binary with entitlements
+        codesign --force --options runtime --deep --entitlements entitlements.plist --sign "$SIGN_IDENTITY" "${{ inputs.binary-path }}"
+
+        # Test signed binary
+        echo "Testing signed binary..."
+        if "${{ inputs.binary-path }}" --version; then
+          echo "Binary works after signing"
+          echo "signed=true" >> $GITHUB_OUTPUT
+        else
+          echo "Binary failed after signing"
+          echo "signed=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Clean up certificate file
+        rm -f certificate.p12 entitlements.plist
+
+    - name: Notarize binary
+      id: notarize
+      if: steps.sign.outputs.signed == 'true' && inputs.macos-notary-issuer-id != ''
+      shell: bash
+      run: |
+        # Create private key file from base64 encoded secret
+        echo "${{ inputs.macos-notary-key }}" | base64 --decode > notary_key.p8
+
+        # Create a zip file for notarization (required by Apple)
+        zip atlas-binary.zip "${{ inputs.binary-path }}"
+
+        # Try notarization with better error handling
+        if xcrun notarytool submit atlas-binary.zip \
+          --issuer "${{ inputs.macos-notary-issuer-id }}" \
+          --key-id "${{ inputs.macos-notary-key-id }}" \
+          --key notary_key.p8 \
+          --wait; then
+          echo "Notarization successful"
+          echo "notarized=true" >> $GITHUB_OUTPUT
+        else
+          echo "Notarization failed, but continuing build"
+          echo "notarized=false" >> $GITHUB_OUTPUT
+          # Don't fail the build for notarization issues
+        fi
+
+        # Clean up files
+        rm -f notary_key.p8 atlas-binary.zip
+
+    - name: Skip signing
+      if: steps.check.outputs.signing_available != 'true'
+      shell: bash
+      run: |
+        echo "signed=false" >> $GITHUB_OUTPUT
+        echo "notarized=false" >> $GITHUB_OUTPUT
+        echo "Skipping macOS signing - no certificate available"

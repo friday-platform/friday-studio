@@ -1,0 +1,252 @@
+name: Nightly Release (Refactored)
+
+on:
+  schedule:
+    # Run at 2 AM PT every day (10 AM UTC to account for daylight saving time)
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      force_release:
+        description: "Force release even if no changes"
+        required: false
+        default: "false"
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for changes since last nightly
+        id: check
+        run: |
+          # Get the latest nightly tag
+          latest_nightly=$(git tag -l "nightly-*" | sort -V | tail -n1)
+
+          if [ -z "$latest_nightly" ]; then
+            echo "No previous nightly found, creating first nightly"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            # Check if there are commits since the last nightly tag
+            commits_since=$(git rev-list ${latest_nightly}..HEAD --count)
+            if [ "$commits_since" -gt 0 ] || [ "${{ inputs.force_release }}" == "true" ]; then
+              echo "Found $commits_since commits since last nightly, creating new release"
+              echo "should_release=true" >> $GITHUB_OUTPUT
+            else
+              echo "No changes since last nightly, skipping release"
+              echo "should_release=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+      - name: Generate version
+        id: version
+        run: |
+          # Generate nightly version: nightly-YYYYMMDD-{git_sha} (date + git sha for unique releases)
+          date_part=$(date -u +%Y%m%d)
+          git_sha=$(git rev-parse --short HEAD)
+          version="nightly-${date_part}-${git_sha}"
+          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "Generated version: $version"
+
+  build:
+    needs: check-changes
+    if: needs.check-changes.outputs.should_release == 'true'
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+            arch: amd64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            platform: linux
+            arch: arm64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            platform: darwin
+            arch: amd64
+          - os: macos-15-xlarge
+            target: aarch64-apple-darwin
+            platform: darwin
+            arch: arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            platform: windows
+            arch: amd64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.4.0
+
+      - name: Install dependencies
+        run: deno install
+
+      - name: Setup cross-compilation for ARM64 (Linux only)
+        if: matrix.platform == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+
+      - name: Build binary
+        id: build
+        uses: ./.github/actions/build-binary
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+          target: ${{ matrix.target }}
+
+      - name: Sign macOS binary
+        if: matrix.platform == 'darwin'
+        uses: ./.github/actions/macos-sign
+        with:
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-sign-p12: ${{ secrets.MACOS_SIGN_P12 }}
+          macos-sign-password: ${{ secrets.MACOS_SIGN_PASSWORD }}
+          macos-sign-identity: ${{ secrets.MACOS_SIGN_IDENTITY }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Create archive
+        run: |
+          binary_name="${{ steps.build.outputs.binary-name }}"
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            archive_ext=".zip"
+          else
+            archive_ext=".tar.gz"
+          fi
+
+          archive_name="atlas_${{ needs.check-changes.outputs.version }}_${{ matrix.platform }}_${{ matrix.arch }}${archive_ext}"
+
+          if [ "${{ matrix.platform }}" == "windows" ]; then
+            7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          else
+            tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
+          fi
+
+          # Generate checksum
+          if [ "${{ matrix.platform }}" == "darwin" ]; then
+            shasum -a 256 "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          else
+            sha256sum "./dist/${archive_name}" > "./dist/${archive_name}.sha256"
+          fi
+        shell: bash
+
+      - name: Create installers
+        uses: ./.github/actions/create-installers
+        with:
+          version: ${{ needs.check-changes.outputs.version }}
+          platform: ${{ matrix.platform }}
+          arch: ${{ matrix.arch }}
+          channel: nightly
+          binary-path: ${{ steps.build.outputs.binary-path }}
+          macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
+          macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
+          macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+          macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
+            ./dist/atlas_*.sha256
+          retention-days: 1
+
+  release:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          merge-multiple: true
+
+      - name: Generate changelog
+        run: |
+          echo "## Nightly Build ${{ needs.check-changes.outputs.version }}" > changelog.md
+          echo "" >> changelog.md
+          echo "This is an automated nightly build with the latest stable changes." >> changelog.md
+          echo "" >> changelog.md
+          echo "### Recent Changes" >> changelog.md
+          
+          # Get the previous nightly for changelog
+          previous_nightly=$(git tag -l "nightly-*" | sort -V | tail -n2 | head -n1)
+          if [ -n "$previous_nightly" ]; then
+            git log --oneline --no-merges ${previous_nightly}..HEAD --pretty=format:"- %s" >> changelog.md || echo "- No changes since last nightly" >> changelog.md
+          else
+            git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
+          fi
+          
+          echo "" >> changelog.md
+          echo "" >> changelog.md
+          echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features." >> changelog.md
+
+      - name: Create checksums file
+        run: |
+          cd ./dist
+          cat *.sha256 > checksums.txt
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-changes.outputs.version }}
+          name: Atlas (nightly: ${{ needs.check-changes.outputs.version }})
+          body_path: changelog.md
+          draft: false
+          prerelease: true
+          make_latest: false
+          files: |
+            ./dist/atlas_*.tar.gz
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.pkg
+            ./dist/atlas_*.msi
+            ./dist/checksums.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-gcs:
+    needs: [check-changes, build]
+    if: needs.check-changes.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Upload to GCS buckets
+        uses: ./.github/actions/gcs-upload
+        with:
+          bucket-prefix: "nightly/"
+          project-id-sandbox: ${{ secrets.GCP_PROJECT_ID_SANDBOX }}
+          project-id-production: ${{ secrets.GCP_PROJECT_ID_PRODUCTION }}
+          service-account-sandbox: ${{ secrets.GCP_SERVICE_ACCOUNT_SANDBOX }}
+          service-account-production: ${{ secrets.GCP_SERVICE_ACCOUNT_PRODUCTION }}

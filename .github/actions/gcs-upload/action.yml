@@ -1,0 +1,120 @@
+name: 'Upload to Google Cloud Storage'
+description: 'Uploads artifacts to GCS buckets with environment-specific prefixes'
+
+inputs:
+  bucket-prefix:
+    description: 'Prefix for the bucket path (e.g., edge/, nightly/, or empty for release)'
+    required: false
+    default: ''
+  project-id-sandbox:
+    description: 'Google Cloud project ID for sandbox environment'
+    required: true
+  project-id-production:
+    description: 'Google Cloud project ID for production environment'
+    required: true
+  service-account-sandbox:
+    description: 'Service account key for sandbox environment'
+    required: true
+  service-account-production:
+    description: 'Service account key for production environment'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts/
+        merge-multiple: true
+
+    - name: Setup Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Upload to sandbox bucket
+      shell: bash
+      run: |
+        # Authenticate with sandbox service account
+        echo '${{ inputs.service-account-sandbox }}' > /tmp/sandbox-key.json
+        gcloud auth activate-service-account --key-file=/tmp/sandbox-key.json
+        gcloud config set project ${{ inputs.project-id-sandbox }}
+
+        # Upload artifacts to sandbox bucket
+        echo "Uploading to sandbox bucket with prefix: ${{ inputs.bucket-prefix }}"
+        if [ -n "${{ inputs.bucket-prefix }}" ]; then
+          gsutil -m cp -r ./artifacts/* gs://atlas-sandbox-releases/${{ inputs.bucket-prefix }}
+        else
+          gsutil -m cp -r ./artifacts/* gs://atlas-sandbox-releases/
+        fi
+
+        # Clean up credentials
+        rm -f /tmp/sandbox-key.json
+
+    - name: Upload to production bucket
+      shell: bash
+      run: |
+        # Authenticate with production service account
+        echo '${{ inputs.service-account-production }}' > /tmp/production-key.json
+        gcloud auth activate-service-account --key-file=/tmp/production-key.json
+        gcloud config set project ${{ inputs.project-id-production }}
+
+        # Upload artifacts to production bucket
+        echo "Uploading to production bucket with prefix: ${{ inputs.bucket-prefix }}"
+        if [ -n "${{ inputs.bucket-prefix }}" ]; then
+          gsutil -m cp -r ./artifacts/* gs://atlas-releases/${{ inputs.bucket-prefix }}
+        else
+          gsutil -m cp -r ./artifacts/* gs://atlas-releases/
+        fi
+
+        # Clean up credentials
+        rm -f /tmp/production-key.json
+
+    - name: Cleanup old artifacts (sandbox)
+      shell: bash
+      run: |
+        # Authenticate with sandbox service account
+        echo '${{ inputs.service-account-sandbox }}' > /tmp/sandbox-key.json
+        gcloud auth activate-service-account --key-file=/tmp/sandbox-key.json
+        gcloud config set project ${{ inputs.project-id-sandbox }}
+
+        # Keep only the latest 10 builds for edge/nightly channels
+        if [ "${{ inputs.bucket-prefix }}" == "edge/" ] || [ "${{ inputs.bucket-prefix }}" == "nightly/" ]; then
+          echo "Cleaning up old ${{ inputs.bucket-prefix }} artifacts in sandbox..."
+          
+          # List all directories in the bucket prefix, sort by creation time, keep only the latest 10
+          gsutil ls -d gs://atlas-sandbox-releases/${{ inputs.bucket-prefix }}*/ | \
+            sort -r | \
+            tail -n +11 | \
+            while read dir; do
+              echo "Removing old artifact directory: $dir"
+              gsutil -m rm -r "$dir" || true
+            done
+        fi
+
+        # Clean up credentials
+        rm -f /tmp/sandbox-key.json
+
+    - name: Cleanup old artifacts (production)
+      shell: bash
+      run: |
+        # Authenticate with production service account
+        echo '${{ inputs.service-account-production }}' > /tmp/production-key.json
+        gcloud auth activate-service-account --key-file=/tmp/production-key.json
+        gcloud config set project ${{ inputs.project-id-production }}
+
+        # Keep only the latest 10 builds for edge/nightly channels
+        if [ "${{ inputs.bucket-prefix }}" == "edge/" ] || [ "${{ inputs.bucket-prefix }}" == "nightly/" ]; then
+          echo "Cleaning up old ${{ inputs.bucket-prefix }} artifacts in production..."
+          
+          # List all directories in the bucket prefix, sort by creation time, keep only the latest 10
+          gsutil ls -d gs://atlas-releases/${{ inputs.bucket-prefix }}*/ | \
+            sort -r | \
+            tail -n +11 | \
+            while read dir; do
+              echo "Removing old artifact directory: $dir"
+              gsutil -m rm -r "$dir" || true
+            done
+        fi
+
+        # Clean up credentials
+        rm -f /tmp/production-key.json
