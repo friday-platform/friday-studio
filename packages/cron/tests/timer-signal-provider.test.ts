@@ -9,9 +9,9 @@ import {
   type TimerSignalConfig,
   type TimerSignalData,
   TimerSignalProvider,
-} from "../../src/core/providers/builtin/timer-signal.ts";
-import { ProviderStatus } from "../../src/core/providers/types.ts";
-import { MemoryKVStorage } from "../../src/core/storage/memory-kv-storage.ts";
+} from "../../../src/core/providers/builtin/timer-signal.ts";
+import { ProviderStatus } from "../../../src/core/providers/types.ts";
+import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
 
 const basicConfig: TimerSignalConfig = {
   id: "test-timer",
