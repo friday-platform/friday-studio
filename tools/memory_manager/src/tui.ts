@@ -25,7 +25,7 @@ export class MemoryManagerTUI {
     scrollOffset: 0,
     searchQuery: "",
     showHelp: false,
-    mode: "list",
+    mode: "list" as const,
     showOverlay: false,
   };
   private running = true;
@@ -798,7 +798,7 @@ export class MemoryManagerTUI {
     if (this.state.mode === "vector-search") {
       // Handle special keys that should work even in vector search mode
       if (key === "ESCAPE") {
-        this.state.mode = "list";
+        this.state.mode = "list" as const;
         this.state.showHelp = false;
         this.state.vectorSearchQuery = undefined;
         this.state.vectorSearchResults = undefined;
@@ -827,7 +827,7 @@ export class MemoryManagerTUI {
       } else if (key === "\r") { // Enter
         // Switch to view mode for selected vector search result
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
-          this.state.mode = "view";
+          this.state.mode = "view" as const;
         }
         return;
       } else if (key === "f" || key === "F") {
@@ -871,9 +871,9 @@ export class MemoryManagerTUI {
         break;
       case "\r": // Enter
         if (this.state.mode === "list") {
-          this.state.mode = "view";
+          this.state.mode = "view" as const;
         } else {
-          this.state.mode = "list";
+          this.state.mode = "list" as const;
         }
         break;
       case "f":
@@ -882,24 +882,36 @@ export class MemoryManagerTUI {
         await this.showCurrentEntryOverlay();
         break;
       case "e":
-        this.state.mode = this.state.mode === "edit" ? "list" : "edit";
+        this.state.mode = this.state.mode === "edit" ? ("list" as const) : ("edit" as const);
         break;
       case "n":
-        this.state.mode = this.state.mode === "create" ? "list" : "create";
+        this.state.mode = this.state.mode === "create" ? ("list" as const) : ("create" as const);
         break;
       case "d":
-        this.state.mode = this.state.mode === "delete" ? "list" : "delete";
+        this.state.mode = this.state.mode === "delete" ? ("list" as const) : ("delete" as const);
         break;
       case "/":
-        this.state.mode = this.state.mode === "search" ? "list" : "search";
+        this.state.mode = this.state.mode === "search" ? ("list" as const) : ("search" as const);
         break;
       case "v":
         if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
-          this.state.mode = this.state.mode === "vector-search" ? "list" : "vector-search";
+          const currentMode = this.state.mode as
+            | "list"
+            | "view"
+            | "edit"
+            | "create"
+            | "delete"
+            | "search"
+            | "vector-search";
+          if (currentMode === "vector-search") {
+            this.state.mode = "list" as const;
+          } else {
+            this.state.mode = "vector-search" as const;
+          }
         } else {
           // Switch to vector search tab and enter vector search mode
           this.state.currentTab = MemoryType.VECTOR_SEARCH;
-          this.state.mode = "vector-search";
+          this.state.mode = "vector-search" as const;
           this.state.selectedIndex = 0;
           this.state.scrollOffset = 0;
         }
@@ -911,7 +923,7 @@ export class MemoryManagerTUI {
         await this.operations.save();
         break;
       case "ESCAPE":
-        this.state.mode = "list";
+        this.state.mode = "list" as const;
         this.state.showHelp = false;
         break;
       default:

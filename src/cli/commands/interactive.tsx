@@ -847,9 +847,10 @@ function InteractiveCommandInner() {
                                 </Text>
                               </Box>
                               <Box>
-                                <Text wrap="wrap" color="white">
-                                  {responseMessage}
-                                </Text>
+                                <MarkdownDisplay
+                                  content={responseMessage}
+                                  showCollapsible={false}
+                                />
                               </Box>
                             </Box>
                           ),

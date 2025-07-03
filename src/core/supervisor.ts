@@ -487,8 +487,8 @@ You have access to the full workspace context and configuration. Create structur
           mcpServerIds: Object.keys(workspaceMcpServers),
         });
 
-        // Create a minimal workspace config object for the registry
-        const workspaceConfig = { mcp_servers: workspaceMcpServers };
+        // Create a minimal workspace config object for the registry using new format
+        const workspaceConfig = { tools: { mcp: { servers: workspaceMcpServers } } };
 
         // Initialize the MCP Server Registry with workspace configuration only
         // (atlas config not needed since it wasn't being used anyway)
@@ -1129,6 +1129,7 @@ Provide a structured analysis.`;
         filteredMemory: [], // TODO: Implement memory filtering
         constraints: intent.constraints,
         jobSpec: selectedJob, // Include job specification for SessionSupervisor
+        workspaceTools: this.config?.workspaceTools, // Pass workspace tools configuration
         additionalContext: {
           workspaceId: this.workspace?.id,
           sessionIntent: intent,
