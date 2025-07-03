@@ -199,13 +199,7 @@ jobs:
             binary_name="atlas.exe"
           fi
 
-          echo "=== TESTING BINARY AFTER COMPILATION ==="
-          ls -la "./dist/${binary_name}"
-          file "./dist/${binary_name}"
-
           # Only test execution if we're not cross-compiling
-          echo "Target: ${{ matrix.target }}"
-          echo "System arch: $(uname -m)"
 
           # Check if this is cross-compilation
           SYSTEM_ARCH=$(uname -m)
@@ -214,11 +208,9 @@ jobs:
              ([ "${{ matrix.target }}" == "aarch64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "arm64" ]) || \
              ([ "${{ matrix.target }}" == "x86_64-apple-darwin" ] && [ "$SYSTEM_ARCH" != "x86_64" ]) || \
              [ "${{ matrix.platform }}" == "windows" ]; then
-            echo "🔄 Skipping execution test (cross-compilation or Windows)"
-            echo "✅ Binary compiled successfully"
+            echo "✅ Binary compiled successfully (skipping cross-compilation test)"
           else
             # Test basic execution for native compilation
-            echo "🧪 Testing binary execution (native compilation)..."
             if "./dist/${binary_name}" --help >/dev/null 2>&1; then
               echo "✅ Binary works after compilation"
             else
@@ -278,9 +270,6 @@ jobs:
             # Create private key file from base64 encoded secret
             echo "${{ secrets.MACOS_NOTARY_KEY }}" | base64 --decode > notary_key.p8
 
-            # Debug: check key file format
-            echo "Private key file size: $(wc -c < notary_key.p8)"
-            echo "Private key starts with: $(head -c 50 notary_key.p8)"
 
             # Create a zip file for notarization (required by Apple)
             zip atlas-binary.zip ./dist/atlas
@@ -304,15 +293,10 @@ jobs:
       - name: Test binary after signing (macOS only)
         if: matrix.platform == 'darwin'
         run: |
-          echo "=== TESTING BINARY AFTER SIGNING ==="
-          ls -la "./dist/atlas"
-          file "./dist/atlas"
-
           # Check if signed
           codesign -dv "./dist/atlas" || echo "Binary not signed"
 
           # Test basic execution
-          echo "Testing binary execution after signing..."
           if "./dist/atlas" --help >/dev/null 2>&1; then
             echo "✅ Binary works after signing"
           else
