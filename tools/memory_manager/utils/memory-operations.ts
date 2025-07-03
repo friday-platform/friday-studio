@@ -261,9 +261,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
           includeEpisodic: true,
           includeSemantic: true,
           includeProcedural: true,
-          maxMemories: 20,
+          limit: 20,
           minSimilarity: 0.2,
-          contextFormat: "detailed",
         },
       );
 
@@ -274,7 +273,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
         timestamp: memory.timestamp,
         accessCount: memory.accessCount,
         lastAccessed: memory.lastAccessed,
-        memoryType: memory.memoryType as MemoryType, // Convert CoALA type to MemoryType
+        memoryType: memory.memoryType as unknown as MemoryType, // Convert CoALA type to MemoryType
         relevanceScore: memory.relevanceScore,
         sourceScope: memory.sourceScope,
         associations: memory.associations,

@@ -1,21 +1,11 @@
 {
+  "name": "@atlas/memory-manager",
+  "exports": "./main.ts",
   "tasks": {
-    "start": "deno run --allow-read --allow-write --unstable main.ts",
-    "stats": "deno run --allow-read --allow-write --unstable main.ts --stats",
-    "export": "deno run --allow-read --allow-write --unstable main.ts --export",
-    "validate": "deno run --allow-read --allow-write --unstable main.ts --validate",
+    "start": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts",
+    "stats": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts --stats",
+    "export": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts --export",
+    "validate": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts --validate",
     "check": "deno check main.ts src/tui.ts utils/memory-loader.ts utils/memory-operations.ts types/memory-types.ts"
-  },
-  "imports": {
-    "@std/cli": "https://deno.land/std@0.210.0/cli/mod.ts",
-    "@std/path": "https://deno.land/std@0.210.0/path/mod.ts",
-    "@std/fs": "https://deno.land/std@0.210.0/fs/mod.ts"
-  },
-  "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": true,
-    "noImplicitReturns": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false
   }
 }
