@@ -1,5 +1,6 @@
 import { Box, render, Text } from "ink";
 import { StatusBadge } from "../../../cli/components/StatusBadge.tsx";
+import { getAtlasClient } from "@atlas/client";
 
 interface GetArgs {
   id: string;
@@ -46,25 +47,38 @@ export const builder = {
 export const handler = async (argv: GetArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
-    const response = await fetch(
-      `http://localhost:${port}/sessions/${argv.id}`,
-    );
+    const client = getAtlasClient({ url: `http://localhost:${port}` });
 
-    if (!response.ok) {
-      if (response.status === 404) {
+    let session;
+    try {
+      session = await client.getSession(argv.id);
+    } catch (error) {
+      // Handle client errors with proper error messages
+      const errorResult = client.handleFetchError(error);
+      if (errorResult.reason === "api_error") {
         throw new Error(`Session '${argv.id}' not found`);
       }
-      throw new Error(`Failed to fetch session: ${response.statusText}`);
+      throw new Error(`Failed to fetch session: ${errorResult.error}`);
     }
-
-    const session = (await response.json()) as SessionDetail;
 
     if (argv.json) {
       // JSON output for scripting
       console.log(JSON.stringify(session, null, 2));
     } else {
-      // Render with Ink
-      render(<SessionDetailCommand session={session} />);
+      // Render with Ink - convert client response to expected format
+      const sessionDetail: SessionDetail = {
+        id: session.id,
+        workspaceName: session.workspaceName,
+        signal: session.signal,
+        status: session.status,
+        startedAt: session.startedAt,
+        completedAt: session.completedAt,
+        agents: session.agents,
+        context: session.context,
+        result: session.result,
+        error: session.error,
+      };
+      render(<SessionDetailCommand session={sessionDetail} />);
     }
   } catch (error) {
     console.error(

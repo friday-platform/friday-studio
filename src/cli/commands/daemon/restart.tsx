@@ -1,5 +1,6 @@
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface RestartArgs {
   port?: number;
@@ -54,38 +55,30 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     infoOutput("Checking daemon status...");
 
     let wasRunning = false;
+    const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 5000 });
     try {
-      const statusResponse = await fetch(`http://localhost:${port}/api/daemon/status`, {
-        signal: AbortSignal.timeout(5000),
-      });
+      const status = await client.getDaemonStatus();
+      wasRunning = true;
 
-      if (statusResponse.ok) {
-        wasRunning = true;
-        const status = await statusResponse.json();
+      // Check for active workspaces
+      if (status.activeWorkspaces > 0 && !argv.force) {
+        errorOutput(
+          `Daemon has ${status.activeWorkspaces} active workspace(s). ` +
+            `Use --force to restart anyway or wait for workspaces to become idle.`,
+        );
+        infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
+        Deno.exit(1);
+      }
 
-        // Check for active workspaces
-        if (status.activeWorkspaces > 0 && !argv.force) {
-          errorOutput(
-            `Daemon has ${status.activeWorkspaces} active workspace(s). ` +
-              `Use --force to restart anyway or wait for workspaces to become idle.`,
-          );
-          infoOutput(`Active workspaces: ${status.workspaces.join(", ")}`);
-          Deno.exit(1);
-        }
+      // Stop the daemon
+      infoOutput("Stopping existing daemon...");
+      try {
+        await client.shutdown();
 
-        // Stop the daemon
-        infoOutput("Stopping existing daemon...");
-        try {
-          await fetch(`http://localhost:${port}/api/daemon/shutdown`, {
-            method: "POST",
-            signal: AbortSignal.timeout(10000),
-          });
-
-          // Wait for shutdown
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        } catch {
-          // Daemon might have already stopped
-        }
+        // Wait for shutdown
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      } catch {
+        // Daemon might have already stopped
       }
     } catch {
       // Daemon not running, that's fine
@@ -93,7 +86,7 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
 
     // Verify daemon is stopped
     if (wasRunning) {
-      const stillRunning = await checkDaemonRunning(port);
+      const stillRunning = await client.isHealthy();
       if (stillRunning) {
         errorOutput("Failed to stop existing daemon");
         Deno.exit(1);
@@ -142,7 +135,8 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
     // Wait a moment and verify it's running
     await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    const isRunning = await checkDaemonRunning(port);
+    const newClient = getAtlasClient({ url: `http://localhost:${port}` });
+    const isRunning = await newClient.isHealthy();
     if (isRunning) {
       successOutput(`Atlas daemon restarted successfully on port ${port}`);
     } else {
@@ -156,12 +150,6 @@ export const handler = async (argv: RestartArgs): Promise<void> => {
 };
 
 async function checkDaemonRunning(port: number): Promise<boolean> {
-  try {
-    const response = await fetch(`http://localhost:${port}/health`, {
-      signal: AbortSignal.timeout(2000),
-    });
-    return response.ok;
-  } catch {
-    return false;
-  }
+  const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 2000 });
+  return await client.isHealthy();
 }

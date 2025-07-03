@@ -1,6 +1,7 @@
 import { errorOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
-import { displayDaemonStatus, fetchDaemonStatus } from "../../utils/daemon-status.ts";
+import { displayDaemonStatus } from "../../utils/daemon-status.ts";
+import { getAtlasClient } from "@atlas/client";
 
 interface StatusArgs {
   port?: number;
@@ -31,9 +32,12 @@ export function builder(y: YargsInstance) {
 export const handler = async (argv: StatusArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
-    const status = await fetchDaemonStatus(port);
+    const client = getAtlasClient({ url: `http://localhost:${port}` });
 
-    if (!status) {
+    let status;
+    try {
+      status = await client.getDaemonStatus();
+    } catch (error) {
       if (argv.json) {
         console.log(JSON.stringify({ status: "not_running", port }, null, 2));
       } else {
