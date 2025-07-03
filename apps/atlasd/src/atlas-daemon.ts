@@ -138,11 +138,23 @@ export class AtlasDaemon {
         // Get or create workspace runtime (this will wake up the workspace)
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-        // Process the timer signal - create minimal signal object
+        // Process the timer signal - create proper IWorkspaceSignal compliant object
         const signal = {
           id: signalId,
           timestamp: new Date().toISOString(),
-        } as any; // Use any since we need to match IWorkspaceSignal but add runtime properties
+          // Add required provider property for IWorkspaceSignal compliance
+          provider: {
+            id: "cron-scheduler",
+            name: "cron-scheduler",
+          },
+          // Add required methods to satisfy IWorkspaceSignal interface
+          trigger: async () => {
+            // Minimal implementation - no-op for timer signals
+          },
+          configure: () => {
+            // Minimal implementation - no-op for timer signals
+          },
+        } as any;
 
         await runtime.processSignal(signal, signalData.data);
 
