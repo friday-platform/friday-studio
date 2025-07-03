@@ -242,6 +242,9 @@ jobs:
     if: needs.check-changes.outputs.should_release == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        
       - name: Upload to GCS buckets
         uses: ./.github/actions/gcs-upload
         with:
