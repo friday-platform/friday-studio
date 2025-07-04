@@ -756,7 +756,7 @@ Focus on safety, efficiency, and reliability.`;
           write: true,
           net: true, // Allow network access for daemon communication
           env: true, // Allow environment variable access
-          run: false, // Restrict process execution
+          run: true, // Allow process execution for MCP servers
           ffi: false, // Restrict FFI access
         },
       },
