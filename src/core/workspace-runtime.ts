@@ -7,6 +7,7 @@ import { WorkerManager } from "./utils/worker-manager.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
+import { createFSMMonitoringDecorator, globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -37,6 +38,7 @@ interface WorkspaceRuntimeContext {
   options: WorkspaceRuntimeOptions;
   supervisorId?: string;
   sessions: Map<string, IWorkspaceSession>;
+  sessionCount: number; // Optimized session counting for guards
   workerManager: WorkerManager;
   runtime?: WorkspaceRuntime; // Reference to runtime instance for signal processing
   error?: Error;
@@ -58,6 +60,7 @@ interface WorkspaceRuntimeContext {
 type WorkspaceRuntimeEvent =
   | { type: "INITIALIZE" }
   | { type: "PROCESS_SIGNAL"; signal: IWorkspaceSignal; payload: any }
+  | { type: "SESSION_CREATED"; sessionId: string }
   | { type: "SESSION_COMPLETE"; sessionId: string }
   | { type: "SHUTDOWN" }
   | { type: "ERROR"; error: Error };
@@ -68,6 +71,7 @@ interface WorkspaceRuntimeMachineInput {
   config?: any;
   options: WorkspaceRuntimeOptions;
   sessions: Map<string, IWorkspaceSession>;
+  sessionCount: number; // Optimized session counting
   workerManager: WorkerManager;
   runtime?: WorkspaceRuntime;
 }
@@ -84,6 +88,7 @@ export class WorkspaceRuntime {
   private config?: any;
   private stateMachine: Actor<typeof workspaceRuntimeMachine>;
   private libraryStorage?: LibraryStorageAdapter;
+  private fsmId: string; // Unique FSM instance ID for monitoring
 
   constructor(
     workspace: IWorkspace,
@@ -110,22 +115,14 @@ export class WorkspaceRuntime {
         config,
         options,
         sessions: new Map(),
+        sessionCount: 0, // Optimized session counting
         workerManager: this.workerManager,
         runtime: this, // Pass runtime instance for signal processing
       },
     });
 
     // Add a unique ID to track this FSM instance
-    const fsmId = crypto.randomUUID().slice(0, 8);
-
-    // Subscribe to state changes for debugging
-    this.stateMachine.subscribe((state) => {
-      logger.info(`Runtime FSM [${fsmId}] state change: ${state.value}`, {
-        workspaceId: workspace.id,
-        fsmId,
-        state: state.value,
-      });
-    });
+    this.fsmId = crypto.randomUUID().slice(0, 8);
 
     this.stateMachine.start();
 
@@ -133,8 +130,14 @@ export class WorkspaceRuntime {
     if (!options.lazy) {
       logger.info("Sending INITIALIZE event (not lazy)", {
         workspaceId: workspace.id,
+        options: options,
       });
       this.stateMachine.send({ type: "INITIALIZE" });
+    } else {
+      logger.info("Lazy initialization - waiting for manual INITIALIZE", {
+        workspaceId: workspace.id,
+        options: options,
+      });
     }
   }
 
@@ -403,6 +406,9 @@ export class WorkspaceRuntime {
           sessionIdAfterOverride: session.id,
           sessionCount: this.sessions.size,
         });
+
+        // Notify FSM about session creation for sessionCount tracking
+        this.stateMachine.send({ type: "SESSION_CREATED", sessionId });
 
         // Send event to state machine
         this.stateMachine.send({ type: "PROCESS_SIGNAL", signal, payload });
@@ -717,6 +723,30 @@ export class WorkspaceRuntime {
   }
 
   /**
+   * Manually initialize the runtime (for lazy initialization)
+   */
+  async initialize(): Promise<void> {
+    const state = this.stateMachine.getSnapshot();
+
+    if (state.value !== "uninitialized") {
+      logger.warn("Runtime already initialized or initializing", {
+        workspaceId: this.workspace.id,
+        currentState: state.value,
+      });
+      return;
+    }
+
+    logger.info("Manually initializing runtime", {
+      workspaceId: this.workspace.id,
+    });
+
+    this.stateMachine.send({ type: "INITIALIZE" });
+
+    // Wait for initialization to complete
+    await this.waitForState(["ready", "terminated"]);
+  }
+
+  /**
    * Shutdown the runtime
    */
   async shutdown(): Promise<void> {
@@ -852,11 +882,11 @@ const workspaceRuntimeMachine = setup({
               // Extract friendly error message if available
               const errorMessage = error instanceof Error ? error.message : String(error);
 
-              // Always log the error details for debugging
-              console.error(`❌ K8s Events Signal Error:`, errorMessage);
+              // Log the error details for debugging
               logger.error(`Failed to initialize stream signal: ${signalId}`, {
                 error: errorMessage,
                 provider: signalConfig.provider,
+                stack: error instanceof Error ? error.stack : undefined,
               });
             }
           }
@@ -931,11 +961,10 @@ const workspaceRuntimeMachine = setup({
       // Memory configuration is already loaded in mergedConfig.atlas
 
       // Load all agents (platform + user)
-      console.log("[DEBUG] Agent config before merging:", {
+      logger.debug("Agent config before merging", {
         atlasAgents: Object.keys(mergedConfig.atlas?.agents || {}),
         workspaceAgents: Object.keys(mergedConfig.workspace?.agents || {}),
         conversationAgentType: mergedConfig.workspace?.agents?.["conversation-agent"]?.type,
-        conversationAgentConfig: mergedConfig.workspace?.agents?.["conversation-agent"],
       });
 
       const allAgents: Record<string, RuntimeAgentConfig> = {
@@ -943,10 +972,9 @@ const workspaceRuntimeMachine = setup({
         ...(mergedConfig.workspace?.agents || {}),
       };
 
-      console.log("[DEBUG] Agent config after merging:", {
+      logger.debug("Agent config after merging", {
         allAgents: Object.keys(allAgents),
         conversationAgentType: allAgents["conversation-agent"]?.type,
-        conversationAgentConfig: allAgents["conversation-agent"],
       });
 
       if (allAgents && Object.keys(allAgents).length > 0) {
@@ -972,9 +1000,22 @@ const workspaceRuntimeMachine = setup({
           ...context.workspace.snapshot(),
           id: context.workspace.id,
           // Serialize agents to pass only metadata
-          agents: (
-            await import("./agent-loader.ts")
-          ).AgentLoader.serializeAgentMetadata(context.workspace.agents || {}),
+          agents: await (async () => {
+            try {
+              logger.debug("Loading agent metadata", {
+                workspaceId: context.workspace.id,
+                agentCount: Object.keys(context.workspace.agents || {}).length,
+              });
+              const agentLoader = await import("./agent-loader.ts");
+              return agentLoader.AgentLoader.serializeAgentMetadata(context.workspace.agents || {});
+            } catch (error) {
+              logger.error("Failed to load agent metadata", {
+                workspaceId: context.workspace.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              throw error;
+            }
+          })(),
           signals: Object.keys(context.workspace.signals || {}),
           workflows: Object.keys(context.workspace.workflows || {}),
         },
@@ -1018,11 +1059,38 @@ const workspaceRuntimeMachine = setup({
         throw new Error(`Failed to spawn supervisor: ${err.message}`);
       }
 
-      console.log(
-        "[Runtime FSM] Supervisor ready, returning ID:",
-        supervisor.id,
-      );
-      return { supervisorId: supervisor.id, mergedConfig };
+      logger.info("Supervisor ready", {
+        supervisorId: supervisor?.id,
+        workspaceId: supervisor?.workspace?.id,
+        hasSupervisor: !!supervisor,
+        hasWorkspace: !!(supervisor?.workspace),
+      });
+
+      if (!supervisor?.id) {
+        throw new Error("Supervisor was created but has no ID");
+      }
+
+      logger.debug("Returning supervisor initialization result", {
+        supervisorId: supervisor.id,
+        hasMergedConfig: !!mergedConfig,
+        workspaceId: context.workspace.id,
+      });
+
+      try {
+        const result = { supervisorId: supervisor.id, mergedConfig };
+        logger.debug("Supervisor initialization result created successfully", {
+          resultKeys: Object.keys(result),
+          supervisorId: result.supervisorId,
+        });
+        return result;
+      } catch (error) {
+        logger.error("Failed to create supervisor initialization result", {
+          error: error instanceof Error ? error.message : String(error),
+          supervisorId: supervisor?.id,
+          hasMergedConfig: !!mergedConfig,
+        });
+        throw error;
+      }
     }),
   },
 }).createMachine({
@@ -1033,6 +1101,7 @@ const workspaceRuntimeMachine = setup({
     config: input.config,
     options: input.options,
     sessions: input.sessions,
+    sessionCount: input.sessionCount,
     workerManager: input.workerManager,
     runtime: input.runtime,
     supervisorId: undefined,
@@ -1048,11 +1117,14 @@ const workspaceRuntimeMachine = setup({
           target: "initializing",
         },
         SHUTDOWN: {
-          target: "terminated",
+          target: "draining",
         },
       },
     },
     initializing: {
+      entry: () => {
+        logger.debug("Entering initializing state");
+      },
       invoke: {
         id: "initializeSupervisor",
         src: "initializeSupervisor",
@@ -1060,16 +1132,54 @@ const workspaceRuntimeMachine = setup({
         onDone: {
           target: "initializingStreams",
           actions: [
+            ({ event }) => {
+              logger.debug("Supervisor initialization completed, assigning context", {
+                supervisorId: event.output.supervisorId,
+                hasMergedConfig: !!event.output.mergedConfig,
+              });
+            },
             assign({
-              supervisorId: ({ event }) => event.output.supervisorId,
-              mergedConfig: ({ event }) => event.output.mergedConfig,
+              supervisorId: ({ event }) => {
+                try {
+                  logger.debug("Assigning supervisorId", {
+                    supervisorId: event.output.supervisorId,
+                  });
+                  return event.output.supervisorId;
+                } catch (error) {
+                  logger.error("Error assigning supervisorId", {
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  throw error;
+                }
+              },
+              mergedConfig: ({ event }) => {
+                try {
+                  logger.debug("Assigning mergedConfig", {
+                    hasMergedConfig: !!event.output.mergedConfig,
+                  });
+                  return event.output.mergedConfig;
+                } catch (error) {
+                  logger.error("Error assigning mergedConfig", {
+                    error: error instanceof Error ? error.message : String(error),
+                  });
+                  throw error;
+                }
+              },
             }),
           ],
         },
         onError: {
           target: "uninitialized",
           actions: [
-            ({ event }) => console.error("[Runtime FSM] Initialization error:", event.error),
+            ({ event }) => {
+              const error = event.error instanceof Error
+                ? event.error
+                : new Error(String(event.error));
+              logger.error("Runtime FSM initialization error", {
+                error: error.message,
+                stack: error.stack,
+              });
+            },
             assign({
               error: ({ event }) => event.error as Error,
             }),
@@ -1078,7 +1188,7 @@ const workspaceRuntimeMachine = setup({
       },
       on: {
         SHUTDOWN: {
-          target: "terminated",
+          target: "draining",
           actions: [
             assign({
               isShuttingDown: () => true,
@@ -1088,6 +1198,9 @@ const workspaceRuntimeMachine = setup({
       },
     },
     initializingStreams: {
+      entry: () => {
+        logger.debug("Entering initializingStreams state");
+      },
       invoke: {
         id: "initializeStreamSignals",
         src: "initializeStreamSignals",
@@ -1133,6 +1246,13 @@ const workspaceRuntimeMachine = setup({
         PROCESS_SIGNAL: {
           target: "processing",
         },
+        SESSION_CREATED: {
+          actions: [
+            assign({
+              sessionCount: ({ context }) => context.sessionCount + 1,
+            }),
+          ],
+        },
         SHUTDOWN: {
           target: "draining",
           actions: [
@@ -1149,17 +1269,20 @@ const workspaceRuntimeMachine = setup({
           // Can process multiple signals concurrently
           target: "processing",
         },
+        SESSION_CREATED: {
+          actions: [
+            assign({
+              sessionCount: ({ context }) => context.sessionCount + 1,
+            }),
+          ],
+        },
         SESSION_COMPLETE: [
           {
             // If no more sessions, go back to ready
             target: "ready",
-            guard: ({ context, event }) => {
-              // Check if this would be the last session
-              let sessionCount = context.sessions.size;
-              if (context.sessions.has(event.sessionId)) {
-                sessionCount--;
-              }
-              return sessionCount === 0;
+            guard: ({ context }) => {
+              // Optimized: Use sessionCount property instead of calculating
+              return context.sessionCount <= 1; // Will be 0 after deletion
             },
             actions: [
               assign({
@@ -1168,6 +1291,7 @@ const workspaceRuntimeMachine = setup({
                   newSessions.delete(event.sessionId);
                   return newSessions;
                 },
+                sessionCount: ({ context }) => Math.max(0, context.sessionCount - 1),
               }),
               ({ context, event }) => {
                 // Return session worker to pool for reuse (major performance optimization)
@@ -1188,6 +1312,7 @@ const workspaceRuntimeMachine = setup({
                   newSessions.delete(event.sessionId);
                   return newSessions;
                 },
+                sessionCount: ({ context }) => Math.max(0, context.sessionCount - 1),
               }),
               ({ context, event }) => {
                 // Return session worker to pool for reuse (major performance optimization)
@@ -1216,58 +1341,98 @@ const workspaceRuntimeMachine = setup({
       },
     },
     draining: {
-      entry: async ({ context }) => {
-        logger.info("Draining workspace - cleaning up streams and sessions", {
-          workspaceId: context.workspace.id,
-          sessionCount: context.sessions.size,
-          streamCount: context.activeStreamSignals?.size || 0,
-        });
+      invoke: {
+        id: "drainWorkspace",
+        src: fromPromise(async ({ input }: {
+          input: {
+            workspace: any;
+            sessions: Map<string, any>;
+            activeStreamSignals?: Map<string, any>;
+          };
+        }) => {
+          logger.info("Draining workspace - cleaning up streams and sessions", {
+            workspaceId: input.workspace.id,
+            sessionCount: input.sessions.size,
+            streamCount: input.activeStreamSignals?.size || 0,
+          });
 
-        // First, cleanup stream signals to stop new events
-        if (context.activeStreamSignals) {
-          for (const [signalId, runtimeSignal] of context.activeStreamSignals) {
-            try {
-              logger.info(`Cleaning up stream signal: ${signalId}`);
-              await runtimeSignal.teardown();
-              logger.info(`Stream signal cleaned up: ${signalId}`);
-            } catch (error) {
-              logger.error(`Failed to cleanup stream signal: ${signalId}`, { error });
+          // First, cleanup stream signals to stop new events
+          if (input.activeStreamSignals) {
+            for (const [signalId, runtimeSignal] of input.activeStreamSignals) {
+              try {
+                logger.info(`Cleaning up stream signal: ${signalId}`);
+                await runtimeSignal.teardown();
+                logger.info(`Stream signal cleaned up: ${signalId}`);
+              } catch (error) {
+                logger.error(`Failed to cleanup stream signal: ${signalId}`, { error });
+              }
             }
           }
-          context.activeStreamSignals.clear();
-        }
 
-        // Then cancel all active sessions
-        for (const [sessionId, session] of context.sessions) {
-          logger.debug("Cancelling session", {
-            workspaceId: context.workspace.id,
-            sessionId,
-          });
-          await session.cancel();
-        }
+          // Then cancel all active sessions
+          for (const [sessionId, session] of input.sessions) {
+            logger.debug("Cancelling session", {
+              workspaceId: input.workspace.id,
+              sessionId,
+            });
+            try {
+              await session.cancel();
+            } catch (error) {
+              logger.error(`Failed to cancel session: ${sessionId}`, { error });
+            }
+          }
 
-        // Clear sessions
-        context.sessions.clear();
-      },
-      always: [
-        {
-          // If no sessions, proceed to terminated
-          target: "terminated",
-          guard: ({ context }) => context.sessions.size === 0,
+          return { drained: true };
+        }),
+        input: ({ context }) => ({
+          workspace: context.workspace,
+          sessions: context.sessions,
+          activeStreamSignals: context.activeStreamSignals,
+        }),
+        onDone: {
+          target: "terminating",
+          actions: assign({
+            sessions: () => new Map(),
+            activeStreamSignals: () => new Map(),
+          }),
         },
-      ],
+        onError: {
+          target: "terminating",
+          actions: [
+            assign({
+              sessions: () => new Map(),
+              activeStreamSignals: () => new Map(),
+            }),
+            ({ event }) => {
+              logger.error("Draining workspace failed", {
+                error: event.error instanceof Error ? event.error.message : String(event.error),
+              });
+            },
+          ],
+        },
+      },
+      after: {
+        30000: { // 30 second timeout for draining
+          target: "terminating",
+          actions: [
+            assign({
+              sessions: () => new Map(),
+              activeStreamSignals: () => new Map(),
+            }),
+            () => {
+              logger.warn("Draining workspace timeout exceeded, forcing termination");
+            },
+          ],
+        },
+      },
       on: {
         SESSION_COMPLETE: [
           {
             // If this was the last session, terminate
-            target: "terminated",
-            guard: ({ context, event }) => {
-              // Check if this would be the last session
-              let sessionCount = context.sessions.size;
-              if (context.sessions.has(event.sessionId)) {
-                sessionCount--;
-              }
-              return sessionCount === 0;
+            target: "terminating",
+            guard: ({ context }) => {
+              // Optimized: Use sessionCount property instead of calculating
+              return context.sessionCount <= 1; // Will be 0 after deletion
             },
             actions: assign({
               sessions: ({ context, event }) => {
@@ -1275,6 +1440,7 @@ const workspaceRuntimeMachine = setup({
                 newSessions.delete(event.sessionId);
                 return newSessions;
               },
+              sessionCount: ({ context }) => Math.max(0, context.sessionCount - 1),
             }),
           },
           {
@@ -1286,26 +1452,71 @@ const workspaceRuntimeMachine = setup({
                 newSessions.delete(event.sessionId);
                 return newSessions;
               },
+              sessionCount: ({ context }) => Math.max(0, context.sessionCount - 1),
             }),
           },
         ],
       },
     },
+    terminating: {
+      invoke: {
+        id: "terminateWorkspace",
+        src: fromPromise(async ({ input }: {
+          input: {
+            workspace: any;
+            workerManager: any;
+          };
+        }) => {
+          logger.info("Terminating workspace - shutting down worker manager", {
+            workspaceId: input.workspace.id,
+          });
+
+          try {
+            // Shutdown worker manager (streams already cleaned up in draining)
+            await input.workerManager.shutdown();
+
+            logger.info("Workspace shutdown complete", {
+              workspaceId: input.workspace.id,
+              finalState: "terminated",
+            });
+
+            return { terminated: true };
+          } catch (error) {
+            logger.error("Worker manager shutdown failed", {
+              workspaceId: input.workspace.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+            // Still consider it terminated even if shutdown failed
+            return { terminated: true };
+          }
+        }),
+        input: ({ context }) => ({
+          workspace: context.workspace,
+          workerManager: context.workerManager,
+        }),
+        onDone: {
+          target: "terminated",
+        },
+        onError: {
+          target: "terminated",
+          actions: ({ event }) => {
+            logger.error("Workspace termination failed", {
+              error: event.error instanceof Error ? event.error.message : String(event.error),
+            });
+          },
+        },
+      },
+      after: {
+        10000: { // 10 second timeout for termination
+          target: "terminated",
+          actions: () => {
+            logger.warn("Workspace termination timeout exceeded, forcing final state");
+          },
+        },
+      },
+    },
     terminated: {
       type: "final",
-      entry: async ({ context }) => {
-        logger.info("Terminating workspace - shutting down worker manager", {
-          workspaceId: context.workspace.id,
-        });
-
-        // Shutdown worker manager (streams already cleaned up in draining)
-        await context.workerManager.shutdown();
-
-        logger.info("Workspace shutdown complete", {
-          workspaceId: context.workspace.id,
-          finalState: "terminated",
-        });
-      },
     },
   },
 });

@@ -12,6 +12,7 @@ import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type ChildLogger, logger } from "../utils/logger.ts";
 import type { TriggerResponseConfig } from "@atlas/config";
+import { globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
 
 // Response channel interfaces - moved to daemon layer
 // Sessions no longer handle response channels directly
@@ -170,9 +171,17 @@ const sessionMachine = createMachine({
           }),
         },
         onError: {
-          target: "#session.failed",
+          target: "#session.planningFailed",
           actions: assign({
             error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+      after: {
+        20000: { // 20 second timeout for planning
+          target: "#session.planningFailed",
+          actions: assign({
+            error: () => new Error("Planning timeout exceeded"),
           }),
         },
       },
@@ -231,9 +240,17 @@ const sessionMachine = createMachine({
           target: "checkSignals",
         },
         onError: {
-          target: "#session.failed",
+          target: "#session.signalProcessingFailed",
           actions: assign({
             error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+      after: {
+        30000: { // 30 second timeout for signal processing
+          target: "#session.signalProcessingFailed",
+          actions: assign({
+            error: () => new Error("Signal processing timeout exceeded"),
           }),
         },
       },
@@ -256,13 +273,13 @@ const sessionMachine = createMachine({
       invoke: {
         id: "executeAgents",
         src: fromPromise(
-          (
+          async (
             { input }: {
               input: { agents?: IWorkspaceAgent[]; sessionId: string };
             },
           ) => {
             if (!input.agents || input.agents.length === 0) {
-              return Promise.resolve([]);
+              return [];
             }
 
             // Create logger for agent execution
@@ -280,11 +297,48 @@ const sessionMachine = createMachine({
                 agentId: agent.id,
                 agentName: agent.name(),
               });
-              // Agent execution would happen here
-              results.push({ agentId: agent.id, status: "completed" });
+
+              try {
+                // Execute the agent with a simple task message
+                // In a real implementation, the task would come from the session plan
+                const taskMessage = "Process the current workspace context and signals";
+
+                fsmLogger.debug(`Invoking agent ${agent.name()} with task`, {
+                  agentId: agent.id,
+                  task: taskMessage.substring(0, 100),
+                });
+
+                const agentResult = await agent.invoke(taskMessage);
+
+                fsmLogger.info(`Agent ${agent.name()} completed successfully`, {
+                  agentId: agent.id,
+                  resultLength: agentResult.length,
+                });
+
+                results.push({
+                  agentId: agent.id,
+                  agentName: agent.name(),
+                  status: "completed",
+                  result: agentResult,
+                  completedAt: new Date().toISOString(),
+                });
+              } catch (error) {
+                fsmLogger.error(`Agent ${agent.name()} execution failed`, {
+                  agentId: agent.id,
+                  error: error instanceof Error ? error.message : String(error),
+                });
+
+                results.push({
+                  agentId: agent.id,
+                  agentName: agent.name(),
+                  status: "failed",
+                  error: error instanceof Error ? error.message : String(error),
+                  failedAt: new Date().toISOString(),
+                });
+              }
             }
 
-            return Promise.resolve(results);
+            return results;
           },
         ),
         input: ({ context }) => ({
@@ -308,9 +362,17 @@ const sessionMachine = createMachine({
           }),
         },
         onError: {
-          target: "#session.failed",
+          target: "#session.agentExecutionFailed",
           actions: assign({
             error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+      after: {
+        120000: { // 2 minute timeout for agent execution
+          target: "#session.agentExecutionFailed",
+          actions: assign({
+            error: () => new Error("Agent execution timeout exceeded"),
           }),
         },
       },
@@ -380,9 +442,17 @@ const sessionMachine = createMachine({
           target: "decidingNext",
         },
         onError: {
-          target: "#session.failed",
+          target: "#session.evaluationFailed",
           actions: assign({
             error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+      after: {
+        15000: { // 15 second timeout for evaluation
+          target: "#session.evaluationFailed",
+          actions: assign({
+            error: () => new Error("Evaluation timeout exceeded"),
           }),
         },
       },
@@ -466,7 +536,7 @@ const sessionMachine = createMachine({
           }),
         },
         onError: {
-          target: "#session.failed",
+          target: "#session.planningFailed", // Refinement errors go back to planning
           actions: assign({
             error: ({ event }) => event.error as Error,
           }),
@@ -541,6 +611,237 @@ const sessionMachine = createMachine({
         },
       },
     },
+    // Granular error states with retry mechanisms
+    planningFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.sessionId,
+          workerType: "session-fsm",
+        });
+        fsmLogger.warn("Planning failed, attempting retry", {
+          error: context.error?.message,
+          currentIteration: context.currentIteration,
+        });
+      },
+      invoke: {
+        id: "retryPlanning",
+        src: fromPromise(
+          async ({ input }: { input: { sessionId: string; currentIteration: number } }) => {
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.sessionId,
+              workerType: "session-fsm",
+            });
+
+            // Wait before retry with exponential backoff
+            const retryDelay = Math.min(1000 * Math.pow(2, input.currentIteration), 10000);
+            fsmLogger.debug(`Waiting ${retryDelay}ms before planning retry`);
+            await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+            fsmLogger.info("Retrying planning after failure");
+            return { retried: true };
+          },
+        ),
+        input: ({ context }) => ({
+          sessionId: context.sessionId,
+          currentIteration: context.currentIteration || 0,
+        }),
+        onDone: {
+          target: "planning",
+          actions: assign({
+            error: undefined, // Clear previous error
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: assign({
+            error: ({ event }) =>
+              new Error(
+                `Planning retry failed: ${
+                  event.error instanceof Error ? event.error.message : String(event.error)
+                }`,
+              ),
+          }),
+        },
+      },
+      after: {
+        30000: { // 30 second timeout
+          target: "failed",
+          actions: assign({
+            error: () => new Error("Planning retry timeout exceeded"),
+          }),
+        },
+      },
+    },
+    signalProcessingFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.sessionId,
+          workerType: "session-fsm",
+        });
+        fsmLogger.warn("Signal processing failed, attempting retry", {
+          error: context.error?.message,
+          signalIndex: context.currentSignalIndex,
+        });
+      },
+      invoke: {
+        id: "retrySignalProcessing",
+        src: fromPromise(
+          async ({ input }: { input: { sessionId: string; signalIndex: number } }) => {
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.sessionId,
+              workerType: "session-fsm",
+            });
+
+            // Wait before retry
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            fsmLogger.info(`Retrying signal processing for signal ${input.signalIndex}`);
+            return { retried: true };
+          },
+        ),
+        input: ({ context }) => ({
+          sessionId: context.sessionId,
+          signalIndex: context.currentSignalIndex,
+        }),
+        onDone: {
+          target: "processingSignals",
+          actions: assign({
+            error: undefined, // Clear previous error
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: assign({
+            error: ({ event }) =>
+              new Error(
+                `Signal processing retry failed: ${
+                  event.error instanceof Error ? event.error.message : String(event.error)
+                }`,
+              ),
+          }),
+        },
+      },
+      after: {
+        15000: { // 15 second timeout
+          target: "failed",
+          actions: assign({
+            error: () => new Error("Signal processing retry timeout exceeded"),
+          }),
+        },
+      },
+    },
+    agentExecutionFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.sessionId,
+          workerType: "session-fsm",
+        });
+        fsmLogger.warn("Agent execution failed, attempting recovery", {
+          error: context.error?.message,
+          iteration: context.currentIteration,
+        });
+      },
+      invoke: {
+        id: "handleAgentFailure",
+        src: fromPromise(async ({ input }: { input: { sessionId: string; iteration: number } }) => {
+          const fsmLogger = logger.createChildLogger({
+            sessionId: input.sessionId,
+            workerType: "session-fsm",
+          });
+
+          // Wait before retry with longer delay for agent failures
+          const retryDelay = Math.min(3000 * Math.pow(1.5, input.iteration), 15000);
+          fsmLogger.debug(`Waiting ${retryDelay}ms before agent execution retry`);
+          await new Promise((resolve) => setTimeout(resolve, retryDelay));
+
+          fsmLogger.info("Attempting agent execution recovery");
+          return { recovered: true };
+        }),
+        input: ({ context }) => ({
+          sessionId: context.sessionId,
+          iteration: context.currentIteration || 0,
+        }),
+        onDone: {
+          target: "executingAgents",
+          actions: assign({
+            error: undefined, // Clear previous error
+            currentIteration: ({ context }) => (context.currentIteration || 0) + 1,
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: assign({
+            error: ({ event }) =>
+              new Error(
+                `Agent execution recovery failed: ${
+                  event.error instanceof Error ? event.error.message : String(event.error)
+                }`,
+              ),
+          }),
+        },
+      },
+      after: {
+        45000: { // 45 second timeout for agent recovery
+          target: "failed",
+          actions: assign({
+            error: () => new Error("Agent execution recovery timeout exceeded"),
+          }),
+        },
+      },
+    },
+    evaluationFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.sessionId,
+          workerType: "session-fsm",
+        });
+        fsmLogger.warn("Evaluation failed, attempting simplified evaluation", {
+          error: context.error?.message,
+        });
+      },
+      invoke: {
+        id: "fallbackEvaluation",
+        src: fromPromise(async ({ input }: { input: { sessionId: string; artifacts: any[] } }) => {
+          const fsmLogger = logger.createChildLogger({
+            sessionId: input.sessionId,
+            workerType: "session-fsm",
+          });
+
+          // Simple fallback evaluation - just check if we have artifacts
+          fsmLogger.info("Performing fallback evaluation");
+          const hasResults = input.artifacts && input.artifacts.length > 0;
+          return hasResults ? "complete" : "retry";
+        }),
+        input: ({ context }) => ({
+          sessionId: context.sessionId,
+          artifacts: context.artifacts,
+        }),
+        onDone: {
+          target: "decidingNext",
+          actions: assign({
+            error: undefined, // Clear previous error
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: assign({
+            error: ({ event }) =>
+              new Error(
+                `Fallback evaluation failed: ${
+                  event.error instanceof Error ? event.error.message : String(event.error)
+                }`,
+              ),
+          }),
+        },
+      },
+      after: {
+        10000: { // 10 second timeout for evaluation
+          target: "failed",
+          actions: assign({
+            error: () => new Error("Evaluation recovery timeout exceeded"),
+          }),
+        },
+      },
+    },
     completed: {
       type: "final",
       entry: assign({
@@ -550,7 +851,15 @@ const sessionMachine = createMachine({
     failed: {
       type: "final",
       entry: ({ context }) => {
-        console.error(`[Session ${context.sessionId}] Failed:`, context.error);
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.sessionId,
+          workerType: "session-fsm",
+        });
+        fsmLogger.error("Session failed", {
+          sessionId: context.sessionId,
+          error: context.error?.message || "Unknown error",
+          stack: context.error?.stack,
+        });
       },
     },
   },
@@ -585,6 +894,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private _artifacts: IWorkspaceArtifact[] = [];
   private _startTime?: Date;
   private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
+  private _fsmId: string; // Unique FSM instance ID for monitoring
   protected logger: ChildLogger;
 
   // Response channels now handled at daemon layer
@@ -646,6 +956,9 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       },
     );
 
+    // Generate unique FSM ID for monitoring
+    this._fsmId = crypto.randomUUID().slice(0, 8);
+
     // Initialize the state machine
     this._stateMachine = createActor(sessionMachine, {
       input: {
@@ -663,12 +976,36 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       },
     });
 
-    // Subscribe to state changes
+    // Register FSM for monitoring
+    globalFSMMonitor.registerFSM("Session", this._fsmId);
+
+    // Subscribe to state changes for monitoring and memory
+    let previousState = "created";
+    let transitionStartTime = Date.now();
+
     this._stateMachine.subscribe((snapshot) => {
       const context = snapshot.context;
       this._progress = context.progress;
       this._artifacts = context.artifacts;
       this._startTime = context.startTime;
+
+      // Record state transition for monitoring
+      const currentState = String(snapshot.value);
+      const transitionTime = Date.now() - transitionStartTime;
+
+      globalFSMMonitor.recordStateTransition("Session", this._fsmId, {
+        fromState: previousState,
+        toState: currentState,
+        duration: transitionTime,
+        timestamp: Date.now(),
+        event: "state_transition",
+        success: snapshot.status !== "error",
+        errorType: snapshot.status === "error" ? "session_error" : undefined,
+      });
+
+      // Update for next transition
+      previousState = currentState;
+      transitionStartTime = Date.now();
 
       // Handle state transitions and store in CoALA memory
       const coalaMemory = this.memory as CoALAMemoryManager;
@@ -796,6 +1133,9 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         this.logger.debug(`Stopping agent ${agent.name()}`, { agentName: agent.name() });
       }
     }
+
+    // Cleanup monitoring
+    globalFSMMonitor.unregisterFSM("Session", this._fsmId);
   }
 
   progress(): number {

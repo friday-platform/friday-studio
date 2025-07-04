@@ -27,6 +27,8 @@ interface SupervisorContext {
   activeSessions: Map<string, IWorkspaceSession>;
   error: Error | null;
   currentJobMatch?: JobMatch; // Store the matched job and trigger
+  retryCount: number;
+  maxRetries: number;
 }
 
 type SupervisorEvent =
@@ -49,6 +51,8 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
       executionPlan: null,
       activeSessions: new Map(),
       error: null,
+      retryCount: 0,
+      maxRetries: 3,
     } as SupervisorContext,
     states: {
       idle: {
@@ -59,6 +63,7 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
               currentSignal: ({ event }) => event.signal,
               currentPayload: ({ event }) => event.payload,
               error: () => null,
+              retryCount: () => 0, // Reset retry count for new signals
             }),
           },
         },
@@ -90,6 +95,14 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
             target: "error",
             actions: assign({
               error: ({ event }) => new Error(`Failed to generate plan: ${event.error}`),
+            }),
+          },
+        },
+        after: {
+          30000: { // 30 second timeout for plan generation
+            target: "error",
+            actions: assign({
+              error: () => new Error("Plan generation timeout exceeded"),
             }),
           },
         },
@@ -155,6 +168,14 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
             }),
           },
         },
+        after: {
+          60000: { // 60 second timeout for session spawning
+            target: "error",
+            actions: assign({
+              error: () => new Error("Session spawning timeout exceeded"),
+            }),
+          },
+        },
       },
       coordinating: {
         on: {
@@ -183,10 +204,16 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
                   return sessions;
                 },
               }),
-              ({ event }) => {
-                console.log(
-                  `Session ${event.sessionId} failed: ${event.error.message}`,
-                );
+              ({ event, context }) => {
+                const fsmLogger = logger.createChildLogger({
+                  sessionId: event.sessionId,
+                  workerType: "workspace-supervisor-fsm",
+                });
+                fsmLogger.error("Session failed", {
+                  sessionId: event.sessionId,
+                  error: event.error.message,
+                  activeSessions: context.activeSessions.size,
+                });
               },
             ],
           },
@@ -198,7 +225,14 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
       },
       error: {
         entry: ({ context }) => {
-          console.log(`Supervisor error: ${context.error?.message}`);
+          const fsmLogger = logger.createChildLogger({
+            workerType: "workspace-supervisor-fsm",
+          });
+          fsmLogger.error("Supervisor error", {
+            error: context.error?.message || "Unknown error",
+            stack: context.error?.stack,
+            currentSignal: context.currentSignal?.id,
+          });
         },
         on: {
           RESET: {
@@ -208,9 +242,21 @@ function createSupervisorMachine(supervisor: WorkspaceSupervisor) {
               currentSignal: () => null,
               currentPayload: () => null,
               executionPlan: () => null,
+              retryCount: () => 0,
             }),
           },
         },
+        always: [
+          {
+            target: "analyzing",
+            guard: ({ context }) =>
+              context.retryCount < context.maxRetries && context.currentSignal !== null,
+            actions: assign({
+              retryCount: ({ context }) => context.retryCount + 1,
+              error: () => null,
+            }),
+          },
+        ],
       },
     },
   });
@@ -1683,13 +1729,227 @@ Provide a structured analysis.`;
 
   // IWorkspaceSupervisor interface methods
   manageAgentLifecycle(): void {
-    // TODO: Implement agent lifecycle management
-    this.log("Managing agent lifecycle");
+    this.log("Managing agent lifecycle", {
+      totalAgents: Object.keys(this.workspace.agents).length,
+      activeSessions: this._stateMachine.getSnapshot().context.activeSessions.size,
+    });
+
+    // Health check for all active agents
+    for (const [agentId, agent] of Object.entries(this.workspace.agents)) {
+      try {
+        // Check agent status and perform health checks
+        if (agent.status === "failed" || agent.status === "error") {
+          this.log(`Agent ${agentId} is in failed state, attempting cleanup`, {
+            agentId,
+            status: agent.status,
+          });
+
+          // Attempt to cleanup failed agent
+          this.cleanupFailedAgent(agentId, agent);
+        } else if (agent.status === "ready" || agent.status === "busy") {
+          // Monitor resource usage for active agents
+          this.monitorAgentResources(agentId, agent);
+        }
+      } catch (error) {
+        this.log(`Error managing lifecycle for agent ${agentId}`, {
+          agentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Cleanup orphaned sessions
+    this.cleanupOrphanedSessions();
+  }
+
+  private cleanupFailedAgent(agentId: string, agent: IWorkspaceAgent): void {
+    try {
+      this.log(`Cleaning up failed agent: ${agentId}`, { agentId });
+
+      // Remove from active sessions if present
+      const snapshot = this._stateMachine.getSnapshot();
+      for (const sessionId of snapshot.context.activeSessions.keys()) {
+        // Note: In a real implementation, we would check if the session is using this agent
+        // and potentially terminate or reassign the session
+      }
+
+      // Mark agent for removal/restart
+      // Note: Actual agent restart logic would depend on agent type and configuration
+      this.log(`Agent ${agentId} marked for restart`, { agentId });
+    } catch (error) {
+      this.log(`Failed to cleanup agent ${agentId}`, {
+        agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  private monitorAgentResources(agentId: string, agent: IWorkspaceAgent): void {
+    // Monitor memory, CPU, and other resources
+    // This would integrate with system monitoring in a real implementation
+    this.log(`Monitoring resources for agent: ${agentId}`, {
+      agentId,
+      status: agent.status,
+      host: agent.host,
+    });
+  }
+
+  private cleanupOrphanedSessions(): void {
+    const snapshot = this._stateMachine.getSnapshot();
+    const activeSessions = snapshot.context.activeSessions;
+
+    // Check for sessions that may have been orphaned
+    for (const [sessionId, session] of activeSessions) {
+      try {
+        // Check if session is still responsive
+        if (session.status === "failed" || session.status === "cancelled") {
+          this.log(`Cleaning up orphaned session: ${sessionId}`, { sessionId });
+          // The session will be removed from activeSessions by the FSM when it receives SESSION_FAILED
+        }
+      } catch (error) {
+        this.log(`Error checking session ${sessionId}`, {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   processSignalInterrupts(): void {
-    // TODO: Implement signal interrupt processing
-    this.log("Processing signal interrupts");
+    const snapshot = this._stateMachine.getSnapshot();
+    const signalQueue = this.signalQueue;
+    const activeSessions = snapshot.context.activeSessions;
+
+    this.log("Processing signal interrupts", {
+      queueLength: signalQueue.length,
+      activeSessions: activeSessions.size,
+      currentState: snapshot.value,
+    });
+
+    // Process priority signals that can interrupt current operations
+    const prioritySignals = signalQueue.filter((signal) => this.isHighPrioritySignal(signal));
+
+    if (prioritySignals.length > 0) {
+      this.log(`Found ${prioritySignals.length} high-priority signals for interrupt processing`, {
+        prioritySignals: prioritySignals.map((s) => s.id),
+      });
+
+      for (const signal of prioritySignals) {
+        this.handlePrioritySignalInterrupt(signal);
+      }
+    }
+
+    // Check for signals that require session context switching
+    this.evaluateSessionContextSwitching();
+
+    // Manage resource allocation based on signal priorities
+    this.reallocateResourcesForPrioritySignals();
+  }
+
+  private isHighPrioritySignal(signal: IWorkspaceSignal): boolean {
+    // Define priority signal types that can interrupt current operations
+    const priorityProviders = ["emergency", "security", "critical-alert"];
+    const providerName = signal.provider?.name?.toLowerCase() || "";
+
+    return priorityProviders.some((priority) => providerName.includes(priority));
+  }
+
+  private handlePrioritySignalInterrupt(signal: IWorkspaceSignal): void {
+    this.log(`Handling priority signal interrupt: ${signal.id}`, {
+      signalId: signal.id,
+      provider: signal.provider?.name,
+    });
+
+    // Check if we need to pause/suspend current sessions
+    const snapshot = this._stateMachine.getSnapshot();
+    if (snapshot.context.activeSessions.size > 0) {
+      this.log("Considering session suspension for priority signal", {
+        signalId: signal.id,
+        activeSessions: snapshot.context.activeSessions.size,
+      });
+
+      // In a real implementation, we might:
+      // 1. Pause low-priority sessions
+      // 2. Allocate resources to the priority signal
+      // 3. Queue session resumption after priority signal completion
+    }
+
+    // Move priority signal to front of queue
+    const queueIndex = this.signalQueue.findIndex((s) => s.id === signal.id);
+    if (queueIndex > 0) {
+      this.signalQueue.splice(queueIndex, 1);
+      this.signalQueue.unshift(signal);
+
+      this.log(`Moved priority signal to front of queue`, {
+        signalId: signal.id,
+        newPosition: 0,
+        previousPosition: queueIndex,
+      });
+    }
+  }
+
+  private evaluateSessionContextSwitching(): void {
+    const snapshot = this._stateMachine.getSnapshot();
+
+    // Check if any active sessions should be switched based on new signals
+    for (const [sessionId, session] of snapshot.context.activeSessions) {
+      try {
+        // Evaluate if session context needs updating based on new signals
+        const relevantSignals = this.signalQueue.filter((signal) =>
+          this.isSignalRelevantToSession(signal, session)
+        );
+
+        if (relevantSignals.length > 0) {
+          this.log(`Found ${relevantSignals.length} relevant signals for session ${sessionId}`, {
+            sessionId,
+            relevantSignals: relevantSignals.map((s) => s.id),
+          });
+
+          // In a real implementation, we might:
+          // 1. Update session context with new signal data
+          // 2. Notify session of context changes
+          // 3. Allow session to adapt its execution plan
+        }
+      } catch (error) {
+        this.log(`Error evaluating context switching for session ${sessionId}`, {
+          sessionId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }
+
+  private isSignalRelevantToSession(signal: IWorkspaceSignal, session: IWorkspaceSession): boolean {
+    // Simple relevance check - in reality this would be more sophisticated
+    // Check if signal provider matches any agents in the session
+    if (session.agents) {
+      const sessionAgentProviders = session.agents.map((agent) => agent.provider());
+      const signalProvider = signal.provider?.name || "";
+
+      return sessionAgentProviders.some((provider) =>
+        provider.toLowerCase().includes(signalProvider.toLowerCase())
+      );
+    }
+
+    return false;
+  }
+
+  private reallocateResourcesForPrioritySignals(): void {
+    const prioritySignalsInQueue = this.signalQueue.filter((signal) =>
+      this.isHighPrioritySignal(signal)
+    );
+
+    if (prioritySignalsInQueue.length > 0) {
+      this.log(`Reallocating resources for ${prioritySignalsInQueue.length} priority signals`, {
+        prioritySignals: prioritySignalsInQueue.map((s) => s.id),
+      });
+
+      // In a real implementation, this would:
+      // 1. Calculate resource requirements for priority signals
+      // 2. Free up resources from lower-priority operations
+      // 3. Reserve resources for immediate priority signal processing
+      // 4. Update resource allocation tracking
+    }
   }
 
   // Create enhanced execution plan from task

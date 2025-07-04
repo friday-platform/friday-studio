@@ -41,8 +41,12 @@ export const handler = async (argv: ListArgs): Promise<void> => {
         ),
       );
     } else {
-      // Render with Ink
-      render(<WorkspaceList registeredWorkspaces={workspaces} />);
+      // Render with Ink and exit immediately
+      const { rerender, unmount } = render(<WorkspaceList registeredWorkspaces={workspaces} />);
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

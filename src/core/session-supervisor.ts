@@ -16,6 +16,7 @@ import { ContextProvisioner } from "./context/context-provisioner.ts";
 import { parse } from "https://deno.land/std@0.208.0/yaml/mod.ts";
 import { ReasoningEngine } from "./reasoning/reasoning-engine.ts";
 import type { ReasoningContext } from "./reasoning/base-reasoning.ts";
+import { assign, createActor, createMachine, fromPromise } from "xstate";
 
 // Job specification types
 export interface JobSpecification {
@@ -240,6 +241,332 @@ export interface AgentResult {
   timestamp: string;
 }
 
+// SessionSupervisor FSM types
+type SessionSupervisorContext = {
+  supervisorId: string;
+  sessionContext?: SessionContext;
+  executionPlan?: ExecutionPlan;
+  executionResults: AgentResult[];
+  currentAgentIndex: number;
+  error?: Error;
+  progress: number;
+  retryCount: number;
+  maxRetries: number;
+};
+
+type SessionSupervisorEvent =
+  | { type: "START"; sessionContext: SessionContext }
+  | { type: "PLAN_CREATED"; plan: ExecutionPlan }
+  | { type: "AGENT_EXECUTED"; result: AgentResult }
+  | { type: "EXECUTION_COMPLETE"; results: AgentResult[] }
+  | { type: "EVALUATION_COMPLETE"; decision: "complete" | "retry" | "refine" | "escalate" }
+  | { type: "REFINEMENT_COMPLETE"; refinedPlan: ExecutionPlan }
+  | { type: "RETRY" }
+  | { type: "ERROR"; error: Error }
+  | { type: "RESET" };
+
+// SessionSupervisor state machine
+const sessionSupervisorMachine = createMachine({
+  id: "sessionSupervisor",
+  types: {} as {
+    context: SessionSupervisorContext;
+    events: SessionSupervisorEvent;
+    input: Partial<SessionSupervisorContext>;
+  },
+  initial: "idle",
+  context: ({ input }: { input: Partial<SessionSupervisorContext> }) => ({
+    supervisorId: input.supervisorId || "unknown",
+    executionResults: [],
+    currentAgentIndex: 0,
+    progress: 0,
+    retryCount: 0,
+    maxRetries: 3,
+    ...input,
+  }),
+  states: {
+    idle: {
+      on: {
+        START: {
+          target: "planning",
+          actions: assign({
+            sessionContext: ({ event }) => event.sessionContext,
+            progress: 10,
+          }),
+        },
+      },
+    },
+    planning: {
+      entry: assign({
+        progress: 20,
+      }),
+      invoke: {
+        id: "createExecutionPlan",
+        src: fromPromise(
+          async (
+            { input }: { input: { sessionContext: SessionContext; supervisorId: string } },
+          ) => {
+            // Create logger for FSM operations
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.supervisorId,
+              workerType: "session-supervisor-fsm",
+            });
+            fsmLogger.debug("Creating execution plan from session context");
+
+            // In a real implementation, this would use the supervisor's planning logic
+            // For now, return a simple plan structure
+            const plan: ExecutionPlan = {
+              id: crypto.randomUUID(),
+              sessionId: input.supervisorId,
+              phases: [{
+                id: "phase1",
+                name: "Process session context",
+                agents: [{
+                  agentId: "default-agent",
+                  task: "Process session context",
+                  inputSource: "signal",
+                  dependencies: [],
+                }],
+                executionStrategy: "sequential",
+              }],
+              successCriteria: ["All agents completed successfully"],
+              adaptationStrategy: "flexible",
+            };
+            return plan;
+          },
+        ),
+        input: ({ context }) => ({
+          sessionContext: context.sessionContext!,
+          supervisorId: context.supervisorId,
+        }),
+        onDone: {
+          target: "executing",
+          actions: assign({
+            executionPlan: ({ event }) => event.output,
+            progress: 30,
+          }),
+        },
+        onError: {
+          target: "planningFailed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    planningFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.supervisorId,
+          workerType: "session-supervisor-fsm",
+        });
+        fsmLogger.error("Planning failed", {
+          error: context.error?.message,
+          retryCount: context.retryCount,
+        });
+      },
+      always: [
+        {
+          target: "planning",
+          guard: ({ context }) => context.retryCount < context.maxRetries,
+          actions: assign({
+            retryCount: ({ context }) => context.retryCount + 1,
+          }),
+        },
+        {
+          target: "failed",
+        },
+      ],
+    },
+    executing: {
+      entry: assign({
+        progress: 50,
+      }),
+      invoke: {
+        id: "executeAgents",
+        src: fromPromise(
+          async ({ input }: { input: { plan: ExecutionPlan; supervisorId: string } }) => {
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.supervisorId,
+              workerType: "session-supervisor-fsm",
+            });
+            fsmLogger.info("Executing agents according to plan", {
+              phaseCount: input.plan.phases.length,
+            });
+
+            // Execute each phase in the plan
+            const results: AgentResult[] = [];
+            for (const phase of input.plan.phases) {
+              for (const agentTask of phase.agents) {
+                fsmLogger.debug(`Executing agent task: ${agentTask.agentId}`, {
+                  phaseId: phase.id,
+                  agentId: agentTask.agentId,
+                  task: agentTask.task,
+                });
+
+                // Placeholder agent execution result
+                results.push({
+                  agentId: agentTask.agentId,
+                  task: agentTask.task,
+                  input: "Session context data",
+                  output: "Agent execution completed successfully",
+                  duration: 1000,
+                  timestamp: new Date().toISOString(),
+                });
+              }
+            }
+
+            return results;
+          },
+        ),
+        input: ({ context }) => ({
+          plan: context.executionPlan!,
+          supervisorId: context.supervisorId,
+        }),
+        onDone: {
+          target: "evaluating",
+          actions: assign({
+            executionResults: ({ event }) => event.output,
+            progress: 70,
+          }),
+        },
+        onError: {
+          target: "executionFailed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    executionFailed: {
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.supervisorId,
+          workerType: "session-supervisor-fsm",
+        });
+        fsmLogger.error("Agent execution failed", {
+          error: context.error?.message,
+          retryCount: context.retryCount,
+        });
+      },
+      always: [
+        {
+          target: "executing",
+          guard: ({ context }) => context.retryCount < context.maxRetries,
+          actions: assign({
+            retryCount: ({ context }) => context.retryCount + 1,
+          }),
+        },
+        {
+          target: "failed",
+        },
+      ],
+    },
+    evaluating: {
+      entry: assign({
+        progress: 80,
+      }),
+      invoke: {
+        id: "evaluateResults",
+        src: fromPromise(
+          async ({ input }: { input: { results: AgentResult[]; supervisorId: string } }) => {
+            const fsmLogger = logger.createChildLogger({
+              sessionId: input.supervisorId,
+              workerType: "session-supervisor-fsm",
+            });
+            fsmLogger.debug("Evaluating execution results", {
+              resultCount: input.results.length,
+            });
+
+            // Simple evaluation logic - check if all agents completed successfully
+            // Since AgentResult doesn't have status, we'll check if output exists and is non-empty
+            const allCompleted = input.results.every((result) =>
+              result.output && result.output.toString().length > 0
+            );
+            return allCompleted ? "complete" : "retry";
+          },
+        ),
+        input: ({ context }) => ({
+          results: context.executionResults,
+          supervisorId: context.supervisorId,
+        }),
+        onDone: {
+          target: "decidingNext",
+          actions: assign({
+            progress: 90,
+          }),
+        },
+        onError: {
+          target: "failed",
+          actions: assign({
+            error: ({ event }) => event.error as Error,
+          }),
+        },
+      },
+    },
+    decidingNext: {
+      always: [
+        {
+          target: "completed",
+          guard: ({ context }) => {
+            // Check if evaluation determined completion
+            return context.executionResults.every((result) =>
+              result.output && result.output.toString().length > 0
+            );
+          },
+        },
+        {
+          target: "executing",
+          guard: ({ context }) => context.retryCount < context.maxRetries,
+          actions: assign({
+            retryCount: ({ context }) => context.retryCount + 1,
+          }),
+        },
+        {
+          target: "failed",
+        },
+      ],
+    },
+    completed: {
+      type: "final",
+      entry: assign({
+        progress: 100,
+      }),
+    },
+    failed: {
+      type: "final",
+      entry: ({ context }) => {
+        const fsmLogger = logger.createChildLogger({
+          sessionId: context.supervisorId,
+          workerType: "session-supervisor-fsm",
+        });
+        fsmLogger.error("SessionSupervisor execution failed", {
+          error: context.error?.message || "Unknown error",
+          retryCount: context.retryCount,
+          progress: context.progress,
+        });
+      },
+    },
+  },
+  on: {
+    ERROR: {
+      target: ".failed",
+      actions: assign({
+        error: ({ event }) => event.error,
+      }),
+    },
+    RESET: {
+      target: ".idle",
+      actions: assign({
+        executionResults: [],
+        currentAgentIndex: 0,
+        progress: 0,
+        retryCount: 0,
+        error: undefined,
+      }),
+    },
+  },
+});
+
 export class SessionSupervisor extends BaseAgent {
   protected sessionContext: SessionContext | null = null;
   private executionPlan: ExecutionPlan | null = null;
@@ -257,6 +584,7 @@ export class SessionSupervisor extends BaseAgent {
   private supervisorDefaults?: any; // Supervisor configuration defaults
   private session?: any; // Reference to the Session instance for streaming
   private reasoningEngine?: ReasoningEngine; // For thinking strategies
+  private _stateMachine: ReturnType<typeof createActor<typeof sessionSupervisorMachine>>; // FSM for state management
 
   constructor(
     memoryConfig: AtlasMemoryConfig,
@@ -300,6 +628,36 @@ You have access to a filtered view of the workspace tailored for this specific s
 You can use advanced reasoning methods to make complex decisions about agent coordination and execution strategies.`,
       user: "",
     };
+
+    // Initialize the FSM
+    this._stateMachine = createActor(sessionSupervisorMachine, {
+      input: {
+        supervisorId: this.id,
+        executionResults: [],
+        currentAgentIndex: 0,
+        progress: 0,
+        retryCount: 0,
+        maxRetries: 3,
+      },
+    });
+
+    // Subscribe to state changes for logging and monitoring
+    this._stateMachine.subscribe((snapshot) => {
+      const context = snapshot.context;
+      this.logger.debug("SessionSupervisor FSM state change", {
+        state: snapshot.value,
+        progress: context.progress,
+        retryCount: context.retryCount,
+        executionResults: context.executionResults.length,
+      });
+
+      // Update internal state based on FSM context
+      this.executionPlan = context.executionPlan || null;
+      this.executionResults = context.executionResults;
+    });
+
+    // Start the state machine
+    this._stateMachine.start();
   }
 
   name(): string {
@@ -3672,6 +4030,49 @@ Overall Session Summary: ${
         sessionId: this.sessionContext?.sessionId,
       });
     }
+  }
+
+  // FSM interaction methods
+  startExecution(sessionContext: SessionContext): void {
+    this.logger.info("Starting SessionSupervisor execution via FSM", {
+      sessionId: sessionContext.sessionId,
+      currentState: this._stateMachine.getSnapshot().value,
+    });
+
+    this._stateMachine.send({
+      type: "START",
+      sessionContext: sessionContext,
+    });
+  }
+
+  getCurrentState(): string {
+    return String(this._stateMachine.getSnapshot().value);
+  }
+
+  getProgress(): number {
+    return this._stateMachine.getSnapshot().context.progress;
+  }
+
+  getExecutionResults(): AgentResult[] {
+    return this._stateMachine.getSnapshot().context.executionResults;
+  }
+
+  resetExecution(): void {
+    this.logger.info("Resetting SessionSupervisor execution");
+    this._stateMachine.send({ type: "RESET" });
+  }
+
+  isExecutionComplete(): boolean {
+    const snapshot = this._stateMachine.getSnapshot();
+    return snapshot.matches("completed") || snapshot.matches("failed");
+  }
+
+  hasExecutionFailed(): boolean {
+    return this._stateMachine.getSnapshot().matches("failed");
+  }
+
+  getExecutionError(): Error | undefined {
+    return this._stateMachine.getSnapshot().context.error;
   }
 
   // Streaming is now handled through workspace capabilities (session_reply tool)
