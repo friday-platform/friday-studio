@@ -1,39 +1,39 @@
-name: 'Sign macOS Binary'
-description: 'Signs and notarizes macOS binaries with Developer ID certificates'
+name: "Sign macOS Binary"
+description: "Signs and notarizes macOS binaries with Developer ID certificates"
 
 inputs:
   binary-path:
-    description: 'Path to the binary to sign'
+    description: "Path to the binary to sign"
     required: true
   macos-sign-p12:
-    description: 'Base64 encoded P12 certificate for code signing'
+    description: "Base64 encoded P12 certificate for code signing"
     required: false
   macos-sign-password:
-    description: 'Password for the P12 certificate'
+    description: "Password for the P12 certificate"
     required: false
   macos-sign-identity:
-    description: 'Signing identity (auto-detected if not provided)'
+    description: "Signing identity (auto-detected if not provided)"
     required: false
   macos-notary-issuer-id:
-    description: 'Apple Notary API issuer ID'
+    description: "Apple Notary API issuer ID"
     required: false
   macos-notary-key-id:
-    description: 'Apple Notary API key ID'
+    description: "Apple Notary API key ID"
     required: false
   macos-notary-key:
-    description: 'Base64 encoded Apple Notary API private key'
+    description: "Base64 encoded Apple Notary API private key"
     required: false
 
 outputs:
   signed:
-    description: 'Whether the binary was successfully signed'
+    description: "Whether the binary was successfully signed"
     value: ${{ steps.sign.outputs.signed }}
   notarized:
-    description: 'Whether the binary was successfully notarized'
+    description: "Whether the binary was successfully notarized"
     value: ${{ steps.notarize.outputs.notarized }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Check if signing is available
       id: check

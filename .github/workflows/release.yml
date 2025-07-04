@@ -62,7 +62,7 @@ jobs:
           else
             version="${{ github.ref_name }}"
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
         shell: bash
 
@@ -71,7 +71,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build binary
         id: build
@@ -120,6 +120,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ steps.version.outputs.version }}
@@ -164,7 +165,7 @@ jobs:
           else
             version="${{ github.ref_name }}"
           fi
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Version: $version"
 
       - name: Download all artifacts
@@ -181,11 +182,13 @@ jobs:
 
           if [ -z "$previous_tag" ]; then
             # First release
-            echo "## What's New" > changelog.md
-            echo "" >> changelog.md
-            echo "This is the first release of Atlas." >> changelog.md
-            echo "" >> changelog.md
-            echo "### Features" >> changelog.md
+            {
+              echo "## What's New"
+              echo ""
+              echo "This is the first release of Atlas."
+              echo ""
+              echo "### Features"
+            } > changelog.md
             git log --oneline --no-merges -20 --pretty=format:"- %s" >> changelog.md
           else
             # Generate changelog since previous tag
@@ -194,65 +197,68 @@ jobs:
 
             # Categorize commits
             echo "###  Features" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="feat" --pretty=format:"- %s" >> changelog.md || echo "- No new features" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Bug Fixes" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="fix" --pretty=format:"- %s" >> changelog.md || echo "- No bug fixes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Documentation" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No documentation changes" >> changelog.md
             echo "" >> changelog.md
 
             echo "###  Other Changes" >> changelog.md
-            git log --oneline --no-merges ${previous_tag}..${{ steps.version.outputs.version }} --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
+            git log --oneline --no-merges "${previous_tag}..${{ steps.version.outputs.version }}" --invert-grep --grep="feat" --grep="fix" --grep="docs" --pretty=format:"- %s" >> changelog.md || echo "- No other changes" >> changelog.md
           fi
 
-          echo "" >> changelog.md
-          echo "## Installation" >> changelog.md
-          echo "" >> changelog.md
-          echo "Download the appropriate binary for your platform from the assets below." >> changelog.md
-          echo "" >> changelog.md
-          echo "### macOS" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Option 1: Package Installer (Recommended)**" >> changelog.md
-          echo "Simply double-click the .pkg file to install. If macOS shows a security warning:" >> changelog.md
-          echo "1. Right-click the .pkg file → Open" >> changelog.md
-          echo "2. Or go to System Preferences → Security & Privacy → Allow" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Option 2: Command Line Installation**" >> changelog.md
-          echo '```bash' >> changelog.md
-          echo 'sudo installer -pkg atlas_*_darwin_*.pkg -target /' >> changelog.md
-          echo '```' >> changelog.md
-          echo "" >> changelog.md
-          echo "**Option 3: Manual Installation**" >> changelog.md
-          echo '```bash' >> changelog.md
-          echo 'tar -xzf atlas_*_darwin_*.tar.gz' >> changelog.md
-          echo 'sudo mv atlas /usr/local/bin/' >> changelog.md
-          echo '```' >> changelog.md
-          echo "" >> changelog.md
-          echo "### Linux" >> changelog.md
-          echo '```bash' >> changelog.md
-          echo 'tar -xzf atlas_*_linux_*.tar.gz' >> changelog.md
-          echo 'sudo mv atlas /usr/local/bin/' >> changelog.md
-          echo '```' >> changelog.md
-          echo "" >> changelog.md
-          echo "### Windows" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Option 1: MSI Installer (Recommended)**" >> changelog.md
-          echo '```powershell' >> changelog.md
-          echo 'msiexec /i atlas_*_windows_*.msi /quiet' >> changelog.md
-          echo '```' >> changelog.md
-          echo "Or double-click the .msi file to install with the GUI." >> changelog.md
-          echo "" >> changelog.md
-          echo "**Option 2: Manual Installation**" >> changelog.md
-          echo "Extract the ZIP file and add the atlas.exe to your PATH." >> changelog.md
+          {
+            echo ""
+            echo "## Installation"
+            echo ""
+            echo "Download the appropriate binary for your platform from the assets below."
+            echo ""
+            echo "### macOS"
+            echo ""
+            echo "**Option 1: Package Installer (Recommended)**"
+            echo "Simply double-click the .pkg file to install. If macOS shows a security warning:"
+            echo "1. Right-click the .pkg file → Open"
+            echo "2. Or go to System Preferences → Security & Privacy → Allow"
+            echo ""
+            echo "**Option 2: Command Line Installation**"
+            echo '```bash'
+            echo 'sudo installer -pkg atlas_*_darwin_*.pkg -target /'
+            echo '```'
+            echo ""
+            echo "**Option 3: Manual Installation**"
+            echo '```bash'
+            echo 'tar -xzf atlas_*_darwin_*.tar.gz'
+            echo 'sudo mv atlas /usr/local/bin/'
+            echo '```'
+            echo ""
+            echo "### Linux"
+            echo '```bash'
+            echo 'tar -xzf atlas_*_linux_*.tar.gz'
+            echo 'sudo mv atlas /usr/local/bin/'
+            echo '```'
+            echo ""
+            echo "### Windows"
+            echo ""
+            echo "**Option 1: MSI Installer (Recommended)**"
+            echo '```powershell'
+            echo 'msiexec /i atlas_*_windows_*.msi /quiet'
+            echo '```'
+            echo "Or double-click the .msi file to install with the GUI."
+            echo ""
+            echo "**Option 2: Manual Installation**"
+            echo "Extract the ZIP file and add the atlas.exe to your PATH."
+            echo ""
+          } >> changelog.md
 
       - name: Create checksums file
         run: |
           cd ./dist
-          cat *.sha256 > checksums.txt
+          cat ./*.sha256 > checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -278,7 +284,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -291,7 +297,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:

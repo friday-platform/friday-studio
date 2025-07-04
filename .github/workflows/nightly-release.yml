@@ -37,16 +37,16 @@ jobs:
 
           if [ -z "$latest_nightly" ]; then
             echo "No previous nightly found, creating first nightly"
-            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
           else
             # Check if there are commits since the last nightly tag
-            commits_since=$(git rev-list ${latest_nightly}..HEAD --count)
+            commits_since=$(git rev-list "${latest_nightly}"..HEAD --count)
             if [ "$commits_since" -gt 0 ] || [ "${{ inputs.force_release }}" == "true" ]; then
               echo "Found $commits_since commits since last nightly, creating new release"
-              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
             else
               echo "No changes since last nightly, skipping release"
-              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
             fi
           fi
 
@@ -57,7 +57,7 @@ jobs:
           date_part=$(date -u +%Y%m%d)
           git_sha=$(git rev-parse --short HEAD)
           version="nightly-${date_part}-${git_sha}"
-          echo "version=$version" >> $GITHUB_OUTPUT
+          echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Generated version: $version"
 
   build:
@@ -104,7 +104,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build binary
         id: build
@@ -153,6 +153,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
@@ -196,34 +197,38 @@ jobs:
 
       - name: Generate changelog
         run: |
-          echo "## Nightly Build ${{ needs.check-changes.outputs.version }}" > changelog.md
-          echo "" >> changelog.md
-          echo "This is an automated nightly build with the latest stable changes." >> changelog.md
-          echo "" >> changelog.md
-          echo "### Recent Changes" >> changelog.md
-          
+          {
+            echo "## Nightly Build ${{ needs.check-changes.outputs.version }}"
+            echo ""
+            echo "This is an automated nightly build with the latest stable changes."
+            echo ""
+            echo "### Recent Changes"
+          } > changelog.md
+
           # Get the previous nightly for changelog
           previous_nightly=$(git tag -l "nightly-*" | sort -V | tail -n2 | head -n1)
           if [ -n "$previous_nightly" ]; then
-            git log --oneline --no-merges ${previous_nightly}..HEAD --pretty=format:"- %s" >> changelog.md || echo "- No changes since last nightly" >> changelog.md
+            git log --oneline --no-merges "${previous_nightly}"..HEAD --pretty=format:"- %s" >> changelog.md || echo "- No changes since last nightly" >> changelog.md
           else
             git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
           fi
-          
-          echo "" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features." >> changelog.md
+
+          {
+            echo ""
+            echo ""
+            echo "**Note:** Nightly builds are more stable than edge builds but may still contain experimental features."
+          } >> changelog.md
 
       - name: Create checksums file
         run: |
           cd ./dist
-          cat *.sha256 > checksums.txt
+          cat ./*.sha256 > checksums.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-changes.outputs.version }}
-          name: "Atlas (nightly: ${{ needs.check-changes.outputs.version }})"
+          name: "Atlas Nightly (${{ needs.check-changes.outputs.version }})"
           body_path: changelog.md
           draft: false
           prerelease: true
@@ -244,7 +249,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -258,7 +263,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:

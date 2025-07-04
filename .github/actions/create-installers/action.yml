@@ -1,62 +1,57 @@
-name: 'Create Platform Installers'
-description: 'Creates PKG installers for macOS and MSI installers for Windows'
+name: "Create Platform Installers"
+description: "Creates PKG installers for macOS and MSI installers for Windows"
 
 inputs:
   version:
-    description: 'Version string for the installer'
+    description: "Version string for the installer"
     required: true
   platform:
-    description: 'Target platform (darwin, windows, linux)'
+    description: "Target platform (darwin, windows, linux)"
     required: true
   arch:
-    description: 'Target architecture (amd64, arm64)'
+    description: "Target architecture (amd64, arm64)"
     required: true
   channel:
-    description: 'Release channel (release, edge, nightly)'
+    description: "Release channel (release, edge, nightly)"
     required: true
   binary-path:
-    description: 'Path to the binary to package'
+    description: "Path to the binary to package"
     required: true
   macos-installer-p12:
-    description: 'Base64 encoded P12 certificate for installer signing'
+    description: "Base64 encoded P12 certificate for installer signing"
     required: false
   macos-installer-password:
-    description: 'Password for the installer P12 certificate'
+    description: "Password for the installer P12 certificate"
     required: false
   macos-notary-issuer-id:
-    description: 'Apple Notary API issuer ID'
+    description: "Apple Notary API issuer ID"
     required: false
   macos-notary-key-id:
-    description: 'Apple Notary API key ID'
+    description: "Apple Notary API key ID"
     required: false
   macos-notary-key:
-    description: 'Base64 encoded Apple Notary API private key'
+    description: "Base64 encoded Apple Notary API private key"
     required: false
 
 outputs:
   installer-path:
-    description: 'Path to the created installer'
+    description: "Path to the created installer"
     value: ${{ steps.create.outputs.installer-path }}
   checksum-path:
-    description: 'Path to the installer checksum file'
+    description: "Path to the installer checksum file"
     value: ${{ steps.create.outputs.checksum-path }}
 
 runs:
-  using: 'composite'
+  using: "composite"
   steps:
     - name: Create macOS PKG installer
       id: create
       if: inputs.platform == 'darwin'
       shell: bash
       run: |
-        # Generate installer name and title based on channel
-        if [ "${{ inputs.channel }}" == "release" ]; then
-          pkg_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.pkg"
-          installer_title="Atlas (${{ inputs.version }})"
-        else
-          pkg_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.pkg"
-          installer_title="Atlas (${{ inputs.channel }}: ${{ inputs.version }})"
-        fi
+        # Generate installer name and use clean title for all channels
+        pkg_name="atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.pkg"
+        installer_title="Atlas"
 
         # Create package directory structure
         mkdir -p ./pkg/payload/usr/local/bin
@@ -253,7 +248,7 @@ runs:
       shell: bash
       run: |
         pkg_name=$(basename "${{ steps.create.outputs.installer-path }}")
-        
+
         echo "Signing pkg installer with Developer ID Installer certificate..."
         # Check if keychain exists, if not create it
         security unlock-keychain -p mypassword build.keychain || {
@@ -335,14 +330,9 @@ runs:
       if: inputs.platform == 'windows'
       shell: pwsh
       run: |
-        # Generate installer name and title based on channel
-        if ("${{ inputs.channel }}" -eq "release") {
-          $msi_name = "atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.msi"
-          $installer_title = "Atlas (${{ inputs.version }})"
-        } else {
-          $msi_name = "atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.msi"
-          $installer_title = "Atlas (${{ inputs.channel }}: ${{ inputs.version }})"
-        }
+        # Generate installer name and use clean title for all channels
+        $msi_name = "atlas_${{ inputs.version }}_${{ inputs.platform }}_${{ inputs.arch }}.msi"
+        $installer_title = "Atlas"
 
         # Install WiX Toolset using chocolatey (pre-installed on GitHub runners)
         Write-Host "Installing WiX Toolset..."

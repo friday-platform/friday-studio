@@ -29,7 +29,7 @@ jobs:
           time_part=$(date -u +%H%M%S)
           git_sha=$(git rev-parse --short HEAD)
           version="edge-${date_part}-${time_part}-${git_sha}"
-          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "Edge version: ${version}"
 
   build:
@@ -76,7 +76,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CC=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
 
       - name: Build binary
         id: build
@@ -125,6 +125,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        id: installers
         uses: ./.github/actions/create-installers
         with:
           version: ${{ needs.check-changes.outputs.version }}
@@ -167,26 +168,30 @@ jobs:
 
       - name: Generate changelog
         run: |
-          echo "## Edge Build ${{ needs.check-changes.outputs.version }}" > changelog.md
-          echo "" >> changelog.md
-          echo "This is an automated edge build from the latest changes on the main branch." >> changelog.md
-          echo "" >> changelog.md
-          echo "### Recent Changes" >> changelog.md
+          {
+            echo "## Edge Build ${{ needs.check-changes.outputs.version }}"
+            echo ""
+            echo "This is an automated edge build from the latest changes on the main branch."
+            echo ""
+            echo "### Recent Changes"
+          } > changelog.md
           git log --oneline --no-merges -10 --pretty=format:"- %s" >> changelog.md
-          echo "" >> changelog.md
-          echo "" >> changelog.md
-          echo "**Warning:** Edge builds are experimental and may contain unstable features." >> changelog.md
+          {
+            echo ""
+            echo ""
+            echo "**Warning:** Edge builds are experimental and may contain unstable features."
+          } >> changelog.md
 
       - name: Create checksums file
         run: |
           cd ./dist
-          cat *.sha256 > checksums.txt
+          cat ./*.sha256 > checksums.txt
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.check-changes.outputs.version }}
-          name: "Atlas (edge: ${{ needs.check-changes.outputs.version }})"
+          name: "Atlas Edge (${{ needs.check-changes.outputs.version }})"
           body_path: changelog.md
           draft: false
           prerelease: true
@@ -206,7 +211,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to sandbox GCS bucket
         uses: ./.github/actions/gcs-upload-sandbox
         with:
@@ -219,7 +224,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        
+
       - name: Upload to production GCS bucket
         uses: ./.github/actions/gcs-upload-production
         with:

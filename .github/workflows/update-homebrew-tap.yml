@@ -16,13 +16,13 @@ jobs:
         run: |
           TAG="${{ github.event.release.tag_name }}"
           if [[ "$TAG" == nightly-* ]]; then
-            echo "channel=nightly" >> $GITHUB_OUTPUT
+            echo "channel=nightly" >> "$GITHUB_OUTPUT"
           elif [[ "$TAG" == edge-* ]]; then
-            echo "channel=edge" >> $GITHUB_OUTPUT
+            echo "channel=edge" >> "$GITHUB_OUTPUT"
           else
-            echo "channel=stable" >> $GITHUB_OUTPUT
+            echo "channel=stable" >> "$GITHUB_OUTPUT"
           fi
-          echo "Detected channel: $(cat $GITHUB_OUTPUT | grep channel | cut -d= -f2)"
+          echo "Detected channel: $(grep channel "$GITHUB_OUTPUT" | cut -d= -f2)"
 
       - name: Trigger Homebrew tap auto-update
         uses: peter-evans/repository-dispatch@v3
