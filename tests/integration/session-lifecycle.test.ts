@@ -262,3 +262,124 @@ Deno.test({
     expect(session.progress()).toBeGreaterThanOrEqual(0);
   },
 });
+
+// Test 6: Multi-agent sequential execution completion behavior
+Deno.test({
+  name: "Multi-agent sequential execution should complete only after all agents finish",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // This integration test specifically verifies the bug fix for premature session completion
+    // in minimal supervision mode with sequential agent execution
+
+    const intent: SessionIntent = {
+      id: "test-sequential-completion",
+      signal: {
+        type: "sequential-test",
+        data: {
+          mode: "test",
+          agents_required: ["agent1", "agent2"],
+        },
+        metadata: { source: "integration-test" },
+      },
+      goals: [
+        "Execute first agent (agent1) completely",
+        "Pass results from agent1 to agent2",
+        "Execute second agent (agent2) completely",
+        "Complete session only after both agents finish",
+      ],
+      constraints: {
+        timeLimit: 10000, // 10 seconds max
+        supervision: "minimal", // Use minimal supervision to test the bug fix
+      },
+      executionHints: {
+        strategy: "sequential", // Sequential execution strategy
+        agentExecution: "wait-for-completion", // Wait for each agent before proceeding
+      },
+    };
+
+    const mockSignal = createMockSignal("sequential-test-signal", "test", "test");
+
+    const { session } = createTestSession(
+      "test-sequential-workspace",
+      {
+        triggers: [mockSignal],
+        callback: async (result) => {
+          // Verify that we only get called once, when the session is truly complete
+          expect(result).toBeDefined();
+          expect(result.agent_results).toBeDefined();
+
+          // Should have results from both agents
+          const agentResults = result.agent_results || [];
+          expect(agentResults.length).toBeGreaterThanOrEqual(2);
+
+          // Verify that we have results from both expected agents
+          const agent1Result = agentResults.find((r: any) => r.agent?.includes("agent1"));
+          const agent2Result = agentResults.find((r: any) => r.agent?.includes("agent2"));
+
+          expect(agent1Result).toBeDefined();
+          expect(agent2Result).toBeDefined();
+        },
+      },
+      undefined, // agents - will be created by the session
+      undefined, // workflows
+      undefined, // sources
+      intent,
+    );
+
+    // Verify session was created with correct intent
+    expect(session.intent?.id).toBe("test-sequential-completion");
+    expect(session.intent?.goals.length).toBe(4);
+    expect(session.intent?.constraints?.supervision).toBe("minimal");
+    expect(session.intent?.executionHints?.strategy).toBe("sequential");
+
+    // Track session state changes to verify proper completion behavior
+    const stateChanges: string[] = [];
+    let completionCount = 0;
+
+    // Monitor session state changes
+    const originalUpdateStatus = session.updateStatus.bind(session);
+    session.updateStatus = function (status: string) {
+      stateChanges.push(status);
+      if (status === "completed") {
+        completionCount++;
+
+        // Session should only complete once, and only after both agents
+        expect(completionCount).toBe(1);
+      }
+      return originalUpdateStatus(status);
+    };
+
+    // Start the session
+    const startTime = Date.now();
+    const sessionPromise = session.start();
+
+    // Allow initial processing time
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Verify session is not immediately completed (this would indicate the bug)
+    expect(session.status).not.toBe("completed");
+    expect(stateChanges).not.toContain("completed");
+
+    // Wait for session to complete naturally
+    await sessionPromise;
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    // Verify session completed properly
+    expect(session.status).toBe("completed");
+    expect(completionCount).toBe(1);
+    expect(stateChanges).toContain("completed");
+
+    // Session should have taken some time (not completed immediately)
+    // This ensures it actually waited for agents to execute
+    expect(duration).toBeGreaterThan(50); // At least 50ms to ensure real execution
+
+    // Verify final state
+    expect(session.progress()).toBe(1.0); // 100% complete
+
+    const summary = session.summarize();
+    expect(summary).toBeDefined();
+    expect(summary.status).toBe("completed");
+  },
+});

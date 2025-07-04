@@ -2262,6 +2262,16 @@ Respond with a structured plan.`;
   }
 
   // Evaluate execution progress using advanced reasoning
+  /**
+   * Helper method to get total number of agents planned for execution
+   */
+  private getTotalPlannedAgents(): number {
+    return this.executionPlan?.phases.reduce(
+      (sum, phase) => sum + phase.agents.length,
+      0,
+    ) || 0;
+  }
+
   async evaluateProgress(results: AgentResult[]): Promise<{
     isComplete: boolean;
     nextAction?: "continue" | "retry" | "adapt" | "escalate";
@@ -2269,15 +2279,33 @@ Respond with a structured plan.`;
   }> {
     // Skip expensive evaluation in minimal supervision mode
     if (this.supervisionLevel === SupervisionLevel.MINIMAL) {
-      // Simple check: if we have results and no errors, we're done
+      // Check for errors in results
       const hasError = results.some((r) =>
         !r.output ||
         (typeof r.output === "object" && "error" in r.output)
       );
+
+      // Check if all planned agents have executed
+      const totalAgentsInPlan = this.getTotalPlannedAgents();
+      const agentsExecuted = results.length;
+
+      // If not all agents have executed, session cannot be complete
+      if (agentsExecuted < totalAgentsInPlan) {
+        return {
+          isComplete: false,
+          nextAction: "continue",
+          feedback:
+            `Minimal supervision: ${agentsExecuted}/${totalAgentsInPlan} agents executed. Continuing with next agent.`,
+        };
+      }
+
+      // All agents executed - check for errors
       return {
-        isComplete: results.length > 0 && !hasError,
-        nextAction: "continue",
-        feedback: "Minimal supervision - basic completion check",
+        isComplete: !hasError,
+        nextAction: hasError ? "retry" : undefined,
+        feedback: hasError
+          ? "Minimal supervision - basic completion check (has errors)"
+          : "Minimal supervision - basic completion check (success)",
       };
     }
 
@@ -2362,10 +2390,7 @@ Respond with a structured plan.`;
     const evaluation = evaluationResult.plan;
 
     // Check execution count first
-    const totalAgentsInPlan = this.executionPlan?.phases.reduce(
-      (sum, phase) => sum + phase.agents.length,
-      0,
-    ) || 0;
+    const totalAgentsInPlan = this.getTotalPlannedAgents();
 
     const agentsExecuted = results.length;
 
@@ -2408,12 +2433,7 @@ Original Signal: ${this.sessionContext!.signal.id}
 Payload: ${JSON.stringify(this.sessionContext!.payload)}
 
 Execution Plan:
-- Total agents to execute: ${
-      this.executionPlan!.phases.reduce(
-        (sum, phase) => sum + phase.agents.length,
-        0,
-      )
-    }
+- Total agents to execute: ${this.getTotalPlannedAgents()}
 - Agents executed so far: ${results.length}
 
 Execution Results:
@@ -2463,10 +2483,7 @@ Provide a brief evaluation.`;
       );
 
       // First check: Have all agents from execution plan actually executed?
-      const totalAgentsInPlan = this.executionPlan!.phases.reduce(
-        (sum, phase) => sum + phase.agents.length,
-        0,
-      );
+      const totalAgentsInPlan = this.getTotalPlannedAgents();
       const agentsExecuted = results.length;
 
       // If not all agents have executed, session cannot be complete regardless of LLM response
@@ -2529,10 +2546,7 @@ Provide a brief evaluation.`;
     const resultsToUse = currentResults || this.executionResults;
 
     if (this.executionPlan && resultsToUse.length > 0) {
-      const totalTasks = this.executionPlan.phases.reduce(
-        (sum, phase) => sum + phase.agents.length,
-        0,
-      );
+      const totalTasks = this.getTotalPlannedAgents();
 
       this.logger.debug("Execution summary status calculation", {
         hasExecutionPlan: !!this.executionPlan,
