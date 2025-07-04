@@ -1185,7 +1185,65 @@ export class AtlasDaemon {
       }
     });
 
-    // (Moved above to be before itemId route)
+    // Create library item
+    this.app.post("/api/library", async (c) => {
+      try {
+        if (!this.libraryStorage) {
+          throw new Error("Library storage not initialized");
+        }
+
+        const itemData = await c.req.json();
+
+        // Validate required fields
+        if (!itemData.type) {
+          return c.json({ error: "type is required" }, 400);
+        }
+        if (!itemData.name) {
+          return c.json({ error: "name is required" }, 400);
+        }
+        if (!itemData.content) {
+          return c.json({ error: "content is required" }, 400);
+        }
+
+        // Generate ID and timestamps
+        const itemId = crypto.randomUUID();
+        const now = new Date().toISOString();
+
+        const libraryItem = {
+          id: itemId,
+          type: itemData.type,
+          name: itemData.name,
+          description: itemData.description || "",
+          content: itemData.content,
+          metadata: {
+            format: itemData.format || "markdown",
+            source: itemData.source || "agent",
+            session_id: itemData.session_id,
+            agent_ids: itemData.agent_ids || [],
+            ...itemData.metadata,
+          },
+          created_at: now,
+          updated_at: now,
+          tags: itemData.tags || [],
+          workspace_id: itemData.workspace_id,
+        };
+
+        await this.libraryStorage.storeItem(libraryItem);
+
+        return c.json({
+          success: true,
+          itemId,
+          message: `Library item '${itemData.name}' created`,
+          item: libraryItem,
+        });
+      } catch (error) {
+        return c.json({
+          error: `Failed to create library item: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
 
     // Delete library item
     this.app.delete("/api/library/:itemId", async (c) => {

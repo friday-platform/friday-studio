@@ -33,6 +33,33 @@ tools:
             ]
         timeout_ms: 30000
 
+      # Atlas Platform Integration - Library and Workspace Management
+      atlas-platform:
+        transport:
+          type: "stdio"
+          command: "deno"
+          args: [
+            "run",
+            "--allow-all",
+            "--unstable-broadcast-channel",
+            "--unstable-worker-options",
+            "--env-file",
+            "/Users/sara/Projects/atlas/src/cli.tsx",
+            "mcp",
+            "serve",
+          ]
+        capabilities:
+          tools:
+            allowed: [
+              "library_list",
+              "library_get",
+              "library_search",
+              "library_store",
+              "library_stats",
+              "library_templates",
+            ]
+        timeout_ms: 30000
+
 # =============================================================================
 # JOB DEFINITIONS - AUTOMATED AI DISCOVERY WORKFLOW
 # =============================================================================
@@ -203,6 +230,8 @@ agents:
     type: "llm"
     model: "claude-3-5-sonnet-20241022"
     purpose: "AI project analysis and trend summarization specialist"
+    tools:
+      mcp: ["atlas-platform"]
     max_steps: 8
     tool_choice: "auto"
     temperature: 0.4
@@ -264,8 +293,20 @@ agents:
         - Emerging technologies to track
         - Market opportunities identified
 
-        **Memory Storage**:
-        Store insights for historical tracking and pattern recognition across discovery sessions.
+        **Library Storage**:
+        After generating your analysis report, store it in the Atlas library using the library_store tool:
+
+        library_store({
+          type: "report",
+          name: "AI Agent Discovery Report - [Current Date]",
+          description: "Analysis of recently discovered AI agent repositories with trend insights",
+          content: "[Your complete markdown report content]",
+          format: "markdown",
+          tags: ["ai-discovery", "trend-analysis", "automated", "github-research"],
+          source: "agent"
+        });
+
+        This ensures your analysis is preserved in the library for historical tracking and future reference.
 
 # =============================================================================
 # SIGNAL CONFIGURATION - AUTOMATED AND MANUAL TRIGGERS

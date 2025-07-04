@@ -21,6 +21,12 @@ export interface PlatformMCPServerDependencies {
   atlasConfig?: AtlasConfig; // Optional - MCP server doesn't need local config
   daemonUrl?: string; // Default: http://localhost:8080
   logger: Logger;
+  // Workspace context for automatic injection
+  workspaceContext?: {
+    workspaceId?: string;
+    sessionId?: string;
+    agentId?: string;
+  };
 }
 
 export class PlatformMCPServer {
@@ -28,11 +34,17 @@ export class PlatformMCPServer {
   private dependencies: PlatformMCPServerDependencies;
   private daemonUrl: string;
   private logger: Logger;
+  private workspaceContext?: {
+    workspaceId?: string;
+    sessionId?: string;
+    agentId?: string;
+  };
 
   constructor(dependencies: PlatformMCPServerDependencies) {
     this.dependencies = dependencies;
     this.logger = dependencies.logger;
     this.daemonUrl = dependencies.daemonUrl || "http://localhost:8080";
+    this.workspaceContext = dependencies.workspaceContext;
     this.server = new McpServer({
       name: "atlas-platform",
       version: "1.0.0",
@@ -1126,6 +1138,148 @@ export class PlatformMCPServer {
       },
     );
 
+    /**
+     * MCP Tool: library_store
+     *
+     * Creates a new library item with comprehensive validation and metadata support.
+     * Routes through daemon API for consistent storage and access control.
+     *
+     * @example
+     * // Create a report item (workspace_id, session_id, agent_ids auto-injected)
+     * atlas.library_store({
+     *   type: "report",
+     *   name: "AI Agent Discovery Report - 2024-07-04",
+     *   description: "Analysis of recently discovered AI agent repositories",
+     *   content: "# AI Agent Discovery Report...",
+     *   format: "markdown",
+     *   tags: ["ai-discovery", "trend-analysis", "automated"]
+     * })
+     *
+     * @param type - Item type (required): "report", "session_archive", "template", "artifact", "user_upload"
+     * @param name - Human-readable name for the item (required, max 255 chars)
+     * @param description - Description of the item contents (optional, max 1000 chars)
+     * @param content - The actual content to store (required)
+     * @param format - Content format (optional, default: "markdown"): "markdown", "json", "html", "text", "binary"
+     * @param tags - Tags for categorization and search (optional, max 50 tags)
+     * @param workspace_id - Associated workspace ID (optional, auto-injected from context)
+     * @param session_id - Associated session ID (optional, auto-injected from context)
+     * @param agent_ids - Array of agent IDs that created this item (optional, auto-injected from context)
+     * @param source - Source of the item (optional, default: "agent"): "agent", "job", "user", "system"
+     * @param metadata - Additional metadata object (optional)
+     *
+     * @returns Creation result with item ID and success confirmation
+     * @throws {Error} Input validation errors for invalid parameters
+     * @throws {Error} Daemon API errors for server/storage issues
+     */
+    this.server.registerTool(
+      "library_store",
+      {
+        description: "Create a new library item through daemon API",
+        inputSchema: {
+          type: z.enum(["report", "session_archive", "template", "artifact", "user_upload"])
+            .describe("Type of library item to create"),
+          name: z.string().min(1).max(255)
+            .describe("Human-readable name for the item"),
+          description: z.string().max(1000).optional()
+            .describe("Description of the item contents"),
+          content: z.string().min(1)
+            .describe("The actual content to store"),
+          format: z.enum(["markdown", "json", "html", "text", "binary"]).default("markdown")
+            .describe("Content format"),
+          tags: z.array(z.string()).max(50).default([])
+            .describe("Tags for categorization and search"),
+          workspace_id: z.string().optional()
+            .describe("Associated workspace ID"),
+          session_id: z.string().optional()
+            .describe("Associated session ID"),
+          agent_ids: z.array(z.string()).default([])
+            .describe("Array of agent IDs that created this item"),
+          source: z.enum(["agent", "job", "user", "system"]).default("agent")
+            .describe("Source of the item"),
+          metadata: z.record(z.string(), z.any()).default({})
+            .describe("Additional metadata object"),
+        },
+      },
+      async ({
+        type,
+        name,
+        description,
+        content,
+        format = "markdown",
+        tags = [],
+        workspace_id,
+        session_id,
+        agent_ids = [],
+        source = "agent",
+        metadata = {},
+      }) => {
+        this.logger.info("MCP library_store called", {
+          type,
+          name,
+          format,
+          contentLength: content.length,
+          tagCount: tags.length,
+          workspace_id,
+          session_id,
+        });
+
+        try {
+          // Automatically inject workspace context if not provided
+          const contextualPayload = {
+            type,
+            name,
+            description,
+            content,
+            format,
+            tags,
+            workspace_id: workspace_id || this.workspaceContext?.workspaceId,
+            session_id: session_id || this.workspaceContext?.sessionId,
+            agent_ids: agent_ids.length > 0
+              ? agent_ids
+              : (this.workspaceContext?.agentId ? [this.workspaceContext.agentId] : []),
+            source,
+            metadata,
+          };
+
+          const response = await this.fetchWithTimeout(`${this.daemonUrl}/api/library`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(contextualPayload),
+          });
+
+          const result = await this.handleDaemonResponse(response, "library_store");
+
+          this.logger.info("MCP library_store response", {
+            success: result.success,
+            itemId: result.itemId,
+            name: result.item?.name,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP library_store failed", { name, type, error });
+          throw error;
+        }
+      },
+    );
+
     // Platform jobs are handled by the daemon, not the MCP server
   }
 
@@ -1752,6 +1906,7 @@ export class PlatformMCPServer {
       "library_search",
       "library_stats",
       "library_templates",
+      "library_store",
       // Platform jobs are handled by the daemon
     ];
   }
