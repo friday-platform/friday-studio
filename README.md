@@ -32,15 +32,18 @@ autonomous agents in a secure, auditable, and scalable environment.
 Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **macOS:**
+
 - Download the `.pkg` installer (recommended) - supports both Intel and Apple Silicon
 - Or download the `.tar.gz` archive and extract to `/usr/local/bin/`
 
 **Linux:**
+
 - Download the `.tar.gz` archive for your architecture (amd64 or arm64)
 - Extract and move to `/usr/local/bin/`
 
 **Windows:**
-- Download the `.msi` installer (recommended) 
+
+- Download the `.msi` installer (recommended)
 - Or download the `.zip` archive and add to PATH
 
 All binaries are signed and notarized for security.
