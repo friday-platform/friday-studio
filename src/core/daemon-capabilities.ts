@@ -105,7 +105,6 @@ export class DaemonCapabilityRegistry {
 
           for (let i = 0; i < words.length; i++) {
             content += (i > 0 ? " " : "") + words[i];
-            console.log(`[stream_reply] Streaming word ${i + 1}/${words.length}: "${content}"`);
 
             const chunkEvent = {
               type: "message_chunk",
@@ -120,7 +119,7 @@ export class DaemonCapabilityRegistry {
             };
 
             // Use HTTP to emit SSE event via daemon API
-            console.log(`[stream_reply] Emitting chunk via HTTP API`);
+
             try {
               const response = await fetch(`http://localhost:8080/api/stream/${stream_id}/emit`, {
                 method: "POST",

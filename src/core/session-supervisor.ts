@@ -98,6 +98,7 @@ export interface TempestAgentConfig {
   agent: string; // Catalog reference
   version: string;
   config?: Record<string, any>;
+  tools?: string[]; // List of daemon capability tools
 }
 
 export interface LLMAgentConfig {

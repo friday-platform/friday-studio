@@ -1135,6 +1135,8 @@ export class WorkspaceCapabilityRegistry {
    */
   static filterCapabilitiesForAgent(filter: CapabilityFilter): WorkspaceCapability[] {
     this.initialize();
+    // Initialize daemon capabilities as well
+    DaemonCapabilityRegistry.initialize();
 
     const grantedCapabilities: WorkspaceCapability[] = [];
     const allTools = [
@@ -1148,7 +1150,11 @@ export class WorkspaceCapabilityRegistry {
     console.log(`[DEBUG] Agent config:`, filter.agentConfig);
     console.log(`[DEBUG] Granted tools:`, filter.grantedTools);
     console.log(`[DEBUG] All tools combined:`, allTools);
-    console.log(`[DEBUG] Available capabilities:`, Array.from(this.capabilities.keys()));
+    console.log(`[DEBUG] Available workspace capabilities:`, Array.from(this.capabilities.keys()));
+    console.log(
+      `[DEBUG] Available daemon capabilities:`,
+      DaemonCapabilityRegistry.getAllCapabilities().map((c) => c.id),
+    );
 
     for (const tool of allTools) {
       console.log(`[DEBUG] Checking tool: ${tool}`);
