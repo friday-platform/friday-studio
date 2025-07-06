@@ -314,6 +314,39 @@ export class WorkspaceCapabilityRegistry {
               valid: result.valid,
               errors: result.errors || [],
             };
+
+            // Add helpful error messages for common mistakes
+            if (!validationStatus.valid && validationStatus.errors.length > 0) {
+              const errorMessages = validationStatus.errors.map((e) =>
+                e.message || "Unknown error"
+              );
+
+              // Check for common mistakes
+              if (errorMessages.some((msg) => msg.includes("agents") && msg.includes("array"))) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: agents must be an object/record with agent IDs as keys, not an array. Example: agents: { 'agent-name': { type: 'llm', ... } }",
+                });
+              }
+
+              if (
+                errorMessages.some((msg) =>
+                  msg.includes("flows") || msg.includes("nodes") || msg.includes("edges")
+                )
+              ) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: Atlas uses signals→jobs→agents architecture. Remove 'flows', 'nodes', and 'edges' - use 'jobs' with 'execution.agents' instead.",
+                });
+              }
+
+              if (errorMessages.some((msg) => msg.includes("system_prompt"))) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: Use 'prompts.system' instead of 'system_prompt' for agent prompts.",
+                });
+              }
+            }
           }
 
           // Send progress update if response channel available
@@ -836,7 +869,7 @@ export class WorkspaceCapabilityRegistry {
     this.registerCapability({
       id: "list_session_drafts",
       name: "List Session Drafts",
-      description: "List all draft workspaces for the current session",
+      description: "List all draft workspaces for the current session or conversation",
       category: "workspace",
       inputSchema: {
         type: "object",
@@ -846,7 +879,18 @@ export class WorkspaceCapabilityRegistry {
       implementation: async (context) => {
         try {
           const adapter = await getDraftStorageAdapter();
-          const drafts = await adapter.getSessionDrafts(context.sessionId);
+
+          // First try to get conversation drafts if conversationId is available
+          let drafts = [];
+          if (context.conversationId) {
+            const conversationDrafts = await adapter.getConversationDrafts(context.conversationId);
+            drafts = conversationDrafts;
+          }
+
+          // If no conversation drafts found, try session drafts
+          if (drafts.length === 0) {
+            drafts = await adapter.getSessionDrafts(context.sessionId);
+          }
 
           return {
             success: true,
@@ -858,6 +902,7 @@ export class WorkspaceCapabilityRegistry {
               agentCount: Object.keys(d.config.agents || {}).length,
               jobCount: Object.keys(d.config.jobs || {}).length,
             })),
+            searchMethod: context.conversationId && drafts.length > 0 ? "conversation" : "session",
           };
         } catch (error) {
           return {
@@ -1135,6 +1180,8 @@ export class WorkspaceCapabilityRegistry {
    */
   static filterCapabilitiesForAgent(filter: CapabilityFilter): WorkspaceCapability[] {
     this.initialize();
+    // Initialize daemon capabilities as well
+    DaemonCapabilityRegistry.initialize();
 
     const grantedCapabilities: WorkspaceCapability[] = [];
     const allTools = [
@@ -1148,7 +1195,11 @@ export class WorkspaceCapabilityRegistry {
     console.log(`[DEBUG] Agent config:`, filter.agentConfig);
     console.log(`[DEBUG] Granted tools:`, filter.grantedTools);
     console.log(`[DEBUG] All tools combined:`, allTools);
-    console.log(`[DEBUG] Available capabilities:`, Array.from(this.capabilities.keys()));
+    console.log(`[DEBUG] Available workspace capabilities:`, Array.from(this.capabilities.keys()));
+    console.log(
+      `[DEBUG] Available daemon capabilities:`,
+      DaemonCapabilityRegistry.getAllCapabilities().map((c) => c.id),
+    );
 
     for (const tool of allTools) {
       console.log(`[DEBUG] Checking tool: ${tool}`);

@@ -465,6 +465,7 @@ export class ConfigLoader {
           agent: workspaceAgentConfig.agent!,
           version: workspaceAgentConfig.version!,
           config: workspaceAgentConfig.config,
+          tools: workspaceAgentConfig.tools,
         } as TempestAgentConfig;
 
       case "llm": {

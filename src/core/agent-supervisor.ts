@@ -607,19 +607,31 @@ Focus on safety, efficiency, and reliability.`;
         }
       }
     } else if (agent.type === "tempest") {
-      const tempestConfig = agent.config;
+      const tempestConfig = agent.config as TempestAgentConfig;
       environment.agent_config.parameters.agent = tempestConfig.agent;
       environment.agent_config.parameters.version = tempestConfig.version;
+      // Ensure tools are passed for tempest agents
+      if (tempestConfig.tools && tempestConfig.tools.length > 0) {
+        environment.agent_config.tools = tempestConfig.tools;
+      }
     }
 
     // Add MCP server configurations for worker access
     environment.mcp_server_configs = this.prepareAgentMcpServerConfigs(agent);
 
     // Add workspace tools metadata if agent has tools configured
-    const llmConfig = agent.config as LLMAgentConfig;
-    this.log(`Agent ${agent.id} config tools: ${JSON.stringify(llmConfig.tools)}`, "debug");
-    if (llmConfig.tools && llmConfig.tools.length > 0) {
-      const workspaceToolsMetadata = this.prepareWorkspaceToolsMetadata(agent, llmConfig.tools);
+    let agentTools: string[] | undefined;
+    if (agent.type === "llm") {
+      const llmConfig = agent.config as LLMAgentConfig;
+      agentTools = llmConfig.tools;
+    } else if (agent.type === "tempest") {
+      const tempestConfig = agent.config as TempestAgentConfig;
+      agentTools = tempestConfig.tools;
+    }
+
+    this.log(`Agent ${agent.id} config tools: ${JSON.stringify(agentTools)}`, "debug");
+    if (agentTools && agentTools.length > 0) {
+      const workspaceToolsMetadata = this.prepareWorkspaceToolsMetadata(agent, agentTools);
       if (workspaceToolsMetadata) {
         environment.workspace_tools_metadata = workspaceToolsMetadata;
         this.log(
