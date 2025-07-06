@@ -126,6 +126,8 @@ export interface AgentEnvironment {
   mcp_server_configs?: Record<string, any>;
   // Workspace path for environment loading
   workspace_path?: string;
+  // Workspace tools metadata for capabilities
+  workspace_tools_metadata?: Record<string, any>;
 }
 
 // Agent worker instance
@@ -607,12 +609,18 @@ Focus on safety, efficiency, and reliability.`;
         }
       }
     } else if (agent.type === "tempest") {
-      const tempestConfig = agent.config as TempestAgentConfig;
-      environment.agent_config.parameters.agent = tempestConfig.agent;
-      environment.agent_config.parameters.version = tempestConfig.version;
+      // Access tempest-specific fields directly from agent.config
+      if (agent.config.agent) {
+        environment.agent_config.parameters.agent = agent.config.agent;
+      }
+      if (agent.config.version) {
+        environment.agent_config.parameters.version = agent.config.version;
+      }
       // Ensure tools are passed for tempest agents
-      if (tempestConfig.tools && tempestConfig.tools.length > 0) {
-        environment.agent_config.tools = tempestConfig.tools;
+      if (
+        agent.config.tools && Array.isArray(agent.config.tools) && agent.config.tools.length > 0
+      ) {
+        environment.agent_config.tools = agent.config.tools;
       }
     }
 
@@ -625,8 +633,7 @@ Focus on safety, efficiency, and reliability.`;
       const llmConfig = agent.config as LLMAgentConfig;
       agentTools = llmConfig.tools;
     } else if (agent.type === "tempest") {
-      const tempestConfig = agent.config as TempestAgentConfig;
-      agentTools = tempestConfig.tools;
+      agentTools = agent.config.tools;
     }
 
     this.log(`Agent ${agent.id} config tools: ${JSON.stringify(agentTools)}`, "debug");
@@ -1523,7 +1530,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
   // Handle workspace capability requests from agent workers
   private async handleWorkspaceCapabilityRequest(
-    instance: AgentInstance,
+    instance: AgentWorkerInstance,
     envelope: AtlasMessageEnvelope,
   ): Promise<void> {
     const payload = envelope.payload as {
@@ -1551,6 +1558,7 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
           agentId: payload.agentId,
           workspaceId: this.workspaceId || "",
           conversationId: payload.args.conversationId,
+          daemon: this.getDaemonInstance(),
         };
 
         console.log(
@@ -1621,16 +1629,6 @@ Provide validation assessment with quality score (0-1) and any issues found.`;
 
       instance.worker.postMessage(errorResponse);
     }
-  }
-
-  // Helper method to create message source for responses
-  private createMessageSource() {
-    return {
-      workerId: this.id,
-      workerType: "agent-supervisor",
-      sessionId: this.sessionId,
-      workspaceId: this.workspaceId,
-    };
   }
 
   /**

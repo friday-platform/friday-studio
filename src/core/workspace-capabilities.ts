@@ -881,7 +881,7 @@ export class WorkspaceCapabilityRegistry {
           const adapter = await getDraftStorageAdapter();
 
           // First try to get conversation drafts if conversationId is available
-          let drafts = [];
+          let drafts: any[] = [];
           if (context.conversationId) {
             const conversationDrafts = await adapter.getConversationDrafts(context.conversationId);
             drafts = conversationDrafts;

@@ -226,7 +226,9 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
       }
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) {
-        console.warn(`Failed to load vector index: ${error.message}`);
+        console.warn(
+          `Failed to load vector index: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       // File doesn't exist or is corrupted, start with empty index
     }

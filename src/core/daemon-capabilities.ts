@@ -198,7 +198,10 @@ export class DaemonCapabilityRegistry {
           };
         } catch (error) {
           console.error(`[stream_reply] ERROR: Stream operation failed:`, error);
-          console.error(`[stream_reply] Error stack:`, error.stack);
+          console.error(
+            `[stream_reply] Error stack:`,
+            error instanceof Error ? error.stack : "No stack trace",
+          );
           return {
             success: false,
             error: "stream_send_failed",

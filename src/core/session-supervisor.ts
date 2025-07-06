@@ -1769,7 +1769,7 @@ Create a well-formatted task following the specified format requirements.`;
       defaultMethod: "react", // Good default for session coordination
       allowLLMSelection: false, // Use heuristics for performance
     });
-    this.log("Reasoning engine initialized", {
+    this.log("Reasoning engine initialized", "info", {
       availableMethods: this.reasoningEngine.getAvailableMethods(),
     });
   }
@@ -1802,7 +1802,7 @@ Create a well-formatted task following the specified format requirements.`;
 
     // Get reasoning result
     const reasoning = await this.reasoningEngine.reason(reasoningContext);
-    this.log("Reasoning completed", {
+    this.log("Reasoning completed", "info", {
       method: reasoning.method,
       confidence: reasoning.confidence,
       requiredCapabilities: reasoning.requiredCapabilities,
@@ -1928,7 +1928,7 @@ Create a well-formatted task following the specified format requirements.`;
     const keywords = step.description.toLowerCase();
     return this.sessionContext?.availableAgents.find((agent) => {
       const agentText = `${agent.id} ${agent.purpose || ""}`.toLowerCase();
-      return keywords.split(" ").some((keyword) => agentText.includes(keyword));
+      return keywords.split(" ").some((keyword: string) => agentText.includes(keyword));
     });
   }
 

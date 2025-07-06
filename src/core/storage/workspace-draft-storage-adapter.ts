@@ -310,8 +310,8 @@ export class WorkspaceDraftStorageAdapter {
           type: (agentType as "llm" | "tempest" | "remote") || "llm",
           model: config.model as string || "claude-3-5-haiku-20241022",
           purpose: agentPurpose,
-          ...(config.system_prompt && { prompts: { system: config.system_prompt as string } }),
-          ...(config.tools && { tools: { mcp: config.tools as string[] } }),
+          ...(config.system_prompt ? { prompts: { system: config.system_prompt as string } } : {}),
+          ...(config.tools ? { tools: { mcp: config.tools as string[] } } : {}),
         };
 
         draft.config.agents[agentId] = agentConfig;
