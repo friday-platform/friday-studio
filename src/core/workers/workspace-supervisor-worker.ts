@@ -62,18 +62,35 @@ type WorkspaceWorkerMessage = SetWorkspaceData | Record<string, unknown>;
 const sessionWorkerMachine = createMachine({
   id: "sessionWorker",
   initial: "spawning",
-  context: ({ input }: { input: any }) => ({
+  types: {
+    context: {} as {
+      sessionId: string;
+      signal: any;
+      payload: any;
+      workerId: string;
+      worker: Worker | null;
+      port: MessagePort | null;
+    },
+    input: {} as {
+      sessionId: string;
+      signal: any;
+      payload: any;
+      workerId: string;
+    },
+  },
+  context: ({ input }) => ({
     sessionId: input.sessionId,
     signal: input.signal,
     payload: input.payload,
     workerId: input.workerId,
-    worker: null as Worker | null,
-    port: null as MessagePort | null,
+    worker: null,
+    port: null,
   }),
   states: {
     spawning: {
       invoke: {
-        src: fromPromise(async ({ context }: { context: any }) => {
+        src: fromPromise(async ({ input }) => {
+          const context = input;
           // Create session worker with permissions to use BroadcastChannel
           const sessionWorker = new Worker(
             new URL("./session-supervisor-worker.ts", import.meta.url).href,
@@ -97,6 +114,7 @@ const sessionWorkerMachine = createMachine({
             sessionId: context.sessionId,
           };
         }),
+        input: ({ context }) => context,
         onDone: {
           target: "processing",
           actions: assign({
@@ -137,11 +155,13 @@ const sessionWorkerMachine = createMachine({
     },
     terminating: {
       invoke: {
-        src: fromPromise(async ({ context }: { context: any }) => {
+        src: fromPromise(async ({ input }) => {
+          const context = input;
           if (context.worker) {
             context.worker.terminate();
           }
         }),
+        input: ({ context }) => context,
         onDone: "terminated",
       },
     },

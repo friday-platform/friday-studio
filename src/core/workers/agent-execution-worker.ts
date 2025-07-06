@@ -904,10 +904,14 @@ class AgentExecutionWorker {
         }
 
         // Add workspace tools to the input context
+        const inputObj = typeof request.input === "object" && request.input !== null
+          ? request.input as Record<string, unknown>
+          : {};
+        const existingContext = inputObj._atlas_context as Record<string, unknown> || {};
         const enrichedInput = {
-          ...request.input,
+          ...inputObj,
           _atlas_context: {
-            ...(request.input as any)._atlas_context,
+            ...existingContext,
             workspace_tools: workspaceTools,
           },
         };

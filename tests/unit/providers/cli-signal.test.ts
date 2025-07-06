@@ -6,7 +6,10 @@
 
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { CliSignalProvider } from "../../../src/core/providers/builtin/cli-signal.ts";
-import type { CliSignalConfig } from "../../../src/core/providers/builtin/cli-signal.ts";
+import type {
+  CliSignalConfig,
+  CliTriggerData,
+} from "../../../src/core/providers/builtin/cli-signal.ts";
 
 Deno.test("CliSignalProvider - initialization", async (t) => {
   await t.step("should initialize with valid CLI config", () => {
@@ -245,7 +248,7 @@ Deno.test("CliSignalProvider - command validation", async (t) => {
     };
 
     try {
-      await provider.processTrigger(triggerData);
+      await provider.processTrigger(triggerData as unknown as CliTriggerData);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("args must be array"), true);
@@ -267,7 +270,7 @@ Deno.test("CliSignalProvider - command validation", async (t) => {
     };
 
     try {
-      await provider.processTrigger(triggerData);
+      await provider.processTrigger(triggerData as unknown as CliTriggerData);
       throw new Error("Should have thrown validation error");
     } catch (error) {
       assertEquals(error.message.includes("flags must be object"), true);

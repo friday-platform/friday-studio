@@ -155,7 +155,6 @@ export async function triggerSignal(options: TriggerSignalOptions): Promise<Trig
 
     return {
       success: true,
-      sessionId: result.sessionId,
       status: result.status,
       duration,
       workspaceId: options.workspaceId,

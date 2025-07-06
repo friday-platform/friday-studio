@@ -1,5 +1,5 @@
 import { assertEquals, assertExists } from "@std/assert";
-import { buildLibraryQueryParams, fetchLibraryItems } from "./fetcher.ts";
+import { buildLibraryQueryParams, fetchLibraryItems, type LibraryFetchError } from "./fetcher.ts";
 import { AtlasClient } from "@atlas/client";
 
 // Helper to create a mock AtlasClient
@@ -164,10 +164,11 @@ Deno.test("fetchLibraryItems - should handle connection refused error", async ()
     assertEquals(result.success, false);
 
     if (!result.success) {
-      assertEquals(result.reason, "server_not_running");
-      assertExists(result.error);
+      const errorResult = result as LibraryFetchError;
+      assertEquals(errorResult.reason, "server_not_running");
+      assertExists(errorResult.error);
       assertEquals(
-        result.error,
+        errorResult.error,
         "Cannot connect to server on port 8080. Make sure the workspace server is running.",
       );
     }
@@ -189,8 +190,9 @@ Deno.test("fetchLibraryItems - should handle timeout error", async () => {
     assertEquals(result.success, false);
 
     if (!result.success) {
-      assertEquals(result.reason, "network_error");
-      assertEquals(result.error, "Request timed out. Server may be unresponsive.");
+      const errorResult = result as LibraryFetchError;
+      assertEquals(errorResult.reason, "network_error");
+      assertEquals(errorResult.error, "Request timed out. Server may be unresponsive.");
     }
   } finally {
     globalThis.getAtlasClient = originalGetAtlasClient;
@@ -274,8 +276,9 @@ Deno.test("fetchLibraryItems - should handle generic errors", async () => {
     assertEquals(result.success, false);
 
     if (!result.success) {
-      assertEquals(result.reason, "network_error");
-      assertEquals(result.error, "Unexpected error occurred");
+      const errorResult = result as LibraryFetchError;
+      assertEquals(errorResult.reason, "network_error");
+      assertEquals(errorResult.error, "Unexpected error occurred");
     }
   } finally {
     globalThis.getAtlasClient = originalGetAtlasClient;
