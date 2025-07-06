@@ -185,6 +185,7 @@ export class ConversationAgent extends BaseAgent {
             systemPrompt: this.config.system_prompt,
             temperature: this.config.temperature || 0.7,
             maxTokens: this.config.max_tokens || 4000,
+            timeout: 120000, // 2 minutes timeout for claude-sonnet-4
             tools: workspaceTools, // Pass workspace capability tools
             operationContext: {
               operation: "conversation_agent",

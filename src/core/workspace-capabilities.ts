@@ -314,6 +314,39 @@ export class WorkspaceCapabilityRegistry {
               valid: result.valid,
               errors: result.errors || [],
             };
+
+            // Add helpful error messages for common mistakes
+            if (!validationStatus.valid && validationStatus.errors.length > 0) {
+              const errorMessages = validationStatus.errors.map((e) =>
+                e.message || "Unknown error"
+              );
+
+              // Check for common mistakes
+              if (errorMessages.some((msg) => msg.includes("agents") && msg.includes("array"))) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: agents must be an object/record with agent IDs as keys, not an array. Example: agents: { 'agent-name': { type: 'llm', ... } }",
+                });
+              }
+
+              if (
+                errorMessages.some((msg) =>
+                  msg.includes("flows") || msg.includes("nodes") || msg.includes("edges")
+                )
+              ) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: Atlas uses signals→jobs→agents architecture. Remove 'flows', 'nodes', and 'edges' - use 'jobs' with 'execution.agents' instead.",
+                });
+              }
+
+              if (errorMessages.some((msg) => msg.includes("system_prompt"))) {
+                validationStatus.errors.push({
+                  message:
+                    "HINT: Use 'prompts.system' instead of 'system_prompt' for agent prompts.",
+                });
+              }
+            }
           }
 
           // Send progress update if response channel available

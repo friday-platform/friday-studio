@@ -90,17 +90,11 @@ export class DaemonCapabilityRegistry {
       ) => {
         // Use HTTP to emit SSE events via daemon API
         try {
-          console.log(
-            `[stream_reply] START: Streaming message for stream ${stream_id}: "${message}"`,
-          );
-
           // Generate messageId for this response
           const messageId = crypto.randomUUID();
-          console.log(`[stream_reply] Generated messageId: ${messageId}`);
 
           // Stream the message word-by-word for realistic typing feel
           const words = message.split(" ");
-          console.log(`[stream_reply] Will stream ${words.length} words`);
           let content = "";
 
           for (let i = 0; i < words.length; i++) {
@@ -130,9 +124,7 @@ export class DaemonCapabilityRegistry {
               if (!response.ok) {
                 throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
               }
-              console.log(`[stream_reply] Chunk emitted successfully`);
             } catch (emitError) {
-              console.error(`[stream_reply] Failed to emit SSE chunk:`, emitError);
               throw emitError;
             }
 
@@ -140,11 +132,8 @@ export class DaemonCapabilityRegistry {
             await new Promise((resolve) => setTimeout(resolve, 25));
           }
 
-          console.log(`[stream_reply] Finished streaming words`);
-
           // Send transparency/metadata if provided
           if (metadata) {
-            console.log(`[stream_reply] Sending transparency metadata:`, metadata);
             const transparencyEvent = {
               type: "transparency",
               data: metadata,
@@ -163,9 +152,7 @@ export class DaemonCapabilityRegistry {
               if (!response.ok) {
                 throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
               }
-              console.log(`[stream_reply] Transparency event emitted successfully`);
             } catch (emitError) {
-              console.error(`[stream_reply] Failed to emit transparency event:`, emitError);
               throw emitError;
             }
           }
@@ -218,6 +205,8 @@ export class DaemonCapabilityRegistry {
             message: error instanceof Error ? error.message : String(error),
             conversationId,
             stream_id,
+            details:
+              "Failed to send streaming reply. This might be due to connection issues or invalid stream ID.",
           };
         }
       },
