@@ -69,8 +69,10 @@ class MemoryAtomicOperation implements AtomicOperation {
       return true;
     } catch (error) {
       throw new KVTransactionError(
-        `Failed to commit atomic operation: ${error.message}`,
-        error,
+        `Failed to commit atomic operation: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }

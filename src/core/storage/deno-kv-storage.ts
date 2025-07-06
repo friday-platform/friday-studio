@@ -1,3 +1,5 @@
+/// <reference lib="deno.unstable" />
+
 /**
  * Deno KV Storage Implementation
  *
@@ -46,8 +48,10 @@ class DenoKVAtomicOperation implements AtomicOperation {
       return result.ok;
     } catch (error) {
       throw new KVTransactionError(
-        `Failed to commit atomic operation: ${error.message}`,
-        error,
+        `Failed to commit atomic operation: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -80,10 +84,10 @@ export class DenoKVStorage implements KVStorage {
       this.kv = await Deno.openKv(this.path);
     } catch (error) {
       throw new KVConnectionError(
-        `Failed to initialize Deno KV storage at ${
-          this.path || "default location"
-        }: ${error.message}`,
-        error,
+        `Failed to initialize Deno KV storage at ${this.path || "default location"}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -98,9 +102,11 @@ export class DenoKVStorage implements KVStorage {
       return result.value;
     } catch (error) {
       throw new KVStorageError(
-        `Failed to get key [${key.join(", ")}]: ${error.message}`,
+        `Failed to get key [${key.join(", ")}]: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "GET_FAILED",
-        error,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -114,9 +120,11 @@ export class DenoKVStorage implements KVStorage {
       await this.kv.set(key, value);
     } catch (error) {
       throw new KVStorageError(
-        `Failed to set key [${key.join(", ")}]: ${error.message}`,
+        `Failed to set key [${key.join(", ")}]: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "SET_FAILED",
-        error,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -130,9 +138,11 @@ export class DenoKVStorage implements KVStorage {
       await this.kv.delete(key);
     } catch (error) {
       throw new KVStorageError(
-        `Failed to delete key [${key.join(", ")}]: ${error.message}`,
+        `Failed to delete key [${key.join(", ")}]: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "DELETE_FAILED",
-        error,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -154,9 +164,11 @@ export class DenoKVStorage implements KVStorage {
       }
     } catch (error) {
       throw new KVStorageError(
-        `Failed to list entries with prefix [${prefix.join(", ")}]: ${error.message}`,
+        `Failed to list entries with prefix [${prefix.join(", ")}]: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "LIST_FAILED",
-        error,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -180,7 +192,7 @@ export class DenoKVStorage implements KVStorage {
             events.push({
               key: entry.key as string[],
               value: entry.value as T,
-              versionstamp: entry.versionstamp,
+              versionstamp: entry.versionstamp ?? undefined,
             });
           }
         }
@@ -189,9 +201,11 @@ export class DenoKVStorage implements KVStorage {
       }
     } catch (error) {
       throw new KVStorageError(
-        `Failed to watch prefix [${prefix.join(", ")}]: ${error.message}`,
+        `Failed to watch prefix [${prefix.join(", ")}]: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         "WATCH_FAILED",
-        error,
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -257,7 +271,7 @@ export class DenoKVStorage implements KVStorage {
         totalKeys: 0,
         totalSize: 0,
         isConnected: false,
-        lastError: error.message,
+        lastError: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -269,9 +283,9 @@ export class DenoKVStorage implements KVStorage {
         this.kv = null;
       } catch (error) {
         throw new KVStorageError(
-          `Failed to close storage: ${error.message}`,
+          `Failed to close storage: ${error instanceof Error ? error.message : String(error)}`,
           "CLOSE_FAILED",
-          error,
+          error instanceof Error ? error : new Error(String(error)),
         );
       }
     }

@@ -330,7 +330,7 @@ Deno.test("TimerSignalProvider Sync - storage persistence during concurrent oper
   const finalStorageState = await storage.get(["timer_signals", "persistence-test"]);
 
   // This test will fail if storage operations are not atomic and cause corruption
-  if (finalStorageState && typeof finalStorageState === "object") {
+  if (finalStorageState && typeof finalStorageState === "object" && "id" in finalStorageState) {
     assertExists(finalStorageState.id, "Stored state should have ID");
     assertEquals(finalStorageState.id, "persistence-test", "Stored state should have correct ID");
   }
@@ -343,7 +343,7 @@ Deno.test("TimerSignalProvider Sync - rapid setup/teardown cycles should not lea
 
   // Perform rapid setup/teardown cycles
   for (let cycle = 0; cycle < 5; cycle++) {
-    const providers = [];
+    const providers: TimerSignalProvider[] = [];
 
     // Setup all providers
     for (const config of configs) {

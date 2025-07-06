@@ -7,7 +7,7 @@ import type { HealthStatus, IProvider, ProviderState } from "../types.ts";
 import { ProviderStatus, ProviderType } from "../types.ts";
 import { logger } from "../../../utils/logger.ts";
 import type { KVStorage } from "../../storage/kv-storage.ts";
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 
 export interface TimerSignalConfig {
   id: string;
@@ -76,7 +76,7 @@ export class TimerSignalProvider implements IProvider {
 
     try {
       // Validate cron expression
-      cronParser.parseExpression(config.schedule);
+      CronExpressionParser.parse(config.schedule);
     } catch (error) {
       throw new Error(
         `Invalid cron expression '${config.schedule}': ${
@@ -261,7 +261,7 @@ export class TimerSignalProvider implements IProvider {
 
     try {
       const timezone = this.config.timezone || "UTC";
-      const cronExpression = cronParser.parseExpression(this.config.schedule, {
+      const cronExpression = CronExpressionParser.parse(this.config.schedule, {
         currentDate: new Date(),
         tz: timezone,
       });
@@ -283,10 +283,7 @@ export class TimerSignalProvider implements IProvider {
         this.cronInterval = undefined;
       }
 
-      // Don't schedule if disabled during the process
-      if (this.state.status === ProviderStatus.DISABLED) {
-        return;
-      }
+      // The status might have changed during the async operations above
 
       // Schedule the next execution
       this.cronInterval = setTimeout(async () => {
@@ -304,10 +301,9 @@ export class TimerSignalProvider implements IProvider {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      if (this.state.status !== ProviderStatus.DISABLED) {
-        this.state.status = ProviderStatus.ERROR;
-        this.state.error = error instanceof Error ? error.message : String(error);
-      }
+      // Only set error status if not already disabled
+      this.state.status = ProviderStatus.ERROR;
+      this.state.error = error instanceof Error ? error.message : String(error);
     }
   }
 
@@ -403,7 +399,7 @@ export class TimerSignalProvider implements IProvider {
 
       // Calculate next run for the signal data
       try {
-        const cronExpression = cronParser.parseExpression(this.config.schedule, {
+        const cronExpression = CronExpressionParser.parse(this.config.schedule, {
           currentDate: new Date(),
           tz: this.config.timezone || "UTC",
         });

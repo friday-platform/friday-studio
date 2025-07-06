@@ -62,7 +62,7 @@ Deno.test("Timer Signal - Cron Expression Parsing", async (t) => {
     } catch (error) {
       errorThrown = true;
       assertEquals(
-        error.message.includes("Invalid cron expression"),
+        error instanceof Error && error.message.includes("Invalid cron expression"),
         true,
         "Should throw invalid cron expression error",
       );
