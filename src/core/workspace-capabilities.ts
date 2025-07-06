@@ -869,7 +869,7 @@ export class WorkspaceCapabilityRegistry {
     this.registerCapability({
       id: "list_session_drafts",
       name: "List Session Drafts",
-      description: "List all draft workspaces for the current session",
+      description: "List all draft workspaces for the current session or conversation",
       category: "workspace",
       inputSchema: {
         type: "object",
@@ -879,7 +879,18 @@ export class WorkspaceCapabilityRegistry {
       implementation: async (context) => {
         try {
           const adapter = await getDraftStorageAdapter();
-          const drafts = await adapter.getSessionDrafts(context.sessionId);
+
+          // First try to get conversation drafts if conversationId is available
+          let drafts = [];
+          if (context.conversationId) {
+            const conversationDrafts = await adapter.getConversationDrafts(context.conversationId);
+            drafts = conversationDrafts;
+          }
+
+          // If no conversation drafts found, try session drafts
+          if (drafts.length === 0) {
+            drafts = await adapter.getSessionDrafts(context.sessionId);
+          }
 
           return {
             success: true,
@@ -891,6 +902,7 @@ export class WorkspaceCapabilityRegistry {
               agentCount: Object.keys(d.config.agents || {}).length,
               jobCount: Object.keys(d.config.jobs || {}).length,
             })),
+            searchMethod: context.conversationId && drafts.length > 0 ? "conversation" : "session",
           };
         } catch (error) {
           return {

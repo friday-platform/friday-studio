@@ -129,7 +129,7 @@ export class DaemonCapabilityRegistry {
             }
 
             // Small delay for realistic typing feel
-            await new Promise((resolve) => setTimeout(resolve, 25));
+            // await new Promise((resolve) => setTimeout(resolve, 25));
           }
 
           // Send transparency/metadata if provided
