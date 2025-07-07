@@ -6,7 +6,7 @@
  * this could explain why cron jobs stop running.
  */
 
-import { assertEquals } from "@std/assert";
+import { assert, assertEquals } from "@std/assert";
 import { CronManager, type CronTimerConfig } from "../mod.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
 
@@ -44,7 +44,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     let callbackErrorCount = 0;
 
     // Set callback that always throws
-    cronManager.setWakeupCallback(async () => {
+    cronManager.setWakeupCallback(() => {
       callbackErrorCount++;
       throw new Error("Simulated callback failure");
     });
@@ -65,7 +65,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
   await t.step("should continue scheduling after callback errors", async () => {
     await setup();
 
-    cronManager.setWakeupCallback(async () => {
+    cronManager.setWakeupCallback(() => {
       throw new Error("Callback error");
     });
 
@@ -98,7 +98,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
 
     let callbackCount = 0;
 
-    cronManager.setWakeupCallback(async (workspaceId, signalId) => {
+    cronManager.setWakeupCallback((_workspaceId, _signalId) => {
       callbackCount++;
       if (callbackCount === 1) {
         throw new Error("First call fails");
@@ -131,11 +131,11 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     let registrationError = false;
     try {
       await cronManager.registerTimer(invalidConfig);
-    } catch (error) {
+    } catch (_error) {
       registrationError = true;
     }
 
-    assertEquals(registrationError, true, "Should throw error for invalid cron expression");
+    assert(registrationError, "Should throw error for invalid cron expression");
 
     // CronManager should remain operational
     assertEquals(
@@ -159,7 +159,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
 
     const callbackData: Array<{ workspaceId: string; signalId: string }> = [];
 
-    cronManager.setWakeupCallback(async (workspaceId, signalId) => {
+    cronManager.setWakeupCallback((workspaceId, signalId) => {
       callbackData.push({ workspaceId, signalId });
     });
 
@@ -167,11 +167,11 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     assertEquals(cronManager.isActive(), false, "CronManager should not be active initially");
 
     // Cannot register timers when not started
-    let registrationError = false;
+    let _registrationError = false;
     try {
       await cronManager.registerTimer(validConfig);
-    } catch (error) {
-      registrationError = true;
+    } catch (_error) {
+      _registrationError = true;
     }
 
     // Start CronManager
@@ -194,7 +194,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     await storage.initialize();
     let cronManager = new CronManager(storage, mockLogger);
 
-    cronManager.setWakeupCallback(async () => {
+    cronManager.setWakeupCallback(() => {
       throw new Error("Persistent error");
     });
 
@@ -229,7 +229,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
   await t.step("should provide detailed status information", async () => {
     await setup();
 
-    cronManager.setWakeupCallback(async () => {
+    cronManager.setWakeupCallback(() => {
       const error = new Error("Detailed error for testing");
       error.stack = "Custom stack trace";
       throw error;

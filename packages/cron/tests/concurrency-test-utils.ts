@@ -5,7 +5,7 @@
  * and timing-sensitive scenarios in the Atlas cron system.
  */
 
-import { assertEquals, assertRejects } from "@std/assert";
+import {} from "@std/assert";
 
 /**
  * Simulates concurrent execution of multiple async operations
@@ -15,7 +15,7 @@ export async function runConcurrent<T>(
   delayMs = 0,
 ): Promise<T[]> {
   // Add small random delays to increase chance of race conditions
-  const delayedOperations = operations.map((op, index) => async () => {
+  const delayedOperations = operations.map((op, _index) => async () => {
     if (delayMs > 0) {
       await delay(Math.random() * delayMs);
     }
@@ -122,13 +122,13 @@ export class MockTimer {
  * Race condition detector that tracks timing of operations
  */
 export class RaceConditionDetector {
-  private operations = new Map<string, { start: number; end?: number; data?: any }>();
+  private operations = new Map<string, { start: number; end?: number; data?: unknown }>();
   private overlaps: Array<{ op1: string; op2: string; overlap: number }> = [];
 
   /**
    * Mark the start of an operation
    */
-  startOperation(operationId: string, data?: any): void {
+  startOperation(operationId: string, data?: unknown): void {
     this.operations.set(operationId, {
       start: performance.now(),
       data,
@@ -200,7 +200,7 @@ export class RaceConditionDetector {
  * Utility to simulate storage contention and failures
  */
 export class MockStorageWithContention {
-  private storage = new Map<string, any>();
+  private storage = new Map<string, unknown>();
   private locks = new Set<string>();
   private contention = new Map<string, number>();
   private failureRate = 0;
@@ -217,7 +217,7 @@ export class MockStorageWithContention {
    */
   async operation<T>(
     key: string,
-    operation: () => Promise<T>,
+    operation: () => Promise<T> | T,
     timeout = 1000,
   ): Promise<T> {
     // Simulate random failures
@@ -270,23 +270,23 @@ export class MockStorageWithContention {
   /**
    * Basic storage operations for testing
    */
-  async get(key: string[]): Promise<any> {
+  async get(key: string[]): Promise<unknown> {
     const keyStr = key.join(":");
-    return this.operation(keyStr, async () => {
+    return await this.operation(keyStr, () => {
       return this.storage.get(keyStr);
     });
   }
 
-  async set(key: string[], value: any): Promise<void> {
+  async set(key: string[], value: unknown): Promise<void> {
     const keyStr = key.join(":");
-    return this.operation(keyStr, async () => {
+    return await this.operation(keyStr, () => {
       this.storage.set(keyStr, value);
     });
   }
 
   async delete(key: string[]): Promise<void> {
     const keyStr = key.join(":");
-    return this.operation(keyStr, async () => {
+    return await this.operation(keyStr, () => {
       this.storage.delete(keyStr);
     });
   }
@@ -294,7 +294,7 @@ export class MockStorageWithContention {
   /**
    * List entries with a given prefix (for KV storage compatibility)
    */
-  async *list(prefix: string[]): AsyncIterable<{ key: string[]; value: any }> {
+  async *list(prefix: string[]): AsyncIterable<{ key: string[]; value: unknown }> {
     const prefixStr = prefix.join(":");
 
     for (const [key, value] of this.storage.entries()) {
@@ -310,8 +310,9 @@ export class MockStorageWithContention {
   /**
    * Initialize method for compatibility
    */
-  async initialize(): Promise<void> {
+  initialize(): Promise<void> {
     // No-op for mock storage
+    return Promise.resolve();
   }
 }
 
@@ -347,7 +348,7 @@ export async function assertDataConsistency<T>(
   validator: (finalState: T) => boolean,
   description = "Data consistency",
 ): Promise<T> {
-  let currentState = initialState;
+  const currentState = initialState;
 
   // Run all operations concurrently, each getting the initial state
   const results = await runConcurrent(

@@ -5,7 +5,7 @@
  * They are designed to fail initially and pass after implementing proper synchronization.
  */
 
-import { assert, assertEquals, assertExists, assertRejects } from "@std/assert";
+import { assert, assertEquals, assertExists } from "@std/assert";
 import {
   CronManager,
   type CronTimerConfig,
@@ -53,7 +53,7 @@ Deno.test("CronManager Concurrency - concurrent timer registration should mainta
     await cronManager.start();
 
     // Create multiple timer configurations for the same workspace
-    const configs = Array(10).fill(null).map((_, i) =>
+    const configs = Array(10).fill(null).map((_: unknown, i: number) =>
       createTestTimerConfig("workspace1", `signal${i}`)
     );
 
@@ -81,7 +81,7 @@ Deno.test("CronManager Concurrency - concurrent timer registration should mainta
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -102,7 +102,6 @@ Deno.test("CronManager Concurrency - concurrent registration of same timer shoul
     // Some registrations might fail, but at least one should succeed
     const results = await Promise.allSettled(registrationPromises);
     const successes = results.filter((r) => r.status === "fulfilled").length;
-    const failures = results.filter((r) => r.status === "rejected").length;
 
     // At least one should succeed, and there should be exactly one active timer
     assert(successes >= 1, "At least one registration should succeed");
@@ -116,7 +115,7 @@ Deno.test("CronManager Concurrency - concurrent registration of same timer shoul
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -170,8 +169,8 @@ Deno.test("CronManager Concurrency - concurrent timer execution and rescheduling
   const raceDetector = new RaceConditionDetector();
 
   let executionCount = 0;
-  const wakeupCallback: WorkspaceWakeupCallback = async (workspaceId, signalId) => {
-    raceDetector.startOperation(`execution-${executionCount}`, { workspaceId, signalId });
+  const wakeupCallback: WorkspaceWakeupCallback = async (_workspaceId, _signalId) => {
+    raceDetector.startOperation(`execution-${executionCount}`, { _workspaceId, _signalId });
     executionCount++;
 
     // Simulate work that might overlap with rescheduling
@@ -198,9 +197,6 @@ Deno.test("CronManager Concurrency - concurrent timer execution and rescheduling
     // Give a moment for final execution to complete
     await delay(100);
 
-    // Check for race conditions in execution/rescheduling
-    const races = raceDetector.detectRaces();
-
     // We expect some overlapping operations, but they should be handled safely
     // The test will fail if the system is not properly synchronized
     assert(executionCount > 0, "Should have executed at least one timer");
@@ -211,7 +207,7 @@ Deno.test("CronManager Concurrency - concurrent timer execution and rescheduling
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -221,13 +217,13 @@ Deno.test("CronManager Concurrency - storage operations should be atomic", async
   const mockStorage = new MockStorageWithContention();
   mockStorage.setFailureRate(0.1); // 10% failure rate to simulate contention
 
-  const cronManager = new CronManager(mockStorage as any, mockLogger);
+  const cronManager = new CronManager(mockStorage as unknown as MemoryKVStorage, mockLogger);
 
   try {
     await cronManager.start();
 
     // Create multiple timers that will cause concurrent storage operations
-    const configs = Array(20).fill(null).map((_, i) =>
+    const configs = Array(20).fill(null).map((_: unknown, i: number) =>
       createTestTimerConfig(`workspace${i % 5}`, `signal${i}`)
     );
 
@@ -237,14 +233,6 @@ Deno.test("CronManager Concurrency - storage operations should be atomic", async
     );
 
     const successes = results.filter((r) => r.status === "fulfilled").length;
-    const failures = results.filter((r) => r.status === "rejected").length;
-
-    // Some operations might fail due to simulated storage issues
-    console.log(`Storage operations - Successes: ${successes}, Failures: ${failures}`);
-
-    // Check storage contention stats
-    const contentionStats = mockStorage.getContentionStats();
-    console.log("Storage contention stats:", Object.fromEntries(contentionStats));
 
     // The system should handle storage contention gracefully
     assert(successes > 0, "Some timer registrations should succeed despite storage contention");
@@ -259,7 +247,7 @@ Deno.test("CronManager Concurrency - storage operations should be atomic", async
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -272,9 +260,9 @@ Deno.test("CronManager Concurrency - bulk workspace registration should handle c
     await cronManager.start();
 
     // Simulate multiple workspaces being registered simultaneously (like daemon startup)
-    const workspaceConfigs = Array(10).fill(null).map((_, i) => ({
+    const workspaceConfigs = Array(10).fill(null).map((_: unknown, i: number) => ({
       workspaceId: `workspace${i}`,
-      timers: Array(3).fill(null).map((_, j) =>
+      timers: Array(3).fill(null).map((_: unknown, j: number) =>
         createTestTimerConfig(`workspace${i}`, `signal${j}`)
       ),
     }));
@@ -286,9 +274,6 @@ Deno.test("CronManager Concurrency - bulk workspace registration should handle c
 
     const results = await Promise.allSettled(registrationPromises);
     const successes = results.filter((r) => r.status === "fulfilled").length;
-    const failures = results.filter((r) => r.status === "rejected").length;
-
-    console.log(`Bulk registration - Successes: ${successes}, Failures: ${failures}`);
 
     // Most registrations should succeed
     assert(successes >= 25, "Most timer registrations should succeed"); // Expect at least 25/30
@@ -308,7 +293,7 @@ Deno.test("CronManager Concurrency - bulk workspace registration should handle c
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -321,7 +306,7 @@ Deno.test("CronManager Concurrency - concurrent unregistration should be safe", 
     await cronManager.start();
 
     // Register multiple timers first
-    const configs = Array(10).fill(null).map((_, i) =>
+    const configs = Array(10).fill(null).map((_: unknown, i: number) =>
       createTestTimerConfig("workspace1", `signal${i}`)
     );
 
@@ -347,7 +332,7 @@ Deno.test("CronManager Concurrency - concurrent unregistration should be safe", 
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -360,9 +345,9 @@ Deno.test("CronManager Concurrency - mixed operations should maintain consistenc
     await cronManager.start();
 
     // Simulate a mix of register, unregister, and query operations happening concurrently
-    const operations: (() => Promise<any>)[] = [
+    const operations: (() => Promise<unknown>)[] = [
       // Register operations
-      ...Array(5).fill(null).map((_, i) => () =>
+      ...Array(5).fill(null).map((_: unknown, i: number) => () =>
         cronManager.registerTimer(createTestTimerConfig("workspace1", `signal${i}`))
       ),
       // Query operations
@@ -372,7 +357,7 @@ Deno.test("CronManager Concurrency - mixed operations should maintain consistenc
     ];
 
     // Run all operations concurrently
-    const results = await runConcurrent(operations);
+    await runConcurrent(operations);
 
     // Check final state consistency
     const finalTimers = cronManager.listActiveTimers();
@@ -393,7 +378,7 @@ Deno.test("CronManager Concurrency - mixed operations should maintain consistenc
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }
@@ -406,7 +391,7 @@ Deno.test("CronManager Concurrency - stress test timer registration", async () =
     await cronManager.start();
 
     // Stress test with many concurrent registrations
-    const stressResults = await stressTest(
+    await stressTest(
       () =>
         cronManager.registerTimer(
           createTestTimerConfig(
@@ -417,8 +402,6 @@ Deno.test("CronManager Concurrency - stress test timer registration", async () =
       100, // 100 iterations
       20, // 20 concurrent operations
     );
-
-    console.log(`Stress test completed: ${stressResults.length} operations`);
 
     // Check final state
     const activeTimers = cronManager.listActiveTimers();
@@ -436,7 +419,7 @@ Deno.test("CronManager Concurrency - stress test timer registration", async () =
   } finally {
     try {
       await cronManager.shutdown();
-    } catch (error) {
+    } catch {
       // Ignore shutdown errors in cleanup
     }
   }

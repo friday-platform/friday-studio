@@ -1,160 +1,284 @@
 # @atlas/cron
 
-Daemon-level cron management for Atlas workspaces that enables reliable scheduled automation while
-allowing workspaces to sleep for resource efficiency.
+Daemon-level cron management service that enables scheduled automation in Atlas' signal-driven
+architecture. CronManager runs independently of workspace lifecycles, allowing workspaces to sleep
+while maintaining reliable timer execution.
 
-## Features
+## Overview
 
-- **Persistent Timer Storage**: Uses KV storage to maintain timer state across daemon restarts
-- **Workspace Sleep Compatibility**: Timers run independently of workspace runtime lifecycle
-- **Wake-up Mechanism**: Automatically activates sleeping workspaces when timers fire
-- **Centralized Management**: Single daemon-level service manages all workspace timers
-- **Error Recovery**: Robust error handling ensures timers continue even after failures
+The cron package is a critical component of Atlas' resource efficiency strategy. By centralizing
+timer management at the daemon level, workspaces can remain dormant until triggered by scheduled
+events, dramatically reducing resource consumption while maintaining automation reliability.
 
-## Architecture
+## Key Features
+
+- **Daemon-Level Service**: Runs as part of the Atlas daemon, independent of workspace lifecycles
+- **Persistent State**: Uses KV storage to survive daemon restarts and maintain timer schedules
+- **Signal-Driven Integration**: Generates timer signals that wake sleeping workspaces
+- **Concurrency-Safe**: Thread-safe operations with mutex locks for timer management
+- **Timezone-Aware**: Full timezone support for global scheduling requirements
+- **Error Resilient**: Continues scheduling even after execution failures
+
+## Architectural Position
 
 ```
-AtlasDaemon → CronManager → KV Storage (persistent)
-                   ↓
-           Individual Timers → Wake Up Workspaces
+Atlas Daemon
+├── CronManager (this package)
+│   ├── Timer Registry (in-memory)
+│   ├── KV Storage (persistent state)
+│   └── Wake-up Callbacks → WorkspaceRuntime
+│
+├── WorkspaceRuntime
+│   ├── Signal Processing
+│   └── WorkspaceSupervisor → SessionSupervisor → Agents
 ```
 
-## Usage
+CronManager sits at the daemon level, managing timers for all workspaces. When timers fire, they
+generate signals that wake dormant workspaces through the standard Atlas signal processing pipeline.
 
-### Basic Setup
+## Integration with Atlas Daemon
+
+### Initialization
+
+CronManager is initialized as part of the Atlas daemon startup sequence:
 
 ```typescript
 import { CronManager } from "@atlas/cron";
 import { createKVStorage } from "@atlas/storage";
 
-// Initialize with KV storage and logger
+// During daemon initialization
 const kvStorage = await createKVStorage({ type: "deno-kv" });
 await kvStorage.initialize();
 
 const cronManager = new CronManager(kvStorage, logger);
 
-// Set workspace wakeup callback
+// Configure the wake-up mechanism
 cronManager.setWakeupCallback(async (workspaceId, signalId, signalData) => {
+  // This callback bridges CronManager to WorkspaceRuntime
   const runtime = await getOrCreateWorkspaceRuntime(workspaceId);
-  await runtime.processSignal(signalData, signalData.data);
+  await runtime.processSignal(signalData);
 });
 
-// Start the cron manager
+// Start the service
 await cronManager.start();
 ```
 
 ### Timer Registration
 
+Timers are registered when workspaces configure cron-based signals:
+
 ```typescript
-// Register a timer for a workspace signal
+// When workspace initializes with cron signal configuration
 await cronManager.registerTimer({
-  workspaceId: "topic-summarizer",
-  signalId: "timer-github-scan",
-  schedule: "*/30 * * * *", // Every 30 minutes
-  timezone: "UTC",
-  description: "Automated GitHub repository discovery",
+  workspaceId: "analytics-workspace",
+  signalId: "daily-report",
+  schedule: "0 9 * * *", // Daily at 9 AM
+  timezone: "America/New_York",
+  description: "Generate daily analytics report",
 });
 ```
 
-### Timer Management
+### Runtime Operations
 
 ```typescript
-// List active timers
+// List all active timers across workspaces
 const activeTimers = cronManager.listActiveTimers();
+// Returns sorted by next execution time
 
-// Get specific timer info
-const timer = cronManager.getTimer("workspace-id", "signal-id");
+// Get detailed timer information
+const timer = cronManager.getTimer("analytics-workspace", "daily-report");
+// Returns: { workspaceId, signalId, schedule, nextExecution, lastExecution, isActive }
 
-// Unregister a timer
-await cronManager.unregisterTimer("workspace-id", "signal-id");
+// Workspace cleanup - remove all timers
+await cronManager.unregisterWorkspaceTimers("analytics-workspace");
 
-// Unregister all timers for a workspace
-await cronManager.unregisterWorkspaceTimers("workspace-id");
-
-// Get statistics
+// Get system statistics
 const stats = cronManager.getStats();
-console.log(`Active timers: ${stats.activeTimers}`);
+// Returns: { totalTimers, activeTimers, scheduledIntervals, nextExecution }
 ```
 
-### Lifecycle Management
+## Signal-Driven Timer Model
 
-```typescript
-// Shutdown cleanly (persists state)
-await cronManager.shutdown();
-```
+### Workspace Configuration
 
-## Timer Configuration
-
-Timers are configured using cron expressions with timezone support:
+Timers are defined as signals in workspace configuration:
 
 ```yaml
-# In workspace.yml
+# workspace.yml
 signals:
-  timer-github-scan:
-    provider: "cron-scheduler"
-    schedule: "*/30 * * * *" # Every 30 minutes
-    timezone: "UTC"
-    description: "Automated timer signal"
+  daily-summary:
+    provider: "timer"
+    config:
+      schedule: "0 9 * * *" # Daily at 9 AM
+      timezone: "America/New_York"
+      description: "Generate daily summary report"
+
+  hourly-sync:
+    provider: "timer"
+    config:
+      schedule: "0 * * * *" # Every hour
+      timezone: "UTC"
+      description: "Sync data from external sources"
 ```
 
-## Supported Cron Expressions
+### Signal Data Structure
 
-The cron manager uses the `cron-parser` library and supports standard cron expressions:
-
-- `*/30 * * * *` - Every 30 minutes
-- `0 9 * * 1` - Every Monday at 9 AM
-- `0 0 * * *` - Daily at midnight
-- `0 12 * * 1-5` - Weekdays at noon
-
-## Storage Schema
-
-Timers are persisted in KV storage with the following structure:
+When timers fire, they generate signals with the following structure:
 
 ```typescript
-// Storage key: ["cron_timers", "workspaceId:signalId"]
+interface TimerSignalData {
+  id: string; // Signal ID from configuration
+  type: "timer";
+  timestamp: string; // ISO 8601 timestamp
+  data: {
+    scheduled: string; // Original cron expression
+    timezone: string; // Configured timezone
+    nextRun: string; // Next scheduled execution
+    source: "cron-manager";
+  };
+}
+```
+
+## Cron Expression Support
+
+CronManager uses standard cron expressions with optional seconds field:
+
+### Standard Format (5 fields)
+
+```
+┌───────────── minute (0-59)
+│ ┌───────────── hour (0-23)
+│ │ ┌───────────── day of month (1-31)
+│ │ │ ┌───────────── month (1-12)
+│ │ │ │ ┌───────────── day of week (0-7, Sunday = 0 or 7)
+│ │ │ │ │
+* * * * *
+```
+
+### Extended Format (6 fields with seconds)
+
+```
+┌───────────── second (0-59)
+│ ┌───────────── minute (0-59)
+│ │ ┌───────────── hour (0-23)
+│ │ │ ┌───────────── day of month (1-31)
+│ │ │ │ ┌───────────── month (1-12)
+│ │ │ │ │ ┌───────────── day of week (0-7)
+│ │ │ │ │ │
+* * * * * *
+```
+
+### Common Patterns
+
+- `*/5 * * * *` - Every 5 minutes
+- `0 */2 * * *` - Every 2 hours
+- `0 9 * * 1-5` - Weekdays at 9 AM
+- `0 0 1 * *` - First day of each month
+- `*/10 * * * * *` - Every 10 seconds (extended format)
+
+## Persistence and Recovery
+
+### Storage Schema
+
+```typescript
+// KV Storage key pattern: ["cron_timers", "{workspaceId}:{signalId}"]
 interface PersistedTimerData {
   workspaceId: string;
   signalId: string;
   schedule: string;
   timezone: string;
   description?: string;
-  nextExecution?: string; // ISO string
-  lastExecution?: string; // ISO string
+  nextExecution?: string; // ISO 8601
+  lastExecution?: string; // ISO 8601
   isActive: boolean;
-  registeredAt: string; // ISO string
+  registeredAt: string; // ISO 8601
 }
 ```
 
-## Error Handling
+### Recovery Behavior
 
-The cron manager includes comprehensive error handling:
+1. **Daemon Restart**: All timers are restored from KV storage
+2. **Expired Timers**: Next execution is recalculated if past due
+3. **Failed Persistence**: Retries with exponential backoff
+4. **Corrupted Data**: Skipped with error logging, doesn't affect other timers
 
-- **Invalid Cron Expressions**: Validated at registration time
-- **Execution Failures**: Timers continue scheduling even after execution errors
-- **Storage Failures**: Graceful degradation with logging
-- **Workspace Wake-up Failures**: Isolated per-timer, doesn't affect other timers
+## Concurrency and Thread Safety
 
-## Integration with Atlas Daemon
+### Locking Mechanism
 
-The cron manager integrates seamlessly with the Atlas daemon lifecycle:
+CronManager uses a mutex-based locking system to ensure thread-safe operations:
 
-1. **Initialization**: Loads persisted timers on daemon startup
-2. **Registration**: Automatically discovers cron signals in workspace configurations
-3. **Execution**: Wakes up workspaces when timers fire
-4. **Cleanup**: Persists state and cleans up timers on daemon shutdown
-
-## Testing
-
-Run the test suite:
-
-```bash
-deno task test
+```typescript
+class TimerOperationLock {
+  async withLock<T>(key: string, operation: () => Promise<T>): Promise<T>;
+}
 ```
 
-The package includes comprehensive tests for:
+All timer operations (register, unregister, execute) are protected by locks to prevent:
 
-- Timer registration and unregistration
-- Cron expression parsing and validation
-- Storage persistence and recovery
-- Error recovery scenarios
-- Workspace integration patterns
+- Race conditions during concurrent registrations
+- Double execution of timers
+- State corruption during persistence
+
+### Graceful Shutdown
+
+CronManager tracks all pending operations and ensures clean shutdown:
+
+1. **Operation Tracking**: All async operations are tracked
+2. **Shutdown Sequence**: Waits for pending operations to complete
+3. **State Persistence**: Final state is persisted before shutdown
+4. **Timer Cleanup**: All active intervals are cleared
+
+## Error Handling and Resilience
+
+### Registration Errors
+
+- **Invalid Cron Expression**: Fails fast with clear error message
+- **Duplicate Registration**: Skipped with warning log
+- **Storage Failure**: Operation fails but CronManager remains operational
+
+### Execution Errors
+
+- **Callback Failures**: Logged but timer continues scheduling
+- **Timeout Protection**: Wake-up callbacks have 30-second timeout
+- **Next Execution**: Always calculated even after failures
+
+### Storage Errors
+
+- **Persistence Retry**: Exponential backoff with jitter (max 3 attempts)
+- **Recovery Failures**: Individual timer skipped, others continue
+- **Corruption Handling**: Invalid data logged and skipped
+
+### Monitoring
+
+- **Metrics**: Export stats via `getStats()` for monitoring
+- **Logging**: Structured logs with timer context
+- **Health Checks**: `isActive()` for liveness probes
+
+## API Reference
+
+### CronManager Class
+
+```typescript
+class CronManager {
+  constructor(storage: KVStorage, logger: CronLogger);
+
+  // Lifecycle
+  start(): Promise<void>;
+  shutdown(): Promise<void>;
+  isActive(): boolean;
+
+  // Timer Management
+  registerTimer(config: CronTimerConfig): Promise<void>;
+  unregisterTimer(workspaceId: string, signalId: string): Promise<void>;
+  unregisterWorkspaceTimers(workspaceId: string): Promise<void>;
+
+  // Timer Information
+  getTimer(workspaceId: string, signalId: string): TimerInfo | undefined;
+  listActiveTimers(): TimerInfo[];
+  getStats(): CronStats;
+
+  // Configuration
+  setWakeupCallback(callback: WorkspaceWakeupCallback): void;
+}
+```

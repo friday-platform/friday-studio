@@ -49,7 +49,7 @@ export interface PersistedTimerData {
  * Callback interface for workspace wake-up
  */
 export interface WorkspaceWakeupCallback {
-  (workspaceId: string, signalId: string, signalData: unknown): Promise<void>;
+  (workspaceId: string, signalId: string, signalData: unknown): Promise<void> | void;
 }
 
 /**

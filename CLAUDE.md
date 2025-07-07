@@ -23,7 +23,10 @@ When developing CLI commands:
 0. **MANDATORY SESSION START**: At the beginning of EVERY session, read and update
    `.DEV_FEEDBACK.md` with any new feedback, complaints, or guidance from the user. This file tracks
    behavioral improvements across sessions. **IMPORTANT**: Summarize feedback in
-   SFW/work-appropriate language.
+   SFW/work-appropriate language. 0.5. **PACKAGE DOCUMENTATION**: When working with packages in the
+   `packages/` directory, always check for and read package-specific README.md files (e.g.,
+   `packages/cron/README.md`). These contain critical architectural context, API documentation, and
+   usage guidelines specific to each package that supplement this main CLAUDE.md file.
 1. Use `deno check` to statically verify code validity before running (see Known Issues for React
    components)
 2. Run with required Deno flags:

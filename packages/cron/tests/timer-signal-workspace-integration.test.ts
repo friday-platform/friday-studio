@@ -66,7 +66,7 @@ const mockWorkspaceConfig = {
 class MockWorkspaceRuntime {
   private cronManager: CronManager;
   private triggeredSignals: Array<
-    { workspaceId: string; signalId: string; data: any; timestamp: number }
+    { workspaceId: string; signalId: string; data: unknown; timestamp: number }
   > = [];
   private registeredTimers = new Map<string, boolean>();
 
@@ -75,7 +75,7 @@ class MockWorkspaceRuntime {
     this.cronManager = new CronManager(storage, mockLogger);
 
     // Set up wakeup callback to track triggered signals
-    this.cronManager.setWakeupCallback(async (workspaceId, signalId, signalData) => {
+    this.cronManager.setWakeupCallback((workspaceId, signalId, signalData) => {
       this.triggeredSignals.push({
         workspaceId,
         signalId,
@@ -91,7 +91,15 @@ class MockWorkspaceRuntime {
     await this.cronManager.start();
   }
 
-  async loadSignalProvider(signalId: string, config: any): Promise<void> {
+  async loadSignalProvider(
+    signalId: string,
+    config: { description: string; schedule?: string; timezone?: string; provider?: string },
+  ): Promise<void> {
+    // Only process timer/cron-scheduler signals
+    if (!config.schedule) {
+      throw new Error(`Signal ${signalId} is not a timer signal`);
+    }
+
     const timerConfig: CronTimerConfig = {
       workspaceId: this.workspaceId,
       signalId: signalId,
@@ -109,7 +117,7 @@ class MockWorkspaceRuntime {
   }
 
   getTriggeredSignals(): Array<
-    { workspaceId: string; signalId: string; data: any; timestamp: number }
+    { workspaceId: string; signalId: string; data: unknown; timestamp: number }
   > {
     return [...this.triggeredSignals];
   }
@@ -243,7 +251,7 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     let loadError = false;
     try {
       await runtime.loadSignalProvider("invalid-timer", invalidConfig);
-    } catch (error) {
+    } catch (_error) {
       loadError = true;
     }
 
