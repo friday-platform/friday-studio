@@ -77,7 +77,7 @@ library_store({
 # Auto-injected to Daemon API
 {
   type: "report",
-  name: "AI Discovery Report", 
+  name: "AI Discovery Report",
   content: "# Report content...",
   workspace_id: "delicate_beans",    # ← Auto-injected
   session_id: "71f0498a-fb46...",    # ← Auto-injected
@@ -114,7 +114,9 @@ library_store({
   "success": true,
   "itemId": "uuid-string",
   "message": "Library item 'name' created",
-  "item": {/* complete library item object */}
+  "item": {
+    /* complete library item object */
+  }
 }
 ```
 
@@ -179,23 +181,25 @@ tools:
         transport:
           type: "stdio"
           command: "deno"
-          args: [
-            "run",
-            "--allow-all",
-            "/Users/sara/Projects/atlas/src/cli.tsx",
-            "mcp",
-            "serve",
-          ]
+          args:
+            [
+              "run",
+              "--allow-all",
+              "/Users/ericskram/code/tempest/atlas/src/cli.tsx",
+              "mcp",
+              "serve",
+            ]
         capabilities:
           tools:
-            allowed: [
-              "library_list",
-              "library_get",
-              "library_search",
-              "library_store",
-              "library_stats",
-              "library_templates",
-            ]
+            allowed:
+              [
+                "library_list",
+                "library_get",
+                "library_search",
+                "library_store",
+                "library_stats",
+                "library_templates",
+              ]
         timeout_ms: 30000
 ```
 
@@ -439,11 +443,13 @@ deno task atlas config validate
 ### **Files Modified**
 
 1. **`apps/atlasd/src/atlas-daemon.ts`**
+
    - Added `POST /api/library` endpoint
    - Library item validation and storage
    - UUID generation and timestamp management
 
 2. **`packages/mcp-server/src/platform-server.ts`**
+
    - Added `workspaceContext` interface and property
    - Implemented `library_store` MCP tool
    - Automatic context injection logic
@@ -460,7 +466,7 @@ deno task atlas config validate
 # Test API endpoint works
 curl -X POST http://localhost:8080/api/library -d '{
   "type": "report",
-  "name": "Test Report", 
+  "name": "Test Report",
   "content": "Test content"
 }'
 

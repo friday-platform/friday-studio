@@ -7,14 +7,28 @@ export const healthResponseSchema = z.object({
   activeWorkspaces: z.int().min(0).meta({
     description: "Number of currently active workspaces",
   }),
-  uptime: z.int().min(0).meta({ description: "Daemon uptime in milliseconds" }),
-  timestamp: z.iso.datetime().meta({ description: "Current server timestamp in ISO 8601 format" }),
+  uptime: z.int().min(0).meta({
+    description: "Daemon uptime in milliseconds",
+  }),
+  timestamp: z.iso.datetime().meta({
+    description: "Current server timestamp in ISO 8601 format",
+  }),
   version: z.object({
-    deno: z.string().meta({ description: "Deno runtime version" }),
-    v8: z.string().meta({ description: "V8 engine version" }),
-    typescript: z.string().meta({ description: "TypeScript version" }),
-  }).meta({ description: "Version information for runtime components" }),
-}).meta({ description: "Health check response containing daemon status and metrics" });
+    deno: z.string().meta({
+      description: "Deno runtime version",
+    }),
+    v8: z.string().meta({
+      description: "V8 engine version",
+    }),
+    typescript: z.string().meta({
+      description: "TypeScript version",
+    }),
+  }).meta({
+    description: "Version information for runtime components",
+  }),
+}).meta({
+  description: "Health check response containing daemon status and metrics",
+});
 
 // Type inference from schema
 type HealthResponse = z.infer<typeof healthResponseSchema>;
@@ -52,24 +66,5 @@ healthRoutes.get(
     return c.json(response);
   },
 );
-
-// OpenAPI spec and Scalar UI are now served at the daemon level:
-// - OpenAPI spec: /openapi.json
-// - Scalar UI: /docs
-
-// Export route metadata for OpenAPI generation
-export const healthRouteMeta = {
-  path: "/health",
-  method: "GET",
-  tags: ["System"],
-  summary: "Health check",
-  description: "Returns the current health status of the Atlas daemon including runtime metrics",
-  responses: {
-    200: {
-      description: "Daemon is healthy and operational",
-      schema: healthResponseSchema,
-    },
-  },
-};
 
 export { healthRoutes };
