@@ -12,6 +12,7 @@ import {
   WorkspaceEntrySchema,
   WorkspaceStatus,
 } from "../workspace-registry-types.ts";
+import { type WorkspaceConfig } from "@atlas/config";
 
 /**
  * Registry-specific storage operations
@@ -49,43 +50,49 @@ export class RegistryStorageAdapter {
     // Validate workspace entry
     const validatedWorkspace = WorkspaceEntrySchema.parse(workspace);
 
-    // Check if workspace is too large and handle separately
-    const workspaceSize = new TextEncoder().encode(JSON.stringify(validatedWorkspace)).length;
-
     let workspaceToStore = validatedWorkspace;
-    let configStoredSeparately = false;
 
-    // If workspace is too large, store config separately and reference it
-    if (workspaceSize > 30000) { // Conservative limit to avoid Deno KV size issues
-      // Store config in separate key
-      if (validatedWorkspace.config) {
-        const configSize =
-          new TextEncoder().encode(JSON.stringify(validatedWorkspace.config)).length;
+    // For virtual workspaces, always embed config regardless of size
+    if (validatedWorkspace.metadata?.virtual) {
+      // Virtual workspaces must have embedded config since there's no filesystem fallback
+      workspaceToStore = validatedWorkspace;
+    } else {
+      // For regular workspaces, check if workspace is too large and handle separately
+      const workspaceSize = new TextEncoder().encode(JSON.stringify(validatedWorkspace)).length;
 
-        // For very large configs, skip storing them entirely and rely on runtime loading
-        if (configSize > 32000) {
-          // Config too large for Deno KV, will be loaded from source at runtime
-          configStoredSeparately = true; // Mark as handled but don't store
-        } else {
-          const configAtomic = this.storage.atomic();
-          configAtomic.set(["workspace-configs", validatedWorkspace.id], validatedWorkspace.config);
-          const configSuccess = await configAtomic.commit();
-          if (!configSuccess) {
-            throw new Error(`Failed to store config for workspace ${validatedWorkspace.id}`);
+      // If workspace is too large, store config separately and reference it
+      if (workspaceSize > 30000) { // Conservative limit to avoid Deno KV size issues
+        // Store config in separate key
+        if (validatedWorkspace.config) {
+          const configSize =
+            new TextEncoder().encode(JSON.stringify(validatedWorkspace.config)).length;
+
+          // For very large configs, skip storing them entirely and rely on runtime loading
+          if (configSize > 32000) {
+            // Config too large for Deno KV, will be loaded from source at runtime
+          } else {
+            const configAtomic = this.storage.atomic();
+            configAtomic.set(
+              ["workspace-configs", validatedWorkspace.id],
+              validatedWorkspace.config,
+            );
+            const configSuccess = await configAtomic.commit();
+            if (!configSuccess) {
+              throw new Error(`Failed to store config for workspace ${validatedWorkspace.id}`);
+            }
           }
-          configStoredSeparately = true;
         }
-      }
 
-      // Store workspace without embedded config, but with a reference
-      workspaceToStore = {
-        ...validatedWorkspace,
-        config: undefined,
-        metadata: {
-          ...validatedWorkspace.metadata,
-          configStoredSeparately: true,
-        },
-      };
+        // Store workspace without embedded config, but with a reference
+        workspaceToStore = {
+          ...validatedWorkspace,
+          config: undefined,
+          metadata: {
+            ...validatedWorkspace.metadata,
+            configStoredSeparately: true,
+          },
+        };
+      }
     }
 
     const workspaceAtomic = this.storage.atomic();
@@ -123,7 +130,7 @@ export class RegistryStorageAdapter {
   async unregisterWorkspace(id: string): Promise<void> {
     // Check if workspace has separately stored config
     const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
-    const hasSeperateConfig = workspace?.metadata?.configStoredSeparately;
+    const hasSeparateConfig = workspace?.metadata?.configStoredSeparately;
 
     // Delete workspace in separate atomic operation
     const workspaceAtomic = this.storage.atomic();
@@ -134,7 +141,7 @@ export class RegistryStorageAdapter {
     }
 
     // Delete separately stored config if it exists
-    if (hasSeperateConfig) {
+    if (hasSeparateConfig) {
       const configAtomic = this.storage.atomic();
       configAtomic.delete(["workspace-configs", id]);
       await configAtomic.commit(); // Don't fail if this fails, workspace is already deleted
@@ -168,10 +175,10 @@ export class RegistryStorageAdapter {
 
     // If config is stored separately, retrieve it
     if (workspace.metadata?.configStoredSeparately) {
-      const config = await this.storage.get(["workspace-configs", id]);
+      const config = await this.storage.get<WorkspaceConfig>(["workspace-configs", id]);
       return {
         ...workspace,
-        config,
+        config: config || undefined, // Ensure config is undefined if null/empty
         metadata: {
           ...workspace.metadata,
           configStoredSeparately: undefined, // Remove the flag from returned object
