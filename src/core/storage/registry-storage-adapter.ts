@@ -51,7 +51,6 @@ export class RegistryStorageAdapter {
     const validatedWorkspace = WorkspaceEntrySchema.parse(workspace);
 
     let workspaceToStore = validatedWorkspace;
-    let configStoredSeparately = false;
 
     // For virtual workspaces, always embed config regardless of size
     if (validatedWorkspace.metadata?.virtual) {
@@ -71,7 +70,6 @@ export class RegistryStorageAdapter {
           // For very large configs, skip storing them entirely and rely on runtime loading
           if (configSize > 32000) {
             // Config too large for Deno KV, will be loaded from source at runtime
-            configStoredSeparately = true; // Mark as handled but don't store
           } else {
             const configAtomic = this.storage.atomic();
             configAtomic.set(
@@ -82,7 +80,6 @@ export class RegistryStorageAdapter {
             if (!configSuccess) {
               throw new Error(`Failed to store config for workspace ${validatedWorkspace.id}`);
             }
-            configStoredSeparately = true;
           }
         }
 
