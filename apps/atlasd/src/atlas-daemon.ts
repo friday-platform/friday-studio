@@ -33,6 +33,8 @@ import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import { healthRoutes } from "../routes/health.ts";
+import { type AppContext, createApp } from "./factory.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -46,12 +48,18 @@ export interface AtlasDaemonOptions {
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
-export class AtlasDaemon {
-  private app: Hono;
+export class AtlasDaemon implements AppContext {
+  private app: ReturnType<typeof createApp>;
   private options: AtlasDaemonOptions;
-  private runtimes: Map<string, WorkspaceRuntime> = new Map();
+  // Public properties for AppContext interface
+  public runtimes: Map<string, WorkspaceRuntime> = new Map();
+  public startTime = Date.now();
+  public sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  > = new Map();
+  // Private properties
   private idleTimeouts: Map<string, number> = new Map();
-  private startTime = Date.now();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
@@ -59,11 +67,6 @@ export class AtlasDaemon {
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private templateAdapter: FilesystemTemplateAdapter | null = null;
-  // System workspace properties removed - using standard workspace pattern
-  private sseClients: Map<
-    string,
-    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
-  > = new Map();
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
 
@@ -73,7 +76,7 @@ export class AtlasDaemon {
       idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    this.app = new Hono();
+    this.app = createApp(this);
     this.setupRoutes();
     this.setupSignalHandlers();
   }
@@ -238,21 +241,8 @@ export class AtlasDaemon {
       );
     }
 
-    // Daemon health check
-    this.app.get("/health", (c) => {
-      return c.json({
-        status: "healthy",
-        daemon: true,
-        activeWorkspaces: this.runtimes.size,
-        uptime: Date.now() - this.startTime,
-        timestamp: new Date().toISOString(),
-        version: {
-          deno: Deno.version.deno,
-          v8: Deno.version.v8,
-          typescript: Deno.version.typescript,
-        },
-      });
-    });
+    // Mount health routes
+    this.app.route("/health", healthRoutes);
 
     // List all registered workspaces
     this.app.get("/api/workspaces", async (c) => {

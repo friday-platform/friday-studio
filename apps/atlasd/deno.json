@@ -1,5 +1,10 @@
 {
   "name": "@atlas/atlasd",
   "version": "1.0.0",
-  "exports": "./mod.ts"
+  "exports": "./mod.ts",
+  "imports": {
+    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.0",
+    "hono-openapi": "npm:hono-openapi@^0.4.8",
+    "zod-openapi": "npm:zod-openapi@^5.0.1"
+  }
 }
