@@ -636,11 +636,15 @@ export class WorkspaceManager {
       // Update workspace entry
       const updatedWorkspace = { ...workspace, config, configHash };
 
-      // Update via storage adapter
-      await this.registry!.getStorage().atomic()
-        .set(["workspaces", id], updatedWorkspace)
-        .set(["registry", "lastUpdated"], new Date().toISOString())
-        .commit();
+      // Update workspace in separate atomic operation
+      const workspaceAtomic = this.registry!.getStorage().atomic();
+      workspaceAtomic.set(["workspaces", id], updatedWorkspace);
+      await workspaceAtomic.commit();
+
+      // Update registry metadata in separate atomic operation
+      const metadataAtomic = this.registry!.getStorage().atomic();
+      metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
+      await metadataAtomic.commit();
 
       logger.info("Workspace config cache refreshed", {
         id,
