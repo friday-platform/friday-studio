@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { Select } from "@inkjs/ui";
+import { Select } from "./select/index.ts";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 
 interface SignalActionSelectionProps {
@@ -41,7 +41,7 @@ export const SignalActionSelection = ({
         <Text dimColor>Choose an action:</Text>
       </Box>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select options={SIGNAL_ACTIONS} onChange={handleSelect} />
+        <Select options={SIGNAL_ACTIONS} onChange={handleSelect} visibleOptionCount={8} />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>

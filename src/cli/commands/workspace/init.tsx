@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Box, render, Text, useApp } from "ink";
-import { Select, Spinner, TextInput } from "@inkjs/ui";
+import { Spinner, TextInput } from "@inkjs/ui";
+import { Select } from "../../components/select/index.ts";
 import { join, resolve } from "@std/path";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { AtlasClient } from "@atlas/client";
@@ -190,6 +191,7 @@ const WorkspaceInitFlow = ({
         <Select
           options={templates}
           onChange={handleTemplateSelect}
+          visibleOptionCount={8}
         />
       </Box>
     );

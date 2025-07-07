@@ -1,12 +1,6 @@
 import { getAtlasClient } from "@atlas/client";
-import {
-  defaultTheme,
-  extendTheme,
-  Select,
-  Spinner,
-  ThemeProvider,
-  UnorderedList,
-} from "@inkjs/ui";
+import { defaultTheme, extendTheme, Spinner, ThemeProvider, UnorderedList } from "@inkjs/ui";
+import { Select } from "../components/select/index.ts";
 import { Box, Newline, render, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useEffect, useRef, useState } from "react";
 import { WorkspaceEntry, WorkspaceStatus } from "../../core/workspace-manager.ts";
@@ -2259,7 +2253,7 @@ const WorkspaceSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select options={options} onChange={handleSelect} />
+        <Select options={options} onChange={handleSelect} visibleOptionCount={8} />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>
