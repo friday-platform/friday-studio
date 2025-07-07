@@ -34,6 +34,7 @@ import { AtlasLogger } from "../../../src/utils/logger.ts";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
 import { healthRoutes } from "../routes/health.ts";
+import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { type AppContext, createApp } from "./factory.ts";
 
 export interface AtlasDaemonOptions {
@@ -1267,6 +1268,18 @@ export class AtlasDaemon implements AppContext {
         workspaces: Array.from(this.runtimes.keys()),
       });
     });
+
+    // OpenAPI documentation - after all routes are mounted
+    const { openAPIHandler, scalarHandler } = createOpenAPIHandlers(this.app, {
+      hostname: this.options.hostname,
+      port: this.options.port,
+    });
+
+    // Mount OpenAPI spec endpoint
+    this.app.get("/openapi.json", openAPIHandler);
+
+    // Mount Scalar UI endpoint
+    this.app.get("/openapi", scalarHandler);
 
     this.app.post("/api/daemon/shutdown", (c) => {
       // Graceful shutdown endpoint

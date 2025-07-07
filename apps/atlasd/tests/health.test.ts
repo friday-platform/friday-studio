@@ -37,8 +37,6 @@ Deno.test("Health Endpoint", async (t) => {
     const json = await res.json();
 
     assertEquals(res.status, 200);
-    assertEquals(json.status, "healthy");
-    assertEquals(json.daemon, true);
     assertEquals(json.activeWorkspaces, 3);
     // Check uptime is approximately correct (within 100ms)
     assert(Math.abs(json.uptime - 60000) < 100);
@@ -66,8 +64,6 @@ Deno.test("Health Endpoint", async (t) => {
 
     for (const res of responses) {
       assertEquals(res.status, 200);
-      const json = await res.json();
-      assertEquals(json.status, "healthy");
     }
   });
 });

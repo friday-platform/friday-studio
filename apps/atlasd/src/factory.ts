@@ -11,13 +11,11 @@ export interface AppContext {
 
 // Define variables available in context
 export type AppVariables = {
-  app: AppContext;
+  Variables: { app: AppContext };
 };
 
 // Create the factory with our types
-export const daemonFactory = createFactory<{
-  Variables: AppVariables;
-}>();
+export const daemonFactory = createFactory<AppVariables>();
 
 // Helper to create a Hono app with context
 export const createApp = (context: AppContext) => {

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "imports": {
-    "@hono/zod-validator": "npm:@hono/zod-validator@^0.7.0",
+    "@hono/zod-openapi": "npm:@hono/zod-openapi@^1.0.0-beta.1",
     "hono-openapi": "npm:hono-openapi@^0.4.8",
     "zod-openapi": "npm:zod-openapi@^5.0.1"
   }
