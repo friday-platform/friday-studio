@@ -8,6 +8,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import type { AtlasConfig } from "@atlas/config";
+import { MODE_CONFIGS, ServerMode } from "./types.ts";
+import { getToolsForMode, isToolAllowedForMode } from "./tool-categories.ts";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -27,6 +29,8 @@ export interface PlatformMCPServerDependencies {
     sessionId?: string;
     agentId?: string;
   };
+  // Server mode - defaults to internal
+  mode?: ServerMode;
 }
 
 export class PlatformMCPServer {
@@ -39,26 +43,61 @@ export class PlatformMCPServer {
     sessionId?: string;
     agentId?: string;
   };
+  private mode: ServerMode;
+  private modeConfig: typeof MODE_CONFIGS[ServerMode];
+  private availableTools: string[];
 
   constructor(dependencies: PlatformMCPServerDependencies) {
     this.dependencies = dependencies;
     this.logger = dependencies.logger;
     this.daemonUrl = dependencies.daemonUrl || "http://localhost:8080";
     this.workspaceContext = dependencies.workspaceContext;
+
+    // Initialize mode and configuration
+    this.mode = dependencies.mode || ServerMode.INTERNAL;
+    this.modeConfig = MODE_CONFIGS[this.mode];
+
+    // Validate mode
+    if (!Object.values(ServerMode).includes(this.mode)) {
+      throw new Error(`Invalid server mode: ${this.mode}`);
+    }
+
+    // Initialize available tools for this mode
+    this.availableTools = getToolsForMode(this.mode);
+
     this.server = new McpServer({
-      name: "atlas-platform",
+      name: this.modeConfig.serverName,
       version: "1.0.0",
     });
     this.setupTools();
 
     this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,
+      mode: this.mode,
+      serverName: this.modeConfig.serverName,
+      availableTools: this.availableTools.length,
     });
+  }
+
+  /**
+   * Register a tool only if it's allowed in the current mode
+   */
+  private registerToolIfAllowed(
+    toolName: string,
+    schema: any,
+    handler: (...args: any[]) => any,
+  ): void {
+    if (isToolAllowedForMode(toolName, this.mode)) {
+      this.server.registerTool(toolName, schema, handler);
+      this.logger.debug(`Registered tool: ${toolName}`, { mode: this.mode });
+    } else {
+      this.logger.debug(`Skipped tool (not allowed in ${this.mode} mode): ${toolName}`);
+    }
   }
 
   private setupTools(): void {
     // Platform capability: workspace.list - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_list",
       {
         description: "List all workspaces through daemon API",
@@ -105,7 +144,7 @@ export class PlatformMCPServer {
     );
 
     // Platform capability: workspace.create - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_create",
       {
         description: "Create a new workspace through daemon API",
@@ -169,7 +208,7 @@ export class PlatformMCPServer {
     );
 
     // Platform capability: workspace.delete - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_delete",
       {
         description: "Delete a workspace through daemon API",
@@ -227,7 +266,7 @@ export class PlatformMCPServer {
     );
 
     // Platform capability: workspace.describe - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_describe",
       {
         description: "Get detailed information about a workspace through daemon API",
@@ -278,7 +317,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_jobs_list - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_jobs_list",
       {
         description: "List all jobs in a workspace through daemon API",
@@ -343,7 +382,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_jobs_describe - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_jobs_describe",
       {
         description: "Get detailed information about a specific job through daemon API",
@@ -401,7 +440,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_sessions_list - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_sessions_list",
       {
         description: "List all sessions in a workspace through daemon API",
@@ -448,7 +487,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_sessions_describe - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_sessions_describe",
       {
         description: "Get detailed information about a specific session through daemon API",
@@ -493,7 +532,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_sessions_cancel - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_sessions_cancel",
       {
         description: "Cancel a running session through daemon API",
@@ -543,7 +582,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_signals_list - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_signals_list",
       {
         description: "List all signals in a workspace through daemon API",
@@ -590,7 +629,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_signals_trigger - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_signals_trigger",
       {
         description: "Trigger a signal in a workspace through daemon API",
@@ -656,7 +695,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_agents_list - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_agents_list",
       {
         description: "List all agents in a workspace through daemon API",
@@ -703,7 +742,7 @@ export class PlatformMCPServer {
     );
 
     // Workspace capability: workspace_agents_describe - ROUTES THROUGH DAEMON API
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "workspace_agents_describe",
       {
         description: "Get detailed information about a specific agent through daemon API",
@@ -785,7 +824,7 @@ export class PlatformMCPServer {
      * @throws {Error} Input validation errors for invalid parameters
      * @throws {Error} Daemon API errors for server/network issues
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_list",
       {
         description: "List library items with optional filtering through daemon API",
@@ -871,7 +910,7 @@ export class PlatformMCPServer {
      * @throws {Error} Validation error for invalid/empty itemId
      * @throws {Error} Daemon API error if item not found or access denied
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_get",
       {
         description: "Get a specific library item with optional content through daemon API",
@@ -955,7 +994,7 @@ export class PlatformMCPServer {
      * @throws {Error} Input validation errors for invalid parameters
      * @throws {Error} Daemon API errors for server/network issues
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_search",
       {
         description: "Search library items across all libraries through daemon API",
@@ -1037,7 +1076,7 @@ export class PlatformMCPServer {
      *   - Recent activity metrics
      * @throws {Error} Daemon API errors for server/network issues
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_stats",
       {
         description: "Get library usage statistics and analytics through daemon API",
@@ -1097,7 +1136,7 @@ export class PlatformMCPServer {
      *   - Usage examples and documentation
      * @throws {Error} Daemon API errors for server/network issues
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_templates",
       {
         description: "List available content generation templates through daemon API",
@@ -1171,7 +1210,7 @@ export class PlatformMCPServer {
      * @throws {Error} Input validation errors for invalid parameters
      * @throws {Error} Daemon API errors for server/storage issues
      */
-    this.server.registerTool(
+    this.registerToolIfAllowed(
       "library_store",
       {
         description: "Create a new library item through daemon API",
@@ -1881,34 +1920,24 @@ export class PlatformMCPServer {
   }
 
   /**
-   * Get available tools
+   * Get available tools for current mode
    */
   getAvailableTools(): string[] {
-    return [
-      // Platform capabilities
-      "workspace_list",
-      "workspace_create",
-      "workspace_delete",
-      "workspace_describe",
-      // Workspace capabilities (via daemon API)
-      "workspace_jobs_list",
-      "workspace_jobs_describe",
-      "workspace_sessions_list",
-      "workspace_sessions_describe",
-      "workspace_sessions_cancel",
-      "workspace_signals_list",
-      "workspace_signals_trigger",
-      "workspace_agents_list",
-      "workspace_agents_describe",
-      // Library capabilities (via daemon API)
-      "library_list",
-      "library_get",
-      "library_search",
-      "library_stats",
-      "library_templates",
-      "library_store",
-      // Platform jobs are handled by the daemon
-    ];
+    return [...this.availableTools];
+  }
+
+  /**
+   * Get current server mode
+   */
+  getMode(): ServerMode {
+    return this.mode;
+  }
+
+  /**
+   * Get server name for current mode
+   */
+  getServerName(): string {
+    return this.modeConfig.serverName;
   }
 
   /**
