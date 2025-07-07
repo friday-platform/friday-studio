@@ -7,6 +7,7 @@
 
 import { BaseAgent } from "./base-agent.ts";
 import { type ConversationMessage, getConversationStorage } from "./conversation-storage.ts";
+import { LLMProviderManager } from "./llm-provider-manager.ts";
 
 export interface ConversationAgentInput {
   streamId: string;
@@ -158,20 +159,66 @@ export class ConversationAgent extends BaseAgent {
         this.log("No history found, using original message as prompt", "debug");
       }
 
-      // Execute LLM using BaseAgent's method
-      this.log("Generating LLM response", "debug", { model: this.config.model });
+      // Execute LLM with tools support
+      this.log("Generating LLM response with tools", "debug", {
+        model: this.config.model,
+        tools: this.config.tools,
+        toolsCount: this.config.tools?.length || 0,
+      });
 
-      const assistantMessage = await this.generateLLM(
-        this.config.model,
-        this.config.system_prompt,
-        userPrompt,
-        false, // Don't include memory context as we have conversation history
-        {
-          operation: "conversation_agent",
-          agentId: this.id,
-          streamId,
-        },
-      );
+      let assistantMessage: string;
+      let toolCalls: any[] = [];
+      let toolResults: any[] = [];
+
+      // Check if we have tools configured
+      if (this.config.tools && this.config.tools.length > 0) {
+        this.log("Using generateTextWithTools for tool-aware generation", "debug");
+
+        // Get workspace tools from request environment if available
+        const workspaceTools = (input._atlas_context as any)?.workspace_tools || {};
+
+        const result = await LLMProviderManager.generateTextWithTools(
+          userPrompt,
+          {
+            provider: "anthropic", // Default to anthropic
+            model: this.config.model,
+            systemPrompt: this.config.system_prompt,
+            temperature: this.config.temperature || 0.7,
+            maxTokens: this.config.max_tokens || 4000,
+            timeout: 120000, // 2 minutes timeout for claude-sonnet-4
+            tools: workspaceTools, // Pass workspace capability tools
+            operationContext: {
+              operation: "conversation_agent",
+              agentId: this.id,
+              streamId,
+            },
+          },
+        );
+
+        assistantMessage = result.text;
+        toolCalls = result.toolCalls || [];
+        toolResults = result.toolResults || [];
+
+        this.log("Tool-aware generation completed", "debug", {
+          responseLength: assistantMessage.length,
+          toolCallsCount: toolCalls.length,
+          toolResultsCount: toolResults.length,
+        });
+      } else {
+        this.log("No tools configured, using standard generation", "debug");
+
+        assistantMessage = await this.generateLLM(
+          this.config.model,
+          this.config.system_prompt,
+          userPrompt,
+          false, // Don't include memory context as we have conversation history
+          {
+            operation: "conversation_agent",
+            agentId: this.id,
+            streamId,
+          },
+        );
+      }
 
       this.log("LLM response generated successfully", "debug", {
         responseLength: assistantMessage.length,
@@ -234,8 +281,8 @@ export class ConversationAgent extends BaseAgent {
         agent_type: "conversation",
         agent_id: this.id,
         result: assistantMessage,
-        tool_calls: [],
-        tool_results: [],
+        tool_calls: toolCalls,
+        tool_results: toolResults,
         conversation_metadata: {
           streamId,
           messagesInHistory: updatedHistory?.messages?.length || 0,

@@ -90,22 +90,15 @@ export class DaemonCapabilityRegistry {
       ) => {
         // Use HTTP to emit SSE events via daemon API
         try {
-          console.log(
-            `[stream_reply] START: Streaming message for stream ${stream_id}: "${message}"`,
-          );
-
           // Generate messageId for this response
           const messageId = crypto.randomUUID();
-          console.log(`[stream_reply] Generated messageId: ${messageId}`);
 
           // Stream the message word-by-word for realistic typing feel
           const words = message.split(" ");
-          console.log(`[stream_reply] Will stream ${words.length} words`);
           let content = "";
 
           for (let i = 0; i < words.length; i++) {
             content += (i > 0 ? " " : "") + words[i];
-            console.log(`[stream_reply] Streaming word ${i + 1}/${words.length}: "${content}"`);
 
             const chunkEvent = {
               type: "message_chunk",
@@ -120,7 +113,7 @@ export class DaemonCapabilityRegistry {
             };
 
             // Use HTTP to emit SSE event via daemon API
-            console.log(`[stream_reply] Emitting chunk via HTTP API`);
+
             try {
               const response = await fetch(`http://localhost:8080/api/stream/${stream_id}/emit`, {
                 method: "POST",
@@ -131,21 +124,16 @@ export class DaemonCapabilityRegistry {
               if (!response.ok) {
                 throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
               }
-              console.log(`[stream_reply] Chunk emitted successfully`);
             } catch (emitError) {
-              console.error(`[stream_reply] Failed to emit SSE chunk:`, emitError);
               throw emitError;
             }
 
             // Small delay for realistic typing feel
-            await new Promise((resolve) => setTimeout(resolve, 25));
+            // await new Promise((resolve) => setTimeout(resolve, 25));
           }
-
-          console.log(`[stream_reply] Finished streaming words`);
 
           // Send transparency/metadata if provided
           if (metadata) {
-            console.log(`[stream_reply] Sending transparency metadata:`, metadata);
             const transparencyEvent = {
               type: "transparency",
               data: metadata,
@@ -164,9 +152,7 @@ export class DaemonCapabilityRegistry {
               if (!response.ok) {
                 throw new Error(`SSE emit failed: ${response.status} ${response.statusText}`);
               }
-              console.log(`[stream_reply] Transparency event emitted successfully`);
             } catch (emitError) {
-              console.error(`[stream_reply] Failed to emit transparency event:`, emitError);
               throw emitError;
             }
           }
@@ -212,13 +198,18 @@ export class DaemonCapabilityRegistry {
           };
         } catch (error) {
           console.error(`[stream_reply] ERROR: Stream operation failed:`, error);
-          console.error(`[stream_reply] Error stack:`, error.stack);
+          console.error(
+            `[stream_reply] Error stack:`,
+            error instanceof Error ? error.stack : "No stack trace",
+          );
           return {
             success: false,
             error: "stream_send_failed",
             message: error instanceof Error ? error.message : String(error),
             conversationId,
             stream_id,
+            details:
+              "Failed to send streaming reply. This might be due to connection issues or invalid stream ID.",
           };
         }
       },

@@ -305,7 +305,7 @@ export class AtlasClient {
         throw error;
       }
 
-      if (error.name === "AbortError") {
+      if (error instanceof Error && error.name === "AbortError") {
         throw new AtlasApiError(
           `Request to workspace server timed out after ${this.timeout}ms`,
           408,
@@ -313,7 +313,9 @@ export class AtlasClient {
       }
 
       throw new AtlasApiError(
-        `Failed to connect to workspace server on port ${port}. Error: ${error.message}`,
+        `Failed to connect to workspace server on port ${port}. Error: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         503,
       );
     }
@@ -918,7 +920,7 @@ export class AtlasClient {
         throw error;
       }
 
-      if (error.name === "AbortError") {
+      if (error instanceof Error && error.name === "AbortError") {
         throw new AtlasApiError(
           `Request to Atlas daemon timed out after ${this.timeout}ms. Is the daemon running?`,
           408,
@@ -927,7 +929,9 @@ export class AtlasClient {
 
       // Network errors
       throw new AtlasApiError(
-        `Failed to connect to Atlas daemon at ${this.url}. Is the daemon running? Error: ${error.message}`,
+        `Failed to connect to Atlas daemon at ${this.url}. Is the daemon running? Error: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         503,
       );
     }

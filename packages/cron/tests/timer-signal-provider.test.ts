@@ -246,20 +246,22 @@ Deno.test("TimerSignalProvider - should use specified timezone for cron-schedule
 Deno.test("TimerSignalProvider - should call signal callback when manually triggered", async () => {
   const { storage } = await setupTest();
   let provider: TimerSignalProvider | undefined;
-  let signalReceived: TimerSignalData | null = null;
+  let signalReceived: TimerSignalData | undefined;
 
   try {
     provider = new TimerSignalProvider(basicConfig, storage);
-    provider.setSignalCallback((signal: TimerSignalData) => {
+    provider.setSignalCallback((signal) => {
       signalReceived = signal;
     });
 
     const signal = await provider.triggerManually();
 
     assertExists(signalReceived);
-    assertEquals(signalReceived?.id, basicConfig.id);
-    assertEquals(signalReceived?.type, "timer");
-    assertEquals(signalReceived?.data.scheduled, basicConfig.schedule);
+    if (signalReceived) {
+      assertEquals(signalReceived.id, basicConfig.id);
+      assertEquals(signalReceived.type, "timer");
+      assertEquals(signalReceived.data.scheduled, basicConfig.schedule);
+    }
   } finally {
     await teardownProvider(provider, storage);
   }

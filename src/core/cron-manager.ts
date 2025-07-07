@@ -11,7 +11,7 @@
  * - Centralized timer scheduling and execution
  */
 
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 import { logger } from "../utils/logger.ts";
 import type { KVStorage } from "./storage/kv-storage.ts";
 
@@ -50,7 +50,7 @@ export interface PersistedTimerData {
  * Callback interface for workspace wake-up
  */
 export interface WorkspaceWakeupCallback {
-  (workspaceId: string, signalId: string, signalData: any): Promise<void>;
+  (workspaceId: string, signalId: string, signalData: unknown): Promise<void>;
 }
 
 /**
@@ -149,7 +149,7 @@ export class CronManager {
 
     // Validate cron expression
     try {
-      cronParser.parseExpression(config.schedule, {
+      CronExpressionParser.parse(config.schedule, {
         tz: config.timezone || "UTC",
       });
     } catch (error) {
@@ -172,7 +172,7 @@ export class CronManager {
 
     // Calculate next execution
     try {
-      const cronExpression = cronParser.parseExpression(config.schedule, {
+      const cronExpression = CronExpressionParser.parse(config.schedule, {
         tz: timerInfo.timezone,
       });
       timerInfo.nextExecution = cronExpression.next().toDate();
@@ -231,7 +231,7 @@ export class CronManager {
     const workspaceTimers = Array.from(this.timers.entries())
       .filter(([_, timer]) => timer.workspaceId === workspaceId);
 
-    for (const [timerKey, timer] of workspaceTimers) {
+    for (const [_, timer] of workspaceTimers) {
       await this.unregisterTimer(timer.workspaceId, timer.signalId);
     }
 
@@ -329,7 +329,7 @@ export class CronManager {
     if (delay <= 0) {
       // Execution time has passed, calculate next execution
       try {
-        const cronExpression = cronParser.parseExpression(timer.schedule, {
+        const cronExpression = CronExpressionParser.parse(timer.schedule, {
           tz: timer.timezone,
         });
         timer.nextExecution = cronExpression.next().toDate();
@@ -370,7 +370,7 @@ export class CronManager {
       timer.lastExecution = new Date();
 
       // Calculate next execution
-      const cronExpression = cronParser.parseExpression(timer.schedule, {
+      const cronExpression = CronExpressionParser.parse(timer.schedule, {
         tz: timer.timezone,
       });
       timer.nextExecution = cronExpression.next().toDate();
@@ -456,7 +456,7 @@ export class CronManager {
 
           // Recalculate next execution if needed
           if (!timer.nextExecution || timer.nextExecution.getTime() <= Date.now()) {
-            const cronExpression = cronParser.parseExpression(timer.schedule, {
+            const cronExpression = CronExpressionParser.parse(timer.schedule, {
               tz: timer.timezone,
             });
             timer.nextExecution = cronExpression.next().toDate();

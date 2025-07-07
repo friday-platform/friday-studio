@@ -804,7 +804,7 @@ export function getAgentSupervisorConfig(atlasConfig: AtlasConfig): {
   prompts: Record<string, string>;
 } {
   return {
-    model: atlasConfig.supervisors.agent.model,
-    prompts: atlasConfig.supervisors.agent.prompts,
+    model: atlasConfig.supervisors?.agent.model || "claude-3-5-sonnet-20241022",
+    prompts: atlasConfig.supervisors?.agent.prompts || {},
   };
 }

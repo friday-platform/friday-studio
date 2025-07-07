@@ -274,7 +274,7 @@ Deno.test("Atlas Client E2E - should handle server errors gracefully", async () 
     const result = await fetchSessions({ port: serverPort });
 
     assertEquals(result.success, false);
-    if (!result.success) {
+    if ("error" in result) {
       assertExists(result.error);
       assertEquals(result.reason, "network_error");
     }
@@ -297,7 +297,7 @@ Deno.test("Atlas Client E2E - should handle malformed responses", async () => {
     const result = await fetchLibraryItems({ port: serverPort });
 
     assertEquals(result.success, false);
-    if (!result.success) {
+    if ("error" in result) {
       assertExists(result.error);
     }
   } finally {

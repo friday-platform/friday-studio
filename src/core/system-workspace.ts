@@ -9,7 +9,6 @@
 // Import types are handled dynamically in the implementation
 import { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { WorkspaceConfig } from "@atlas/config";
-import type { ResponseChannel } from "./session.ts";
 import { logger } from "../utils/logger.ts";
 
 /**
@@ -111,7 +110,7 @@ export abstract class SystemWorkspace {
   async triggerSignal(
     signalName: string,
     payload: any,
-    responseChannel?: ResponseChannel,
+    responseChannel?: unknown,
   ): Promise<void> {
     if (!this.runtime) {
       throw new Error("System workspace not initialized");

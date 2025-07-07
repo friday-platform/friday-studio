@@ -1342,7 +1342,6 @@ const workspaceRuntimeMachine = setup({
     },
     draining: {
       invoke: {
-        id: "drainWorkspace",
         src: fromPromise(async ({ input }: {
           input: {
             workspace: any;
@@ -1460,7 +1459,6 @@ const workspaceRuntimeMachine = setup({
     },
     terminating: {
       invoke: {
-        id: "terminateWorkspace",
         src: fromPromise(async ({ input }: {
           input: {
             workspace: any;

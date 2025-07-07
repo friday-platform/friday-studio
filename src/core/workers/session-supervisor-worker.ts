@@ -276,6 +276,9 @@ class SessionSupervisorWorker extends BaseWorker {
               results,
             );
 
+            // Get session context for memory configuration
+            const sessionContext = this.supervisor!.getSessionContext();
+
             // Check if memory operations are enabled based on job configuration
             const jobSpec = sessionContext?.jobSpec;
             const memoryConfig = jobSpec?.memory;
@@ -306,7 +309,7 @@ class SessionSupervisorWorker extends BaseWorker {
             }
 
             // Log structured session results
-            const sessionContext = this.supervisor!.getSessionContext();
+            // Already have sessionContext from above
             const timing = {
               total_duration: Date.now() - sessionStartTime,
               agent_executions: results.flatMap((r) => r.results).map((r) => ({

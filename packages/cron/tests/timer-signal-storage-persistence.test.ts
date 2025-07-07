@@ -7,7 +7,7 @@
  */
 
 import { assertEquals } from "@std/assert";
-import { CronManager, type CronTimerConfig } from "../mod.ts";
+import { CronManager, type CronTimerConfig, type PersistedTimerData } from "../mod.ts";
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
 
 // Mock logger for testing
@@ -48,23 +48,30 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
 
     // Check if timer data is persisted in storage
     const timerKey = `${validConfig.workspaceId}:${validConfig.signalId}`;
-    const persistedState = await storage.get(["cron_timers", timerKey]);
+    const persistedState = await storage.get<PersistedTimerData>(["cron_timers", timerKey]);
 
     assertEquals(persistedState !== null, true, "Should persist state to storage");
-    assertEquals(
-      persistedState.workspaceId,
-      validConfig.workspaceId,
-      "Should persist correct workspace ID",
-    );
-    assertEquals(persistedState.signalId, validConfig.signalId, "Should persist correct signal ID");
-    assertEquals(persistedState.schedule, validConfig.schedule, "Should persist schedule");
-    assertEquals(persistedState.timezone, validConfig.timezone, "Should persist timezone");
-    assertEquals(persistedState.isActive, true, "Should persist active status");
-    assertEquals(
-      typeof persistedState.nextExecution,
-      "string",
-      "Should persist next execution time",
-    );
+
+    if (persistedState && typeof persistedState === "object" && "workspaceId" in persistedState) {
+      assertEquals(
+        persistedState.workspaceId,
+        validConfig.workspaceId,
+        "Should persist correct workspace ID",
+      );
+      assertEquals(
+        persistedState.signalId,
+        validConfig.signalId,
+        "Should persist correct signal ID",
+      );
+      assertEquals(persistedState.schedule, validConfig.schedule, "Should persist schedule");
+      assertEquals(persistedState.timezone, validConfig.timezone, "Should persist timezone");
+      assertEquals(persistedState.isActive, true, "Should persist active status");
+      assertEquals(
+        typeof persistedState.nextExecution,
+        "string",
+        "Should persist next execution time",
+      );
+    }
 
     await cronManager.shutdown();
   });
@@ -238,7 +245,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     await cronManager.registerTimer(validConfig);
 
     const timerKey = `${validConfig.workspaceId}:${validConfig.signalId}`;
-    const initialState = await storage.get(["cron_timers", timerKey]);
+    const initialState = await storage.get<PersistedTimerData>(["cron_timers", timerKey]);
     const initialNextExecution = initialState?.nextExecution;
 
     // Wait a bit to ensure state is persisted
@@ -295,7 +302,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     await cronManager.registerTimer(validConfig);
 
     const timerKey = `${validConfig.workspaceId}:${validConfig.signalId}`;
-    const preExecutionState = await storage.get(["cron_timers", timerKey]);
+    const preExecutionState = await storage.get<PersistedTimerData>(["cron_timers", timerKey]);
     assertEquals(
       preExecutionState?.lastExecution,
       undefined,
@@ -321,14 +328,14 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
 
     // Should have persisted state
     const timerKey = `${validConfig.workspaceId}:${validConfig.signalId}`;
-    const persistedState = await storage.get(["cron_timers", timerKey]);
+    const persistedState = await storage.get<PersistedTimerData>(["cron_timers", timerKey]);
     assertEquals(persistedState !== null, true, "Should have persisted state");
 
     // Unregister timer
     await cronManager.unregisterTimer(validConfig.workspaceId, validConfig.signalId);
 
     // Storage should be cleaned up
-    const finalState = await storage.get(["cron_timers", timerKey]);
+    const finalState = await storage.get<PersistedTimerData>(["cron_timers", timerKey]);
     assertEquals(finalState, null, "Should clean up storage on unregister");
 
     // Timer should no longer exist

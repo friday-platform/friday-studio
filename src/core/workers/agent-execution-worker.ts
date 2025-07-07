@@ -854,12 +854,26 @@ class AgentExecutionWorker {
         console.log(`[executeTempestAgent] ConversationAgent imported successfully`);
 
         // Create conversation agent config from request
+        console.log(`[executeTempestAgent] agentConfig.tools:`, agentConfig.tools);
+        console.log(
+          `[executeTempestAgent] request environment has workspace_tools_metadata:`,
+          !!(request.environment as any)?.workspace_tools_metadata,
+        );
+
+        // Get tools from environment if available
+        const toolsFromEnvironment = (request.environment as any)?.workspace_tools_metadata
+          ? Object.keys((request.environment as any).workspace_tools_metadata)
+          : [];
+        console.log(`[executeTempestAgent] Tools from environment:`, toolsFromEnvironment);
+
         const conversationConfig = {
           model: config.model as string || "claude-3-5-sonnet-20241022",
           temperature: config.temperature as number || 0.7,
           max_tokens: config.max_tokens as number || 4000,
           system_prompt: prompts.system as string || "You are a helpful AI assistant.",
-          tools: agentConfig.tools as string[] || [],
+          tools: toolsFromEnvironment.length > 0
+            ? toolsFromEnvironment
+            : (agentConfig.tools as string[] || []),
           parameters: config,
         };
 
@@ -869,8 +883,41 @@ class AgentExecutionWorker {
           this.workspaceId,
         );
 
+        // Build workspace tools if available
+        let workspaceTools = {};
+        const hasWorkspaceTools = agentConfig.tools && Array.isArray(agentConfig.tools) &&
+          agentConfig.tools.length > 0;
+
+        if (hasWorkspaceTools && request.environment) {
+          const env = request.environment as any;
+          if (env.workspace_tools_metadata) {
+            workspaceTools = await this.createWorkspaceToolsFromMetadata(
+              env.workspace_tools_metadata,
+            );
+            this.log(
+              `Created ${
+                Object.keys(workspaceTools).length
+              } workspace tools for conversation agent`,
+              "debug",
+            );
+          }
+        }
+
+        // Add workspace tools to the input context
+        const inputObj = typeof request.input === "object" && request.input !== null
+          ? request.input as Record<string, unknown>
+          : {};
+        const existingContext = inputObj._atlas_context as Record<string, unknown> || {};
+        const enrichedInput = {
+          ...inputObj,
+          _atlas_context: {
+            ...existingContext,
+            workspace_tools: workspaceTools,
+          },
+        };
+
         // Execute the conversation agent
-        const result = await conversationAgent.execute(request.input as any);
+        const result = await conversationAgent.execute(enrichedInput as any);
 
         return {
           agent_type: "tempest",

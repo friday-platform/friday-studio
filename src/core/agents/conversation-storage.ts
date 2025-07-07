@@ -64,7 +64,11 @@ export class ConversationStorage {
       console.log("[ConversationStorage] Initialized KV storage for conversations");
     } catch (error) {
       console.error("[ConversationStorage] Failed to initialize KV storage:", error);
-      throw new Error(`Failed to initialize conversation storage: ${error.message}`);
+      throw new Error(
+        `Failed to initialize conversation storage: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 
@@ -111,7 +115,11 @@ export class ConversationStorage {
       );
     } catch (error) {
       console.error(`[ConversationStorage] Failed to save message:`, error);
-      throw new Error(`Failed to save conversation message: ${error.message}`);
+      throw new Error(
+        `Failed to save conversation message: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

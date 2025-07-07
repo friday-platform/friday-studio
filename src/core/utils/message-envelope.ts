@@ -269,6 +269,9 @@ export function inferDomainFromWorkerType(workerType: WorkerType): MessageDomain
       return "agent";
     case "manager":
       return "manager";
+    default:
+      // Default to manager domain for unknown worker types
+      return "manager";
   }
 }
 

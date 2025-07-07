@@ -631,7 +631,7 @@ export class LLMProviderManager {
         messages,
         tools: Object.keys(allTools).length > 0 ? allTools : undefined,
         toolChoice: options.toolChoice,
-        maxSteps: options.maxSteps || 1,
+        maxSteps: options.maxSteps || 10,
         maxTokens: config.maxTokens,
         temperature: config.temperature,
         abortSignal: controller.signal,

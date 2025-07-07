@@ -309,7 +309,11 @@ export class LibraryStorageAdapter {
         content = await Deno.readTextFile(fullContentPath);
       }
     } catch (error) {
-      throw new Error(`Failed to read content for item ${id}: ${error.message}`);
+      throw new Error(
+        `Failed to read content for item ${id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     // Convert metadata to LibraryItem format
@@ -336,7 +340,11 @@ export class LibraryStorageAdapter {
       await Deno.remove(fullContentPath);
     } catch (error) {
       // Log warning but continue with metadata deletion
-      console.warn(`Failed to delete content file ${fullContentPath}: ${error.message}`);
+      console.warn(
+        `Failed to delete content file ${fullContentPath}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
 
     const atomic = this.storage.atomic();

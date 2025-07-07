@@ -11,7 +11,7 @@
  * - Centralized timer scheduling and execution
  */
 
-import cronParser from "cron-parser";
+import { CronExpressionParser } from "cron-parser";
 import type { KVStorage } from "../../../src/core/storage/kv-storage.ts";
 
 export interface TimerInfo {
@@ -223,7 +223,7 @@ export class CronManager {
 
       // Validate cron expression
       try {
-        cronParser.parseExpression(config.schedule, {
+        CronExpressionParser.parse(config.schedule, {
           tz: config.timezone || "UTC",
         });
       } catch (error) {
@@ -246,7 +246,7 @@ export class CronManager {
 
       // Calculate next execution
       try {
-        const cronExpression = cronParser.parseExpression(config.schedule, {
+        const cronExpression = CronExpressionParser.parse(config.schedule, {
           tz: timerInfo.timezone,
         });
         timerInfo.nextExecution = cronExpression.next().toDate();
@@ -432,7 +432,7 @@ export class CronManager {
     if (delay <= 0) {
       // Execution time has passed, calculate next execution
       try {
-        const cronExpression = cronParser.parseExpression(timer.schedule, {
+        const cronExpression = CronExpressionParser.parse(timer.schedule, {
           tz: timer.timezone,
         });
         timer.nextExecution = cronExpression.next().toDate();
@@ -489,7 +489,7 @@ export class CronManager {
         timer.lastExecution = new Date();
 
         // Calculate next execution
-        const cronExpression = cronParser.parseExpression(timer.schedule, {
+        const cronExpression = CronExpressionParser.parse(timer.schedule, {
           tz: timer.timezone,
         });
         timer.nextExecution = cronExpression.next().toDate();
@@ -505,7 +505,7 @@ export class CronManager {
           data: {
             scheduled: timer.schedule,
             timezone: timer.timezone,
-            nextRun: timer.nextExecution.toISOString(),
+            nextRun: timer.nextExecution?.toISOString() ?? "unknown",
             source: "cron-manager",
           },
         };
@@ -553,7 +553,7 @@ export class CronManager {
 
         this.logger.info("Cron timer executed successfully", {
           timerKey,
-          nextExecution: timer.nextExecution.toISOString(),
+          nextExecution: timer.nextExecution?.toISOString() ?? "unknown",
         });
       } catch (error) {
         this.logger.error("Failed to execute cron timer", { error, timerKey, timer });
@@ -618,7 +618,7 @@ export class CronManager {
 
           // Recalculate next execution if needed
           if (!timer.nextExecution || timer.nextExecution.getTime() <= Date.now()) {
-            const cronExpression = cronParser.parseExpression(timer.schedule, {
+            const cronExpression = CronExpressionParser.parse(timer.schedule, {
               tz: timer.timezone,
             });
             timer.nextExecution = cronExpression.next().toDate();
