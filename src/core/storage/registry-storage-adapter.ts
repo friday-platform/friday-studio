@@ -12,6 +12,7 @@ import {
   WorkspaceEntrySchema,
   WorkspaceStatus,
 } from "../workspace-registry-types.ts";
+import { type WorkspaceConfig } from "@atlas/config";
 
 /**
  * Registry-specific storage operations
@@ -49,20 +50,77 @@ export class RegistryStorageAdapter {
     // Validate workspace entry
     const validatedWorkspace = WorkspaceEntrySchema.parse(workspace);
 
-    // Atomic operation to register workspace and update metadata
-    const atomic = this.storage.atomic();
-    atomic.set(["workspaces", validatedWorkspace.id], validatedWorkspace);
-    atomic.set(["registry", "lastUpdated"], new Date().toISOString());
+    let workspaceToStore = validatedWorkspace;
 
-    // Update workspace list for efficient enumeration
-    const workspaceList = await this.getWorkspaceList();
-    if (!workspaceList.includes(validatedWorkspace.id)) {
-      atomic.set(["workspaces", "_list"], [...workspaceList, validatedWorkspace.id]);
+    // For virtual workspaces, always embed config regardless of size
+    if (validatedWorkspace.metadata?.virtual) {
+      // Virtual workspaces must have embedded config since there's no filesystem fallback
+      workspaceToStore = validatedWorkspace;
+    } else {
+      // For regular workspaces, check if workspace is too large and handle separately
+      const workspaceSize = new TextEncoder().encode(JSON.stringify(validatedWorkspace)).length;
+
+      // If workspace is too large, store config separately and reference it
+      if (workspaceSize > 30000) { // Conservative limit to avoid Deno KV size issues
+        // Store config in separate key
+        if (validatedWorkspace.config) {
+          const configSize =
+            new TextEncoder().encode(JSON.stringify(validatedWorkspace.config)).length;
+
+          // For very large configs, skip storing them entirely and rely on runtime loading
+          if (configSize > 32000) {
+            // Config too large for Deno KV, will be loaded from source at runtime
+          } else {
+            const configAtomic = this.storage.atomic();
+            configAtomic.set(
+              ["workspace-configs", validatedWorkspace.id],
+              validatedWorkspace.config,
+            );
+            const configSuccess = await configAtomic.commit();
+            if (!configSuccess) {
+              throw new Error(`Failed to store config for workspace ${validatedWorkspace.id}`);
+            }
+          }
+        }
+
+        // Store workspace without embedded config, but with a reference
+        workspaceToStore = {
+          ...validatedWorkspace,
+          config: undefined,
+          metadata: {
+            ...validatedWorkspace.metadata,
+            configStoredSeparately: true,
+          },
+        };
+      }
     }
 
-    const success = await atomic.commit();
-    if (!success) {
-      throw new Error("Failed to register workspace - atomic operation failed");
+    const workspaceAtomic = this.storage.atomic();
+    workspaceAtomic.set(["workspaces", validatedWorkspace.id], workspaceToStore);
+    const workspaceSuccess = await workspaceAtomic.commit();
+    if (!workspaceSuccess) {
+      throw new Error(
+        `Failed to register workspace ${validatedWorkspace.id} - atomic operation failed`,
+      );
+    }
+
+    // Update registry metadata in separate atomic operation
+    const metadataAtomic = this.storage.atomic();
+    metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
+    const metadataSuccess = await metadataAtomic.commit();
+    if (!metadataSuccess) {
+      throw new Error("Failed to update registry metadata - atomic operation failed");
+    }
+
+    // Update workspace list in separate atomic operation
+    const workspaceList = await this.getWorkspaceList();
+    if (!workspaceList.includes(validatedWorkspace.id)) {
+      const listAtomic = this.storage.atomic();
+      listAtomic.set(["workspaces", "_list"], [...workspaceList, validatedWorkspace.id]);
+      const listSuccess = await listAtomic.commit();
+      if (!listSuccess) {
+        throw new Error("Failed to update workspace list - atomic operation failed");
+      }
     }
   }
 
@@ -70,18 +128,41 @@ export class RegistryStorageAdapter {
    * Unregister a workspace
    */
   async unregisterWorkspace(id: string): Promise<void> {
-    const atomic = this.storage.atomic();
-    atomic.delete(["workspaces", id]);
-    atomic.set(["registry", "lastUpdated"], new Date().toISOString());
+    // Check if workspace has separately stored config
+    const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
+    const hasSeparateConfig = workspace?.metadata?.configStoredSeparately;
 
-    // Remove from workspace list
+    // Delete workspace in separate atomic operation
+    const workspaceAtomic = this.storage.atomic();
+    workspaceAtomic.delete(["workspaces", id]);
+    const workspaceSuccess = await workspaceAtomic.commit();
+    if (!workspaceSuccess) {
+      throw new Error(`Failed to unregister workspace ${id} - atomic operation failed`);
+    }
+
+    // Delete separately stored config if it exists
+    if (hasSeparateConfig) {
+      const configAtomic = this.storage.atomic();
+      configAtomic.delete(["workspace-configs", id]);
+      await configAtomic.commit(); // Don't fail if this fails, workspace is already deleted
+    }
+
+    // Update registry metadata in separate atomic operation
+    const metadataAtomic = this.storage.atomic();
+    metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
+    const metadataSuccess = await metadataAtomic.commit();
+    if (!metadataSuccess) {
+      throw new Error("Failed to update registry metadata - atomic operation failed");
+    }
+
+    // Update workspace list in separate atomic operation
     const workspaceList = await this.getWorkspaceList();
     const updatedList = workspaceList.filter((workspaceId) => workspaceId !== id);
-    atomic.set(["workspaces", "_list"], updatedList);
-
-    const success = await atomic.commit();
-    if (!success) {
-      throw new Error(`Failed to unregister workspace ${id} - atomic operation failed`);
+    const listAtomic = this.storage.atomic();
+    listAtomic.set(["workspaces", "_list"], updatedList);
+    const listSuccess = await listAtomic.commit();
+    if (!listSuccess) {
+      throw new Error("Failed to update workspace list - atomic operation failed");
     }
   }
 
@@ -89,7 +170,23 @@ export class RegistryStorageAdapter {
    * Get a workspace by ID
    */
   async getWorkspace(id: string): Promise<WorkspaceEntry | null> {
-    return await this.storage.get<WorkspaceEntry>(["workspaces", id]);
+    const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
+    if (!workspace) return null;
+
+    // If config is stored separately, retrieve it
+    if (workspace.metadata?.configStoredSeparately) {
+      const config = await this.storage.get<WorkspaceConfig>(["workspace-configs", id]);
+      return {
+        ...workspace,
+        config: config || undefined, // Ensure config is undefined if null/empty
+        metadata: {
+          ...workspace.metadata,
+          configStoredSeparately: undefined, // Remove the flag from returned object
+        },
+      };
+    }
+
+    return workspace;
   }
 
   /**

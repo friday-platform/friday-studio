@@ -919,7 +919,8 @@ export class WorkspaceCapabilityRegistry {
     this.registerCapability({
       id: "library_list",
       name: "List Library Items",
-      description: "List library items with optional filtering by type, tags, or date range",
+      description:
+        "List library items with metadata only (no content). Use library_get to retrieve full content for specific items.",
       category: "workspace",
       inputSchema: {
         type: "object",
@@ -998,7 +999,8 @@ export class WorkspaceCapabilityRegistry {
     this.registerCapability({
       id: "library_get",
       name: "Get Library Item",
-      description: "Get specific library item with full content for analysis and discussion",
+      description:
+        "Get specific library item with full content for analysis and discussion. Use this to retrieve actual content after getting IDs from library_list.",
       category: "workspace",
       inputSchema: {
         type: "object",
@@ -1062,7 +1064,8 @@ export class WorkspaceCapabilityRegistry {
     this.registerCapability({
       id: "library_search",
       name: "Search Library",
-      description: "Search library items across all workspaces or globally",
+      description:
+        "Search library items across all workspaces or globally. Returns metadata only - use library_get to retrieve full content for specific items.",
       category: "workspace",
       inputSchema: {
         type: "object",

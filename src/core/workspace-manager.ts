@@ -370,7 +370,7 @@ export class WorkspaceManager {
       return existing;
     }
 
-    // Create workspace entry with embedded config
+    // Create workspace entry without embedded config for large configurations
     const workspaceName = metadata?.name || config.workspace.name || id;
 
     // Generate config hash for change detection
@@ -390,7 +390,7 @@ export class WorkspaceManager {
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       configHash,
-      config, // Store the entire config
+      // Don't embed large configs - they will be loaded dynamically via getWorkspaceConfigBySlug
       metadata: {
         description: metadata?.description || config.workspace.description,
         system: metadata?.system || false,
@@ -617,7 +617,13 @@ export class WorkspaceManager {
     }
 
     try {
-      // Load configuration using absolute path
+      // Virtual workspaces have embedded config that doesn't need refreshing
+      if (workspace.metadata?.virtual) {
+        logger.debug("Virtual workspace config refresh skipped (embedded configuration)", { id });
+        return;
+      }
+
+      // Load configuration using absolute path for regular workspaces
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, workspace.path);
       const loadedConfig = await configLoader.load();
@@ -636,11 +642,15 @@ export class WorkspaceManager {
       // Update workspace entry
       const updatedWorkspace = { ...workspace, config, configHash };
 
-      // Update via storage adapter
-      await this.registry!.getStorage().atomic()
-        .set(["workspaces", id], updatedWorkspace)
-        .set(["registry", "lastUpdated"], new Date().toISOString())
-        .commit();
+      // Update workspace in separate atomic operation
+      const workspaceAtomic = this.registry!.getStorage().atomic();
+      workspaceAtomic.set(["workspaces", id], updatedWorkspace);
+      await workspaceAtomic.commit();
+
+      // Update registry metadata in separate atomic operation
+      const metadataAtomic = this.registry!.getStorage().atomic();
+      metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
+      await metadataAtomic.commit();
 
       logger.info("Workspace config cache refreshed", {
         id,
@@ -767,7 +777,25 @@ export class WorkspaceManager {
     }
 
     try {
-      // Use ConfigLoader for consistent configuration loading
+      // Handle virtual workspaces differently
+      if (workspace.metadata?.virtual) {
+        // For virtual workspaces, load configuration from system workspaces module
+        if (workspace.id === "atlas-conversation") {
+          const { ATLAS_CONVERSATION_CONFIG } = await import("@atlas/system-workspaces");
+          return ATLAS_CONVERSATION_CONFIG;
+        }
+
+        // For other virtual workspaces, try embedded config
+        if (workspace.config) {
+          return workspace.config;
+        }
+
+        // If no embedded config and unknown virtual workspace, return null
+        logger.warn(`Virtual workspace ${workspaceSlug} has no available configuration`);
+        return null;
+      }
+
+      // For regular workspaces, use ConfigLoader for consistent configuration loading
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, workspace.path);
       const mergedConfig = await configLoader.load();
@@ -1067,6 +1095,16 @@ export class WorkspaceManager {
 
     for (const workspace of workspaces) {
       try {
+        // Handle virtual workspaces differently
+        if (workspace.metadata?.virtual) {
+          // Virtual workspaces don't have filesystem paths to validate
+          logger.info(`Virtual workspace '${workspace.name}' validated (embedded configuration)`, {
+            workspaceId: workspace.id,
+            type: "virtual",
+          });
+          continue;
+        }
+
         // Check if workspace directory still exists
         const dirExists = await Deno.stat(workspace.path).catch(() => null);
         if (!dirExists) {

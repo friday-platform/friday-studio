@@ -250,7 +250,7 @@ export class AgentSupervisor extends BaseAgent {
         3. Monitor agent execution in real-time
         4. Validate outputs for quality and safety
         5. Handle failures and recovery scenarios
-        
+
         Never load agents directly - always analyze, prepare, and supervise.`,
       user: "",
     };

@@ -185,7 +185,6 @@ export class AtlasDaemon {
 
     // Start CronManager
     await this.cronManager.start();
-    logger.info("CronManager started successfully");
 
     // Register cron signals for all existing workspaces
     await this.discoverAndRegisterExistingCronSignals();
@@ -1464,17 +1463,29 @@ export class AtlasDaemon {
       // Use cached configuration from workspace registry
       let mergedConfig: MergedConfig;
 
-      if (workspace.metadata?.virtual && workspace.config) {
-        // For virtual workspaces, construct MergedConfig without filesystem access
-        mergedConfig = {
-          atlas: atlasDefaults, // Use full atlas defaults which includes memory config
-          workspace: workspace.config, // Use embedded workspace config
-          jobs: workspace.config.jobs || {},
-          supervisorDefaults: this.supervisorDefaults!, // Keep supervisor defaults for compatibility
-        };
-        logger.debug(`Using embedded virtual workspace configuration`, {
+      if (workspace.metadata?.virtual) {
+        // For virtual workspaces, load configuration dynamically
+        logger.debug(`Loading virtual workspace configuration dynamically`, {
           workspaceId: workspace.id,
           system: workspace.metadata?.system,
+        });
+
+        const workspaceConfig = await manager.getWorkspaceConfigBySlug(workspace.id);
+        if (!workspaceConfig) {
+          throw new Error(`Failed to load configuration for virtual workspace: ${workspace.id}`);
+        }
+
+        mergedConfig = {
+          atlas: atlasDefaults, // Use full atlas defaults which includes memory config
+          workspace: workspaceConfig, // Use dynamically loaded workspace config
+          jobs: workspaceConfig.jobs || {},
+          supervisorDefaults: this.supervisorDefaults!, // Keep supervisor defaults for compatibility
+        };
+        logger.debug(`Virtual workspace configuration loaded successfully`, {
+          workspaceId: workspace.id,
+          signals: Object.keys(workspaceConfig.signals || {}).length,
+          jobs: Object.keys(workspaceConfig.jobs || {}).length,
+          agents: Object.keys(workspaceConfig.agents || {}).length,
         });
       } else if (workspace.config) {
         // Use pre-cached configuration (preferred - no I/O at signal time)
