@@ -185,7 +185,6 @@ export class AtlasDaemon {
 
     // Start CronManager
     await this.cronManager.start();
-    logger.info("CronManager started successfully");
 
     // Register cron signals for all existing workspaces
     await this.discoverAndRegisterExistingCronSignals();
