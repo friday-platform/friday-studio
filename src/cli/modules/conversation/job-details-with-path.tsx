@@ -1,17 +1,17 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text } from "ink";
 import { getAtlasClient } from "@atlas/client";
-import { SignalDetails } from "../../../components/signal-details.tsx";
+import { JobDetails } from "../../components/job-details.tsx";
 
-interface SignalDetailsWithPathProps {
+interface JobDetailsWithPathProps {
   workspaceId: string;
-  signalId: string;
+  jobName: string;
 }
 
-export const SignalDetailsWithPath = ({
+export const JobDetailsWithPath = ({
   workspaceId,
-  signalId,
-}: SignalDetailsWithPathProps) => {
+  jobName,
+}: JobDetailsWithPathProps) => {
   const [workspacePath, setWorkspacePath] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -57,9 +57,9 @@ export const SignalDetailsWithPath = ({
   }
 
   return (
-    <SignalDetails
+    <JobDetails
       workspaceId={workspaceId}
-      signalId={signalId}
+      jobName={jobName}
       workspacePath={workspacePath}
     />
   );

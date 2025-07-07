@@ -1,7 +1,10 @@
 export * from "./types.ts";
 export * from "./commands.tsx";
 export * from "./registry.ts";
-export * from "./components/index.ts";
+export { SignalDetailsWithPath } from "./signal-details-with-path.tsx";
+export { JobDetailsWithPath } from "./job-details-with-path.tsx";
+export { WorkspaceSelection } from "./workspace-selection.tsx";
+export { Component } from "./component.tsx";
 
 // Parse command arguments while preserving complex arguments
 export const parseSlashCommand = (input: string) => {

@@ -1,59 +1,55 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Box, Newline, Static, Text, useApp, useInput, useStdout } from "ink";
-import { defaultTheme, extendTheme, Spinner, ThemeProvider, UnorderedList } from "@inkjs/ui";
-import { getAtlasClient } from "@atlas/client";
-import { WorkspaceEntry, WorkspaceStatus } from "../../../../core/workspace-manager.ts";
-import { AgentDetails } from "../../../components/agent-details.tsx";
-import { AgentSelection } from "../../../components/agent-selection.tsx";
-import { ChatMessage } from "../../../components/chat-message.tsx";
-import { CommandInput } from "../../../components/command-input.tsx";
-import { GitDiff } from "../../../components/git-diff.tsx";
-import { JobSelection } from "../../../components/job-selection.tsx";
-import { MarkdownDisplay } from "../../../components/markdown-display.tsx";
-import { SessionDetails } from "../../../components/session-details.tsx";
-import { SessionSelection } from "../../../components/session-selection.tsx";
-import { SignalActionSelection } from "../../../components/signal-action-selection.tsx";
-import { SignalSelection } from "../../../components/signal-selection.tsx";
-import { SignalTriggerInput } from "../../../components/signal-trigger-input.tsx";
-import { useAppContext } from "../../../contexts/app-context.tsx";
-import { AgentListComponent } from "../../../modules/agents/agent-list-component.tsx";
-import { processAgentsFromConfig } from "../../../modules/agents/processor.ts";
-import { fetchLibraryItems } from "../../../modules/library/fetcher.ts";
-import { LibraryListComponent } from "../../../modules/library/library-list-component.tsx";
-import { fetchSessions } from "../../../modules/sessions/fetcher.ts";
-import { SessionListComponent } from "../../../modules/sessions/session-list-component.tsx";
-import { SignalListComponent } from "../../../modules/signals/SignalListComponent.tsx";
-import { triggerSignalSimple } from "../../../modules/signals/trigger.ts";
-import { loadWorkspaceConfigNoCwd } from "../../../modules/workspaces/resolver.ts";
-import { ConversationClient } from "../../../utils/conversation-client.ts";
-import { getDaemonClient } from "../../../utils/daemon-client.ts";
-import { useResponsiveDimensions } from "../../../utils/useResponsiveDimensions.ts";
-import { ConfigView } from "../../../views/ConfigView.tsx";
-import CreditsView from "../../../views/CreditsView.tsx";
-import Help from "../../../views/help.tsx";
-import { InitView } from "../../../views/InitView.tsx";
+import { Spinner, UnorderedList } from "@inkjs/ui";
+import { AgentDetails } from "../../components/agent-details.tsx";
+import { AgentSelection } from "../../components/agent-selection.tsx";
+import { ChatMessage } from "../../components/chat-message.tsx";
+import { CommandInput } from "../../components/command-input.tsx";
+import { JobSelection } from "../../components/job-selection.tsx";
+import { MarkdownDisplay } from "../../components/markdown-display.tsx";
+import { SessionDetails } from "../../components/session-details.tsx";
+import { SessionSelection } from "../../components/session-selection.tsx";
+import { SignalActionSelection } from "../../components/signal-action-selection.tsx";
+import { SignalSelection } from "../../components/signal-selection.tsx";
+import { SignalTriggerInput } from "../../components/signal-trigger-input.tsx";
+import { useAppContext } from "../../contexts/app-context.tsx";
+import { AgentListComponent } from "../agents/agent-list-component.tsx";
+import { processAgentsFromConfig } from "../agents/processor.ts";
+import { fetchLibraryItems } from "../library/fetcher.ts";
+import { LibraryListComponent } from "../library/library-list-component.tsx";
+import { fetchSessions } from "../sessions/fetcher.ts";
+import { SessionListComponent } from "../sessions/session-list-component.tsx";
+import { SignalListComponent } from "../signals/SignalListComponent.tsx";
+import { triggerSignalSimple } from "../signals/trigger.ts";
+import { loadWorkspaceConfigNoCwd } from "../workspaces/resolver.ts";
+import { ConversationClient } from "../../utils/conversation-client.ts";
+import { getDaemonClient } from "../../utils/daemon-client.ts";
+import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
+import { ConfigView } from "../../views/ConfigView.tsx";
+import CreditsView from "../../views/CreditsView.tsx";
+import Help from "../../views/help.tsx";
+import { InitView } from "../../views/InitView.tsx";
 import {
   COMMAND_REGISTRY,
   handleLibraryOpenCommand,
-  JobDetailsWithPath,
   OutputEntry,
   parseSlashCommand,
-  SignalDetailsWithPath,
-  WorkspaceSelection,
-} from "../index.ts";
+} from "./index.ts";
+import { JobDetailsWithPath } from "./job-details-with-path.tsx";
+import { SignalDetailsWithPath } from "./signal-details-with-path.tsx";
+import { WorkspaceSelection } from "./workspace-selection.tsx";
 
 // Helper function to get workspace by ID using daemon API
 const getWorkspaceById = async (workspaceId: string) => {
   try {
     const client = getDaemonClient();
     return await client.getWorkspace(workspaceId);
-  } catch (error) {
-    console.warn("Failed to get workspace:", error);
+  } catch {
     return null;
   }
 };
 
-export function InteractiveCommandInner() {
+export function Component() {
   const { config } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -101,7 +97,6 @@ export function InteractiveCommandInner() {
   // Handle Ctrl+C for graceful shutdown
   useInput((_input, key) => {
     if (key.ctrl && _input === "c") {
-      console.log("[Interactive] Ctrl+C detected, cleaning up...");
       if (sseAbortControllerRef.current) {
         sseAbortControllerRef.current.abort();
         sseAbortControllerRef.current = null;
@@ -117,7 +112,9 @@ export function InteractiveCommandInner() {
   >(null);
 
   const [isInitializing, setIsInitializing] = useState(true);
-  const [_sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(null);
+  const [_sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
+    null,
+  );
   const sseAbortControllerRef = useRef<AbortController | null>(null);
   const [isTyping, setIsTyping] = useState(false);
   const [_typingStartTime, setTypingStartTime] = useState<number | null>(null);
@@ -182,7 +179,6 @@ export function InteractiveCommandInner() {
 
         // Initialize ConversationClient for system workspace
         try {
-          console.log("[Interactive] Initializing ConversationClient...");
           // Use "system" as the workspace ID for the conversation system workspace
           const conversationClient = new ConversationClient(
             "http://localhost:8080",
@@ -190,9 +186,7 @@ export function InteractiveCommandInner() {
             "cli-user",
           );
 
-          console.log("[Interactive] Creating conversation session...");
           const session = await conversationClient.createSession();
-          console.log("[Interactive] Session created:", session);
 
           setConversationClient(conversationClient);
           setConversationSessionId(session.sessionId);
@@ -200,7 +194,6 @@ export function InteractiveCommandInner() {
           conversationClient.sseUrl = session.sseUrl;
 
           // Start persistent SSE listener with AbortController
-          console.log("[Interactive] Starting persistent SSE listener...");
           const abortController = new AbortController();
           sseAbortControllerRef.current = abortController;
 
@@ -217,16 +210,8 @@ export function InteractiveCommandInner() {
               for await (const event of sseIterator) {
                 // Check if we should stop
                 if (abortController.signal.aborted) {
-                  console.log(
-                    "[Interactive] SSE stream aborted, stopping listener",
-                  );
                   break;
                 }
-                console.log(
-                  "[Interactive] Received SSE event:",
-                  event.type,
-                  event.data,
-                );
 
                 if (event.type === "message_chunk") {
                   const responseMessage = event.data.content;
@@ -276,8 +261,6 @@ export function InteractiveCommandInner() {
                 }
 
                 if (event.type === "message_complete") {
-                  console.log("[Interactive] Message completed");
-
                   // Update streaming message ID to make it permanent
                   const streamingMessageId = `llm-response-current`;
                   const permanentMessageId = `message-received-${Date.now()}`;
@@ -298,27 +281,15 @@ export function InteractiveCommandInner() {
                   setIsTyping(false);
                 }
               }
-            } catch (error) {
-              // Only log error if not aborted
+            } catch {
+              // Ignore errors from aborted streams
               if (!abortController.signal.aborted) {
-                console.error("[Interactive] SSE stream error:", error);
+                // Add error handling here if needed
               }
             }
           })();
-
-          console.log(
-            "[Interactive] ConversationClient initialized successfully",
-          );
-        } catch (error) {
-          // Log the full error for debugging
-          console.error(
-            "[Interactive] Failed to initialize conversation client:",
-            error,
-          );
-          console.error("[Interactive] Full error details:", {
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-          });
+        } catch {
+          // Add error handling here if needed
         } finally {
           setIsInitializing(false);
         }
@@ -393,7 +364,6 @@ export function InteractiveCommandInner() {
 
     // Cleanup function
     return () => {
-      console.log("[Interactive] Cleaning up SSE connection...");
       if (sseAbortControllerRef.current) {
         sseAbortControllerRef.current.abort();
         sseAbortControllerRef.current = null;
@@ -1007,11 +977,6 @@ export function InteractiveCommandInner() {
     setIsTyping(true);
 
     try {
-      console.log(
-        "[Interactive] Sending message with streamId:",
-        conversationSessionId,
-      );
-
       // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
@@ -1053,7 +1018,6 @@ export function InteractiveCommandInner() {
       parsed.command === "q"
     ) {
       // Clean up SSE connection before exit
-      console.log("[Interactive] Exit command received, cleaning up...");
       if (sseAbortControllerRef.current) {
         sseAbortControllerRef.current.abort();
         sseAbortControllerRef.current = null;
@@ -1158,54 +1122,6 @@ export function InteractiveCommandInner() {
     if (parsed.command === "session" && parsed.args.length === 0) {
       setWorkspaceSelectionContext("sessions-select");
       setShowSessionsWorkspaceSelection(true);
-      return;
-    }
-
-    if (parsed.command === "diff") {
-      // Show example git diff
-      const exampleDiff = `function calculateTotal(items) {
--  let total = 0;
--  for (let i = 0; i < items.length; i++) {
--    total += items[i].price;
--  }
-+  return items.reduce((total, item) => total + item.price, 0);
-}
-
-function processOrder(order) {
-  const total = calculateTotal(order.items);
-+  const tax = total * 0.08;
-+  const finalTotal = total + tax;
--  return { total };
-+  return { total, tax, finalTotal };
-}`;
-
-      const now = new Date();
-      const timestamp = now
-        .toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        })
-        .toLowerCase()
-        .replace(/\s/g, "");
-
-      addOutputEntry({
-        id: `diff-output-${Date.now()}`,
-        component: (
-          <Box flexDirection="column">
-            <ChatMessage
-              author="Δ Atlas"
-              date={timestamp}
-              message="Here's an example git diff:"
-              authorColor="blue"
-            />
-            <GitDiff
-              diffContent={exampleDiff}
-              startingLine={1}
-              endingLine={15}
-            />
-          </Box>
-        ),
-      });
       return;
     }
 

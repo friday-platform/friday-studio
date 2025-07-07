@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
-import { Select } from "../../../components/select/index.ts";
-import { WorkspaceEntry, WorkspaceStatus } from "../../../../core/workspace-manager.ts";
-import { getDaemonClient } from "../../../utils/daemon-client.ts";
-import { useResponsiveDimensions } from "../../../utils/useResponsiveDimensions.ts";
+import { Select } from "../../components/select/index.ts";
+import { WorkspaceEntry, WorkspaceStatus } from "../../../core/workspace-manager.ts";
+import { getDaemonClient } from "../../utils/daemon-client.ts";
+import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 
 interface WorkspaceSelectionProps {
   onEscape: () => void;
@@ -107,7 +107,11 @@ export const WorkspaceSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select options={options} onChange={handleSelect} visibleOptionCount={8} />
+        <Select
+          options={options}
+          onChange={handleSelect}
+          visibleOptionCount={8}
+        />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>

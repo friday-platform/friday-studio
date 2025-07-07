@@ -293,6 +293,31 @@ Only use dynamic imports when:
 **Default to static imports** for cleaner code, better performance, and improved developer
 experience.
 
+### Avoid Barrel Imports
+
+**IMPORTANT**: Avoid using barrel imports (index.ts files that re-export other modules) in favor of
+direct imports from specific files:
+
+```typescript
+// ❌ Avoid barrel imports
+import { Component, SomeUtility } from "./components/index.ts";
+
+// ✅ Prefer direct imports
+import { Component } from "./components/component.tsx";
+import { SomeUtility } from "./utils/some-utility.ts";
+```
+
+**Why avoid barrel imports:**
+
+- **Bundle size**: Can lead to importing unused code
+- **Circular dependencies**: Makes dependency graphs harder to reason about
+- **Build performance**: Can slow down bundling and tree-shaking
+- **IDE performance**: Can cause slower autocomplete and navigation
+- **Debugging**: Makes it harder to trace where code actually comes from
+
+**Exception**: Only use barrel imports for external package entry points or when creating a clean
+public API for packages intended for external consumption.
+
 ## TypeScript Type Error Resolution Best Practices
 
 When fixing TypeScript type errors:

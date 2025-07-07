@@ -1,8 +1,7 @@
 import { defaultTheme, extendTheme, ThemeProvider } from "@inkjs/ui";
 import { render } from "ink";
-import React from "react";
 import { AppProvider } from "../contexts/app-context.tsx";
-import { InteractiveCommandInner } from "../modules/conversation/index.ts";
+import { Component } from "../modules/conversation/component.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
 
 export const command = "$0";
@@ -33,15 +32,9 @@ const customTheme = extendTheme(defaultTheme, {
 export function handler() {
   render(
     <ThemeProvider theme={customTheme}>
-      <InteractiveCommand />
+      <AppProvider>
+        <Component />
+      </AppProvider>
     </ThemeProvider>,
-  );
-}
-
-export default function InteractiveCommand() {
-  return (
-    <AppProvider>
-      <InteractiveCommandInner />
-    </AppProvider>
   );
 }
