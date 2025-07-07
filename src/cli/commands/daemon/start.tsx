@@ -90,10 +90,6 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     // Load environment variables
     await load({ export: true });
 
-    // Initialize workspace registry
-    const registry = getWorkspaceManager();
-    await registry.initialize();
-
     if (argv.detached) {
       await startDetached(argv);
     } else {
