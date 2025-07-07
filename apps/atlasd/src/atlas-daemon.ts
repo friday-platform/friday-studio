@@ -7,13 +7,15 @@ import {
   supervisorDefaults,
   WorkspaceConfigSchema,
 } from "@atlas/config";
+import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import { PlatformMCPServer, ServerMode } from "@atlas/mcp-server";
 import {
   FilesystemConfigAdapter,
   FilesystemTemplateAdapter,
   FilesystemWorkspaceCreationAdapter,
 } from "@atlas/storage";
+import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
-import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
@@ -32,7 +34,9 @@ import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
-import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import { healthRoutes } from "../routes/health.ts";
+import { createOpenAPIHandlers } from "../routes/openapi.ts";
+import { type AppContext, createApp } from "./factory.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -40,18 +44,27 @@ export interface AtlasDaemonOptions {
   cors?: string | string[];
   maxConcurrentWorkspaces?: number;
   idleTimeoutMs?: number;
+  mcp?: {
+    mode?: ServerMode;
+  };
 }
 
 /**
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
-export class AtlasDaemon {
-  private app: Hono;
+export class AtlasDaemon implements AppContext {
+  private app: ReturnType<typeof createApp>;
   private options: AtlasDaemonOptions;
-  private runtimes: Map<string, WorkspaceRuntime> = new Map();
+  // Public properties for AppContext interface
+  public runtimes: Map<string, WorkspaceRuntime> = new Map();
+  public startTime = Date.now();
+  public sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  > = new Map();
+  // Private properties
   private idleTimeouts: Map<string, number> = new Map();
-  private startTime = Date.now();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
@@ -59,13 +72,9 @@ export class AtlasDaemon {
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private templateAdapter: FilesystemTemplateAdapter | null = null;
-  // System workspace properties removed - using standard workspace pattern
-  private sseClients: Map<
-    string,
-    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
-  > = new Map();
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
+  private mcpServer: PlatformMCPServer | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -73,7 +82,7 @@ export class AtlasDaemon {
       idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    this.app = new Hono();
+    this.app = createApp(this);
     this.setupRoutes();
     this.setupSignalHandlers();
   }
@@ -210,6 +219,36 @@ export class AtlasDaemon {
   }
 
   /**
+   * Initialize MCP server instance
+   */
+  private initializeMCPServer(): void {
+    const logger = AtlasLogger.getInstance();
+
+    const daemonUrl = `http://${this.options.hostname || "localhost"}:${this.options.port || 8080}`;
+
+    this.mcpServer = new PlatformMCPServer({
+      daemonUrl,
+      logger: AtlasLogger.getInstance(),
+      mode: this.options.mcp?.mode || ServerMode.INTERNAL,
+    });
+
+    logger.info("MCP server initialized", {
+      daemonUrl,
+      mode: this.options.mcp?.mode || ServerMode.INTERNAL,
+    });
+  }
+
+  /**
+   * Get MCP server instance (lazy initialization)
+   */
+  private getMCPServer(): PlatformMCPServer {
+    if (!this.mcpServer) {
+      this.initializeMCPServer();
+    }
+    return this.mcpServer!;
+  }
+
+  /**
    * Initialize system workspaces
    */
   // System workspace methods removed - using standard workspace pattern
@@ -238,21 +277,8 @@ export class AtlasDaemon {
       );
     }
 
-    // Daemon health check
-    this.app.get("/health", (c) => {
-      return c.json({
-        status: "healthy",
-        daemon: true,
-        activeWorkspaces: this.runtimes.size,
-        uptime: Date.now() - this.startTime,
-        timestamp: new Date().toISOString(),
-        version: {
-          deno: Deno.version.deno,
-          v8: Deno.version.v8,
-          typescript: Deno.version.typescript,
-        },
-      });
-    });
+    // Mount health routes
+    this.app.route("/health", healthRoutes);
 
     // List all registered workspaces
     this.app.get("/api/workspaces", async (c) => {
@@ -1276,6 +1302,42 @@ export class AtlasDaemon {
         memoryUsage: Deno.memoryUsage(),
         workspaces: Array.from(this.runtimes.keys()),
       });
+    });
+
+    // OpenAPI documentation - after all routes are mounted
+    const { openAPIHandler, scalarHandler } = createOpenAPIHandlers(this.app, {
+      hostname: this.options.hostname,
+      port: this.options.port,
+    });
+
+    // Mount OpenAPI spec endpoint
+    this.app.get("/openapi.json", openAPIHandler);
+
+    // Mount Scalar UI endpoint
+    this.app.get("/openapi", scalarHandler);
+
+    // MCP endpoint
+    this.app.all("/mcp", async (c) => {
+      const logger = AtlasLogger.getInstance();
+
+      try {
+        // Get MCP server instance
+        const mcpServer = this.getMCPServer();
+
+        // Create streaming transport
+        const transport = new StreamableHTTPTransport();
+
+        // Connect MCP server to transport
+        await mcpServer.getServer().connect(transport);
+
+        // Handle the request
+        return transport.handleRequest(c);
+      } catch (error) {
+        logger.error("MCP endpoint error", { error });
+        return c.json({
+          error: `MCP server error: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
     });
 
     this.app.post("/api/daemon/shutdown", (c) => {

@@ -16,6 +16,10 @@ export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
     args: z.array(z.string()).optional(),
     env: z.record(z.string(), z.string()).optional(),
   }).strict(),
+  z.object({
+    type: z.literal("http"),
+    url: z.url(),
+  }).strict(),
 ]);
 
 export const MCPAuthConfigSchema = z.object({
