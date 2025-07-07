@@ -31,6 +31,7 @@ marked.setOptions({
     del: chalk.dim.gray.strikethrough,
     link: chalk.yellow,
     href: chalk.yellow.underline,
+    tab: 2,
     tableOptions: {
       style: {
         head: ["white", "bold"],

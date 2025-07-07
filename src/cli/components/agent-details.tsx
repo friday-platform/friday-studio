@@ -1,11 +1,16 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
 import { checkDaemonRunning, getDaemonClient } from "../utils/daemon-client.ts";
+import { MarkdownDisplay } from "./markdown-display.tsx";
 
 interface AgentDetailsProps {
   workspaceId: string;
   agentId: string;
 }
+
+const appendSection = (markdown: string, title: string, content: string): string => {
+  return `${markdown}## ${title}\n\n${content}\n\n`;
+};
 
 interface AgentData {
   type: string;
@@ -103,7 +108,7 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
 
   if (loading) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text dimColor>Loading agent details...</Text>
       </Box>
     );
@@ -111,7 +116,7 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
 
   if (error) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text color="red">Error: {error}</Text>
       </Box>
     );
@@ -119,238 +124,142 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
 
   if (!agentData) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text color="yellow">No agent data found</Text>
       </Box>
     );
   }
 
-  return (
-    <Box flexDirection="column" marginBottom={2}>
-      {/* Agent Header */}
-      <Box marginBottom={2}>
-        <Text bold color="cyan">{agentId}</Text>
-      </Box>
+  // Build markdown content
+  let markdown = `# ${agentId}\n\n`;
 
-      {/* Basic Information */}
-      <Box flexDirection="column" marginBottom={2}>
-        <Box marginBottom={1}>
-          <Text dimColor>Type:</Text>
-          <Text>{agentData.type}</Text>
-        </Box>
-        {agentData.provider && (
-          <Box marginBottom={1}>
-            <Text dimColor>Provider:</Text>
-            <Text>{agentData.provider}</Text>
-          </Box>
-        )}
-        {agentData.model && (
-          <Box marginBottom={1}>
-            <Text dimColor>Model:</Text>
-            <Text>{agentData.model}</Text>
-          </Box>
-        )}
-        {agentData.purpose && (
-          <Box marginBottom={1}>
-            <Text dimColor>Purpose:</Text>
-            <Text>{agentData.purpose}</Text>
-          </Box>
-        )}
-        {agentData.max_steps && (
-          <Box marginBottom={1}>
-            <Text dimColor>Max Steps:</Text>
-            <Text>{agentData.max_steps}</Text>
-          </Box>
-        )}
-      </Box>
+  // Basic Information
+  let basicInfo = `Type: ${agentData.type}\n`;
+  if (agentData.provider) {
+    basicInfo += `Provider: ${agentData.provider}\n`;
+  }
+  if (agentData.model) {
+    basicInfo += `Model: ${agentData.model}\n`;
+  }
+  if (agentData.purpose) {
+    basicInfo += `Purpose: ${agentData.purpose}\n`;
+  }
+  if (agentData.max_steps) {
+    basicInfo += `Max Steps: ${agentData.max_steps}\n`;
+  }
+  markdown = appendSection(markdown, "Basic Information", basicInfo);
 
-      {/* Type-Specific Configuration */}
-      {agentData.type === "llm" && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Box marginBottom={1}>
-            <Text bold>LLM Configuration:</Text>
-          </Box>
-          {agentData.tools && agentData.tools.length > 0 && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Text dimColor>Tools:</Text>
-              {agentData.tools.map((tool) => (
-                <Box key={tool} marginLeft={2}>
-                  <Text dimColor>•</Text>
-                  <Text>{tool}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {agentData.mcp_servers && agentData.mcp_servers.length > 0 && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Text dimColor>MCP Servers:</Text>
-              {agentData.mcp_servers.map((server) => (
-                <Box key={server} marginLeft={2}>
-                  <Text dimColor>•</Text>
-                  <Text>{server}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </Box>
-      )}
+  // Type-Specific Configuration
+  if (agentData.type === "llm") {
+    let llmConfig = "";
+    if (agentData.tools && agentData.tools.length > 0) {
+      llmConfig += "**Tools:**\n";
+      agentData.tools.forEach((tool) => {
+        llmConfig += `- ${tool}\n`;
+      });
+      llmConfig += "\n";
+    }
+    if (agentData.mcp_servers && agentData.mcp_servers.length > 0) {
+      llmConfig += "**MCP Servers:**\n";
+      agentData.mcp_servers.forEach((server) => {
+        llmConfig += `- ${server}\n`;
+      });
+    }
+    if (llmConfig) {
+      markdown = appendSection(markdown, "LLM Configuration", llmConfig);
+    }
+  }
 
-      {agentData.type === "tempest" && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Box marginBottom={1}>
-            <Text bold>Tempest Configuration:</Text>
-          </Box>
-          {agentData.path && (
-            <Box marginBottom={1}>
-              <Text dimColor>Path:</Text>
-              <Text>{agentData.path}</Text>
-            </Box>
-          )}
-        </Box>
-      )}
+  if (agentData.type === "tempest") {
+    let tempestConfig = "";
+    if (agentData.path) {
+      tempestConfig += `Path: ${agentData.path}\n`;
+    }
+    if (tempestConfig) {
+      markdown = appendSection(markdown, "Tempest Configuration", tempestConfig);
+    }
+  }
 
-      {agentData.type === "remote" && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Box marginBottom={1}>
-            <Text bold>Remote Configuration:</Text>
-          </Box>
-          {agentData.tools && agentData.tools.length > 0 && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Text dimColor>Available Tools:</Text>
-              {agentData.tools.map((tool) => (
-                <Box key={tool} marginLeft={2}>
-                  <Text dimColor>•</Text>
-                  <Text>{tool}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-          {agentData.url && (
-            <Box marginBottom={1}>
-              <Text dimColor>URL:</Text>
-              <Text>{agentData.url}</Text>
-            </Box>
-          )}
-          {agentData.timeout_ms && (
-            <Box marginBottom={1}>
-              <Text dimColor>Timeout:</Text>
-              <Text>{agentData.timeout_ms}ms</Text>
-            </Box>
-          )}
-        </Box>
-      )}
+  if (agentData.type === "remote") {
+    let remoteConfig = "";
+    if (agentData.tools && agentData.tools.length > 0) {
+      remoteConfig += "**Available Tools:**\n";
+      agentData.tools.forEach((tool) => {
+        remoteConfig += `- ${tool}\n`;
+      });
+      remoteConfig += "\n";
+    }
+    if (agentData.url) {
+      remoteConfig += `URL: ${agentData.url}\n`;
+    }
+    if (agentData.timeout_ms) {
+      remoteConfig += `Timeout: ${agentData.timeout_ms}ms\n`;
+    }
+    if (remoteConfig) {
+      markdown = appendSection(markdown, "Remote Configuration", remoteConfig);
+    }
+  }
 
-      {/* Prompts Section */}
-      {agentData.prompts && Object.keys(agentData.prompts).length > 0 && (
-        <Box flexDirection="column" marginBottom={2}>
-          <Box marginBottom={1}>
-            <Text bold>Prompts:</Text>
-          </Box>
-          {Object.entries(agentData.prompts).map(([promptType, prompt]) => (
-            <Box key={promptType} flexDirection="column" marginBottom={2}>
-              <Box marginBottom={1}>
-                <Text dimColor>{promptType}:</Text>
-              </Box>
-              <Box marginLeft={2} flexDirection="column">
-                {prompt.split("\n").slice(0, 10).map((line, index) => (
-                  <Text key={index} dimColor>{line}</Text>
-                ))}
-                {prompt.split("\n").length > 10 && (
-                  <Text dimColor>... ({prompt.split("\n").length - 10} more lines)</Text>
-                )}
-              </Box>
-            </Box>
-          ))}
-        </Box>
-      )}
+  // Prompts Section
+  if (agentData.prompts && Object.keys(agentData.prompts).length > 0) {
+    let promptsContent = "";
+    Object.entries(agentData.prompts).forEach(([promptType, prompt]) => {
+      promptsContent += `### ${promptType}\n\n`;
+      const lines = prompt.split("\n");
+      if (lines.length > 10) {
+        promptsContent += lines.slice(0, 10).join("\n");
+        promptsContent += `\n\n... (${lines.length - 10} more lines)\n\n`;
+      } else {
+        promptsContent += prompt + "\n\n";
+      }
+    });
+    markdown = appendSection(markdown, "Prompts", promptsContent);
+  }
 
-      {/* Usage Section */}
-      {(() => {
-        const jobsUsingAgent = getJobsUsingAgent(agentId);
-        const signalsUsingAgent = getSignalsUsingAgent(agentId);
+  // Usage Section
+  const jobsUsingAgent = getJobsUsingAgent(agentId);
+  const signalsUsingAgent = getSignalsUsingAgent(agentId);
 
-        if (jobsUsingAgent.length > 0 || signalsUsingAgent.length > 0) {
-          return (
-            <Box flexDirection="column" marginBottom={2}>
-              <Box marginBottom={1}>
-                <Text bold>Usage:</Text>
-              </Box>
+  if (jobsUsingAgent.length > 0 || signalsUsingAgent.length > 0) {
+    let usageContent = "";
 
-              {jobsUsingAgent.length > 0 && (
-                <Box flexDirection="column" marginBottom={2}>
-                  <Box marginBottom={1}>
-                    <Text dimColor>Used in Jobs:</Text>
-                  </Box>
-                  {jobsUsingAgent.map((job) => (
-                    <Box key={job.id} marginLeft={2} marginBottom={1}>
-                      <Box flexDirection="column">
-                        <Box>
-                          <Text dimColor>•</Text>
-                          <Text bold>{job.name}</Text>
-                        </Box>
-                        {job.description && (
-                          <Box marginLeft={2}>
-                            <Text dimColor>{job.description}</Text>
-                          </Box>
-                        )}
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-              )}
-
-              {signalsUsingAgent.length > 0 && (
-                <Box flexDirection="column" marginBottom={2}>
-                  <Box marginBottom={1}>
-                    <Text dimColor>Triggered by Signals:</Text>
-                  </Box>
-                  {signalsUsingAgent.map((signal) => (
-                    <Box key={signal.id} marginLeft={2} marginBottom={1}>
-                      <Box flexDirection="column">
-                        <Box>
-                          <Text dimColor>•</Text>
-                          <Text bold>{signal.id}</Text>
-                          <Text dimColor>({signal.provider})</Text>
-                        </Box>
-                        {signal.description && (
-                          <Box marginLeft={2}>
-                            <Text dimColor>{signal.description}</Text>
-                          </Box>
-                        )}
-                      </Box>
-                    </Box>
-                  ))}
-                </Box>
-              )}
-            </Box>
-          );
-        } else {
-          return (
-            <Box flexDirection="column" marginBottom={2}>
-              <Box marginBottom={1}>
-                <Text bold>Usage:</Text>
-              </Box>
-              <Box marginLeft={2}>
-                <Text dimColor>
-                  This agent is not currently used in any jobs or signals
-                </Text>
-              </Box>
-            </Box>
-          );
+    if (jobsUsingAgent.length > 0) {
+      usageContent += "**Used in Jobs:**\n\n";
+      jobsUsingAgent.forEach((job) => {
+        usageContent += `- ${job.name}\n`;
+        if (job.description) {
+          usageContent += `  ${job.description}\n`;
         }
-      })()}
+      });
+      usageContent += "\n";
+    }
 
-      {/* Raw Configuration (for debugging) */}
-      <Box flexDirection="column" marginTop={2}>
-        <Box marginBottom={1}>
-          <Text bold>Raw Configuration:</Text>
-        </Box>
-        <Box marginLeft={2}>
-          <Text dimColor>
-            {JSON.stringify(agentData, null, 2)}
-          </Text>
-        </Box>
-      </Box>
+    if (signalsUsingAgent.length > 0) {
+      usageContent += "**Triggered by Signals:**\n\n";
+      signalsUsingAgent.forEach((signal) => {
+        usageContent += `- ${signal.id} (${signal.provider})\n`;
+        if (signal.description) {
+          usageContent += `  ${signal.description}\n`;
+        }
+      });
+    }
+
+    markdown = appendSection(markdown, "Usage", usageContent);
+  } else {
+    markdown = appendSection(
+      markdown,
+      "Usage",
+      "This agent is not currently used in any jobs or signals",
+    );
+  }
+
+  // Raw Configuration
+  const rawConfig = JSON.stringify(agentData, null, 2);
+  markdown = appendSection(markdown, "Raw Configuration", `\`\`\`json\n${rawConfig}\n\`\`\``);
+
+  return (
+    <Box flexDirection="column">
+      <MarkdownDisplay content={markdown} />
     </Box>
   );
 };

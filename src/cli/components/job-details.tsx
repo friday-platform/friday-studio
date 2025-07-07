@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { checkDaemonRunning } from "../utils/daemon-client.ts";
 import { getAtlasClient } from "@atlas/client";
 import type { JobDetailedInfo } from "@atlas/client";
+import { MarkdownDisplay } from "./markdown-display.tsx";
 
 interface JobDetailsProps {
   workspaceId: string;
@@ -10,7 +11,19 @@ interface JobDetailsProps {
   workspacePath: string;
 }
 
-export const JobDetails = ({ workspaceId, jobName, workspacePath }: JobDetailsProps) => {
+const appendSection = (
+  markdown: string,
+  title: string,
+  content: string,
+): string => {
+  return `${markdown}## ${title}\n\n${content}\n\n`;
+};
+
+export const JobDetails = ({
+  workspaceId,
+  jobName,
+  workspacePath,
+}: JobDetailsProps) => {
   const [jobData, setJobData] = useState<JobDetailedInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -19,7 +32,9 @@ export const JobDetails = ({ workspaceId, jobName, workspacePath }: JobDetailsPr
     const loadJobDetails = async () => {
       try {
         if (!workspaceId || !jobName) {
-          setError(`Missing required parameters: workspaceId=${workspaceId}, jobName=${jobName}`);
+          setError(
+            `Missing required parameters: workspaceId=${workspaceId}, jobName=${jobName}`,
+          );
           return;
         }
 
@@ -32,11 +47,17 @@ export const JobDetails = ({ workspaceId, jobName, workspacePath }: JobDetailsPr
           const client = getAtlasClient();
 
           // Use the new client package method to get detailed job information
-          const jobDetails = await client.describeJob(workspaceId, jobName, workspacePath);
+          const jobDetails = await client.describeJob(
+            workspaceId,
+            jobName,
+            workspacePath,
+          );
 
           setJobData(jobDetails);
         } else {
-          setError("Daemon not running. Use 'atlas daemon start' to enable job management.");
+          setError(
+            "Daemon not running. Use 'atlas daemon start' to enable job management.",
+          );
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -72,241 +93,188 @@ export const JobDetails = ({ workspaceId, jobName, workspacePath }: JobDetailsPr
     );
   }
 
+  // Build markdown content
+  let markdown = `# ${jobData.name}\n\n`;
+
+  if (jobData.description) {
+    markdown += `${jobData.description}\n\n`;
+  }
+
+  if (jobData.task_template) {
+    markdown = appendSection(markdown, "Task Template", jobData.task_template);
+  }
+
+  if (jobData.triggers && jobData.triggers.length > 0) {
+    let triggersContent = "";
+    jobData.triggers.forEach((trigger, index) => {
+      triggersContent += `Signal: ${trigger.signal}\n`;
+      if (trigger.condition) {
+        if (typeof trigger.condition === "object") {
+          const conditionStr = JSON.stringify(trigger.condition, null, 2);
+          triggersContent += `Condition:\n\`\`\`\n${conditionStr}\n\`\`\`\n`;
+        } else {
+          triggersContent += `Condition: ${String(trigger.condition)}\n`;
+        }
+      }
+      if (index < jobData.triggers.length - 1) triggersContent += "\n";
+    });
+    markdown = appendSection(markdown, "Triggers", triggersContent);
+  }
+
+  // Execution Strategy
+  let executionContent = `**Strategy:** ${jobData.execution.strategy}\n\n`;
+  executionContent += `**Agents (${jobData.execution.agents.length}):**\n`;
+  jobData.execution.agents.forEach((agent) => {
+    if (typeof agent === "string") {
+      executionContent += `### ${agent}`;
+    } else {
+      executionContent += `### ${agent.id}\n`;
+      if (agent.task) {
+        executionContent += `Task: ${agent.task}\n`;
+      }
+      if (agent.input_source) {
+        executionContent += `Input: ${agent.input_source}\n`;
+      }
+      if (agent.dependencies && agent.dependencies.length > 0) {
+        executionContent += `Dependencies: ${agent.dependencies.join(", ")}\n`;
+      }
+      if (agent.tools && agent.tools.length > 0) {
+        executionContent += `- Tools: ${agent.tools.join(", ")}\n`;
+      }
+    }
+  });
+  markdown = appendSection(markdown, "Execution", executionContent);
+
+  // Context Configuration
+  if (jobData.execution.context) {
+    let contextContent = "";
+    if (jobData.execution.context.filesystem) {
+      contextContent += "**Filesystem:**\n";
+      contextContent += `- Patterns: ${
+        jobData.execution.context.filesystem.patterns.join(
+          ", ",
+        )
+      }\n`;
+      if (jobData.execution.context.filesystem.base_path) {
+        contextContent += `- Base Path: ${jobData.execution.context.filesystem.base_path}\n`;
+      }
+      if (jobData.execution.context.filesystem.max_file_size) {
+        contextContent +=
+          `- Max File Size: ${jobData.execution.context.filesystem.max_file_size}\n`;
+      }
+      if (jobData.execution.context.filesystem.include_content !== undefined) {
+        contextContent += `- Include Content: ${
+          jobData.execution.context.filesystem.include_content ? "Yes" : "No"
+        }\n`;
+      }
+    }
+    if (jobData.execution.context.memory) {
+      if (contextContent) contextContent += "\n";
+      contextContent += "**Memory:**\n";
+      if (jobData.execution.context.memory.recall_limit) {
+        contextContent += `- Recall Limit: ${jobData.execution.context.memory.recall_limit}\n`;
+      }
+      if (jobData.execution.context.memory.strategy) {
+        contextContent += `- Strategy: ${jobData.execution.context.memory.strategy}\n`;
+      }
+    }
+    if (contextContent) {
+      markdown = appendSection(markdown, "Context", contextContent);
+    }
+  }
+
+  // Session Prompts
+  if (
+    jobData.session_prompts &&
+    (jobData.session_prompts.planning || jobData.session_prompts.evaluation)
+  ) {
+    let promptsContent = "";
+    if (jobData.session_prompts.planning) {
+      promptsContent += `**Planning:**\n${jobData.session_prompts.planning}\n\n`;
+    }
+    if (jobData.session_prompts.evaluation) {
+      promptsContent += `**Evaluation:**\n${jobData.session_prompts.evaluation}\n`;
+    }
+    markdown = appendSection(markdown, "Session Prompts", promptsContent);
+  }
+
+  // Success Criteria
+  if (
+    jobData.success_criteria &&
+    Object.keys(jobData.success_criteria).length > 0
+  ) {
+    let criteriaContent = "";
+    Object.entries(jobData.success_criteria).forEach(([key, value]) => {
+      const valueStr = typeof value === "object" ? JSON.stringify(value) : String(value);
+      criteriaContent += `- ${key}: ${valueStr}\n`;
+    });
+    markdown = appendSection(markdown, "Success Criteria", criteriaContent);
+  }
+
+  // Error Handling
+  if (jobData.error_handling) {
+    let errorContent = "";
+    if (jobData.error_handling.max_retries) {
+      errorContent += `- Max Retries: ${jobData.error_handling.max_retries}\n`;
+    }
+    if (jobData.error_handling.retry_delay_seconds) {
+      errorContent += `- Retry Delay: ${jobData.error_handling.retry_delay_seconds}s\n`;
+    }
+    if (jobData.error_handling.timeout_seconds) {
+      errorContent += `- Timeout: ${jobData.error_handling.timeout_seconds}s\n`;
+    }
+    if (jobData.error_handling.stage_failure_strategy) {
+      errorContent +=
+        `- Stage Failure Strategy: ${jobData.error_handling.stage_failure_strategy}\n`;
+    }
+    if (errorContent) {
+      markdown = appendSection(markdown, "Error Handling", errorContent);
+    }
+  }
+
+  // Resources
+  if (jobData.resources) {
+    let resourcesContent = "";
+    if (jobData.resources.estimated_duration_seconds) {
+      resourcesContent +=
+        `- Estimated Duration: ${jobData.resources.estimated_duration_seconds}s\n`;
+    }
+    if (jobData.resources.max_memory_mb) {
+      resourcesContent += `- Max Memory: ${jobData.resources.max_memory_mb}MB\n`;
+    }
+    if (
+      jobData.resources.required_capabilities &&
+      jobData.resources.required_capabilities.length > 0
+    ) {
+      resourcesContent += `- Required Capabilities: ${
+        jobData.resources.required_capabilities.join(
+          ", ",
+        )
+      }\n`;
+    }
+    if (jobData.resources.concurrent_agent_limit) {
+      resourcesContent += `- Concurrent Agent Limit: ${jobData.resources.concurrent_agent_limit}\n`;
+    }
+    if (resourcesContent) {
+      markdown = appendSection(markdown, "Resources", resourcesContent);
+    }
+  }
+
+  // Execution Settings
+  if (jobData.execution.timeout_seconds || jobData.execution.max_iterations) {
+    let settingsContent = "";
+    if (jobData.execution.timeout_seconds) {
+      settingsContent += `- Timeout: ${jobData.execution.timeout_seconds}s\n`;
+    }
+    if (jobData.execution.max_iterations) {
+      settingsContent += `- Max Iterations: ${jobData.execution.max_iterations}\n`;
+    }
+    markdown = appendSection(markdown, "Execution Settings", settingsContent);
+  }
+
   return (
-    <Box flexDirection="column" marginBottom={2}>
-      {/* Job Header */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">{jobData.name}</Text>
-      </Box>
-
-      {/* Description */}
-      {jobData.description && (
-        <Box marginBottom={1}>
-          <Text dimColor>{jobData.description}</Text>
-        </Box>
-      )}
-
-      {/* Task Template */}
-      {jobData.task_template && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Task Template:</Text>
-          <Box marginLeft={2}>
-            <Text>{jobData.task_template}</Text>
-          </Box>
-        </Box>
-      )}
-
-      {/* Triggers */}
-      {jobData.triggers && jobData.triggers.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Triggers:</Text>
-          {jobData.triggers.map((trigger, index) => (
-            <Box key={index} marginLeft={2}>
-              <Text dimColor>Signal:</Text>
-              <Text color="white">{trigger.signal}</Text>
-              {trigger.condition && (
-                <>
-                  <Text dimColor>(Condition:</Text>
-                  <Text color="gray">{trigger.condition}</Text>
-                  <Text dimColor>)</Text>
-                </>
-              )}
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Execution Strategy */}
-      <Box flexDirection="column" marginBottom={1}>
-        <Text bold color="green">Execution:</Text>
-        <Box marginLeft={2}>
-          <Text dimColor>Strategy:</Text>
-          <Text color="white">{jobData.execution.strategy}</Text>
-        </Box>
-
-        {/* Agents */}
-        <Box flexDirection="column" marginLeft={2} marginTop={1}>
-          <Text dimColor>Agents ({jobData.execution.agents.length}):</Text>
-          {jobData.execution.agents.map((agent, index) => (
-            <Box key={index} marginLeft={2}>
-              {typeof agent === "string" ? <Text>• {agent}</Text> : (
-                <Box flexDirection="column">
-                  <Text>• {agent.id}</Text>
-                  {agent.task && (
-                    <Box marginLeft={2}>
-                      <Text dimColor>Task: {agent.task}</Text>
-                    </Box>
-                  )}
-                  {agent.input_source && (
-                    <Box marginLeft={2}>
-                      <Text dimColor>Input: {agent.input_source}</Text>
-                    </Box>
-                  )}
-                  {agent.dependencies && agent.dependencies.length > 0 && (
-                    <Box marginLeft={2}>
-                      <Text dimColor>Dependencies: {agent.dependencies.join(", ")}</Text>
-                    </Box>
-                  )}
-                  {agent.tools && agent.tools.length > 0 && (
-                    <Box marginLeft={2}>
-                      <Text dimColor>Tools: {agent.tools.join(", ")}</Text>
-                    </Box>
-                  )}
-                </Box>
-              )}
-            </Box>
-          ))}
-        </Box>
-      </Box>
-
-      {/* Context Configuration */}
-      {jobData.execution.context && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Context:</Text>
-          {jobData.execution.context.filesystem && (
-            <Box flexDirection="column" marginLeft={2}>
-              <Text dimColor>Filesystem:</Text>
-              <Box marginLeft={2}>
-                <Text dimColor>
-                  Patterns: {jobData.execution.context.filesystem.patterns.join(", ")}
-                </Text>
-                {jobData.execution.context.filesystem.base_path && (
-                  <Text dimColor>Base Path: {jobData.execution.context.filesystem.base_path}</Text>
-                )}
-                {jobData.execution.context.filesystem.max_file_size && (
-                  <Text dimColor>
-                    Max File Size: {jobData.execution.context.filesystem.max_file_size}
-                  </Text>
-                )}
-                {jobData.execution.context.filesystem.include_content !== undefined && (
-                  <Text dimColor>
-                    Include Content:{" "}
-                    {jobData.execution.context.filesystem.include_content ? "Yes" : "No"}
-                  </Text>
-                )}
-              </Box>
-            </Box>
-          )}
-          {jobData.execution.context.memory && (
-            <Box flexDirection="column" marginLeft={2}>
-              <Text dimColor>Memory:</Text>
-              <Box marginLeft={2}>
-                {jobData.execution.context.memory.recall_limit && (
-                  <Text dimColor>
-                    Recall Limit: {jobData.execution.context.memory.recall_limit}
-                  </Text>
-                )}
-                {jobData.execution.context.memory.strategy && (
-                  <Text dimColor>Strategy: {jobData.execution.context.memory.strategy}</Text>
-                )}
-              </Box>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Session Prompts */}
-      {jobData.session_prompts &&
-        (jobData.session_prompts.planning || jobData.session_prompts.evaluation) && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Session Prompts:</Text>
-          {jobData.session_prompts.planning && (
-            <Box flexDirection="column" marginLeft={2}>
-              <Text dimColor>Planning:</Text>
-              <Box marginLeft={2}>
-                <Text>{jobData.session_prompts.planning}</Text>
-              </Box>
-            </Box>
-          )}
-          {jobData.session_prompts.evaluation && (
-            <Box flexDirection="column" marginLeft={2}>
-              <Text dimColor>Evaluation:</Text>
-              <Box marginLeft={2}>
-                <Text>{jobData.session_prompts.evaluation}</Text>
-              </Box>
-            </Box>
-          )}
-        </Box>
-      )}
-
-      {/* Success Criteria */}
-      {jobData.success_criteria && Object.keys(jobData.success_criteria).length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Success Criteria:</Text>
-          {Object.entries(jobData.success_criteria).map(([key, value]) => (
-            <Box key={key} marginLeft={2}>
-              <Text dimColor>{key}:</Text>
-              <Text color="white">{String(value)}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-
-      {/* Error Handling */}
-      {jobData.error_handling && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Error Handling:</Text>
-          <Box marginLeft={2}>
-            {jobData.error_handling.max_retries && (
-              <Text dimColor>Max Retries: {jobData.error_handling.max_retries}</Text>
-            )}
-            {jobData.error_handling.retry_delay_seconds && (
-              <Text dimColor>Retry Delay: {jobData.error_handling.retry_delay_seconds}s</Text>
-            )}
-            {jobData.error_handling.timeout_seconds && (
-              <Text dimColor>Timeout: {jobData.error_handling.timeout_seconds}s</Text>
-            )}
-            {jobData.error_handling.stage_failure_strategy && (
-              <Text dimColor>
-                Stage Failure Strategy: {jobData.error_handling.stage_failure_strategy}
-              </Text>
-            )}
-          </Box>
-        </Box>
-      )}
-
-      {/* Resources */}
-      {jobData.resources && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Resources:</Text>
-          <Box marginLeft={2}>
-            {jobData.resources.estimated_duration_seconds && (
-              <Text dimColor>
-                Estimated Duration: {jobData.resources.estimated_duration_seconds}s
-              </Text>
-            )}
-            {jobData.resources.max_memory_mb && (
-              <Text dimColor>Max Memory: {jobData.resources.max_memory_mb}MB</Text>
-            )}
-            {jobData.resources.required_capabilities &&
-              jobData.resources.required_capabilities.length > 0 && (
-              <Text dimColor>
-                Required Capabilities: {jobData.resources.required_capabilities.join(", ")}
-              </Text>
-            )}
-            {jobData.resources.concurrent_agent_limit && (
-              <Text dimColor>
-                Concurrent Agent Limit: {jobData.resources.concurrent_agent_limit}
-              </Text>
-            )}
-          </Box>
-        </Box>
-      )}
-
-      {/* Execution Settings */}
-      {(jobData.execution.timeout_seconds || jobData.execution.max_iterations) && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text bold color="green">Execution Settings:</Text>
-          <Box marginLeft={2}>
-            {jobData.execution.timeout_seconds && (
-              <Text dimColor>Timeout: {jobData.execution.timeout_seconds}s</Text>
-            )}
-            {jobData.execution.max_iterations && (
-              <Text dimColor>Max Iterations: {jobData.execution.max_iterations}</Text>
-            )}
-          </Box>
-        </Box>
-      )}
+    <Box flexDirection="column" flexShrink={0}>
+      <MarkdownDisplay content={markdown} />
     </Box>
   );
 };

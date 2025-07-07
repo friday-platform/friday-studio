@@ -19,7 +19,7 @@ export interface JobDetailedInfo {
   task_template?: string;
   triggers?: Array<{
     signal: string;
-    condition?: string;
+    condition?: string | Record<string, unknown>;
   }>;
   session_prompts?: {
     planning?: string;

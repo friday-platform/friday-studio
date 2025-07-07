@@ -3,12 +3,21 @@ import { useEffect, useState } from "react";
 import { z } from "zod/v4";
 import { checkDaemonRunning } from "../utils/daemon-client.ts";
 import { getAtlasClient } from "@atlas/client";
+import { MarkdownDisplay } from "./markdown-display.tsx";
 
 interface SignalDetailsProps {
   workspaceId: string;
   signalId: string;
   workspacePath: string;
 }
+
+const appendSection = (
+  markdown: string,
+  title: string,
+  content: string,
+): string => {
+  return `${markdown}## ${title}\n\n${content}\n\n`;
+};
 
 // Schema validation for signal schemas
 const SignalSchemaValidator = z.object({
@@ -83,276 +92,159 @@ const parseProperty = (
   }
 };
 
-// Component to render property documentation with enhanced visual styling
-const PropertyDoc = ({
-  property,
-  level = 0,
-}: {
-  property: PropertyInfo;
-  level?: number;
-}) => {
-  const indent = "  ".repeat(level);
-
-  // Get color for type badge based on type
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case "string":
-        return "blue";
-      case "number":
-        return "green";
-      case "boolean":
-        return "yellow";
-      case "object":
-        return "magenta";
-      case "array":
-        return "cyan";
-      default:
-        return "gray";
-    }
-  };
-
-  return (
-    <Box flexDirection="column">
-      <Box>
-        <Text color="cyan">
-          {indent}
-          {property.name}
-        </Text>
-        <Text color={getTypeColor(property.type)} dimColor>
-          ({property.type})
-        </Text>
-        {property.required && <Text color="red">*</Text>}
-      </Box>
-
-      {property.description && (
-        <Box marginLeft={level * 2}>
-          <Text color="yellow">{property.description}</Text>
-        </Box>
-      )}
-
-      {property.enum && (
-        <Box marginLeft={level * 2}>
-          <Text color="cyan">Options: {property.enum.join(", ")}</Text>
-        </Box>
-      )}
-
-      {property.default !== undefined && (
-        <Box marginLeft={level * 2}>
-          <Text color="gray">Default: {String(property.default)}</Text>
-        </Box>
-      )}
-
-      {property.type === "array" && property.items && (
-        <Box marginLeft={level * 2}>
-          <Text color="gray">Items:</Text>
-          <PropertyDoc property={property.items} level={level + 1} />
-        </Box>
-      )}
-
-      {property.properties && (
-        <Box flexDirection="column" marginLeft={level * 2}>
-          {property.properties.map((prop) => (
-            <PropertyDoc key={prop.name} property={prop} level={level + 1} />
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
-};
-
-// HTTP Signal provider-specific display
-const HttpSignalDetails = ({ signal }: { signal: Record<string, unknown> }) => {
+// Helper functions to build markdown for different provider types
+const buildHttpConfigMarkdown = (signal: Record<string, unknown>): string => {
+  let content = "";
   const method = (signal.method as string) || "GET";
   const path = (signal.path as string) || (signal.endpoint as string) || "/";
   const headers = (signal.headers as Record<string, string>) || {};
   const config = (signal.config as Record<string, unknown>) || {};
 
-  return (
-    <Box flexDirection="column" marginBottom={2}>
-      <Box marginBottom={1}>
-        <Text bold>HTTP Configuration:</Text>
-      </Box>
+  content += `Method: ${method}\n`;
+  content += `Path: ${path}\n`;
 
-      <Box>
-        <Text dimColor>Method:</Text>
-        <Text>{method}</Text>
-      </Box>
+  if (Object.keys(headers).length > 0) {
+    content += "\n**Headers:**\n";
+    Object.entries(headers).forEach(([key, value]) => {
+      content += `- ${key}: ${value}\n`;
+    });
+  }
 
-      <Box marginBottom={1}>
-        <Text dimColor>Path:</Text>
-        <Text>{path}</Text>
-      </Box>
+  if (signal.webhook_secret) {
+    content += "\nSecurity: Webhook signature validation enabled\n";
+  }
 
-      {Object.keys(headers).length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text color="cyan">Headers:</Text>
-          {Object.entries(headers).map(([key, value]) => (
-            <Box key={key} marginLeft={2}>
-              <Text color="gray">{key}:</Text>
-              <Text color="white">{value}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
+  if (config.timeout_ms) {
+    content += `Timeout: ${String(config.timeout_ms)}ms\n`;
+  }
 
-      {signal.webhook_secret && (
-        <Box marginBottom={1}>
-          <Text dimColor>Security:</Text>
-          <Text>Webhook signature validation enabled</Text>
-        </Box>
-      )}
+  if (config.retry_config) {
+    content += "\n**Retry Configuration:**\n";
+    content += `- Max retries: ${(config.retry_config as any).max_retries || "N/A"}\n`;
+    content += `- Retry delay: ${(config.retry_config as any).retry_delay_ms || "N/A"}ms\n`;
+  }
 
-      {config.timeout_ms && (
-        <Box marginBottom={1}>
-          <Text dimColor>Timeout:</Text>
-          <Text>{String(config.timeout_ms)}ms</Text>
-        </Box>
-      )}
-
-      {config.retry_config && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text dimColor>Retry Configuration:</Text>
-          <Box marginLeft={2}>
-            <Text dimColor>Max retries:</Text>
-            <Text>{(config.retry_config as any).max_retries || "N/A"}</Text>
-          </Box>
-          <Box marginLeft={2}>
-            <Text dimColor>Retry delay:</Text>
-            <Text>
-              {(config.retry_config as any).retry_delay_ms || "N/A"}ms
-            </Text>
-          </Box>
-        </Box>
-      )}
-    </Box>
-  );
+  return content;
 };
 
-// CLI Signal provider-specific display
-const CliSignalDetails = ({ signal }: { signal: Record<string, unknown> }) => {
+const buildCliConfigMarkdown = (signal: Record<string, unknown>): string => {
+  let content = "";
   const command = (signal.command as string) || "";
   const args = (signal.args as string[]) || [];
   const flags = (signal.flags as Record<string, unknown>) || {};
 
-  return (
-    <Box flexDirection="column" marginBottom={2}>
-      <Box marginBottom={1}>
-        <Text bold color="green">
-          CLI Configuration:
-        </Text>
-      </Box>
+  content += `Command: ${command}\n`;
 
-      <Box marginBottom={1}>
-        <Text dimColor>Command:</Text>
-        <Text>{command}</Text>
-      </Box>
+  if (args.length > 0) {
+    content += "\n**Arguments:**\n";
+    args.forEach((arg, index) => {
+      content += `- [${index}] ${arg}\n`;
+    });
+  }
 
-      {args.length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text dimColor>Arguments:</Text>
-          {args.map((arg, index) => (
-            <Box key={index} marginLeft={2}>
-              <Text dimColor>[{index}]</Text>
-              <Text>{arg}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
+  if (Object.keys(flags).length > 0) {
+    content += "\n**Available Flags:**\n";
+    Object.entries(flags).forEach(([flag, description]) => {
+      content += `- --${flag}: ${String(description)}\n`;
+    });
+  }
 
-      {Object.keys(flags).length > 0 && (
-        <Box flexDirection="column" marginBottom={1}>
-          <Text color="cyan">Available Flags:</Text>
-          {Object.entries(flags).map(([flag, description]) => (
-            <Box key={flag} marginLeft={2}>
-              <Text color="yellow">--{flag}:</Text>
-              <Text color="gray">{String(description)}</Text>
-            </Box>
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
+  return content;
 };
 
-// Specialized provider display (k8s-events, webhooks, etc.)
-const SpecializedProviderDetails = ({
-  signal,
-  provider,
-}: {
-  signal: Record<string, unknown>;
-  provider: string;
-}) => {
+const buildSpecializedConfigMarkdown = (
+  signal: Record<string, unknown>,
+  provider: string,
+): string => {
+  let content = "";
   const config = (signal.config as Record<string, unknown>) || {};
 
-  return (
-    <Box flexDirection="column" marginBottom={2}>
-      <Box marginBottom={1}>
-        <Text bold>Configuration:</Text>
-      </Box>
+  if (provider === "k8s-events") {
+    if (signal.kubeconfig) {
+      content += `Kubeconfig: ${signal.kubeconfig as string}\n`;
+    }
+    if (signal.namespace) {
+      content += `Namespace: ${signal.namespace as string}\n`;
+    }
+    if (signal.insecure) {
+      content += "Mode: Insecure (development)\n";
+    }
+  }
 
-      {provider === "k8s-events" && (
-        <>
-          {signal.kubeconfig && (
-            <Box marginBottom={1}>
-              <Text dimColor>Kubeconfig:</Text>
-              <Text>{signal.kubeconfig as string}</Text>
-            </Box>
-          )}
-          {signal.namespace && (
-            <Box marginBottom={1}>
-              <Text dimColor>Namespace:</Text>
-              <Text>{signal.namespace as string}</Text>
-            </Box>
-          )}
-          {signal.insecure && (
-            <Box marginBottom={1}>
-              <Text dimColor>Mode:</Text>
-              <Text>Insecure (development)</Text>
-            </Box>
-          )}
-        </>
-      )}
+  if (provider === "http-webhook") {
+    if (signal.endpoint) {
+      content += `Endpoint: ${signal.endpoint as string}\n`;
+    }
+    if (config.webhook_secret) {
+      content += "Security: Webhook secret configured\n";
+    }
+    if (config.allowed_event_types) {
+      content += "\n**Allowed Events:**\n";
+      (config.allowed_event_types as string[]).forEach((eventType) => {
+        content += `- ${eventType}\n`;
+      });
+    }
+  }
 
-      {provider === "http-webhook" && (
-        <>
-          {signal.endpoint && (
-            <Box marginBottom={1}>
-              <Text dimColor>Endpoint:</Text>
-              <Text>{signal.endpoint as string}</Text>
-            </Box>
-          )}
-          {config.webhook_secret && (
-            <Box marginBottom={1}>
-              <Text dimColor>Security:</Text>
-              <Text>Webhook secret configured</Text>
-            </Box>
-          )}
-          {config.allowed_event_types && (
-            <Box flexDirection="column" marginBottom={1}>
-              <Text dimColor>Allowed Events:</Text>
-              {(config.allowed_event_types as string[]).map((eventType) => (
-                <Box key={eventType} marginLeft={2}>
-                  <Text dimColor>•</Text>
-                  <Text color="white">{eventType}</Text>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </>
-      )}
+  if (signal.timeout_ms) {
+    content += `Timeout: ${String(signal.timeout_ms)}ms\n`;
+  }
 
-      {signal.timeout_ms && (
-        <Box marginBottom={1}>
-          <Text dimColor>Timeout:</Text>
-          <Text>{String(signal.timeout_ms)}ms</Text>
-        </Box>
-      )}
-    </Box>
-  );
+  return content;
 };
 
-export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDetailsProps) => {
-  const [signalData, setSignalData] = useState<Record<string, unknown> | null>(null);
+const buildSchemaMarkdown = (properties: PropertyInfo[]): string => {
+  let content = "";
+
+  const renderProperty = (property: PropertyInfo, level = 0): string => {
+    const indent = "  ".repeat(level);
+    let propContent = "";
+
+    propContent += `${indent}- **${property.name}** (${property.type})${
+      property.required ? " *" : ""
+    }\n`;
+
+    if (property.description) {
+      propContent += `${indent}  ${property.description}\n`;
+    }
+
+    if (property.enum) {
+      propContent += `${indent}  Options: ${property.enum.join(", ")}\n`;
+    }
+
+    if (property.default !== undefined) {
+      propContent += `${indent}  Default: ${String(property.default)}\n`;
+    }
+
+    if (property.type === "array" && property.items) {
+      propContent += `${indent}  **Items:**\n`;
+      propContent += renderProperty(property.items, level + 1);
+    }
+
+    if (property.properties) {
+      property.properties.forEach((prop) => {
+        propContent += renderProperty(prop, level + 1);
+      });
+    }
+
+    return propContent;
+  };
+
+  properties.forEach((property) => {
+    content += renderProperty(property);
+  });
+
+  return content;
+};
+
+export const SignalDetails = ({
+  workspaceId,
+  signalId,
+  workspacePath,
+}: SignalDetailsProps) => {
+  const [signalData, setSignalData] = useState<Record<string, unknown> | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
 
@@ -376,7 +268,9 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
 
           setSignalData(signalDetails as unknown as Record<string, unknown>);
         } else {
-          setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
+          setError(
+            "Daemon not running. Use 'atlas daemon start' to enable signal management.",
+          );
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -390,7 +284,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
 
   if (loading) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text dimColor>Loading signal details...</Text>
       </Box>
     );
@@ -398,7 +292,7 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
 
   if (error) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text color="red">Error: {error}</Text>
       </Box>
     );
@@ -406,126 +300,103 @@ export const SignalDetails = ({ workspaceId, signalId, workspacePath }: SignalDe
 
   if (!signalData) {
     return (
-      <Box flexDirection="column" marginBottom={2}>
+      <Box flexDirection="column">
         <Text color="yellow">No signal data found</Text>
       </Box>
     );
   }
 
-  return (
-    <Box flexDirection="column" marginBottom={2}>
-      {/* Signal Header */}
-      <Box marginBottom={1}>
-        <Text bold color="cyan">{signalId}</Text>
-      </Box>
+  // Build markdown content
+  let markdown = `# ${signalId}\n\n`;
 
-      {/* Description */}
-      {(signalData as any).description && (
-        <Box marginBottom={1}>
-          <Text dimColor>{(signalData as any).description}</Text>
-        </Box>
-      )}
+  if ((signalData as any).description) {
+    markdown += `${(signalData as any).description}\n`;
+  }
 
-      {/* Provider */}
-      <Box marginBottom={1}>
-        <Text dimColor>Provider:</Text>
-        <Text>{(signalData as any).provider || "Unknown"}</Text>
-      </Box>
+  // Provider
+  const provider = (signalData as any).provider as string;
+  markdown += `Provider: ${provider || "Unknown"}\n\n`;
 
-      {/* Provider-Specific Details */}
-      {(() => {
-        const provider = (signalData as any).provider as string;
+  // Provider-specific configuration
+  if (provider === "http" || provider === "http-webhook") {
+    const configContent = buildHttpConfigMarkdown(signalData);
+    if (configContent) {
+      markdown = appendSection(markdown, "HTTP Configuration", configContent);
+    }
+  } else if (provider === "cli") {
+    const configContent = buildCliConfigMarkdown(signalData);
+    if (configContent) {
+      markdown = appendSection(markdown, "CLI Configuration", configContent);
+    }
+  } else if (
+    provider &&
+    ["k8s-events", "http-webhook", "codebase-watcher", "cron"].includes(
+      provider,
+    )
+  ) {
+    const configContent = buildSpecializedConfigMarkdown(signalData, provider);
+    if (configContent) {
+      markdown = appendSection(markdown, "Configuration", configContent);
+    }
+  }
 
-        if (provider === "http" || provider === "http-webhook") {
-          return <HttpSignalDetails signal={signalData} />;
-        } else if (provider === "cli") {
-          return <CliSignalDetails signal={signalData} />;
-        } else if (
-          provider &&
-          [
-            "k8s-events",
-            "http-webhook",
-            "codebase-watcher",
-            "cron",
-          ].includes(provider)
-        ) {
-          return (
-            <SpecializedProviderDetails
-              signal={signalData}
-              provider={provider}
-            />
-          );
+  // Schema Documentation
+  if ((signalData as any).schema) {
+    const validatedSchema = validateSignalSchema((signalData as any).schema);
+    if (validatedSchema) {
+      const properties = Object.entries(validatedSchema.properties).map(
+        ([name, prop]) =>
+          parseProperty(
+            name,
+            prop as Record<string, unknown>,
+            validatedSchema.required || [],
+          ),
+      );
+
+      const schemaContent = buildSchemaMarkdown(properties);
+      if (schemaContent) {
+        let finalSchemaContent = schemaContent;
+        if (validatedSchema.required && validatedSchema.required.length > 0) {
+          finalSchemaContent += "\n* Required fields";
         }
-        return null;
-      })()}
+        markdown = appendSection(
+          markdown,
+          "Schema Documentation",
+          finalSchemaContent,
+        );
+      }
+    } else {
+      markdown = appendSection(
+        markdown,
+        "Schema Documentation",
+        'Invalid schema format - must be type "object"',
+      );
+    }
+  }
 
-      {/* Schema Documentation */}
-      {(signalData as any).schema &&
-        (() => {
-          const validatedSchema = validateSignalSchema(
-            (signalData as any).schema,
-          );
-          if (validatedSchema) {
-            const properties = Object.entries(
-              validatedSchema.properties,
-            ).map(([name, prop]) =>
-              parseProperty(
-                name,
-                prop as Record<string, unknown>,
-                validatedSchema.required || [],
-              )
-            );
+  // Raw Configuration (fallback for unknown providers)
+  if (
+    (signalData as any).config &&
+    ![
+      "http",
+      "http-webhook",
+      "cli",
+      "k8s-events",
+      "codebase-watcher",
+      "cron",
+    ].includes(provider)
+  ) {
+    const rawConfig = JSON.stringify((signalData as any).config, null, 2);
+    markdown = appendSection(
+      markdown,
+      "Raw Configuration",
+      `\`\`\`\n${rawConfig}\n\`\`\``,
+    );
+  }
 
-            return (
-              <Box flexDirection="column" marginTop={2}>
-                <Box marginBottom={1}>
-                  <Text bold color="green">
-                    Schema Documentation:
-                  </Text>
-                </Box>
-                {properties.map((property) => (
-                  <PropertyDoc key={property.name} property={property} />
-                ))}
-                {validatedSchema.required &&
-                  validatedSchema.required.length > 0 && (
-                  <Box marginTop={2}>
-                    <Text color="red">* Required fields</Text>
-                  </Box>
-                )}
-              </Box>
-            );
-          } else {
-            return (
-              <Box marginTop={2}>
-                <Text color="red">
-                  Invalid schema format - must be type "object"
-                </Text>
-              </Box>
-            );
-          }
-        })()}
-
-      {/* Raw Configuration (fallback for unknown providers) */}
-      {(signalData as any).config &&
-        ![
-          "http",
-          "http-webhook",
-          "cli",
-          "k8s-events",
-          "codebase-watcher",
-          "cron",
-        ].includes((signalData as any).provider as string) && (
-        <Box marginTop={2}>
-          <Text bold>Raw Configuration:</Text>
-          <Text>
-            {JSON.stringify(
-              (signalData as any).config,
-              null,
-              2,
-            )}
-          </Text>
-        </Box>
-      )}
+  return (
+    <Box flexDirection="column" flexShrink={0}>
+      <MarkdownDisplay content={markdown} />
     </Box>
   );
 };
