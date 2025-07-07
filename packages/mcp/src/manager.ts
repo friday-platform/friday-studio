@@ -2,20 +2,20 @@
  * MCP Manager using Vercel AI SDK's experimental MCP client
  * Provides type-safe MCP server connectivity with transport abstraction
  */
-import { experimental_createMCPClient as createMCPClient } from "ai";
-import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
-import { z } from "zod/v4";
-import { logger } from "../../../src/utils/logger.ts";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
-import type { Span } from "@opentelemetry/api";
 import {
   type MCPAuthConfig,
   MCPAuthConfigSchema,
   type MCPToolsConfig,
   MCPToolsConfigSchema,
-  type MCPTransportConfig,
   MCPTransportConfigSchema,
 } from "@atlas/config";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Span } from "@opentelemetry/api";
+import { experimental_createMCPClient as createMCPClient } from "ai";
+import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
+import { z } from "zod/v4";
+import { logger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 
 // ai doesn't export the MCPClient type, so we need to infer it.
 type MCPClient = Awaited<ReturnType<typeof createMCPClient>>;
@@ -152,6 +152,20 @@ export class MCPManager {
               args: args || [],
               env: processedEnv,
             }),
+          });
+          break;
+        }
+
+        case "http": {
+          const { url } = validatedConfig.transport;
+
+          // Create client with StreamableHTTPClientTransport
+          const transport = new StreamableHTTPClientTransport(
+            new URL(url),
+          );
+
+          mcpClient = await createMCPClient({
+            transport,
           });
           break;
         }

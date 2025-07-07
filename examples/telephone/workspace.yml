@@ -38,27 +38,18 @@ tools:
 
       atlas-platform:
         transport:
-          type: "stdio"
-          command: "deno"
-          args: [
-            "run",
-            "--allow-all",
-            "--unstable-broadcast-channel",
-            "--unstable-worker-options",
-            "--env-file",
-            "/Users/kenneth/tempest/atlas/src/cli.tsx",
-            "mcp",
-            "serve",
-          ]
-          env:
-            ATLAS_DAEMON_URL: "http://localhost:8080"
+          type: "http"
+          url: "http://localhost:8080/mcp"
         tools:
-          allowed: [
-            "workspace_list",
-            "workspace_create",
-            "workspace_describe",
-            "workspace_delete",
-          ]
+          allowed:
+            [
+              "library_list",
+              "library_get",
+              "library_search",
+              "library_store",
+              "library_stats",
+              "library_templates",
+            ]
 
 # Signal definitions
 signals:
@@ -81,13 +72,14 @@ jobs:
       how information degrades and mutates through sequential processing
     triggers:
       - signal: "telephone-message"
-        condition: {
-          "and": [
-            { "var": "message" },
-            { ">": [{ "length": { "var": "message" } }, 0] },
-            { "<": [{ "length": { "var": "message" } }, 100] },
-          ],
-        }
+        condition:
+          {
+            "and": [
+              { "var": "message" },
+              { ">": [{ "length": { "var": "message" } }, 0] },
+              { "<": [{ "length": { "var": "message" } }, 100] },
+            ],
+          }
     execution:
       strategy: "sequential"
       agents:
