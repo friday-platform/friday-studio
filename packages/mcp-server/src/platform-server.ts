@@ -7,6 +7,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerTools } from "./tools/index.ts";
 import type { ToolContext } from "./tools/types.ts";
+import { registerResources } from "./resources/index.ts";
+import type { ResourceContext } from "./resources/types.ts";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -44,6 +46,12 @@ export class PlatformMCPServer {
 
     // Register all tools with shared context
     registerTools(this.server, toolContext);
+
+    // Register resources with same DI pattern
+    const resourceContext: ResourceContext = {
+      logger: this.logger,
+    };
+    registerResources(this.server, resourceContext);
 
     this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,

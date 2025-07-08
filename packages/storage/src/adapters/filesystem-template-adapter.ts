@@ -17,17 +17,8 @@ export class FilesystemTemplateAdapter implements TemplateStorageAdapter {
   }
 
   async listTemplates(): Promise<TemplateInfo[]> {
-    // Import the template registry from the starters package
-    const startersPath = join(this.templatesPath, "index.ts");
-    if (await exists(startersPath)) {
-      try {
-        const module = await import(startersPath);
-        return module.templates || [];
-      } catch (error) {
-        console.error(`Failed to load template registry: ${error}`);
-        return [];
-      }
-    }
+    // Since starters package was removed, return empty array
+    // Templates can be added in the future if needed
     return [];
   }
 

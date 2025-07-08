@@ -6,7 +6,8 @@ MCP (Model Context Protocol) server implementations for the Atlas AI agent orche
 
 This package provides two MCP servers:
 
-- **Platform MCP Server**: Exposes platform-wide capabilities through the Atlas daemon
+- **Platform MCP Server**: Exposes platform-wide capabilities through the Atlas daemon, including
+  tools and resources
 - **Workspace MCP Server**: Provides workspace-specific job execution with security controls
 
 ## Usage
@@ -27,6 +28,11 @@ const platformServer = new PlatformMCPServer({
 // Get the MCP server instance for transport integration
 const mcpServer = platformServer.getServer();
 ```
+
+The platform server automatically registers:
+
+- **Tools**: For workspace management, job execution, library operations, and more
+- **Resources**: Including the workspace configuration reference at `atlas://reference/workspace`
 
 ### Workspace MCP Server
 
@@ -252,6 +258,76 @@ Ensure your tool handles:
 deno test packages/mcp-server/
 ```
 
+## Resources
+
+The platform server exposes MCP Resources that provide static data and content for AI agents.
+
+### Available Resources
+
+#### Workspace Configuration Reference
+
+- **URI**: `atlas://reference/workspace`
+- **Type**: `text/yaml`
+- **Description**: Comprehensive reference showing all Atlas workspace configuration options
+
+This resource provides a complete, well-documented example of workspace configuration including:
+
+- Signal definitions (CLI, HTTP webhooks, scheduled)
+- Job configurations with triggers and execution strategies
+- Agent definitions with prompts and MCP tool attachments
+- MCP server configurations
+- Advanced features like supervision levels and memory settings
+
+### Accessing Resources
+
+AI agents can discover and read resources through standard MCP operations:
+
+```typescript
+// List available resources
+const resources = await mcp.resources.list();
+// Returns: [{ uri: "atlas://reference/workspace", name: "...", description: "...", mimeType: "text/yaml" }]
+
+// Read resource content
+const reference = await mcp.resources.read({
+  uri: "atlas://reference/workspace",
+});
+// Returns: { contents: [{ uri: "...", mimeType: "text/yaml", text: "..." }] }
+```
+
+### Resource Development
+
+Resources follow a similar pattern to tools but provide read-only data:
+
+```typescript
+// src/resources/workspace-reference.ts
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ResourceContext } from "./types.ts";
+
+export function registerWorkspaceReferenceResource(
+  server: McpServer,
+  context: ResourceContext,
+) {
+  server.registerResource(
+    "workspace-reference", // Resource name
+    "atlas://reference/workspace", // Resource URI
+    {
+      name: "Workspace Configuration Reference",
+      description: "Comprehensive reference showing all Atlas workspace configuration options",
+      mimeType: "text/yaml",
+    },
+    () => { // Read callback
+      return {
+        contents: [{
+          uri: "atlas://reference/workspace",
+          mimeType: "text/yaml",
+          text: referenceContent,
+        }],
+      };
+    },
+  );
+}
+```
+
 ## Security Architecture
 
 ### Platform Server Security
@@ -302,3 +378,13 @@ Each tool follows a consistent pattern:
 3. **Context Injection**: Receives `ToolContext` with daemon URL and logger
 4. **Error Handling**: Consistent error responses with MCP error codes
 5. **Logging**: Structured logging for debugging and monitoring
+
+### Resource Implementation Pattern
+
+Resources follow a similar pattern to tools:
+
+1. **Static Content**: Resources provide read-only data, not dynamic operations
+2. **URI Scheme**: Use the `atlas://` scheme for all Atlas resources
+3. **Context Injection**: Receives `ResourceContext` with logger
+4. **Registration**: Resources are registered with name, URI, metadata, and read callback
+5. **Content Types**: Support standard MIME types (text/yaml, application/json, etc.)
