@@ -72,9 +72,9 @@ export class ConfigLoader {
   }
 
   /**
-   * Load atlas.yml configuration
+   * Load atlas.yml configuration (public method)
    */
-  private async loadAtlasConfig(): Promise<AtlasConfig> {
+  async loadAtlasConfig(): Promise<AtlasConfig> {
     const atlasPath = await this.adapter.resolveAtlasConfigPath(this.workspaceDir);
 
     try {

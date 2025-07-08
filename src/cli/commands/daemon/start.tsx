@@ -13,6 +13,7 @@ interface StartArgs {
   maxWorkspaces?: number;
   idleTimeout?: number;
   logLevel?: string;
+  atlasConfig?: string;
 }
 
 export const command = "start";
@@ -60,10 +61,19 @@ export function builder(y: YargsInstance) {
       describe: "Logging level (debug, info, warn, error)",
       choices: ["debug", "info", "warn", "error"],
     })
+    .option("atlas-config", {
+      type: "string",
+      describe: "Path to atlas.yml configuration directory",
+      alias: "c",
+    })
     .example("$0 daemon start", "Start daemon on default port 8080")
     .example("$0 daemon start --port 3000", "Start daemon on specific port")
     .example("$0 daemon start --detached", "Start daemon in background mode")
-    .example("$0 daemon start --max-workspaces 20", "Start with higher workspace limit");
+    .example("$0 daemon start --max-workspaces 20", "Start with higher workspace limit")
+    .example(
+      "$0 daemon start --atlas-config /path/to/config",
+      "Start with custom atlas config path",
+    );
 }
 
 export const handler = async (argv: StartArgs): Promise<void> => {
@@ -89,6 +99,11 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Load environment variables
     await load({ export: true });
+
+    // Set atlas config path if provided
+    if (argv.atlasConfig) {
+      Deno.env.set("ATLAS_CONFIG_PATH", argv.atlasConfig);
+    }
 
     if (argv.detached) {
       await startDetached(argv);
@@ -128,6 +143,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
       "--idle-timeout",
       (argv.idleTimeout || 300).toString(),
       ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
+      ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
     ],
     env: {
       ...Deno.env.toObject(),

@@ -137,15 +137,19 @@ private configService: ConfigService;
 
 **Objective**: Replace complex worker architecture with XState Actor + BaseAgent model
 
-**Architecture Understanding**:
+**Architecture Understanding (Updated based on implementation)**:
 
-- **XState Actors**: Provide isolation and concurrency (replaces Web Workers)
-- **BaseAgent**: Contains business logic, memory, context, planning
-- **Pattern**: Each XState Actor wraps a BaseAgent instance
+- **Direct Actor Pattern**: Simple orchestrator classes, not XState actor wrappers
+- **BaseAgent**: Rich agent interface with memory, context, planning, LLM integration (645 lines)
+- **LLMProvider**: Centralized LLM execution in src/utils/llm/provider.ts (775 lines, AI SDK, MCP,
+  telemetry)
 - **Agent Types**:
-  - **Supervisors**: Agents that orchestrate other agents (WorkspaceSupervisor, SessionSupervisor)
-  - **System Agents**: Built-in agents like ConversationAgent (extend BaseAgent)
-  - **External Agents**: LLM/Remote agents handled via AgentExecutionActor
+  - **System Agents**: Built-in agents extending BaseAgent (in packages/system/agents/)
+  - **LLM Agents**: Configuration-driven agents using LLMProvider directly
+  - **Remote Agents**: Using existing RemoteAgent infrastructure
+  - **Supervisors**: Simple orchestrator classes that coordinate other agents
+- **AgentExecutionActor**: Pure orchestrator (100 lines) that dispatches based on agent type
+- **SystemAgentRegistry**: Dynamic discovery and registration of system agents
 
 **Benefits**:
 
@@ -260,17 +264,40 @@ private configService: ConfigService;
 
 ### **Phase 1: Worker-to-Actor Migration**
 
-- [ ] Create `src/core/actors/base-actor.ts` with XState business logic FSM
-- [ ] Migrate `src/core/workers/agent-execution-worker.ts` →
-      `src/core/actors/agent-execution-actor.ts`
-- [ ] Migrate `src/core/workers/session-supervisor-worker.ts` →
-      `src/core/actors/session-supervisor-actor.ts`
-- [ ] Migrate `src/core/workers/workspace-supervisor-worker.ts` →
-      `src/core/actors/workspace-supervisor-actor.ts`
-- [ ] Replace `src/core/utils/worker-manager.ts` → `src/core/utils/actor-system.ts`
-- [ ] Update `src/core/workspace-runtime.ts` to use ActorSystem instead of WorkerManager
-- [ ] Update `src/core/supervisor.ts` to work with actors instead of workers
-- [ ] Test actor communication and XState behavior
+- [x] **COMPLETED**: LLM Architecture Cleanup
+  - [x] Remove LLMService wrapper entirely
+  - [x] Move LLMProviderManager → LLMProvider in src/utils/llm/provider.ts
+  - [x] Direct usage: BaseAgent → LLMProvider, AgentExecutionActor → LLMProvider
+  - [x] Update all import paths across codebase
+
+- [x] **COMPLETED**: AgentExecutionActor Simplification
+  - [x] Migrate `src/core/workers/agent-execution-worker.ts` →
+        `src/core/actors/agent-execution-actor.ts`
+  - [x] Remove 300+ lines of unnecessary abstraction (AgentExecutionRequest/Response/Config)
+  - [x] Direct orchestration: AgentExecutePayload → Agent.invoke() → result
+  - [x] Simple dispatch pattern based on agent type
+
+- [x] **COMPLETED**: System Agent Registry
+  - [x] Dynamic discovery from packages/system/agents/
+  - [x] Store metadata in Deno KV during daemon initialization
+  - [x] Support system agent type "tempest" in configuration
+
+- [ ] **NEXT**: Session-level actor migration
+  - [ ] Migrate `src/core/workers/session-supervisor-worker.ts` →
+        `src/core/actors/session-supervisor-actor.ts`
+  - [ ] Direct agent actor calls instead of worker spawning
+  - [ ] Simplified session execution planning
+
+- [ ] **NEXT**: Workspace-level actor migration
+  - [ ] Migrate `src/core/workers/workspace-supervisor-worker.ts` →
+        `src/core/actors/workspace-supervisor-actor.ts`
+  - [ ] Direct session actor management instead of worker spawning
+  - [ ] Simplified signal processing
+
+- [ ] **NEXT**: ActorSystem and Runtime Updates
+  - [ ] Replace `src/core/utils/worker-manager.ts` → `src/core/utils/actor-system.ts`
+  - [ ] Update `src/core/workspace-runtime.ts` to use ActorSystem instead of WorkerManager
+  - [ ] Update `src/core/supervisor.ts` to work with actors instead of workers
 
 ### **Phase 2: Configuration Service Centralization**
 

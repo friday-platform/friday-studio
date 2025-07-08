@@ -784,6 +784,21 @@ export class AtlasDaemon {
       }
     });
 
+    // Refresh atlas config cache
+    this.app.post("/api/atlas/refresh-config", async (c) => {
+      try {
+        const manager = getWorkspaceManager();
+        await manager.refreshAtlasConfig();
+        return c.json({ message: "Atlas config cache refreshed" });
+      } catch (error) {
+        return c.json({
+          error: `Failed to refresh atlas config: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
     // Trigger signal on specific workspace
     this.app.post("/api/workspaces/:workspaceId/signals/:signalId", async (c) => {
       const workspaceId = c.req.param("workspaceId");

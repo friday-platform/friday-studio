@@ -581,11 +581,10 @@ export const SupervisorDefaultsSchema = z.object({
 export const AtlasConfigSchema = z.object({
   version: z.string(),
 
-  // Workspace identity (atlas.yml IS a workspace)
+  // Workspace identity (atlas.yml IS a workspace, same as WorkspaceConfig)
   workspace: WorkspaceIdentitySchema.extend({
-    id: z.string().default("atlas-platform"),
-    name: z.string().default("Atlas Platform"),
-  }),
+    name: z.string().min(1, "Workspace name cannot be empty"),
+  }), // ID is generated during registration, not in config
 
   // Server configuration (how this platform workspace exposes itself)
   server: ServerConfigSchema.optional(),
@@ -607,7 +606,7 @@ export const AtlasConfigSchema = z.object({
   ).optional(),
 
   // Platform capabilities as jobs, signals, and agents (same as workspace.yml)
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(),
+  jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(), // Job keys become MCP tools, same as WorkspaceConfig
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
 
@@ -768,6 +767,9 @@ export const AtlasConfigSchema = z.object({
         .optional(),
     })
     .optional(),
+
+  // MCP servers configuration (same as WorkspaceConfig)
+  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 // Inferred types from Zod schemas

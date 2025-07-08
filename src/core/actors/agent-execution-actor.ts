@@ -4,8 +4,8 @@
  */
 
 import { type ChildLogger, logger } from "../../utils/logger.ts";
-import type { WorkspaceManager } from "../workspace-manager.ts";
 import type { WorkspaceAgentConfig } from "../../../packages/config/src/schemas.ts";
+import { getWorkspaceManager } from "../workspace-manager.ts";
 import { SystemAgentRegistry } from "../system-agent-registry.ts";
 import { RemoteAgent } from "../agents/remote/remote-agent.ts";
 import type { AgentExecutePayload } from "../../types/messages.ts";
@@ -17,7 +17,6 @@ interface AgentExecutionResult {
 }
 
 export class AgentExecutionActor {
-  private workspaceManager?: WorkspaceManager;
   private sessionId?: string;
   private workspaceId?: string;
   private logger: ChildLogger;
@@ -37,16 +36,25 @@ export class AgentExecutionActor {
     });
   }
 
-  async initialize(workspaceManager: WorkspaceManager): Promise<void> {
-    this.workspaceManager = workspaceManager;
+  async initialize(): Promise<void> {
     this.logger.info("Agent execution actor initialized");
   }
 
   async executeTask(taskId: string, data: AgentExecutePayload): Promise<AgentExecutionResult> {
     const executionStart = Date.now();
 
-    // Get agent configuration from workspace registry
-    const agentConfig = await this.getAgentConfig(data.agent_id);
+    // Get workspace configuration transparently
+    const workspaceConfig = await this.loadWorkspaceConfig();
+
+    // Get agent config from workspace
+    const agentConfig = workspaceConfig.agents?.[data.agent_id];
+    if (!agentConfig) {
+      throw new Error(
+        `Agent configuration not found: ${data.agent_id} in workspace: ${
+          this.workspaceId || "global"
+        }`,
+      );
+    }
 
     // Dispatch based on agent type - simple orchestration
     let result: unknown;
@@ -66,19 +74,6 @@ export class AgentExecutionActor {
 
     const duration = Date.now() - executionStart;
     return { output: result, duration };
-  }
-
-  private async getAgentConfig(agentId: string): Promise<WorkspaceAgentConfig> {
-    if (!this.workspaceId) {
-      throw new Error("Workspace ID required to get agent config");
-    }
-
-    const workspaceConfig = await this.workspaceManager?.getWorkspaceConfigBySlug(this.workspaceId);
-    if (!workspaceConfig?.agents?.[agentId]) {
-      throw new Error(`Agent configuration not found: ${agentId}`);
-    }
-
-    return workspaceConfig.agents[agentId];
   }
 
   private async executeSystemAgent(
@@ -174,5 +169,34 @@ export class AgentExecutionActor {
 
     // Use invoke method from BaseAgent
     return await remoteAgent.invoke(request.input as string);
+  }
+
+  /**
+   * Load workspace configuration transparently
+   * - If workspaceId is provided: load specific workspace config from WorkspaceManager
+   * - If workspaceId is undefined: load global atlas.yml config from WorkspaceManager
+   */
+  private async loadWorkspaceConfig() {
+    const workspaceManager = getWorkspaceManager();
+
+    if (!this.workspaceId) {
+      // No workspace ID means we're in the global workspace (atlas.yml only)
+      this.logger.debug("Loading global atlas.yml configuration from WorkspaceManager");
+
+      const atlasConfig = await workspaceManager.getAtlasConfig();
+      if (!atlasConfig) {
+        throw new Error("Global atlas.yml configuration not found in registry");
+      }
+
+      // AtlasConfig is now a superset of WorkspaceConfig, use directly
+      return atlasConfig;
+    } else {
+      // Load specific workspace config from WorkspaceManager (already loaded and cached)
+      const workspaceConfig = await workspaceManager.getWorkspaceConfigBySlug(this.workspaceId);
+      if (!workspaceConfig) {
+        throw new Error(`Workspace configuration not found: ${this.workspaceId}`);
+      }
+      return workspaceConfig;
+    }
   }
 }
