@@ -6,6 +6,8 @@
     "@atlas/config": "../config/mod.ts",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
     "zod": "npm:zod@^3.21.4",
-    "zod/v4": "npm:zod@^3.21.4"
+    "zod/v4": "npm:zod@^3.21.4",
+    "@std/fs": "jsr:@std/fs@^1.0.0",
+    "@std/path": "jsr:@std/path@^1.0.0"
   }
 }
