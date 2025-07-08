@@ -2,7 +2,7 @@
 // https://github.com/cline/cline/blob/main/evals/diff-edits/diff-apply/diff-06-23-25.ts
 // https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/utils/editCorrector.ts
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import * as path from "path";
 import { Tool } from "./tool";
 import { LSP } from "../lsp";
