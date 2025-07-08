@@ -6,6 +6,7 @@
     "jsr:@std/async@1": "1.0.13",
     "jsr:@std/dotenv@0.225": "0.225.5",
     "jsr:@std/expect@^1.0.16": "1.0.16",
+    "jsr:@std/fs@1": "1.0.19",
     "jsr:@std/fs@^1.0.19": "1.0.19",
     "jsr:@std/internal@^1.0.6": "1.0.9",
     "jsr:@std/internal@^1.0.7": "1.0.9",
@@ -45,6 +46,7 @@
     "npm:openapi-fetch@~0.12.4": "0.12.5",
     "npm:openapi-typescript@^7.4.4": "7.8.0_typescript@5.8.3",
     "npm:react@^19.1.0": "19.1.0",
+    "npm:turndown@^7.2.0": "7.2.0",
     "npm:xstate@^5.20.1": "5.20.1",
     "npm:zod-openapi@^5.0.1": "5.0.1_zod@3.25.75",
     "npm:zod@^3.21.4": "3.25.75",
@@ -230,6 +232,9 @@
     },
     "@jsdevtools/ono@7.1.3": {
       "integrity": "sha512-4JQNk+3mVzK3xh2rqd6RB4J46qUR19azEHBneZyTZM+c456qOrbbM/5xcR8huNCCcbVt7+UmizG6GuUvPvKUYg=="
+    },
+    "@mixmark-io/domino@2.2.0": {
+      "integrity": "sha512-Y28PR25bHXUg88kCV7nivXrP2Nj2RueZ3/l/jdx6J9f8J4nsEGcgX0Qe6lt7Pa+J79+kPiJU3LguR6O/6zrLOw=="
     },
     "@modelcontextprotocol/sdk@1.15.0_express@5.1.0_zod@3.25.75": {
       "integrity": "sha512-67hnl/ROKdb03Vuu0YOr+baKTvf1/5YBHBm9KnZdjdAh8hjt4FRCPD5ucwxGB237sBpzlqQsLy1PFu7z/ekZ9Q==",
@@ -1472,6 +1477,12 @@
     "toidentifier@1.0.1": {
       "integrity": "sha512-o5sSPKEkg/DIQNmH43V0/uerLrpzVedkUh8tGNvaeXpfpuwjKenlSox/2O/BTlZUtEe+JG7s5YhEz608PlAHRA=="
     },
+    "turndown@7.2.0": {
+      "integrity": "sha512-eCZGBN4nNNqM9Owkv9HAtWRYfLA4h909E/WGAWWBpmB275ehNhZyk87/Tpvjbp0jjNl9XwCsbe6bm6CqFsgD+A==",
+      "dependencies": [
+        "@mixmark-io/domino"
+      ]
+    },
     "type-fest@4.41.0": {
       "integrity": "sha512-TeTSQ6H5YHvpqVwBRcnLDCBnDOHWYu7IvGbHT6N8AOymcr9PJGjc1GTtiWZTYg0NCgYwvnYWEkVChQAr9bjfwA=="
     },
@@ -1935,6 +1946,11 @@
       "npm:xstate@^5.20.1",
       "npm:zod@^3.25.74"
     ],
+    "packageJson": {
+      "dependencies": [
+        "npm:turndown@^7.2.0"
+      ]
+    },
     "members": {
       "apps/atlasd": {
         "dependencies": [
@@ -1958,6 +1974,8 @@
       },
       "packages/mcp-server": {
         "dependencies": [
+          "jsr:@std/fs@1",
+          "jsr:@std/path@1",
           "npm:@modelcontextprotocol/sdk@^1.12.1",
           "npm:zod@^3.21.4"
         ]
