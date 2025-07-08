@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { Tool } from "./tool";
 import TurndownService from "turndown";
-import DESCRIPTION from "./webfetch.txt";
+import DESCRIPTION from "./webfetch.txt" with { type: "txt" };
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds

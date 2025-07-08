@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import { Tool } from "./tool";
 import { EditTool } from "./edit";
-import DESCRIPTION from "./multiedit.txt";
+import DESCRIPTION from "./multiedit.txt" with { type: "txt" };
 import path from "path";
 
 export const MultiEditTool = Tool.define({

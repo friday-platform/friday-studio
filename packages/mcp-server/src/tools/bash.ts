@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { Tool } from "./tool";
-import DESCRIPTION from "./bash.txt";
+import DESCRIPTION from "./bash.txt" with { type: "txt" };
 
 const MAX_OUTPUT_LENGTH = 30000;
 const DEFAULT_TIMEOUT = 1 * 60 * 1000;

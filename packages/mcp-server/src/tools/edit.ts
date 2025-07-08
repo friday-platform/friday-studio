@@ -8,7 +8,7 @@ import { Tool } from "./tool";
 import { LSP } from "../lsp";
 import { createTwoFilesPatch } from "diff";
 import { Permission } from "../permission";
-import DESCRIPTION from "./edit.txt";
+import DESCRIPTION from "./edit.txt" with { type: "txt" };
 import { File } from "../file";
 import { Bus } from "../bus";
 import { FileTime } from "../file/time";

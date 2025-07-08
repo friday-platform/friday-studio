@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import { Tool } from "./tool";
-import DESCRIPTION_WRITE from "./todowrite.txt";
+import DESCRIPTION_WRITE from "./todowrite.txt" with { type: "txt" };
 import { App } from "../app/app";
 
 const TodoInfo = z.object({

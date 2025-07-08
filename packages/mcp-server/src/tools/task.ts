@@ -1,5 +1,5 @@
 import { Tool } from "./tool";
-import DESCRIPTION from "./task.txt";
+import DESCRIPTION from "./task.txt" with { type: "txt" };
 import { z } from "zod/v4";
 import { Session } from "../session";
 import { Bus } from "../bus";

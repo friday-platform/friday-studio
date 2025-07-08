@@ -1,7 +1,7 @@
 import { z } from "zod/v4";
 import path from "path";
 import { Tool } from "./tool";
-import DESCRIPTION from "./glob.txt";
+import DESCRIPTION from "./glob.txt" with { type: "txt" };
 import { Ripgrep } from "../file/ripgrep";
 
 export const GlobTool = Tool.define({

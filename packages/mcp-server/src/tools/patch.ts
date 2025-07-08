@@ -3,7 +3,7 @@ import * as path from "path";
 import * as fs from "fs/promises";
 import { Tool } from "./tool";
 import { FileTime } from "../file/time";
-import DESCRIPTION from "./patch.txt";
+import DESCRIPTION from "./patch.txt" with { type: "txt" };
 
 const PatchParams = z.object({
   patchText: z.string().describe("The full patch text that describes all changes to be made"),

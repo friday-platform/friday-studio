@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { Tool } from "./tool";
 import { Ripgrep } from "../file/ripgrep";
 
-import DESCRIPTION from "./grep.txt";
+import DESCRIPTION from "./grep.txt" with { type: "txt" };
 
 export const GrepTool = Tool.define({
   id: "grep",

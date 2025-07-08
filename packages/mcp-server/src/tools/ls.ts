@@ -3,7 +3,7 @@ import { Tool } from "./tool";
 import * as path from "path";
 import { expandGlob } from "@std/fs";
 import { globToRegExp } from "@std/path";
-import DESCRIPTION from "./ls.txt";
+import DESCRIPTION from "./ls.txt" with { type: "txt" };
 
 export const IGNORE_PATTERNS = [
   "node_modules/",

@@ -3,7 +3,7 @@ import * as path from "path";
 import { Tool } from "./tool";
 import { LSP } from "../lsp";
 import { FileTime } from "../file/time";
-import DESCRIPTION from "./read.txt";
+import DESCRIPTION from "./read.txt" with { type: "txt" };
 
 const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
