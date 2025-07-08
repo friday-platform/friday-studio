@@ -189,6 +189,11 @@ export class AtlasDaemon {
     // Register cron signals for all existing workspaces
     await this.discoverAndRegisterExistingCronSignals();
 
+    // Initialize system agent registry
+    logger.info("Initializing system agent registry...");
+    const { SystemAgentRegistry } = await import("../../../src/core/system-agent-registry.ts");
+    await SystemAgentRegistry.initialize(kvStorage);
+
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
   }

@@ -47,7 +47,7 @@ const LLMGenerationOptionsWithToolsSchema = LLMGenerationOptionsSchema.extend({
     .optional(),
 });
 
-export type LLMProvider = z.infer<typeof LLMProviderSchema>;
+export type LLMProviderType = z.infer<typeof LLMProviderSchema>;
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 export type LLMGenerationOptions = z.infer<typeof LLMGenerationOptionsSchema>;
 export type LLMGenerationOptionsWithTools = z.infer<typeof LLMGenerationOptionsWithToolsSchema>;
@@ -65,7 +65,7 @@ const PROVIDER_ENV_VARS = {
  * Simplified multi-provider LLM manager using AI SDK patterns
  * Replaces complex abstraction layers with direct AI SDK usage
  */
-export class LLMProviderManager {
+export class LLMProvider {
   private static clients: Map<string, ProviderClient> = new Map();
   private static mcpManager = new MCPManager();
 

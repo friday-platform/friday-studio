@@ -4,7 +4,7 @@
  */
 
 import { logger } from "../../../src/utils/logger.ts";
-import { LLMProviderManager } from "../../../src/core/agents/llm-provider-manager.ts";
+import { LLMProvider } from "../../../src/utils/llm/provider.ts";
 import {
   type AgentConfig,
   type MCPServerOverrides,
@@ -248,7 +248,7 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
 
     try {
       // Use LLMProviderManager to initialize the servers
-      await LLMProviderManager.initializeMCPServers(configs);
+      await LLMProvider.initializeMCPServers(configs);
 
       logger.info(`MCP servers initialized successfully for session`, {
         operation: "mcp_session_initialization",

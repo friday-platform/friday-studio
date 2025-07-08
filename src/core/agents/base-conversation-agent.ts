@@ -1,5 +1,5 @@
 import { BaseAgent } from "./base-agent.ts";
-import { LLMProviderManager } from "./llm-provider-manager.ts";
+import { LLMProvider } from "../../utils/llm/provider.ts";
 import { Tool } from "ai";
 import { AtlasLogger } from "../../utils/logger.ts";
 import { ConversationEvent, ConversationMessage } from "../conversation-supervisor.old.ts";
@@ -86,7 +86,7 @@ export abstract class BaseConversationAgent extends BaseAgent {
 
     try {
       // Use LLMProviderManager for tool calling
-      const result = await LLMProviderManager.generateTextWithTools(message, {
+      const result = await LLMProvider.generateTextWithTools(message, {
         systemPrompt,
         tools: this.conversationTools,
         model,

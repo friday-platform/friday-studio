@@ -1,7 +1,7 @@
 import { BaseConversationAgent } from "./base-conversation-agent.ts";
 import { jsonSchema, Tool } from "ai";
 import { AtlasLogger } from "../../utils/logger.ts";
-import { LLMProviderManager } from "./llm-provider-manager.ts";
+import { LLMProvider } from "../../utils/llm/provider.ts";
 import type {
   ConversationEvent,
   ConversationMessage,
@@ -289,7 +289,7 @@ Available tools:
         systemPromptPreview: systemPrompt.substring(0, 200) + "...",
       });
 
-      const result = await LLMProviderManager.generateTextWithTools(message, {
+      const result = await LLMProvider.generateTextWithTools(message, {
         systemPrompt,
         tools: this.conversationTools,
         model: "claude-3-5-haiku-20241022",

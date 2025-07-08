@@ -9,7 +9,7 @@ import type {
 import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
-import { LLMService } from "../llm-service.ts";
+import { LLMProvider } from "../../utils/llm/provider.ts";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
 import {
@@ -327,8 +327,8 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         memoryContext = `${memContext.systemContext}\n\n${memContext.userContext}`;
       }
 
-      // Use centralized LLM service
-      const text = await LLMService.generateText(userPrompt, {
+      // Use LLM provider directly
+      const text = await LLMProvider.generateText(userPrompt, {
         model,
         systemPrompt,
         memoryContext: memoryContext || undefined,
@@ -401,7 +401,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
         enhancedUserPrompt = `${userPrompt}\n\n${memoryContext.userContext}`;
       }
 
-      const stream = LLMService.generateTextStream(enhancedUserPrompt, {
+      const stream = LLMProvider.generateTextStream(enhancedUserPrompt, {
         model,
         systemPrompt: enhancedSystemPrompt,
         temperature: 0.7,

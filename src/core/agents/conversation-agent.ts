@@ -7,7 +7,7 @@
 
 import { BaseAgent } from "./base-agent.ts";
 import { type ConversationMessage, getConversationStorage } from "./conversation-storage.ts";
-import { LLMProviderManager } from "./llm-provider-manager.ts";
+import { LLMProvider } from "../../utils/llm/provider.ts";
 
 export interface ConversationAgentInput {
   streamId: string;
@@ -177,7 +177,7 @@ export class ConversationAgent extends BaseAgent {
         // Get workspace tools from request environment if available
         const workspaceTools = (input._atlas_context as any)?.workspace_tools || {};
 
-        const result = await LLMProviderManager.generateTextWithTools(
+        const result = await LLMProvider.generateTextWithTools(
           userPrompt,
           {
             provider: "anthropic", // Default to anthropic
