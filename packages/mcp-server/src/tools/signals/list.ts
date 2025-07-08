@@ -3,42 +3,45 @@
  * Lists available signals within a workspace through the daemon API
  */
 
-import { z } from "zod/v4";
-import type { ToolHandler } from "../types.ts";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-const schema = z.object({
-  workspaceId: z.string().describe("Workspace ID to list signals for"),
-});
+export function registerSignalsListTool(server: McpServer, ctx: ToolContext) {
+  server.registerTool(
+    "atlas:workspace_signals_list",
+    {
+      description:
+        "View all signal configurations within a workspace that can trigger automated job executions. Signals represent external events (webhooks, schedules, file changes) that initiate workspace operations.",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace ID to list signals for"),
+      },
+    },
+    async ({ workspaceId }) => {
+      ctx.logger.info("MCP workspace_signals_list called", { workspaceId });
 
-export const signalsListTool: ToolHandler<typeof schema> = {
-  name: "workspace_signals_list",
-  description:
-    "View all signal configurations within a workspace that can trigger automated job executions. Signals represent external events (webhooks, schedules, file changes) that initiate workspace operations.",
-  inputSchema: schema,
-  handler: async ({ workspaceId }, { daemonUrl, logger }) => {
-    logger.info("MCP workspace_signals_list called", { workspaceId });
+      try {
+        const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+          );
+        }
 
-    try {
-      const response = await fetch(`${daemonUrl}/api/workspaces/${workspaceId}/signals`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-        );
+        const signals = await response.json();
+
+        return createSuccessResponse({
+          signals,
+          total: signals.length,
+          workspaceId,
+          source: "daemon_api",
+        });
+      } catch (error) {
+        ctx.logger.error("MCP workspace_signals_list failed", { workspaceId, error });
+        throw error;
       }
-
-      const signals = await response.json();
-
-      return createSuccessResponse({
-        signals,
-        total: signals.length,
-        workspaceId,
-        source: "daemon_api",
-      });
-    } catch (error) {
-      logger.error("MCP workspace_signals_list failed", { workspaceId, error });
-      throw error;
-    }
-  },
-};
+    },
+  );
+}

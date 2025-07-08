@@ -4,142 +4,107 @@
  */
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { ToolContext, ToolHandler } from "./types.ts";
-import { z } from "zod/v4";
+import { type ToolContext } from "./types.ts";
 
 // Import workspace tools
-import { workspaceListTool } from "./workspace/list.ts";
-import { workspaceCreateTool } from "./workspace/create.ts";
-import { workspaceDeleteTool } from "./workspace/delete.ts";
-import { workspaceDescribeTool } from "./workspace/describe.ts";
+import { registerWorkspaceCreateTool } from "./workspace/create.ts";
+import { registerWorkspaceDeleteTool } from "./workspace/delete.ts";
+import { registerWorkspaceDescribeTool } from "./workspace/describe.ts";
+import { registerWorkspaceListTool } from "./workspace/list.ts";
 
 // Import session tools
-import { sessionDescribeTool } from "./session/describe.ts";
-import { sessionCancelTool } from "./session/cancel.ts";
+import { registerSessionCancelTool } from "./session/cancel.ts";
+import { registerSessionDescribeTool } from "./session/describe.ts";
 
 // Import job tools
-import { jobsListTool } from "./jobs/list.ts";
-import { jobsDescribeTool } from "./jobs/describe.ts";
+import { registerJobsDescribeTool } from "./jobs/describe.ts";
+import { registerJobsListTool } from "./jobs/list.ts";
 
 // Import signal tools
-import { signalsListTool } from "./signals/list.ts";
-import { signalsTriggerTool } from "./signals/trigger.ts";
+import { registerSignalsListTool } from "./signals/list.ts";
+import { registerSignalsTriggerTool } from "./signals/trigger.ts";
 
 // Import agent tools
-import { agentsListTool } from "./agents/list.ts";
-import { agentsDescribeTool } from "./agents/describe.ts";
+import { registerAgentsDescribeTool } from "./agents/describe.ts";
+import { registerAgentsListTool } from "./agents/list.ts";
 
 // Import library tools
-import { libraryListTool } from "./library/list.ts";
-import { libraryGetTool } from "./library/get.ts";
-import { libraryStoreTool } from "./library/store.ts";
-import { libraryStatsTool } from "./library/stats.ts";
-import { libraryTemplatesTool } from "./library/templates.ts";
+import { registerLibraryGetTool } from "./library/get.ts";
+import { registerLibraryListTool } from "./library/list.ts";
+import { registerLibraryStatsTool } from "./library/stats.ts";
+import { registerLibraryStoreTool } from "./library/store.ts";
+import { registerLibraryTemplatesTool } from "./library/templates.ts";
 
 // Import draft tools
-import { draftCreateTool } from "./drafts/create.ts";
-import { draftUpdateTool } from "./drafts/update.ts";
-import { draftValidateTool } from "./drafts/validate.ts";
-import { draftPublishTool } from "./drafts/publish.ts";
-import { draftShowTool } from "./drafts/show.ts";
-import { draftListTool } from "./drafts/list.ts";
-import { draftDeleteTool } from "./drafts/delete.ts";
+import { registerDraftCreateTool } from "./drafts/create.ts";
+import { registerDraftDeleteTool } from "./drafts/delete.ts";
+import { registerDraftListTool } from "./drafts/list.ts";
+import { registerDraftPublishTool } from "./drafts/publish.ts";
+import { registerDraftShowTool } from "./drafts/show.ts";
+import { registerDraftUpdateTool } from "./drafts/update.ts";
+import { registerDraftValidateTool } from "./drafts/validate.ts";
 
 // Import filesystem tools
-import { globTool } from "./fs/glob.ts";
-import { grepTool } from "./fs/grep.ts";
-import { lsTool } from "./fs/ls.ts";
-import { readTool } from "./fs/read.ts";
-import { writeTool } from "./fs/write.ts";
+import { registerGlobTool } from "./fs/glob.ts";
+import { registerGrepTool } from "./fs/grep.ts";
+import { registerLsTool } from "./fs/ls.ts";
+import { registerReadTool } from "./fs/read.ts";
+import { registerWriteTool } from "./fs/write.ts";
 
 // Import web tools
-import { fetchTool } from "./web/fetch.ts";
-
-/**
- * Get all available tools
- */
-export function getAllTools(): ToolHandler[] {
-  return [
-    // Workspace tools
-    workspaceListTool,
-    workspaceCreateTool,
-    workspaceDeleteTool,
-    workspaceDescribeTool,
-
-    // Session tools
-    sessionDescribeTool,
-    sessionCancelTool,
-
-    // Job tools
-    jobsListTool,
-    jobsDescribeTool,
-
-    // Signal tools
-    signalsListTool,
-    signalsTriggerTool,
-
-    // Agent tools
-    agentsListTool,
-    agentsDescribeTool,
-
-    // Library tools
-    libraryListTool,
-    libraryGetTool,
-    libraryStoreTool,
-    libraryStatsTool,
-    libraryTemplatesTool,
-
-    // Draft tools
-    draftCreateTool,
-    draftUpdateTool,
-    draftValidateTool,
-    draftPublishTool,
-    draftShowTool,
-    draftListTool,
-    draftDeleteTool,
-    // // Filesystem tools
-    globTool,
-    // grepTool,
-    // lsTool,
-    // readTool,
-    // writeTool,
-
-    // // Web tools
-    // fetchTool,
-  ];
-}
+import { registerFetchTool } from "./web/fetch.ts";
 
 /**
  * Register all tools with the MCP server
  */
 export function registerTools(server: McpServer, context: ToolContext): void {
-  const tools = getAllTools();
+  // Workspace tools
+  registerWorkspaceListTool(server, context);
+  registerWorkspaceCreateTool(server, context);
+  registerWorkspaceDeleteTool(server, context);
+  registerWorkspaceDescribeTool(server, context);
 
-  for (const tool of tools) {
-    // Extract the shape from the Zod object schema
-    // The MCP SDK expects a ZodRawShape (object with Zod schemas as values)
-    // not a ZodObject schema
-    let inputSchema: z.ZodRawShape;
+  // Session tools
+  registerSessionDescribeTool(server, context);
+  registerSessionCancelTool(server, context);
 
-    if (tool.inputSchema instanceof z.ZodObject) {
-      // If it's a ZodObject, extract the shape
-      inputSchema = tool.inputSchema.shape;
-    } else {
-      // Otherwise, assume it's already a raw shape (shouldn't happen with our current setup)
-      inputSchema = tool.inputSchema as unknown as z.ZodRawShape;
-    }
+  // Job tools
+  registerJobsListTool(server, context);
+  registerJobsDescribeTool(server, context);
 
-    server.registerTool(
-      tool.name,
-      {
-        description: tool.description,
-        inputSchema,
-      },
-      (args) => tool.handler(args, context),
-    );
+  // Signal tools
+  registerSignalsListTool(server, context);
+  registerSignalsTriggerTool(server, context);
 
-    context.logger.debug(`Registered tool: ${tool.name}`);
-  }
+  // Agent tools
+  registerAgentsListTool(server, context);
+  registerAgentsDescribeTool(server, context);
 
-  context.logger.info(`Registered ${tools.length} tools with MCP server`);
+  // Library tools
+  registerLibraryListTool(server, context);
+  registerLibraryGetTool(server, context);
+  registerLibraryStoreTool(server, context);
+  registerLibraryStatsTool(server, context);
+  registerLibraryTemplatesTool(server, context);
+
+  // Draft tools
+  registerDraftCreateTool(server, context);
+  registerDraftUpdateTool(server, context);
+  registerDraftValidateTool(server, context);
+  registerDraftPublishTool(server, context);
+  registerDraftShowTool(server, context);
+  registerDraftListTool(server, context);
+  registerDraftDeleteTool(server, context);
+
+  // Filesystem tools
+  registerGlobTool(server, context);
+  registerGrepTool(server, context);
+  registerLsTool(server, context);
+  registerReadTool(server, context);
+  registerWriteTool(server, context);
+
+  // Web tools
+  registerFetchTool(server, context);
+
+  context.logger.info("Registered all tools with MCP server");
 }

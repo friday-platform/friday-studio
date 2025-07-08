@@ -3,41 +3,44 @@
  * Lists available agents within a workspace through the daemon API
  */
 
-import { z } from "zod/v4";
-import type { ToolHandler } from "../types.ts";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-const schema = z.object({
-  workspaceId: z.string().describe("Workspace ID to list agents for"),
-});
+export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
+  server.registerTool(
+    "atlas:workspace_agents_list",
+    {
+      description: "List all agents in a workspace through daemon API",
+      inputSchema: {
+        workspaceId: z.string().describe("Workspace ID to list agents for"),
+      },
+    },
+    async ({ workspaceId }) => {
+      ctx.logger.info("MCP workspace_agents_list called", { workspaceId });
 
-export const agentsListTool: ToolHandler<typeof schema> = {
-  name: "workspace_agents_list",
-  description: "List all agents in a workspace through daemon API",
-  inputSchema: schema,
-  handler: async ({ workspaceId }, { daemonUrl, logger }) => {
-    logger.info("MCP workspace_agents_list called", { workspaceId });
+      try {
+        const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/agents`);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(
+            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+          );
+        }
 
-    try {
-      const response = await fetch(`${daemonUrl}/api/workspaces/${workspaceId}/agents`);
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-        );
+        const agents = await response.json();
+
+        return createSuccessResponse({
+          agents,
+          total: agents.length,
+          workspaceId,
+          source: "daemon_api",
+        });
+      } catch (error) {
+        ctx.logger.error("MCP workspace_agents_list failed", { workspaceId, error });
+        throw error;
       }
-
-      const agents = await response.json();
-
-      return createSuccessResponse({
-        agents,
-        total: agents.length,
-        workspaceId,
-        source: "daemon_api",
-      });
-    } catch (error) {
-      logger.error("MCP workspace_agents_list failed", { workspaceId, error });
-      throw error;
-    }
-  },
-};
+    },
+  );
+}

@@ -1,35 +1,38 @@
-import { z } from "zod/v4";
-import type { ToolHandler } from "../types.ts";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-const schema = z.object({});
+export function registerLibraryStatsTool(server: McpServer, ctx: ToolContext) {
+  server.registerTool(
+    "atlas:library_stats",
+    {
+      description: "Get library usage statistics and analytics through daemon API",
+      inputSchema: {},
+    },
+    async () => {
+      ctx.logger.info("MCP library_stats called");
 
-export const libraryStatsTool: ToolHandler<typeof schema> = {
-  name: "library_stats",
-  description: "Get library usage statistics and analytics through daemon API",
-  inputSchema: schema,
-  handler: async (_, { daemonUrl, logger }) => {
-    logger.info("MCP library_stats called");
+      try {
+        const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library/stats`);
+        const result = await handleDaemonResponse(response, "library_stats", ctx.logger);
 
-    try {
-      const response = await fetchWithTimeout(`${daemonUrl}/api/library/stats`);
-      const result = await handleDaemonResponse(response, "library_stats", logger);
+        ctx.logger.info("MCP library_stats response", {
+          totalItems: result.total_items,
+          totalSizeBytes: result.total_size_bytes,
+          typeCount: Object.keys(result.types || {}).length,
+        });
 
-      logger.info("MCP library_stats response", {
-        totalItems: result.total_items,
-        totalSizeBytes: result.total_size_bytes,
-        typeCount: Object.keys(result.types || {}).length,
-      });
-
-      return createSuccessResponse({
-        ...result,
-        source: "daemon_api",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error("MCP library_stats failed", { error });
-      throw error;
-    }
-  },
-};
+        return createSuccessResponse({
+          ...result,
+          source: "daemon_api",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        ctx.logger.error("MCP library_stats failed", { error });
+        throw error;
+      }
+    },
+  );
+}

@@ -1,45 +1,48 @@
-import { z } from "zod/v4";
-import type { ToolHandler } from "../types.ts";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-const schema = z.object({
-  draftId: z.string().min(1).describe(
-    "Unique identifier of the draft to delete",
-  ),
-});
+export function registerDraftDeleteTool(server: McpServer, ctx: ToolContext) {
+  server.registerTool(
+    "atlas:delete_draft_config",
+    {
+      description:
+        "Delete a workspace draft that is no longer needed. This permanently removes the draft and its configuration from the system.",
+      inputSchema: {
+        draftId: z.string().min(1).describe(
+          "Unique identifier of the draft to delete",
+        ),
+      },
+    },
+    async ({ draftId }) => {
+      ctx.logger.info("MCP delete_draft_config called", { draftId });
 
-export const draftDeleteTool: ToolHandler<typeof schema> = {
-  name: "delete_draft_config",
-  description:
-    "Delete a workspace draft that is no longer needed. This permanently removes the draft and its configuration from the system.",
-  inputSchema: schema,
-  handler: async ({ draftId }, { daemonUrl, logger }) => {
-    logger.info("MCP delete_draft_config called", { draftId });
+      try {
+        const response = await fetchWithTimeout(
+          `${ctx.daemonUrl}/api/drafts/${draftId}`,
+          {
+            method: "DELETE",
+          },
+        );
 
-    try {
-      const response = await fetchWithTimeout(
-        `${daemonUrl}/api/drafts/${draftId}`,
-        {
-          method: "DELETE",
-        },
-      );
+        const result = await handleDaemonResponse(response, "delete_draft_config", ctx.logger);
 
-      const result = await handleDaemonResponse(response, "delete_draft_config", logger);
+        ctx.logger.info("MCP delete_draft_config response", {
+          success: result.success,
+          draftId,
+        });
 
-      logger.info("MCP delete_draft_config response", {
-        success: result.success,
-        draftId,
-      });
-
-      return createSuccessResponse({
-        ...result,
-        source: "daemon_api",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error("MCP delete_draft_config failed", { draftId, error });
-      throw error;
-    }
-  },
-};
+        return createSuccessResponse({
+          ...result,
+          source: "daemon_api",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        ctx.logger.error("MCP delete_draft_config failed", { draftId, error });
+        throw error;
+      }
+    },
+  );
+}

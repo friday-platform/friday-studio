@@ -3,43 +3,46 @@
  * Discovers available Atlas workspaces through the daemon API
  */
 
-import { z } from "zod/v4";
-import type { ToolHandler } from "../types.ts";
+import { z } from "zod";
+import type { ToolContext } from "../types.ts";
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-const schema = z.object({});
+export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {
+  server.registerTool(
+    "atlas:workspace_list",
+    {
+      description:
+        "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
+      inputSchema: {},
+    },
+    async () => {
+      ctx.logger.info("MCP workspace_list called - querying daemon API");
 
-export const workspaceListTool: ToolHandler<typeof schema> = {
-  name: "workspace_list",
-  description:
-    "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
-  inputSchema: schema,
-  handler: async (_args, { daemonUrl, logger }) => {
-    logger.info("MCP workspace_list called - querying daemon API");
+      try {
+        const response = await fetch(`${ctx.daemonUrl}/api/workspaces`);
+        if (!response.ok) {
+          throw new Error(`Daemon API error: ${response.status} ${response.statusText}`);
+        }
 
-    try {
-      const response = await fetch(`${daemonUrl}/api/workspaces`);
-      if (!response.ok) {
-        throw new Error(`Daemon API error: ${response.status} ${response.statusText}`);
+        const workspaces = await response.json();
+
+        ctx.logger.info("MCP workspace_list response", {
+          totalWorkspaces: workspaces.length,
+          // deno-lint-ignore no-explicit-any
+          activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
+        });
+
+        return createSuccessResponse({
+          workspaces,
+          total: workspaces.length,
+          source: "daemon_api",
+          timestamp: new Date().toISOString(),
+        });
+      } catch (error) {
+        ctx.logger.error("MCP workspace_list failed", { error });
+        throw error;
       }
-
-      const workspaces = await response.json();
-
-      logger.info("MCP workspace_list response", {
-        totalWorkspaces: workspaces.length,
-        // deno-lint-ignore no-explicit-any
-        activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
-      });
-
-      return createSuccessResponse({
-        workspaces,
-        total: workspaces.length,
-        source: "daemon_api",
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error("MCP workspace_list failed", { error });
-      throw error;
-    }
-  },
-};
+    },
+  );
+}
