@@ -84,7 +84,9 @@ export class PlatformMCPServer {
    */
   private registerToolIfAllowed(
     toolName: string,
+    // deno-lint-ignore no-explicit-any
     schema: any,
+    // deno-lint-ignore no-explicit-any
     handler: (...args: any[]) => any,
   ): void {
     if (isToolAllowedForMode(toolName, this.mode)) {
@@ -100,7 +102,8 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_list",
       {
-        description: "List all workspaces through daemon API",
+        description:
+          "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
         inputSchema: {},
       },
       async () => {
@@ -116,6 +119,7 @@ export class PlatformMCPServer {
 
           this.logger.info("MCP workspace_list response", {
             totalWorkspaces: workspaces.length,
+            // deno-lint-ignore no-explicit-any
             activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
           });
 
@@ -147,12 +151,21 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_create",
       {
-        description: "Create a new workspace through daemon API",
+        description:
+          "Create a new Atlas workspace for organizing domain-specific automation. Workspaces define jobs (multi-step workflows), agents (LLM or remote specialists), signals (triggers like webhooks, timers, file changes), and MCP tool integrations. Each workspace represents a specialized automation environment for specific business purposes like code analysis, document processing, or system monitoring.",
         inputSchema: {
-          name: z.string().min(1).describe("Workspace name"),
-          description: z.string().optional().describe("Workspace description"),
-          template: z.string().optional().describe("Template to use"),
-          config: z.record(z.string(), z.any()).optional().describe("Additional configuration"),
+          name: z.string().min(1).describe(
+            "Human-readable workspace identifier for organization and reference (e.g., 'my-api-project', 'data-pipeline')",
+          ),
+          description: z.string().optional().describe(
+            "Optional detailed description explaining the workspace's purpose, scope, and intended use",
+          ),
+          template: z.string().optional().describe(
+            "Optional template name to bootstrap the workspace with predefined configuration, jobs, and structure",
+          ),
+          config: z.record(z.string(), z.unknown()).optional().describe(
+            "Optional custom configuration settings to override template defaults or add workspace-specific behavior",
+          ),
         },
       },
       async ({ name, description, template, config }) => {
@@ -211,10 +224,15 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_delete",
       {
-        description: "Delete a workspace through daemon API",
+        description:
+          "Remove an Atlas workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
         inputSchema: {
-          workspaceId: z.string().describe("Workspace ID to delete"),
-          force: z.boolean().default(false).describe("Force deletion"),
+          workspaceId: z.string().describe(
+            "Unique identifier of the workspace to permanently remove from the system",
+          ),
+          force: z.boolean().default(false).describe(
+            "Bypass safety checks and force deletion even if workspace has active sessions or running jobs",
+          ),
         },
       },
       async ({ workspaceId, force }) => {
@@ -269,9 +287,12 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_describe",
       {
-        description: "Get detailed information about a workspace through daemon API",
+        description:
+          "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
         inputSchema: {
-          workspaceId: z.string().describe("Workspace ID to describe"),
+          workspaceId: z.string().describe(
+            "Unique identifier of the workspace to examine (obtain from workspace_list)",
+          ),
         },
       },
       async ({ workspaceId }) => {
@@ -320,12 +341,15 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_jobs_list",
       {
-        description: "List all jobs in a workspace through daemon API",
+        description:
+          "Discover all automated tasks (jobs) available within a specific workspace. Jobs represent reusable workflows that can be triggered to perform operations like builds, deployments, data processing, or custom automation. Only shows jobs marked as discoverable.",
         inputSchema: {
-          workspaceId: z.string().describe("Workspace ID to list jobs for"),
+          workspaceId: z.string().describe(
+            "Unique identifier of the workspace whose jobs you want to explore",
+          ),
         },
       },
-      async (args) =>
+      (args) =>
         this.withWorkspaceMCPCheck(args, async ({ workspaceId }) => {
           this.logger.info("MCP workspace_jobs_list called", { workspaceId });
 
@@ -385,13 +409,16 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_jobs_describe",
       {
-        description: "Get detailed information about a specific job through daemon API",
+        description:
+          "Examine a job's workflow configuration including execution strategy (sequential, parallel, conditional), assigned agents, trigger conditions, and context provisioning. Jobs define multi-step workflows where agents receive inputs from signals, previous agents, or filesystem context, then execute using specialized MCP tools.",
         inputSchema: {
-          workspaceId: z.string().describe("Workspace ID"),
-          jobName: z.string().describe("Job name to describe"),
+          workspaceId: z.string().describe("Unique identifier of the workspace containing the job"),
+          jobName: z.string().describe(
+            "Name of the specific job to examine (obtain from workspace_jobs_list)",
+          ),
         },
       },
-      async (args) =>
+      (args) =>
         this.withJobDiscoverabilityCheck(args, async ({ workspaceId, jobName }) => {
           this.logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 
@@ -406,6 +433,7 @@ export class PlatformMCPServer {
             }
 
             const jobs = await response.json();
+            // deno-lint-ignore no-explicit-any
             const job = jobs.find((j: any) => j.name === jobName);
 
             if (!job) {
@@ -443,9 +471,12 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_sessions_list",
       {
-        description: "List all sessions in a workspace through daemon API",
+        description:
+          "View all execution sessions within a workspace to monitor active and completed job runs. Sessions represent individual execution instances of jobs, showing their current status, progress, and results.",
         inputSchema: {
-          workspaceId: z.string().describe("Workspace ID to list sessions for"),
+          workspaceId: z.string().describe(
+            "Unique identifier of the workspace whose sessions you want to monitor",
+          ),
         },
       },
       async ({ workspaceId }) => {
@@ -488,15 +519,18 @@ export class PlatformMCPServer {
 
     // Workspace capability: workspace_sessions_describe - ROUTES THROUGH DAEMON API
     this.registerToolIfAllowed(
-      "workspace_sessions_describe",
+      "session_describe",
       {
-        description: "Get detailed information about a specific session through daemon API",
+        description:
+          "Examine a specific execution session across all workspaces to understand its current state, progress, logs, and results. This is a global operation that searches for the session ID across all active workspaces in the system. Sessions track the complete lifecycle of job executions, including their inputs, outputs, and any errors encountered.",
         inputSchema: {
-          sessionId: z.string().describe("Session ID to describe"),
+          sessionId: z.string().describe(
+            "Unique identifier of the session to examine (obtain from workspace_sessions_list or other session listings)",
+          ),
         },
       },
       async ({ sessionId }) => {
-        this.logger.info("MCP workspace_sessions_describe called", { sessionId });
+        this.logger.info("MCP session_describe called", { sessionId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/sessions/${sessionId}`);
@@ -525,7 +559,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          this.logger.error("MCP workspace_sessions_describe failed", { sessionId, error });
+          this.logger.error("MCP session_describe failed", { sessionId, error });
           throw error;
         }
       },
@@ -533,15 +567,18 @@ export class PlatformMCPServer {
 
     // Workspace capability: workspace_sessions_cancel - ROUTES THROUGH DAEMON API
     this.registerToolIfAllowed(
-      "workspace_sessions_cancel",
+      "session_cancel",
       {
-        description: "Cancel a running session through daemon API",
+        description:
+          "Terminate an active execution session gracefully across all workspaces. This is a global operation that searches for the session ID across all active workspaces and stops the running job while cleaning up associated resources. Use this when a session needs to be stopped due to errors, changed requirements, or resource constraints.",
         inputSchema: {
-          sessionId: z.string().describe("Session ID to cancel"),
+          sessionId: z.string().describe(
+            "Unique identifier of the active session to terminate (can be from any workspace)",
+          ),
         },
       },
       async ({ sessionId }) => {
-        this.logger.info("MCP workspace_sessions_cancel called", { sessionId });
+        this.logger.info("MCP session_cancel called", { sessionId });
 
         try {
           const response = await fetch(`${this.daemonUrl}/api/sessions/${sessionId}`, {
@@ -575,7 +612,7 @@ export class PlatformMCPServer {
             ],
           };
         } catch (error) {
-          this.logger.error("MCP workspace_sessions_cancel failed", { sessionId, error });
+          this.logger.error("MCP session_cancel failed", { sessionId, error });
           throw error;
         }
       },
@@ -585,7 +622,8 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_signals_list",
       {
-        description: "List all signals in a workspace through daemon API",
+        description:
+          "View all signal configurations within a workspace that can trigger automated job executions. Signals represent external events (webhooks, schedules, file changes) that initiate workspace operations.",
         inputSchema: {
           workspaceId: z.string().describe("Workspace ID to list signals for"),
         },
@@ -632,14 +670,17 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "workspace_signals_trigger",
       {
-        description: "Trigger a signal in a workspace through daemon API",
+        description:
+          "Trigger a workspace signal to start automated job execution. Signals route to specific jobs based on payload conditions and create execution sessions that run asynchronously. Sessions contain the actual job progress and results.",
         inputSchema: {
           workspaceId: z.string().describe("Workspace ID"),
           signalName: z.string().describe("Signal name to trigger"),
-          payload: z.record(z.string(), z.any()).optional().describe("Signal payload"),
+          payload: z.record(z.string(), z.unknown()).optional().describe(
+            "Signal payload data used for job routing and agent input",
+          ),
         },
       },
-      async (args) =>
+      (args) =>
         this.withWorkspaceMCPCheck(args, async ({ workspaceId, signalName, payload }) => {
           this.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
@@ -827,15 +868,30 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "library_list",
       {
-        description: "List library items with optional filtering through daemon API",
+        description:
+          "Browse and search items stored in the Atlas library with flexible filtering and text search capabilities. The library contains reusable resources like reports, session archives, templates, and documentation. Use the query parameter for full-text search or combine filters to browse by type, tags, and date ranges.",
         inputSchema: {
-          query: z.string().optional().describe("Search query to filter items"),
-          type: z.array(z.string()).optional().describe("Item types to filter by"),
-          tags: z.array(z.string()).optional().describe("Tags to filter by"),
-          since: z.string().optional().describe("Items created since this date (ISO 8601)"),
-          until: z.string().optional().describe("Items created until this date (ISO 8601)"),
-          limit: z.number().default(50).describe("Maximum number of items to return"),
-          offset: z.number().default(0).describe("Offset for pagination"),
+          query: z.string().optional().describe(
+            "Text search query to find items by name, description, or content (max 1000 characters)",
+          ),
+          type: z.array(z.string()).optional().describe(
+            "Specific types of library items to include (e.g., 'report', 'session_archive', 'template')",
+          ),
+          tags: z.array(z.string()).optional().describe(
+            "Category tags to filter items (e.g., 'production', 'analytics', 'development')",
+          ),
+          since: z.string().optional().describe(
+            "Include only items created after this timestamp (ISO 8601 format, e.g., '2024-01-01T00:00:00Z')",
+          ),
+          until: z.string().optional().describe(
+            "Include only items created before this timestamp (ISO 8601 format)",
+          ),
+          limit: z.number().default(50).describe(
+            "Maximum number of items to return in this request (1-1000, useful for pagination)",
+          ),
+          offset: z.number().default(0).describe(
+            "Number of items to skip (for pagination, use with limit to navigate through large result sets)",
+          ),
         },
       },
       async ({ query, type, tags, since, until, limit = 50, offset = 0 }) => {
@@ -913,10 +969,15 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "library_get",
       {
-        description: "Get a specific library item with optional content through daemon API",
+        description:
+          "Retrieve a specific library item including its metadata and optionally its full content. Use this to access stored reports, session archives, templates, or other resources by their unique identifier.",
         inputSchema: {
-          itemId: z.string().describe("Library item ID to retrieve"),
-          includeContent: z.boolean().default(false).describe("Include item content in response"),
+          itemId: z.string().describe(
+            "Unique identifier of the library item to retrieve (obtain from library_list or library_search)",
+          ),
+          includeContent: z.boolean().default(false).describe(
+            "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
+          ),
         },
       },
       async ({ itemId, includeContent = false }) => {
@@ -962,97 +1023,6 @@ export class PlatformMCPServer {
           };
         } catch (error) {
           this.logger.error("MCP library_get failed", { itemId, error });
-          throw error;
-        }
-      },
-    );
-
-    /**
-     * MCP Tool: library_search
-     *
-     * Performs full-text search across all library items with advanced filtering.
-     * Routes through daemon API for optimized search performance and access control.
-     *
-     * @example
-     * // Search for specific content with filters
-     * atlas.library_search({
-     *   query: "performance optimization",
-     *   type: ["report", "template"],
-     *   tags: ["production"],
-     *   limit: 20
-     * })
-     *
-     * @param query - Search query string (required, max 1000 chars)
-     * @param type - Array of item types to filter by (optional, max 20 types)
-     * @param tags - Array of tags to filter by (optional, max 50 tags)
-     * @param since - ISO 8601 date for items created after this date
-     * @param until - ISO 8601 date for items created before this date
-     * @param limit - Maximum items to return (1-1000, default: 50)
-     * @param offset - Pagination offset (min: 0, default: 0)
-     *
-     * @returns Search results with relevance scoring and metadata
-     * @throws {Error} Input validation errors for invalid parameters
-     * @throws {Error} Daemon API errors for server/network issues
-     */
-    this.registerToolIfAllowed(
-      "library_search",
-      {
-        description: "Search library items across all libraries through daemon API",
-        inputSchema: {
-          query: z.string().describe("Search query"),
-          type: z.array(z.string()).optional().describe("Item types to filter by"),
-          tags: z.array(z.string()).optional().describe("Tags to filter by"),
-          since: z.string().optional().describe("Items created since this date (ISO 8601)"),
-          until: z.string().optional().describe("Items created until this date (ISO 8601)"),
-          limit: z.number().default(50).describe("Maximum number of items to return"),
-          offset: z.number().default(0).describe("Offset for pagination"),
-        },
-      },
-      async ({ query, type, tags, since, until, limit = 50, offset = 0 }) => {
-        this.logger.info("MCP library_search called", { query, type, tags, limit, offset });
-
-        try {
-          // Build query parameters using helper method
-          const params = this.buildLibraryQueryParams({
-            query,
-            type,
-            tags,
-            since,
-            until,
-            limit,
-            offset,
-          });
-
-          const url = `${this.daemonUrl}/api/library/search?${params.toString()}`;
-
-          const response = await this.fetchWithTimeout(url);
-          const result = await this.handleDaemonResponse(response, "library_search");
-
-          this.logger.info("MCP library_search response", {
-            query,
-            totalItems: result.total,
-            returnedItems: result.items.length,
-            tookMs: result.took_ms,
-          });
-
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(
-                  {
-                    ...result,
-                    source: "daemon_api",
-                    timestamp: new Date().toISOString(),
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-          };
-        } catch (error) {
-          this.logger.error("MCP library_search failed", { query, error });
           throw error;
         }
       },
@@ -1213,20 +1183,29 @@ export class PlatformMCPServer {
     this.registerToolIfAllowed(
       "library_store",
       {
-        description: "Create a new library item through daemon API",
+        description:
+          "Store a new item in the Atlas library for future reference and reuse across workspaces. Use this to save reports, templates, session results, artifacts, or any content that should be preserved and discoverable.",
         inputSchema: {
           type: z.enum(["report", "session_archive", "template", "artifact", "user_upload"])
-            .describe("Type of library item to create"),
+            .describe(
+              "Category of content being stored - determines indexing and discovery behavior",
+            ),
           name: z.string().min(1).max(255)
-            .describe("Human-readable name for the item"),
+            .describe(
+              "Descriptive title for the item that will appear in search results and listings",
+            ),
           description: z.string().max(1000).optional()
-            .describe("Description of the item contents"),
+            .describe(
+              "Optional detailed description explaining what the item contains and its purpose",
+            ),
           content: z.string().min(1)
-            .describe("The actual content to store"),
+            .describe("The main content/data to be stored in the library item"),
           format: z.enum(["markdown", "json", "html", "text", "binary"]).default("markdown")
-            .describe("Content format"),
+            .describe("Format of the content being stored - affects rendering and processing"),
           tags: z.array(z.string()).max(50).default([])
-            .describe("Tags for categorization and search"),
+            .describe(
+              "Category tags to help organize and discover this item later (e.g., 'production', 'analysis', 'template')",
+            ),
           workspace_id: z.string().optional()
             .describe("Associated workspace ID"),
           session_id: z.string().optional()
@@ -1497,10 +1476,12 @@ export class PlatformMCPServer {
     response: Response,
     operation: string,
     options: { retryCount?: number; maxRetries?: number } = {},
+    // deno-lint-ignore no-explicit-any
   ): Promise<any> {
     const { retryCount = 0, maxRetries = 3 } = options;
 
     if (!response.ok) {
+      // deno-lint-ignore no-explicit-any
       let errorData: any = {};
       let responseText = "";
 
@@ -1557,8 +1538,11 @@ export class PlatformMCPServer {
             errorData.error || errorData.message || response.statusText
           } (retry ${retryCount + 1}/${maxRetries})`,
         );
+        // deno-lint-ignore no-explicit-any
         (retryError as any).code = -32000;
+        // deno-lint-ignore no-explicit-any
         (retryError as any).details = errorInfo;
+        // deno-lint-ignore no-explicit-any
         (retryError as any).shouldRetry = true;
         throw retryError;
       }
@@ -1569,8 +1553,11 @@ export class PlatformMCPServer {
           errorData.error || errorData.message || response.statusText
         }${retryCount > 0 ? ` (failed after ${retryCount} retries)` : ""}`,
       );
+      // deno-lint-ignore no-explicit-any
       (error as any).code = -32000; // MCP server error code
+      // deno-lint-ignore no-explicit-any
       (error as any).details = errorInfo;
+      // deno-lint-ignore no-explicit-any
       (error as any).shouldRetry = false;
       throw error;
     }
@@ -1595,7 +1582,9 @@ export class PlatformMCPServer {
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      // deno-lint-ignore no-explicit-any
       (parseError as any).code = -32603; // Parse error code
+      // deno-lint-ignore no-explicit-any
       (parseError as any).details = {
         operation,
         status: response.status,
@@ -1605,6 +1594,7 @@ export class PlatformMCPServer {
         timestamp: new Date().toISOString(),
       };
 
+      // deno-lint-ignore no-explicit-any
       this.logger.error(`Parse error for ${operation}`, (parseError as any).details);
       throw parseError;
     }
@@ -1684,7 +1674,9 @@ export class PlatformMCPServer {
 
       if (error instanceof Error && error.name === "AbortError") {
         const timeoutError = new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
+        // deno-lint-ignore no-explicit-any
         (timeoutError as any).code = -32000;
+        // deno-lint-ignore no-explicit-any
         (timeoutError as any).details = {
           url,
           timeoutMs,
@@ -1811,9 +1803,12 @@ export class PlatformMCPServer {
    * Wrapper to enforce workspace MCP settings for workspace-scoped tools
    * SECURITY: All workspace operations must go through this check
    */
+  // deno-lint-ignore no-explicit-any
   private async withWorkspaceMCPCheck<T extends Record<string, any>>(
     args: T,
+    // deno-lint-ignore no-explicit-any
     operation: (args: T) => Promise<any>,
+    // deno-lint-ignore no-explicit-any
   ): Promise<any> {
     const workspaceId = args.workspaceId as string;
 
@@ -1832,6 +1827,7 @@ export class PlatformMCPServer {
       const error = new Error(
         `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
       );
+      // deno-lint-ignore no-explicit-any
       (error as any).code = -32000; // MCP server error code for authorization
       throw error;
     }
@@ -1843,9 +1839,12 @@ export class PlatformMCPServer {
    * Wrapper to enforce job discoverability for job-related operations
    * SECURITY: Only allows operations on discoverable jobs
    */
+  // deno-lint-ignore no-explicit-any
   private async withJobDiscoverabilityCheck<T extends Record<string, any>>(
     args: T,
+    // deno-lint-ignore no-explicit-any
     operation: (args: T) => Promise<any>,
+    // deno-lint-ignore no-explicit-any
   ): Promise<any> {
     const workspaceId = args.workspaceId as string;
     const jobName = args.jobName as string;
@@ -1869,6 +1868,7 @@ export class PlatformMCPServer {
       const error = new Error(
         `Job '${jobName}' is not discoverable for workspace '${workspaceId}'. Add it to workspace.yml server.mcp.discoverable.jobs to allow access.`,
       );
+      // deno-lint-ignore no-explicit-any
       (error as any).code = -32601; // MCP method not found for undiscoverable jobs
       throw error;
     }

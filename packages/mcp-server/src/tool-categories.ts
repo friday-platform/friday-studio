@@ -2,7 +2,7 @@
  * Tool categorization for MCP server mode support
  */
 
-import { ToolCategory, ToolMetadata } from "./types.ts";
+import { MODE_CONFIGS, ServerMode, ToolCategory, ToolMetadata } from "./types.ts";
 
 /**
  * Internal tools - require workspace context, privileged access
@@ -11,14 +11,11 @@ export const INTERNAL_TOOLS = [
   "library_store",
   "library_get",
   "library_list",
-  "library_search",
   "library_stats",
   "library_templates",
   "workspace_jobs_list",
   "workspace_jobs_describe",
   "workspace_sessions_list",
-  "workspace_sessions_describe",
-  "workspace_sessions_cancel",
   "workspace_signals_list",
   "workspace_signals_trigger",
   "workspace_agents_list",
@@ -33,6 +30,8 @@ export const PUBLIC_TOOLS = [
   "workspace_create",
   "workspace_delete",
   "workspace_describe",
+  "session_describe",
+  "session_cancel",
 ] as const;
 
 /**
@@ -44,91 +43,85 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Store library items with automatic workspace context",
+    description: "Save content to the Atlas library with automatic workspace context injection",
   },
   library_get: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Retrieve library items with workspace filtering",
+    description: "Access specific library items with workspace-scoped access controls",
   },
   library_list: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "List library items with workspace filtering",
-  },
-  library_search: {
-    category: ToolCategory.INTERNAL,
-    requiresWorkspaceContext: true,
-    accessLevel: "agent",
-    description: "Search within workspace library",
+    description: "Browse and search library resources with workspace context filtering",
   },
   library_stats: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Workspace library usage statistics",
+    description: "View library usage metrics and statistics for workspace planning",
   },
   library_templates: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Available library templates for workspace",
+    description: "Discover reusable templates available for workspace operations",
   },
   workspace_jobs_list: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "List jobs in current workspace",
+    description: "Discover automated tasks available in the current workspace environment",
   },
   workspace_jobs_describe: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Describe specific job in workspace",
+    description: "Examine job configuration and capabilities within workspace context",
   },
   workspace_sessions_list: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "List sessions in current workspace",
+    description: "Monitor execution sessions running in the current workspace",
   },
-  workspace_sessions_describe: {
-    category: ToolCategory.INTERNAL,
-    requiresWorkspaceContext: true,
-    accessLevel: "agent",
-    description: "Describe specific session in workspace",
+  session_describe: {
+    category: ToolCategory.PUBLIC,
+    requiresWorkspaceContext: false,
+    accessLevel: "public",
+    description: "Examine session details and execution state across all workspaces",
   },
-  workspace_sessions_cancel: {
-    category: ToolCategory.INTERNAL,
-    requiresWorkspaceContext: true,
-    accessLevel: "agent",
-    description: "Cancel running session in workspace",
+  session_cancel: {
+    category: ToolCategory.PUBLIC,
+    requiresWorkspaceContext: false,
+    accessLevel: "admin",
+    description: "Terminate active execution session across all workspaces",
   },
   workspace_signals_list: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "List signals in current workspace",
+    description: "View event triggers configured for the current workspace",
   },
   workspace_signals_trigger: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Trigger signal in current workspace",
+    description: "Activate workspace event triggers to initiate automated workflows",
   },
   workspace_agents_list: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "List agents in current workspace",
+    description: "Discover AI agents available within the current workspace environment",
   },
   workspace_agents_describe: {
     category: ToolCategory.INTERNAL,
     requiresWorkspaceContext: true,
     accessLevel: "agent",
-    description: "Describe specific agent in workspace",
+    description: "Examine agent capabilities and configuration within workspace context",
   },
 
   // Public tools
@@ -136,25 +129,25 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
     category: ToolCategory.PUBLIC,
     requiresWorkspaceContext: false,
     accessLevel: "public",
-    description: "List all workspaces via daemon API",
+    description: "Discover available Atlas workspace environments across the platform",
   },
   workspace_create: {
     category: ToolCategory.PUBLIC,
     requiresWorkspaceContext: false,
     accessLevel: "admin",
-    description: "Create new workspace via daemon API",
+    description: "Establish new isolated workspace environment for project organization",
   },
   workspace_delete: {
     category: ToolCategory.PUBLIC,
     requiresWorkspaceContext: false,
     accessLevel: "admin",
-    description: "Delete workspace via daemon API",
+    description: "Permanently remove workspace and all associated resources",
   },
   workspace_describe: {
     category: ToolCategory.PUBLIC,
     requiresWorkspaceContext: false,
     accessLevel: "public",
-    description: "Describe workspace via daemon API",
+    description: "Retrieve comprehensive workspace details including configuration and status",
   },
 };
 
@@ -186,6 +179,3 @@ export function isToolAllowedForMode(toolName: string, mode: ServerMode): boolea
   const config = MODE_CONFIGS[mode];
   return config.allowedToolCategories.includes(metadata.category);
 }
-
-// Import ServerMode and MODE_CONFIGS from types.ts
-import { MODE_CONFIGS, ServerMode } from "./types.ts";
