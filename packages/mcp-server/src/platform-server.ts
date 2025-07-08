@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { AtlasConfig } from "@atlas/config";
 import { MODE_CONFIGS, ServerMode } from "./types.ts";
 import { getToolsForMode, isToolAllowedForMode } from "./tool-categories.ts";
+import { workspaceDraftTools } from "./tools/workspace-drafts.ts";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -154,18 +155,32 @@ export class PlatformMCPServer {
         description:
           "Create a new Atlas workspace for organizing domain-specific automation. Workspaces define jobs (multi-step workflows), agents (LLM or remote specialists), signals (triggers like webhooks, timers, file changes), and MCP tool integrations. Each workspace represents a specialized automation environment for specific business purposes like code analysis, document processing, or system monitoring.",
         inputSchema: {
-          name: z.string().min(1).describe(
-            "Human-readable workspace identifier for organization and reference (e.g., 'my-api-project', 'data-pipeline')",
-          ),
-          description: z.string().optional().describe(
-            "Optional detailed description explaining the workspace's purpose, scope, and intended use",
-          ),
-          template: z.string().optional().describe(
-            "Optional template name to bootstrap the workspace with predefined configuration, jobs, and structure",
-          ),
-          config: z.record(z.string(), z.unknown()).optional().describe(
-            "Optional custom configuration settings to override template defaults or add workspace-specific behavior",
-          ),
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              minLength: 1,
+              description:
+                "Human-readable workspace identifier for organization and reference (e.g., 'my-api-project', 'data-pipeline')",
+            },
+            description: {
+              type: "string",
+              description:
+                "Optional detailed description explaining the workspace's purpose, scope, and intended use",
+            },
+            template: {
+              type: "string",
+              description:
+                "Optional template name to bootstrap the workspace with predefined configuration, jobs, and structure",
+            },
+            config: {
+              type: "object",
+              additionalProperties: true,
+              description:
+                "Optional custom configuration settings to override template defaults or add workspace-specific behavior",
+            },
+          },
+          required: ["name"],
         },
       },
       async ({ name, description, template, config }) => {
@@ -227,12 +242,21 @@ export class PlatformMCPServer {
         description:
           "Remove an Atlas workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
         inputSchema: {
-          workspaceId: z.string().describe(
-            "Unique identifier of the workspace to permanently remove from the system",
-          ),
-          force: z.boolean().default(false).describe(
-            "Bypass safety checks and force deletion even if workspace has active sessions or running jobs",
-          ),
+          type: "object",
+          properties: {
+            workspaceId: {
+              type: "string",
+              description:
+                "Unique identifier of the workspace to permanently remove from the system",
+            },
+            force: {
+              type: "boolean",
+              default: false,
+              description:
+                "Bypass safety checks and force deletion even if workspace has active sessions or running jobs",
+            },
+          },
+          required: ["workspaceId"],
         },
       },
       async ({ workspaceId, force }) => {
@@ -290,9 +314,15 @@ export class PlatformMCPServer {
         description:
           "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
         inputSchema: {
-          workspaceId: z.string().describe(
-            "Unique identifier of the workspace to examine (obtain from workspace_list)",
-          ),
+          type: "object",
+          properties: {
+            workspaceId: {
+              type: "string",
+              description:
+                "Unique identifier of the workspace to examine (obtain from workspace_list)",
+            },
+          },
+          required: ["workspaceId"],
         },
       },
       async ({ workspaceId }) => {
@@ -344,9 +374,14 @@ export class PlatformMCPServer {
         description:
           "Discover all automated tasks (jobs) available within a specific workspace. Jobs represent reusable workflows that can be triggered to perform operations like builds, deployments, data processing, or custom automation. Only shows jobs marked as discoverable.",
         inputSchema: {
-          workspaceId: z.string().describe(
-            "Unique identifier of the workspace whose jobs you want to explore",
-          ),
+          type: "object",
+          properties: {
+            workspaceId: {
+              type: "string",
+              description: "Unique identifier of the workspace whose jobs you want to explore",
+            },
+          },
+          required: ["workspaceId"],
         },
       },
       (args) =>
@@ -412,10 +447,18 @@ export class PlatformMCPServer {
         description:
           "Examine a job's workflow configuration including execution strategy (sequential, parallel, conditional), assigned agents, trigger conditions, and context provisioning. Jobs define multi-step workflows where agents receive inputs from signals, previous agents, or filesystem context, then execute using specialized MCP tools.",
         inputSchema: {
-          workspaceId: z.string().describe("Unique identifier of the workspace containing the job"),
-          jobName: z.string().describe(
-            "Name of the specific job to examine (obtain from workspace_jobs_list)",
-          ),
+          type: "object",
+          properties: {
+            workspaceId: {
+              type: "string",
+              description: "Unique identifier of the workspace containing the job",
+            },
+            jobName: {
+              type: "string",
+              description: "Name of the specific job to examine (obtain from workspace_jobs_list)",
+            },
+          },
+          required: ["workspaceId", "jobName"],
         },
       },
       (args) =>
@@ -973,7 +1016,7 @@ export class PlatformMCPServer {
           "Retrieve a specific library item including its metadata and optionally its full content. Use this to access stored reports, session archives, templates, or other resources by their unique identifier.",
         inputSchema: {
           itemId: z.string().describe(
-            "Unique identifier of the library item to retrieve (obtain from library_list or library_search)",
+            "Unique identifier of the library item to retrieve (obtain from library_list)",
           ),
           includeContent: z.boolean().default(false).describe(
             "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
@@ -1293,6 +1336,502 @@ export class PlatformMCPServer {
           };
         } catch (error) {
           this.logger.error("MCP library_store failed", { name, type, error });
+          throw error;
+        }
+      },
+    );
+
+    // Draft management tools - ROUTES THROUGH DAEMON API
+    this.registerToolIfAllowed(
+      "workspace_draft_create",
+      {
+        description: workspaceDraftTools.workspace_draft_create.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            name: {
+              type: "string",
+              minLength: 1,
+              maxLength: 255,
+              description:
+                "Human-readable workspace name (e.g., 'my-api-project', 'data-pipeline')",
+            },
+            description: {
+              type: "string",
+              minLength: 1,
+              maxLength: 1000,
+              description: "Clear description of the workspace's purpose and functionality",
+            },
+            initialConfig: {
+              type: "object",
+              description:
+                "Optional initial workspace configuration following WorkspaceConfig schema",
+              additionalProperties: true,
+            },
+          },
+          required: ["name", "description"],
+        },
+      },
+      async ({ name, description, initialConfig }) => {
+        this.logger.info("MCP workspace_draft_create called", { name, description });
+
+        try {
+          const response = await this.fetchWithTimeout(`${this.daemonUrl}/api/drafts`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name,
+              description,
+              initialConfig,
+              sessionId: this.workspaceContext?.sessionId,
+              conversationId: this.workspaceContext?.sessionId, // Use sessionId as fallback
+            }),
+          });
+
+          const result = await this.handleDaemonResponse(response, "workspace_draft_create");
+
+          this.logger.info("MCP workspace_draft_create response", {
+            success: result.success,
+            draftId: result.draft?.id,
+            validation: result.validation?.valid,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP workspace_draft_create failed", { error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "workspace_draft_update",
+      {
+        description: workspaceDraftTools.workspace_draft_update.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            draftId: {
+              type: "string",
+              minLength: 1,
+              description:
+                "Unique identifier of the draft to update (obtain from workspace_draft_create or list_session_drafts)",
+            },
+            updates: {
+              type: "object",
+              description: "Configuration updates to apply to the draft (partial WorkspaceConfig)",
+              additionalProperties: true,
+            },
+            updateDescription: {
+              type: "string",
+              description: "Optional description of what changes are being made",
+            },
+          },
+          required: ["draftId", "updates"],
+        },
+      },
+      async ({ draftId, updates, updateDescription }) => {
+        this.logger.info("MCP workspace_draft_update called", { draftId, updateDescription });
+
+        try {
+          const response = await this.fetchWithTimeout(`${this.daemonUrl}/api/drafts/${draftId}`, {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              updates,
+              updateDescription,
+            }),
+          });
+
+          const result = await this.handleDaemonResponse(response, "workspace_draft_update");
+
+          this.logger.info("MCP workspace_draft_update response", {
+            success: result.success,
+            draftId,
+            validation: result.validation?.valid,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP workspace_draft_update failed", { draftId, error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "validate_draft_config",
+      {
+        description: workspaceDraftTools.validate_draft_config.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            draftId: {
+              type: "string",
+              minLength: 1,
+              description: "Unique identifier of the draft to validate",
+            },
+          },
+          required: ["draftId"],
+        },
+      },
+      async ({ draftId }) => {
+        this.logger.info("MCP validate_draft_config called", { draftId });
+
+        try {
+          const response = await this.fetchWithTimeout(
+            `${this.daemonUrl}/api/drafts/${draftId}/validate`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            },
+          );
+
+          const result = await this.handleDaemonResponse(response, "validate_draft_config");
+
+          this.logger.info("MCP validate_draft_config response", {
+            success: result.success,
+            draftId,
+            valid: result.valid,
+            errorCount: result.errors?.length || 0,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP validate_draft_config failed", { draftId, error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "pre_publish_check",
+      {
+        description: workspaceDraftTools.pre_publish_check.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            draftId: {
+              type: "string",
+              minLength: 1,
+              description: "Unique identifier of the draft to check for publication readiness",
+            },
+          },
+          required: ["draftId"],
+        },
+      },
+      async ({ draftId }) => {
+        this.logger.info("MCP pre_publish_check called", { draftId });
+
+        try {
+          // Use the same validation endpoint but with enhanced checks
+          const response = await this.fetchWithTimeout(
+            `${this.daemonUrl}/api/drafts/${draftId}/validate`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            },
+          );
+
+          const result = await this.handleDaemonResponse(response, "pre_publish_check");
+
+          this.logger.info("MCP pre_publish_check response", {
+            success: result.success,
+            draftId,
+            valid: result.valid,
+            readyForPublish: result.valid,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    readyForPublish: result.valid,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP pre_publish_check failed", { draftId, error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "publish_workspace",
+      {
+        description: workspaceDraftTools.publish_workspace.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            draftId: {
+              type: "string",
+              minLength: 1,
+              description: "Unique identifier of the draft to publish",
+            },
+            path: {
+              type: "string",
+              description:
+                "Target filesystem path for workspace creation (defaults to current directory)",
+            },
+            overwrite: {
+              type: "boolean",
+              default: false,
+              description: "Whether to overwrite existing workspace directory if it exists",
+            },
+          },
+          required: ["draftId"],
+        },
+      },
+      async ({ draftId, path, overwrite = false }) => {
+        this.logger.info("MCP publish_workspace called", { draftId, path, overwrite });
+
+        try {
+          const response = await this.fetchWithTimeout(
+            `${this.daemonUrl}/api/drafts/${draftId}/publish`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                path,
+                overwrite,
+              }),
+            },
+          );
+
+          const result = await this.handleDaemonResponse(response, "publish_workspace");
+
+          this.logger.info("MCP publish_workspace response", {
+            success: result.success,
+            draftId,
+            workspacePath: result.workspacePath,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP publish_workspace failed", { draftId, error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "show_draft_config",
+      {
+        description: workspaceDraftTools.show_draft_config.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            draftId: {
+              type: "string",
+              minLength: 1,
+              description: "Unique identifier of the draft to display",
+            },
+            format: {
+              type: "string",
+              enum: ["yaml", "json", "summary"],
+              default: "yaml",
+              description:
+                "Format for displaying the configuration (yaml, json, or human-readable summary)",
+            },
+          },
+          required: ["draftId"],
+        },
+      },
+      async ({ draftId, format = "yaml" }) => {
+        this.logger.info("MCP show_draft_config called", { draftId, format });
+
+        try {
+          const response = await this.fetchWithTimeout(
+            `${this.daemonUrl}/api/drafts/${draftId}?format=${format}`,
+          );
+
+          const result = await this.handleDaemonResponse(response, "show_draft_config");
+
+          this.logger.info("MCP show_draft_config response", {
+            success: result.success,
+            draftId,
+            format: result.format,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP show_draft_config failed", { draftId, error });
+          throw error;
+        }
+      },
+    );
+
+    this.registerToolIfAllowed(
+      "list_session_drafts",
+      {
+        description: workspaceDraftTools.list_session_drafts.description,
+        inputSchema: {
+          type: "object",
+          properties: {
+            sessionId: {
+              type: "string",
+              description: "Session ID to list drafts for (optional, defaults to current session)",
+            },
+            conversationId: {
+              type: "string",
+              description:
+                "Conversation ID to list drafts for (optional, used for conversation-scoped drafts)",
+            },
+            includeDetails: {
+              type: "boolean",
+              default: false,
+              description: "Whether to include detailed configuration summaries for each draft",
+            },
+          },
+          required: [],
+        },
+      },
+      async ({ sessionId, conversationId, includeDetails = false }) => {
+        this.logger.info("MCP list_session_drafts called", {
+          sessionId,
+          conversationId,
+          includeDetails,
+        });
+
+        try {
+          const params = new URLSearchParams();
+          if (sessionId) params.set("sessionId", sessionId);
+          if (conversationId) params.set("conversationId", conversationId);
+          if (includeDetails) params.set("includeDetails", "true");
+
+          // Use context if no explicit IDs provided
+          if (!sessionId && !conversationId && this.workspaceContext?.sessionId) {
+            params.set("sessionId", this.workspaceContext.sessionId);
+          }
+
+          const queryString = params.toString();
+          const url = queryString
+            ? `${this.daemonUrl}/api/drafts?${queryString}`
+            : `${this.daemonUrl}/api/drafts`;
+
+          const response = await this.fetchWithTimeout(url);
+
+          const result = await this.handleDaemonResponse(response, "list_session_drafts");
+
+          this.logger.info("MCP list_session_drafts response", {
+            success: result.success,
+            totalDrafts: result.total,
+            includeDetails,
+          });
+
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: JSON.stringify(
+                  {
+                    ...result,
+                    source: "daemon_api",
+                    timestamp: new Date().toISOString(),
+                  },
+                  null,
+                  2,
+                ),
+              },
+            ],
+          };
+        } catch (error) {
+          this.logger.error("MCP list_session_drafts failed", { error });
           throw error;
         }
       },

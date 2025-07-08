@@ -38,13 +38,6 @@ Deno.test("library_get tool should be available in tool list", () => {
   assertEquals(tools.includes("library_get"), true);
 });
 
-// Test: library_search tool availability
-Deno.test("library_search tool should be available in tool list", () => {
-  setupTest();
-  const tools = server.getAvailableTools();
-  assertEquals(tools.includes("library_search"), true);
-});
-
 // Test: library_stats tool availability
 Deno.test("library_stats tool should be available in tool list", () => {
   setupTest();
@@ -66,7 +59,6 @@ Deno.test("all library tools should be registered correctly", () => {
   const libraryTools = [
     "library_list",
     "library_get",
-    "library_search",
     "library_stats",
     "library_templates",
   ];
