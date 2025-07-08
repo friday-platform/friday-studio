@@ -1,0 +1,14 @@
+- Fetches content from a specified URL
+- Takes a URL and optional format specification
+- Can return content as text, markdown, or raw HTML
+- Automatically converts HTML to clean markdown when format is set to markdown
+- Use this tool when you need to retrieve web content
+
+Usage notes:
+  - IMPORTANT: If an MCP-provided web fetch tool is available, prefer using that tool instead of this one, as it may have fewer restrictions. All MCP-provided tools start with "mcp__".
+  - The URL must be a fully-formed valid URL starting with http:// or https://
+  - Supports timeout configuration (default 30s, max 120s)
+  - Maximum response size is 5MB
+  - When format is "markdown", HTML content is converted to clean markdown
+  - When format is "text", HTML tags are stripped from HTML content
+  - When format is "html", raw HTML is returned

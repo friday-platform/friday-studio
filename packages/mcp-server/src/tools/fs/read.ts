@@ -1,26 +1,30 @@
 import { z } from "zod/v4";
-import * as path from "path";
-import type { ToolHandler } from "./types.ts";
-import { createSuccessResponse } from "./types.ts";
-import { LSP } from "../lsp";
-import { FileTime } from "../file/time";
-import DESCRIPTION from "./read.txt" with { type: "txt" };
+import * as path from "@std/path";
+import type { ToolHandler } from "../types.ts";
+import { createSuccessResponse } from "../types.ts";
+import DESCRIPTION from "./read.txt" with { type: "text" };
 
 const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
 const schema = z.object({
-  filePath: z.string().describe("The path to the file to read"),
-  offset: z.number().describe("The line number to start reading from (0-based)").optional(),
-  limit: z.number().describe("The number of lines to read (defaults to 2000)").optional(),
+  filePath: z.string().meta({
+    description: "The path to the file to read",
+  }),
+  offset: z.number().optional().meta({
+    description: "The line number to start reading from (0-based)",
+  }),
+  limit: z.number().optional().meta({
+    description: "The number of lines to read (defaults to 2000)",
+  }),
 });
 
 export const readTool: ToolHandler<typeof schema> = {
   name: "read",
   description: DESCRIPTION,
   inputSchema: schema,
-  handler: async (params, { logger }) => {
+  handler: async (params) => {
     let filePath = params.filePath;
     if (!path.isAbsolute(filePath)) {
       filePath = path.join(Deno.cwd(), filePath);
@@ -97,13 +101,6 @@ export const readTool: ToolHandler<typeof schema> = {
       })`;
     }
     output += "\n</file>";
-
-    // just warms the lsp client
-    await LSP.touchFile(filePath, false);
-
-    // TODO: sessionID needs to be passed in context or retrieved differently
-    const sessionID = "default"; // Temporary placeholder
-    FileTime.read(sessionID, filePath);
 
     return createSuccessResponse({
       title: path.relative(Deno.cwd(), filePath),

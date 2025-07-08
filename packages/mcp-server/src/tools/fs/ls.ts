@@ -1,39 +1,33 @@
 import { z } from "zod/v4";
-import type { ToolHandler } from "./types.ts";
-import { createSuccessResponse } from "./types.ts";
-import * as path from "path";
+import type { ToolHandler } from "../types.ts";
+import { createSuccessResponse } from "../types.ts";
+import * as path from "@std/path";
 import { expandGlob } from "@std/fs";
-import { globToRegExp } from "@std/path";
-import DESCRIPTION from "./ls.txt" with { type: "txt" };
+import DESCRIPTION from "./ls.txt" with { type: "text" };
 
 export const IGNORE_PATTERNS = [
   "node_modules/",
-  "__pycache__/",
   ".git/",
   "dist/",
   "build/",
-  "target/",
-  "vendor/",
-  "bin/",
-  "obj/",
-  ".idea/",
-  ".vscode/",
 ];
 
 const LIMIT = 100;
 
 const schema = z.object({
-  path: z.string().describe(
-    "The absolute path to the directory to list (must be absolute, not relative)",
-  ).optional(),
-  ignore: z.array(z.string()).describe("List of glob patterns to ignore").optional(),
+  path: z.string().optional().meta({
+    description: "The path to the directory to list (can be absolute or relative)",
+  }),
+  ignore: z.array(z.string()).optional().meta({
+    description: "List of glob patterns to ignore",
+  }),
 });
 
 export const lsTool: ToolHandler<typeof schema> = {
   name: "list",
   description: DESCRIPTION,
   inputSchema: schema,
-  handler: async (params, { logger }) => {
+  handler: async (params) => {
     const searchPath = path.resolve(Deno.cwd(), params.path || ".");
 
     const files = [];
@@ -54,7 +48,7 @@ export const lsTool: ToolHandler<typeof schema> = {
       // Check against ignore patterns using globToRegExp
       if (
         params.ignore?.some((pattern) => {
-          const regexp = globToRegExp(pattern);
+          const regexp = path.globToRegExp(pattern);
           return regexp.test(file);
         })
       ) continue;

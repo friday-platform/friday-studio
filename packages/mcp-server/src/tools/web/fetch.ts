@@ -1,32 +1,32 @@
 import { z } from "zod/v4";
-import type { ToolHandler } from "./types.ts";
-import { createSuccessResponse } from "./types.ts";
+import type { ToolHandler } from "../types.ts";
+import { createSuccessResponse } from "../types.ts";
 import TurndownService from "turndown";
 import { HTMLRewriter } from "@worker-tools/html-rewriter";
-import DESCRIPTION from "./webfetch.txt" with { type: "txt" };
+import DESCRIPTION from "./fetch.txt" with { type: "text" };
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds
 const MAX_TIMEOUT = 120 * 1000; // 2 minutes
 
 const schema = z.object({
-  url: z.string().describe("The URL to fetch content from"),
+  url: z.url().meta({ description: "The URL to fetch content from" }),
   format: z
     .enum(["text", "markdown", "html"])
-    .describe("The format to return the content in (text, markdown, or html)"),
+    .meta({ description: "The format to return the content in (text, markdown, or html)" }),
   timeout: z
     .number()
     .min(0)
     .max(MAX_TIMEOUT / 1000)
-    .describe("Optional timeout in seconds (max 120)")
+    .meta({ description: "Optional timeout in seconds (max 120)" })
     .optional(),
 });
 
-export const webfetchTool: ToolHandler<typeof schema> = {
-  name: "webfetch",
+export const fetchTool: ToolHandler<typeof schema> = {
+  name: "fetch",
   description: DESCRIPTION,
   inputSchema: schema,
-  handler: async (params, { logger }) => {
+  handler: async (params) => {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
       throw new Error("URL must start with http:// or https://");
