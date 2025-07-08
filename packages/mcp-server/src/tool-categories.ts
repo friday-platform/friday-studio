@@ -20,6 +20,14 @@ export const INTERNAL_TOOLS = [
   "workspace_signals_trigger",
   "workspace_agents_list",
   "workspace_agents_describe",
+  // Draft management tools (migrated from conversation agent)
+  "workspace_draft_create",
+  "workspace_draft_update",
+  "validate_draft_config",
+  "pre_publish_check",
+  "publish_workspace",
+  "show_draft_config",
+  "list_session_drafts",
 ] as const;
 
 /**
@@ -122,6 +130,51 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
     requiresWorkspaceContext: true,
     accessLevel: "agent",
     description: "Examine agent capabilities and configuration within workspace context",
+  },
+
+  // Draft management tools
+  workspace_draft_create: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description:
+      "Create new workspace drafts with optional initial configuration for development and testing",
+  },
+  workspace_draft_update: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "Update existing workspace drafts with configuration changes and validation",
+  },
+  validate_draft_config: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "Validate workspace draft configuration for correctness and completeness",
+  },
+  pre_publish_check: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "Run comprehensive readiness checks before workspace publication",
+  },
+  publish_workspace: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "Publish validated workspace draft to filesystem for production use",
+  },
+  show_draft_config: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "Display current workspace draft configuration with formatting",
+  },
+  list_session_drafts: {
+    category: ToolCategory.INTERNAL,
+    requiresWorkspaceContext: true,
+    accessLevel: "agent",
+    description: "List all workspace drafts for the current session or conversation context",
   },
 
   // Public tools

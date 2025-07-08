@@ -45,18 +45,23 @@ Deno.test("Internal tools are correctly categorized", () => {
     "library_store",
     "library_get",
     "library_list",
-    "library_search",
     "library_stats",
     "library_templates",
     "workspace_jobs_list",
     "workspace_jobs_describe",
     "workspace_sessions_list",
-    "workspace_sessions_describe",
-    "workspace_sessions_cancel",
     "workspace_signals_list",
     "workspace_signals_trigger",
     "workspace_agents_list",
     "workspace_agents_describe",
+    // Draft management tools (migrated from conversation agent)
+    "workspace_draft_create",
+    "workspace_draft_update",
+    "validate_draft_config",
+    "pre_publish_check",
+    "publish_workspace",
+    "show_draft_config",
+    "list_session_drafts",
   ];
 
   assertEquals([...INTERNAL_TOOLS], expectedInternalTools);
@@ -68,6 +73,8 @@ Deno.test("Public tools are correctly categorized", () => {
     "workspace_create",
     "workspace_delete",
     "workspace_describe",
+    "session_describe",
+    "session_cancel",
   ];
 
   assertEquals([...PUBLIC_TOOLS], expectedPublicTools);
