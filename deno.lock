@@ -20,7 +20,7 @@
     "npm:@hono/mcp@0.1": "0.1.0_@modelcontextprotocol+sdk@1.15.0__express@5.1.0__zod@3.25.75_hono@4.8.4",
     "npm:@hono/swagger-ui@~0.5.2": "0.5.2_hono@4.8.4",
     "npm:@hono/zod-openapi@^1.0.0-beta.1": "1.0.0-beta.1_hono@4.8.4_zod@3.25.75",
-    "npm:@inkjs/ui@2": "2.0.0_ink@6.0.1__@types+react@19.1.8__react@19.1.0_@types+react@19.1.8_react@19.1.0",
+    "npm:@inkjs/ui@2": "2.0.0_ink@6.0.1__react@19.1.0_react@19.1.0_@types+react@19.1.8",
     "npm:@modelcontextprotocol/sdk@^1.12.1": "1.15.0_express@5.1.0_zod@3.25.75",
     "npm:@modelcontextprotocol/sdk@^1.15.0": "1.15.0_express@5.1.0_zod@3.25.75",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
@@ -34,9 +34,8 @@
     "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@19.1.8_react@19.1.0",
     "npm:hono-openapi@~0.4.8": "0.4.8_hono@4.8.4_openapi-types@12.1.3_zod@3.25.75_zod-openapi@5.0.1__zod@3.25.75",
     "npm:hono@^4.8.4": "4.8.4",
-    "npm:ink@^6.0.1": "6.0.1_@types+react@19.1.8_react@19.1.0",
+    "npm:ink@^6.0.1": "6.0.1_react@19.1.0_@types+react@19.1.8",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
-    "npm:lint-staged@16": "16.1.2",
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:marked-terminal@*": "7.3.0_marked@16.0.0",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.0.0",
@@ -49,7 +48,6 @@
     "npm:turndown@^7.2.0": "7.2.0",
     "npm:xstate@^5.20.1": "5.20.1",
     "npm:zod-openapi@^5.0.1": "5.0.1_zod@3.25.75",
-    "npm:zod@^3.21.4": "3.25.75",
     "npm:zod@^3.25.74": "3.25.75"
   },
   "jsr": {
@@ -220,14 +218,24 @@
         "zod@3.25.75"
       ]
     },
-    "@inkjs/ui@2.0.0_ink@6.0.1__@types+react@19.1.8__react@19.1.0_@types+react@19.1.8_react@19.1.0": {
+    "@inkjs/ui@2.0.0_ink@6.0.1__react@19.1.0_react@19.1.0": {
       "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
       "dependencies": [
         "chalk@5.4.1",
         "cli-spinners",
         "deepmerge",
         "figures",
-        "ink"
+        "ink@6.0.1_react@19.1.0"
+      ]
+    },
+    "@inkjs/ui@2.0.0_ink@6.0.1__react@19.1.0_react@19.1.0_@types+react@19.1.8": {
+      "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
+      "dependencies": [
+        "chalk@5.4.1",
+        "cli-spinners",
+        "deepmerge",
+        "figures",
+        "ink@6.0.1_react@19.1.0_@types+react@19.1.8"
       ]
     },
     "@jsdevtools/ono@7.1.3": {
@@ -742,7 +750,7 @@
     "fullscreen-ink@0.0.2_@types+react@19.1.8_react@19.1.0": {
       "integrity": "sha512-5AiV01q8EfOvG2BrYlmNQtUxDSEBf4p8EN+3R0GRvdDKSh2sphUE+7UKTMMq4qMWq1XuhcJB7TGR8O+UD5VyQw==",
       "dependencies": [
-        "ink",
+        "ink@6.0.1_@types+react@19.1.8_react@19.1.0",
         "react"
       ]
     },
@@ -846,6 +854,70 @@
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
     "ink@6.0.1_@types+react@19.1.8_react@19.1.0": {
+      "integrity": "sha512-vhhFrCodTHZAPPSdMYzLEbeI0Ug37R9j6yA0kLKok9kSK53lQtj/RJhEQJUjq6OwT4N33nxqSRd/7yXhEhVPIw==",
+      "dependencies": [
+        "@alcalzone/ansi-tokenize",
+        "@types/react",
+        "ansi-escapes",
+        "ansi-styles@6.2.1",
+        "auto-bind",
+        "chalk@5.4.1",
+        "cli-boxes",
+        "cli-cursor@4.0.0",
+        "cli-truncate",
+        "code-excerpt",
+        "es-toolkit",
+        "indent-string",
+        "is-in-ci",
+        "patch-console",
+        "react",
+        "react-reconciler",
+        "scheduler@0.23.2",
+        "signal-exit@3.0.7",
+        "slice-ansi@7.1.0",
+        "stack-utils",
+        "string-width@7.2.0",
+        "type-fest",
+        "widest-line",
+        "wrap-ansi@9.0.0",
+        "ws",
+        "yoga-layout"
+      ],
+      "optionalPeers": [
+        "@types/react"
+      ]
+    },
+    "ink@6.0.1_react@19.1.0": {
+      "integrity": "sha512-vhhFrCodTHZAPPSdMYzLEbeI0Ug37R9j6yA0kLKok9kSK53lQtj/RJhEQJUjq6OwT4N33nxqSRd/7yXhEhVPIw==",
+      "dependencies": [
+        "@alcalzone/ansi-tokenize",
+        "ansi-escapes",
+        "ansi-styles@6.2.1",
+        "auto-bind",
+        "chalk@5.4.1",
+        "cli-boxes",
+        "cli-cursor@4.0.0",
+        "cli-truncate",
+        "code-excerpt",
+        "es-toolkit",
+        "indent-string",
+        "is-in-ci",
+        "patch-console",
+        "react",
+        "react-reconciler",
+        "scheduler@0.23.2",
+        "signal-exit@3.0.7",
+        "slice-ansi@7.1.0",
+        "stack-utils",
+        "string-width@7.2.0",
+        "type-fest",
+        "widest-line",
+        "wrap-ansi@9.0.0",
+        "ws",
+        "yoga-layout"
+      ]
+    },
+    "ink@6.0.1_react@19.1.0_@types+react@19.1.8": {
       "integrity": "sha512-vhhFrCodTHZAPPSdMYzLEbeI0Ug37R9j6yA0kLKok9kSK53lQtj/RJhEQJUjq6OwT4N33nxqSRd/7yXhEhVPIw==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
@@ -1946,11 +2018,6 @@
       "npm:xstate@^5.20.1",
       "npm:zod@^3.25.74"
     ],
-    "packageJson": {
-      "dependencies": [
-        "npm:turndown@^7.2.0"
-      ]
-    },
     "members": {
       "apps/atlasd": {
         "dependencies": [
@@ -1968,8 +2035,7 @@
       "packages/mcp": {
         "dependencies": [
           "npm:@modelcontextprotocol/sdk@^1.12.1",
-          "npm:ai@^4.0.7",
-          "npm:zod@^3.21.4"
+          "npm:ai@^4.0.7"
         ]
       },
       "packages/mcp-server": {
@@ -1977,7 +2043,7 @@
           "jsr:@std/fs@1",
           "jsr:@std/path@1",
           "npm:@modelcontextprotocol/sdk@^1.12.1",
-          "npm:zod@^3.21.4"
+          "npm:turndown@^7.2.0"
         ]
       },
       "packages/openapi-client": {
