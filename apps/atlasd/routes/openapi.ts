@@ -2,6 +2,7 @@ import { openAPISpecs } from "hono-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Hono } from "hono";
 import type { AppVariables } from "../src/factory.ts";
+import { OPENAPI_DOCUMENTATION } from "../src/openapi-config.ts";
 
 // Export handlers that need to be configured with the main app
 export const createOpenAPIHandlers = (
@@ -14,23 +15,12 @@ export const createOpenAPIHandlers = (
   // OpenAPI spec handler
   const openAPIHandler = openAPISpecs(mainApp, {
     documentation: {
-      info: {
-        title: "Atlas Daemon API",
-        version: "1.0.0",
-        description: "API for managing workspaces, sessions, and AI agent orchestration",
-      },
+      ...OPENAPI_DOCUMENTATION,
       servers: [
         {
           url: `http://${hostname}:${port}`,
           description: "Atlas Daemon Server",
         },
-      ],
-      tags: [
-        { name: "System", description: "System health and status endpoints" },
-        { name: "Workspaces", description: "Workspace management operations" },
-        { name: "Sessions", description: "Session management operations" },
-        { name: "Library", description: "Library storage operations" },
-        { name: "Daemon", description: "Daemon control operations" },
       ],
     },
   });

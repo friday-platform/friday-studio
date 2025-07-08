@@ -265,6 +265,14 @@ export class AtlasDaemon implements AppContext {
     return this.supervisorDefaults;
   }
 
+  /**
+   * Get the configured Hono app instance
+   * Used for OpenAPI spec generation
+   */
+  public getApp(): ReturnType<typeof createApp> {
+    return this.app;
+  }
+
   private setupRoutes() {
     // Setup CORS if configured
     if (this.options.cors) {

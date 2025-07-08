@@ -37,11 +37,6 @@
     "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts"
   },
   "imports": {
-    "@atlas/config": "./packages/config/mod.ts",
-    "@atlas/storage": "./packages/storage/mod.ts",
-    "@atlas/client": "./packages/client/mod.ts",
-    "@atlas/mcp": "./packages/mcp/mod.ts",
-    "@atlas/mcp-server": "./packages/mcp-server/mod.ts",
     "@hono/swagger-ui": "npm:@hono/swagger-ui@^0.5.2",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.15.0",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
@@ -60,8 +55,6 @@
     "lint-staged": "npm:lint-staged@^16.1.2",
     "marked": "npm:marked@^16.0.0",
     "marked-terminal": "npm:marked-terminal@^7.3.0",
-    "openapi-fetch": "npm:openapi-fetch@^0.14.0",
-    "openapi-typescript": "npm:openapi-typescript@^7.8.0",
     "react": "npm:react@^19.1.0",
     "@types/react": "npm:@types/react@^19.1.8",
     "meow": "npm:meow@^13.2.0",
@@ -78,6 +71,7 @@
     "hono/pretty-json": "npm:hono@^4.8.4/pretty-json",
     "hono/http-exception": "npm:hono@^4.8.4/http-exception",
     "hono/streaming": "npm:hono@^4.8.4/streaming",
+    "hono-openapi": "npm:hono-openapi@^0.4.8",
     "eventsource-parser": "npm:eventsource-parser@^3.0.3",
     "cron-parser": "npm:cron-parser@^5.3.0",
     "yargs": "https://deno.land/x/yargs@v18.0.0-deno/deno.ts"

@@ -5,10 +5,6 @@
   "imports": {
     "@hono/zod-openapi": "npm:@hono/zod-openapi@^1.0.0-beta.1",
     "@hono/mcp": "npm:@hono/mcp@^0.1.0",
-    "hono-openapi": "npm:hono-openapi@^0.4.8",
     "zod-openapi": "npm:zod-openapi@^5.0.1"
-  },
-  "tasks": {
-    "openapi:yaml": "deno run --allow-read --allow-write scripts/generate-openapi-yaml.ts"
   }
 }
