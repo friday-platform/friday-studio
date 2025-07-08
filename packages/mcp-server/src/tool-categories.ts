@@ -11,7 +11,6 @@ export const INTERNAL_TOOLS = [
   "library_store",
   "library_get",
   "library_list",
-  "library_search",
   "library_stats",
   "library_templates",
   "workspace_jobs_list",
@@ -57,12 +56,6 @@ export const TOOL_METADATA: Record<string, ToolMetadata> = {
     requiresWorkspaceContext: true,
     accessLevel: "agent",
     description: "Browse and search library resources with workspace context filtering",
-  },
-  library_search: {
-    category: ToolCategory.INTERNAL,
-    requiresWorkspaceContext: true,
-    accessLevel: "agent",
-    description: "Perform full-text search across library items with advanced filtering",
   },
   library_stats: {
     category: ToolCategory.INTERNAL,
