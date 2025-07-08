@@ -28,7 +28,7 @@ class RateLimitError extends Error {
   constructor(message: string, public retryAfter?: number) {
     super(message);
     this.name = "RateLimitError";
-    (this as any).code = -32000; // MCP server error code
+    (this as unknown as { code: number }).code = -32000; // MCP server error code
   }
 }
 
@@ -36,8 +36,8 @@ export interface WorkspaceMCPServerDependencies {
   workspaceRuntime: {
     // SECURITY: Only expose safe, workspace-scoped job operations
     listJobs(): Promise<Array<{ name: string; description?: string }>>;
-    triggerJob(jobName: string, payload?: any): Promise<{ sessionId: string }>;
-    describeJob(jobName: string): Promise<any>;
+    triggerJob(jobName: string, payload?: unknown): Promise<{ sessionId: string }>;
+    describeJob(jobName: string): Promise<unknown>;
     // REMOVED: session management, signal triggering, agent introspection
     // These are platform-level capabilities that workspace MCP should not expose
   };
@@ -83,7 +83,7 @@ export class WorkspaceMCPServer {
 
   private setupRequestHandlers(): void {
     // Handle tool listing
-    this.server.setRequestHandler(ListToolsRequestSchema, async () => {
+    this.server.setRequestHandler(ListToolsRequestSchema, () => {
       const tools = [];
       const serverConfig = this.dependencies.workspaceConfig.server?.mcp;
 
@@ -105,7 +105,8 @@ export class WorkspaceMCPServer {
           case "workspace_jobs_list":
             tools.push({
               name: "workspace_jobs_list",
-              description: "List all jobs in this workspace",
+              description:
+                "Discover all automated tasks (jobs) available in this workspace. Jobs are reusable workflows that can perform operations like builds, deployments, data processing, or custom automation within this workspace environment.",
               inputSchema: {
                 type: "object",
                 properties: {},
@@ -115,11 +116,16 @@ export class WorkspaceMCPServer {
           case "workspace_jobs_describe":
             tools.push({
               name: "workspace_jobs_describe",
-              description: "Get detailed information about a job",
+              description:
+                "Examine a specific job's configuration, capabilities, expected inputs, and execution requirements. Use this to understand how to properly trigger a job or what it will accomplish.",
               inputSchema: {
                 type: "object",
                 properties: {
-                  jobName: { type: "string", description: "Name of the job to describe" },
+                  jobName: {
+                    type: "string",
+                    description:
+                      "Name of the specific job to examine (obtain from workspace_jobs_list)",
+                  },
                 },
                 required: ["jobName"],
               },
@@ -136,13 +142,15 @@ export class WorkspaceMCPServer {
         if (jobSpec) {
           tools.push({
             name: jobName,
-            description: (jobSpec as any)?.description || `Execute workspace job: ${jobName}`,
+            description: (jobSpec as { description?: string })?.description ||
+              `Execute the '${jobName}' workflow in this workspace. This job will run its configured agents in the defined execution strategy (sequential/parallel), with each agent receiving appropriate input sources (signal payload, previous results, or filesystem context) and using their assigned MCP tools to complete their specialized tasks.`,
             inputSchema: {
               type: "object",
               properties: {
                 payload: {
                   type: "object",
-                  description: "Optional payload for the job",
+                  description:
+                    "Optional input data/configuration to pass to the job execution (structure depends on job requirements)",
                   additionalProperties: true,
                 },
               },
@@ -248,7 +256,7 @@ export class WorkspaceMCPServer {
         // Check if it's a discoverable job
         const discoverableJobs = this.getDiscoverableJobs();
         if (discoverableJobs.includes(name)) {
-          const { payload } = args as { payload?: any };
+          const { payload } = args as { payload?: unknown };
 
           // Check concurrent session limit before triggering job
           this.checkRateLimit(); // Additional check for session limit
@@ -523,7 +531,7 @@ export class WorkspaceMCPServer {
     workspaceId: string,
     command: string = "atlas",
     args: string[] = ["workspace", "serve", "--mcp"],
-  ): any {
+  ): unknown {
     return {
       [`atlas-workspace-${workspaceId}`]: {
         command,
