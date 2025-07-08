@@ -8,7 +8,7 @@ import {
   WorkspaceConfigSchema,
 } from "@atlas/config";
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
-import { PlatformMCPServer, ServerMode } from "@atlas/mcp-server";
+import { PlatformMCPServer } from "@atlas/mcp-server";
 import {
   FilesystemConfigAdapter,
   FilesystemTemplateAdapter,
@@ -229,12 +229,10 @@ export class AtlasDaemon implements AppContext {
     this.mcpServer = new PlatformMCPServer({
       daemonUrl,
       logger: AtlasLogger.getInstance(),
-      mode: this.options.mcp?.mode || ServerMode.INTERNAL,
     });
 
     logger.info("MCP server initialized", {
       daemonUrl,
-      mode: this.options.mcp?.mode || ServerMode.INTERNAL,
     });
   }
 

@@ -4,15 +4,16 @@
  */
 
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import type { AtlasConfig } from "@atlas/config";
 
 // Simple mock configs for testing (no inheritance needed)
-const mockAtlasConfigs = new Map<string, any>();
+const mockAtlasConfigs = new Map<string, unknown>();
 
-function setMockAtlasConfig(path: string, config: any) {
+function setMockAtlasConfig(path: string, config: unknown) {
   mockAtlasConfigs.set(path, config);
 }
 
-function getMockAtlasConfig(path: string): any {
+function getMockAtlasConfig(path: string): unknown {
   const config = mockAtlasConfigs.get(path);
   if (!config) {
     throw new Error(`Mock config not found for path: ${path}`);
@@ -21,7 +22,7 @@ function getMockAtlasConfig(path: string): any {
 }
 
 Deno.test("Atlas MCP Configuration", async (t) => {
-  await t.step("Atlas MCP enabled - platform server should be available", async () => {
+  await t.step("Atlas MCP enabled - platform server should be available", () => {
     setMockAtlasConfig("/test/atlas.yml", {
       version: "1.0",
       workspace: {
@@ -38,13 +39,13 @@ Deno.test("Atlas MCP Configuration", async (t) => {
       },
     });
 
-    const config = getMockAtlasConfig("/test/atlas.yml");
+    const config = getMockAtlasConfig("/test/atlas.yml") as AtlasConfig;
 
     assertEquals(config.server?.mcp?.enabled, true);
     assertEquals(config.server?.mcp?.discoverable?.capabilities, ["workspace_*"]);
   });
 
-  await t.step("Atlas MCP disabled - platform server should not be available", async () => {
+  await t.step("Atlas MCP disabled - platform server should not be available", () => {
     setMockAtlasConfig("/test/atlas-disabled.yml", {
       version: "1.0",
       workspace: {
@@ -58,12 +59,12 @@ Deno.test("Atlas MCP Configuration", async (t) => {
       },
     });
 
-    const config = getMockAtlasConfig("/test/atlas-disabled.yml");
+    const config = getMockAtlasConfig("/test/atlas-disabled.yml") as AtlasConfig;
 
     assertEquals(config.server?.mcp?.enabled, false);
   });
 
-  await t.step("Atlas MCP with specific capability patterns", async () => {
+  await t.step("Atlas MCP with specific capability patterns", () => {
     setMockAtlasConfig("/test/atlas-specific.yml", {
       version: "1.0",
       workspace: {
@@ -85,14 +86,14 @@ Deno.test("Atlas MCP Configuration", async (t) => {
       },
     });
 
-    const config = getMockAtlasConfig("/test/atlas-specific.yml");
+    const config = getMockAtlasConfig("/test/atlas-specific.yml") as AtlasConfig;
 
     assertEquals(config.server?.mcp?.enabled, true);
     assertEquals(config.server?.mcp?.discoverable?.capabilities.length, 4);
     assertEquals(config.server?.mcp?.discoverable?.capabilities.includes("workspace_jobs_*"), true);
   });
 
-  await t.step("Atlas MCP with no discoverable capabilities", async () => {
+  await t.step("Atlas MCP with no discoverable capabilities", () => {
     setMockAtlasConfig("/test/atlas-empty.yml", {
       version: "1.0",
       workspace: {
@@ -109,13 +110,13 @@ Deno.test("Atlas MCP Configuration", async (t) => {
       },
     });
 
-    const config = getMockAtlasConfig("/test/atlas-empty.yml");
+    const config = getMockAtlasConfig("/test/atlas-empty.yml") as AtlasConfig;
 
     assertEquals(config.server?.mcp?.enabled, true);
     assertEquals(config.server?.mcp?.discoverable?.capabilities, []);
   });
 
-  await t.step("Atlas MCP missing configuration defaults to disabled", async () => {
+  await t.step("Atlas MCP missing configuration defaults to disabled", () => {
     setMockAtlasConfig("/test/atlas-minimal.yml", {
       version: "1.0",
       workspace: {
@@ -125,7 +126,7 @@ Deno.test("Atlas MCP Configuration", async (t) => {
       // No server.mcp section
     });
 
-    const config = getMockAtlasConfig("/test/atlas-minimal.yml");
+    const config = getMockAtlasConfig("/test/atlas-minimal.yml") as AtlasConfig;
 
     // Should default to disabled when not specified
     assertEquals(config.server?.mcp?.enabled, undefined);
@@ -135,10 +136,10 @@ Deno.test("Atlas MCP Configuration", async (t) => {
 // Test the two-level architecture: Atlas + Workspace MCP settings
 Deno.test("Two-Level MCP Architecture", async (t) => {
   await t.step("Atlas enabled + Workspace enabled = Full access", () => {
-    const atlasConfig: any = {
+    const atlasConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: true, discoverable: { capabilities: ["workspace_*"] } } },
     };
-    const workspaceConfig: any = {
+    const workspaceConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: true, discoverable: { jobs: ["public_*"] } } },
     };
 
@@ -152,10 +153,10 @@ Deno.test("Two-Level MCP Architecture", async (t) => {
   });
 
   await t.step("Atlas enabled + Workspace disabled = No access", () => {
-    const atlasConfig: any = {
+    const atlasConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: true, discoverable: { capabilities: ["workspace_*"] } } },
     };
-    const workspaceConfig: any = {
+    const workspaceConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: false } },
     };
 
@@ -168,10 +169,10 @@ Deno.test("Two-Level MCP Architecture", async (t) => {
   });
 
   await t.step("Atlas disabled + Workspace enabled = No platform server", () => {
-    const atlasConfig: any = {
+    const atlasConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: false } },
     };
-    const workspaceConfig: any = {
+    const workspaceConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: true, discoverable: { jobs: ["public_*"] } } },
     };
 
@@ -185,10 +186,10 @@ Deno.test("Two-Level MCP Architecture", async (t) => {
   });
 
   await t.step("Both disabled = No access", () => {
-    const atlasConfig: any = {
+    const atlasConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: false } },
     };
-    const workspaceConfig: any = {
+    const workspaceConfig: Partial<AtlasConfig> = {
       server: { mcp: { enabled: false } },
     };
 
@@ -201,8 +202,8 @@ Deno.test("Two-Level MCP Architecture", async (t) => {
   });
 
   await t.step("Default behavior (undefined configs)", () => {
-    const atlasConfig: any = {}; // No MCP config
-    const workspaceConfig: any = {}; // No MCP config
+    const atlasConfig: Partial<AtlasConfig> = {}; // No MCP config
+    const workspaceConfig: Partial<AtlasConfig> = {}; // No MCP config
 
     const atlasEnabled = atlasConfig.server?.mcp?.enabled ?? false;
     const workspaceEnabled = workspaceConfig.server?.mcp?.enabled ?? false;
@@ -304,7 +305,7 @@ Deno.test("Atlas Capability Pattern Matching", async (t) => {
 // Test configuration validation scenarios
 Deno.test("Atlas MCP Configuration Validation", async (t) => {
   await t.step("Valid atlas.yml with all MCP fields", () => {
-    const config: any = {
+    const config: Partial<AtlasConfig> = {
       version: "1.0",
       workspace: {
         id: "atlas-platform",
@@ -335,7 +336,7 @@ Deno.test("Atlas MCP Configuration Validation", async (t) => {
   });
 
   await t.step("Minimal valid atlas.yml", () => {
-    const config: any = {
+    const config: Partial<AtlasConfig> = {
       version: "1.0",
       workspace: {
         id: "atlas-platform",

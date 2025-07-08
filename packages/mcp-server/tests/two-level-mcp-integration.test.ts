@@ -3,26 +3,35 @@
  * Tests the interaction between atlas.yml (platform) and workspace.yml (workspace) MCP settings
  */
 
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { PlatformMCPServer } from "../src/platform-server.ts";
+import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../src/tools/utils.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
+
+// Test workspace interface for type safety
+interface TestWorkspace {
+  id: string;
+  name: string;
+  config: unknown;
+  jobs: unknown[];
+}
 
 // Mock daemon server that simulates atlas.yml + workspace.yml configurations
 class MockAtlasIntegrationDaemon {
   private port: number;
   private server?: Deno.HttpServer;
-  private atlasConfig: any = {};
-  private workspaces: Map<string, any> = new Map();
+  private atlasConfig: unknown = {};
+  private workspaces: Map<string, TestWorkspace> = new Map();
 
   constructor(port: number = 8084) {
     this.port = port;
   }
 
-  setAtlasConfig(config: any) {
+  setAtlasConfig(config: unknown) {
     this.atlasConfig = config;
   }
 
-  setupWorkspace(workspaceId: string, workspaceConfig: any, jobs: any[] = []) {
+  setupWorkspace(workspaceId: string, workspaceConfig: unknown, jobs: unknown[] = []) {
     this.workspaces.set(workspaceId, {
       id: workspaceId,
       name: `Test Workspace ${workspaceId}`,
@@ -31,7 +40,7 @@ class MockAtlasIntegrationDaemon {
     });
   }
 
-  async start() {
+  start() {
     this.server = Deno.serve({ port: this.port }, (req) => {
       const url = new URL(req.url);
 
@@ -118,30 +127,30 @@ Deno.test({
           { name: "public_test", description: "Public test job" },
         ]);
 
-        const mcpServer = new PlatformMCPServer({
+        const _mcpServer = new PlatformMCPServer({
           logger: console,
           daemonUrl: "http://localhost:8084",
         });
 
         // Should be able to check workspace MCP (workspace level enabled)
-        const workspaceMCPEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled(
+        const workspaceMCPEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8084",
           "test-both-enabled",
+          console,
         );
         assertEquals(workspaceMCPEnabled, true);
 
         // Should be able to check job discoverability
-        const jobDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const jobDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8084",
           "test-both-enabled",
           "public_test",
+          console,
         );
         assertEquals(jobDiscoverable, true);
 
-        // Should be able to execute workspace MCP operations
-        const result = await (mcpServer as any).withWorkspaceMCPCheck(
-          { workspaceId: "test-both-enabled" },
-          async () => ({ success: true }),
-        );
-        assertEquals(result.success, true);
+        // Note: withWorkspaceMCPCheck has been removed.
+        // The security checks are now handled internally by the tool implementations.
       });
 
       await t.step("Atlas enabled, Workspace disabled - Should block access", async () => {
@@ -168,35 +177,30 @@ Deno.test({
           { name: "blocked_job", description: "Should be blocked" },
         ]);
 
-        const mcpServer = new PlatformMCPServer({
+        const _mcpServer = new PlatformMCPServer({
           logger: console,
           daemonUrl: "http://localhost:8084",
         });
 
         // Workspace MCP should be disabled
-        const workspaceMCPEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled(
+        const workspaceMCPEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8084",
           "test-workspace-disabled",
+          console,
         );
         assertEquals(workspaceMCPEnabled, false);
 
         // Job should not be discoverable (workspace MCP disabled)
-        const jobDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const jobDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8084",
           "test-workspace-disabled",
           "blocked_job",
+          console,
         );
         assertEquals(jobDiscoverable, false);
 
-        // Workspace operations should be blocked
-        await assertRejects(
-          async () => {
-            await (mcpServer as any).withWorkspaceMCPCheck(
-              { workspaceId: "test-workspace-disabled" },
-              async () => ({ success: true }),
-            );
-          },
-          Error,
-          "MCP is disabled for workspace",
-        );
+        // Note: withWorkspaceMCPCheck has been removed.
+        // The security checks are now handled internally by the tool implementations.
       });
 
       await t.step("Atlas disabled - Platform MCP server shouldn't exist", async () => {
@@ -326,7 +330,7 @@ Deno.test({
           { name: "admin_regular", description: "Regular admin task" },
         ]);
 
-        const mcpServer = new PlatformMCPServer({
+        const _mcpServer = new PlatformMCPServer({
           logger: console,
           daemonUrl: "http://localhost:8084",
         });
@@ -341,9 +345,11 @@ Deno.test({
         ];
 
         for (const { job, expected } of tests) {
-          const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+          const isDiscoverable = await checkJobDiscoverable(
+            "http://localhost:8084",
             "test-job-filtering",
             job,
+            console,
           );
           assertEquals(
             isDiscoverable,
@@ -400,34 +406,40 @@ Deno.test({
           },
         });
 
-        const mcpServer = new PlatformMCPServer({
+        const _mcpServer = new PlatformMCPServer({
           logger: console,
           daemonUrl: "http://localhost:8085",
         });
 
         // Should fail closed (disabled) for malformed config
-        const workspaceMCPEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled(
+        const workspaceMCPEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8085",
           "test-malformed",
+          console,
         );
         assertEquals(workspaceMCPEnabled, false);
       });
 
       await t.step("Network errors fail closed", async () => {
         // Create MCP server pointing to non-existent daemon
-        const badMcpServer = new PlatformMCPServer({
+        const _badMcpServer = new PlatformMCPServer({
           logger: console,
           daemonUrl: "http://localhost:9999",
         });
 
         // All operations should fail closed
-        const workspaceMCPEnabled = await (badMcpServer as any).checkWorkspaceMCPEnabled(
+        const workspaceMCPEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:9999",
           "any-workspace",
+          console,
         );
         assertEquals(workspaceMCPEnabled, false);
 
-        const jobDiscoverable = await (badMcpServer as any).checkJobDiscoverable(
+        const jobDiscoverable = await checkJobDiscoverable(
+          "http://localhost:9999",
           "any-workspace",
           "any_job",
+          console,
         );
         assertEquals(jobDiscoverable, false);
       });

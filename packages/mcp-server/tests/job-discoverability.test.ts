@@ -82,7 +82,7 @@ Deno.test("Job Discoverability Pattern Matching", async (t) => {
   });
 
   await t.step("Edge cases", () => {
-    const discoverableJobs = ["*", "", "a*", "*a"];
+    const _discoverableJobs = ["*", "", "a*", "*a"];
 
     assertEquals(checkJobDiscoverableSync(["*"], "anything"), true); // Global wildcard
     assertEquals(checkJobDiscoverableSync([""], ""), true); // Empty exact match
