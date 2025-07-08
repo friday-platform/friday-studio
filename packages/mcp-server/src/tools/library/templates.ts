@@ -3,10 +3,12 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const libraryTemplatesTool: ToolHandler = {
+const schema = z.object({});
+
+export const libraryTemplatesTool: ToolHandler<typeof schema> = {
   name: "library_templates",
   description: "List available content generation templates through daemon API",
-  inputSchema: z.object({}),
+  inputSchema: schema,
   handler: async (_, { daemonUrl, logger }) => {
     logger.info("MCP library_templates called");
 

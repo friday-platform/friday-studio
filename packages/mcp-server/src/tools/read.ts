@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import * as path from "path";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import { LSP } from "../lsp";
 import { FileTime } from "../file/time";
 import DESCRIPTION from "./read.txt" with { type: "txt" };
@@ -9,15 +10,17 @@ const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
-export const ReadTool = Tool.define({
-  id: "read",
+const schema = z.object({
+  filePath: z.string().describe("The path to the file to read"),
+  offset: z.number().describe("The line number to start reading from (0-based)").optional(),
+  limit: z.number().describe("The number of lines to read (defaults to 2000)").optional(),
+});
+
+export const readTool: ToolHandler<typeof schema> = {
+  name: "read",
   description: DESCRIPTION,
-  parameters: z.object({
-    filePath: z.string().describe("The path to the file to read"),
-    offset: z.number().describe("The line number to start reading from (0-based)").optional(),
-    limit: z.number().describe("The number of lines to read (defaults to 2000)").optional(),
-  }),
-  async execute(params, ctx) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     let filePath = params.filePath;
     if (!path.isAbsolute(filePath)) {
       filePath = path.join(Deno.cwd(), filePath);
@@ -97,17 +100,20 @@ export const ReadTool = Tool.define({
 
     // just warms the lsp client
     await LSP.touchFile(filePath, false);
-    FileTime.read(ctx.sessionID, filePath);
 
-    return {
+    // TODO: sessionID needs to be passed in context or retrieved differently
+    const sessionID = "default"; // Temporary placeholder
+    FileTime.read(sessionID, filePath);
+
+    return createSuccessResponse({
       title: path.relative(Deno.cwd(), filePath),
       output,
       metadata: {
         preview,
       },
-    };
+    });
   },
-});
+};
 
 function isImageFile(filePath: string): string | false {
   const ext = path.extname(filePath).toLowerCase();

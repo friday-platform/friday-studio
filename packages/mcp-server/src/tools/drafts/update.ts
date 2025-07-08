@@ -3,21 +3,23 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const draftUpdateTool: ToolHandler = {
+const schema = z.object({
+  draftId: z.string().min(1).describe(
+    "Unique identifier of the draft to update (obtain from workspace_draft_create or list_session_drafts)",
+  ),
+  updates: z.record(z.string(), z.unknown()).describe(
+    "Configuration updates to apply to the draft (partial WorkspaceConfig)",
+  ),
+  updateDescription: z.string().optional().describe(
+    "Optional description of what changes are being made",
+  ),
+});
+
+export const draftUpdateTool: ToolHandler<typeof schema> = {
   name: "workspace_draft_update",
   description:
     "Update an existing workspace draft with configuration changes and validation. Supports iterative development with helpful error reporting.",
-  inputSchema: z.object({
-    draftId: z.string().min(1).describe(
-      "Unique identifier of the draft to update (obtain from workspace_draft_create or list_session_drafts)",
-    ),
-    updates: z.record(z.string(), z.unknown()).describe(
-      "Configuration updates to apply to the draft (partial WorkspaceConfig)",
-    ),
-    updateDescription: z.string().optional().describe(
-      "Optional description of what changes are being made",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ draftId, updates, updateDescription }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_draft_update called", { draftId, updateDescription });
 

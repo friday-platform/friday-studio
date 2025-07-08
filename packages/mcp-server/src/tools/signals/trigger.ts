@@ -8,17 +8,19 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { checkWorkspaceMCPEnabled } from "../utils.ts";
 
-export const signalsTriggerTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe("Workspace ID"),
+  signalName: z.string().describe("Signal name to trigger"),
+  payload: z.record(z.string(), z.unknown()).optional().describe(
+    "Signal payload data used for job routing and agent input",
+  ),
+});
+
+export const signalsTriggerTool: ToolHandler<typeof schema> = {
   name: "workspace_signals_trigger",
   description:
     "Trigger a workspace signal to start automated job execution. Signals route to specific jobs based on payload conditions and create execution sessions that run asynchronously. Sessions contain the actual job progress and results.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe("Workspace ID"),
-    signalName: z.string().describe("Signal name to trigger"),
-    payload: z.record(z.string(), z.unknown()).optional().describe(
-      "Signal payload data used for job routing and agent input",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId, signalName, payload }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 

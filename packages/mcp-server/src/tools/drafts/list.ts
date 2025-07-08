@@ -3,21 +3,23 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const draftListTool: ToolHandler = {
+const schema = z.object({
+  sessionId: z.string().optional().describe(
+    "Session ID to list drafts for (optional, defaults to current session)",
+  ),
+  conversationId: z.string().optional().describe(
+    "Conversation ID to list drafts for (optional, used for conversation-scoped drafts)",
+  ),
+  includeDetails: z.boolean().default(false).describe(
+    "Whether to include detailed configuration summaries for each draft",
+  ),
+});
+
+export const draftListTool: ToolHandler<typeof schema> = {
   name: "list_session_drafts",
   description:
     "List all workspace drafts for the current session or conversation context. Shows draft status, creation times, and basic metadata.",
-  inputSchema: z.object({
-    sessionId: z.string().optional().describe(
-      "Session ID to list drafts for (optional, defaults to current session)",
-    ),
-    conversationId: z.string().optional().describe(
-      "Conversation ID to list drafts for (optional, used for conversation-scoped drafts)",
-    ),
-    includeDetails: z.boolean().default(false).describe(
-      "Whether to include detailed configuration summaries for each draft",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ sessionId, conversationId, includeDetails = false }, { daemonUrl, logger }) => {
     logger.info("MCP list_session_drafts called", {
       sessionId,

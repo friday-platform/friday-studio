@@ -3,42 +3,44 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const libraryStoreTool: ToolHandler = {
+const schema = z.object({
+  type: z.enum(["report", "session_archive", "template", "artifact", "user_upload"])
+    .describe(
+      "Category of content being stored - determines indexing and discovery behavior",
+    ),
+  name: z.string().min(1).max(255)
+    .describe(
+      "Descriptive title for the item that will appear in search results and listings",
+    ),
+  description: z.string().max(1000).optional()
+    .describe(
+      "Optional detailed description explaining what the item contains and its purpose",
+    ),
+  content: z.string().min(1)
+    .describe("The main content/data to be stored in the library item"),
+  format: z.enum(["markdown", "json", "html", "text", "binary"]).default("markdown")
+    .describe("Format of the content being stored - affects rendering and processing"),
+  tags: z.array(z.string()).max(50).default([])
+    .describe(
+      "Category tags to help organize and discover this item later (e.g., 'production', 'analysis', 'template')",
+    ),
+  workspace_id: z.string().optional()
+    .describe("Associated workspace ID"),
+  session_id: z.string().optional()
+    .describe("Associated session ID"),
+  agent_ids: z.array(z.string()).default([])
+    .describe("Array of agent IDs that created this item"),
+  source: z.enum(["agent", "job", "user", "system"]).default("agent")
+    .describe("Source of the item"),
+  metadata: z.record(z.string(), z.unknown()).default({})
+    .describe("Additional metadata object"),
+});
+
+export const libraryStoreTool: ToolHandler<typeof schema> = {
   name: "library_store",
   description:
     "Store a new item in the Atlas library for future reference and reuse across workspaces. Use this to save reports, templates, session results, artifacts, or any content that should be preserved and discoverable.",
-  inputSchema: z.object({
-    type: z.enum(["report", "session_archive", "template", "artifact", "user_upload"])
-      .describe(
-        "Category of content being stored - determines indexing and discovery behavior",
-      ),
-    name: z.string().min(1).max(255)
-      .describe(
-        "Descriptive title for the item that will appear in search results and listings",
-      ),
-    description: z.string().max(1000).optional()
-      .describe(
-        "Optional detailed description explaining what the item contains and its purpose",
-      ),
-    content: z.string().min(1)
-      .describe("The main content/data to be stored in the library item"),
-    format: z.enum(["markdown", "json", "html", "text", "binary"]).default("markdown")
-      .describe("Format of the content being stored - affects rendering and processing"),
-    tags: z.array(z.string()).max(50).default([])
-      .describe(
-        "Category tags to help organize and discover this item later (e.g., 'production', 'analysis', 'template')",
-      ),
-    workspace_id: z.string().optional()
-      .describe("Associated workspace ID"),
-    session_id: z.string().optional()
-      .describe("Associated session ID"),
-    agent_ids: z.array(z.string()).default([])
-      .describe("Array of agent IDs that created this item"),
-    source: z.enum(["agent", "job", "user", "system"]).default("agent")
-      .describe("Source of the item"),
-    metadata: z.record(z.string(), z.unknown()).default({})
-      .describe("Additional metadata object"),
-  }),
+  inputSchema: schema,
   handler: async ({
     type,
     name,

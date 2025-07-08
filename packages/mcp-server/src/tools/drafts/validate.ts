@@ -3,15 +3,17 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const draftValidateTool: ToolHandler = {
+const schema = z.object({
+  draftId: z.string().min(1).describe(
+    "Unique identifier of the draft to validate",
+  ),
+});
+
+export const draftValidateTool: ToolHandler<typeof schema> = {
   name: "workspace_draft_validate",
   description:
     "Validate workspace draft configuration for correctness, completeness, and best practices. Returns detailed validation results and suggestions.",
-  inputSchema: z.object({
-    draftId: z.string().min(1).describe(
-      "Unique identifier of the draft to validate",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ draftId }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_draft_validate called", { draftId });
 

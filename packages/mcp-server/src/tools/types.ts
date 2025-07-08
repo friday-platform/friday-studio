@@ -18,11 +18,11 @@ export interface ToolContext {
  * The MCP SDK doesn't export a specific ToolDefinition type, but this interface
  * provides type safety while maintaining compatibility with the SDK.
  */
-export interface ToolHandler<TInput = unknown> {
+export interface ToolHandler<TSchema extends z.ZodObject<any> = z.ZodObject<any>> {
   name: string;
   description: string;
-  inputSchema: z.ZodSchema<TInput>;
-  handler: (args: TInput, context: ToolContext) => Promise<{
+  inputSchema: TSchema;
+  handler: (args: z.infer<TSchema>, context: ToolContext) => Promise<{
     content: Array<{
       type: "text";
       text: string;

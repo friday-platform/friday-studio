@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import * as path from "path";
 import { expandGlob } from "@std/fs";
 import { globToRegExp } from "@std/path";
@@ -21,16 +22,18 @@ export const IGNORE_PATTERNS = [
 
 const LIMIT = 100;
 
-export const ListTool = Tool.define({
-  id: "list",
+const schema = z.object({
+  path: z.string().describe(
+    "The absolute path to the directory to list (must be absolute, not relative)",
+  ).optional(),
+  ignore: z.array(z.string()).describe("List of glob patterns to ignore").optional(),
+});
+
+export const lsTool: ToolHandler<typeof schema> = {
+  name: "list",
   description: DESCRIPTION,
-  parameters: z.object({
-    path: z.string().describe(
-      "The absolute path to the directory to list (must be absolute, not relative)",
-    ).optional(),
-    ignore: z.array(z.string()).describe("List of glob patterns to ignore").optional(),
-  }),
-  async execute(params) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     const searchPath = path.resolve(Deno.cwd(), params.path || ".");
 
     const files = [];
@@ -108,13 +111,13 @@ export const ListTool = Tool.define({
 
     const output = `${searchPath}/\n` + renderDir(".", 0);
 
-    return {
+    return createSuccessResponse({
       title: path.relative(Deno.cwd(), searchPath),
       metadata: {
         count: files.length,
         truncated: files.length >= LIMIT,
       },
       output,
-    };
+    });
   },
-});
+};

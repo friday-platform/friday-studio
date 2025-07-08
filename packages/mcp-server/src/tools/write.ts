@@ -1,6 +1,7 @@
 import { z } from "zod/v4";
 import * as path from "path";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import { LSP } from "../lsp";
 import { Permission } from "../permission";
 import DESCRIPTION from "./write.txt" with { type: "txt" };
@@ -8,16 +9,18 @@ import { Bus } from "../bus";
 import { File } from "../file";
 import { FileTime } from "../file/time";
 
-export const WriteTool = Tool.define({
-  id: "write",
+const schema = z.object({
+  filePath: z.string().describe(
+    "The absolute path to the file to write (must be absolute, not relative)",
+  ),
+  content: z.string().describe("The content to write to the file"),
+});
+
+export const writeTool: ToolHandler<typeof schema> = {
+  name: "write",
   description: DESCRIPTION,
-  parameters: z.object({
-    filePath: z.string().describe(
-      "The absolute path to the file to write (must be absolute, not relative)",
-    ),
-    content: z.string().describe("The content to write to the file"),
-  }),
-  async execute(params, ctx) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     const filepath = path.isAbsolute(params.filePath)
       ? params.filePath
       : path.join(Deno.cwd(), params.filePath);
@@ -35,11 +38,14 @@ export const WriteTool = Tool.define({
       }
     }
 
-    if (exists) await FileTime.assert(ctx.sessionID, filepath);
+    // TODO: sessionID needs to be passed in context or retrieved differently
+    const sessionID = "default"; // Temporary placeholder
+
+    if (exists) await FileTime.assert(sessionID, filepath);
 
     await Permission.ask({
       id: "write",
-      sessionID: ctx.sessionID,
+      sessionID,
       title: exists ? "Overwrite this file: " + filepath : "Create new file: " + filepath,
       metadata: {
         filePath: filepath,
@@ -52,7 +58,7 @@ export const WriteTool = Tool.define({
     await Bus.publish(File.Event.Edited, {
       file: filepath,
     });
-    FileTime.read(ctx.sessionID, filepath);
+    FileTime.read(sessionID, filepath);
 
     let output = "";
     await LSP.touchFile(filepath, true);
@@ -70,7 +76,7 @@ export const WriteTool = Tool.define({
       }\n</project_diagnostics>\n`;
     }
 
-    return {
+    return createSuccessResponse({
       title: path.relative(Deno.cwd(), filepath),
       metadata: {
         diagnostics,
@@ -78,6 +84,6 @@ export const WriteTool = Tool.define({
         exists: exists,
       },
       output,
-    };
+    });
   },
-});
+};

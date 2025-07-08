@@ -1,22 +1,25 @@
 import { z } from "zod/v4";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import { Ripgrep } from "../file/ripgrep";
 
 import DESCRIPTION from "./grep.txt" with { type: "txt" };
 
-export const GrepTool = Tool.define({
-  id: "grep",
+const schema = z.object({
+  pattern: z.string().describe("The regex pattern to search for in file contents"),
+  path: z.string().optional().describe(
+    "The directory to search in. Defaults to the current working directory.",
+  ),
+  include: z.string().optional().describe(
+    'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
+  ),
+});
+
+export const grepTool: ToolHandler<typeof schema> = {
+  name: "grep",
   description: DESCRIPTION,
-  parameters: z.object({
-    pattern: z.string().describe("The regex pattern to search for in file contents"),
-    path: z.string().optional().describe(
-      "The directory to search in. Defaults to the current working directory.",
-    ),
-    include: z.string().optional().describe(
-      'File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")',
-    ),
-  }),
-  async execute(params) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     if (!params.pattern) {
       throw new Error("pattern is required");
     }
@@ -41,11 +44,11 @@ export const GrepTool = Tool.define({
     const errorOutput = new TextDecoder().decode(stderr);
 
     if (exitCode === 1) {
-      return {
+      return createSuccessResponse({
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
         output: "No files found",
-      };
+      });
     }
 
     if (exitCode !== 0) {
@@ -88,11 +91,11 @@ export const GrepTool = Tool.define({
     const finalMatches = truncated ? matches.slice(0, limit) : matches;
 
     if (finalMatches.length === 0) {
-      return {
+      return createSuccessResponse({
         title: params.pattern,
         metadata: { matches: 0, truncated: false },
         output: "No files found",
-      };
+      });
     }
 
     const outputLines = [`Found ${finalMatches.length} matches`];
@@ -114,13 +117,13 @@ export const GrepTool = Tool.define({
       outputLines.push("(Results are truncated. Consider using a more specific path or pattern.)");
     }
 
-    return {
+    return createSuccessResponse({
       title: params.pattern,
       metadata: {
         matches: finalMatches.length,
         truncated,
       },
       output: outputLines.join("\n"),
-    };
+    });
   },
-});
+};

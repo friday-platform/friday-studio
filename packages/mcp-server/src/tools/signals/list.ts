@@ -7,13 +7,15 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const signalsListTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe("Workspace ID to list signals for"),
+});
+
+export const signalsListTool: ToolHandler<typeof schema> = {
   name: "workspace_signals_list",
   description:
     "View all signal configurations within a workspace that can trigger automated job executions. Signals represent external events (webhooks, schedules, file changes) that initiate workspace operations.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe("Workspace ID to list signals for"),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_signals_list called", { workspaceId });
 

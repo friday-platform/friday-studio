@@ -7,13 +7,15 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const agentsDescribeTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe("Workspace ID"),
+  agentId: z.string().describe("Agent ID to describe"),
+});
+
+export const agentsDescribeTool: ToolHandler<typeof schema> = {
   name: "workspace_agents_describe",
   description: "Get detailed information about a specific agent through daemon API",
-  inputSchema: z.object({
-    workspaceId: z.string().describe("Workspace ID"),
-    agentId: z.string().describe("Agent ID to describe"),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId, agentId }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_agents_describe called", { workspaceId, agentId });
 

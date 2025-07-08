@@ -8,18 +8,20 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../utils.ts";
 
-export const jobsDescribeTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe(
+    "Unique identifier of the workspace containing the job",
+  ),
+  jobName: z.string().describe(
+    "Name of the specific job to examine (obtain from workspace_jobs_list)",
+  ),
+});
+
+export const jobsDescribeTool: ToolHandler<typeof schema> = {
   name: "workspace_jobs_describe",
   description:
     "Examine a job's workflow configuration including execution strategy (sequential, parallel, conditional), assigned agents, trigger conditions, and context provisioning. Jobs define multi-step workflows where agents receive inputs from signals, previous agents, or filesystem context, then execute using specialized MCP tools.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe(
-      "Unique identifier of the workspace containing the job",
-    ),
-    jobName: z.string().describe(
-      "Name of the specific job to examine (obtain from workspace_jobs_list)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId, jobName }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_jobs_describe called", { workspaceId, jobName });
 

@@ -8,15 +8,17 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../utils.ts";
 
-export const jobsListTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe(
+    "Unique identifier of the workspace whose jobs you want to explore",
+  ),
+});
+
+export const jobsListTool: ToolHandler<typeof schema> = {
   name: "workspace_jobs_list",
   description:
     "Discover all automated tasks (jobs) available within a specific workspace. Jobs represent reusable workflows that can be triggered to perform operations like builds, deployments, data processing, or custom automation. Only shows jobs marked as discoverable.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe(
-      "Unique identifier of the workspace whose jobs you want to explore",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_jobs_list called", { workspaceId });
 

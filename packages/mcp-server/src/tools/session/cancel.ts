@@ -7,15 +7,17 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const sessionCancelTool: ToolHandler = {
+const schema = z.object({
+  sessionId: z.string().describe(
+    "Unique identifier of the active session to terminate (can be from any workspace)",
+  ),
+});
+
+export const sessionCancelTool: ToolHandler<typeof schema> = {
   name: "session_cancel",
   description:
     "Terminate an active execution session gracefully across all workspaces. This is a global operation that searches for the session ID across all active workspaces and stops the running job while cleaning up associated resources. Use this when a session needs to be stopped due to errors, changed requirements, or resource constraints.",
-  inputSchema: z.object({
-    sessionId: z.string().describe(
-      "Unique identifier of the active session to terminate (can be from any workspace)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ sessionId }, { daemonUrl, logger }) => {
     logger.info("MCP session_cancel called", { sessionId });
 

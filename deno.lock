@@ -27,6 +27,7 @@
     "npm:@scalar/hono-api-reference@~0.9.9": "0.9.9_hono@4.8.4",
     "npm:@types/node@*": "22.15.15",
     "npm:@types/react@^19.1.8": "19.1.8",
+    "npm:@worker-tools/html-rewriter@~0.1.0-pre.19": "0.1.0-pre.19",
     "npm:ai@^4.0.7": "4.3.17_react@19.1.0_zod@3.25.75",
     "npm:chalk@^5.4.1": "5.4.1",
     "npm:cron-parser@^5.3.0": "5.3.0",
@@ -36,6 +37,7 @@
     "npm:hono@^4.8.4": "4.8.4",
     "npm:ink@^6.0.1": "6.0.1_react@19.1.0_@types+react@19.1.8",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
+    "npm:lint-staged@16": "16.1.2",
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:marked-terminal@*": "7.3.0_marked@16.0.0",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.0.0",
@@ -320,6 +322,15 @@
     "@sindresorhus/is@4.6.0": {
       "integrity": "sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw=="
     },
+    "@stardazed/streams-compression@1.0.0": {
+      "integrity": "sha512-SQCiwxdIVJ5xxUBYptN+fc+tJpSDbxQuJ0+3u2SmHjIzr6JIRZ28AVFtFnGy6x6j3UBlaLx73w9rC6UAFxnd1g==",
+      "dependencies": [
+        "@stardazed/zlib"
+      ]
+    },
+    "@stardazed/zlib@1.0.1": {
+      "integrity": "sha512-MS6PCYiRNJ32c69+3NPyL+bu7LpiFDvMcBXnlhQnF8CKMG0R/xRVCCo422NPkQ0+Cox3xKpk5Lc1LfWFS4b3cw=="
+    },
     "@types/diff-match-patch@1.0.36": {
       "integrity": "sha512-xFdR6tkm0MWvBfO8xXCSsinYxHcqkQUlcHeSpMC2ukzOb6lwQAfDmW+Qt0AvlGd8HpsS28qKsB+oPeJn9I39jg=="
     },
@@ -337,6 +348,16 @@
       "dependencies": [
         "csstype"
       ]
+    },
+    "@worker-tools/html-rewriter@0.1.0-pre.19": {
+      "integrity": "sha512-IUbEZwvSdp8vtaB1LAZ/sBRJGNycd9a8cbkqO05rMEPm5MC59Sb+wiGCWaaRXrwQLDAyWeod4QC/q0TuSUI5EA==",
+      "dependencies": [
+        "@stardazed/streams-compression",
+        "@worker-tools/resolvable-promise"
+      ]
+    },
+    "@worker-tools/resolvable-promise@0.2.0-pre.6": {
+      "integrity": "sha512-+5RcuruCLB/P3FYYb376RgyImXaq9BBQoOskUbgPyNK3O0AXPakrXUj1EELv+lcnUSdFws/ufdrrWODLJyoTmg=="
     },
     "accepts@2.0.0": {
       "integrity": "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==",
@@ -2043,6 +2064,7 @@
           "jsr:@std/fs@1",
           "jsr:@std/path@1",
           "npm:@modelcontextprotocol/sdk@^1.12.1",
+          "npm:@worker-tools/html-rewriter@~0.1.0-pre.19",
           "npm:turndown@^7.2.0"
         ]
       },

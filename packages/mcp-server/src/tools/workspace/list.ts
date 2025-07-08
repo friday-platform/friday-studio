@@ -7,11 +7,13 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const workspaceListTool: ToolHandler = {
+const schema = z.object({});
+
+export const workspaceListTool: ToolHandler<typeof schema> = {
   name: "workspace_list",
   description:
     "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",
-  inputSchema: z.object({}),
+  inputSchema: schema,
   handler: async (_args, { daemonUrl, logger }) => {
     logger.info("MCP workspace_list called - querying daemon API");
 

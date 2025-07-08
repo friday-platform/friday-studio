@@ -7,15 +7,17 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const workspaceDescribeTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe(
+    "Unique identifier of the workspace to examine (obtain from workspace_list)",
+  ),
+});
+
+export const workspaceDescribeTool: ToolHandler<typeof schema> = {
   name: "workspace_describe",
   description:
     "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe(
-      "Unique identifier of the workspace to examine (obtain from workspace_list)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_describe called", { workspaceId });
 

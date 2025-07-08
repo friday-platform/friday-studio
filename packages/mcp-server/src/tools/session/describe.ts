@@ -7,15 +7,17 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const sessionDescribeTool: ToolHandler = {
+const schema = z.object({
+  sessionId: z.string().describe(
+    "Unique identifier of the session to examine (obtain from workspace_sessions_list or other session listings)",
+  ),
+});
+
+export const sessionDescribeTool: ToolHandler<typeof schema> = {
   name: "session_describe",
   description:
     "Examine a specific execution session across all workspaces to understand its current state, progress, logs, and results. This is a global operation that searches for the session ID across all active workspaces in the system. Sessions track the complete lifecycle of job executions, including their inputs, outputs, and any errors encountered.",
-  inputSchema: z.object({
-    sessionId: z.string().describe(
-      "Unique identifier of the session to examine (obtain from workspace_sessions_list or other session listings)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ sessionId }, { daemonUrl, logger }) => {
     logger.info("MCP session_describe called", { sessionId });
 

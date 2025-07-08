@@ -7,18 +7,20 @@ import { z } from "zod/v4";
 import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 
-export const workspaceDeleteTool: ToolHandler = {
+const schema = z.object({
+  workspaceId: z.string().describe(
+    "Unique identifier of the workspace to permanently remove from the system",
+  ),
+  force: z.boolean().default(false).describe(
+    "Bypass safety checks and force deletion even if workspace has active sessions or running jobs",
+  ),
+});
+
+export const workspaceDeleteTool: ToolHandler<typeof schema> = {
   name: "workspace_delete",
   description:
     "Remove an Atlas workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",
-  inputSchema: z.object({
-    workspaceId: z.string().describe(
-      "Unique identifier of the workspace to permanently remove from the system",
-    ),
-    force: z.boolean().default(false).describe(
-      "Bypass safety checks and force deletion even if workspace has active sessions or running jobs",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ workspaceId, force }, { daemonUrl, logger }) => {
     logger.info("MCP workspace_delete called", { workspaceId, force });
 

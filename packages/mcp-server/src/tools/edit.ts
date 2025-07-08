@@ -4,7 +4,8 @@
 
 import { z } from "zod/v4";
 import * as path from "path";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import { LSP } from "../lsp";
 import { createTwoFilesPatch } from "diff";
 import { Permission } from "../permission";
@@ -13,20 +14,22 @@ import { File } from "../file";
 import { Bus } from "../bus";
 import { FileTime } from "../file/time";
 
-export const EditTool = Tool.define({
-  id: "edit",
+const schema = z.object({
+  filePath: z.string().describe("The absolute path to the file to modify"),
+  oldString: z.string().describe("The text to replace"),
+  newString: z.string().describe(
+    "The text to replace it with (must be different from old_string)",
+  ),
+  replaceAll: z.boolean().optional().describe(
+    "Replace all occurrences of old_string (default false)",
+  ),
+});
+
+export const editTool: ToolHandler<typeof schema> = {
+  name: "edit",
   description: DESCRIPTION,
-  parameters: z.object({
-    filePath: z.string().describe("The absolute path to the file to modify"),
-    oldString: z.string().describe("The text to replace"),
-    newString: z.string().describe(
-      "The text to replace it with (must be different from old_string)",
-    ),
-    replaceAll: z.boolean().optional().describe(
-      "Replace all occurrences of old_string (default false)",
-    ),
-  }),
-  async execute(params, ctx) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     if (!params.filePath) {
       throw new Error("filePath is required");
     }
@@ -39,9 +42,12 @@ export const EditTool = Tool.define({
       ? params.filePath
       : path.join(Deno.cwd(), params.filePath);
 
+    // TODO: sessionID needs to be passed in context or retrieved differently
+    const sessionID = "default"; // Temporary placeholder
+
     await Permission.ask({
       id: "edit",
-      sessionID: ctx.sessionID,
+      sessionID,
       title: "Edit this file: " + filepath,
       metadata: {
         filePath: filepath,
@@ -73,7 +79,7 @@ export const EditTool = Tool.define({
       }
 
       if (stats.isDirectory) throw new Error(`Path is a directory, not a file: ${filepath}`);
-      await FileTime.assert(ctx.sessionID, filepath);
+      await FileTime.assert(sessionID, filepath);
       contentOld = await Deno.readTextFile(filepath);
 
       contentNew = replace(contentOld, params.oldString, params.newString, params.replaceAll);
@@ -86,7 +92,7 @@ export const EditTool = Tool.define({
 
     const diff = trimDiff(createTwoFilesPatch(filepath, filepath, contentOld, contentNew));
 
-    FileTime.read(ctx.sessionID, filepath);
+    FileTime.read(sessionID, filepath);
 
     let output = "";
     await LSP.touchFile(filepath, true);
@@ -104,16 +110,16 @@ export const EditTool = Tool.define({
       }\n</project_diagnostics>\n`;
     }
 
-    return {
+    return createSuccessResponse({
       metadata: {
         diagnostics,
         diff,
       },
       title: `${path.relative(Deno.cwd(), filepath)}`,
       output,
-    };
+    });
   },
-});
+};
 
 export type Replacer = (content: string, find: string) => Generator<string, void, unknown>;
 

@@ -45,6 +45,15 @@ import { draftShowTool } from "./drafts/show.ts";
 import { draftListTool } from "./drafts/list.ts";
 import { draftDeleteTool } from "./drafts/delete.ts";
 
+// Import filesystem tools
+import { editTool } from "./edit.ts";
+import { globTool } from "./glob.ts";
+import { grepTool } from "./grep.ts";
+import { lsTool } from "./ls.ts";
+import { readTool } from "./read.ts";
+import { webfetchTool } from "./webfetch.ts";
+import { writeTool } from "./write.ts";
+
 /**
  * Get all available tools
  */
@@ -87,6 +96,15 @@ export function getAllTools(): ToolHandler[] {
     draftShowTool,
     draftListTool,
     draftDeleteTool,
+
+    // Filesystem tools
+    editTool,
+    globTool,
+    grepTool,
+    lsTool,
+    readTool,
+    webfetchTool,
+    writeTool,
   ];
 }
 

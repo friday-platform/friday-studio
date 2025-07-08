@@ -1,28 +1,32 @@
 import { z } from "zod/v4";
-import { Tool } from "./tool";
+import type { ToolHandler } from "./types.ts";
+import { createSuccessResponse } from "./types.ts";
 import TurndownService from "turndown";
+import { HTMLRewriter } from "@worker-tools/html-rewriter";
 import DESCRIPTION from "./webfetch.txt" with { type: "txt" };
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds
 const MAX_TIMEOUT = 120 * 1000; // 2 minutes
 
-export const WebFetchTool = Tool.define({
-  id: "webfetch",
+const schema = z.object({
+  url: z.string().describe("The URL to fetch content from"),
+  format: z
+    .enum(["text", "markdown", "html"])
+    .describe("The format to return the content in (text, markdown, or html)"),
+  timeout: z
+    .number()
+    .min(0)
+    .max(MAX_TIMEOUT / 1000)
+    .describe("Optional timeout in seconds (max 120)")
+    .optional(),
+});
+
+export const webfetchTool: ToolHandler<typeof schema> = {
+  name: "webfetch",
   description: DESCRIPTION,
-  parameters: z.object({
-    url: z.string().describe("The URL to fetch content from"),
-    format: z
-      .enum(["text", "markdown", "html"])
-      .describe("The format to return the content in (text, markdown, or html)"),
-    timeout: z
-      .number()
-      .min(0)
-      .max(MAX_TIMEOUT / 1000)
-      .describe("Optional timeout in seconds (max 120)")
-      .optional(),
-  }),
-  async execute(params, ctx) {
+  inputSchema: schema,
+  handler: async (params, { logger }) => {
     // Validate URL
     if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
       throw new Error("URL must start with http:// or https://");
@@ -34,7 +38,7 @@ export const WebFetchTool = Tool.define({
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     const response = await fetch(params.url, {
-      signal: AbortSignal.any([controller.signal, ctx.abort]),
+      signal: controller.signal,
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -65,53 +69,37 @@ export const WebFetchTool = Tool.define({
     const contentType = response.headers.get("content-type") || "";
 
     const title = `${params.url} (${contentType})`;
+    let output: string;
+
     switch (params.format) {
       case "text":
         if (contentType.includes("text/html")) {
-          const text = await extractTextFromHTML(content);
-          return {
-            output: text,
-            title,
-            metadata: {},
-          };
+          output = await extractTextFromHTML(content);
+        } else {
+          output = content;
         }
-        return {
-          output: content,
-          title,
-          metadata: {},
-        };
+        break;
 
       case "markdown":
         if (contentType.includes("text/html")) {
-          const markdown = convertHTMLToMarkdown(content);
-          return {
-            output: markdown,
-            title,
-            metadata: {},
-          };
+          output = convertHTMLToMarkdown(content);
+        } else {
+          output = "```\n" + content + "\n```";
         }
-        return {
-          output: "```\n" + content + "\n```",
-          title,
-          metadata: {},
-        };
-
-      case "html":
-        return {
-          output: content,
-          title,
-          metadata: {},
-        };
+        break;
 
       default:
-        return {
-          output: content,
-          title,
-          metadata: {},
-        };
+        output = content;
+        break;
     }
+
+    return createSuccessResponse({
+      output,
+      title,
+      metadata: {},
+    });
   },
-});
+};
 
 async function extractTextFromHTML(html: string) {
   let text = "";

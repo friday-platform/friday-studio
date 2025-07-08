@@ -3,15 +3,17 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const draftDeleteTool: ToolHandler = {
+const schema = z.object({
+  draftId: z.string().min(1).describe(
+    "Unique identifier of the draft to delete",
+  ),
+});
+
+export const draftDeleteTool: ToolHandler<typeof schema> = {
   name: "delete_draft_config",
   description:
     "Delete a workspace draft that is no longer needed. This permanently removes the draft and its configuration from the system.",
-  inputSchema: z.object({
-    draftId: z.string().min(1).describe(
-      "Unique identifier of the draft to delete",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ draftId }, { daemonUrl, logger }) => {
     logger.info("MCP delete_draft_config called", { draftId });
 

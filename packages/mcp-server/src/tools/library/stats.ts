@@ -3,10 +3,12 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const libraryStatsTool: ToolHandler = {
+const schema = z.object({});
+
+export const libraryStatsTool: ToolHandler<typeof schema> = {
   name: "library_stats",
   description: "Get library usage statistics and analytics through daemon API",
-  inputSchema: z.object({}),
+  inputSchema: schema,
   handler: async (_, { daemonUrl, logger }) => {
     logger.info("MCP library_stats called");
 

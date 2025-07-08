@@ -3,18 +3,20 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const draftShowTool: ToolHandler = {
+const schema = z.object({
+  draftId: z.string().min(1).describe(
+    "Unique identifier of the draft to display",
+  ),
+  format: z.enum(["yaml", "json", "summary"]).default("yaml").describe(
+    "Format for displaying the configuration (yaml, json, or human-readable summary)",
+  ),
+});
+
+export const draftShowTool: ToolHandler<typeof schema> = {
   name: "show_draft_config",
   description:
     "Display current workspace draft configuration with clear formatting. Shows the complete configuration structure and current values.",
-  inputSchema: z.object({
-    draftId: z.string().min(1).describe(
-      "Unique identifier of the draft to display",
-    ),
-    format: z.enum(["yaml", "json", "summary"]).default("yaml").describe(
-      "Format for displaying the configuration (yaml, json, or human-readable summary)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ draftId, format = "yaml" }, { daemonUrl, logger }) => {
     logger.info("MCP show_draft_config called", { draftId, format });
 

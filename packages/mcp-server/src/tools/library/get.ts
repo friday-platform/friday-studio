@@ -3,18 +3,20 @@ import type { ToolHandler } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
-export const libraryGetTool: ToolHandler = {
+const schema = z.object({
+  itemId: z.string().describe(
+    "Unique identifier of the library item to retrieve (obtain from library_list)",
+  ),
+  includeContent: z.boolean().default(false).describe(
+    "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
+  ),
+});
+
+export const libraryGetTool: ToolHandler<typeof schema> = {
   name: "library_get",
   description:
     "Retrieve a specific library item including its metadata and optionally its full content. Use this to access stored reports, session archives, templates, or other resources by their unique identifier.",
-  inputSchema: z.object({
-    itemId: z.string().describe(
-      "Unique identifier of the library item to retrieve (obtain from library_list)",
-    ),
-    includeContent: z.boolean().default(false).describe(
-      "Whether to include the full content/data of the item, not just metadata (useful for reports, documents, or archived results)",
-    ),
-  }),
+  inputSchema: schema,
   handler: async ({ itemId, includeContent = false }, { daemonUrl, logger }) => {
     logger.info("MCP library_get called", { itemId, includeContent });
 
