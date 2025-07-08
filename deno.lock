@@ -2011,6 +2011,11 @@
       "npm:xstate@^5.20.1",
       "npm:zod@^3.25.74"
     ],
+    "packageJson": {
+      "dependencies": [
+        "npm:turndown@^7.2.0"
+      ]
+    },
     "members": {
       "apps/atlasd": {
         "dependencies": [
