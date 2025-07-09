@@ -288,21 +288,7 @@ export class AtlasDaemon implements AppContext {
     this.app.route("/api/workspaces", workspacesRoutes);
 
     // Get specific workspace info
-    this.app.get("/api/workspaces/:workspaceId", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        const manager = getWorkspaceManager();
-        const workspace = await manager.describeWorkspace(workspaceId);
-        return c.json(workspace);
-      } catch (error) {
-        return c.json({
-          error: `Failed to get workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
+    // Note: GET /api/workspaces/:workspaceId is now handled by the workspaces route module
 
     // Create a new workspace
     this.app.post("/api/workspaces", async (c) => {

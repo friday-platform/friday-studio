@@ -26,7 +26,7 @@ Create a new route file in `apps/atlasd/routes/` (e.g., `workspaces.ts`):
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
-import { resolver, zValidator } from "hono-openapi/zod";
+import { resolver, validator } from "hono-openapi/zod";
 
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();
@@ -72,8 +72,9 @@ type CreateWorkspaceRequest = z.infer<typeof createWorkspaceSchema>;
 
 Extract route logic from `atlas-daemon.ts` and wrap with `describeRoute()`.
 
-**Important**: Use `zValidator` middleware for validating parameters, query strings, and request
-bodies. The validators should be placed AFTER the `describeRoute()` configuration:
+**Important**: Use `validator` middleware (not `zValidator`) for validating parameters, query
+strings, and request bodies. The validators should be placed AFTER the `describeRoute()`
+configuration:
 
 ```typescript
 workspacesRoutes.get(
@@ -154,13 +155,13 @@ workspacesRoutes.delete(
       },
     },
   }),
-  zValidator(
+  validator(
     "param",
     z.object({
       workspaceId: z.string().meta({ description: "Workspace ID" }),
     }),
   ),
-  zValidator("query", workspaceQuerySchema),
+  validator("query", workspaceQuerySchema),
   async (c) => {
     const { workspaceId } = c.req.valid("param");
     const { force } = c.req.valid("query");
@@ -194,7 +195,7 @@ workspacesRoutes.post(
       },
     },
   }),
-  zValidator("json", createWorkspaceSchema),
+  validator("json", createWorkspaceSchema),
   async (c) => {
     const body = c.req.valid("json");
     // Implementation...
@@ -233,19 +234,19 @@ workspacesRoutes.put(
       },
     },
   }),
-  zValidator(
+  validator(
     "param",
     z.object({
       workspaceId: z.string(),
     }),
   ),
-  zValidator(
+  validator(
     "query",
     z.object({
       notify: z.coerce.boolean().optional().default(false),
     }),
   ),
-  zValidator("json", updateSettingsSchema),
+  validator("json", updateSettingsSchema),
   async (c) => {
     const { workspaceId } = c.req.valid("param");
     const { notify } = c.req.valid("query");
@@ -257,15 +258,19 @@ workspacesRoutes.put(
 
 ### Validation Types
 
-- `zValidator("param", schema)` - Validates path parameters
-- `zValidator("query", schema)` - Validates query string parameters
-- `zValidator("json", schema)` - Validates JSON request body
-- `zValidator("form", schema)` - Validates form data
-- `zValidator("header", schema)` - Validates headers
-- `zValidator("cookie", schema)` - Validates cookies
+- `validator("param", schema)` - Validates path parameters
+- `validator("query", schema)` - Validates query string parameters
+- `validator("json", schema)` - Validates JSON request body
+- `validator("form", schema)` - Validates form data
+- `validator("header", schema)` - Validates headers
+- `validator("cookie", schema)` - Validates cookies
 
-**Note**: You don't need validators for routes that have no parameters, query strings, or request
-bodies (like simple GET endpoints that return static data).
+**Note**:
+
+- The hono-openapi library exports `validator`, not `zValidator` (this is different from the
+  standard hono/zod-validator)
+- You don't need validators for routes that have no parameters, query strings, or request bodies
+  (like simple GET endpoints that return static data)
 
 ### Step 4: Update Factory Context (if needed)
 
@@ -339,6 +344,23 @@ This updates `src/atlasd-types.gen.d.ts` with the new route types.
 **Note**: Failing to regenerate client types will cause TypeScript errors in any code that depends
 on the OpenAPI client package.
 
+### Step 8: Update CLI Commands and Run Linting
+
+After generating client types, update any CLI commands that use the migrated endpoints:
+
+1. **Update the CLI command** to use the OpenAPI client
+2. **Use `useStdout` hook for JSON output** in Ink-based components (not `console.log`)
+3. **Run `deno lint`** on modified files and fix any issues:
+   - Remove unused variables
+   - Replace `any` types with proper TypeScript types
+   - Use `_` prefix for intentionally unused parameters
+
+```bash
+# Run linting on your modified files
+deno lint src/cli/commands/workspace/status.tsx
+deno fmt src/cli/commands/workspace/status.tsx
+```
+
 ## Common Patterns
 
 ### Standard Error Response Schema
@@ -349,7 +371,7 @@ Create a reusable error response schema:
 export const errorResponseSchema = z.object({
   error: z.string().meta({ description: "Error message" }),
   code: z.string().optional().meta({ description: "Error code" }),
-  details: z.any().optional().meta({ description: "Additional error details" }),
+  details: z.unknown().optional().meta({ description: "Additional error details" }),
 }).meta({
   description: "Standard error response",
 });
@@ -407,7 +429,7 @@ describeRoute({
 
 - [ ] **Workspace Routes** (`/api/workspaces/*`)
   - [x] GET `/api/workspaces` - List workspaces ✅
-  - [ ] GET `/api/workspaces/:id` - Get workspace details
+  - [x] GET `/api/workspaces/:id` - Get workspace details ✅
   - [ ] POST `/api/workspaces` - Create workspace
   - [ ] DELETE `/api/workspaces/:id` - Delete workspace
   - [ ] POST `/api/workspaces/add` - Add existing workspace
@@ -441,6 +463,10 @@ describeRoute({
   - [ ] GET `/api/workspaces/:id/agents` - List agents
   - [ ] GET `/api/workspaces/:id/agents/:agentId` - Get agent details
 
+- [ ] **Workspace-specific Routes** (`/api/workspaces/:id/*`)
+  - [ ] GET `/api/workspaces/:id/jobs` - List jobs in workspace
+  - [ ] GET `/api/workspaces/:id/sessions` - List sessions in workspace
+
 - [ ] **Stream Routes** (`/api/stream/*`)
   - [ ] POST `/api/streams` - Create stream session
   - [ ] GET `/api/stream/:id/stream` - SSE endpoint
@@ -468,6 +494,7 @@ describeRoute({
    - One route module per resource type
    - Keep route files focused and cohesive
    - Extract complex logic to service functions
+   - When getting an entity by ID, check for "not found" errors and return 404 status
 
 3. **Documentation Quality**:
    - Write clear, actionable summaries
@@ -479,13 +506,13 @@ describeRoute({
    - Use `z.coerce` for query parameters
    - Validate request bodies with schemas
    - Type handler responses explicitly
-   - Avoid `any` types
+   - Avoid `any` types (use `z.unknown()` and handle them in the route handler)
 
 5. **Consistency**:
    - Use consistent naming conventions
    - Standardize error responses
    - Follow REST conventions
-   - Use proper HTTP status codes
+   - Use proper HTTP status codes (404 for not found, 409 for conflicts, etc.)
 
 ## Migrating CLI Components to Use OpenAPI Client
 
@@ -551,8 +578,8 @@ When implementing JSON output in Ink-based CLI components, use the `useStdout` h
 `console.log`:
 
 ```typescript
-import { useStdout } from "ink";
-import React from "react";
+import { Box, render, Text, useStdout } from "ink";
+import React from "react"; // Required for React.useEffect
 
 function JsonOutput({ data }: { data: any }) {
   const { write } = useStdout();
@@ -565,6 +592,8 @@ function JsonOutput({ data }: { data: any }) {
   return null;
 }
 ```
+
+**Important**: Always import `React` when using React hooks like `useEffect` in Ink components.
 
 ### CLI Migration Best Practices
 
@@ -614,7 +643,56 @@ export const handler = async (argv: { json?: boolean }) => {
     Deno.exit(1);
   }
 };
+
+// JSON output component using useStdout
+function JsonOutput({ workspaces }: { workspaces: WorkspaceResponse[] }) {
+  const { write } = useStdout();
+
+  React.useEffect(() => {
+    const output = JSON.stringify({ workspaces }, null, 2);
+    write(output);
+  }, [workspaces, write]);
+
+  return null;
+}
 ```
+
+### Handling Unmigrated Endpoints
+
+When a CLI command depends on endpoints that haven't been migrated yet:
+
+1. **Create placeholder types** for the unmigrated data:
+
+```typescript
+// Placeholder types for endpoints not yet migrated
+interface WorkspaceAgent {
+  id: string;
+  name: string;
+  type: string;
+}
+
+interface WorkspaceSignal {
+  id: string;
+  name: string;
+  type: string;
+}
+```
+
+2. **Use empty arrays** as placeholders:
+
+```typescript
+// Get additional workspace details - these endpoints aren't migrated yet
+const agents: WorkspaceAgent[] = [];
+const signals: WorkspaceSignal[] = [];
+
+// TODO: Update these when their endpoints are migrated to OpenAPI
+// const [agents, signals] = await Promise.all([
+//   client.GET("/api/workspaces/{workspaceId}/agents", { params: { path: { workspaceId } } }),
+//   client.GET("/api/workspaces/{workspaceId}/signals", { params: { path: { workspaceId } } }),
+// ]);
+```
+
+3. **Add TODOs** to track which endpoints need migration
 
 ## Testing Migration
 
@@ -627,6 +705,11 @@ After migrating routes:
 5. Run integration tests to ensure compatibility
 6. Verify no TypeScript errors in client code that uses the API
 7. Test CLI commands to ensure they work with the new OpenAPI client
+8. **Run linting** on all modified files:
+   ```bash
+   deno lint src/cli/commands/workspace/status.tsx
+   deno fmt src/cli/commands/workspace/status.tsx
+   ```
 
 ## Benefits
 
@@ -642,3 +725,33 @@ After implementation:
 
 - **OpenAPI Spec**: `http://localhost:8080/openapi.json`
 - **Interactive Docs**: `http://localhost:8080/openapi`
+
+## Migration Checklist Summary
+
+When migrating an endpoint, ensure you complete ALL of these steps:
+
+### Server-side:
+
+- [ ] Create/update route module with proper imports (`validator`, not `zValidator`)
+- [ ] Define Zod schemas using `z.unknown()` instead of `z.any()`
+- [ ] Implement routes with OpenAPI descriptions
+- [ ] Add proper error handling (404 for not found, etc.)
+- [ ] Update atlas-daemon.ts to remove inline implementation
+- [ ] Mount routes if new module
+
+### Client-side:
+
+- [ ] Generate OpenAPI client types: `cd packages/openapi-client && deno task generate`
+- [ ] Update CLI commands to use OpenAPI client
+- [ ] Use `useStdout` hook for JSON output (not `console.log`)
+- [ ] Import `React` when using React hooks
+- [ ] Create placeholder types for unmigrated endpoints
+- [ ] Add TODOs for unmigrated endpoint dependencies
+
+### Quality checks:
+
+- [ ] Run `deno lint` and fix all issues
+- [ ] Run `deno fmt` to format code
+- [ ] Test the endpoint via Scalar UI
+- [ ] Test the CLI command
+- [ ] Update migration checklist in this document
