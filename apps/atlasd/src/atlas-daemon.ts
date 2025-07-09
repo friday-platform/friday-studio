@@ -36,6 +36,7 @@ import { AtlasLogger } from "../../../src/utils/logger.ts";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
+import { workspacesRoutes } from "../routes/workspaces.ts";
 import { type AppContext, createApp } from "./factory.ts";
 
 export interface AtlasDaemonOptions {
@@ -44,9 +45,6 @@ export interface AtlasDaemonOptions {
   cors?: string | string[];
   maxConcurrentWorkspaces?: number;
   idleTimeoutMs?: number;
-  mcp?: {
-    mode?: ServerMode;
-  };
 }
 
 /**
@@ -286,20 +284,8 @@ export class AtlasDaemon implements AppContext {
     // Mount health routes
     this.app.route("/health", healthRoutes);
 
-    // List all registered workspaces
-    this.app.get("/api/workspaces", async (c) => {
-      try {
-        const manager = getWorkspaceManager();
-        const workspaces = await manager.listWorkspaces();
-        return c.json(workspaces);
-      } catch (error) {
-        return c.json({
-          error: `Failed to list workspaces: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
+    // Mount workspace routes
+    this.app.route("/api/workspaces", workspacesRoutes);
 
     // Get specific workspace info
     this.app.get("/api/workspaces/:workspaceId", async (c) => {

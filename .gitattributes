@@ -1,2 +1,3 @@
 # Auto-generated files should be marked as such for GitHub's linguist
 src/core/agents/remote/adapters/acp/types.gen.ts linguist-generated=true
+packages/openapi-client/src/atlasd-types.gen.d.ts linguist-generated=true
