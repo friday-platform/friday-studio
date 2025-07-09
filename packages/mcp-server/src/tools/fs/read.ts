@@ -8,7 +8,7 @@ const MAX_READ_SIZE = 250 * 1024;
 const DEFAULT_READ_LIMIT = 2000;
 const MAX_LINE_LENGTH = 2000;
 
-export function registerReadTool(server: McpServer, ctx: ToolContext) {
+export function registerReadTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_read",
     {

@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 
 Deno.test("Workspace Tools - create", () => {
   // TODO: Implement workspace create test

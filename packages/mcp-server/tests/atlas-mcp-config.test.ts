@@ -3,7 +3,7 @@
  * Covers the platform-wide MCP server settings in atlas.yml
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import type { AtlasConfig } from "@atlas/config";
 
 // Simple mock configs for testing (no inheritance needed)

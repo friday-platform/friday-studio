@@ -3,7 +3,7 @@
  * Covers integration between daemon API, MCP server, and workspace configuration
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { PlatformMCPServer } from "../src/platform-server.ts";
 import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../src/tools/utils.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";

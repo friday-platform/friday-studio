@@ -1,7 +1,0 @@
-version: 1.0.0
-workspace:
-  name: ai-agent-analysis
-  description: Workspace for analyzing AI agent repositories and generating trend reports
-jobs: {}
-signals: {}
-agents: {}

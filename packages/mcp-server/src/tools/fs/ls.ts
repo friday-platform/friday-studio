@@ -14,7 +14,7 @@ export const IGNORE_PATTERNS = [
 
 const LIMIT = 100;
 
-export function registerLsTool(server: McpServer, ctx: ToolContext) {
+export function registerLsTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_list",
     {

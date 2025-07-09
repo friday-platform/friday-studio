@@ -9,7 +9,7 @@ const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds
 const MAX_TIMEOUT = 120 * 1000; // 2 minutes
 
-export function registerFetchTool(server: McpServer, ctx: ToolContext) {
+export function registerFetchTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_fetch",
     {

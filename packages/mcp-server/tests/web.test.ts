@@ -1,4 +1,4 @@
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 
 Deno.test("Web Tools - fetch", () => {
   // TODO: Implement web fetch test

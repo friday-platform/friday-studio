@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { createMCPClient } from "./fixtures/mcp-client.ts";
 
 Deno.test("Filesystem Tools - glob", async () => {

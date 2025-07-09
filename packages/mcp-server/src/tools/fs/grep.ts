@@ -76,7 +76,7 @@ async function runGrep(
   }
 }
 
-export function registerGrepTool(server: McpServer, ctx: ToolContext) {
+export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_grep",
     {

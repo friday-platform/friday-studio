@@ -5,7 +5,7 @@ import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerGlobTool(server: McpServer, ctx: ToolContext) {
+export function registerGlobTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_glob",
     {

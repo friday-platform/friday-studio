@@ -6,7 +6,7 @@ import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerWriteTool(server: McpServer, ctx: ToolContext) {
+export function registerWriteTool(server: McpServer, _ctx: ToolContext) {
   server.registerTool(
     "atlas_write",
     {

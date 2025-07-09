@@ -1,9 +1,0 @@
-version: 1.0.0
-workspace:
-  name: getting-started
-  description: >-
-    First Atlas workspace for exploring AI agent collaboration and workflow
-    creation
-jobs: {}
-signals: {}
-agents: {}
