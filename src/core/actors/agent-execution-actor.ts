@@ -177,7 +177,7 @@ export class AgentExecutionActor {
    * - If workspaceId is undefined: load global atlas.yml config from WorkspaceManager
    */
   private async loadWorkspaceConfig() {
-    const workspaceManager = getWorkspaceManager();
+    const workspaceManager = await getWorkspaceManager();
 
     if (!this.workspaceId) {
       // No workspace ID means we're in the global workspace (atlas.yml only)
@@ -192,7 +192,7 @@ export class AgentExecutionActor {
       return atlasConfig;
     } else {
       // Load specific workspace config from WorkspaceManager (already loaded and cached)
-      const workspaceConfig = await workspaceManager.getWorkspaceConfigBySlug(this.workspaceId);
+      const workspaceConfig = await workspaceManager.find({ id: this.workspaceId });
       if (!workspaceConfig) {
         throw new Error(`Workspace configuration not found: ${this.workspaceId}`);
       }

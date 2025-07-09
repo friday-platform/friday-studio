@@ -467,7 +467,7 @@ export class SessionSupervisorActor {
 
   // Helper methods
   private async loadWorkspaceConfig(): Promise<WorkspaceConfig> {
-    const workspaceManager = getWorkspaceManager();
+    const workspaceManager = await getWorkspaceManager();
 
     if (!this.workspaceId) {
       const atlasConfig = await workspaceManager.getAtlasConfig();

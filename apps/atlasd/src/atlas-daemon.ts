@@ -758,7 +758,7 @@ export class AtlasDaemon implements AppContext {
     // Refresh atlas config cache
     this.app.post("/api/atlas/refresh-config", async (c) => {
       try {
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         await manager.refreshAtlasConfig();
         return c.json({ message: "Atlas config cache refreshed" });
       } catch (error) {
