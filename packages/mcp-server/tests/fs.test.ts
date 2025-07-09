@@ -19,7 +19,7 @@ Deno.test("Filesystem Tools - glob", async () => {
     try {
       // Test glob pattern for JavaScript files
       const result = await client.callTool({
-        name: "atlas:glob",
+        name: "atlas_glob",
         arguments: {
           pattern: "**/*.js",
           path: testDir,
@@ -63,7 +63,7 @@ Deno.test("Filesystem Tools - grep", async () => {
     try {
       // Test grep for "hello" pattern
       const result = await client.callTool({
-        name: "atlas:grep",
+        name: "atlas_grep",
         arguments: {
           pattern: "hello",
           path: testDir,
@@ -85,7 +85,7 @@ Deno.test("Filesystem Tools - grep", async () => {
 
       // Test with file pattern filter
       const filteredResult = await client.callTool({
-        name: "atlas:grep",
+        name: "atlas_grep",
         arguments: {
           pattern: "hello",
           path: testDir,
@@ -125,7 +125,7 @@ Deno.test("Filesystem Tools - ls", async () => {
     try {
       // Call the atlas:list tool
       const result = await client.callTool({
-        name: "atlas:list",
+        name: "atlas_list",
         arguments: {
           path: testDir,
           ignore: [],
@@ -147,7 +147,7 @@ Deno.test("Filesystem Tools - ls", async () => {
 
       // Test with ignore patterns
       const ignoredResult = await client.callTool({
-        name: "atlas:list",
+        name: "atlas_list",
         arguments: {
           path: testDir,
           ignore: ["*.js"],
@@ -183,7 +183,7 @@ Deno.test("Filesystem Tools - read", async () => {
     try {
       // Test reading the entire file
       const result = await client.callTool({
-        name: "atlas:read",
+        name: "atlas_read",
         arguments: {
           filePath: testFile,
         },
@@ -204,7 +204,7 @@ Deno.test("Filesystem Tools - read", async () => {
 
       // Test reading with limit
       const limitedResult = await client.callTool({
-        name: "atlas:read",
+        name: "atlas_read",
         arguments: {
           filePath: testFile,
           limit: 2,
@@ -238,7 +238,7 @@ Deno.test("Filesystem Tools - write", async () => {
     try {
       // Test writing a new file
       const result = await client.callTool({
-        name: "atlas:write",
+        name: "atlas_write",
         arguments: {
           filePath: testFile,
           content: "Hello, World!\nThis is a test file.",
@@ -261,7 +261,7 @@ Deno.test("Filesystem Tools - write", async () => {
 
       // Test overwriting the file
       const overwriteResult = await client.callTool({
-        name: "atlas:write",
+        name: "atlas_write",
         arguments: {
           filePath: testFile,
           content: "Updated content",

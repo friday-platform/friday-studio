@@ -6,7 +6,7 @@ Deno.test("Drafts Tools - list", async () => {
 
   try {
     const result = await client.callTool({
-      name: "atlas:drafts_list",
+      name: "atlas_drafts_list",
       arguments: {},
     });
 
@@ -41,7 +41,7 @@ Deno.test("Drafts Tools - create", async () => {
     };
 
     const result = await client.callTool({
-      name: "atlas:drafts_create",
+      name: "atlas_drafts_create",
       arguments: testDraft,
     });
 
@@ -64,7 +64,7 @@ Deno.test("Drafts Tools - create", async () => {
     if (createdDraftId) {
       try {
         await client.callTool({
-          name: "atlas:drafts_delete",
+          name: "atlas_drafts_delete",
           arguments: {
             id: createdDraftId,
           },
@@ -83,7 +83,7 @@ Deno.test("Drafts Tools - show", async () => {
   try {
     // First list drafts to get an ID
     const listResult = await client.callTool({
-      name: "atlas:drafts_list",
+      name: "atlas_drafts_list",
       arguments: {},
     });
 
@@ -95,7 +95,7 @@ Deno.test("Drafts Tools - show", async () => {
       const draftId = listData.drafts[0].id;
 
       const result = await client.callTool({
-        name: "atlas:drafts_show",
+        name: "atlas_drafts_show",
         arguments: {
           id: draftId,
         },
@@ -124,7 +124,7 @@ Deno.test("Drafts Tools - update", async () => {
   try {
     // First create a draft
     const createResult = await client.callTool({
-      name: "atlas:drafts_create",
+      name: "atlas_drafts_create",
       arguments: {
         name: `test-update-draft-${Date.now()}`,
         content: "Original content",
@@ -141,7 +141,7 @@ Deno.test("Drafts Tools - update", async () => {
 
     // Now update it
     const result = await client.callTool({
-      name: "atlas:drafts_update",
+      name: "atlas_drafts_update",
       arguments: {
         id: draftId,
         content: "Updated content",
@@ -164,7 +164,7 @@ Deno.test("Drafts Tools - update", async () => {
     if (createdDraftId) {
       try {
         await client.callTool({
-          name: "atlas:drafts_delete",
+          name: "atlas_drafts_delete",
           arguments: {
             id: createdDraftId,
           },
@@ -183,7 +183,7 @@ Deno.test("Drafts Tools - validate", async () => {
   try {
     // First list drafts to get an ID
     const listResult = await client.callTool({
-      name: "atlas:drafts_list",
+      name: "atlas_drafts_list",
       arguments: {},
     });
 
@@ -195,7 +195,7 @@ Deno.test("Drafts Tools - validate", async () => {
       const draftId = listData.drafts[0].id;
 
       const result = await client.callTool({
-        name: "atlas:drafts_validate",
+        name: "atlas_drafts_validate",
         arguments: {
           id: draftId,
         },
@@ -223,7 +223,7 @@ Deno.test("Drafts Tools - publish", async () => {
   try {
     // First create a draft
     const createResult = await client.callTool({
-      name: "atlas:drafts_create",
+      name: "atlas_drafts_create",
       arguments: {
         name: `test-publish-draft-${Date.now()}`,
         content: "Content to publish",
@@ -239,7 +239,7 @@ Deno.test("Drafts Tools - publish", async () => {
     createdDraftId = draftId;
 
     const result = await client.callTool({
-      name: "atlas:drafts_publish",
+      name: "atlas_drafts_publish",
       arguments: {
         id: draftId,
       },
@@ -259,12 +259,12 @@ Deno.test("Drafts Tools - publish", async () => {
     if (createdDraftId) {
       try {
         await client.callTool({
-          name: "atlas:drafts_delete",
+          name: "atlas_drafts_delete",
           arguments: {
             id: createdDraftId,
           },
         });
-      } catch (error) {
+      } catch (_) {
         // Ignore errors - draft might have been deleted by publish
       }
     }
@@ -278,7 +278,7 @@ Deno.test("Drafts Tools - delete", async () => {
   try {
     // First create a draft
     const createResult = await client.callTool({
-      name: "atlas:drafts_create",
+      name: "atlas_drafts_create",
       arguments: {
         name: `test-delete-draft-${Date.now()}`,
         content: "Content to delete",
@@ -293,7 +293,7 @@ Deno.test("Drafts Tools - delete", async () => {
     const draftId = createData.draft.id;
 
     const result = await client.callTool({
-      name: "atlas:drafts_delete",
+      name: "atlas_drafts_delete",
       arguments: {
         id: draftId,
       },

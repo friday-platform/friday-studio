@@ -18,20 +18,11 @@ export async function createMCPClient() {
   return { client, transport };
 }
 
-// Helper function to clean up test resources
-export async function safeCleanup(client: Client, cleanupFn: () => Promise<void>) {
-  try {
-    await cleanupFn();
-  } catch (error) {
-    console.warn("Cleanup failed:", error);
-  }
-}
-
 // Helper to delete workspace safely
 export async function deleteWorkspace(client: Client, workspaceId: string) {
   try {
     await client.callTool({
-      name: "atlas:workspace_delete",
+      name: "atlas_workspace_delete",
       arguments: { workspaceId },
     });
   } catch (error) {
@@ -43,7 +34,7 @@ export async function deleteWorkspace(client: Client, workspaceId: string) {
 export async function deleteDraft(client: Client, draftId: string) {
   try {
     await client.callTool({
-      name: "atlas:drafts_delete",
+      name: "atlas_drafts_delete",
       arguments: { id: draftId },
     });
   } catch (error) {

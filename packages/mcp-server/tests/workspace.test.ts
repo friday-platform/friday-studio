@@ -6,7 +6,7 @@ Deno.test("Workspace Tools - list", async () => {
 
   try {
     const result = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -34,7 +34,7 @@ Deno.test("Workspace Tools - describe", async () => {
   try {
     // First get a workspace to describe
     const listResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -46,7 +46,7 @@ Deno.test("Workspace Tools - describe", async () => {
       const workspaceId = listData.workspaces[0].id;
 
       const result = await client.callTool({
-        name: "atlas:workspace_describe",
+        name: "atlas_workspace_describe",
         arguments: {
           workspaceId: workspaceId,
         },
@@ -79,7 +79,7 @@ Deno.test("Workspace Tools - create", async () => {
 
     try {
       const result = await client.callTool({
-        name: "atlas:workspace_create",
+        name: "atlas_workspace_create",
         arguments: {
           name: testWorkspaceName,
           path: testPath,
@@ -109,7 +109,7 @@ Deno.test("Workspace Tools - create", async () => {
     if (createdWorkspaceId) {
       try {
         await client.callTool({
-          name: "atlas:workspace_delete",
+          name: "atlas_workspace_delete",
           arguments: {
             workspaceId: createdWorkspaceId,
           },
@@ -133,7 +133,7 @@ Deno.test("Workspace Tools - delete", async () => {
 
     try {
       const createResult = await client.callTool({
-        name: "atlas:workspace_create",
+        name: "atlas_workspace_create",
         arguments: {
           name: testWorkspaceName,
           path: testPath,
@@ -150,7 +150,7 @@ Deno.test("Workspace Tools - delete", async () => {
 
       // Now delete the workspace
       const deleteResult = await client.callTool({
-        name: "atlas:workspace_delete",
+        name: "atlas_workspace_delete",
         arguments: {
           workspaceId: workspaceId,
         },
@@ -176,7 +176,7 @@ Deno.test("Workspace Tools - delete", async () => {
     if (createdWorkspaceId) {
       try {
         await client.callTool({
-          name: "atlas:workspace_delete",
+          name: "atlas_workspace_delete",
           arguments: {
             workspaceId: createdWorkspaceId,
           },

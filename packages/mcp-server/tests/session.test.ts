@@ -9,7 +9,7 @@ Deno.test("Session Tools - describe", async () => {
     const mockSessionId = "test-session-123";
 
     const result = await client.callTool({
-      name: "atlas:session_describe",
+      name: "atlas_session_describe",
       arguments: {
         sessionId: mockSessionId,
       },
@@ -36,7 +36,7 @@ Deno.test("Session Tools - cancel", async () => {
     const mockSessionId = "test-session-cancel-123";
 
     const result = await client.callTool({
-      name: "atlas:session_cancel",
+      name: "atlas_session_cancel",
       arguments: {
         sessionId: mockSessionId,
       },

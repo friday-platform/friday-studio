@@ -7,7 +7,7 @@ Deno.test("Agents Tools - list", async () => {
   try {
     // First get a workspace ID
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -19,7 +19,7 @@ Deno.test("Agents Tools - list", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const result = await client.callTool({
-        name: "atlas:workspace_agents_list",
+        name: "atlas_workspace_agents_list",
         arguments: {
           workspaceId: workspaceId,
         },
@@ -49,7 +49,7 @@ Deno.test("Agents Tools - describe", async () => {
   try {
     // First get a workspace and agent
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -61,7 +61,7 @@ Deno.test("Agents Tools - describe", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const agentsResult = await client.callTool({
-        name: "atlas:workspace_agents_list",
+        name: "atlas_workspace_agents_list",
         arguments: { workspaceId: workspaceId },
       });
 
@@ -73,7 +73,7 @@ Deno.test("Agents Tools - describe", async () => {
         const agentName = agentsData.agents[0].name;
 
         const result = await client.callTool({
-          name: "atlas:workspace_agents_describe",
+          name: "atlas_workspace_agents_describe",
           arguments: {
             workspaceId: workspaceId,
             agentId: agentName,

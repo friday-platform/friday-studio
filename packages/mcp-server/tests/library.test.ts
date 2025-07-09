@@ -6,7 +6,7 @@ Deno.test("Library Tools - list", async () => {
 
   try {
     const result = await client.callTool({
-      name: "atlas:library_list",
+      name: "atlas_library_list",
       arguments: {
         limit: 10,
       },
@@ -40,7 +40,7 @@ Deno.test("Library Tools - get", async () => {
   try {
     // First list items to get an ID
     const listResult = await client.callTool({
-      name: "atlas:library_list",
+      name: "atlas_library_list",
       arguments: { limit: 1 },
     });
 
@@ -52,7 +52,7 @@ Deno.test("Library Tools - get", async () => {
       const itemId = listData.items[0].id;
 
       const result = await client.callTool({
-        name: "atlas:library_get",
+        name: "atlas_library_get",
         arguments: {
           itemId: itemId,
         },
@@ -83,7 +83,7 @@ Deno.test("Library Tools - stats", async () => {
 
   try {
     const result = await client.callTool({
-      name: "atlas:library_stats",
+      name: "atlas_library_stats",
       arguments: {},
     });
 
@@ -108,7 +108,7 @@ Deno.test("Library Tools - store", async () => {
     const testContent = "This is test content for the library";
 
     const result = await client.callTool({
-      name: "atlas:library_store",
+      name: "atlas_library_store",
       arguments: {
         name: `test-item-${Date.now()}`,
         content: testContent,
@@ -137,7 +137,7 @@ Deno.test("Library Tools - templates", async () => {
 
   try {
     const result = await client.callTool({
-      name: "atlas:library_templates",
+      name: "atlas_library_templates",
       arguments: {},
     });
 

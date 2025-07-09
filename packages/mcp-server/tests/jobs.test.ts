@@ -7,7 +7,7 @@ Deno.test("Jobs Tools - list", async () => {
   try {
     // First get a workspace ID
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -19,7 +19,7 @@ Deno.test("Jobs Tools - list", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const result = await client.callTool({
-        name: "atlas:workspace_jobs_list",
+        name: "atlas_workspace_jobs_list",
         arguments: {
           workspaceId: workspaceId,
         },
@@ -50,7 +50,7 @@ Deno.test("Jobs Tools - describe", async () => {
   try {
     // First get a workspace and job
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -62,7 +62,7 @@ Deno.test("Jobs Tools - describe", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const jobsResult = await client.callTool({
-        name: "atlas:workspace_jobs_list",
+        name: "atlas_workspace_jobs_list",
         arguments: { workspaceId: workspaceId },
       });
 
@@ -74,7 +74,7 @@ Deno.test("Jobs Tools - describe", async () => {
         const jobName = jobsData.jobs[0].name;
 
         const result = await client.callTool({
-          name: "atlas:workspace_jobs_describe",
+          name: "atlas_workspace_jobs_describe",
           arguments: {
             workspaceId: workspaceId,
             jobName: jobName,

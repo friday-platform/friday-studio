@@ -7,7 +7,7 @@ Deno.test("Signals Tools - list", async () => {
   try {
     // First get a workspace ID
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -19,7 +19,7 @@ Deno.test("Signals Tools - list", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const result = await client.callTool({
-        name: "atlas:workspace_signals_list",
+        name: "atlas_workspace_signals_list",
         arguments: {
           workspaceId: workspaceId,
         },
@@ -49,7 +49,7 @@ Deno.test("Signals Tools - trigger", async () => {
   try {
     // First get a workspace ID
     const workspaceResult = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -61,7 +61,7 @@ Deno.test("Signals Tools - trigger", async () => {
       const workspaceId = workspaceData.workspaces[0].id;
 
       const result = await client.callTool({
-        name: "atlas:workspace_signals_trigger",
+        name: "atlas_workspace_signals_trigger",
         arguments: {
           workspaceId: workspaceId,
           signalName: "test-signal",

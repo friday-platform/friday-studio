@@ -6,7 +6,7 @@ export async function cleanupTestWorkspaces() {
   try {
     // Get all workspaces
     const result = await client.callTool({
-      name: "atlas:workspace_list",
+      name: "atlas_workspace_list",
       arguments: {},
     });
 
@@ -15,7 +15,7 @@ export async function cleanupTestWorkspaces() {
     const data = JSON.parse(textContent!.text);
 
     // Find test workspaces
-    const testWorkspaces = data.workspaces.filter((ws: any) =>
+    const testWorkspaces = data.workspaces.filter((ws: { name: string }) =>
       ws.name.includes("test-workspace") || ws.name.includes("test-delete-workspace")
     );
 
@@ -25,7 +25,7 @@ export async function cleanupTestWorkspaces() {
     for (const workspace of testWorkspaces) {
       try {
         await client.callTool({
-          name: "atlas:workspace_delete",
+          name: "atlas_workspace_delete",
           arguments: {
             workspaceId: workspace.id,
           },

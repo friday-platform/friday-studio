@@ -7,7 +7,7 @@ Deno.test("Web Tools - fetch", async () => {
   try {
     // Test fetching a simple web page
     const result = await client.callTool({
-      name: "atlas:fetch",
+      name: "atlas_fetch",
       arguments: {
         url: "https://httpbin.org/json",
         format: "text",
@@ -33,7 +33,7 @@ Deno.test("Web Tools - fetch", async () => {
 
     // Test with markdown format
     const markdownResult = await client.callTool({
-      name: "atlas:fetch",
+      name: "atlas_fetch",
       arguments: {
         url: "https://httpbin.org/html",
         format: "markdown",
