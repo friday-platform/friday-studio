@@ -17,3 +17,36 @@ export async function createMCPClient() {
 
   return { client, transport };
 }
+
+// Helper function to clean up test resources
+export async function safeCleanup(client: Client, cleanupFn: () => Promise<void>) {
+  try {
+    await cleanupFn();
+  } catch (error) {
+    console.warn("Cleanup failed:", error);
+  }
+}
+
+// Helper to delete workspace safely
+export async function deleteWorkspace(client: Client, workspaceId: string) {
+  try {
+    await client.callTool({
+      name: "atlas:workspace_delete",
+      arguments: { workspaceId },
+    });
+  } catch (error) {
+    console.warn(`Failed to delete workspace ${workspaceId}:`, error);
+  }
+}
+
+// Helper to delete draft safely
+export async function deleteDraft(client: Client, draftId: string) {
+  try {
+    await client.callTool({
+      name: "atlas:drafts_delete",
+      arguments: { id: draftId },
+    });
+  } catch (error) {
+    console.warn(`Failed to delete draft ${draftId}:`, error);
+  }
+}
