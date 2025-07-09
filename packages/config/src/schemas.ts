@@ -35,7 +35,7 @@ export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
 export type MCPToolsConfig = z.infer<typeof MCPToolsConfigSchema>;
 
 // Agent type schema
-export const AgentTypeSchema = z.enum(["tempest", "llm", "remote"]);
+export const AgentTypeSchema = z.enum(["system", "llm", "remote"]);
 
 // Environment variable configuration schema
 export const EnvironmentVariableSchema = z.union([
@@ -270,7 +270,7 @@ export const WorkspaceAgentConfigSchema = z
         }),
       ])
       .optional(), // Tool choice control
-    // Tempest agent specific
+    // System agent specific
     agent: z.string().optional(),
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
@@ -302,11 +302,11 @@ export const WorkspaceAgentConfigSchema = z
   })
   .superRefine((value, ctx) => {
     // Type-specific validation with detailed error messages
-    if (value.type === "tempest") {
+    if (value.type === "system") {
       if (!value.agent) {
         ctx.addIssue({
           code: "custom",
-          message: "Tempest agents require 'agent' field",
+          message: "System agents require 'agent' field",
           path: ["agent"],
           input: value,
         });
@@ -314,7 +314,7 @@ export const WorkspaceAgentConfigSchema = z
       if (!value.version) {
         ctx.addIssue({
           code: "custom",
-          message: "Tempest agents require 'version' field",
+          message: "System agents require 'version' field",
           path: ["version"],
           input: value,
         });

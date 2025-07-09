@@ -282,6 +282,17 @@ private configService: ConfigService;
   - [x] Store metadata in Deno KV during daemon initialization
   - [x] Support system agent type "tempest" in configuration
 
+- [x] **COMPLETED**: Atlas Config Registration & Centralization (NEW - Foundation for Phase 2)
+  - [x] Fix AtlasConfig schema to be true superset of WorkspaceConfig
+  - [x] Add atlas.yml discovery and registration in WorkspaceManager
+  - [x] Implement centralized atlas config caching in KV storage with hash-based change detection
+  - [x] Add global workspace support to AgentExecutionActor (workspaceId: undefined)
+  - [x] Add CLI integration: --atlas-config flag and ATLAS_CONFIG_PATH env var
+  - [x] Add /api/atlas/refresh-config HTTP endpoint
+  - [x] Eliminate repeated loadAtlasConfig() filesystem reads across codebase
+  - [x] Use WorkspaceManager as centralized configuration authority (replaces need for separate
+        ConfigService)
+
 - [ ] **NEXT**: Session-level actor migration
   - [ ] Migrate `src/core/workers/session-supervisor-worker.ts` →
         `src/core/actors/session-supervisor-actor.ts`
@@ -299,15 +310,17 @@ private configService: ConfigService;
   - [ ] Update `src/core/workspace-runtime.ts` to use ActorSystem instead of WorkerManager
   - [ ] Update `src/core/supervisor.ts` to work with actors instead of workers
 
-### **Phase 2: Configuration Service Centralization**
+### **Phase 2: Configuration Service Centralization (SIMPLIFIED - Partially Completed)**
 
-- [ ] Create `packages/config/src/config-service.ts` with core methods
-- [ ] Update `src/core/daemon-capabilities.ts` to register ConfigService
-- [ ] Update `src/core/workspace-runtime.ts` to inject ConfigService
-- [ ] Update `src/core/workspace-manager.ts` to use ConfigService
-- [ ] Update `src/core/agent-loader.ts` to use ConfigService
-- [ ] Update actor files to query config on-demand
-- [ ] Test configuration access patterns and caching
+- [x] **COMPLETED**: Enhanced WorkspaceManager as centralized configuration authority
+  - [x] Atlas config registration, caching, and retrieval
+  - [x] Hash-based change detection and refresh capabilities
+  - [x] KV storage integration with proper error handling
+  - [x] AgentExecutionActor using centralized config access
+- [ ] **REMAINING**: Update remaining components to use WorkspaceManager for config access
+  - [ ] Update remaining actor files to query config on-demand via WorkspaceManager
+  - [ ] Remove remaining direct ConfigLoader usage across codebase
+  - [ ] Update federation and MCP components to use cached configs
 
 ### **Phase 3: Supporting Infrastructure Updates**
 

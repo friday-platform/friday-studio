@@ -459,9 +459,9 @@ export class ConfigLoader {
     workspaceAgentConfig: WorkspaceAgentConfig,
   ): AgentConfig {
     switch (workspaceAgentConfig.type) {
-      case "tempest":
+      case "system":
         return {
-          type: "tempest",
+          type: "system",
           agent: workspaceAgentConfig.agent!,
           version: workspaceAgentConfig.version!,
           config: workspaceAgentConfig.config,

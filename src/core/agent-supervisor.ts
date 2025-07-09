@@ -443,7 +443,7 @@ Focus on safety, efficiency, and reliability.`;
 
     if (agent.type === "remote") {
       timeoutSeconds = 600; // Remote agents may need more time
-    } else if (agent.type === "tempest") {
+    } else if (agent.type === "system") {
       memoryMb = 512; // Tempest agents may need more memory
     }
 
@@ -608,7 +608,7 @@ Focus on safety, efficiency, and reliability.`;
             remoteConfig.acp.health_check_interval;
         }
       }
-    } else if (agent.type === "tempest") {
+    } else if (agent.type === "system") {
       // Access tempest-specific fields directly from agent.config
       if (agent.config.agent) {
         environment.agent_config.parameters.agent = agent.config.agent;
@@ -632,7 +632,7 @@ Focus on safety, efficiency, and reliability.`;
     if (agent.type === "llm") {
       const llmConfig = agent.config as LLMAgentConfig;
       agentTools = llmConfig.tools;
-    } else if (agent.type === "tempest") {
+    } else if (agent.type === "system") {
       agentTools = agent.config.tools;
     }
 

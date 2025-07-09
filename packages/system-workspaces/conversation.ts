@@ -136,7 +136,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
   },
   agents: {
     "conversation-agent": {
-      type: "tempest",
+      type: "system",
       agent: "conversation-agent",
       version: "1.0.0",
       config: {

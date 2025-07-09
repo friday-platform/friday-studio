@@ -92,10 +92,10 @@ export interface JobStage {
 }
 
 // Agent type definitions
-export type AgentType = "tempest" | "llm" | "remote";
+export type AgentType = "system" | "llm" | "remote";
 
 export interface TempestAgentConfig {
-  type: "tempest";
+  type: "system";
   agent: string; // Catalog reference
   version: string;
   config?: Record<string, any>;
@@ -203,7 +203,7 @@ export type AgentMetadata =
     capabilities?: string[];
   }
   & (
-    | { type: "tempest"; config: TempestAgentConfig }
+    | { type: "system"; config: TempestAgentConfig }
     | { type: "llm"; config: LLMAgentConfig }
     | { type: "remote"; config: RemoteAgentConfig }
   );
@@ -1630,7 +1630,7 @@ Create a well-formatted task following the specified format requirements.`;
 - Suggest optimal next steps or recommendations
 - Include reasoning behind any conclusions`;
 
-      case "tempest":
+      case "system":
         return `For Tempest agents:
 - Synthesize multiple data sources if available
 - Create structured output in the requested format
@@ -1706,7 +1706,7 @@ Create a well-formatted task following the specified format requirements.`;
     } else if (agent.type === "remote") {
       capabilities += `- Remote operations via ${agent.config?.protocol || "custom"} protocol\n`;
       capabilities += `- Handles external system interactions\n`;
-    } else if (agent.type === "tempest") {
+    } else if (agent.type === "system") {
       capabilities += `- Specialized first-party agent\n`;
       capabilities += `- Pre-built functionality and tools\n`;
     }

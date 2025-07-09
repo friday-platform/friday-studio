@@ -82,7 +82,7 @@ export class ConversationAgent extends BaseAgent {
   }
 
   provider(): string {
-    return "tempest";
+    return "system";
   }
 
   purpose(): string {

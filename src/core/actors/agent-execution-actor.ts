@@ -59,7 +59,7 @@ export class AgentExecutionActor {
     // Dispatch based on agent type - simple orchestration
     let result: unknown;
     switch (agentConfig.type) {
-      case "tempest": // System agents in schema
+      case "system": // System agents in schema
         result = await this.executeSystemAgent(agentConfig, data);
         break;
       case "llm":
