@@ -118,7 +118,7 @@ workspacesRoutes.get(
   }),
   async (c) => {
     try {
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
       const workspaces = await manager.listWorkspaces();
       return c.json(workspaces);
     } catch (error) {
@@ -171,8 +171,15 @@ workspacesRoutes.get(
     const { workspaceId } = c.req.valid("param");
 
     try {
-      const manager = getWorkspaceManager();
-      const workspace = await manager.describeWorkspace(workspaceId);
+      const manager = await getWorkspaceManager();
+      const workspace = await manager.getWorkspace(workspaceId);
+
+      if (!workspace) {
+        return c.json({
+          error: `Workspace not found: ${workspaceId}`,
+        }, 404);
+      }
+
       return c.json(workspace);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);

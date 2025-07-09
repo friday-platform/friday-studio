@@ -11,7 +11,7 @@ import {
   type WorkspaceEntry,
   WorkspaceEntrySchema,
   WorkspaceStatus,
-} from "../workspace-registry-types.ts";
+} from "../workspace-manager.ts";
 import { type WorkspaceConfig } from "@atlas/config";
 
 /**

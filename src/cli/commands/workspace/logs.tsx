@@ -80,14 +80,14 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: LogsArgs): Promise<void> => {
   try {
-    const registry = getWorkspaceManager();
+    const registry = await getWorkspaceManager();
     await registry.initialize();
 
     // Resolve workspace ID
     let workspaceId: string;
     if (!argv.workspace) {
       // Try to get current workspace
-      const workspace = await registry.getCurrentWorkspace();
+      const workspace = await registry.findByPath(Deno.cwd());
       if (!workspace) {
         throw new Error("No workspace specified and not in a workspace directory");
       }

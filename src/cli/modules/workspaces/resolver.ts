@@ -8,7 +8,7 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   workspace: { path: string; id: string; name: string };
   config: WorkspaceConfig;
 }> {
-  const registry = getWorkspaceManager();
+  const registry = await getWorkspaceManager();
   await registry.initialize();
 
   let workspacePath = Deno.cwd();
@@ -41,8 +41,7 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
     }
 
     // Try to find in registry or register
-    const currentWorkspace = (await registry.getCurrentWorkspace()) ||
-      (await registry.findOrRegisterWorkspace(Deno.cwd()));
+    const currentWorkspace = await registry.registerWorkspace(Deno.cwd());
 
     workspaceInfo = {
       path: currentWorkspace.path,
@@ -69,7 +68,7 @@ export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promi
   workspace: { path: string; id: string; name: string };
   config: WorkspaceConfig;
 }> {
-  const registry = getWorkspaceManager();
+  const registry = await getWorkspaceManager();
   await registry.initialize();
   const targetWorkspace = await registry.findById(workspaceId);
 
@@ -97,7 +96,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
   id: string;
   name: string;
 }> {
-  const registry = getWorkspaceManager();
+  const registry = await getWorkspaceManager();
   await registry.initialize();
 
   if (workspaceId) {
@@ -119,7 +118,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
     };
   } else {
     // Try current directory
-    const currentWorkspace = await registry.getCurrentWorkspace();
+    const currentWorkspace = await registry.findByPath(Deno.cwd());
 
     if (currentWorkspace) {
       return {
@@ -132,7 +131,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
     // Fallback to checking for workspace.yml in current directory
     if (await exists("workspace.yml")) {
       // Register this workspace if not already registered
-      const workspace = await registry.findOrRegisterWorkspace(Deno.cwd());
+      const workspace = await registry.registerWorkspace(Deno.cwd());
       return {
         path: workspace.path,
         id: workspace.id,

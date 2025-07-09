@@ -25,10 +25,7 @@ import {
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import {
-  getWorkspaceManager,
-  type WorkspaceCreateConfig,
-} from "../../../src/core/workspace-manager.ts";
+import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
@@ -100,7 +97,7 @@ export class AtlasDaemon implements AppContext {
 
     // Initialize WorkspaceManager singleton (with auto-import)
     logger.info("Initializing WorkspaceManager...");
-    const manager = getWorkspaceManager();
+    const manager = await getWorkspaceManager();
     await manager.initialize();
 
     // NEW: Register system workspaces
@@ -146,37 +143,20 @@ export class AtlasDaemon implements AppContext {
     const wakeupCallback: WorkspaceWakeupCallback = async (
       workspaceId: string,
       signalId: string,
-      signalData: any,
+      signalData: unknown,
     ) => {
       logger.info("CronManager waking up workspace for timer signal", {
         workspaceId,
         signalId,
-        timestamp: signalData.timestamp,
+        timestamp: (signalData as Record<string, unknown>)?.timestamp,
       });
 
       try {
         // Get or create workspace runtime (this will wake up the workspace)
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-        // Process the timer signal - create proper IWorkspaceSignal compliant object
-        const signal = {
-          id: signalId,
-          timestamp: new Date().toISOString(),
-          // Add required provider property for IWorkspaceSignal compliance
-          provider: {
-            id: "cron-scheduler",
-            name: "cron-scheduler",
-          },
-          // Add required methods to satisfy IWorkspaceSignal interface
-          trigger: async () => {
-            // Minimal implementation - no-op for timer signals
-          },
-          configure: () => {
-            // Minimal implementation - no-op for timer signals
-          },
-        } as any;
-
-        await runtime.processSignal(signal, signalData.data);
+        // Process the timer signal using triggerSignal which handles signal creation
+        await runtime.triggerSignal(signalId, (signalData as Record<string, unknown>)?.data);
 
         logger.info("Timer signal processed successfully", { workspaceId, signalId });
       } catch (error) {
@@ -285,20 +265,12 @@ export class AtlasDaemon implements AppContext {
     // Mount workspace routes
     this.app.route("/api/workspaces", workspacesRoutes);
 
-    // Create a new workspace
-    this.app.post("/api/workspaces", async (c) => {
-      try {
-        const body = await c.req.json() as WorkspaceCreateConfig;
-        const manager = getWorkspaceManager();
-        const result = await manager.createWorkspace(body);
-        return c.json(result, 201);
-      } catch (error) {
-        return c.json({
-          error: `Failed to create workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
+    // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
+    this.app.post("/api/workspaces", (c) => {
+      return c.json({
+        error:
+          "Direct workspace creation not supported. Use /api/workspaces/create-from-template or /api/workspaces/create-from-config instead.",
+      }, 400);
     });
 
     // Delete a workspace
@@ -310,7 +282,7 @@ export class AtlasDaemon implements AppContext {
         // Unregister cron signals before deleting workspace
         await this.unregisterWorkspaceCronSignals(workspaceId);
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         await manager.deleteWorkspace(workspaceId, force);
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {
@@ -377,7 +349,7 @@ export class AtlasDaemon implements AppContext {
           }
         }
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
 
         // Check if workspace already exists at this path
         const existingByPath = await manager.findByPath(path);
@@ -438,7 +410,7 @@ export class AtlasDaemon implements AppContext {
           return c.json({ error: "Paths array is required" }, 400);
         }
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const results: {
           added: Array<{
             id: string;
@@ -632,7 +604,7 @@ export class AtlasDaemon implements AppContext {
         await this.templateAdapter.copyTemplate(templateId, path, replacements);
 
         // Register the new workspace
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const entry = await manager.registerWorkspace(path, {
           name,
           description: `Created from ${templateId} template`,
@@ -736,7 +708,7 @@ export class AtlasDaemon implements AppContext {
         await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
 
         // Register the new workspace
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const entry = await manager.registerWorkspace(workspacePath, {
           name,
           description,
@@ -766,8 +738,8 @@ export class AtlasDaemon implements AppContext {
       const workspaceId = c.req.param("workspaceId");
 
       try {
-        const manager = getWorkspaceManager();
-        await manager.refreshWorkspaceConfig(workspaceId);
+        const manager = await getWorkspaceManager();
+        await manager.refreshConfig(workspaceId);
         return c.json({ message: `Workspace ${workspaceId} config cache refreshed` });
       } catch (error) {
         return c.json({
@@ -1461,7 +1433,7 @@ export class AtlasDaemon implements AppContext {
 
       // Find workspace in registry (manager already initialized at daemon startup)
       logger.debug(`Looking up workspace in registry: ${workspaceId}`);
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
 
       const workspace = await manager.findById(workspaceId) ||
         await manager.findByName(workspaceId);
@@ -1581,7 +1553,7 @@ export class AtlasDaemon implements AppContext {
       logger.debug(`Runtime stored in daemon registry`);
 
       // Register runtime with WorkspaceManager
-      manager.registerRuntime(workspace.id, runtime, workspaceObj, {
+      await manager.registerRuntime(workspace.id, runtime, workspaceObj, {
         name: workspace.name,
         description: workspace.metadata?.description,
       });
@@ -1702,7 +1674,7 @@ export class AtlasDaemon implements AppContext {
     this.runtimes.delete(workspaceId);
 
     // Unregister runtime from WorkspaceManager
-    const manager = getWorkspaceManager();
+    const manager = await getWorkspaceManager();
     manager.unregisterRuntime(workspaceId);
 
     // Clear idle timeout
@@ -1928,8 +1900,8 @@ export class AtlasDaemon implements AppContext {
             workspaceId,
             signalId,
             schedule: signalConfig.schedule,
-            timezone: (signalConfig as any).timezone || "UTC",
-            description: (signalConfig as any).description,
+            timezone: (signalConfig as Record<string, unknown>).timezone as string || "UTC",
+            description: (signalConfig as Record<string, unknown>).description as string,
           };
 
           cronTimers.push(cronConfig);
@@ -2002,7 +1974,7 @@ export class AtlasDaemon implements AppContext {
     }
 
     try {
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
       const workspaces = await manager.listAllPersisted();
 
       AtlasLogger.getInstance().info("Discovering cron signals for existing workspaces", {

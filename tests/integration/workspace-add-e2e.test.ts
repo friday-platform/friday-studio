@@ -3,17 +3,12 @@
  * Tests the complete flow including file system operations and daemon interaction
  */
 
-import { assertEquals, assertExists } from "@std/assert";
-import { join } from "@std/path";
-import { ensureDir, exists } from "@std/fs";
 import { AtlasDaemon } from "@atlas/atlasd";
 import { AtlasClient } from "@atlas/client";
-import {
-  createWorkspaceManager,
-  getWorkspaceManager,
-  resetWorkspaceManager,
-} from "../../src/core/workspace-manager.ts";
-import { createRegistryStorage, StorageConfigs } from "../../src/core/storage/index.ts";
+import { assertEquals, assertExists } from "@std/assert";
+import { ensureDir, exists } from "@std/fs";
+import { join } from "@std/path";
+import { getWorkspaceManager, resetWorkspaceManager } from "../../src/core/workspace-manager.ts";
 
 // Helper to create a test workspace directory with workspace.yml
 async function createTestWorkspace(basePath: string, name: string): Promise<string> {
@@ -167,7 +162,7 @@ Deno.test({
       assertEquals(result.failed.length, 0);
 
       // Verify each workspace
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
       for (const added of result.added) {
         const workspace = await manager.findById(added.id);
         assertExists(workspace);

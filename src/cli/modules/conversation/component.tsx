@@ -213,8 +213,11 @@ export function Component() {
                   break;
                 }
 
+                // @ts-expect-error event is currently untyped.
                 if (event.type === "message_chunk") {
+                  // @ts-expect-error event is currently untyped.
                   const responseMessage = event.data.content;
+                  // @ts-expect-error event is currently untyped.
                   const isPartial = event.data.partial;
 
                   // If streaming is enabled, show all chunks
@@ -259,7 +262,7 @@ export function Component() {
                     });
                   }
                 }
-
+                // @ts-expect-error event is currently untyped.
                 if (event.type === "message_complete") {
                   // Update streaming message ID to make it permanent
                   const streamingMessageId = `llm-response-current`;

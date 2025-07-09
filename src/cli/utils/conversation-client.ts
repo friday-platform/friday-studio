@@ -1,5 +1,4 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
-import type { ConversationEvent } from "../../core/conversation-supervisor.old.ts";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
@@ -152,12 +151,14 @@ export class ConversationClient {
 
   /**
    * Stream conversation events via Server-Sent Events
+   * @FIXME: Create a dedicated event type from
+   * https://github.com/tempestteam/atlas/blob/db7941f26370ca923ef4ede1d026386b765d028e/src/core/daemon-capabilities.ts#L104
    */
   async *streamEvents(
     sessionId: string,
     sseUrl?: string,
     abortSignal?: AbortSignal,
-  ): AsyncIterableIterator<ConversationEvent> {
+  ): AsyncIterableIterator<unknown> {
     // Use the SSE URL from the session if not provided
     const streamUrl = sseUrl ||
       `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
@@ -177,8 +178,8 @@ export class ConversationClient {
 
         try {
           const parsedData = JSON.parse(message.data);
-          const event: ConversationEvent = {
-            type: parsedData.type || "unknown" as ConversationEvent["type"],
+          const event: unknown = {
+            type: parsedData.type || "unknown",
             data: parsedData.data || parsedData,
             timestamp: parsedData.timestamp || new Date().toISOString(),
             sessionId: parsedData.sessionId || sessionId,
@@ -188,6 +189,7 @@ export class ConversationClient {
           yield event;
 
           // Only close the connection if explicitly requested
+          // @ts-expect-error event is currently untyped.
           if (event.type === "message_complete" && event.data?.closeConnection === true) {
             if (eventSource && eventSource.close) {
               eventSource.close();

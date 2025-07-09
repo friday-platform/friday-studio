@@ -2,7 +2,6 @@ import * as agentCmd from "./agent.ts";
 import * as daemonCmd from "./daemon.ts";
 import * as interactiveCmd from "./interactive.tsx";
 import * as libraryCmd from "./library/index.ts";
-import * as mcpCmd from "./mcp.ts";
 import * as psCmd from "./ps.ts";
 import * as sessionCmd from "./session.ts";
 import * as signalCmd from "./signal.ts";
@@ -17,7 +16,6 @@ export const commands = [
   agentCmd,
   signalCmd,
   libraryCmd,
-  mcpCmd,
   daemonCmd,
   interactiveCmd,
 ];

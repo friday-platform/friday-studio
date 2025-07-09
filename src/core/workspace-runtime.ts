@@ -2,12 +2,11 @@ import { type Actor, assign, createActor, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { Session } from "./session.ts";
-import { WorkerManager } from "./utils/worker-manager.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
+import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
-import { createFSMMonitoringDecorator, globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
+import { ManagedWorker, WorkerManager } from "./utils/worker-manager.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -1038,7 +1037,7 @@ const workspaceRuntimeMachine = setup({
         },
       };
 
-      let supervisor;
+      let supervisor: ManagedWorker;
       try {
         supervisor = await context.workerManager.spawnSupervisorWorker(
           context.workspace.id,
@@ -1059,12 +1058,7 @@ const workspaceRuntimeMachine = setup({
         throw new Error(`Failed to spawn supervisor: ${err.message}`);
       }
 
-      logger.info("Supervisor ready", {
-        supervisorId: supervisor?.id,
-        workspaceId: supervisor?.workspace?.id,
-        hasSupervisor: !!supervisor,
-        hasWorkspace: !!(supervisor?.workspace),
-      });
+      logger.info("Supervisor ready", { supervisorId: supervisor?.id });
 
       if (!supervisor?.id) {
         throw new Error("Supervisor was created but has no ID");
