@@ -54,6 +54,9 @@ import { registerWriteTool } from "./fs/write.ts";
 // Import web tools
 import { registerFetchTool } from "./web/fetch.ts";
 
+// Import system tools
+import { registerBashTool } from "./system/bash.ts";
+
 /**
  * Register all tools with the MCP server
  */
@@ -105,6 +108,9 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // Web tools
   registerFetchTool(server, context);
+
+  // System tools
+  registerBashTool(server, context);
 
   context.logger.info("Registered all tools with MCP server");
 }
