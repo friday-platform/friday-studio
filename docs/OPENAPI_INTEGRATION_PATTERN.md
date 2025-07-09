@@ -447,11 +447,7 @@ describeRoute({
 
 ### Priority 1 - Core CRUD Operations
 
-- [ ] **Workspace Routes** (`/api/workspaces/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Workspace Routes** (`/api/workspaces/*`)
 
 - [x] GET `/api/workspaces` - List workspaces ✅
 - [x] GET `/api/workspaces/:id` - Get workspace details ✅
@@ -467,11 +463,7 @@ describeRoute({
 
 ### Priority 2 - Extended Operations
 
-- [ ] **Library Routes** (`/api/library/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Library Routes** (`/api/library/*`)
 
 - [ ] GET `/api/library` - Search library items
 - [ ] GET `/api/library/:id` - Get library item
@@ -485,29 +477,17 @@ describeRoute({
 
 ### Priority 3 - Advanced Features
 
-- [ ] **Signal Routes** (`/api/workspaces/:id/signals/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Signal Routes** (`/api/workspaces/:id/signals/*`)
 
 - [ ] GET `/api/workspaces/:id/signals` - List signals
 - [ ] POST `/api/workspaces/:id/signals/:signalId` - Trigger signal
 
-- [ ] **Agent Routes** (`/api/workspaces/:id/agents/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Agent Routes** (`/api/workspaces/:id/agents/*`)
 
 - [ ] GET `/api/workspaces/:id/agents` - List agents
 - [ ] GET `/api/workspaces/:id/agents/:agentId` - Get agent details
 
-- [ ] **Workspace-specific Routes** (`/api/workspaces/:id/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Workspace-specific Routes** (`/api/workspaces/:id/*`)
 
 - [ ] GET `/api/workspaces/:id/jobs` - List jobs in workspace
 - [ ] GET `/api/workspaces/:id/sessions` - List sessions in workspace
@@ -520,11 +500,7 @@ describeRoute({
 
 ### Priority 4 - System Routes
 
-- [ ] **Daemon Routes** (`/api/daemon/*`) <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+- [ ] **Daemon Routes** (`/api/daemon/*`)
 
 - [ ] GET `/api/daemon/status` - Daemon status
 - [ ] POST `/api/daemon/shutdown` - Shutdown daemon
@@ -534,44 +510,28 @@ describeRoute({
 
 ## Best Practices
 
-1. **Schema Organization**: <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+1. **Schema Organization**:
 
 - Group related schemas in the same file
 - Export schemas for reuse
 - Use descriptive names ending with `Schema`
 - Create type aliases using `z.infer<typeof schema>`
 
-2. **Route Organization**: <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+2. **Route Organization**:
 
 - One route module per resource type
 - Keep route files focused and cohesive
 - Extract complex logic to service functions
 - When getting an entity by ID, check for "not found" errors and return 404 status
 
-3. **Documentation Quality**: <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+3. **Documentation Quality**:
 
 - Write clear, actionable summaries
 - Include example values in descriptions
 - Document all edge cases and errors
 - Specify required vs optional fields
 
-4. **Type Safety**: <<<<<<< HEAD
-
-=======
-
->>>>>>> main
+4. **Type Safety**:
 
 - Use `z.coerce` for query parameters
 - Validate request bodies with schemas
