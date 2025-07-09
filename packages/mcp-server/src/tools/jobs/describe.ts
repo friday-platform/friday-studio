@@ -11,7 +11,7 @@ import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../utils.ts";
 
 export function registerJobsDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_jobs_describe",
+    "atlas_workspace_jobs_describe",
     {
       description:
         "Examine a job's workflow configuration including execution strategy (sequential, parallel, conditional), assigned agents, trigger conditions, and context provisioning. Jobs define multi-step workflows where agents receive inputs from signals, previous agents, or filesystem context, then execute using specialized MCP tools.",

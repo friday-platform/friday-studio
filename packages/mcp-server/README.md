@@ -72,17 +72,21 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerLsTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:list",
+    "atlas_list",
     {
       description:
         "Lists files and directories in a given path. The path parameter can be either absolute or relative. You can optionally provide an array of glob patterns to ignore with the ignore parameter. You should generally prefer the Glob and Grep tools, if you know which directories to search.",
       inputSchema: {
-        path: z.string().optional().describe(
-          "The path to the directory to list (can be absolute or relative)",
-        ),
-        ignore: z.array(z.string()).optional().describe(
-          "List of glob patterns to ignore",
-        ),
+        path: z
+          .string()
+          .optional()
+          .describe(
+            "The path to the directory to list (can be absolute or relative)",
+          ),
+        ignore: z
+          .array(z.string())
+          .optional()
+          .describe("List of glob patterns to ignore"),
       },
     },
     async (params) => {
@@ -128,22 +132,22 @@ inputSchema: {
   workspaceId: z.string().describe(
     "The workspace ID to operate on"
   ),
-  
+
   // Optional parameters with clear descriptions
   path: z.string().optional().describe(
     "The path to the directory to list (can be absolute or relative)"
   ),
-  
+
   // Arrays with item validation
   ignore: z.array(z.string()).optional().describe(
     "List of glob patterns to ignore"
   ),
-  
+
   // Enums for constrained choices
   format: z.enum(["json", "text"]).optional().default("json").describe(
     "Output format for the results"
   ),
-  
+
   // Numbers with constraints
   limit: z.number().min(1).max(1000).optional().default(100).describe(
     "Maximum number of results to return"
@@ -212,7 +216,9 @@ try {
   if (error instanceof z.ZodError) {
     // Validation errors should be clear about what's wrong
     return createErrorResponse(
-      new Error(`Invalid parameters: ${error.errors.map((e) => e.message).join(", ")}`),
+      new Error(
+        `Invalid parameters: ${error.errors.map((e) => e.message).join(", ")}`,
+      ),
     );
   }
 
@@ -240,9 +246,7 @@ return createSuccessResponse({
 });
 
 // Avoid: Unstructured text responses
-return createSuccessResponse(
-  `Found ${libraries.length} libraries...`,
-);
+return createSuccessResponse(`Found ${libraries.length} libraries...`);
 ```
 
 ### Testing Your Tools
@@ -315,13 +319,16 @@ export function registerWorkspaceReferenceResource(
       description: "Comprehensive reference showing all Atlas workspace configuration options",
       mimeType: "text/yaml",
     },
-    () => { // Read callback
+    () => {
+      // Read callback
       return {
-        contents: [{
-          uri: "atlas://reference/workspace",
-          mimeType: "text/yaml",
-          text: referenceContent,
-        }],
+        contents: [
+          {
+            uri: "atlas://reference/workspace",
+            mimeType: "text/yaml",
+            text: referenceContent,
+          },
+        ],
       };
     },
   );

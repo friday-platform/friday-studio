@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:delete_draft_config",
+    "atlas_delete_draft_config",
     {
       description:
         "Delete a workspace draft that is no longer needed. This permanently removes the draft and its configuration from the system.",

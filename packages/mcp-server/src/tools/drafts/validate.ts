@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftValidateTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_draft_validate",
+    "atlas_workspace_draft_validate",
     {
       description:
         "Validate workspace draft configuration for correctness, completeness, and best practices. Returns detailed validation results and suggestions.",

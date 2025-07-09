@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerLibraryTemplatesTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:library_templates",
+    "atlas_library_templates",
     {
       description: "List available content generation templates through daemon API",
       inputSchema: {},

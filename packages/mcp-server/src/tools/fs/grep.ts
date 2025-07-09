@@ -78,7 +78,7 @@ async function runGrep(
 
 export function registerGrepTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:grep",
+    "atlas_grep",
     {
       description: `- Fast content search tool that works with any codebase size
 - Searches file contents using regular expressions

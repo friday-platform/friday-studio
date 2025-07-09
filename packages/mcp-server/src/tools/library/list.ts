@@ -6,7 +6,7 @@ import { buildLibraryQueryParams, fetchWithTimeout, handleDaemonResponse } from 
 
 export function registerLibraryListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:library_list",
+    "atlas_library_list",
     {
       description:
         "Browse and search items stored in the Atlas library with flexible filtering and text search capabilities. The library contains reusable resources like reports, session archives, templates, and documentation. Use the query parameter for full-text search or combine filters to browse by type, tags, and date ranges.",

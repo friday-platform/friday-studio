@@ -11,7 +11,7 @@ import { checkWorkspaceMCPEnabled } from "../utils.ts";
 
 export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_signals_trigger",
+    "atlas_workspace_signals_trigger",
     {
       description:
         "Trigger a workspace signal to start automated job execution. Signals route to specific jobs based on payload conditions and create execution sessions that run asynchronously. Sessions contain the actual job progress and results.",

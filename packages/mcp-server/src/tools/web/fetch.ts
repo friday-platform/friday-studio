@@ -11,7 +11,7 @@ const MAX_TIMEOUT = 120 * 1000; // 2 minutes
 
 export function registerFetchTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:fetch",
+    "atlas_fetch",
     {
       description: `- Fetches content from a specified URL
 - Takes a URL and optional format specification

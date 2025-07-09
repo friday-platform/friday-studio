@@ -10,7 +10,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceDeleteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_delete",
+    "atlas_workspace_delete",
     {
       description:
         "Remove an Atlas workspace and its associated resources permanently. This action destroys the workspace environment, its configuration, and all associated data. Use with caution as this operation cannot be undone.",

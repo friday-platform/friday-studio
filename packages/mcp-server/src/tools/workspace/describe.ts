@@ -10,7 +10,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_describe",
+    "atlas_workspace_describe",
     {
       description:
         "Retrieve comprehensive details about a specific Atlas workspace including its configuration, status, active sessions, and available resources. Use this to understand a workspace's current state and capabilities.",

@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerLibraryStoreTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:library_store",
+    "atlas_library_store",
     {
       description:
         "Store a new item in the Atlas library for future reference and reuse across workspaces. Use this to save reports, templates, session results, artifacts, or any content that should be preserved and discoverable.",

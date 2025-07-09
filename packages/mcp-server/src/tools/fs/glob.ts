@@ -7,7 +7,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerGlobTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:glob",
+    "atlas_glob",
     {
       description: `- Fast file pattern matching tool that works with any codebase size
 - Supports glob patterns like "**/*.js" or "src/**/*.ts"

@@ -10,7 +10,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_list",
+    "atlas_workspace_list",
     {
       description:
         "Discover available Atlas workspaces (project environments) to understand what development contexts are accessible. Each workspace represents an isolated project environment with its own configuration, jobs, and resources.",

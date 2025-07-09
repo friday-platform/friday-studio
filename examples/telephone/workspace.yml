@@ -43,12 +43,12 @@ tools:
         tools:
           allowed:
             [
-              "library_list",
-              "library_get",
-              "library_search",
-              "library_store",
-              "library_stats",
-              "library_templates",
+              "atlas_library_list",
+              "atlas_library_get",
+              "atlas_library_search",
+              "atlas_library_store",
+              "atlas_library_stats",
+              "atlas_library_templates",
             ]
 
 # Signal definitions

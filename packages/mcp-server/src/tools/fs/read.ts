@@ -10,7 +10,7 @@ const MAX_LINE_LENGTH = 2000;
 
 export function registerReadTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:read",
+    "atlas_read",
     {
       description:
         `Reads a file from the local filesystem. You can access any file directly by using this tool.

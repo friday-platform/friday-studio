@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftPublishTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:publish_draft_to_workspace",
+    "atlas_publish_draft_to_workspace",
     {
       description:
         "Publish validated workspace draft to filesystem for production use. Creates workspace directory structure with configuration files and setup instructions.",

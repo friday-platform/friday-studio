@@ -10,7 +10,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerAgentsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_agents_list",
+    "atlas_workspace_agents_list",
     {
       description: "List all agents in a workspace through daemon API",
       inputSchema: {

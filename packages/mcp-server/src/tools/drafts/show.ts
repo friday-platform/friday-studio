@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftShowTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:show_draft_config",
+    "atlas_show_draft_config",
     {
       description:
         "Display current workspace draft configuration with clear formatting. Shows the complete configuration structure and current values.",

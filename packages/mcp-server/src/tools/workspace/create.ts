@@ -10,7 +10,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerWorkspaceCreateTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_create",
+    "atlas_workspace_create",
     {
       description:
         "Create a new Atlas workspace for organizing domain-specific automation. Workspaces define jobs (multi-step workflows), agents (LLM or remote specialists), signals (triggers like webhooks, timers, file changes), and MCP tool integrations. Each workspace represents a specialized automation environment for specific business purposes like code analysis, document processing, or system monitoring.",

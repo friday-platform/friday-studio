@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftUpdateTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:workspace_draft_update",
+    "atlas_workspace_draft_update",
     {
       description:
         "Update an existing workspace draft with configuration changes and validation. Supports iterative development with helpful error reporting.",

@@ -6,7 +6,7 @@ import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerDraftListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:list_session_drafts",
+    "atlas_list_session_drafts",
     {
       description:
         "List all workspace drafts for the current session or conversation context. Shows draft status, creation times, and basic metadata.",

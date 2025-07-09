@@ -8,7 +8,7 @@ import { createSuccessResponse } from "../types.ts";
 
 export function registerWriteTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
-    "atlas:write",
+    "atlas_write",
     {
       description: `Writes a file to the local filesystem.
 
