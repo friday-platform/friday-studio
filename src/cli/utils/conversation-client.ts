@@ -53,8 +53,6 @@ export class ConversationClient {
       createOnly: options?.createOnly ?? true, // Just create session, don't send a message
     };
 
-    console.log(`[ConversationClient] Creating session at ${url} with body:`, body);
-
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -63,20 +61,12 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      console.error(`[ConversationClient] Failed to create session:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorText,
-        url,
-        body,
-      });
       throw new Error(
         `Failed to create conversation session (${response.status}): ${errorText}`,
       );
     }
 
     const result = await response.json();
-    console.log(`[ConversationClient] Session created successfully:`, result);
 
     // Transform the response to match the expected ConversationSession interface
     return {
@@ -113,7 +103,6 @@ export class ConversationClient {
       this.conversationWorkspaceId = conversationWorkspace.id;
       return this.conversationWorkspaceId;
     } catch (error) {
-      console.error(`[ConversationClient] Failed to find conversation workspace:`, error);
       throw new Error(`Failed to find conversation workspace: ${error}`);
     }
   }
@@ -132,7 +121,6 @@ export class ConversationClient {
     // Use workspace signal instead of direct stream endpoint
     const url =
       `${this.daemonUrl}/api/workspaces/${conversationWorkspaceId}/signals/conversation-stream`;
-    console.log(`[ConversationClient] Sending message via signal to ${url}`);
 
     const body = {
       streamId: sessionId,
@@ -149,20 +137,12 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      console.error(`[ConversationClient] Failed to send message:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorText,
-        url,
-        body,
-      });
       throw new Error(
         `Failed to send message (${response.status}): ${errorText}`,
       );
     }
 
     const result = await response.json();
-    console.log(`[ConversationClient] Message sent successfully:`, result);
 
     return {
       messageId: result.messageId || crypto.randomUUID(),

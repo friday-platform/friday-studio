@@ -1193,22 +1193,9 @@ export class WorkspaceCapabilityRegistry {
       ...filter.grantedTools,
     ];
 
-    // DEBUG: Temporary logging to understand filtering issue
-    console.log(`[DEBUG] Filtering capabilities for agent ${filter.agentId}`);
-    console.log(`[DEBUG] Agent config:`, filter.agentConfig);
-    console.log(`[DEBUG] Granted tools:`, filter.grantedTools);
-    console.log(`[DEBUG] All tools combined:`, allTools);
-    console.log(`[DEBUG] Available workspace capabilities:`, Array.from(this.capabilities.keys()));
-    console.log(
-      `[DEBUG] Available daemon capabilities:`,
-      DaemonCapabilityRegistry.getAllCapabilities().map((c) => c.id),
-    );
-
     for (const tool of allTools) {
-      console.log(`[DEBUG] Checking tool: ${tool}`);
       const capability = this.capabilities.get(tool);
       if (capability) {
-        console.log(`[DEBUG] Found workspace capability for tool ${tool}:`, capability.id);
         grantedCapabilities.push(capability);
       } else {
         // Check if it's a daemon capability

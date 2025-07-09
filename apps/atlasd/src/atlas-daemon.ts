@@ -229,9 +229,7 @@ export class AtlasDaemon implements AppContext {
       logger: AtlasLogger.getInstance(),
     });
 
-    logger.info("MCP server initialized", {
-      daemonUrl,
-    });
+    logger.info("MCP server initialized", { daemonUrl });
   }
 
   /**
@@ -286,9 +284,6 @@ export class AtlasDaemon implements AppContext {
 
     // Mount workspace routes
     this.app.route("/api/workspaces", workspacesRoutes);
-
-    // Get specific workspace info
-    // Note: GET /api/workspaces/:workspaceId is now handled by the workspaces route module
 
     // Create a new workspace
     this.app.post("/api/workspaces", async (c) => {
