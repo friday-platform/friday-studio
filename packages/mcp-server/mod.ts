@@ -8,4 +8,5 @@ export {
   PlatformMCPServer,
   type PlatformMCPServerDependencies,
 } from "./src/platform-server.ts";
+
 export { WorkspaceMCPServer, type WorkspaceMCPServerDependencies } from "./src/workspace-server.ts";

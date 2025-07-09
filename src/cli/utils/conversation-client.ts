@@ -1,5 +1,4 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
-import type { ConversationEvent } from "../../core/conversation-supervisor.old.ts";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
@@ -53,8 +52,6 @@ export class ConversationClient {
       createOnly: options?.createOnly ?? true, // Just create session, don't send a message
     };
 
-    console.log(`[ConversationClient] Creating session at ${url} with body:`, body);
-
     const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -63,20 +60,12 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      console.error(`[ConversationClient] Failed to create session:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorText,
-        url,
-        body,
-      });
       throw new Error(
         `Failed to create conversation session (${response.status}): ${errorText}`,
       );
     }
 
     const result = await response.json();
-    console.log(`[ConversationClient] Session created successfully:`, result);
 
     // Transform the response to match the expected ConversationSession interface
     return {
@@ -113,7 +102,6 @@ export class ConversationClient {
       this.conversationWorkspaceId = conversationWorkspace.id;
       return this.conversationWorkspaceId;
     } catch (error) {
-      console.error(`[ConversationClient] Failed to find conversation workspace:`, error);
       throw new Error(`Failed to find conversation workspace: ${error}`);
     }
   }
@@ -132,7 +120,6 @@ export class ConversationClient {
     // Use workspace signal instead of direct stream endpoint
     const url =
       `${this.daemonUrl}/api/workspaces/${conversationWorkspaceId}/signals/conversation-stream`;
-    console.log(`[ConversationClient] Sending message via signal to ${url}`);
 
     const body = {
       streamId: sessionId,
@@ -149,20 +136,12 @@ export class ConversationClient {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      console.error(`[ConversationClient] Failed to send message:`, {
-        status: response.status,
-        statusText: response.statusText,
-        errorText,
-        url,
-        body,
-      });
       throw new Error(
         `Failed to send message (${response.status}): ${errorText}`,
       );
     }
 
     const result = await response.json();
-    console.log(`[ConversationClient] Message sent successfully:`, result);
 
     return {
       messageId: result.messageId || crypto.randomUUID(),
@@ -172,12 +151,14 @@ export class ConversationClient {
 
   /**
    * Stream conversation events via Server-Sent Events
+   * @FIXME: Create a dedicated event type from
+   * https://github.com/tempestteam/atlas/blob/db7941f26370ca923ef4ede1d026386b765d028e/src/core/daemon-capabilities.ts#L104
    */
   async *streamEvents(
     sessionId: string,
     sseUrl?: string,
     abortSignal?: AbortSignal,
-  ): AsyncIterableIterator<ConversationEvent> {
+  ): AsyncIterableIterator<unknown> {
     // Use the SSE URL from the session if not provided
     const streamUrl = sseUrl ||
       `${this.daemonUrl}/system/conversation/sessions/${sessionId}/stream`;
@@ -197,8 +178,8 @@ export class ConversationClient {
 
         try {
           const parsedData = JSON.parse(message.data);
-          const event: ConversationEvent = {
-            type: parsedData.type || "unknown" as ConversationEvent["type"],
+          const event: unknown = {
+            type: parsedData.type || "unknown",
             data: parsedData.data || parsedData,
             timestamp: parsedData.timestamp || new Date().toISOString(),
             sessionId: parsedData.sessionId || sessionId,
@@ -208,6 +189,7 @@ export class ConversationClient {
           yield event;
 
           // Only close the connection if explicitly requested
+          // @ts-expect-error event is currently untyped.
           if (event.type === "message_complete" && event.data?.closeConnection === true) {
             if (eventSource && eventSource.close) {
               eventSource.close();

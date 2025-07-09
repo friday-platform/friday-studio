@@ -7,40 +7,74 @@
  * storage implementation details behind clean domain-specific interfaces.
  */
 
-import { basename, join } from "@std/path";
-import { exists } from "@std/fs";
-import * as yaml from "@std/yaml";
-import { logger } from "../utils/logger.ts";
-import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import { type AtlasConfig, ConfigLoader, WorkspaceConfig } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
-import type { WorkspaceRuntime } from "./workspace-runtime.ts";
-import type { IWorkspace } from "../types/core.ts";
-import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
-
-// Re-export types from workspace-registry-types for unified API
-export {
-  type WorkspaceEntry,
-  WorkspaceEntrySchema,
-  WorkspaceStatus,
-  type WorkspaceStatus as WorkspaceStatusType,
-} from "./workspace-registry-types.ts";
-
 import {
-  type WorkspaceEntry,
-  WorkspaceEntrySchema,
-  WorkspaceStatus,
-} from "./workspace-registry-types.ts";
+  type AtlasConfig,
+  ConfigLoader,
+  WorkspaceConfig,
+  WorkspaceConfigSchema,
+} from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
+import { exists } from "@std/fs";
+import { basename, join } from "@std/path";
+import { z } from "zod/v4";
+import type { IWorkspace } from "../types/core.ts";
+import { logger } from "../utils/logger.ts";
+import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
+import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
+import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 
-export interface RuntimeWorkspaceInfo {
-  id: string;
-  name: string;
-  description?: string;
+// Define types in the same file for better cohesion
+export const WorkspaceStatusSchema = z.enum([
+  "stopped",
+  "starting",
+  "running",
+  "stopping",
+  "crashed",
+  "unknown",
+]);
+
+export const WorkspaceEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string(),
+  configPath: z.string(),
+  config: WorkspaceConfigSchema.optional(),
+  configHash: z.string().optional(),
+  status: WorkspaceStatusSchema,
+  createdAt: z.iso.datetime(),
+  lastSeen: z.iso.datetime(),
+  startedAt: z.iso.datetime().optional(),
+  stoppedAt: z.iso.datetime().optional(),
+  pid: z.number().optional(),
+  port: z.number().optional(),
+  metadata: z.object({
+    description: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    virtual: z.boolean().optional(),
+    atlasVersion: z.string().optional(),
+    system: z.boolean().optional(),
+    configStoredSeparately: z.boolean().optional(),
+  }).optional(),
+});
+
+export type WorkspaceEntry = z.infer<typeof WorkspaceEntrySchema>;
+export type WorkspaceStatus = z.infer<typeof WorkspaceStatusSchema>;
+
+// Export enum for convenience
+export const WorkspaceStatus = {
+  STOPPED: "stopped",
+  STARTING: "starting",
+  RUNNING: "running",
+  STOPPING: "stopping",
+  CRASHED: "crashed",
+  UNKNOWN: "unknown",
+} as const;
+
+// Single runtime info type that extends base entry
+export interface WorkspaceRuntimeInfo {
+  entry: WorkspaceEntry;
   runtime: WorkspaceRuntime;
-  status: string;
   startedAt: Date;
-  sessions: number;
-  workers: number;
 }
 
 export interface WorkspaceCreateConfig {
@@ -50,6 +84,17 @@ export interface WorkspaceCreateConfig {
   config?: Record<string, unknown>;
 }
 
+// Unified workspace info type
+export interface WorkspaceInfo extends WorkspaceEntry {
+  isActive: boolean;
+  runtime?: {
+    state: string;
+    startedAt: string;
+    sessions: number;
+    workers: number;
+  };
+}
+
 /**
  * Unified WorkspaceManager - handles both persistence and runtime tracking
  *
@@ -57,24 +102,38 @@ export interface WorkspaceCreateConfig {
  * between business logic and storage implementation details.
  */
 export class WorkspaceManager {
-  private registry: RegistryStorageAdapter | null = null;
+  // Remove nullable type - registry is always required
+  private registry: RegistryStorageAdapter;
 
   // Runtime tracking (in-memory)
-  private runtimes = new Map<string, RuntimeWorkspaceInfo>();
+  private runtimes = new Map<string, WorkspaceRuntimeInfo>();
 
-  constructor(registry?: RegistryStorageAdapter) {
-    this.registry = registry || null;
+  // Require registry in constructor
+  constructor(registry: RegistryStorageAdapter) {
+    this.registry = registry;
   }
 
-  async initialize(options?: { skipAutoImport?: boolean }): Promise<void> {
-    // Create default registry if not provided
-    if (!this.registry) {
-      this.registry = await createRegistryStorage(StorageConfigs.defaultKV());
-    }
+  // Helper method to generate unique ID
+  private async generateUniqueId(): Promise<string> {
+    const existingWorkspaces = await this.registry.listWorkspaces();
+    const existingIds = new Set(existingWorkspaces.map((w) => w.id));
+    return generateUniqueWorkspaceName(existingIds);
+  }
 
-    // Auto-import existing workspaces unless explicitly skipped (skip in tests and signal processing)
-    const isTestMode = Deno.env.get("DENO_TEST") === "true" ||
-      await exists(join(Deno.env.get("HOME") || Deno.cwd(), ".atlas", ".test-mode"));
+  // Helper method to hash configuration
+  private async hashConfig(config: WorkspaceConfig): Promise<string> {
+    const configJson = JSON.stringify(config, Object.keys(config).sort());
+    const encoder = new TextEncoder();
+    const data = encoder.encode(configJson);
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Simplify initialize - no need to create default registry
+  async initialize(options?: { skipAutoImport?: boolean }): Promise<void> {
+    // Just handle auto-import logic
+    const isTestMode = Deno.env.get("DENO_TEST") === "true";
 
     if (!isTestMode && !options?.skipAutoImport) {
       try {
@@ -96,6 +155,7 @@ export class WorkspaceManager {
         logger.error("Failed to initialize workspace manager", { error: error.message });
         throw error;
       }
+      await this.validateExistingWorkspaces();
     }
   }
 
@@ -114,13 +174,11 @@ export class WorkspaceManager {
       tags?: string[];
     },
   ): Promise<WorkspaceEntry> {
-    if (!this.registry) await this.initialize();
-
     // Resolve to absolute path for consistent lookups
     const absolutePath = await Deno.realPath(workspacePath);
 
     // Check if already registered
-    const existing = await this.registry!.findWorkspaceByPath(absolutePath);
+    const existing = await this.registry.findWorkspaceByPath(absolutePath);
     if (existing) {
       // Check if config has changed by comparing file hash
       const workspaceName = existing.name;
@@ -152,7 +210,7 @@ export class WorkspaceManager {
             newHash: currentHash.substring(0, 8) + "...",
           });
 
-          await this.refreshWorkspaceConfig(existing.id);
+          await this.refreshConfig(existing.id);
         }
       } catch (error) {
         logger.warn(`Failed to check config changes for '${workspaceName}', using cached version`, {
@@ -164,136 +222,70 @@ export class WorkspaceManager {
       return existing;
     }
 
-    // Generate unique Docker-style ID
-    const existingWorkspaces = await this.registry!.listWorkspaces();
-    const existingIds = new Set(existingWorkspaces.map((w) => w.id));
-    const id = generateUniqueWorkspaceName(existingIds);
+    // Generate ID
+    const id = await this.generateUniqueId();
 
-    // Load and cache workspace configuration
-    const configPath = join(absolutePath, "workspace.yml");
-
+    // Load and validate configuration
     let config: WorkspaceConfig | undefined;
     let configHash: string | undefined;
+    let validationError: string | undefined;
 
     try {
-      // Load configuration using absolute path
       const adapter = new FilesystemConfigAdapter();
       const configLoader = new ConfigLoader(adapter, absolutePath);
-      const loadedConfig = await configLoader.load();
+      const mergedConfig = await configLoader.load();
 
-      // Cache the workspace config from merged config
-      config = loadedConfig.workspace; // Extract workspace portion from MergedConfig
-
-      // Generate config hash for change detection
-      const configJson = JSON.stringify(config, Object.keys(config).sort());
-      const encoder = new TextEncoder();
-      const data = encoder.encode(configJson);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-      logger.debug("Workspace config loaded and cached", {
-        workspaceId: id,
-        configHash: configHash.substring(0, 8) + "...",
-      });
-    } catch (error) {
-      const workspaceName = basename(absolutePath);
-
-      // Create a compact error message for console display
-      let errorSummary = error.message;
-
-      if (error.message.includes("Configuration validation failed")) {
-        // Extract the actual field error from validation messages
-        const lines = error.message.split("\n");
-        const errorLine = lines.find((line) => line.includes("•"));
-        if (errorLine) {
-          // Extract field path and error type
-          const match = errorLine.match(/• ([^:]+): (.+)/);
-          if (match) {
-            const fieldPath = match[1];
-            const errorType = match[2].split(",")[0]; // Take first part before comma
-            errorSummary = `${fieldPath}: ${errorType}`;
-          }
-        }
-      } else if (error.issues && Array.isArray(error.issues)) {
-        // Handle Zod validation errors directly
-        const issueCount = error.issues.length;
-        const firstIssue = error.issues[0];
-        const issuePath = firstIssue?.path?.join?.(".") || "root";
-        const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
-        errorSummary = `${issueCount} error${
-          issueCount > 1 ? "s" : ""
-        } (${issuePath}: ${shortMessage})`;
+      // Use Zod validation directly
+      const parseResult = WorkspaceConfigSchema.safeParse(mergedConfig.workspace);
+      if (!parseResult.success) {
+        // Store formatted error for logging
+        validationError = z.prettifyError(parseResult.error);
       } else {
-        // For other errors, use the original message
-        errorSummary = error.message;
+        config = parseResult.data;
+        configHash = await this.hashConfig(config);
       }
-
-      logger.warn(`Failed to load workspace config for '${workspaceName}': ${errorSummary}`, {
-        workspace: workspaceName,
-        workspacePath: absolutePath,
+    } catch (error) {
+      // Simple error logging - no complex parsing
+      logger.warn(`Failed to load workspace config`, {
+        workspace: basename(absolutePath),
         error: error.message,
-        reason: error.name || "ConfigurationError",
       });
-
-      // Log additional validation details if available
-      if (error.issues && Array.isArray(error.issues)) {
-        logger.debug("Workspace config validation issues", {
-          workspace: workspaceName,
-          issues: error.issues.map((issue: {
-            path?: (string | number)[];
-            message: string;
-            code?: string;
-          }) => ({
-            path: issue.path?.join(".") || "root",
-            message: issue.message,
-            code: issue.code,
-          })),
-        });
-      }
-
-      // Continue registration without config cache - will be loaded on-demand if needed
     }
 
-    // Create new entry
+    // Create entry (register even if config has errors)
     const entry: WorkspaceEntry = {
       id,
-      name: options?.name || config?.workspace.name || basename(workspacePath),
+      name: options?.name || config?.workspace.name || basename(absolutePath),
       path: absolutePath,
-      configPath,
+      configPath: join(absolutePath, "workspace.yml"),
       config,
       configHash,
       status: WorkspaceStatus.STOPPED,
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
       metadata: {
-        atlasVersion: Deno.version.deno,
         description: options?.description || config?.workspace.description,
         tags: options?.tags,
+        atlasVersion: Deno.version.deno,
       },
     };
 
-    // Validate entry with Zod
+    // Validate with schema
     const validatedEntry = WorkspaceEntrySchema.parse(entry);
+    await this.registry.registerWorkspace(validatedEntry);
 
-    // Register using storage adapter
-    await this.registry!.registerWorkspace(validatedEntry);
-
-    // Log registration result with appropriate context
-    if (config) {
-      logger.info(`Workspace '${validatedEntry.name}' registered successfully`, {
+    // Log result
+    if (validationError) {
+      logger.warn(`Workspace registered with config errors: ${validatedEntry.name}`, {
         id: validatedEntry.id,
-        name: validatedEntry.name,
+        error: validationError,
       });
     } else {
-      logger.warn(
-        `Workspace '${validatedEntry.name}' registered with config errors (will load on-demand)`,
-        {
-          id: validatedEntry.id,
-          name: validatedEntry.name,
-        },
-      );
+      logger.info(`Workspace registered: ${validatedEntry.name}`, {
+        id: validatedEntry.id,
+      });
     }
+
     return validatedEntry;
   }
 
@@ -301,9 +293,7 @@ export class WorkspaceManager {
    * Unregister a workspace from persistent storage
    */
   async unregisterWorkspace(id: string): Promise<void> {
-    if (!this.registry) await this.initialize();
-
-    await this.registry!.unregisterWorkspace(id);
+    await this.registry.unregisterWorkspace(id);
     logger.info("Workspace unregistered", { id });
   }
 
@@ -311,33 +301,37 @@ export class WorkspaceManager {
    * List all persisted workspaces
    */
   async listAllPersisted(): Promise<WorkspaceEntry[]> {
-    if (!this.registry) await this.initialize();
-    return await this.registry!.listWorkspaces();
+    return await this.registry.listWorkspaces();
   }
 
   /**
-   * Find workspace by ID in persistent storage
+   * Unified find method for workspaces
    */
-  async findById(id: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
-    return await this.registry!.getWorkspace(id);
+  async find(query: { id?: string; name?: string; path?: string }): Promise<WorkspaceEntry | null> {
+    if (query.id) {
+      return await this.registry.getWorkspace(query.id);
+    }
+    if (query.name) {
+      return await this.registry.findWorkspaceByName(query.name);
+    }
+    if (query.path) {
+      const normalizedPath = await Deno.realPath(query.path).catch(() => query.path);
+      return await this.registry.findWorkspaceByPath(normalizedPath);
+    }
+    return null;
   }
 
-  /**
-   * Find workspace by name in persistent storage
-   */
-  async findByName(name: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
-    return await this.registry!.findWorkspaceByName(name);
+  // Legacy methods for backward compatibility (will deprecate)
+  findById(id: string): Promise<WorkspaceEntry | null> {
+    return this.find({ id });
   }
 
-  /**
-   * Find workspace by path in persistent storage
-   */
-  async findByPath(path: string): Promise<WorkspaceEntry | null> {
-    if (!this.registry) await this.initialize();
-    const normalizedPath = await Deno.realPath(path).catch(() => path);
-    return await this.registry!.findWorkspaceByPath(normalizedPath);
+  findByName(name: string): Promise<WorkspaceEntry | null> {
+    return this.find({ name });
+  }
+
+  findByPath(path: string): Promise<WorkspaceEntry | null> {
+    return this.find({ path });
   }
 
   /**
@@ -348,9 +342,7 @@ export class WorkspaceManager {
     status: WorkspaceStatus,
     updates?: Partial<WorkspaceEntry>,
   ): Promise<void> {
-    if (!this.registry) await this.initialize();
-
-    await this.registry!.updateWorkspaceStatus(id, status, updates);
+    await this.registry.updateWorkspaceStatus(id, status, updates);
     logger.debug("Workspace status updated", { id, status });
   }
 
@@ -368,8 +360,6 @@ export class WorkspaceManager {
       tags?: string[];
     },
   ): Promise<WorkspaceEntry> {
-    if (!this.registry) await this.initialize();
-
     // Check if already registered
     const existing = await this.findById(id);
     if (existing) {
@@ -407,7 +397,7 @@ export class WorkspaceManager {
     };
 
     // Store in registry
-    await this.registry!.registerWorkspace(entry);
+    await this.registry.registerWorkspace(entry);
 
     logger.info("Virtual workspace registered", {
       id: entry.id,
@@ -455,29 +445,30 @@ export class WorkspaceManager {
   /**
    * Register an active workspace runtime
    */
-  registerRuntime(
+  async registerRuntime(
     workspaceId: string,
     runtime: WorkspaceRuntime,
     _workspace: IWorkspace,
-    metadata?: { name?: string; description?: string },
-  ): void {
-    const info: RuntimeWorkspaceInfo = {
-      id: workspaceId,
-      name: metadata?.name || workspaceId,
-      description: metadata?.description,
+    _metadata?: { name?: string; description?: string },
+  ): Promise<void> {
+    // Get the workspace entry first
+    const entry = await this.findById(workspaceId);
+    if (!entry) {
+      throw new Error(`Cannot register runtime for unknown workspace: ${workspaceId}`);
+    }
+
+    const info: WorkspaceRuntimeInfo = {
+      entry,
       runtime,
-      status: runtime.getState(),
       startedAt: new Date(),
-      sessions: runtime.getSessions().length,
-      workers: runtime.getWorkers().length,
     };
 
     this.runtimes.set(workspaceId, info);
 
     logger.info("Workspace runtime registered", {
       workspaceId,
-      name: info.name,
-      status: info.status,
+      name: entry.name,
+      status: runtime.getState(),
     });
   }
 
@@ -490,7 +481,7 @@ export class WorkspaceManager {
       this.runtimes.delete(workspaceId);
       logger.info("Workspace runtime unregistered", {
         workspaceId,
-        name: info.name,
+        name: info.entry.name,
       });
     }
   }
@@ -508,9 +499,9 @@ export class WorkspaceManager {
     workers: number;
   }> {
     return Array.from(this.runtimes.values()).map((info) => ({
-      id: info.id,
-      name: info.name,
-      description: info.description,
+      id: info.entry.id,
+      name: info.entry.name,
+      description: info.entry.metadata?.description,
       status: info.runtime.getState(),
       startedAt: info.startedAt.toISOString(),
       sessions: info.runtime.getSessions().length,
@@ -521,7 +512,7 @@ export class WorkspaceManager {
   /**
    * Get a specific active runtime
    */
-  getRuntime(workspaceId: string): RuntimeWorkspaceInfo | undefined {
+  getRuntime(workspaceId: string): WorkspaceRuntimeInfo | undefined {
     return this.runtimes.get(workspaceId);
   }
 
@@ -544,9 +535,9 @@ export class WorkspaceManager {
   // ============================================================================
 
   /**
-   * List all workspaces (combines persisted + runtime info)
+   * List workspaces with optional filtering
    */
-  async listWorkspaces(): Promise<
+  async list(filter?: { status?: WorkspaceStatus }): Promise<
     Array<{
       id: string;
       name: string;
@@ -558,9 +549,14 @@ export class WorkspaceManager {
       lastSeen: string;
     }>
   > {
-    const persisted = await this.listAllPersisted();
+    let workspaces = await this.listAllPersisted();
 
-    return persisted.map((workspace) => ({
+    // Apply status filter if provided
+    if (filter?.status) {
+      workspaces = workspaces.filter((w) => w.status === filter.status);
+    }
+
+    return workspaces.map((workspace) => ({
       id: workspace.id,
       name: workspace.name,
       description: workspace.metadata?.description,
@@ -572,102 +568,46 @@ export class WorkspaceManager {
     }));
   }
 
-  /**
-   * Create a new workspace
-   */
-  async createWorkspace(config: WorkspaceCreateConfig): Promise<{ id: string; name: string }> {
-    if (!this.registry) await this.initialize();
-
-    // Create workspace directory
-    const workspacePath = join(Deno.cwd(), config.name);
-    await Deno.mkdir(workspacePath, { recursive: true });
-
-    // Create basic workspace.yml file (no ID - it's generated during registration)
-    const workspaceConfig = {
-      version: "1.0.0",
-      workspace: {
-        name: config.name,
-        description: config.description,
-      },
-      jobs: {},
-      signals: {},
-      agents: {},
-      ...(config.config || {}),
-    };
-
-    const workspaceYmlPath = join(workspacePath, "workspace.yml");
-    await Deno.writeTextFile(workspaceYmlPath, yaml.stringify(workspaceConfig));
-
-    // Register in persistent storage
-    const entry = await this.registerWorkspace(workspacePath, {
-      name: config.name,
-      description: config.description,
-    });
-
-    logger.info("Workspace created", { id: entry.id, name: entry.name, path: workspacePath });
-
-    return {
-      id: entry.id,
-      name: entry.name,
-    };
+  // Legacy method for backward compatibility
+  listWorkspaces(): Promise<
+    Array<{
+      id: string;
+      name: string;
+      description?: string;
+      status: WorkspaceStatus;
+      path: string;
+      hasActiveRuntime: boolean;
+      createdAt: string;
+      lastSeen: string;
+    }>
+  > {
+    return this.list();
   }
 
   /**
    * Refresh cached config for a workspace
    */
-  async refreshWorkspaceConfig(id: string): Promise<void> {
-    if (!this.registry) await this.initialize();
-
-    const workspace = await this.findById(id);
+  async refreshConfig(id: string): Promise<void> {
+    const workspace = await this.registry.getWorkspace(id);
     if (!workspace) {
-      throw new Error(`Workspace ${id} not found`);
+      throw new Error(`Workspace not found: ${id}`);
     }
 
-    try {
-      // Virtual workspaces have embedded config that doesn't need refreshing
-      if (workspace.metadata?.virtual) {
-        logger.debug("Virtual workspace config refresh skipped (embedded configuration)", { id });
-        return;
-      }
+    // Virtual workspaces don't need refresh
+    if (workspace.metadata?.virtual) return;
 
-      // Load configuration using absolute path for regular workspaces
-      const adapter = new FilesystemConfigAdapter();
-      const configLoader = new ConfigLoader(adapter, workspace.path);
-      const loadedConfig = await configLoader.load();
+    // Load fresh config
+    const adapter = new FilesystemConfigAdapter();
+    const configLoader = new ConfigLoader(adapter, workspace.path);
+    const mergedConfig = await configLoader.load();
 
-      // Cache the workspace config from merged config
-      const config = loadedConfig.workspace; // Extract workspace portion from MergedConfig
+    // Update entry with new config and hash
+    const config = mergedConfig.workspace;
+    const configHash = await this.hashConfig(config);
 
-      // Generate new config hash
-      const configJson = JSON.stringify(config, Object.keys(config).sort());
-      const encoder = new TextEncoder();
-      const data = encoder.encode(configJson);
-      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      const configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+    await this.registry.updateWorkspaceStatus(id, workspace.status, { config, configHash });
 
-      // Update workspace entry
-      const updatedWorkspace = { ...workspace, config, configHash };
-
-      // Update workspace in separate atomic operation
-      const workspaceAtomic = this.registry!.getStorage().atomic();
-      workspaceAtomic.set(["workspaces", id], updatedWorkspace);
-      await workspaceAtomic.commit();
-
-      // Update registry metadata in separate atomic operation
-      const metadataAtomic = this.registry!.getStorage().atomic();
-      metadataAtomic.set(["registry", "lastUpdated"], new Date().toISOString());
-      await metadataAtomic.commit();
-
-      logger.info("Workspace config cache refreshed", {
-        id,
-        oldHash: workspace.configHash?.substring(0, 8) + "...",
-        newHash: configHash.substring(0, 8) + "...",
-      });
-    } catch (error) {
-      logger.error("Failed to refresh workspace config", { id, error: error.message });
-      throw error;
-    }
+    logger.info(`Config refreshed for workspace: ${workspace.name}`);
   }
 
   /**
@@ -708,60 +648,23 @@ export class WorkspaceManager {
   }
 
   /**
-   * Get detailed workspace information
+   * Get workspace information with runtime details
    */
-  async describeWorkspace(id: string): Promise<{
-    id: string;
-    name: string;
-    description?: string;
-    path: string;
-    status: WorkspaceStatus;
-    createdAt: string;
-    lastSeen: string;
-    hasActiveRuntime: boolean;
-    config: WorkspaceConfig;
-    runtime?: {
-      status: string;
-      startedAt: string;
-      sessions: number;
-      workers: number;
-    };
-  }> {
-    const workspace = await this.findById(id);
-    if (!workspace) {
-      throw new Error(`Workspace ${id} not found`);
-    }
+  async getWorkspace(id: string): Promise<WorkspaceInfo | null> {
+    const entry = await this.registry.getWorkspace(id);
+    if (!entry) return null;
 
-    const runtimeInfo = this.getRuntime(id);
-
-    // Get workspace configuration for MCP settings and other config
-    let config;
-    try {
-      config = await this.getWorkspaceConfigBySlug(id);
-    } catch (error) {
-      logger.warn("Failed to load workspace configuration for describe", {
-        workspaceId: id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      config = null;
-    }
+    const runtime = this.runtimes.get(id);
 
     return {
-      id: workspace.id,
-      name: workspace.name,
-      description: workspace.metadata?.description,
-      path: workspace.path,
-      status: workspace.status,
-      createdAt: workspace.createdAt,
-      lastSeen: workspace.lastSeen,
-      hasActiveRuntime: !!runtimeInfo,
-      config,
-      runtime: runtimeInfo
+      ...entry,
+      isActive: !!runtime,
+      runtime: runtime
         ? {
-          status: runtimeInfo.runtime.getState(),
-          startedAt: runtimeInfo.startedAt.toISOString(),
-          sessions: runtimeInfo.runtime.getSessions().length,
-          workers: runtimeInfo.runtime.getWorkers().length,
+          state: runtime.runtime.getState(),
+          startedAt: runtime.startedAt.toISOString(),
+          sessions: runtime.runtime.getSessions().length,
+          workers: runtime.runtime.getWorkers().length,
         }
         : undefined,
     };
@@ -771,8 +674,6 @@ export class WorkspaceManager {
    * Get workspace configuration by slug (ID or name)
    */
   async getWorkspaceConfigBySlug(workspaceSlug: string): Promise<WorkspaceConfig | null> {
-    if (!this.registry) await this.initialize();
-
     // Find workspace by ID or name
     let workspace = await this.findById(workspaceSlug);
     if (!workspace) {
@@ -817,190 +718,22 @@ export class WorkspaceManager {
     }
   }
 
-  /**
-   * Get the current workspace (for current directory)
-   */
-  async getCurrentWorkspace(): Promise<WorkspaceEntry | null> {
-    const cwd = Deno.cwd();
-    return await this.findByPath(cwd);
-  }
-
-  /**
-   * Find or register a workspace
-   */
-  async findOrRegisterWorkspace(
-    path: string,
-    options?: {
-      name?: string;
-      description?: string;
-    },
-  ): Promise<WorkspaceEntry> {
-    const existing = await this.findByPath(path);
-    if (existing) return existing;
-
-    return await this.registerWorkspace(path, options);
-  }
-
-  /**
-   * Get running workspaces
-   */
-  async getRunningWorkspaces(): Promise<WorkspaceEntry[]> {
-    const all = await this.listAllPersisted();
-    return all.filter((w) => w.status === WorkspaceStatus.RUNNING);
-  }
-
-  /**
-   * Cleanup stale workspace entries
-   */
-  async cleanupWorkspaces(): Promise<number> {
-    if (!this.registry) await this.initialize();
-
-    const workspaces = await this.listAllPersisted();
-    let cleaned = 0;
-    const toRemove: string[] = [];
-
-    for (const workspace of workspaces) {
-      // Check if workspace directory still exists
-      const exists = await Deno.stat(workspace.path).catch(() => null);
-
-      if (!exists) {
-        toRemove.push(workspace.id);
-        cleaned++;
-      }
-    }
-
-    // Remove non-existent workspaces
-    for (const id of toRemove) {
-      await this.unregisterWorkspace(id);
-    }
-
-    logger.info(`Cleaned up ${cleaned} stale workspace entries`);
-    return cleaned;
-  }
-
-  /**
-   * Vacuum old stopped workspaces
-   */
-  async vacuumWorkspaces(): Promise<void> {
-    if (!this.registry) await this.initialize();
-
-    const workspaces = await this.listAllPersisted();
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - 30); // 30 days
-
-    const toRemove = workspaces
-      .filter((w) => {
-        if (w.status === WorkspaceStatus.STOPPED && w.stoppedAt) {
-          return new Date(w.stoppedAt) <= cutoff;
-        }
-        return false;
-      })
-      .map((w) => w.id);
-
-    for (const id of toRemove) {
-      await this.unregisterWorkspace(id);
-    }
-
-    logger.info(`Vacuumed ${toRemove.length} old workspace entries`);
-  }
-
-  /**
-   * Watch for workspace changes (real-time updates)
-   */
-  watchWorkspaces(): ReadableStream<WorkspaceEntry[]> {
-    if (!this.registry) throw new Error("Registry not initialized");
-
-    // Simple polling implementation
-    const stream = new ReadableStream<WorkspaceEntry[]>({
-      start: async (controller) => {
-        let isActive = true;
-
-        // Send initial state
-        controller.enqueue(await this.listAllPersisted());
-
-        // Simple polling for updates
-        const interval = setInterval(async () => {
-          if (!isActive) {
-            clearInterval(interval);
-            return;
-          }
-
-          try {
-            controller.enqueue(await this.listAllPersisted());
-          } catch (error) {
-            controller.error(error);
-            isActive = false;
-            clearInterval(interval);
-          }
-        }, 5000); // Poll every 5 seconds
-
-        // Cleanup function
-        return () => {
-          isActive = false;
-          clearInterval(interval);
-        };
-      },
-    });
-
-    return stream;
-  }
-
   // ============================================================================
   // MIGRATION & UTILITY METHODS
   // ============================================================================
 
-  async discoverWorkspaces(searchPath?: string): Promise<string[]> {
+  private async discoverWorkspaces(searchPath?: string): Promise<string[]> {
     const workspaces: string[] = [];
     const rootPath = searchPath || Deno.cwd();
+    const commonPaths = [
+      join(rootPath, "examples", "workspaces"),
+      join(rootPath, "workspaces"),
+      rootPath,
+    ];
 
-    if (searchPath) {
-      // Explicit search path
-      const commonPaths = [
-        join(rootPath, "examples", "workspaces"),
-        join(rootPath, "workspaces"),
-        rootPath,
-      ];
-
-      for (const basePath of commonPaths) {
-        if (await exists(basePath)) {
-          await this.scanDirectory(basePath, workspaces, 3);
-        }
-      }
-    } else {
-      // Git root discovery
-      try {
-        const gitRoot = new Deno.Command("git", {
-          args: ["rev-parse", "--show-toplevel"],
-          cwd: rootPath,
-        }).outputSync();
-
-        if (gitRoot.success) {
-          const gitRootPath = new TextDecoder().decode(gitRoot.stdout).trim();
-          const commonPaths = [
-            join(gitRootPath, "examples", "workspaces"),
-            join(gitRootPath, "workspaces"),
-            gitRootPath,
-          ];
-
-          for (const basePath of commonPaths) {
-            if (await exists(basePath)) {
-              await this.scanDirectory(basePath, workspaces, 3);
-            }
-          }
-        }
-      } catch {
-        // Not in git repo, scan current directory
-        const commonPaths = [
-          join(rootPath, "examples", "workspaces"),
-          join(rootPath, "workspaces"),
-          rootPath,
-        ];
-
-        for (const basePath of commonPaths) {
-          if (await exists(basePath)) {
-            await this.scanDirectory(basePath, workspaces, 3);
-          }
-        }
+    for (const basePath of commonPaths) {
+      if (await exists(basePath)) {
+        await this.scanDirectory(basePath, workspaces, 3);
       }
     }
 
@@ -1016,11 +749,6 @@ export class WorkspaceManager {
     if (currentDepth > maxDepth) return;
 
     try {
-      // Skip template storage directory
-      if (path.includes(join("packages", "starters"))) {
-        return;
-      }
-
       // Check if this directory has workspace.yml
       const workspaceYmlPath = join(path, "workspace.yml");
       if (await exists(workspaceYmlPath)) {
@@ -1050,35 +778,15 @@ export class WorkspaceManager {
     }
   }
 
-  async importExistingWorkspaces(searchPath?: string): Promise<number> {
+  private async importExistingWorkspaces(searchPath?: string): Promise<number> {
     const discovered = await this.discoverWorkspaces(searchPath);
     let imported = 0;
 
     for (const workspacePath of discovered) {
       try {
-        const existing = await this.findByPath(workspacePath);
+        const existing = await this.find({ path: workspacePath });
         if (!existing) {
-          // Try to load workspace config using ConfigLoader
-          let name = basename(workspacePath);
-          let description: string | undefined;
-
-          try {
-            const adapter = new FilesystemConfigAdapter();
-            const configLoader = new ConfigLoader(adapter, workspacePath);
-            const mergedConfig = await configLoader.load();
-
-            // Extract name and description from validated config
-            if (mergedConfig.workspace.workspace.name) {
-              name = mergedConfig.workspace.workspace.name;
-            }
-            if (mergedConfig.workspace.workspace.description) {
-              description = mergedConfig.workspace.workspace.description;
-            }
-          } catch {
-            // Ignore parsing errors, use defaults
-          }
-
-          await this.registerWorkspace(workspacePath, { name, description });
+          await this.registerWorkspace(workspacePath);
           imported++;
         }
       } catch (error) {
@@ -1090,109 +798,20 @@ export class WorkspaceManager {
   }
 
   /**
-   * Validate existing workspaces and show cache status during startup
+   * Validate existing workspaces on startup
    */
-  async validateExistingWorkspaces(): Promise<void> {
+  private async validateExistingWorkspaces(): Promise<void> {
     const workspaces = await this.listAllPersisted();
-    if (workspaces.length === 0) {
-      return;
-    }
-
-    logger.info(`Validating ${workspaces.length} existing workspace(s)...`);
+    if (workspaces.length === 0) return;
 
     for (const workspace of workspaces) {
-      try {
-        // Handle virtual workspaces differently
-        if (workspace.metadata?.virtual) {
-          // Virtual workspaces don't have filesystem paths to validate
-          logger.info(`Virtual workspace '${workspace.name}' validated (embedded configuration)`, {
-            workspaceId: workspace.id,
-            type: "virtual",
-          });
-          continue;
-        }
+      // Skip virtual workspaces
+      if (workspace.metadata?.virtual) continue;
 
-        // Check if workspace directory still exists
-        const dirExists = await Deno.stat(workspace.path).catch(() => null);
-        if (!dirExists) {
-          logger.warn(`Workspace '${workspace.name}' directory not found: ${workspace.path}`);
-          continue;
-        }
-
-        // Check config file and cache status
-        const workspaceYmlPath = join(workspace.path, "workspace.yml");
-        const configExists = await Deno.stat(workspaceYmlPath).catch(() => null);
-        if (!configExists) {
-          logger.warn(`Workspace '${workspace.name}' missing workspace.yml file`);
-          continue;
-        }
-
-        // Check if cached config is still valid
-        try {
-          const adapter = new FilesystemConfigAdapter();
-          const configLoader = new ConfigLoader(adapter, workspace.path);
-          const loadedConfig = await configLoader.load();
-          const config = loadedConfig.workspace;
-
-          // Calculate current config hash
-          const configJson = JSON.stringify(config, Object.keys(config).sort());
-          const encoder = new TextEncoder();
-          const data = encoder.encode(configJson);
-          const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          const currentHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
-
-          if (workspace.configHash === currentHash) {
-            logger.info(`Workspace '${workspace.name}' loaded from cache (no changes detected)`, {
-              workspaceId: workspace.id,
-              configHash: currentHash.substring(0, 8) + "...",
-            });
-          } else {
-            logger.info(`Workspace '${workspace.name}' config changed since last startup`, {
-              workspaceId: workspace.id,
-              oldHash: workspace.configHash?.substring(0, 8) + "...",
-              newHash: currentHash.substring(0, 8) + "...",
-            });
-          }
-        } catch (error) {
-          // Create compact error message for validation failures
-          let compactError = error.message;
-
-          if (error.message.includes("Configuration validation failed")) {
-            // Extract the actual field error from validation messages
-            const lines = error.message.split("\n");
-            const errorLine = lines.find((line) => line.includes("•"));
-            if (errorLine) {
-              // Extract field path and error type
-              const match = errorLine.match(/• ([^:]+): (.+)/);
-              if (match) {
-                const fieldPath = match[1];
-                const errorType = match[2].split(",")[0]; // Take first part before comma
-                compactError = `${fieldPath}: ${errorType}`;
-              }
-            }
-          } else if (error.issues && Array.isArray(error.issues)) {
-            // Handle Zod validation errors directly
-            const issueCount = error.issues.length;
-            const firstIssue = error.issues[0];
-            const issuePath = firstIssue?.path?.join?.(".") || "root";
-            const shortMessage = firstIssue?.message?.split(".")[0] || "validation error";
-            compactError = `${issueCount} error${
-              issueCount > 1 ? "s" : ""
-            } (${issuePath}: ${shortMessage})`;
-          } else {
-            compactError = error.message;
-          }
-
-          logger.warn(`Failed to validate config for '${workspace.name}': ${compactError}`, {
-            workspaceId: workspace.id,
-            workspacePath: workspace.path,
-          });
-        }
-      } catch (error) {
-        logger.warn(`Failed to validate workspace '${workspace.name}': ${error.message}`, {
-          workspaceId: workspace.id,
-        });
+      // Check if directory exists
+      const exists = await Deno.stat(workspace.path).catch(() => null);
+      if (!exists) {
+        logger.warn(`Workspace directory not found: ${workspace.name}`);
       }
     }
   }
@@ -1347,10 +966,7 @@ export class WorkspaceManager {
    * Close storage connection and cleanup
    */
   async close(): Promise<void> {
-    if (this.registry) {
-      await this.registry.close();
-      this.registry = null;
-    }
+    await this.registry.close();
     this.runtimes.clear();
     logger.debug("WorkspaceManager closed");
   }
@@ -1359,16 +975,17 @@ export class WorkspaceManager {
 // Global singleton instance - lazy initialization with new storage
 let _workspaceManager: WorkspaceManager | null = null;
 
-export function getWorkspaceManager(): WorkspaceManager {
+export async function getWorkspaceManager(): Promise<WorkspaceManager> {
   if (!_workspaceManager) {
-    // Use new storage adapter architecture
-    _workspaceManager = new WorkspaceManager();
+    // Create default registry adapter
+    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
+    _workspaceManager = new WorkspaceManager(registry);
   }
   return _workspaceManager;
 }
 
 // Factory function for custom storage (testing, etc.)
-export function createWorkspaceManager(registry?: RegistryStorageAdapter): WorkspaceManager {
+export function createWorkspaceManager(registry: RegistryStorageAdapter): WorkspaceManager {
   return new WorkspaceManager(registry);
 }
 

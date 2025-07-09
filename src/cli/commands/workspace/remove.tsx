@@ -1,6 +1,6 @@
 import { checkAtlasRunning, createAtlasNotRunningError, getAtlasClient } from "@atlas/client";
 import type { WorkspaceInfo } from "@atlas/client";
-import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
+// import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
@@ -86,30 +86,30 @@ export const handler = async (argv: RemoveArgs): Promise<void> => {
         Deno.exit(0);
       }
 
-      // Stop the workspace
-      const processManager = new WorkspaceProcessManager();
-      const s = spinner();
-      s.start(`Stopping workspace '${workspace.name}'...`);
+      // // Stop the workspace
+      // const processManager = new WorkspaceProcessManager();
+      // const s = spinner();
+      // s.start(`Stopping workspace '${workspace.name}'...`);
 
-      try {
-        await processManager.stop(workspace.id);
-        s.stop("Workspace stopped");
-      } catch (err) {
-        s.stop("Failed to stop workspace");
-        errorOutput(
-          `Error stopping workspace: ${err instanceof Error ? err.message : String(err)}`,
-        );
+      // try {
+      //   await processManager.stop(workspace.id);
+      //   s.stop("Workspace stopped");
+      // } catch (err) {
+      //   s.stop("Failed to stop workspace");
+      //   errorOutput(
+      //     `Error stopping workspace: ${err instanceof Error ? err.message : String(err)}`,
+      //   );
 
-        const forceRemove = await confirmAction(
-          "Failed to stop workspace. Remove anyway?",
-          { force: argv.force, yes: argv.yes, defaultValue: false },
-        );
+      //   const forceRemove = await confirmAction(
+      //     "Failed to stop workspace. Remove anyway?",
+      //     { force: argv.force, yes: argv.yes, defaultValue: false },
+      //   );
 
-        if (!forceRemove) {
-          infoOutput("Removal cancelled.");
-          Deno.exit(0);
-        }
-      }
+      //   if (!forceRemove) {
+      //     infoOutput("Removal cancelled.");
+      //     Deno.exit(0);
+      //   }
+      // }
     }
 
     // Confirm removal

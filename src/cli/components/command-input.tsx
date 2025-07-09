@@ -50,7 +50,8 @@ export const CommandInput = ({
     // Handle double escape to clear input
     if (key.escape) {
       const currentTime = Date.now();
-      if (currentTime - lastEscapeTime < 500) { // 500ms window for double escape
+      if (currentTime - lastEscapeTime < 500) {
+        // 500ms window for double escape
         clearInput();
         return;
       }
@@ -76,6 +77,12 @@ export const CommandInput = ({
       }
       // Any character input goes back to input mode
       if (input && input.length === 1 && !key.ctrl && !key.meta) {
+        // Don't reset selection if there's only one suggestion and we're already at index 0
+        const filteredSuggestions = getFilteredSuggestions();
+        if (filteredSuggestions.length === 1 && selectedSuggestionIndex === 0) {
+          // Let the input be handled by TextInput without resetting selection
+          return;
+        }
         setSelectedSuggestionIndex(-1);
         // Let the input be handled by TextInput
         return;
@@ -85,11 +92,32 @@ export const CommandInput = ({
 
   // Handle input changes from TextInput
   const handleInputChange = (value: string) => {
-    setCurrentInput(value);
-    setShowSuggestions(value.startsWith("/"));
+    const isSlashCommand = value.startsWith("/");
 
-    if (value.startsWith("/") && selectedSuggestionIndex === -1) {
-      setSelectedSuggestionIndex(0);
+    if (isSlashCommand) {
+      // Calculate filtered suggestions based on the new value
+      const filteredSuggestions = getAllSuggestionsWithDescriptions().filter(
+        (item) => item.command.toLowerCase().includes(value.toLowerCase()),
+      );
+
+      // If there's only one item and we're already at index 0, only update input but skip other state changes
+      if (filteredSuggestions.length === 1 && selectedSuggestionIndex === 0) {
+        setCurrentInput(value);
+        return;
+      }
+
+      // Update all state normally
+      setCurrentInput(value);
+      setShowSuggestions(true);
+
+      // Only set index to 0 if we're not in suggestion mode and there are suggestions
+      if (selectedSuggestionIndex === -1 && filteredSuggestions.length > 0) {
+        setSelectedSuggestionIndex(0);
+      }
+    } else {
+      // Not a slash command, update normally
+      setCurrentInput(value);
+      setShowSuggestions(false);
     }
   };
 
@@ -123,17 +151,15 @@ export const CommandInput = ({
         borderColor={isDisabled ? "gray" : "gray"}
         paddingX={1}
       >
-        <>
-          <Text dimColor>→&nbsp;</Text>
-          <TextInput
-            key={inputKey}
-            suggestions={getAllSuggestions()}
-            placeholder="Enter a message or type / for commands..."
-            onChange={handleInputChange}
-            onSubmit={handleSubmit}
-            isDisabled={isDisabled}
-          />
-        </>
+        <Text dimColor>→&nbsp;</Text>
+        <TextInput
+          key={inputKey}
+          suggestions={getAllSuggestions()}
+          placeholder="Enter a message or type / for commands..."
+          onChange={handleInputChange}
+          onSubmit={handleSubmit}
+          isDisabled={isDisabled}
+        />
       </Box>
 
       {/* Always show row with conditional contents */}

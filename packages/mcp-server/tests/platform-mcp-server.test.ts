@@ -3,13 +3,22 @@
  * Covers integration between daemon API, MCP server, and workspace configuration
  */
 
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { PlatformMCPServer } from "../src/platform-server.ts";
+import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../src/tools/utils.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
+
+// Test workspace interface for type safety
+interface TestWorkspace {
+  id: string;
+  name: string;
+  config: unknown;
+  jobs: unknown[];
+}
 
 // Mock daemon server for testing
 class MockDaemonServer {
-  private workspaces: Map<string, any> = new Map();
+  private workspaces: Map<string, TestWorkspace> = new Map();
   private port: number;
   private server?: Deno.HttpServer;
 
@@ -18,7 +27,7 @@ class MockDaemonServer {
   }
 
   // Set up test workspace configurations
-  setupTestWorkspace(workspaceId: string, config: any, jobs: any[] = []) {
+  setupTestWorkspace(workspaceId: string, config: unknown, jobs: unknown[] = []) {
     this.workspaces.set(workspaceId, {
       id: workspaceId,
       name: `Test Workspace ${workspaceId}`,
@@ -27,7 +36,7 @@ class MockDaemonServer {
     });
   }
 
-  async start() {
+  start() {
     this.server = Deno.serve({ port: this.port }, (req) => {
       const url = new URL(req.url);
 
@@ -80,7 +89,7 @@ Deno.test({
     const mockDaemon = new MockDaemonServer(8081);
     await mockDaemon.start();
 
-    const mcpServer = new PlatformMCPServer({
+    const _mcpServer = new PlatformMCPServer({
       logger: console,
       daemonUrl: "http://localhost:8081",
     });
@@ -146,17 +155,21 @@ Deno.test({
       });
 
       await t.step("checkJobDiscoverable - exact match", async () => {
-        const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-1",
           "telephone",
+          console,
         );
         assertEquals(isDiscoverable, true, "telephone job should be discoverable via exact match");
       });
 
       await t.step("checkJobDiscoverable - wildcard match", async () => {
-        const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-1",
           "public_demo",
+          console,
         );
         assertEquals(
           isDiscoverable,
@@ -166,25 +179,33 @@ Deno.test({
       });
 
       await t.step("checkJobDiscoverable - no match", async () => {
-        const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-1",
           "private_secret",
+          console,
         );
         assertEquals(isDiscoverable, false, "private_secret should not be discoverable");
       });
 
       await t.step("checkJobDiscoverable - admin wildcard pattern", async () => {
-        const adminCleanup = await (mcpServer as any).checkJobDiscoverable(
+        const adminCleanup = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-2",
           "admin_cleanup",
+          console,
         );
-        const adminBackup = await (mcpServer as any).checkJobDiscoverable(
+        const adminBackup = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-2",
           "admin_backup",
+          console,
         );
-        const userTask = await (mcpServer as any).checkJobDiscoverable(
+        const userTask = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-2",
           "user_task",
+          console,
         );
 
         assertEquals(adminCleanup, true, "admin_cleanup should match admin_* pattern");
@@ -193,81 +214,42 @@ Deno.test({
       });
 
       await t.step("checkWorkspaceMCPEnabled - enabled workspace", async () => {
-        const isEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled("test-workspace-1");
+        const isEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8081",
+          "test-workspace-1",
+          console,
+        );
         assertEquals(isEnabled, true, "test-workspace-1 should have MCP enabled");
       });
 
       await t.step("checkWorkspaceMCPEnabled - disabled workspace", async () => {
-        const isEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled("test-workspace-3");
+        const isEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8081",
+          "test-workspace-3",
+          console,
+        );
         assertEquals(isEnabled, false, "test-workspace-3 should have MCP disabled");
       });
 
       await t.step("checkWorkspaceMCPEnabled - nonexistent workspace", async () => {
-        const isEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled("nonexistent");
+        const isEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8081",
+          "nonexistent",
+          console,
+        );
         assertEquals(isEnabled, false, "nonexistent workspace should fail closed");
       });
 
-      await t.step("withWorkspaceMCPCheck - enabled workspace", async () => {
-        const result = await (mcpServer as any).withWorkspaceMCPCheck(
-          { workspaceId: "test-workspace-1" },
-          async ({ workspaceId }) => ({ success: true, workspaceId }),
-        );
-        assertEquals(result.success, true);
-        assertEquals(result.workspaceId, "test-workspace-1");
-      });
-
-      await t.step("withWorkspaceMCPCheck - disabled workspace", async () => {
-        await assertRejects(
-          async () => {
-            await (mcpServer as any).withWorkspaceMCPCheck(
-              { workspaceId: "test-workspace-3" },
-              async () => ({ success: true }),
-            );
-          },
-          Error,
-          "MCP is disabled for workspace",
-        );
-      });
-
-      await t.step("withJobDiscoverabilityCheck - discoverable job", async () => {
-        const result = await (mcpServer as any).withJobDiscoverabilityCheck(
-          { workspaceId: "test-workspace-1", jobName: "telephone" },
-          async ({ workspaceId, jobName }) => ({ success: true, workspaceId, jobName }),
-        );
-        assertEquals(result.success, true);
-        assertEquals(result.jobName, "telephone");
-      });
-
-      await t.step("withJobDiscoverabilityCheck - non-discoverable job", async () => {
-        await assertRejects(
-          async () => {
-            await (mcpServer as any).withJobDiscoverabilityCheck(
-              { workspaceId: "test-workspace-1", jobName: "private_secret" },
-              async () => ({ success: true }),
-            );
-          },
-          Error,
-          "not discoverable",
-        );
-      });
-
-      await t.step("withJobDiscoverabilityCheck - MCP disabled workspace", async () => {
-        await assertRejects(
-          async () => {
-            await (mcpServer as any).withJobDiscoverabilityCheck(
-              { workspaceId: "test-workspace-3", jobName: "any_job" },
-              async () => ({ success: true }),
-            );
-          },
-          Error,
-          "MCP is disabled",
-        );
-      });
+      // Note: withWorkspaceMCPCheck and withJobDiscoverabilityCheck have been removed
+      // as they are no longer part of the platform server's public API.
+      // The security checks are now handled internally by the tool implementations.
 
       await t.step("Empty discoverable jobs list blocks all jobs", async () => {
-        const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8081",
           "test-workspace-4",
           "blocked_job",
+          console,
         );
         assertEquals(
           isDiscoverable,
@@ -309,79 +291,80 @@ Deno.test({
         { name: "telephone", description: "Telephone job" },
       ]);
 
-      const mcpServer = new PlatformMCPServer({
+      const _mcpServer = new PlatformMCPServer({
         logger: console,
         daemonUrl: "http://localhost:8082",
       });
 
       await t.step("workspace_jobs_list filters jobs correctly", async () => {
-        // Simulate the MCP tool call for workspace_jobs_list
-        const result = await (mcpServer as any).withWorkspaceMCPCheck(
-          { workspaceId: "integration-test" },
-          async ({ workspaceId }) => {
-            // This simulates the actual workspace_jobs_list implementation
-            const response = await fetch(
-              `http://localhost:8082/api/workspaces/${workspaceId}/jobs`,
-            );
-            const allJobs = await response.json();
-            // Note: response.json() automatically consumes and closes the body
-
-            // Filter jobs based on discoverability
-            const discoverableJobs = [];
-            for (const job of allJobs) {
-              const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
-                workspaceId,
-                job.name,
-              );
-              if (isDiscoverable) {
-                discoverableJobs.push(job);
-              }
-            }
-
-            return {
-              jobs: discoverableJobs,
-              total: discoverableJobs.length,
-              filtered: true,
-            };
-          },
+        // First check if workspace has MCP enabled
+        const mcpEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8082",
+          "integration-test",
+          console,
         );
+        assertEquals(mcpEnabled, true, "Workspace should have MCP enabled");
 
-        assertEquals(result.total, 1, "Should return only 1 discoverable job");
-        assertEquals(result.jobs[0].name, "public_test", "Should return only the public_test job");
-        assertEquals(result.filtered, true, "Should indicate filtering was applied");
+        // Simulate the actual workspace_jobs_list implementation
+        const response = await fetch(
+          `http://localhost:8082/api/workspaces/integration-test/jobs`,
+        );
+        const allJobs = await response.json();
+        // Note: response.json() automatically consumes and closes the body
+
+        // Filter jobs based on discoverability
+        const discoverableJobs = [];
+        for (const job of allJobs) {
+          const isDiscoverable = await checkJobDiscoverable(
+            "http://localhost:8082",
+            "integration-test",
+            job.name,
+            console,
+          );
+          if (isDiscoverable) {
+            discoverableJobs.push(job);
+          }
+        }
+
+        assertEquals(discoverableJobs.length, 1, "Should return only 1 discoverable job");
+        assertEquals(
+          discoverableJobs[0].name,
+          "public_test",
+          "Should return only the public_test job",
+        );
       });
 
       await t.step("workspace_jobs_describe allows discoverable job", async () => {
-        // Should succeed for discoverable job
-        const result = await (mcpServer as any).withJobDiscoverabilityCheck(
-          { workspaceId: "integration-test", jobName: "public_test" },
-          async ({ workspaceId, jobName }) => {
-            const response = await fetch(
-              `http://localhost:8082/api/workspaces/${workspaceId}/jobs`,
-            );
-            const jobs = await response.json();
-            // Note: response.json() automatically consumes and closes the body
-            const job = jobs.find((j: any) => j.name === jobName);
-            return { job };
-          },
+        // First check if job is discoverable
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8082",
+          "integration-test",
+          "public_test",
+          console,
         );
+        assertEquals(isDiscoverable, true, "public_test should be discoverable");
 
-        assertEquals(result.job.name, "public_test");
-        assertEquals(result.job.description, "Public test job");
+        // Simulate fetching job details
+        const response = await fetch(
+          `http://localhost:8082/api/workspaces/integration-test/jobs`,
+        );
+        const jobs = await response.json();
+        // Note: response.json() automatically consumes and closes the body
+        const job = jobs.find((j: unknown) => (j as { name: string }).name === "public_test");
+
+        assertEquals(job.name, "public_test");
+        assertEquals(job.description, "Public test job");
       });
 
       await t.step("workspace_jobs_describe blocks non-discoverable job", async () => {
         // Should fail for non-discoverable job
-        await assertRejects(
-          async () => {
-            await (mcpServer as any).withJobDiscoverabilityCheck(
-              { workspaceId: "integration-test", jobName: "private_test" },
-              async () => ({ success: true }),
-            );
-          },
-          Error,
-          "not discoverable",
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8082",
+          "integration-test",
+          "private_test",
+          console,
         );
+        assertEquals(isDiscoverable, false, "private_test should not be discoverable");
       });
     } finally {
       // Ensure proper cleanup
@@ -400,7 +383,7 @@ Deno.test({
     const mockDaemon = new MockDaemonServer(8083);
     await mockDaemon.start();
 
-    const mcpServer = new PlatformMCPServer({
+    const _mcpServer = new PlatformMCPServer({
       logger: console,
       daemonUrl: "http://localhost:8083",
     });
@@ -411,28 +394,35 @@ Deno.test({
           // Missing server.mcp section entirely
         });
 
-        const isEnabled = await (mcpServer as any).checkWorkspaceMCPEnabled("malformed-config");
+        const isEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:8083",
+          "malformed-config",
+          console,
+        );
         assertEquals(isEnabled, false, "Should fail closed for malformed config");
 
-        const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:8083",
           "malformed-config",
           "any_job",
+          console,
         );
         assertEquals(isDiscoverable, false, "Should fail closed for missing discoverable config");
       });
 
       await t.step("Network errors fail closed", async () => {
-        const badMcpServer = new PlatformMCPServer({
-          logger: console,
-          daemonUrl: "http://localhost:9999", // Non-existent daemon
-        });
-
-        const isEnabled = await (badMcpServer as any).checkWorkspaceMCPEnabled("any-workspace");
+        const isEnabled = await checkWorkspaceMCPEnabled(
+          "http://localhost:9999", // Non-existent daemon
+          "any-workspace",
+          console,
+        );
         assertEquals(isEnabled, false, "Should fail closed on network error");
 
-        const isDiscoverable = await (badMcpServer as any).checkJobDiscoverable(
+        const isDiscoverable = await checkJobDiscoverable(
+          "http://localhost:9999", // Non-existent daemon
           "any-workspace",
           "any_job",
+          console,
         );
         assertEquals(isDiscoverable, false, "Should fail closed on network error");
       });
@@ -461,9 +451,11 @@ Deno.test({
         ];
 
         for (const { job, expected } of tests) {
-          const isDiscoverable = await (mcpServer as any).checkJobDiscoverable(
+          const isDiscoverable = await checkJobDiscoverable(
+            "http://localhost:8083",
             "complex-patterns",
             job,
+            console,
           );
           assertEquals(
             isDiscoverable,

@@ -3,7 +3,7 @@
  * Tests the pattern matching and filtering logic in isolation
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 
 /**
  * Extracted job discoverability logic for unit testing
@@ -82,7 +82,7 @@ Deno.test("Job Discoverability Pattern Matching", async (t) => {
   });
 
   await t.step("Edge cases", () => {
-    const discoverableJobs = ["*", "", "a*", "*a"];
+    const _discoverableJobs = ["*", "", "a*", "*a"];
 
     assertEquals(checkJobDiscoverableSync(["*"], "anything"), true); // Global wildcard
     assertEquals(checkJobDiscoverableSync([""], ""), true); // Empty exact match

@@ -1,6 +1,11 @@
-import { Box, render, Text } from "ink";
-import { getDaemonClient, type WorkspaceInfo } from "../../utils/daemon-client.ts";
+import { Box, render, Text, useStdout } from "ink";
+import React from "react";
+import { createAtlasClient, type paths } from "@atlas/oapi-client";
 import { YargsInstance } from "../../utils/yargs.ts";
+
+// Extract WorkspaceResponse type from OpenAPI generated types
+type WorkspaceResponse =
+  paths["/api/workspaces"]["get"]["responses"]["200"]["content"]["application/json"][number];
 
 interface ListArgs {
   json?: boolean;
@@ -23,57 +28,67 @@ export function builder(y: YargsInstance) {
 
 export const handler = async (argv: ListArgs): Promise<void> => {
   try {
-    // Get workspaces from daemon API
-    // The client will auto-start the daemon if needed
-    const client = getDaemonClient();
-    const workspaces = await client.listWorkspaces();
+    // Get workspaces from daemon API using OpenAPI client
+    // Note: Unlike the old daemon-client, this doesn't auto-start the daemon
+    const client = createAtlasClient();
+    const { data, error } = await client.GET("/api/workspaces");
 
-    if (argv.json) {
-      // JSON output for scripting
-      console.log(
-        JSON.stringify(
-          {
-            workspaces: workspaces.map(formatWorkspaceForJson),
-            count: workspaces.length,
-          },
-          null,
-          2,
-        ),
+    if (error) {
+      throw new Error(error.error || "Failed to fetch workspaces");
+    }
+
+    // Use the data directly from the API
+    const workspaces = data;
+
+    // Render appropriate view based on output format
+    const { unmount } = render(
+      argv.json
+        ? <JsonOutput workspaces={workspaces} />
+        : <WorkspaceList registeredWorkspaces={workspaces} />,
+    );
+
+    // Give a moment for render then exit
+    setTimeout(() => {
+      unmount();
+    }, 100);
+  } catch (error) {
+    // Provide helpful error message if daemon is not running
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+      console.error(
+        "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
       );
     } else {
-      // Render with Ink and exit immediately
-      const { rerender, unmount } = render(<WorkspaceList registeredWorkspaces={workspaces} />);
-      // Give a moment for render then exit
-      setTimeout(() => {
-        unmount();
-      }, 100);
+      console.error(`Error: ${errorMessage}`);
     }
-  } catch (error) {
-    console.error(
-      `Error: ${error instanceof Error ? error.message : String(error)}`,
-    );
     Deno.exit(1);
   }
 };
 
-function formatWorkspaceForJson(workspace: WorkspaceInfo) {
-  return {
-    id: workspace.id,
-    name: workspace.name,
-    description: workspace.description,
-    status: workspace.status,
-    path: workspace.path,
-    hasActiveRuntime: workspace.hasActiveRuntime,
-    createdAt: workspace.createdAt,
-    lastSeen: workspace.lastSeen,
-  };
+// JSON output component using useStdout
+function JsonOutput({ workspaces }: { workspaces: WorkspaceResponse[] }) {
+  const { write } = useStdout();
+
+  React.useEffect(() => {
+    const output = JSON.stringify(
+      {
+        workspaces,
+        count: workspaces.length,
+      },
+      null,
+      2,
+    );
+    write(output);
+  }, [workspaces, write]);
+
+  return null;
 }
 
 // Component for rendering workspace list
 function WorkspaceList({
   registeredWorkspaces,
 }: {
-  registeredWorkspaces: WorkspaceInfo[];
+  registeredWorkspaces: WorkspaceResponse[];
 }) {
   const hasRegistered = registeredWorkspaces && registeredWorkspaces.length > 0;
 
@@ -99,10 +114,10 @@ function WorkspaceList({
   };
 
   // Format runtime status
-  const formatRuntimeStatus = (workspace: WorkspaceInfo): string => {
+  const formatRuntimeStatus = (workspace: WorkspaceResponse): string => {
     if (workspace.hasActiveRuntime) {
       return "Active";
-    } else if (workspace.status === "RUNNING") {
+    } else if (workspace.status === "running") {
       return "Running";
     } else {
       return "-";
@@ -136,9 +151,9 @@ function WorkspaceList({
 
       {/* Table Rows */}
       {registeredWorkspaces.map((workspace, i) => {
-        const statusColor = workspace.status === "RUNNING"
+        const statusColor = workspace.status === "running"
           ? "green"
-          : workspace.status === "CRASHED"
+          : workspace.status === "crashed"
           ? "red"
           : "gray";
 
@@ -161,10 +176,6 @@ function WorkspaceList({
           </Box>
         );
       })}
-
-      <Box>
-        <Text></Text>
-      </Box>
     </Box>
   );
 }

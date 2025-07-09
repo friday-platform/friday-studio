@@ -6,8 +6,7 @@
     "@atlas/config": "../config/mod.ts",
     "@atlas/storage": "../storage/mod.ts",
     "ai": "npm:ai@^4.0.7",
-    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1",
-    "zod": "npm:zod@^3.21.4"
+    "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1"
   },
   "tasks": {
     "test": "deno test --allow-all"

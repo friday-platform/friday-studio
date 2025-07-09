@@ -294,3 +294,117 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "MCPManager - HTTP Transport Registration",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new MCPManager();
+
+    // Mock HTTP server or use test daemon
+    // Note: This test will fail without a running daemon at localhost:8080/mcp
+    let registrationSucceeded = false;
+
+    try {
+      await manager.registerServer({
+        id: "http-test-server",
+        transport: {
+          type: "http",
+          url: "http://localhost:8080/mcp",
+        },
+      });
+
+      registrationSucceeded = true;
+
+      // Verify server is registered
+      const status = manager.getServerStatus();
+      expect(status.has("http-test-server")).toBe(true);
+    } catch (error) {
+      // Expected to fail without running daemon
+      expect((error as Error).message).toContain("registration failed");
+    }
+
+    // Clean up if registration succeeded
+    if (registrationSucceeded) {
+      await manager.dispose();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  },
+});
+
+Deno.test({
+  name: "MCPManager - Multiple Transport Types Including HTTP",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new MCPManager();
+
+    try {
+      // Register servers with different transports
+      await manager.registerServer({
+        id: "stdio-server",
+        transport: {
+          type: "stdio",
+          command: "deno",
+          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+        },
+      });
+
+      // Attempt HTTP server registration (may fail without daemon)
+      let httpRegistered = false;
+      try {
+        await manager.registerServer({
+          id: "http-server",
+          transport: {
+            type: "http",
+            url: "http://localhost:8080/mcp",
+          },
+        });
+        httpRegistered = true;
+      } catch {
+        // Expected to fail without daemon
+      }
+
+      // Verify at least stdio server is registered
+      const servers = manager.listServers();
+      expect(servers).toContain("stdio-server");
+
+      if (httpRegistered) {
+        expect(servers).toContain("http-server");
+      }
+    } finally {
+      await manager.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  },
+});
+
+Deno.test({
+  name: "MCPManager - HTTP Transport Connection Failure",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    const manager = new MCPManager();
+
+    let caughtError = false;
+    try {
+      await manager.registerServer({
+        id: "http-fail-server",
+        transport: {
+          type: "http",
+          url: "http://localhost:9999/nonexistent", // Invalid endpoint
+        },
+      });
+    } catch (error) {
+      caughtError = true;
+      expect((error as Error).message).toContain("registration failed");
+    }
+
+    expect(caughtError).toBe(true);
+
+    // Clean up
+    await manager.dispose();
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  },
+});

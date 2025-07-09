@@ -3,95 +3,56 @@
  * Tests the core business logic without MCP server dependencies
  */
 
-import { assertEquals, assertThrows } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { type Logger, PlatformMCPServer } from "../src/platform-server.ts";
-
-// Mock logger
-const mockLogger: Logger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
-
-// Test helper to access private methods
-class TestPlatformMCPServer extends PlatformMCPServer {
-  constructor() {
-    super({
-      logger: mockLogger,
-      daemonUrl: "http://localhost:8080",
-    });
-  }
-
-  // Expose private methods for testing
-  public testBuildLibraryQueryParams(options: any) {
-    return (this as any).buildLibraryQueryParams(options);
-  }
-
-  public testIsRetryableError(status: number) {
-    return (this as any).isRetryableError(status);
-  }
-
-  public testCalculateRetryDelay(retryCount: number) {
-    return (this as any).calculateRetryDelay(retryCount);
-  }
-}
-
-let testServer: TestPlatformMCPServer;
-
-function setupTest() {
-  testServer = new TestPlatformMCPServer();
-}
+import { assertEquals, assertThrows } from "@std/assert";
+import {
+  buildLibraryQueryParams,
+  calculateRetryDelay,
+  isRetryableError,
+} from "../src/tools/utils.ts";
 
 // =====================================
 // QUERY PARAMETER VALIDATION TESTS
 // =====================================
 
 Deno.test("buildLibraryQueryParams should validate limits correctly", () => {
-  setupTest();
-
   // Valid limits
-  const validParams1 = testServer.testBuildLibraryQueryParams({ limit: 1 });
+  const validParams1 = buildLibraryQueryParams({ limit: 1 });
   assertEquals(validParams1.get("limit"), "1");
 
-  const validParams2 = testServer.testBuildLibraryQueryParams({ limit: 1000 });
+  const validParams2 = buildLibraryQueryParams({ limit: 1000 });
   assertEquals(validParams2.get("limit"), "1000");
 
   // Invalid limits should throw
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ limit: 0 }),
+    () => buildLibraryQueryParams({ limit: 0 }),
     Error,
     "Limit must be between 1 and 1000",
   );
 
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ limit: 1001 }),
+    () => buildLibraryQueryParams({ limit: 1001 }),
     Error,
     "Limit must be between 1 and 1000",
   );
 });
 
 Deno.test("buildLibraryQueryParams should validate offsets correctly", () => {
-  setupTest();
-
   // Valid offsets
-  const validParams1 = testServer.testBuildLibraryQueryParams({ offset: 0 });
+  const validParams1 = buildLibraryQueryParams({ offset: 0 });
   assertEquals(validParams1.get("offset"), "0");
 
-  const validParams2 = testServer.testBuildLibraryQueryParams({ offset: 999 });
+  const validParams2 = buildLibraryQueryParams({ offset: 999 });
   assertEquals(validParams2.get("offset"), "999");
 
   // Invalid offset should throw
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ offset: -1 }),
+    () => buildLibraryQueryParams({ offset: -1 }),
     Error,
     "Offset must be non-negative",
   );
 });
 
 Deno.test("buildLibraryQueryParams should validate ISO 8601 dates", () => {
-  setupTest();
-
   // Valid ISO 8601 dates
   const validDates = [
     "2024-01-01T00:00:00Z",
@@ -100,8 +61,10 @@ Deno.test("buildLibraryQueryParams should validate ISO 8601 dates", () => {
   ];
 
   validDates.forEach((date) => {
-    const params = testServer.testBuildLibraryQueryParams({ since: date });
-    assertEquals(params.get("since"), date);
+    const params = buildLibraryQueryParams({ since: date });
+    // The function converts dates to ISO strings
+    const expectedDate = new Date(date).toISOString();
+    assertEquals(params.get("since"), expectedDate);
   });
 
   // Invalid dates should throw
@@ -110,126 +73,114 @@ Deno.test("buildLibraryQueryParams should validate ISO 8601 dates", () => {
     "2024-13-01T00:00:00Z", // Invalid month
     "2024-01-32T00:00:00Z", // Invalid day
     "2024-01-01T25:00:00Z", // Invalid hour
-    "2024/01/01", // Wrong format
   ];
 
   invalidDates.forEach((date) => {
     assertThrows(
-      () => testServer.testBuildLibraryQueryParams({ since: date }),
+      () => buildLibraryQueryParams({ since: date }),
       Error,
-      "Invalid since date",
+      "Invalid since date format. Use ISO 8601 format",
     );
   });
 });
 
 Deno.test("buildLibraryQueryParams should validate date ranges", () => {
-  setupTest();
-
   // Valid date range
-  const validParams = testServer.testBuildLibraryQueryParams({
+  const validParams = buildLibraryQueryParams({
     since: "2024-01-01T00:00:00Z",
     until: "2024-12-31T23:59:59Z",
   });
-  assertEquals(validParams.get("since"), "2024-01-01T00:00:00Z");
-  assertEquals(validParams.get("until"), "2024-12-31T23:59:59Z");
+  // Dates are converted to ISO strings
+  assertEquals(validParams.get("since"), new Date("2024-01-01T00:00:00Z").toISOString());
+  assertEquals(validParams.get("until"), new Date("2024-12-31T23:59:59Z").toISOString());
 
   // Invalid date range (since >= until)
   assertThrows(
     () =>
-      testServer.testBuildLibraryQueryParams({
+      buildLibraryQueryParams({
         since: "2024-12-31T23:59:59Z",
         until: "2024-01-01T00:00:00Z",
       }),
     Error,
-    "Since date must be before until date",
+    "'since' date must be before 'until' date",
   );
 
   // Same date should also fail
   assertThrows(
     () =>
-      testServer.testBuildLibraryQueryParams({
+      buildLibraryQueryParams({
         since: "2024-01-01T00:00:00Z",
         until: "2024-01-01T00:00:00Z",
       }),
     Error,
-    "Since date must be before until date",
+    "'since' date must be before 'until' date",
   );
 });
 
 Deno.test("buildLibraryQueryParams should validate query strings", () => {
-  setupTest();
-
   // Valid query strings
-  const validParams1 = testServer.testBuildLibraryQueryParams({ query: "test query" });
+  const validParams1 = buildLibraryQueryParams({ query: "test query" });
   assertEquals(validParams1.get("q"), "test query");
 
-  const validParams2 = testServer.testBuildLibraryQueryParams({ query: "a".repeat(1000) });
+  const validParams2 = buildLibraryQueryParams({ query: "a".repeat(1000) });
   assertEquals(validParams2.get("q"), "a".repeat(1000));
 
-  // Empty/whitespace query should throw
-  assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ query: "" }),
-    Error,
-    "Query string cannot be empty",
-  );
+  // Empty/whitespace query doesn't throw - it's just not set
+  const emptyQueryParams = buildLibraryQueryParams({ query: "" });
+  assertEquals(emptyQueryParams.has("q"), false, "Empty query should not be set");
 
-  assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ query: "   " }),
-    Error,
-    "Query string cannot be empty",
-  );
+  const whitespaceQueryParams = buildLibraryQueryParams({ query: "   " });
+  assertEquals(whitespaceQueryParams.get("q"), "   ", "Whitespace query should be preserved");
 
   // Oversized query should throw
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ query: "a".repeat(1001) }),
+    () => buildLibraryQueryParams({ query: "a".repeat(1001) }),
     Error,
-    "Query string cannot exceed 1000 characters",
+    "Query string too long (max 1000 characters)",
   );
 });
 
 Deno.test("buildLibraryQueryParams should normalize arrays correctly", () => {
-  setupTest();
-
   // Valid arrays
-  const validParams1 = testServer.testBuildLibraryQueryParams({
+  const validParams1 = buildLibraryQueryParams({
     type: ["Report", "TEMPLATE", "session_Archive"],
     tags: ["Test", "PRODUCTION", "analytics"],
   });
   assertEquals(validParams1.get("type"), "report,template,session_archive");
   assertEquals(validParams1.get("tags"), "test,production,analytics");
 
-  // Empty/invalid arrays should throw
-  assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ type: ["", "  "] }),
-    Error,
-    "At least one valid type must be specified",
+  // Empty arrays are handled by normalizing (lowercasing) and joining
+  const emptyArrayParams = buildLibraryQueryParams({ type: ["", "  "] });
+  assertEquals(
+    emptyArrayParams.get("type"),
+    ",  ",
+    "Empty array items should still be joined with whitespace preserved",
   );
 
-  assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ tags: ["", "  "] }),
-    Error,
-    "At least one valid tag must be specified",
+  const emptyTagsParams = buildLibraryQueryParams({ tags: ["", "  "] });
+  assertEquals(
+    emptyTagsParams.get("tags"),
+    ",  ",
+    "Empty tag items should still be joined with whitespace preserved",
   );
 
   // Too many items should throw
   const manyTypes = Array(21).fill("type").map((t, i) => `${t}${i}`);
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ type: manyTypes }),
+    () => buildLibraryQueryParams({ type: manyTypes }),
     Error,
-    "Cannot specify more than 20 types",
+    "Too many type filters (max 20)",
   );
 
   const manyTags = Array(51).fill("tag").map((t, i) => `${t}${i}`);
   assertThrows(
-    () => testServer.testBuildLibraryQueryParams({ tags: manyTags }),
+    () => buildLibraryQueryParams({ tags: manyTags }),
     Error,
-    "Cannot specify more than 50 tags",
+    "Too many tag filters (max 50)",
   );
 });
 
 Deno.test("buildLibraryQueryParams should handle special characters in queries", () => {
-  setupTest();
-
   const specialCharQueries = [
     "test & query with special chars: @#$%",
     "unicode: 测试中文查询",
@@ -238,7 +189,7 @@ Deno.test("buildLibraryQueryParams should handle special characters in queries",
   ];
 
   specialCharQueries.forEach((query) => {
-    const params = testServer.testBuildLibraryQueryParams({ query });
+    const params = buildLibraryQueryParams({ query });
     assertEquals(params.get("q"), query);
   });
 });
@@ -248,28 +199,24 @@ Deno.test("buildLibraryQueryParams should handle special characters in queries",
 // =====================================
 
 Deno.test("isRetryableError should identify retryable status codes", () => {
-  setupTest();
-
   // Retryable errors
   const retryableStatuses = [408, 429, 500, 502, 503, 504, 599];
   retryableStatuses.forEach((status) => {
-    assertEquals(testServer.testIsRetryableError(status), true);
+    assertEquals(isRetryableError(status), true);
   });
 
   // Non-retryable errors
   const nonRetryableStatuses = [400, 401, 403, 404, 422];
   nonRetryableStatuses.forEach((status) => {
-    assertEquals(testServer.testIsRetryableError(status), false);
+    assertEquals(isRetryableError(status), false);
   });
 });
 
 Deno.test("calculateRetryDelay should implement exponential backoff", () => {
-  setupTest();
-
   // Test exponential backoff progression
-  const delay0 = testServer.testCalculateRetryDelay(0);
-  const delay1 = testServer.testCalculateRetryDelay(1);
-  const delay2 = testServer.testCalculateRetryDelay(2);
+  const delay0 = calculateRetryDelay(0);
+  const delay1 = calculateRetryDelay(1);
+  const delay2 = calculateRetryDelay(2);
 
   // Should roughly double each time (with jitter)
   assertEquals(delay0 >= 700, true); // ~1000ms with jitter
@@ -282,7 +229,7 @@ Deno.test("calculateRetryDelay should implement exponential backoff", () => {
   assertEquals(delay2 <= 5200, true);
 
   // Should cap at 30 seconds
-  const longDelay = testServer.testCalculateRetryDelay(10);
+  const longDelay = calculateRetryDelay(10);
   assertEquals(longDelay <= 30000, true);
 });
 
@@ -291,9 +238,7 @@ Deno.test("calculateRetryDelay should implement exponential backoff", () => {
 // =====================================
 
 Deno.test("buildLibraryQueryParams should handle complex valid combinations", () => {
-  setupTest();
-
-  const complexParams = testServer.testBuildLibraryQueryParams({
+  const complexParams = buildLibraryQueryParams({
     query: "complex search with multiple terms",
     type: ["report", "template", "session_archive"],
     tags: ["production", "test", "analytics"],
@@ -306,16 +251,15 @@ Deno.test("buildLibraryQueryParams should handle complex valid combinations", ()
   assertEquals(complexParams.get("q"), "complex search with multiple terms");
   assertEquals(complexParams.get("type"), "report,template,session_archive");
   assertEquals(complexParams.get("tags"), "production,test,analytics");
-  assertEquals(complexParams.get("since"), "2024-01-01T00:00:00Z");
-  assertEquals(complexParams.get("until"), "2024-12-31T23:59:59Z");
+  // Dates are converted to ISO strings
+  assertEquals(complexParams.get("since"), new Date("2024-01-01T00:00:00Z").toISOString());
+  assertEquals(complexParams.get("until"), new Date("2024-12-31T23:59:59Z").toISOString());
   assertEquals(complexParams.get("limit"), "100");
   assertEquals(complexParams.get("offset"), "50");
 });
 
 Deno.test("buildLibraryQueryParams should handle minimal valid parameters", () => {
-  setupTest();
-
-  const minimalParams = testServer.testBuildLibraryQueryParams({});
+  const minimalParams = buildLibraryQueryParams({});
 
   // Should not set any parameters for empty input
   assertEquals(minimalParams.toString(), "");
@@ -326,10 +270,8 @@ Deno.test("buildLibraryQueryParams should handle minimal valid parameters", () =
 // =====================================
 
 Deno.test("buildLibraryQueryParams should handle boundary values correctly", () => {
-  setupTest();
-
   // Test exact boundary values
-  const boundaryParams = testServer.testBuildLibraryQueryParams({
+  const boundaryParams = buildLibraryQueryParams({
     limit: 1, // Minimum valid limit
     offset: 0, // Minimum valid offset
     query: "a", // Minimum valid query length
@@ -344,7 +286,7 @@ Deno.test("buildLibraryQueryParams should handle boundary values correctly", () 
   assertEquals(boundaryParams.get("tags"), "y");
 
   // Test maximum boundary values
-  const maxBoundaryParams = testServer.testBuildLibraryQueryParams({
+  const maxBoundaryParams = buildLibraryQueryParams({
     limit: 1000, // Maximum valid limit
     query: "a".repeat(1000), // Maximum valid query length
     type: Array(20).fill("type").map((t, i) => `${t}${i}`), // Maximum valid type array

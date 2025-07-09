@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from "ink";
-import { Select } from "@inkjs/ui";
+import { Select } from "./select/index.ts";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
 import { checkDaemonRunning } from "../utils/daemon-client.ts";
@@ -106,7 +106,7 @@ export const SignalSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select options={options} onChange={handleSelect} />
+        <Select options={options} onChange={handleSelect} visibleOptionCount={8} />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>

@@ -7,13 +7,15 @@ import {
   supervisorDefaults,
   WorkspaceConfigSchema,
 } from "@atlas/config";
+import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import { PlatformMCPServer } from "@atlas/mcp-server";
 import {
   FilesystemConfigAdapter,
   FilesystemTemplateAdapter,
   FilesystemWorkspaceCreationAdapter,
 } from "@atlas/storage";
+import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
-import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
@@ -23,16 +25,16 @@ import {
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import {
-  getWorkspaceManager,
-  type WorkspaceCreateConfig,
-} from "../../../src/core/workspace-manager.ts";
+import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
 import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
-import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
+import { healthRoutes } from "../routes/health.ts";
+import { createOpenAPIHandlers } from "../routes/openapi.ts";
+import { workspacesRoutes } from "../routes/workspaces.ts";
+import { type AppContext, createApp } from "./factory.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -46,12 +48,18 @@ export interface AtlasDaemonOptions {
  * AtlasDaemon - Single daemon managing multiple workspaces with on-demand runtime creation
  * Replaces the per-workspace WorkspaceServer architecture
  */
-export class AtlasDaemon {
-  private app: Hono;
+export class AtlasDaemon implements AppContext {
+  private app: ReturnType<typeof createApp>;
   private options: AtlasDaemonOptions;
-  private runtimes: Map<string, WorkspaceRuntime> = new Map();
+  // Public properties for AppContext interface
+  public runtimes: Map<string, WorkspaceRuntime> = new Map();
+  public startTime = Date.now();
+  public sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  > = new Map();
+  // Private properties
   private idleTimeouts: Map<string, number> = new Map();
-  private startTime = Date.now();
   private isShuttingDown = false;
   private server: Deno.HttpServer | null = null;
   private signalHandlers: Array<{ signal: Deno.Signal; handler: () => void }> = [];
@@ -59,13 +67,9 @@ export class AtlasDaemon {
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
   private templateAdapter: FilesystemTemplateAdapter | null = null;
-  // System workspace properties removed - using standard workspace pattern
-  private sseClients: Map<
-    string,
-    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
-  > = new Map();
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
+  private mcpServer: PlatformMCPServer | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -73,7 +77,7 @@ export class AtlasDaemon {
       idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
-    this.app = new Hono();
+    this.app = createApp(this);
     this.setupRoutes();
     this.setupSignalHandlers();
   }
@@ -93,7 +97,7 @@ export class AtlasDaemon {
 
     // Initialize WorkspaceManager singleton (with auto-import)
     logger.info("Initializing WorkspaceManager...");
-    const manager = getWorkspaceManager();
+    const manager = await getWorkspaceManager();
     await manager.initialize();
 
     // NEW: Register system workspaces
@@ -139,37 +143,20 @@ export class AtlasDaemon {
     const wakeupCallback: WorkspaceWakeupCallback = async (
       workspaceId: string,
       signalId: string,
-      signalData: any,
+      signalData: unknown,
     ) => {
       logger.info("CronManager waking up workspace for timer signal", {
         workspaceId,
         signalId,
-        timestamp: signalData.timestamp,
+        timestamp: (signalData as Record<string, unknown>)?.timestamp,
       });
 
       try {
         // Get or create workspace runtime (this will wake up the workspace)
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
 
-        // Process the timer signal - create proper IWorkspaceSignal compliant object
-        const signal = {
-          id: signalId,
-          timestamp: new Date().toISOString(),
-          // Add required provider property for IWorkspaceSignal compliance
-          provider: {
-            id: "cron-scheduler",
-            name: "cron-scheduler",
-          },
-          // Add required methods to satisfy IWorkspaceSignal interface
-          trigger: async () => {
-            // Minimal implementation - no-op for timer signals
-          },
-          configure: () => {
-            // Minimal implementation - no-op for timer signals
-          },
-        } as any;
-
-        await runtime.processSignal(signal, signalData.data);
+        // Process the timer signal using triggerSignal which handles signal creation
+        await runtime.triggerSignal(signalId, (signalData as Record<string, unknown>)?.data);
 
         logger.info("Timer signal processed successfully", { workspaceId, signalId });
       } catch (error) {
@@ -215,6 +202,32 @@ export class AtlasDaemon {
   }
 
   /**
+   * Initialize MCP server instance
+   */
+  private initializeMCPServer(): void {
+    const logger = AtlasLogger.getInstance();
+
+    const daemonUrl = `http://${this.options.hostname || "localhost"}:${this.options.port || 8080}`;
+
+    this.mcpServer = new PlatformMCPServer({
+      daemonUrl,
+      logger: AtlasLogger.getInstance(),
+    });
+
+    logger.info("MCP server initialized", { daemonUrl });
+  }
+
+  /**
+   * Get MCP server instance (lazy initialization)
+   */
+  private getMCPServer(): PlatformMCPServer {
+    if (!this.mcpServer) {
+      this.initializeMCPServer();
+    }
+    return this.mcpServer!;
+  }
+
+  /**
    * Initialize system workspaces
    */
   // System workspace methods removed - using standard workspace pattern
@@ -231,6 +244,14 @@ export class AtlasDaemon {
     return this.supervisorDefaults;
   }
 
+  /**
+   * Get the configured Hono app instance
+   * Used for OpenAPI spec generation
+   */
+  public getApp(): ReturnType<typeof createApp> {
+    return this.app;
+  }
+
   private setupRoutes() {
     // Setup CORS if configured
     if (this.options.cors) {
@@ -243,68 +264,18 @@ export class AtlasDaemon {
       );
     }
 
-    // Daemon health check
-    this.app.get("/health", (c) => {
+    // Mount health routes
+    this.app.route("/health", healthRoutes);
+
+    // Mount workspace routes
+    this.app.route("/api/workspaces", workspacesRoutes);
+
+    // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
+    this.app.post("/api/workspaces", (c) => {
       return c.json({
-        status: "healthy",
-        daemon: true,
-        activeWorkspaces: this.runtimes.size,
-        uptime: Date.now() - this.startTime,
-        timestamp: new Date().toISOString(),
-        version: {
-          deno: Deno.version.deno,
-          v8: Deno.version.v8,
-          typescript: Deno.version.typescript,
-        },
-      });
-    });
-
-    // List all registered workspaces
-    this.app.get("/api/workspaces", async (c) => {
-      try {
-        const manager = getWorkspaceManager();
-        const workspaces = await manager.listWorkspaces();
-        return c.json(workspaces);
-      } catch (error) {
-        return c.json({
-          error: `Failed to list workspaces: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
-
-    // Get specific workspace info
-    this.app.get("/api/workspaces/:workspaceId", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-
-      try {
-        const manager = getWorkspaceManager();
-        const workspace = await manager.describeWorkspace(workspaceId);
-        return c.json(workspace);
-      } catch (error) {
-        return c.json({
-          error: `Failed to get workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
-
-    // Create a new workspace
-    this.app.post("/api/workspaces", async (c) => {
-      try {
-        const body = await c.req.json() as WorkspaceCreateConfig;
-        const manager = getWorkspaceManager();
-        const result = await manager.createWorkspace(body);
-        return c.json(result, 201);
-      } catch (error) {
-        return c.json({
-          error: `Failed to create workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
+        error:
+          "Direct workspace creation not supported. Use /api/workspaces/create-from-template or /api/workspaces/create-from-config instead.",
+      }, 400);
     });
 
     // Delete a workspace
@@ -316,7 +287,7 @@ export class AtlasDaemon {
         // Unregister cron signals before deleting workspace
         await this.unregisterWorkspaceCronSignals(workspaceId);
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         await manager.deleteWorkspace(workspaceId, force);
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {
@@ -383,7 +354,7 @@ export class AtlasDaemon {
           }
         }
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
 
         // Check if workspace already exists at this path
         const existingByPath = await manager.findByPath(path);
@@ -444,7 +415,7 @@ export class AtlasDaemon {
           return c.json({ error: "Paths array is required" }, 400);
         }
 
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const results: {
           added: Array<{
             id: string;
@@ -638,7 +609,7 @@ export class AtlasDaemon {
         await this.templateAdapter.copyTemplate(templateId, path, replacements);
 
         // Register the new workspace
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const entry = await manager.registerWorkspace(path, {
           name,
           description: `Created from ${templateId} template`,
@@ -742,7 +713,7 @@ export class AtlasDaemon {
         await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
 
         // Register the new workspace
-        const manager = getWorkspaceManager();
+        const manager = await getWorkspaceManager();
         const entry = await manager.registerWorkspace(workspacePath, {
           name,
           description,
@@ -772,8 +743,8 @@ export class AtlasDaemon {
       const workspaceId = c.req.param("workspaceId");
 
       try {
-        const manager = getWorkspaceManager();
-        await manager.refreshWorkspaceConfig(workspaceId);
+        const manager = await getWorkspaceManager();
+        await manager.refreshConfig(workspaceId);
         return c.json({ message: `Workspace ${workspaceId} config cache refreshed` });
       } catch (error) {
         return c.json({
@@ -1298,6 +1269,42 @@ export class AtlasDaemon {
       });
     });
 
+    // OpenAPI documentation - after all routes are mounted
+    const { openAPIHandler, scalarHandler } = createOpenAPIHandlers(this.app, {
+      hostname: this.options.hostname,
+      port: this.options.port,
+    });
+
+    // Mount OpenAPI spec endpoint
+    this.app.get("/openapi.json", openAPIHandler);
+
+    // Mount Scalar UI endpoint
+    this.app.get("/openapi", scalarHandler);
+
+    // MCP endpoint
+    this.app.all("/mcp", async (c) => {
+      const logger = AtlasLogger.getInstance();
+
+      try {
+        // Get MCP server instance
+        const mcpServer = this.getMCPServer();
+
+        // Create streaming transport
+        const transport = new StreamableHTTPTransport();
+
+        // Connect MCP server to transport
+        await mcpServer.getServer().connect(transport);
+
+        // Handle the request
+        return transport.handleRequest(c);
+      } catch (error) {
+        logger.error("MCP endpoint error", { error });
+        return c.json({
+          error: `MCP server error: ${error instanceof Error ? error.message : String(error)}`,
+        }, 500);
+      }
+    });
+
     this.app.post("/api/daemon/shutdown", (c) => {
       // Graceful shutdown endpoint
       AtlasLogger.getInstance().info("Daemon shutdown requested via API");
@@ -1446,7 +1453,7 @@ export class AtlasDaemon {
 
       // Find workspace in registry (manager already initialized at daemon startup)
       logger.debug(`Looking up workspace in registry: ${workspaceId}`);
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
 
       const workspace = await manager.findById(workspaceId) ||
         await manager.findByName(workspaceId);
@@ -1566,7 +1573,7 @@ export class AtlasDaemon {
       logger.debug(`Runtime stored in daemon registry`);
 
       // Register runtime with WorkspaceManager
-      manager.registerRuntime(workspace.id, runtime, workspaceObj, {
+      await manager.registerRuntime(workspace.id, runtime, workspaceObj, {
         name: workspace.name,
         description: workspace.metadata?.description,
       });
@@ -1687,7 +1694,7 @@ export class AtlasDaemon {
     this.runtimes.delete(workspaceId);
 
     // Unregister runtime from WorkspaceManager
-    const manager = getWorkspaceManager();
+    const manager = await getWorkspaceManager();
     manager.unregisterRuntime(workspaceId);
 
     // Clear idle timeout
@@ -1913,8 +1920,8 @@ export class AtlasDaemon {
             workspaceId,
             signalId,
             schedule: signalConfig.schedule,
-            timezone: (signalConfig as any).timezone || "UTC",
-            description: (signalConfig as any).description,
+            timezone: (signalConfig as Record<string, unknown>).timezone as string || "UTC",
+            description: (signalConfig as Record<string, unknown>).description as string,
           };
 
           cronTimers.push(cronConfig);
@@ -1987,7 +1994,7 @@ export class AtlasDaemon {
     }
 
     try {
-      const manager = getWorkspaceManager();
+      const manager = await getWorkspaceManager();
       const workspaces = await manager.listAllPersisted();
 
       AtlasLogger.getInstance().info("Discovering cron signals for existing workspaces", {
