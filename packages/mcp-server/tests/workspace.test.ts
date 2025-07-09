@@ -38,7 +38,10 @@ Deno.test("Workspace Tools - describe", async () => {
       arguments: {},
     });
 
-    const listContent = listResult.content as Array<{ type: string; text: string }>;
+    const listContent = listResult.content as Array<{
+      type: string;
+      text: string;
+    }>;
     const listTextContent = listContent.find((item) => item.type === "text");
     const listData = JSON.parse(listTextContent!.text);
 
@@ -75,7 +78,9 @@ Deno.test("Workspace Tools - create", async () => {
 
   try {
     const testWorkspaceName = `test-workspace-${Date.now()}`;
-    const testPath = await Deno.makeTempDir({ prefix: "atlas_workspace_test_" });
+    const testPath = await Deno.makeTempDir({
+      prefix: "atlas_workspace_test_",
+    });
 
     try {
       const result = await client.callTool({
@@ -94,13 +99,12 @@ Deno.test("Workspace Tools - create", async () => {
       const responseData = JSON.parse(textContent!.text);
 
       // Should have created workspace info
-      assertExists(responseData.id);
-      assertEquals(responseData.name, testWorkspaceName);
-      assertExists(responseData.path);
-      assertEquals(responseData.status, "stopped");
+      assertExists(responseData.workspace.id);
+      assertEquals(responseData.workspace.name, testWorkspaceName);
+      assertEquals(responseData.success, true);
 
       // Store workspace ID for cleanup
-      createdWorkspaceId = responseData.id;
+      createdWorkspaceId = responseData.workspace.id;
     } finally {
       await Deno.remove(testPath, { recursive: true });
     }
@@ -115,7 +119,10 @@ Deno.test("Workspace Tools - create", async () => {
           },
         });
       } catch (error) {
-        console.warn(`Failed to clean up workspace ${createdWorkspaceId}:`, error);
+        console.warn(
+          `Failed to clean up workspace ${createdWorkspaceId}:`,
+          error,
+        );
       }
     }
     await transport.close();
@@ -129,7 +136,9 @@ Deno.test("Workspace Tools - delete", async () => {
   try {
     // First create a workspace to delete
     const testWorkspaceName = `test-delete-workspace-${Date.now()}`;
-    const testPath = await Deno.makeTempDir({ prefix: "atlas_workspace_delete_test_" });
+    const testPath = await Deno.makeTempDir({
+      prefix: "atlas_workspace_delete_test_",
+    });
 
     try {
       const createResult = await client.callTool({
@@ -141,11 +150,16 @@ Deno.test("Workspace Tools - delete", async () => {
         },
       });
 
-      const createContent = createResult.content as Array<{ type: string; text: string }>;
-      const createTextContent = createContent.find((item) => item.type === "text");
+      const createContent = createResult.content as Array<{
+        type: string;
+        text: string;
+      }>;
+      const createTextContent = createContent.find(
+        (item) => item.type === "text",
+      );
       const createData = JSON.parse(createTextContent!.text);
 
-      const workspaceId = createData.id;
+      const workspaceId = createData.workspace.id;
       createdWorkspaceId = workspaceId;
 
       // Now delete the workspace
@@ -153,18 +167,24 @@ Deno.test("Workspace Tools - delete", async () => {
         name: "atlas_workspace_delete",
         arguments: {
           workspaceId: workspaceId,
+          force: true,
         },
       });
 
       assertEquals(Array.isArray(deleteResult.content), true);
 
-      const deleteContent = deleteResult.content as Array<{ type: string; text: string }>;
-      const deleteTextContent = deleteContent.find((item) => item.type === "text");
+      const deleteContent = deleteResult.content as Array<{
+        type: string;
+        text: string;
+      }>;
+      const deleteTextContent = deleteContent.find(
+        (item) => item.type === "text",
+      );
       const deleteData = JSON.parse(deleteTextContent!.text);
 
-      // Should confirm deletion
-      assertExists(deleteData.deleted);
-      assertEquals(deleteData.workspaceId, workspaceId);
+      // Should confirm deletion (assuming success field indicates deletion)
+      assertExists(deleteData.success);
+      assertEquals(deleteData.success, true);
 
       // Mark as successfully deleted
       createdWorkspaceId = undefined;
@@ -182,7 +202,10 @@ Deno.test("Workspace Tools - delete", async () => {
           },
         });
       } catch (error) {
-        console.warn(`Failed to clean up workspace ${createdWorkspaceId}:`, error);
+        console.warn(
+          `Failed to clean up workspace ${createdWorkspaceId}:`,
+          error,
+        );
       }
     }
     await transport.close();

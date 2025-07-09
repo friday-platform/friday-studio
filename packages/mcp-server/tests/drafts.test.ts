@@ -5,8 +5,12 @@ Deno.test("Drafts Tools - list", async () => {
   const { client, transport } = await createMCPClient();
 
   try {
+    // First list available tools to debug
+    const tools = await client.listTools();
+    console.log("Available tools:", tools.tools.map((t) => t.name));
+
     const result = await client.callTool({
-      name: "atlas_drafts_list",
+      name: "atlas_list_session_drafts",
       arguments: {},
     });
 
@@ -14,6 +18,7 @@ Deno.test("Drafts Tools - list", async () => {
 
     const content = result.content as Array<{ type: string; text: string }>;
     const textContent = content.find((item) => item.type === "text");
+    console.log("Raw drafts list response:", textContent!.text);
     const responseData = JSON.parse(textContent!.text);
 
     // Should have drafts array
