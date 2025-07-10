@@ -123,8 +123,6 @@ export class WorkspaceSupervisorActor {
     signal: IWorkspaceSignal,
     payload: Record<string, unknown>,
     sessionId: string,
-    signalConfig?: Record<string, unknown>,
-    jobs?: Record<string, unknown>,
     traceHeaders?: Record<string, string>,
   ): Promise<ProcessSignalResult> {
     if (!this.supervisor) {
@@ -166,8 +164,6 @@ export class WorkspaceSupervisorActor {
         payload,
         sessionId,
         sessionActor,
-        signalConfig,
-        jobs,
         traceHeaders,
       )
         .catch((error) => {
@@ -206,8 +202,6 @@ export class WorkspaceSupervisorActor {
     payload: Record<string, unknown>,
     sessionId: string,
     sessionActor: SessionSupervisorActor,
-    signalConfig?: Record<string, unknown>,
-    jobs?: Record<string, unknown>,
     traceHeaders?: Record<string, string>,
   ): Promise<void> {
     try {
@@ -232,7 +226,7 @@ export class WorkspaceSupervisorActor {
         intent,
         signal,
         payload,
-        { signalConfig, jobs },
+        {}, // Session context loads config from central source
       );
 
       this.logger.info("Session context created", {
