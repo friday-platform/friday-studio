@@ -112,7 +112,7 @@ export function parseAction(thinking: string): ReasoningAction | null {
             // If JSON parsing fails, try to clean it up
             try {
               // Remove any trailing content after the JSON
-              const cleanJson = jsonString.trim();
+              const cleanJson = remainingText.substring(0, jsonEnd).trim();
               parameters = JSON.parse(cleanJson);
             } catch {
               parameters = {};

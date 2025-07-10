@@ -512,8 +512,9 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               } else if (capability.id === "workspace_draft_create") {
                 const result = await workspaceCapability.implementation(
                   context,
-                  args.config,
+                  args.name,
                   args.description,
+                  args.initialConfig,
                 );
                 return result;
               } else if (capability.id === "workspace_draft_update") {
