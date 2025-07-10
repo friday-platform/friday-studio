@@ -435,7 +435,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       };
 
       // Create reasoning callbacks
-      const callbacks: ReasoningCallbacks<typeof userContext> = {
+      const callbacks = {
         // Generate thinking based on conversation context
         think: async (context) => {
           this.logger.debug("Think callback invoked", {
@@ -616,14 +616,27 @@ Generate a natural, helpful response that addresses the user's needs.`;
         },
       };
 
-      // Create and run reasoning machine
-      const machine = createReasoningMachine(callbacks, {
+      this.logger.info("About to create reasoning machine", {
+        hasCallbacks: !!callbacks,
+        callbackKeys: Object.keys(callbacks),
         maxIterations: this.config.max_reasoning_steps || 5,
       });
 
-      this.logger.info("Creating reasoning machine", {
-        maxIterations: this.config.max_reasoning_steps || 5,
-      });
+      // Create and run reasoning machine
+      let machine;
+      try {
+        machine = createReasoningMachine(callbacks, {
+          maxIterations: this.config.max_reasoning_steps || 5,
+        });
+        this.logger.info("Reasoning machine created successfully");
+      } catch (error) {
+        this.logger.error("Failed to create reasoning machine", {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          errorType: error instanceof Error ? error.constructor.name : typeof error,
+        });
+        throw error;
+      }
 
       // Run the machine with user context
       const result = await new Promise<ReasoningResult>((resolve, reject) => {
@@ -656,6 +669,13 @@ Generate a natural, helpful response that addresses the user's needs.`;
           this.logger.error("Failed to create reasoning actor", {
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
+            errorType: error instanceof Error ? error.constructor.name : typeof error,
+            fullError: String(error),
+            userContext: {
+              message: userContext.message,
+              hasTools: !!userContext.tools,
+              toolCount: Object.keys(userContext.tools || {}).length,
+            },
           });
           reject(error);
         }

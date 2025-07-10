@@ -20,12 +20,12 @@ import {
 } from "./schemas.ts";
 import { ConfigValidationError, formatZodError } from "./validation.ts";
 import { z } from "zod/v4";
-import type {
-  AgentConfig,
-  LLMAgentConfig,
-  RemoteAgentConfig,
-  TempestAgentConfig,
-} from "../../../src/core/session-supervisor.ts";
+// Agent config types are now part of WorkspaceAgentConfig in schemas.ts
+// These type aliases are for backward compatibility
+type AgentConfig = WorkspaceAgentConfig;
+type LLMAgentConfig = WorkspaceAgentConfig & { type: "llm" };
+type RemoteAgentConfig = WorkspaceAgentConfig & { type: "remote" };
+type TempestAgentConfig = WorkspaceAgentConfig & { type: "tempest" };
 
 /**
  * Configuration loader with dependency injection

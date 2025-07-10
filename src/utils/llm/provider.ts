@@ -684,10 +684,10 @@ export class LLMProvider {
           keys: Object.keys(firstTool || {}),
           hasDescription: !!firstTool?.description,
           hasParameters: !!firstTool?.parameters,
-          hasInputSchema: !!firstTool?.input_schema,
+          hasInputSchema: !!(firstTool as any)?.input_schema,
           hasExecute: !!firstTool?.execute,
           parametersType: typeof firstTool?.parameters,
-          inputSchemaType: typeof firstTool?.input_schema,
+          inputSchemaType: typeof (firstTool as any)?.input_schema,
         });
       }
 
@@ -708,7 +708,7 @@ export class LLMProvider {
                 name,
                 keys: Object.keys(tool),
                 hasDescription: !!tool.description,
-                hasInputSchema: !!tool.input_schema,
+                hasInputSchema: !!(tool as any).input_schema,
                 hasParameters: !!tool.parameters,
                 hasExecute: typeof tool.execute === "function",
               })),

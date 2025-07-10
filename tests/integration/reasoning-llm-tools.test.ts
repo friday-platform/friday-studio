@@ -92,7 +92,7 @@ Deno.test({
             if (action.toolName === "file_reader" || action.toolName === "file_reader.read") {
               const path = action.parameters.path || action.parameters.file ||
                 action.parameters.filename;
-              const content = mockTools.file_reader.read(path);
+              const content = mockTools.file_reader.read(path as string);
               console.log(`→ File content: "${content}"`);
               return {
                 result: { content },

@@ -392,7 +392,7 @@ export class MCPManager {
       if (tool && typeof tool === "object" && "parameters" in tool && !("input_schema" in tool)) {
         // Create a new tool object with input_schema instead of parameters
         const toolObj = tool as Record<string, unknown>;
-        const convertedTool = {
+        const convertedTool: any = {
           ...toolObj,
           input_schema: toolObj.parameters,
         };
