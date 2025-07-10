@@ -1,15 +1,13 @@
 import { z } from "zod/v4";
-import { daemonFactory } from "../src/factory.ts";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute } from "@hono/zod-openapi";
+import type { AppVariables } from "../src/factory.ts";
 import "@hono/zod-validator"; // Ensure this dependency is bundled
 import "zod-openapi"; // Ensure this dependency is bundled
 import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 
-// TODO: Remove 'as any' once hono-openapi v0.5 is released with zod/v4 support
-// See: https://github.com/rhinobase/hono-openapi/issues/97
-
-// Create app instance using factory
-const workspacesRoutes = daemonFactory.createApp();
+// Create app instance using OpenAPI Hono
+const workspacesRoutes = new OpenAPIHono<AppVariables>();
 
 // ============================================================================
 // Zod Schemas
@@ -94,112 +92,112 @@ export type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSc
 // ============================================================================
 
 // List all registered workspaces
-workspacesRoutes.get(
-  "/",
-  describeRoute({
-    tags: ["Workspaces"],
-    summary: "List all workspaces",
-    description:
-      "Returns a list of all registered workspaces with their current status and runtime information",
-    responses: {
-      200: {
-        description: "Successfully retrieved workspaces",
-        content: {
-          "application/json": {
-            schema: resolver(z.array(workspaceResponseSchema) as any),
-          },
-        },
-      },
-      500: {
-        description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema as any),
-          },
+const listWorkspacesRoute = createRoute({
+  method: "get",
+  path: "/",
+  tags: ["Workspaces"],
+  summary: "List all workspaces",
+  description:
+    "Returns a list of all registered workspaces with their current status and runtime information",
+  responses: {
+    200: {
+      description: "Successfully retrieved workspaces",
+      content: {
+        "application/json": {
+          schema: z.array(workspaceResponseSchema),
         },
       },
     },
-  }),
-  async (c) => {
-    try {
-      const manager = await getWorkspaceManager();
-      const workspaces = await manager.listWorkspaces();
-      return c.json(workspaces);
-    } catch (error) {
-      return c.json({
-        error: `Failed to list workspaces: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      }, 500);
-    }
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema,
+        },
+      },
+    },
   },
-);
+});
+
+workspacesRoutes.openapi(listWorkspacesRoute, async (c) => {
+  try {
+    const manager = await getWorkspaceManager();
+    const workspaces = await manager.listWorkspaces();
+    return c.json(workspaces);
+  } catch (error) {
+    return c.json({
+      error: `Failed to list workspaces: ${error instanceof Error ? error.message : String(error)}`,
+    }, 500);
+  }
+});
 
 // Get workspace details by ID
-workspacesRoutes.get(
-  "/:workspaceId",
-  describeRoute({
-    tags: ["Workspaces"],
-    summary: "Get workspace details",
-    description:
-      "Returns detailed information about a specific workspace including its configuration and runtime status",
-    responses: {
-      200: {
-        description: "Successfully retrieved workspace details",
-        content: {
-          "application/json": {
-            schema: resolver(workspaceDetailsResponseSchema as any),
-          },
-        },
-      },
-      404: {
-        description: "Workspace not found",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema as any),
-          },
-        },
-      },
-      500: {
-        description: "Internal server error",
-        content: {
-          "application/json": {
-            schema: resolver(errorResponseSchema as any),
-          },
+const getWorkspaceRoute = createRoute({
+  method: "get",
+  path: "/{workspaceId}",
+  tags: ["Workspaces"],
+  summary: "Get workspace details",
+  description:
+    "Returns detailed information about a specific workspace including its configuration and runtime status",
+  request: {
+    params: workspaceIdParamSchema,
+  },
+  responses: {
+    200: {
+      description: "Successfully retrieved workspace details",
+      content: {
+        "application/json": {
+          schema: workspaceDetailsResponseSchema,
         },
       },
     },
-  }),
-  validator("param", workspaceIdParamSchema as any),
-  async (c) => {
-    const { workspaceId } = c.req.valid("param");
-
-    try {
-      const manager = await getWorkspaceManager();
-      const workspace = await manager.getWorkspace(workspaceId);
-
-      if (!workspace) {
-        return c.json({
-          error: `Workspace not found: ${workspaceId}`,
-        }, 404);
-      }
-
-      return c.json(workspace);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Check if it's a "not found" error
-      if (errorMessage.includes("not found")) {
-        return c.json({
-          error: errorMessage,
-        }, 404);
-      }
-
-      return c.json({
-        error: `Failed to get workspace: ${errorMessage}`,
-      }, 500);
-    }
+    404: {
+      description: "Workspace not found",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema,
+        },
+      },
+    },
+    500: {
+      description: "Internal server error",
+      content: {
+        "application/json": {
+          schema: errorResponseSchema,
+        },
+      },
+    },
   },
-);
+});
+
+workspacesRoutes.openapi(getWorkspaceRoute, async (c) => {
+  const { workspaceId } = c.req.valid("param");
+
+  try {
+    const manager = await getWorkspaceManager();
+    const workspace = await manager.getWorkspace(workspaceId);
+
+    if (!workspace) {
+      return c.json({
+        error: `Workspace not found: ${workspaceId}`,
+      }, 404);
+    }
+
+    return c.json(workspace);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Check if it's a "not found" error
+    if (errorMessage.includes("not found")) {
+      return c.json({
+        error: errorMessage,
+      }, 404);
+    }
+
+    return c.json({
+      error: `Failed to get workspace: ${errorMessage}`,
+    }, 500);
+  }
+});
 
 export { workspacesRoutes };

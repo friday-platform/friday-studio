@@ -1,11 +1,9 @@
 import { z } from "zod/v4";
-import { daemonFactory } from "../src/factory.ts";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { createRoute } from "@hono/zod-openapi";
+import type { AppVariables } from "../src/factory.ts";
 import "@hono/zod-validator"; // Ensure this dependency is bundled
 import "zod-openapi"; // Ensure this dependency is bundled
-
-// TODO: Remove 'as any' once hono-openapi v0.5 is released with zod/v4 support
-// See: https://github.com/rhinobase/hono-openapi/issues/97
 
 export const healthResponseSchema = z.object({
   activeWorkspaces: z.int().min(0).meta({
@@ -37,7 +35,7 @@ export const healthResponseSchema = z.object({
 // Type inference from schema
 type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-const healthRoutes = daemonFactory.createApp();
+const healthRoutes = new OpenAPIHono<AppVariables>();
 
 const healthRoute = createRoute({
   method: "get",
@@ -49,7 +47,7 @@ const healthRoute = createRoute({
     200: {
       description: "Daemon is healthy and operational",
       content: {
-        "application/json": { 
+        "application/json": {
           schema: healthResponseSchema,
         },
       },
@@ -58,20 +56,19 @@ const healthRoute = createRoute({
 });
 
 healthRoutes.openapi(healthRoute, (c) => {
-    const ctx = c.get("app");
+  const ctx = c.get("app");
 
-    const response: HealthResponse = {
-      activeWorkspaces: ctx.runtimes.size,
-      uptime: Date.now() - ctx.startTime,
-      timestamp: new Date().toISOString(),
-      version: {
-        deno: Deno.version.deno,
-        v8: Deno.version.v8,
-        typescript: Deno.version.typescript,
-      },
-    };
-    return c.json(response);
-  },
-);
+  const response: HealthResponse = {
+    activeWorkspaces: ctx.runtimes.size,
+    uptime: Date.now() - ctx.startTime,
+    timestamp: new Date().toISOString(),
+    version: {
+      deno: Deno.version.deno,
+      v8: Deno.version.v8,
+      typescript: Deno.version.typescript,
+    },
+  };
+  return c.json(response);
+});
 
 export { healthRoutes };

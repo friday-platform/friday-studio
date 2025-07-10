@@ -1,4 +1,5 @@
 import { createFactory } from "hono/factory";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 
 // Define app context that will be available to all routes
@@ -20,6 +21,19 @@ export const daemonFactory = createFactory<AppVariables>();
 // Helper to create a Hono app with context
 export const createApp = (context: AppContext) => {
   const app = daemonFactory.createApp();
+
+  // Set app context as a variable available to all routes
+  app.use("*", async (c, next) => {
+    c.set("app", context);
+    await next();
+  });
+
+  return app;
+};
+
+// Helper to create OpenAPI Hono app with context
+export const createOpenAPIApp = (context: AppContext) => {
+  const app = new OpenAPIHono<AppVariables>();
 
   // Set app context as a variable available to all routes
   app.use("*", async (c, next) => {

@@ -6,15 +6,15 @@ import { OPENAPI_DOCUMENTATION } from "../src/openapi-config.ts";
 
 // Export handlers that need to be configured with the main app
 export const createOpenAPIHandlers = (
-  mainApp: Hono<AppVariables>,
+  mainApp: OpenAPIHono<AppVariables>,
   options: { hostname?: string; port?: number } = {},
 ) => {
   const hostname = options.hostname || "localhost";
   const port = options.port || 8080;
 
   // OpenAPI spec handler
-  const openAPIHandler = openAPISpecs(mainApp, {
-    documentation: {
+  const openAPIHandler = (c: any) => {
+    return c.json(mainApp.getOpenAPIDocument({
       ...OPENAPI_DOCUMENTATION,
       servers: [
         {
@@ -22,8 +22,8 @@ export const createOpenAPIHandlers = (
           description: "Atlas Daemon Server",
         },
       ],
-    },
-  });
+    }));
+  };
 
   // Scalar UI handler
   const scalarHandler = Scalar({
