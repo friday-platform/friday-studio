@@ -10,6 +10,7 @@ import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.
 import type { Tool } from "ai";
 import {
   createReasoningMachine,
+  parseAction as parseReasoningAction,
   type ReasoningAction,
   type ReasoningCallbacks,
   type ReasoningContext,
@@ -584,13 +585,25 @@ ${JSON.stringify(previousSteps, null, 2)}`
                 : ""
             }
 
+Available tools: ${Object.keys(context.userContext.tools).join(", ")}
+
 Think step-by-step about:
 1. What is the user asking for?
 2. Do I need to use any tools to help them?
 3. What would be the most helpful response?
-4. Should I stream the response using stream_reply?
 
-Provide your thinking in a structured way that leads to a clear action.`;
+Then provide your response in EXACTLY this format:
+
+THINKING: [Your detailed analysis of what the user needs and how to respond]
+
+ACTION: tool_call
+TOOL_NAME: stream_reply
+PARAMETERS: {"stream_id": "${
+              context.userContext.streamId || "default"
+            }", "message": "[Your response to the user]"}
+REASONING: [Why you chose this action]
+
+Note: Always use stream_reply to respond to the user.`;
 
             this.logger.debug("Generating thinking with LLM", {
               promptLength: thinkingPrompt.length,
@@ -624,39 +637,26 @@ Provide your thinking in a structured way that leads to a clear action.`;
           }
         },
 
-        // Parse action from thinking
+        // Parse action from thinking using the reasoning package parser
         parseAction: (thinking: string): ReasoningAction | null => {
           this.logger.debug("Parsing action from thinking", {
             thinkingLength: thinking.length,
+            thinkingPreview: thinking.substring(0, 200),
           });
 
-          // Look for tool usage patterns in thinking
-          if (thinking.includes("stream_reply") || thinking.includes("respond to the user")) {
-            return {
-              type: "tool_call",
-              toolName: "stream_reply",
-              parameters: {},
-              reasoning: "Streaming response to user",
-            };
+          const action = parseReasoningAction(thinking);
+
+          if (action) {
+            this.logger.debug("Parsed action", {
+              type: action.type,
+              toolName: action.toolName,
+              hasParameters: !!action.parameters,
+            });
+          } else {
+            this.logger.debug("No action parsed from thinking");
           }
 
-          // Check if task is complete
-          if (
-            thinking.includes("task is complete") || thinking.includes("conversation is finished")
-          ) {
-            return {
-              type: "complete",
-              parameters: {},
-              reasoning: "Conversation goal achieved",
-            };
-          }
-
-          // Default to completing if no clear action
-          return {
-            type: "complete",
-            parameters: {},
-            reasoning: "No specific action needed",
-          };
+          return action;
         },
 
         // Execute the determined action
@@ -671,35 +671,30 @@ Provide your thinking in a structured way that leads to a clear action.`;
             const tool = tools[action.toolName];
 
             if (tool) {
-              // Generate appropriate parameters based on the tool
-              let parameters: any = {};
+              // Use the parameters from the parsed action
+              const parameters = action.parameters || {};
 
+              // For stream_reply, ensure we have the required fields
               if (action.toolName === "stream_reply") {
-                // Generate response based on conversation context and reasoning
-                const responsePrompt = `
-Based on the conversation and reasoning, generate a helpful response.
-
-User message: ${context.userContext.message}
-
-Reasoning: ${context.currentStep?.thinking || ""}
-
-Generate a natural, helpful response that addresses the user's needs.`;
-
-                const response = await LLMProvider.generateText(responsePrompt, {
-                  systemPrompt: this.prompts.system,
-                  model: this.config.model || "claude-3-5-sonnet-20241022",
-                  provider: "anthropic",
-                  temperature: this.config.temperature || 0.7,
-                  maxTokens: this.config.max_tokens || 2000,
-                });
-
-                parameters = {
-                  stream_id: context.userContext.streamId,
-                  message: response,
-                };
+                // Use streamId from context if not in parameters
+                if (!parameters.stream_id && context.userContext.streamId) {
+                  parameters.stream_id = context.userContext.streamId;
+                }
               }
 
+              this.logger.debug("Executing tool with parameters", {
+                toolName: action.toolName,
+                parameters,
+              });
+
               const result = await tool.execute(parameters);
+
+              // Track the message that was sent for stream_reply
+              if (action.toolName === "stream_reply" && parameters.message) {
+                // Store the streamed message in context for later saving
+                context.userContext.streamedMessage = parameters.message;
+              }
+
               return {
                 result,
                 observation: `Tool ${action.toolName} executed successfully`,
@@ -840,9 +835,12 @@ Generate a natural, helpful response that addresses the user's needs.`;
         achieved: result.jobResults.achieved,
       });
 
+      // Get the actual message that was streamed to the user
+      const streamedMessage = (userContext as any).streamedMessage || result.jobResults.output;
+
       return {
         reasoning: result,
-        response: result.jobResults.output,
+        response: streamedMessage,
       };
     } catch (error) {
       this.logger.error("executeWithReasoning failed", {

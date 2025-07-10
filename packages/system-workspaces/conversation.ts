@@ -149,6 +149,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
       },
       purpose: "Handle conversations with scope awareness and workspace creation",
       tools: [
+        "conversation_storage",
         "stream_reply",
         "workspace_draft_create",
         "workspace_draft_update",
