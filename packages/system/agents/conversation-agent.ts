@@ -635,24 +635,26 @@ Available tools: ${Object.keys(context.userContext.tools).join(", ")}
 
 Think step-by-step about:
 1. What is the user asking for?
-2. Do I need to use any tools to help them?
-3. What would be the most helpful response?
+2. What tools do I need to use to accomplish this?
+3. Am I in the middle of a multi-step process?
 
-Then provide your response in EXACTLY this format:
+If you're creating a workspace after user confirmation:
+- First use stream_reply to acknowledge
+- Then CONTINUE reasoning to call workspace_draft_create
 
-THINKING: [Your detailed analysis of what the user needs and how to respond]
+Provide your response in EXACTLY this format:
+
+THINKING: [Your detailed analysis of what the user needs and your current progress]
 
 ACTION: tool_call
-TOOL_NAME: stream_reply
-PARAMETERS: {"stream_id": "${
-              context.userContext.streamId || "default"
-            }", "message": "[Your response to the user]"}
-REASONING: [Why you chose this action]
+TOOL_NAME: [appropriate tool name]
+PARAMETERS: [valid JSON parameters for the tool]
+REASONING: [Why you chose this action and what comes next]
 
 IMPORTANT: 
-- The PARAMETERS must be valid JSON on a single line
-- Replace [Your response to the user] with your actual response message
-- Always use stream_reply to respond to the user`;
+- After confirming workspace creation, your NEXT action should be workspace_draft_create
+- Don't stop after just acknowledging - complete the task
+- The PARAMETERS must be valid JSON on a single line`;
 
             this.logger.debug("Generating thinking with LLM", {
               promptLength: thinkingPrompt.length,
@@ -760,11 +762,36 @@ IMPORTANT:
 
         // Check if conversation goal is achieved
         isComplete: (context) => {
-          // Complete after responding or reaching max iterations
-          const hasResponded = context.steps.some(
-            (step) => step.action?.toolName === "stream_reply",
+          // Don't complete just because we used stream_reply
+          // We might need to continue with workspace creation or other actions
+
+          // Check if we're in the middle of a workspace creation flow
+          const lastStep = context.steps[context.steps.length - 1];
+          const lastMessage = (context.userContext as any).streamedMessage ||
+            lastStep?.action?.parameters?.message || "";
+
+          // If we just confirmed we're creating something, don't stop
+          const creationPhrases = [
+            "create",
+            "build",
+            "set up",
+            "configure",
+            "proceed",
+            "let me",
+            "i'll",
+            "now",
+            "creating",
+          ];
+          const isCreatingWorkspace = creationPhrases.some((phrase) =>
+            lastMessage.toLowerCase().includes(phrase)
           );
-          return hasResponded || context.currentIteration >= context.maxIterations;
+
+          if (isCreatingWorkspace && context.currentIteration < 3) {
+            return false; // Continue to actually create the workspace
+          }
+
+          // Complete if we've done substantial work or hit max iterations
+          return context.currentIteration >= context.maxIterations;
         },
 
         // Stream reasoning updates
