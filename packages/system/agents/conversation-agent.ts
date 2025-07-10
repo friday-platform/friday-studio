@@ -578,7 +578,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       // Create reasoning context
       const tools = await this.getDaemonCapabilityTools(streamId);
 
-      this.logger.debug("Reasoning context tools prepared", {
+      this.logger.info("Reasoning context tools prepared", {
         toolCount: Object.keys(tools).length,
         toolNames: Object.keys(tools),
       });
@@ -595,7 +595,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       const callbacks = {
         // Generate thinking based on conversation context
         think: async (context) => {
-          this.logger.debug("Think callback invoked", {
+          this.logger.info("Think callback invoked", {
             message: context.userContext.message.substring(0, 100),
             stepCount: context.steps.length,
             currentIteration: context.currentIteration,
@@ -661,9 +661,9 @@ IMPORTANT:
               maxTokens: 1000,
             });
 
-            this.logger.debug("Thinking generated", {
+            this.logger.info("Thinking generated", {
               thinkingLength: thinking.length,
-              thinking, // Log full thinking at debug level
+              thinkingPreview: thinking.substring(0, 200) + "...",
             });
 
             return {
@@ -681,7 +681,7 @@ IMPORTANT:
 
         // Parse action from thinking using the reasoning package parser
         parseAction: (thinking: string): ReasoningAction | null => {
-          this.logger.debug("Parsing action from thinking", {
+          this.logger.info("Parsing action from thinking", {
             thinkingLength: thinking.length,
             thinkingPreview: thinking.substring(0, 200),
           });
@@ -689,13 +689,14 @@ IMPORTANT:
           const action = parseReasoningAction(thinking);
 
           if (action) {
-            this.logger.debug("Parsed action", {
+            this.logger.info("Parsed action", {
               type: action.type,
               toolName: action.toolName,
               hasParameters: !!action.parameters,
+              parameters: action.parameters,
             });
           } else {
-            this.logger.debug("No action parsed from thinking");
+            this.logger.warn("No action parsed from thinking");
           }
 
           return action;
@@ -703,7 +704,7 @@ IMPORTANT:
 
         // Execute the determined action
         executeAction: async (action, context) => {
-          this.logger.debug("Executing reasoning action", {
+          this.logger.info("Executing reasoning action", {
             type: action.type,
             toolName: action.toolName,
           });
@@ -724,12 +725,9 @@ IMPORTANT:
                 }
               }
 
-              this.logger.debug("Executing tool with parameters", {
+              this.logger.info("Executing tool with parameters", {
                 toolName: action.toolName,
-                parameters,
-                parametersKeys: Object.keys(parameters),
-                message: parameters.message,
-                stream_id: parameters.stream_id,
+                parameters: JSON.stringify(parameters),
               });
 
               const result = await tool.execute(parameters);
@@ -764,20 +762,20 @@ IMPORTANT:
 
         // Stream reasoning updates
         onThinkingStart: () => {
-          this.logger.debug("Reasoning started");
+          this.logger.info("Reasoning started");
         },
         onThinkingUpdate: (partial) => {
-          this.logger.debug("Reasoning update", { partial });
+          this.logger.info("Reasoning update", { partial });
         },
         onActionDetermined: (action) => {
-          this.logger.debug("Action determined", { action });
+          this.logger.info("Action determined", { action });
         },
         onObservation: (observation) => {
-          this.logger.debug("Observation", { observation });
+          this.logger.info("Observation", { observation });
         },
       };
 
-      this.logger.debug("About to create reasoning machine", {
+      this.logger.info("About to create reasoning machine", {
         hasCallbacks: !!callbacks,
         callbackKeys: Object.keys(callbacks),
         maxIterations: this.config.max_reasoning_steps || 5,
@@ -789,7 +787,7 @@ IMPORTANT:
         machine = createReasoningMachine(callbacks, {
           maxIterations: this.config.max_reasoning_steps || 5,
         });
-        this.logger.debug("Reasoning machine created successfully");
+        this.logger.info("Reasoning machine created successfully");
       } catch (error) {
         this.logger.error("Failed to create reasoning machine", {
           error: error instanceof Error ? error.message : String(error),
@@ -806,11 +804,11 @@ IMPORTANT:
             input: userContext,
           });
 
-          this.logger.debug("Reasoning actor created");
+          this.logger.info("Reasoning actor created");
 
           actor.subscribe({
             complete: () => {
-              this.logger.debug("Reasoning actor completed");
+              this.logger.info("Reasoning actor completed");
               const snapshot = actor.getSnapshot();
               resolve(snapshot.output as ReasoningResult);
             },
@@ -825,7 +823,7 @@ IMPORTANT:
           });
 
           actor.start();
-          this.logger.debug("Reasoning actor started");
+          this.logger.info("Reasoning actor started");
         } catch (error) {
           this.logger.error("Failed to create reasoning actor", {
             error: error instanceof Error ? error.message : String(error),
@@ -874,10 +872,11 @@ IMPORTANT:
         } as ReasoningResult;
       });
 
-      this.logger.debug("Reasoning completed", {
+      this.logger.info("Reasoning completed", {
         status: result.status,
         steps: result.reasoning.totalIterations,
         achieved: result.jobResults.achieved,
+        finalThinking: result.reasoning.finalThinking?.substring(0, 200),
       });
 
       // Get the actual message that was streamed to the user
