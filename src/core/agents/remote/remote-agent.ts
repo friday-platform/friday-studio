@@ -4,18 +4,39 @@
  */
 
 import type { AtlasMemoryConfig } from "../../memory-config.ts";
-import type { RemoteAgentConfig } from "../../session-supervisor.ts";
-import { BaseAgent } from "../base-agent.ts";
+import { BaseAgent } from "../base-agent-v2.ts";
 import { RemoteAdapterFactory } from "./adapter-factory.ts";
 import { BaseRemoteAdapter } from "./adapters/base-remote-adapter.ts";
 import type {
   HealthStatus,
+  RemoteAgentError,
   RemoteAgentInfo,
+  RemoteConnectionError,
   RemoteExecutionRequest,
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "./types.ts";
-import { RemoteAgentError, RemoteConnectionError } from "./types.ts";
+
+// Define RemoteAgentConfig locally since session-supervisor.ts is gone
+export interface RemoteAgentConfig {
+  type: "remote";
+  protocol: string;
+  endpoint: string;
+  model?: string;
+  purpose?: string;
+  timeout?: number;
+  auth?: {
+    type: string;
+    token?: string;
+    token_env?: string;
+    credentials?: Record<string, string>;
+  };
+  headers?: Record<string, string>;
+  schema?: {
+    input?: any;
+    output?: any;
+  };
+}
 
 /**
  * Remote agent metadata for Atlas integration
@@ -140,9 +161,42 @@ export class RemoteAgent extends BaseAgent {
   }
 
   /**
-   * Standard invoke implementation for remote agents
+   * Execute method required by BaseAgent
    */
-  override async invoke(message: string): Promise<string> {
+  protected async execute(
+    input?: unknown,
+    streaming?: (data: string) => void,
+  ): Promise<unknown> {
+    await this.ensureInitialized();
+
+    const message = typeof input === "string" ? input : JSON.stringify(input);
+
+    try {
+      const request = this.buildExecutionRequest(message, streaming ? "stream" : "sync");
+      const result = await this.adapter.executeAgent(request);
+
+      if (result.status === "failed") {
+        throw new RemoteAgentError(
+          result.error || "Remote execution failed",
+          "EXECUTION_FAILED",
+        );
+      }
+
+      return result;
+    } catch (error) {
+      this.logger.error("Remote execution failed", {
+        error: error.message,
+        agentId: this.id,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Standard invoke implementation for remote agents
+   * @deprecated Use the new BaseAgent invoke method instead
+   */
+  async invokeOld(message: string): Promise<string> {
     await this.ensureInitialized();
 
     try {

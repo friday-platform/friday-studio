@@ -9,7 +9,7 @@ import { SelectorNode } from "./selector-node.ts";
 import { ParallelNode, type ParallelNodeConfig } from "./parallel-node.ts";
 import { ConditionNode, type ConditionNodeConfig } from "./condition-node.ts";
 import { AgentActionNode, type AgentActionNodeConfig } from "./agent-action-node.ts";
-import type { JobSpecification } from "../../session-supervisor.ts";
+import type { JobSpecification } from "../../types/agent-types.ts";
 
 export interface BehaviorTreeSpec {
   type: "sequence" | "selector" | "parallel" | "condition" | "agent";

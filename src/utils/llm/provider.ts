@@ -619,23 +619,87 @@ export class LLMProvider {
         provider: config.provider,
         model: config.model,
         toolCount: Object.keys(allTools).length,
+        toolNames: Object.keys(allTools),
         mcpServerCount: options.mcpServers?.length || 0,
         maxSteps: options.maxSteps || 1,
         toolChoice: options.toolChoice,
         ...options.operationContext,
       });
 
+      // Log first tool structure for debugging
+      const firstToolName = Object.keys(allTools)[0];
+      if (firstToolName) {
+        const firstTool = allTools[firstToolName];
+        logger.debug("First tool structure before AI SDK call", {
+          name: firstToolName,
+          type: typeof firstTool,
+          keys: Object.keys(firstTool || {}),
+          hasDescription: !!firstTool?.description,
+          hasParameters: !!firstTool?.parameters,
+          hasInputSchema: !!firstTool?.input_schema,
+          hasExecute: !!firstTool?.execute,
+          parametersType: typeof firstTool?.parameters,
+          inputSchemaType: typeof firstTool?.input_schema,
+        });
+      }
+
       // Use actual AI SDK tool calling with MCP tools
-      const result = await generateText({
-        model: client(config.model),
-        messages,
-        tools: Object.keys(allTools).length > 0 ? allTools : undefined,
-        toolChoice: options.toolChoice,
-        maxSteps: options.maxSteps || 10,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        abortSignal: controller.signal,
-      });
+      let result;
+      try {
+        logger.debug("Calling AI SDK generateText", {
+          hasTools: Object.keys(allTools).length > 0,
+          messageCount: messages.length,
+        });
+
+        // Log the exact structure we're passing
+        if (Object.keys(allTools).length > 0) {
+          logger.debug("Tools being passed to AI SDK", {
+            toolNames: Object.keys(allTools),
+            toolStructure: JSON.stringify(
+              Object.entries(allTools).map(([name, tool]) => ({
+                name,
+                keys: Object.keys(tool),
+                hasDescription: !!tool.description,
+                hasInputSchema: !!tool.input_schema,
+                hasParameters: !!tool.parameters,
+                hasExecute: typeof tool.execute === "function",
+              })),
+            ),
+          });
+        }
+
+        result = await generateText({
+          model: client(config.model),
+          messages,
+          tools: Object.keys(allTools).length > 0 ? allTools : undefined,
+          toolChoice: options.toolChoice,
+          maxSteps: options.maxSteps || 10,
+          maxTokens: config.maxTokens,
+          temperature: config.temperature,
+          abortSignal: controller.signal,
+        });
+      } catch (genError) {
+        // Extract more detailed error information
+        const errorDetails: any = {
+          error: genError instanceof Error ? genError.message : String(genError),
+          errorName: genError instanceof Error ? genError.constructor.name : typeof genError,
+          stack: genError instanceof Error ? genError.stack : undefined,
+          // Check for specific AI SDK error properties
+          statusCode: (genError as any)?.statusCode,
+          statusText: (genError as any)?.statusText,
+          responseBody: (genError as any)?.responseBody,
+          data: (genError as any)?.data,
+        };
+
+        // Check for validation errors
+        if (genError instanceof Error && genError.message.includes("Field required")) {
+          errorDetails.validationError = true;
+          errorDetails.errorPattern = genError.message;
+        }
+
+        logger.error("generateText call failed", errorDetails);
+        throw genError;
+      }
 
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
@@ -709,7 +773,17 @@ export class LLMProvider {
         duration,
         mcpServerCount: options.mcpServers?.length || 0,
         toolCount: Object.keys(allTools).length,
+        toolNames: Object.keys(allTools),
         error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        fullError: String(error),
+        cause: error instanceof Error && (error as any).cause
+          ? String((error as any).cause)
+          : undefined,
+        responseBody: error instanceof Error && (error as any).response
+          ? JSON.stringify((error as any).response)
+          : undefined,
         ...options.operationContext,
       });
 

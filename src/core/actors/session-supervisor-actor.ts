@@ -155,6 +155,20 @@ export class SessionSupervisorActor {
       return cachedPlan;
     }
 
+    // Check if planning should be skipped based on job supervision settings
+    const skipPlanning = this.sessionContext.jobSpec?.supervision?.skip_planning;
+    if (skipPlanning) {
+      this.logger.info("Skipping planning phase due to job configuration");
+      // Return a simple plan with no agents if job spec is missing
+      return {
+        id: crypto.randomUUID(),
+        phases: [],
+        reasoning: "Planning skipped by job configuration",
+        strategy: "skip-planning",
+        confidence: 1.0,
+      };
+    }
+
     // 2. Compute execution plan on-demand using multi-step reasoning engine
     this.logger.info("Computing execution plan using multi-step reasoning");
 
@@ -532,9 +546,38 @@ export class SessionSupervisorActor {
   }
 
   private getCachedJobSpec(): ExecutionPlan | null {
-    // Check registry cache for pre-computed job specs
-    // This would integrate with the WorkspaceManager's caching system
-    return null; // Placeholder
+    // Check if we have a job spec from the workspace configuration
+    if (!this.sessionContext?.jobSpec) {
+      return null;
+    }
+
+    const jobSpec = this.sessionContext.jobSpec;
+
+    // Convert job spec to execution plan
+    const planId = crypto.randomUUID();
+
+    // Create execution phases from job configuration
+    const agents = jobSpec.execution?.agents || [];
+    const phases: ExecutionPhase[] = [{
+      id: crypto.randomUUID(),
+      name: jobSpec.name || "Job Execution",
+      executionStrategy: jobSpec.execution?.strategy || "sequential",
+      agents: agents.map((agent: any) => ({
+        agentId: agent.id,
+        task: agent.task || "Execute job task",
+        inputSource: agent.input_source || "signal",
+        dependencies: agent.dependencies,
+        reasoning: "Defined by job configuration",
+      })),
+    }];
+
+    return {
+      id: planId,
+      phases,
+      reasoning: `Executing job: ${jobSpec.name}`,
+      strategy: "job-based",
+      confidence: 1.0,
+    };
   }
 
   private shouldCachePlan(): boolean {

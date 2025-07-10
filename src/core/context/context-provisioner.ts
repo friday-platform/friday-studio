@@ -8,7 +8,7 @@
 import { EMCPRegistry } from "../emcp/emcp-registry.ts";
 import { FilesystemProvider } from "../emcp/providers/filesystem-provider.ts";
 import type { CodebaseContextSpec, ContextSpec, EMCPContext } from "../emcp/emcp-provider.ts";
-import type { JobSpecification } from "../session-supervisor.ts";
+import type { JobSpecification } from "../types/agent-types.ts";
 
 export interface ContextProvisionerConfig {
   readonly workspaceId: string;

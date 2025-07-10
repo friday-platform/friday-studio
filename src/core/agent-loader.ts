@@ -1,6 +1,6 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
-import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
+import type { RuntimeAgentConfig } from "./types/agent-types.ts";
 import { ConfigLoader } from "@atlas/config";
 
 export interface AgentLoadResult {

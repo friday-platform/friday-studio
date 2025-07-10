@@ -80,16 +80,29 @@ export class AgentExecutionActor {
     agentConfig: WorkspaceAgentConfig,
     request: AgentExecutePayload,
   ): Promise<unknown> {
+    // For system agents, the 'agent' field specifies which system agent to use
+    const systemAgentId = (agentConfig as any).agent || request.agent_id;
+
     // Create system agent instance from registry
+    // Pass the full agent config including tools, prompts, etc.
+    const fullConfig = {
+      ...agentConfig.config,
+      tools: agentConfig.tools,
+      prompts: agentConfig.prompts,
+      model: agentConfig.model || agentConfig.config?.model,
+      temperature: agentConfig.temperature || agentConfig.config?.temperature,
+      max_tokens: agentConfig.max_tokens || agentConfig.config?.max_tokens,
+    };
+
     const systemAgent = SystemAgentRegistry.createAgent(
-      request.agent_id, // Use agent_id from request
-      agentConfig,
+      systemAgentId,
+      fullConfig,
     );
 
-    this.logger.debug(`Executing system agent: ${request.agent_id}`);
+    this.logger.debug(`Executing system agent: ${systemAgentId} (requested: ${request.agent_id})`);
 
-    // Use invoke method from BaseAgent
-    return await systemAgent.invoke(request.input as string);
+    // Use invoke method from BaseAgent - pass input as-is for system agents
+    return await systemAgent.invoke(request.input);
   }
 
   private async executeLLMAgent(
@@ -191,8 +204,8 @@ export class AgentExecutionActor {
       // AtlasConfig is now a superset of WorkspaceConfig, use directly
       return atlasConfig;
     } else {
-      // Load specific workspace config from WorkspaceManager (already loaded and cached)
-      const workspaceConfig = await workspaceManager.find({ id: this.workspaceId });
+      // Load specific workspace config from WorkspaceManager
+      const workspaceConfig = await workspaceManager.getWorkspaceConfigBySlug(this.workspaceId);
       if (!workspaceConfig) {
         throw new Error(`Workspace configuration not found: ${this.workspaceId}`);
       }

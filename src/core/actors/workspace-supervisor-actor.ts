@@ -12,7 +12,6 @@
 
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { getWorkspaceManager } from "../workspace-manager.ts";
-import { WorkspaceSupervisor } from "../supervisor.ts";
 import { SessionSupervisorActor } from "./session-supervisor-actor.ts";
 import type { IWorkspace, IWorkspaceSignal } from "../../types/core.ts";
 import type { AtlasMemoryConfig } from "../memory-config.ts";
@@ -52,7 +51,6 @@ export class WorkspaceSupervisorActor {
   private workspace?: IWorkspace;
   private logger: ChildLogger;
   private id: string;
-  private supervisor: WorkspaceSupervisor | null = null;
   private sessions: Map<string, SessionInfo> = new Map();
   private workspaceConfig?: WorkspaceConfig;
   private config?: WorkspaceSupervisorConfig;
@@ -95,22 +93,10 @@ export class WorkspaceSupervisorActor {
       throw new Error(errorMsg);
     }
 
-    // Create WorkspaceSupervisor with proper configuration
-    const supervisorConfig = {
-      ...config.config,
-      memoryConfig,
-    };
-
-    this.supervisor = new WorkspaceSupervisor(config.workspaceId, supervisorConfig);
-
-    // Set workspace if provided
+    // Store workspace if provided
     if (config.workspace) {
       this.workspace = config.workspace;
-      this.supervisor.setWorkspace(this.workspace);
     }
-
-    // Initialize supervisor with advanced planning and job precomputation
-    await this.supervisor.initialize();
 
     this.logger.info("Workspace supervisor actor initialized", {
       workspaceId: config.workspaceId,
@@ -125,10 +111,6 @@ export class WorkspaceSupervisorActor {
     sessionId: string,
     traceHeaders?: Record<string, string>,
   ): Promise<ProcessSignalResult> {
-    if (!this.supervisor) {
-      throw new Error("Supervisor not initialized");
-    }
-
     try {
       this.logger.info("Processing signal", {
         signalId: signal.id,
@@ -205,13 +187,19 @@ export class WorkspaceSupervisorActor {
     traceHeaders?: Record<string, string>,
   ): Promise<void> {
     try {
-      // Use WorkspaceSupervisor's intelligence to analyze the signal
-      this.logger.info("Analyzing signal with WorkspaceSupervisor", {
+      // Analyze signal to determine intent
+      this.logger.info("Analyzing signal", {
         sessionId,
         signalId: signal.id,
       });
 
-      const intent = await this.supervisor!.analyzeSignal(signal, payload);
+      // For now, create a simple intent based on the signal
+      const intent = {
+        id: crypto.randomUUID(),
+        signal: signal.id,
+        confidence: 1.0,
+        reasoning: "Direct signal mapping",
+      };
 
       this.logger.info("Signal analysis complete", {
         sessionId,
@@ -219,19 +207,40 @@ export class WorkspaceSupervisorActor {
         intentId: intent.id,
       });
 
-      // Create filtered session context
+      // Create session context
       this.logger.info("Creating session context", { sessionId });
 
-      const sessionContext = await this.supervisor!.createSessionContext(
-        intent,
+      // Find the job that is triggered by this signal
+      let jobSpec = undefined;
+      if (this.workspaceConfig?.jobs) {
+        for (const [jobId, job] of Object.entries(this.workspaceConfig.jobs)) {
+          if (job.triggers?.some((trigger) => trigger.signal === signal.id)) {
+            jobSpec = job;
+            this.logger.info("Found matching job for signal", {
+              signalId: signal.id,
+              jobId,
+              jobName: job.name,
+            });
+            break;
+          }
+        }
+      }
+
+      const sessionContext = {
+        sessionId,
+        workspaceId: this.workspaceId,
         signal,
         payload,
-        {}, // Session context loads config from central source
-      );
+        intent,
+        availableAgents: this.workspace ? Object.values(this.workspace.agents) : [],
+        config: this.workspaceConfig,
+        jobSpec,
+      };
 
       this.logger.info("Session context created", {
         sessionId,
         availableAgents: sessionContext.availableAgents?.length || 0,
+        hasJobSpec: !!jobSpec,
       });
 
       // Initialize session with context
@@ -240,7 +249,7 @@ export class WorkspaceSupervisorActor {
         workspaceId: this.workspaceId,
         signal,
         payload,
-        jobSpec: sessionContext.jobSpec,
+        jobSpec,
         availableAgents: sessionContext.availableAgents?.map((agent: any) => agent.id) || [],
         constraints: sessionContext.constraints,
         additionalPrompts: sessionContext.additionalPrompts,
@@ -302,7 +311,7 @@ export class WorkspaceSupervisorActor {
     }
 
     return {
-      ready: !!this.supervisor,
+      ready: true,
       workspaceId: this.workspaceId,
       sessions: this.sessions.size,
       activeSessions: sessionsByStatus.active,
@@ -313,9 +322,6 @@ export class WorkspaceSupervisorActor {
 
   setWorkspace(workspace: IWorkspace): void {
     this.workspace = workspace;
-    if (this.supervisor) {
-      this.supervisor.setWorkspace(workspace);
-    }
   }
 
   // Session lifecycle management
@@ -348,10 +354,6 @@ export class WorkspaceSupervisorActor {
     }
 
     // Clean up supervisor
-    if (this.supervisor) {
-      this.supervisor.destroy();
-      this.supervisor = null;
-    }
 
     this.workspace = undefined;
     this.workspaceConfig = undefined;
@@ -360,11 +362,8 @@ export class WorkspaceSupervisorActor {
 
   // Precomputed plans access for session supervisors
   getPrecomputedPlans(requestingWorkspaceId?: string): Record<string, any> {
-    if (!this.supervisor) {
-      return {};
-    }
-
-    return this.supervisor.getPrecomputedPlans(requestingWorkspaceId);
+    // TODO: Implement precomputed plans
+    return {};
   }
 
   // Helper methods

@@ -87,6 +87,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
       },
       supervision: {
         level: "minimal",
+        skip_planning: true,
       },
       memory: {
         enabled: false,
@@ -137,10 +138,10 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
   agents: {
     "conversation-agent": {
       type: "system",
-      agent: "conversation-agent",
+      agent: "conversation",
       version: "1.0.0",
       config: {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-3-5-sonnet-20241022",
         temperature: 0.7,
         max_tokens: 4000,
       },

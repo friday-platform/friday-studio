@@ -3,7 +3,7 @@
  * Integrates federation capabilities with existing WorkspaceRuntime
  */
 
-import type { WorkspaceRuntime } from "./workspace-runtime.ts";
+import type { WorkspaceRuntime } from "./workspace-runtime-v2.ts";
 import type { AtlasConfig, WorkspaceConfig } from "@atlas/config";
 import { FederationManager } from "./federation-manager.ts";
 import { WorkspaceCapabilityRegistry } from "./workspace-capabilities.ts";

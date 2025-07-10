@@ -4,7 +4,7 @@
  */
 
 import type { IWorkspaceSignal } from "../../types/core.ts";
-import type { AgentMetadata, JobSpecification } from "../session-supervisor.ts";
+import type { AgentMetadata, JobSpecification } from "../types/agent-types.ts";
 
 export interface ExecutionContext {
   sessionId: string;

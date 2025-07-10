@@ -5,7 +5,7 @@
 
 import { join } from "@std/path";
 import { exists } from "@std/fs";
-import { BaseAgent } from "./agents/base-agent.ts";
+import { BaseAgent } from "./agents/base-agent-v2.ts";
 import { AtlasLogger } from "../utils/logger.ts";
 
 export interface SystemAgentMetadata {
