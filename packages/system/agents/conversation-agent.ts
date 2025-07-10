@@ -116,17 +116,67 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       input: JSON.stringify(input).substring(0, 200),
     });
 
-    // Extract message and streamId from input
+    // Extract message, streamId, and other metadata from input
     const message = typeof input === "string" ? input : (input as any)?.message || "Hello";
-
     const streamId = (input as any)?.streamId;
+    const userId = (input as any)?.userId;
+    const conversationId = (input as any)?.conversationId || streamId;
 
     this.logger.info("Processing message", {
       message: message.substring(0, 100),
       systemPrompt: this.prompts.system.substring(0, 100),
       model: this.config.model,
       streamId,
+      userId,
+      conversationId,
     });
+
+    // Load conversation history if we have a streamId
+    let historyContext = "";
+    let messagesInHistory = 0;
+    let isNewConversation = true;
+
+    if (streamId) {
+      try {
+        const historyResult = await this.loadConversationHistory(streamId);
+        if (historyResult.success && historyResult.messages?.length > 0) {
+          historyContext = historyResult.historyContext || "";
+          messagesInHistory = historyResult.messages.length;
+          isNewConversation = false;
+
+          this.logger.info("Loaded conversation history", {
+            streamId,
+            messageCount: messagesInHistory,
+            contextLength: historyContext.length,
+          });
+        }
+      } catch (error) {
+        this.logger.warn("Failed to load conversation history", {
+          streamId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    // Save user message before processing
+    if (streamId) {
+      try {
+        await this.saveMessage(streamId, {
+          role: "user",
+          content: message,
+          metadata: {
+            userId,
+            timestamp: new Date().toISOString(),
+            workspaceContext: this.workspaceId,
+          },
+        });
+      } catch (error) {
+        this.logger.warn("Failed to save user message", {
+          streamId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     try {
       // Check if reasoning is enabled
@@ -136,7 +186,29 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           message: message.substring(0, 100),
         });
 
-        return await this.executeWithReasoning(message, streamId);
+        const result = await this.executeWithReasoning(message, streamId, historyContext);
+
+        // Save assistant response if we got one
+        if (streamId && result && typeof result === "object" && "response" in result) {
+          await this.saveMessage(streamId, {
+            role: "assistant",
+            content: String(result.response),
+            metadata: {
+              timestamp: new Date().toISOString(),
+              reasoning: true,
+            },
+          });
+        }
+
+        // Add conversation metadata to result
+        return {
+          ...result,
+          conversationMetadata: {
+            streamId,
+            messagesInHistory: messagesInHistory + 2, // user + assistant
+            isNewConversation,
+          },
+        };
       }
 
       // Check if we have tools configured
@@ -179,10 +251,15 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         });
 
         try {
-          // Create enhanced system prompt with streamId context
-          const enhancedSystemPrompt = streamId
-            ? `${this.prompts.system}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`
-            : this.prompts.system;
+          // Create enhanced system prompt with streamId and history context
+          let enhancedSystemPrompt = this.prompts.system;
+          if (historyContext) {
+            enhancedSystemPrompt = `${historyContext}\n\n${enhancedSystemPrompt}`;
+          }
+          if (streamId) {
+            enhancedSystemPrompt =
+              `${enhancedSystemPrompt}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`;
+          }
 
           // Use LLMProvider directly for tool-enabled completion
           const result = await LLMProvider.generateTextWithTools(message, {
@@ -205,11 +282,28 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
             toolCallCount: result.toolCalls?.length || 0,
           });
 
+          // Save assistant response
+          if (streamId && result.text) {
+            await this.saveMessage(streamId, {
+              role: "assistant",
+              content: result.text,
+              metadata: {
+                timestamp: new Date().toISOString(),
+                toolCallCount: result.toolCalls?.length || 0,
+              },
+            });
+          }
+
           // The tool calls should already be executed by generateTextWithTools
           // including stream_reply if it was called
           return {
             response: result.text,
             toolCalls: result.toolCalls,
+            conversationMetadata: {
+              streamId,
+              messagesInHistory: messagesInHistory + 2, // user + assistant
+              isNewConversation,
+            },
           };
         } catch (toolError) {
           this.logger.error("Tool execution error", {
@@ -227,8 +321,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         }
       } else {
         // Fallback to simple completion without tools
+        let enhancedSystemPrompt = this.prompts.system;
+        if (historyContext) {
+          enhancedSystemPrompt = `${historyContext}\n\n${enhancedSystemPrompt}`;
+        }
         const response = await LLMProvider.generateText(message, {
-          systemPrompt: this.prompts.system,
+          systemPrompt: enhancedSystemPrompt,
           model: this.config.model || "claude-3-5-sonnet-20241022",
           provider: "anthropic",
           temperature: this.config.temperature || 0.7,
@@ -257,8 +355,24 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           });
         }
 
+        // Save assistant response
+        if (streamId && response) {
+          await this.saveMessage(streamId, {
+            role: "assistant",
+            content: response,
+            metadata: {
+              timestamp: new Date().toISOString(),
+            },
+          });
+        }
+
         return {
           response,
+          conversationMetadata: {
+            streamId,
+            messagesInHistory: messagesInHistory + 2, // user + assistant
+            isNewConversation,
+          },
         };
       }
     } catch (error) {
@@ -412,6 +526,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
   private async executeWithReasoning(
     message: string,
     streamId?: string,
+    historyContext?: string,
   ): Promise<unknown> {
     this.logger.info("Starting reasoning-based conversation", {
       message: message.substring(0, 100),
@@ -433,6 +548,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         streamId,
         conversationId: streamId || this.id,
         tools,
+        historyContext,
       };
 
       // Create reasoning callbacks
@@ -455,7 +571,11 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
             const thinkingPrompt = `
 You are having a conversation with a user. Analyze what they need and plan your response.
 
-User message: ${context.userContext.message}
+${
+              context.userContext.historyContext
+                ? `Conversation history:\n${context.userContext.historyContext}\n\n`
+                : ""
+            }User message: ${context.userContext.message}
 
 ${
               previousSteps.length > 0
@@ -810,5 +930,54 @@ Generate a natural, helpful response that addresses the user's needs.`;
     }
 
     return { valid: errors.length === 0, errors };
+  }
+
+  /**
+   * Load conversation history using daemon capability
+   */
+  private async loadConversationHistory(streamId: string): Promise<any> {
+    try {
+      const tools = await this.getDaemonCapabilityTools(streamId);
+      if (tools.conversation_storage?.execute) {
+        return await tools.conversation_storage.execute({
+          action: "load_history",
+          stream_id: streamId,
+        });
+      }
+    } catch (error) {
+      this.logger.error("Failed to load conversation history", {
+        streamId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return { success: false, messages: [] };
+  }
+
+  /**
+   * Save message to conversation history using daemon capability
+   */
+  private async saveMessage(
+    streamId: string,
+    message: {
+      role: "user" | "assistant";
+      content: string;
+      metadata?: Record<string, any>;
+    },
+  ): Promise<void> {
+    try {
+      const tools = await this.getDaemonCapabilityTools(streamId);
+      if (tools.conversation_storage?.execute) {
+        await tools.conversation_storage.execute({
+          action: "save_message",
+          stream_id: streamId,
+          message,
+        });
+      }
+    } catch (error) {
+      this.logger.error("Failed to save message to history", {
+        streamId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }
