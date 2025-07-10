@@ -72,12 +72,20 @@ jobs:
         run: deno install
 
       - name: Clear npm cache for clean build
+        shell: bash
         run: |
-          # Clear potential corrupted npm cache entries
-          rm -rf "$HOME/.cache/deno/npm" "$HOME/Library/Caches/deno/npm" 2>/dev/null || true
-          # Also clear any @inkjs/ui specific cache
-          find "$HOME" -path "*deno*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
-          find "$HOME" -path "*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          # Clear potential corrupted npm cache entries (cross-platform)
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            # Windows paths
+            rm -rf "$LOCALAPPDATA/deno/cache" "$APPDATA/deno" 2>/dev/null || true
+            find "$LOCALAPPDATA" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            find "$APPDATA" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          else
+            # Unix paths (Linux, macOS)
+            rm -rf "$HOME/.cache/deno/npm" "$HOME/Library/Caches/deno/npm" 2>/dev/null || true
+            find "$HOME" -path "*deno*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            find "$HOME" -path "*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          fi
           deno clean
           rm -f deno.lock
           deno cache --reload src/cli.tsx
