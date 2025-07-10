@@ -7,6 +7,7 @@ import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { IAtlasAgent } from "../../../src/types/core.ts";
 import { LLMProvider } from "../../../src/utils/llm/provider.ts";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
+import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
 import type { Tool } from "ai";
 import {
   createReasoningMachine,
@@ -442,14 +443,33 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
   }
 
   /**
-   * Convert daemon capabilities to tool format for LLM
+   * Convert daemon and workspace capabilities to tool format for LLM
    */
   private async getDaemonCapabilityTools(streamId?: string): Promise<Record<string, Tool>> {
     const tools: Record<string, any> = {};
 
-    // Get all daemon capabilities that match our configured tools
+    // Ensure workspace capabilities are initialized
+    WorkspaceCapabilityRegistry.initialize();
+
+    // Get all daemon and workspace capabilities that match our configured tools
     for (const toolName of this.config.tools || []) {
-      const capability = DaemonCapabilityRegistry.getCapability(toolName);
+      // First check daemon capabilities
+      let capability = DaemonCapabilityRegistry.getCapability(toolName);
+
+      // If not found in daemon capabilities, check workspace capabilities
+      if (!capability) {
+        const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(toolName);
+        if (workspaceCapability) {
+          // Convert workspace capability to the same format as daemon capability
+          capability = {
+            id: workspaceCapability.id,
+            description: workspaceCapability.description,
+            inputSchema: workspaceCapability.inputSchema,
+            // The implementation will be wrapped below
+          };
+        }
+      }
+
       if (capability) {
         // Use the capability's inputSchema directly if available
         // Otherwise create a minimal schema
@@ -464,8 +484,80 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           description: capability.description,
           parameters: parameters,
           execute: async (args: any) => {
-            this.logger.info(`Executing daemon capability: ${capability.id}`, { args, streamId });
+            this.logger.info(`Executing capability: ${capability.id}`, { args, streamId });
 
+            // Check if this is a workspace capability
+            const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(capability.id);
+            if (workspaceCapability) {
+              // Create workspace execution context
+              const context = {
+                sessionId: streamId || this.id,
+                agentId: this.id,
+                workspaceId: "atlas-conversation",
+                conversationId: args.conversationId || streamId || this.id,
+              };
+
+              // Execute workspace capability
+              // For workspace capabilities, we need to pass arguments based on the expected parameters
+              // Most workspace capabilities expect individual parameters, not an args object
+
+              // Special handling for known workspace capabilities
+              if (capability.id === "publish_workspace") {
+                const result = await workspaceCapability.implementation(
+                  context,
+                  args.draftId,
+                  args.path,
+                );
+                return result;
+              } else if (capability.id === "workspace_draft_create") {
+                const result = await workspaceCapability.implementation(
+                  context,
+                  args.config,
+                  args.description,
+                );
+                return result;
+              } else if (capability.id === "workspace_draft_update") {
+                const result = await workspaceCapability.implementation(
+                  context,
+                  args.draftId,
+                  args.updates,
+                  args.updateDescription,
+                );
+                return result;
+              } else if (capability.id === "validate_draft_config") {
+                const result = await workspaceCapability.implementation(context, args.draftId);
+                return result;
+              } else if (capability.id === "pre_publish_check") {
+                const result = await workspaceCapability.implementation(context, args.draftId);
+                return result;
+              } else if (capability.id === "show_draft_config") {
+                const result = await workspaceCapability.implementation(context, args.draftId);
+                return result;
+              } else if (capability.id === "list_session_drafts") {
+                const result = await workspaceCapability.implementation(context);
+                return result;
+              } else if (capability.id === "library_list") {
+                const result = await workspaceCapability.implementation(context, args.category);
+                return result;
+              } else if (capability.id === "library_get") {
+                const result = await workspaceCapability.implementation(context, args.id);
+                return result;
+              } else if (capability.id === "library_search") {
+                const result = await workspaceCapability.implementation(
+                  context,
+                  args.query,
+                  args.category,
+                );
+                return result;
+              } else {
+                // For other workspace capabilities, pass all args as individual parameters
+                const argValues = Object.values(args);
+                const result = await workspaceCapability.implementation(context, ...argValues);
+                return result;
+              }
+            }
+
+            // Otherwise it's a daemon capability
             // Create daemon execution context
             const context = {
               sessionId: streamId || this.id,
@@ -508,7 +600,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       }
     }
 
-    this.logger.info("Converted daemon capabilities to tools", {
+    this.logger.info("Converted capabilities to tools", {
       toolCount: Object.keys(tools).length,
       toolNames: Object.keys(tools),
     });
@@ -596,6 +688,8 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         conversationId: streamId || this.id,
         tools,
         historyContext,
+        // Track draft ID across reasoning steps
+        draftId: null as string | null,
       };
 
       // Create reasoning callbacks
@@ -632,7 +726,11 @@ ${JSON.stringify(previousSteps, null, 2)}`
             }
 
 Available tools: ${Object.keys(context.userContext.tools).join(", ")}
-
+${
+              context.userContext.draftId
+                ? `\nCurrent draft ID: ${context.userContext.draftId} (use this for workspace operations)\n`
+                : ""
+            }
 Think step-by-step about:
 1. What is the user asking for?
 2. What tools do I need to use to accomplish this?
@@ -751,6 +849,33 @@ IMPORTANT:
               if (action.toolName === "stream_reply" && parameters.message) {
                 // Store the streamed message in context for later saving
                 context.userContext.streamedMessage = parameters.message;
+              }
+
+              // Track the draft ID from workspace_draft_create
+              if (action.toolName === "workspace_draft_create" && result?.draftId) {
+                context.userContext.draftId = result.draftId;
+                this.logger.info("Captured draft ID from workspace creation", {
+                  draftId: result.draftId,
+                });
+              }
+
+              // Use stored draft ID for subsequent workspace operations
+              if (
+                [
+                  "validate_draft_config",
+                  "pre_publish_check",
+                  "publish_workspace",
+                  "show_draft_config",
+                  "workspace_draft_update",
+                ].includes(action.toolName)
+              ) {
+                if (!parameters.draftId && context.userContext.draftId) {
+                  parameters.draftId = context.userContext.draftId;
+                  this.logger.info("Using stored draft ID for workspace operation", {
+                    toolName: action.toolName,
+                    draftId: context.userContext.draftId,
+                  });
+                }
               }
 
               return {
