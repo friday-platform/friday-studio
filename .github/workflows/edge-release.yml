@@ -71,6 +71,18 @@ jobs:
       - name: Install dependencies
         run: deno install
 
+      - name: Clear @inkjs/ui npm cache (VFS corruption workaround)
+        shell: bash
+        run: |
+          # Clear only @inkjs/ui cache entries that cause npm VFS corruption during compile
+          # Keep deno.lock for deterministic builds
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            find "$LOCALAPPDATA" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            find "$APPDATA" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          else
+            find "$HOME" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          fi
+
       - name: Setup cross-compilation for ARM64 (Linux only)
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         run: |
