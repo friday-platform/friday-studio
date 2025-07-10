@@ -75,7 +75,11 @@ jobs:
         run: |
           # Clear potential corrupted npm cache entries
           rm -rf "$HOME/.cache/deno/npm" "$HOME/Library/Caches/deno/npm" 2>/dev/null || true
+          # Also clear any @inkjs/ui specific cache
+          find "$HOME" -path "*deno*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+          find "$HOME" -path "*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
           deno clean
+          rm -f deno.lock
           deno cache --reload src/cli.tsx
 
       - name: Setup cross-compilation for ARM64 (Linux only)
