@@ -71,17 +71,25 @@ jobs:
       - name: Install dependencies
         run: deno install
 
-      - name: Clear @inkjs/ui npm cache (VFS corruption workaround)
+      - name: Clear npm cache for @inkjs/ui VFS corruption fix
         shell: bash
         run: |
-          # Clear only @inkjs/ui cache entries that cause npm VFS corruption during compile
-          # Keep deno.lock for deterministic builds
+          # Aggressive cache clearing needed for @inkjs/ui@2.0.0 npm VFS corruption
+          # Preserve deno.lock for deterministic builds
           if [ "${{ matrix.os }}" == "windows-latest" ]; then
-            find "$LOCALAPPDATA" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
-            find "$APPDATA" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            # Windows paths
+            rm -rf "$LOCALAPPDATA/deno/cache" "$APPDATA/deno" 2>/dev/null || true
+            find "$LOCALAPPDATA" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            find "$APPDATA" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
           else
-            find "$HOME" -path "*deno*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            # Unix paths (Linux, macOS)
+            rm -rf "$HOME/.cache/deno/npm" "$HOME/Library/Caches/deno/npm" 2>/dev/null || true
+            find "$HOME" -path "*deno*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
+            find "$HOME" -path "*npm*" -name "*@inkjs*" -exec rm -rf {} + 2>/dev/null || true
           fi
+          deno clean
+          # DO NOT remove deno.lock - preserve for deterministic builds
+          deno cache --reload src/cli.tsx
 
       - name: Setup cross-compilation for ARM64 (Linux only)
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
