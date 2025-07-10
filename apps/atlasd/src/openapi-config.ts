@@ -1,5 +1,4 @@
 export const OPENAPI_DOCUMENTATION = {
-  openapi: "3.0.0",
   info: {
     title: "Atlas Daemon API",
     version: "1.0.0",

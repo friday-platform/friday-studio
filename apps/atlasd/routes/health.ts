@@ -1,9 +1,7 @@
 import { z } from "zod/v4";
-import { OpenAPIHono } from "@hono/zod-openapi";
-import { createRoute } from "@hono/zod-openapi";
-import type { AppVariables } from "../src/factory.ts";
-import "@hono/zod-validator"; // Ensure this dependency is bundled
-import "zod-openapi"; // Ensure this dependency is bundled
+import { daemonFactory } from "../src/factory.ts";
+import { describeRoute } from "hono-openapi";
+import { resolver } from "hono-openapi/zod";
 
 export const healthResponseSchema = z.object({
   activeWorkspaces: z.int().min(0).meta({
@@ -35,27 +33,24 @@ export const healthResponseSchema = z.object({
 // Type inference from schema
 type HealthResponse = z.infer<typeof healthResponseSchema>;
 
-const healthRoutes = new OpenAPIHono<AppVariables>();
+const healthRoutes = daemonFactory.createApp();
 
-const healthRoute = createRoute({
-  method: "get",
-  path: "/",
-  tags: ["System"],
-  summary: "Health check",
-  description: "Returns the current health status of the Atlas daemon including runtime metrics",
-  responses: {
-    200: {
-      description: "Daemon is healthy and operational",
-      content: {
-        "application/json": {
-          schema: healthResponseSchema,
+healthRoutes.get(
+  "/",
+  describeRoute({
+    tags: ["System"],
+    summary: "Health check",
+    description: "Returns the current health status of the Atlas daemon including runtime metrics",
+    responses: {
+      200: {
+        description: "Daemon is healthy and operational",
+        content: {
+          "application/json": { schema: resolver(healthResponseSchema) },
         },
       },
     },
-  },
-});
-
-healthRoutes.openapi(healthRoute, (c) => {
+  }),
+  (c) => {
   const ctx = c.get("app");
 
   const response: HealthResponse = {
@@ -69,6 +64,7 @@ healthRoutes.openapi(healthRoute, (c) => {
     },
   };
   return c.json(response);
-});
+  },
+);
 
 export { healthRoutes };
