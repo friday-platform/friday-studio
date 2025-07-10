@@ -25,7 +25,10 @@ const LLMConfigSchema = z.object({
 const LLMGenerationOptionsSchema = z.object({
   includeMemoryContext: z.boolean().optional(),
   systemPrompt: z.string().optional(),
-  memoryContext: z.string().optional(),
+  messages: z.array(z.object({
+    role: z.enum(["system", "user", "assistant"]),
+    content: z.string(),
+  })).optional(),
   operationContext: z.record(z.string(), z.any()).optional(),
 });
 
@@ -202,6 +205,7 @@ export class LLMProvider {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -209,14 +213,15 @@ export class LLMProvider {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       const modelToUse = config.model;
@@ -349,6 +354,7 @@ export class LLMProvider {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -356,14 +362,15 @@ export class LLMProvider {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       const modelToUse = config.model;
@@ -645,6 +652,7 @@ export class LLMProvider {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -652,14 +660,15 @@ export class LLMProvider {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       logger.debug("LLM generation with MCP tools starting", {

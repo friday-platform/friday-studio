@@ -134,6 +134,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
 
     // Load conversation history if we have a streamId
     let historyContext = "";
+    let historyMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
     let messagesInHistory = 0;
     let isNewConversation = true;
 
@@ -144,6 +145,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           historyContext = historyResult.historyContext || "";
           messagesInHistory = historyResult.messages.length;
           isNewConversation = false;
+
+          // Convert messages to proper format
+          historyMessages = historyResult.messages.map((msg: any) => ({
+            role: msg.role,
+            content: msg.content,
+          }));
 
           this.logger.info("Loaded conversation history", {
             streamId,
@@ -194,7 +201,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           const response = await this.generateSimpleResponseWithTools(
             message,
             streamId,
-            historyContext,
+            historyMessages,
           );
 
           // If response is null, it means the query is complex and needs reasoning
@@ -1057,27 +1064,25 @@ IMPORTANT:
   private async generateSimpleResponseWithTools(
     message: string,
     streamId?: string,
-    historyContext?: string,
+    historyMessages?: Array<{ role: "user" | "assistant"; content: string }>,
   ): Promise<string | null> {
     // Get daemon capability tools
     const tools = await this.getDaemonCapabilityTools(streamId);
 
-    // Create a simplified prompt that encourages direct tool use
-    let enhancedSystemPrompt = this.prompts.system;
-    if (historyContext) {
-      enhancedSystemPrompt = `${historyContext}\n\n${enhancedSystemPrompt}`;
-    }
+    // Build proper system prompt
+    let systemPrompt = this.prompts.system;
     if (streamId) {
-      enhancedSystemPrompt =
-        `${enhancedSystemPrompt}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`;
+      systemPrompt =
+        `${systemPrompt}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`;
     }
 
     // Add instruction to use stream_reply directly OR indicate complexity
-    enhancedSystemPrompt =
-      `${enhancedSystemPrompt}\n\nCRITICAL: You have access to tools. You MUST use the stream_reply tool to send your response. DO NOT return plain text.\n\nFor simple messages like greetings or acknowledgments:\n1. Call stream_reply with your brief response\n2. Use the exact parameters: {"stream_id": "${streamId}", "message": "your response here"}\n\nONLY if the message requires complex multi-step reasoning, return exactly: "NEEDS_REASONING"`;
+    systemPrompt =
+      `${systemPrompt}\n\nCRITICAL: You have access to tools. You MUST use the stream_reply tool to send your response. DO NOT return plain text.\n\nFor simple messages like greetings or acknowledgments:\n1. Call stream_reply with your brief response\n2. Use the exact parameters: {"stream_id": "${streamId}", "message": "your response here"}\n\nONLY if the message requires complex multi-step reasoning, return exactly: "NEEDS_REASONING"`;
 
     const result = await LLMProvider.generateTextWithTools(message, {
-      systemPrompt: enhancedSystemPrompt,
+      systemPrompt,
+      messages: historyMessages || [],
       model: this.config.model || "claude-3-5-sonnet-20241022",
       provider: "anthropic",
       temperature: this.config.temperature || 0.7,
