@@ -642,16 +642,22 @@ If you're creating a workspace after user confirmation:
 - First use stream_reply to acknowledge
 - Then CONTINUE reasoning to call workspace_draft_create
 
+If the user is confirming but you've already completed all the actions:
+- Use stream_reply to acknowledge what's been done
+- Then use ACTION: complete to finish the reasoning
+
 Provide your response in EXACTLY this format:
 
 THINKING: [Your detailed analysis of what the user needs and your current progress]
 
-ACTION: tool_call
-TOOL_NAME: [appropriate tool name]
-PARAMETERS: [valid JSON parameters for the tool]
-REASONING: [Why you chose this action and what comes next]
+ACTION: [tool_call or complete]
+TOOL_NAME: [appropriate tool name if ACTION is tool_call]
+PARAMETERS: [valid JSON parameters for the tool if ACTION is tool_call]
+REASONING: [Why you chose this action]
 
 IMPORTANT: 
+- Use ACTION: tool_call when you need to use a tool
+- Use ACTION: complete when the conversation is done and no more actions are needed
 - After confirming workspace creation, your NEXT action should be workspace_draft_create
 - Don't stop after just acknowledging - complete the task
 - The PARAMETERS must be valid JSON on a single line`;

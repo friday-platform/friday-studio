@@ -122,7 +122,7 @@ export function createReasoningMachine<TUserContext = any>(
             }
           },
           emit(({ context }) => {
-            const action = callbacks.parseAction(context.currentStep!.thinking);
+            const action = context.currentStep?.action;
             return action ? { type: "reasoning.action.determined", action } : undefined;
           }),
         ],
