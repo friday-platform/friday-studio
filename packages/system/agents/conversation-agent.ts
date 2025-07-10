@@ -168,7 +168,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           metadata: {
             userId,
             timestamp: new Date().toISOString(),
-            workspaceContext: this.workspaceId,
+            workspaceContext: "atlas-conversation",
           },
         });
       } catch (error) {
@@ -190,35 +190,40 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
             message: message.substring(0, 100),
           });
 
-          // Fast path - generate response directly without full reasoning
-          const response = await this.generateSimpleResponse(message, historyContext);
+          // Fast path - generate response with tool support but without reasoning
+          const response = await this.generateSimpleResponseWithTools(
+            message,
+            streamId,
+            historyContext,
+          );
 
-          // Save the response
-          if (streamId) {
-            await this.saveMessage(streamId, {
-              role: "assistant",
-              content: response,
-              metadata: {
-                timestamp: new Date().toISOString(),
+          // If response is null, it means the query is complex and needs reasoning
+          if (response === null) {
+            this.logger.info("Fast-path determined message needs full reasoning, delegating");
+            // Fall through to reasoning execution below
+          } else {
+            // Save the response
+            if (streamId && response) {
+              await this.saveMessage(streamId, {
+                role: "assistant",
+                content: response,
+                metadata: {
+                  timestamp: new Date().toISOString(),
+                  fastPath: true,
+                },
+              });
+            }
+
+            return {
+              response,
+              conversationMetadata: {
+                streamId,
+                messagesInHistory: messagesInHistory + 2,
+                isNewConversation,
                 fastPath: true,
               },
-            });
+            };
           }
-
-          // Stream the response if we have a streamId
-          if (streamId) {
-            await this.handleStreamReply(streamId, response);
-          }
-
-          return {
-            response,
-            conversationMetadata: {
-              streamId,
-              messagesInHistory: messagesInHistory + 2,
-              isNewConversation,
-              fastPath: true,
-            },
-          };
         }
 
         this.logger.info("Using reasoning-based conversation", {
@@ -242,7 +247,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
 
         // Add conversation metadata to result
         return {
-          ...result,
+          ...(typeof result === "object" && result !== null ? result : {}),
           conversationMetadata: {
             streamId,
             messagesInHistory: messagesInHistory + 2, // user + assistant
@@ -980,7 +985,7 @@ IMPORTANT:
         return await tools.conversation_storage.execute({
           action: "load_history",
           stream_id: streamId,
-        });
+        }, {});
       }
     } catch (error) {
       this.logger.error("Failed to load conversation history", {
@@ -1009,7 +1014,7 @@ IMPORTANT:
           action: "save_message",
           stream_id: streamId,
           message,
-        });
+        }, {});
       }
     } catch (error) {
       this.logger.error("Failed to save message to history", {
@@ -1025,38 +1030,71 @@ IMPORTANT:
   private isSimpleMessage(message: string): boolean {
     const normalized = message.toLowerCase().trim();
 
-    // Simple greetings and responses
+    // Only very simple greetings and responses
     const simplePatterns = [
-      /^(hi|hello|hey|good morning|good afternoon|good evening)[\s!.]*$/,
+      /^(hi|hello|hey)[\s!.]*$/,
       /^(thanks|thank you|thx|ty)[\s!.]*$/,
-      /^(ok|okay|sure|got it|understood|cool|great|awesome)[\s!.]*$/,
-      /^(bye|goodbye|see you|later|farewell)[\s!.]*$/,
-      /^(yes|yeah|yep|no|nope|maybe)[\s!.]*$/,
-      /^what'?s my name\??$/,
-      /^who am i\??$/,
+      /^(ok|okay|sure|got it|understood)[\s!.]*$/,
+      /^(bye|goodbye)[\s!.]*$/,
+      /^(yes|yeah|yep|no|nope)[\s!.]*$/,
     ];
 
     return simplePatterns.some((pattern) => pattern.test(normalized));
   }
 
   /**
-   * Generate a simple response without reasoning
+   * Generate a simple response with tool support but without reasoning loop
    */
-  private async generateSimpleResponse(message: string, historyContext?: string): Promise<string> {
-    const prompt = `${historyContext ? historyContext + "\n\n" : ""}User: ${message}`;
+  private async generateSimpleResponseWithTools(
+    message: string,
+    streamId?: string,
+    historyContext?: string,
+  ): Promise<string | null> {
+    // Get daemon capability tools
+    const tools = await this.getDaemonCapabilityTools(streamId);
 
-    const response = await LLMProvider.generateText(prompt, {
-      systemPrompt: this.prompts.system,
+    // Create a simplified prompt that encourages direct tool use
+    let enhancedSystemPrompt = this.prompts.system;
+    if (historyContext) {
+      enhancedSystemPrompt = `${historyContext}\n\n${enhancedSystemPrompt}`;
+    }
+    if (streamId) {
+      enhancedSystemPrompt =
+        `${enhancedSystemPrompt}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`;
+    }
+
+    // Add instruction to use stream_reply directly OR indicate complexity
+    enhancedSystemPrompt =
+      `${enhancedSystemPrompt}\n\nFor simple messages, respond immediately using the stream_reply tool without extensive reasoning.\n\nHOWEVER, if the message requires complex reasoning, multiple steps, or analysis, respond with exactly: "NEEDS_REASONING"`;
+
+    const result = await LLMProvider.generateTextWithTools(message, {
+      systemPrompt: enhancedSystemPrompt,
       model: this.config.model || "claude-3-5-sonnet-20241022",
       provider: "anthropic",
       temperature: this.config.temperature || 0.7,
       maxTokens: 500, // Smaller token limit for simple responses
+      tools: tools,
+      maxSteps: 1, // Single step for simple responses
       operationContext: {
-        operation: "conversation_agent_simple",
+        operation: "conversation_agent_simple_tools",
         agentId: this.id,
+        streamId,
       },
     });
 
-    return response;
+    this.logger.debug("Simple tool response received", {
+      responseLength: result.text?.length || 0,
+      toolCallCount: result.toolCalls?.length || 0,
+      text: result.text,
+    });
+
+    // Check if the model indicated this needs reasoning
+    if (result.text && result.text.includes("NEEDS_REASONING")) {
+      this.logger.info("Simple path detected complex query, delegating to reasoning");
+      return null; // Signal to use reasoning
+    }
+
+    // The tool calls (including stream_reply) should already be executed
+    return result.text || "";
   }
 }
