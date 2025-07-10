@@ -15,6 +15,7 @@ import {
   type ReasoningContext,
   type ReasoningResult,
 } from "@atlas/reasoning";
+import { createActor } from "xstate";
 
 export interface ConversationAgentConfig {
   model?: string;
@@ -641,7 +642,7 @@ Generate a natural, helpful response that addresses the user's needs.`;
       // Run the machine with user context
       const result = await new Promise<ReasoningResult>((resolve, reject) => {
         try {
-          const actor = machine.createActor({
+          const actor = createActor(machine, {
             input: userContext,
           });
 
