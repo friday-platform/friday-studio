@@ -4,6 +4,9 @@ import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
 import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 
+// TODO: Remove 'as any' once hono-openapi v0.5 is released with zod/v4 support
+// See: https://github.com/rhinobase/hono-openapi/issues/97
+
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();
 

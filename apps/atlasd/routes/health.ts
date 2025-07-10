@@ -3,6 +3,9 @@ import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver } from "hono-openapi/zod";
 
+// TODO: Remove 'as any' once hono-openapi v0.5 is released with zod/v4 support
+// See: https://github.com/rhinobase/hono-openapi/issues/97
+
 export const healthResponseSchema = z.object({
   activeWorkspaces: z.int().min(0).meta({
     description: "Number of currently active workspaces",
