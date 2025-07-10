@@ -803,7 +803,7 @@ For workspace_draft_create parameters, include:
               model: this.config.model || "claude-3-5-sonnet-20241022",
               provider: "anthropic",
               temperature: 0.3,
-              maxTokens: 4000, // Increased to handle full workspace configs
+              maxTokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
               tools: reasoningTool,
               toolChoice: "required",
               operationContext: {

@@ -23,7 +23,7 @@ export async function generateThinking<T>(
     model: "claude-3-5-sonnet-20241022",
     provider: "anthropic",
     temperature: 0.1,
-    maxTokens: 1000,
+    maxTokens: 4000, // Reasonable default for reasoning steps
     operationContext: {
       operation: "reasoning_think_step",
       iteration: context.currentIteration + 1,
