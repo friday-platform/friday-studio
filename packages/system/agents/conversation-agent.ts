@@ -1040,7 +1040,15 @@ IMPORTANT:
       /^how are you\??$/,
     ];
 
-    return simplePatterns.some((pattern) => pattern.test(normalized));
+    const isSimple = simplePatterns.some((pattern) => pattern.test(normalized));
+
+    this.logger.info("Checking if message is simple", {
+      message: normalized,
+      isSimple,
+      messageLength: normalized.length,
+    });
+
+    return isSimple;
   }
 
   /**
@@ -1066,7 +1074,7 @@ IMPORTANT:
 
     // Add instruction to use stream_reply directly OR indicate complexity
     enhancedSystemPrompt =
-      `${enhancedSystemPrompt}\n\nIMPORTANT: You MUST use the stream_reply tool to send your response to the user. For simple messages, call stream_reply immediately with your response.\n\nHOWEVER, if the message requires complex reasoning, multiple steps, or analysis, respond with exactly: "NEEDS_REASONING" (do not use stream_reply in this case).`;
+      `${enhancedSystemPrompt}\n\nCRITICAL: You have access to tools. You MUST use the stream_reply tool to send your response. DO NOT return plain text.\n\nFor simple messages like greetings or acknowledgments:\n1. Call stream_reply with your brief response\n2. Use the exact parameters: {"stream_id": "${streamId}", "message": "your response here"}\n\nONLY if the message requires complex multi-step reasoning, return exactly: "NEEDS_REASONING"`;
 
     const result = await LLMProvider.generateTextWithTools(message, {
       systemPrompt: enhancedSystemPrompt,
