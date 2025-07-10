@@ -803,7 +803,7 @@ For workspace_draft_create parameters, include:
               model: this.config.model || "claude-3-5-sonnet-20241022",
               provider: "anthropic",
               temperature: 0.3,
-              maxTokens: 1000,
+              maxTokens: 4000, // Increased to handle full workspace configs
               tools: reasoningTool,
               toolChoice: "required",
               operationContext: {
@@ -832,6 +832,9 @@ For workspace_draft_create parameters, include:
                 action,
                 toolName,
                 hasParameters: !!parameters,
+                parametersPreview: parameters
+                  ? JSON.stringify(parameters).substring(0, 200)
+                  : "no parameters",
               });
 
               return {

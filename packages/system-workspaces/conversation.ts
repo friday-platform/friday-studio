@@ -435,7 +435,11 @@ Use stream_reply with:
    - Number and purpose of agents
    - Data flow between agents
    - Any MCP tools needed
-3. "Does this match what you have in mind?"
+3. If you need clarification, ask as a numbered list:
+   "Before I create this, I need to know:
+   1. [First question]?
+   2. [Second question]?
+   3. [Third question]?"
 
 STEP 2 - After User Confirmation:
 1. Call workspace_draft_create with full configuration
