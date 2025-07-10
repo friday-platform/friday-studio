@@ -2,6 +2,8 @@ import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
+import "@hono/zod-validator"; // Ensure this dependency is bundled
+import "zod-openapi"; // Ensure this dependency is bundled
 import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 
 // TODO: Remove 'as any' once hono-openapi v0.5 is released with zod/v4 support
@@ -87,7 +89,6 @@ export const errorResponseSchema = z.object({
 // Type inference
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
 export type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
-
 
 // ============================================================================
 // Route Implementations
