@@ -19,6 +19,10 @@ import {
 export interface ConversationAgentConfig {
   model?: string;
   system_prompt?: string;
+  prompts?: {
+    system?: string;
+    user?: string;
+  };
   tools?: string[];
   temperature?: number;
   max_tokens?: number;
@@ -52,11 +56,13 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       ...config,
     };
 
+    // Check for prompts in config (passed from workspace) or use system_prompt
+    const systemPrompt = config.prompts?.system ||
+      this.config.system_prompt ||
+      "You are a helpful AI assistant.";
+
     // Set agent prompts based on configuration
-    this.setPrompts(
-      this.config.system_prompt || "You are a helpful AI assistant.",
-      "",
-    );
+    this.setPrompts(systemPrompt, "");
   }
 
   // IAtlasAgent interface implementation
@@ -445,7 +451,8 @@ Think step-by-step about:
 Provide your thinking in a structured way that leads to a clear action.`;
 
         const thinking = await LLMProvider.generateText(thinkingPrompt, {
-          systemPrompt: "You are a reasoning engine that plans conversations step by step.",
+          systemPrompt:
+            `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
           model: this.config.model || "claude-3-5-sonnet-20241022",
           provider: "anthropic",
           temperature: 0.3,
