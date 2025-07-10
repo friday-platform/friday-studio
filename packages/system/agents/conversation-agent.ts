@@ -1029,13 +1029,15 @@ IMPORTANT:
   private isSimpleMessage(message: string): boolean {
     const normalized = message.toLowerCase().trim();
 
-    // Only very simple greetings and responses
+    // Simple greetings and responses - expanded list
     const simplePatterns = [
-      /^(hi|hello|hey)[\s!.]*$/,
+      /^(hi|hello|hey|good morning|good afternoon|good evening)[\s!.]*$/,
       /^(thanks|thank you|thx|ty)[\s!.]*$/,
-      /^(ok|okay|sure|got it|understood)[\s!.]*$/,
-      /^(bye|goodbye)[\s!.]*$/,
-      /^(yes|yeah|yep|no|nope)[\s!.]*$/,
+      /^(ok|okay|sure|got it|understood|cool|great)[\s!.]*$/,
+      /^(bye|goodbye|see you|later)[\s!.]*$/,
+      /^(yes|yeah|yep|yup|no|nope|nah)[\s!.]*$/,
+      /^what'?s up\??$/,
+      /^how are you\??$/,
     ];
 
     return simplePatterns.some((pattern) => pattern.test(normalized));
@@ -1064,7 +1066,7 @@ IMPORTANT:
 
     // Add instruction to use stream_reply directly OR indicate complexity
     enhancedSystemPrompt =
-      `${enhancedSystemPrompt}\n\nFor simple messages, respond immediately using the stream_reply tool without extensive reasoning.\n\nHOWEVER, if the message requires complex reasoning, multiple steps, or analysis, respond with exactly: "NEEDS_REASONING"`;
+      `${enhancedSystemPrompt}\n\nIMPORTANT: You MUST use the stream_reply tool to send your response to the user. For simple messages, call stream_reply immediately with your response.\n\nHOWEVER, if the message requires complex reasoning, multiple steps, or analysis, respond with exactly: "NEEDS_REASONING" (do not use stream_reply in this case).`;
 
     const result = await LLMProvider.generateTextWithTools(message, {
       systemPrompt: enhancedSystemPrompt,
@@ -1073,7 +1075,7 @@ IMPORTANT:
       temperature: this.config.temperature || 0.7,
       maxTokens: 500, // Smaller token limit for simple responses
       tools: tools,
-      maxSteps: 1, // Single step for simple responses
+      maxSteps: 2, // Allow one tool call plus response
       operationContext: {
         operation: "conversation_agent_simple_tools",
         agentId: this.id,
@@ -1081,10 +1083,14 @@ IMPORTANT:
       },
     });
 
-    this.logger.debug("Simple tool response received", {
+    this.logger.info("Simple tool response received", {
       responseLength: result.text?.length || 0,
       toolCallCount: result.toolCalls?.length || 0,
       text: result.text,
+      toolCalls: result.toolCalls?.map((tc) => ({
+        toolName: tc.toolName,
+        args: tc.args,
+      })),
     });
 
     // Check if the model indicated this needs reasoning
@@ -1093,7 +1099,22 @@ IMPORTANT:
       return null; // Signal to use reasoning
     }
 
-    // The tool calls (including stream_reply) should already be executed
-    return result.text || "";
+    // Find the stream_reply tool call to get the actual message sent
+    let streamedMessage = result.text || "";
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      const streamReplyCall = result.toolCalls.find((tc) => tc.toolName === "stream_reply");
+      if (
+        streamReplyCall && streamReplyCall.args && typeof streamReplyCall.args.message === "string"
+      ) {
+        streamedMessage = streamReplyCall.args.message;
+        this.logger.info("Extracted streamed message from tool call", {
+          messageLength: streamedMessage.length,
+          messagePreview: streamedMessage.substring(0, 100),
+        });
+      }
+    }
+
+    // Return the actual message that was streamed
+    return streamedMessage;
   }
 }
