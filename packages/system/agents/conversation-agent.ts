@@ -412,35 +412,56 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     message: string,
     streamId?: string,
   ): Promise<unknown> {
-    // Create reasoning context
-    const userContext = {
-      message,
+    this.logger.info("Starting reasoning-based conversation", {
+      message: message.substring(0, 100),
       streamId,
-      conversationId: streamId || this.id,
-      tools: await this.getDaemonCapabilityTools(streamId),
-    };
+      hasStreamId: !!streamId,
+    });
 
-    // Create reasoning callbacks
-    const callbacks: ReasoningCallbacks<typeof userContext> = {
-      // Generate thinking based on conversation context
-      think: async (context) => {
-        const previousSteps = context.steps.map((s) => ({
-          thinking: s.thinking,
-          action: s.action,
-          observation: s.observation,
-        }));
+    try {
+      // Create reasoning context
+      const tools = await this.getDaemonCapabilityTools(streamId);
 
-        const thinkingPrompt = `
+      this.logger.debug("Reasoning context tools prepared", {
+        toolCount: Object.keys(tools).length,
+        toolNames: Object.keys(tools),
+      });
+
+      const userContext = {
+        message,
+        streamId,
+        conversationId: streamId || this.id,
+        tools,
+      };
+
+      // Create reasoning callbacks
+      const callbacks: ReasoningCallbacks<typeof userContext> = {
+        // Generate thinking based on conversation context
+        think: async (context) => {
+          this.logger.debug("Think callback invoked", {
+            message: context.userContext.message.substring(0, 100),
+            stepCount: context.steps.length,
+            currentIteration: context.currentIteration,
+          });
+
+          try {
+            const previousSteps = context.steps.map((s) => ({
+              thinking: s.thinking,
+              action: s.action,
+              observation: s.observation,
+            }));
+
+            const thinkingPrompt = `
 You are having a conversation with a user. Analyze what they need and plan your response.
 
 User message: ${context.userContext.message}
 
 ${
-          previousSteps.length > 0
-            ? `Previous reasoning steps:
+              previousSteps.length > 0
+                ? `Previous reasoning steps:
 ${JSON.stringify(previousSteps, null, 2)}`
-            : ""
-        }
+                : ""
+            }
 
 Think step-by-step about:
 1. What is the user asking for?
@@ -450,74 +471,91 @@ Think step-by-step about:
 
 Provide your thinking in a structured way that leads to a clear action.`;
 
-        const thinking = await LLMProvider.generateText(thinkingPrompt, {
-          systemPrompt:
-            `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
-          model: this.config.model || "claude-3-5-sonnet-20241022",
-          provider: "anthropic",
-          temperature: 0.3,
-          maxTokens: 1000,
-        });
+            this.logger.debug("Generating thinking with LLM", {
+              promptLength: thinkingPrompt.length,
+              systemPromptLength: this.prompts.system.length,
+            });
 
-        return {
-          thinking,
-          confidence: 0.8, // Could analyze thinking to determine confidence
-        };
-      },
+            const thinking = await LLMProvider.generateText(thinkingPrompt, {
+              systemPrompt:
+                `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
+              model: this.config.model || "claude-3-5-sonnet-20241022",
+              provider: "anthropic",
+              temperature: 0.3,
+              maxTokens: 1000,
+            });
 
-      // Parse action from thinking
-      parseAction: (thinking: string): ReasoningAction | null => {
-        this.logger.debug("Parsing action from thinking", {
-          thinkingLength: thinking.length,
-        });
+            this.logger.debug("Thinking generated", {
+              thinkingLength: thinking.length,
+              thinkingPreview: thinking.substring(0, 100),
+            });
 
-        // Look for tool usage patterns in thinking
-        if (thinking.includes("stream_reply") || thinking.includes("respond to the user")) {
-          return {
-            type: "tool_call",
-            toolName: "stream_reply",
-            parameters: {},
-            reasoning: "Streaming response to user",
-          };
-        }
+            return {
+              thinking,
+              confidence: 0.8, // Could analyze thinking to determine confidence
+            };
+          } catch (error) {
+            this.logger.error("Think callback failed", {
+              error: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+            });
+            throw error;
+          }
+        },
 
-        // Check if task is complete
-        if (
-          thinking.includes("task is complete") || thinking.includes("conversation is finished")
-        ) {
+        // Parse action from thinking
+        parseAction: (thinking: string): ReasoningAction | null => {
+          this.logger.debug("Parsing action from thinking", {
+            thinkingLength: thinking.length,
+          });
+
+          // Look for tool usage patterns in thinking
+          if (thinking.includes("stream_reply") || thinking.includes("respond to the user")) {
+            return {
+              type: "tool_call",
+              toolName: "stream_reply",
+              parameters: {},
+              reasoning: "Streaming response to user",
+            };
+          }
+
+          // Check if task is complete
+          if (
+            thinking.includes("task is complete") || thinking.includes("conversation is finished")
+          ) {
+            return {
+              type: "complete",
+              parameters: {},
+              reasoning: "Conversation goal achieved",
+            };
+          }
+
+          // Default to completing if no clear action
           return {
             type: "complete",
             parameters: {},
-            reasoning: "Conversation goal achieved",
+            reasoning: "No specific action needed",
           };
-        }
+        },
 
-        // Default to completing if no clear action
-        return {
-          type: "complete",
-          parameters: {},
-          reasoning: "No specific action needed",
-        };
-      },
+        // Execute the determined action
+        executeAction: async (action, context) => {
+          this.logger.info("Executing reasoning action", {
+            type: action.type,
+            toolName: action.toolName,
+          });
 
-      // Execute the determined action
-      executeAction: async (action, context) => {
-        this.logger.info("Executing reasoning action", {
-          type: action.type,
-          toolName: action.toolName,
-        });
+          if (action.type === "tool_call" && action.toolName) {
+            const tools = context.userContext.tools;
+            const tool = tools[action.toolName];
 
-        if (action.type === "tool_call" && action.toolName) {
-          const tools = context.userContext.tools;
-          const tool = tools[action.toolName];
+            if (tool) {
+              // Generate appropriate parameters based on the tool
+              let parameters: any = {};
 
-          if (tool) {
-            // Generate appropriate parameters based on the tool
-            let parameters: any = {};
-
-            if (action.toolName === "stream_reply") {
-              // Generate response based on conversation context and reasoning
-              const responsePrompt = `
+              if (action.toolName === "stream_reply") {
+                // Generate response based on conversation context and reasoning
+                const responsePrompt = `
 Based on the conversation and reasoning, generate a helpful response.
 
 User message: ${context.userContext.message}
@@ -526,118 +564,153 @@ Reasoning: ${context.currentStep?.thinking || ""}
 
 Generate a natural, helpful response that addresses the user's needs.`;
 
-              const response = await LLMProvider.generateText(responsePrompt, {
-                systemPrompt: this.prompts.system,
-                model: this.config.model || "claude-3-5-sonnet-20241022",
-                provider: "anthropic",
-                temperature: this.config.temperature || 0.7,
-                maxTokens: this.config.max_tokens || 2000,
-              });
+                const response = await LLMProvider.generateText(responsePrompt, {
+                  systemPrompt: this.prompts.system,
+                  model: this.config.model || "claude-3-5-sonnet-20241022",
+                  provider: "anthropic",
+                  temperature: this.config.temperature || 0.7,
+                  maxTokens: this.config.max_tokens || 2000,
+                });
 
-              parameters = {
-                stream_id: context.userContext.streamId,
-                message: response,
+                parameters = {
+                  stream_id: context.userContext.streamId,
+                  message: response,
+                };
+              }
+
+              const result = await tool.execute(parameters);
+              return {
+                result,
+                observation: `Tool ${action.toolName} executed successfully`,
               };
             }
-
-            const result = await tool.execute(parameters);
-            return {
-              result,
-              observation: `Tool ${action.toolName} executed successfully`,
-            };
           }
-        }
 
-        return {
-          result: null,
-          observation: "Action completed",
-        };
-      },
+          return {
+            result: null,
+            observation: "Action completed",
+          };
+        },
 
-      // Check if conversation goal is achieved
-      isComplete: (context) => {
-        // Complete after responding or reaching max iterations
-        const hasResponded = context.steps.some(
-          (step) => step.action?.toolName === "stream_reply",
-        );
-        return hasResponded || context.currentIteration >= context.maxIterations;
-      },
+        // Check if conversation goal is achieved
+        isComplete: (context) => {
+          // Complete after responding or reaching max iterations
+          const hasResponded = context.steps.some(
+            (step) => step.action?.toolName === "stream_reply",
+          );
+          return hasResponded || context.currentIteration >= context.maxIterations;
+        },
 
-      // Stream reasoning updates
-      onThinkingStart: () => {
-        this.logger.debug("Reasoning started");
-      },
-      onThinkingUpdate: (partial) => {
-        this.logger.debug("Reasoning update", { partial: partial.substring(0, 100) });
-      },
-      onActionDetermined: (action) => {
-        this.logger.info("Action determined", { action });
-      },
-      onObservation: (observation) => {
-        this.logger.info("Observation", { observation });
-      },
-    };
+        // Stream reasoning updates
+        onThinkingStart: () => {
+          this.logger.debug("Reasoning started");
+        },
+        onThinkingUpdate: (partial) => {
+          this.logger.debug("Reasoning update", { partial: partial.substring(0, 100) });
+        },
+        onActionDetermined: (action) => {
+          this.logger.info("Action determined", { action });
+        },
+        onObservation: (observation) => {
+          this.logger.info("Observation", { observation });
+        },
+      };
 
-    // Create and run reasoning machine
-    const machine = createReasoningMachine(callbacks, {
-      maxIterations: this.config.max_reasoning_steps || 5,
-    });
-
-    // Run the machine with user context
-    const result = await new Promise<ReasoningResult>((resolve) => {
-      const actor = machine.createActor({
-        input: userContext,
+      // Create and run reasoning machine
+      const machine = createReasoningMachine(callbacks, {
+        maxIterations: this.config.max_reasoning_steps || 5,
       });
 
-      actor.subscribe({
-        complete: () => {
-          const snapshot = actor.getSnapshot();
-          resolve(snapshot.output as ReasoningResult);
-        },
-        error: (error) => {
-          this.logger.error("Reasoning machine error", { error });
-          resolve({
-            status: "failed",
-            reasoning: {
-              steps: [],
-              totalIterations: 0,
-              finalThinking: "Error occurred",
-              confidence: 0,
+      this.logger.info("Creating reasoning machine", {
+        maxIterations: this.config.max_reasoning_steps || 5,
+      });
+
+      // Run the machine with user context
+      const result = await new Promise<ReasoningResult>((resolve, reject) => {
+        try {
+          const actor = machine.createActor({
+            input: userContext,
+          });
+
+          this.logger.debug("Reasoning actor created");
+
+          actor.subscribe({
+            complete: () => {
+              this.logger.debug("Reasoning actor completed");
+              const snapshot = actor.getSnapshot();
+              resolve(snapshot.output as ReasoningResult);
             },
-            execution: {
-              agentsExecuted: [],
-              toolsExecuted: [],
-              totalDuration: 0,
-            },
-            jobResults: {
-              goal: "Respond to user",
-              achieved: false,
-              output: null,
-              artifacts: {},
-            },
-            metrics: {
-              llmTokens: 0,
-              llmCost: 0,
-              agentCalls: 0,
-              toolCalls: 0,
+            error: (error) => {
+              this.logger.error("Reasoning machine error", {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                errorType: error instanceof Error ? error.constructor.name : typeof error,
+              });
+              reject(error);
             },
           });
-        },
+
+          actor.start();
+          this.logger.debug("Reasoning actor started");
+        } catch (error) {
+          this.logger.error("Failed to create reasoning actor", {
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          });
+          reject(error);
+        }
+      }).catch((error) => {
+        // Return a failed result instead of throwing
+        this.logger.error("Reasoning execution failed, returning fallback result", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+
+        return {
+          status: "failed",
+          reasoning: {
+            steps: [],
+            totalIterations: 0,
+            finalThinking: "Error occurred during reasoning",
+            confidence: 0,
+          },
+          execution: {
+            agentsExecuted: [],
+            toolsExecuted: [],
+            totalDuration: 0,
+          },
+          jobResults: {
+            goal: "Respond to user",
+            achieved: false,
+            output: null,
+            artifacts: {},
+          },
+          metrics: {
+            llmTokens: 0,
+            llmCost: 0,
+            agentCalls: 0,
+            toolCalls: 0,
+          },
+        } as ReasoningResult;
       });
 
-      actor.start();
-    });
+      this.logger.info("Reasoning completed", {
+        status: result.status,
+        steps: result.reasoning.totalIterations,
+        achieved: result.jobResults.achieved,
+      });
 
-    this.logger.info("Reasoning completed", {
-      status: result.status,
-      steps: result.reasoning.totalIterations,
-      achieved: result.jobResults.achieved,
-    });
-
-    return {
-      reasoning: result,
-      response: result.jobResults.output,
-    };
+      return {
+        reasoning: result,
+        response: result.jobResults.output,
+      };
+    } catch (error) {
+      this.logger.error("executeWithReasoning failed", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+      });
+      throw error;
+    }
   }
 
   /**
