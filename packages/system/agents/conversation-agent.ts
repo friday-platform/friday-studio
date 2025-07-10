@@ -1036,15 +1036,18 @@ IMPORTANT:
   private isSimpleMessage(message: string): boolean {
     const normalized = message.toLowerCase().trim();
 
-    // Simple greetings and responses - expanded list
+    // Simple patterns include greetings AND short contextual responses
     const simplePatterns = [
       /^(hi|hello|hey|good morning|good afternoon|good evening)[\s!.]*$/,
       /^(thanks|thank you|thx|ty)[\s!.]*$/,
-      /^(ok|okay|sure|got it|understood|cool|great)[\s!.]*$/,
       /^(bye|goodbye|see you|later)[\s!.]*$/,
       /^(yes|yeah|yep|yup|no|nope|nah)[\s!.]*$/,
+      /^(ok|okay|sure|got it|understood)[\s!.]*$/,
       /^what'?s up\??$/,
       /^how are you\??$/,
+      /^#\d+$/, // Numbered choices like #1, #2
+      /^(first|second|third|last) one$/i, // Ordinal choices
+      /^\d+$/, // Just a number
     ];
 
     const isSimple = simplePatterns.some((pattern) => pattern.test(normalized));
@@ -1078,7 +1081,22 @@ IMPORTANT:
 
     // Add instruction to use stream_reply directly OR indicate complexity
     systemPrompt =
-      `${systemPrompt}\n\nCRITICAL: You have access to tools. You MUST use the stream_reply tool to send your response. DO NOT return plain text.\n\nFor simple messages like greetings or acknowledgments:\n1. Call stream_reply with your brief response\n2. Use the exact parameters: {"stream_id": "${streamId}", "message": "your response here"}\n\nONLY if the message requires complex multi-step reasoning, return exactly: "NEEDS_REASONING"`;
+      `${systemPrompt}\n\nYou are handling a simple message in an ongoing conversation. You have the full conversation history above.
+
+CRITICAL INSTRUCTIONS:
+1. You MUST use the stream_reply tool to respond to the user
+2. Understand the context from the conversation history
+3. If the user is responding to something you previously said (like choosing an option), handle it appropriately
+4. Use parameters: {"stream_id": "${streamId}", "message": "your response"}
+
+ONLY return "NEEDS_REASONING" if you truly need multi-step reasoning or complex analysis.
+
+Examples of what you SHOULD handle:
+- User says "#1" or "first one" -> They're choosing option 1 from your list
+- User says "yes" or "yeah" -> They're agreeing to your last question
+- User provides a short answer -> They're responding to your question
+
+DO NOT ask for clarification if the context is clear from the conversation history.`;
 
     const result = await LLMProvider.generateTextWithTools(message, {
       systemPrompt,
@@ -1086,8 +1104,9 @@ IMPORTANT:
       model: this.config.model || "claude-3-5-sonnet-20241022",
       provider: "anthropic",
       temperature: this.config.temperature || 0.7,
-      maxTokens: 500, // Smaller token limit for simple responses
+      maxTokens: 1000, // Increased for proper responses
       tools: tools,
+      toolChoice: "required", // Force tool use
       maxSteps: 2, // Allow one tool call plus response
       operationContext: {
         operation: "conversation_agent_simple_tools",
