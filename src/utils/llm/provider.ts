@@ -550,8 +550,35 @@ export class LLMProvider {
       );
     }
 
+    // Import jsonSchema for tool format conversion
+    const { jsonSchema } = await import("ai");
+
     // Prepare tools - combine provided tools with MCP tools
-    const allTools: Record<string, Tool> = { ...options.tools };
+    const allTools: Record<string, Tool> = {};
+
+    // Convert provided tools to ensure proper format
+    if (options.tools) {
+      for (const [toolName, tool] of Object.entries(options.tools)) {
+        // Ensure tool has proper format with jsonSchema-wrapped parameters
+        // Check if parameters need to be wrapped with jsonSchema
+        const params = tool.parameters;
+        const needsWrapping = params &&
+          typeof params === "object" &&
+          !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped by AI SDK
+          (params._def || params.shape); // Is a Zod schema
+
+        if (needsWrapping) {
+          // Wrap Zod schema with jsonSchema
+          allTools[toolName] = {
+            ...tool,
+            parameters: jsonSchema(params),
+          };
+        } else {
+          // Tool already has proper format or no parameters
+          allTools[toolName] = tool;
+        }
+      }
+    }
 
     // Add MCP tools if servers are specified
     if (options.mcpServers && options.mcpServers.length > 0) {
@@ -567,7 +594,28 @@ export class LLMProvider {
         const mcpTools = await this.mcpManager.getToolsForServers(
           options.mcpServers,
         );
-        Object.assign(allTools, mcpTools);
+
+        // Convert MCP tools to ensure proper format
+        for (const [toolName, tool] of Object.entries(mcpTools)) {
+          if (tool && typeof tool === "object") {
+            const toolObj = tool as any;
+            // Check if MCP tool parameters need wrapping
+            const params = toolObj.parameters;
+            const needsWrapping = params &&
+              typeof params === "object" &&
+              !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped
+              (params._def || params.shape || params.type); // Is a schema object
+
+            if (needsWrapping) {
+              allTools[toolName] = {
+                ...toolObj,
+                parameters: jsonSchema(params),
+              };
+            } else {
+              allTools[toolName] = toolObj;
+            }
+          }
+        }
 
         // Add MCP tool count to parent span
         span?.setAttribute("mcp.tool_count", Object.keys(mcpTools).length);

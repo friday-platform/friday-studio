@@ -275,7 +275,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           });
         }
 
-        // AI SDK expects 'parameters' (not 'input_schema')
+        // Pass Zod schema directly - LLMProvider will wrap with jsonSchema
         tools[capability.id] = {
           description: capability.description,
           parameters: parameters,
