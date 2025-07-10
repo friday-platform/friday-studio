@@ -710,7 +710,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
             }));
 
             const thinkingPrompt = `
-You are having a conversation with a user. Analyze what they need and plan your response.
+You are having a conversation with a user. Use the reasoning_action tool to analyze what they need and plan your response.
 
 ${
               context.userContext.historyContext
@@ -731,10 +731,11 @@ ${
                 ? `\nCurrent draft ID: ${context.userContext.draftId} (use this for workspace operations)\n`
                 : ""
             }
-Think step-by-step about:
-1. What is the user asking for?
-2. What tools do I need to use to accomplish this?
-3. Am I in the middle of a multi-step process?
+
+Use the reasoning_action tool to:
+1. Analyze what the user is asking for
+2. Determine what tools you need to use
+3. Check if you're in the middle of a multi-step process
 
 If you're creating a workspace after user confirmation:
 - First use stream_reply to acknowledge
@@ -742,50 +743,113 @@ If you're creating a workspace after user confirmation:
 
 If the user is confirming but you've already completed all the actions:
 - Use stream_reply to acknowledge what's been done
-- Then use ACTION: complete to finish the reasoning
+- Then set action to "complete" to finish the reasoning
 
-Provide your response in EXACTLY this format:
+For the reasoning_action tool:
+- thinking: Your detailed analysis of what the user needs and your current progress
+- action: Either "tool_call" or "complete"
+- toolName: The name of the tool to call (if action is tool_call)
+- parameters: The complete parameters for the tool call (if action is tool_call)
+- reasoning: Why you chose this action
 
-THINKING: [Your detailed analysis of what the user needs and your current progress]
-
-ACTION: [tool_call or complete]
-TOOL_NAME: [appropriate tool name if ACTION is tool_call]
-PARAMETERS: [valid JSON parameters for the tool if ACTION is tool_call]
-REASONING: [Why you chose this action]
-
-IMPORTANT: 
-- Use ACTION: tool_call when you need to use a tool
-- Use ACTION: complete when the conversation is done and no more actions are needed
-- After confirming workspace creation, your NEXT action should be workspace_draft_create
-- Don't stop after just acknowledging - complete the task
-- The PARAMETERS must be valid JSON on a single line
-- For workspace_draft_create, the PARAMETERS must contain: name, description, and initialConfig
-- The initialConfig follows the WorkspaceConfig schema shown in workspace_draft_create_format section
-- Example PARAMETERS format: {"name": "workspace-name", "description": "workspace description", "initialConfig": {... full workspace config ...}}
-- NEVER call workspace_draft_create with empty parameters {}`;
+For workspace_draft_create parameters, include:
+- name: workspace name
+- description: workspace description  
+- initialConfig: the full WorkspaceConfig object with version, workspace, signals, jobs, agents, and tools`;
 
             this.logger.debug("Generating thinking with LLM", {
               promptLength: thinkingPrompt.length,
               systemPromptLength: this.prompts.system.length,
             });
 
-            const thinking = await LLMProvider.generateText(thinkingPrompt, {
+            // Use structured output for better reliability
+            const reasoningTool = {
+              reasoning_action: {
+                description: "Determine the next action in the reasoning process",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    thinking: {
+                      type: "string",
+                      description:
+                        "Your detailed analysis of what the user needs and your current progress",
+                    },
+                    action: {
+                      type: "string",
+                      enum: ["tool_call", "complete"],
+                      description: "The type of action to take",
+                    },
+                    toolName: {
+                      type: "string",
+                      description: "The name of the tool to call (if action is tool_call)",
+                    },
+                    parameters: {
+                      type: "object",
+                      description: "The parameters for the tool call (if action is tool_call)",
+                    },
+                    reasoning: {
+                      type: "string",
+                      description: "Why you chose this action",
+                    },
+                  },
+                  required: ["thinking", "action", "reasoning"],
+                },
+              },
+            };
+
+            const result = await LLMProvider.generateTextWithTools(thinkingPrompt, {
               systemPrompt:
                 `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
               model: this.config.model || "claude-3-5-sonnet-20241022",
               provider: "anthropic",
               temperature: 0.3,
               maxTokens: 1000,
+              tools: reasoningTool,
+              toolChoice: "required",
+              operationContext: {
+                operation: "conversation_reasoning",
+                agentId: this.id,
+              },
             });
 
-            this.logger.info("Thinking generated", {
+            // Extract the structured output from tool calls
+            const toolCall = result.toolCalls?.[0];
+            if (toolCall?.toolName === "reasoning_action" && toolCall.args) {
+              const { thinking, action, toolName, parameters, reasoning } = toolCall.args;
+
+              // Embed the structured action data in the thinking for the parseAction callback
+              const thinkingWithAction = `${thinking}\n\n[ACTION_DATA]${
+                JSON.stringify({
+                  action,
+                  toolName,
+                  parameters,
+                  reasoning,
+                })
+              }[/ACTION_DATA]`;
+
+              this.logger.info("Thinking generated with structured action", {
+                thinkingLength: thinking.length,
+                action,
+                toolName,
+                hasParameters: !!parameters,
+              });
+
+              return {
+                thinking: thinkingWithAction,
+                confidence: 0.9, // Higher confidence with structured output
+              };
+            }
+
+            // Fallback if no structured output
+            const thinking = result.text || "No thinking generated";
+            this.logger.info("Thinking generated (fallback)", {
               thinkingLength: thinking.length,
               thinkingPreview: thinking.substring(0, 200) + "...",
             });
 
             return {
               thinking,
-              confidence: 0.8, // Could analyze thinking to determine confidence
+              confidence: 0.7, // Lower confidence without structured output
             };
           } catch (error) {
             this.logger.error("Think callback failed", {
@@ -796,17 +860,42 @@ IMPORTANT:
           }
         },
 
-        // Parse action from thinking using the reasoning package parser
+        // Parse action from thinking - now using structured output
         parseAction: (thinking: string): ReasoningAction | null => {
           this.logger.info("Parsing action from thinking", {
             thinkingLength: thinking.length,
             thinkingPreview: thinking.substring(0, 200),
           });
 
+          // In the new approach, we pass structured data through the thinking
+          // The thinking callback should have embedded the structured action
+          try {
+            // Look for embedded JSON in the thinking
+            const jsonMatch = thinking.match(/\[ACTION_DATA\](.*)\[\/ACTION_DATA\]/s);
+            if (jsonMatch) {
+              const actionData = JSON.parse(jsonMatch[1]);
+              this.logger.info("Parsed structured action", {
+                type: actionData.action,
+                toolName: actionData.toolName,
+                hasParameters: !!actionData.parameters,
+              });
+
+              return {
+                type: actionData.action as ReasoningAction["type"],
+                toolName: actionData.toolName,
+                parameters: actionData.parameters || {},
+                reasoning: actionData.reasoning || "No reasoning provided",
+              };
+            }
+          } catch (e) {
+            this.logger.warn("Failed to parse embedded action data", { error: e });
+          }
+
+          // Fallback to regex parsing for backwards compatibility
           const action = parseReasoningAction(thinking);
 
           if (action) {
-            this.logger.info("Parsed action", {
+            this.logger.info("Parsed action via regex", {
               type: action.type,
               toolName: action.toolName,
               hasParameters: !!action.parameters,
