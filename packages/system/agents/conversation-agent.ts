@@ -619,7 +619,7 @@ IMPORTANT:
 
             this.logger.debug("Thinking generated", {
               thinkingLength: thinking.length,
-              thinkingPreview: thinking.substring(0, 100),
+              thinking, // Log full thinking at debug level
             });
 
             return {
@@ -659,7 +659,7 @@ IMPORTANT:
 
         // Execute the determined action
         executeAction: async (action, context) => {
-          this.logger.info("Executing reasoning action", {
+          this.logger.debug("Executing reasoning action", {
             type: action.type,
             toolName: action.toolName,
           });
@@ -723,17 +723,17 @@ IMPORTANT:
           this.logger.debug("Reasoning started");
         },
         onThinkingUpdate: (partial) => {
-          this.logger.debug("Reasoning update", { partial: partial.substring(0, 100) });
+          this.logger.debug("Reasoning update", { partial });
         },
         onActionDetermined: (action) => {
-          this.logger.info("Action determined", { action });
+          this.logger.debug("Action determined", { action });
         },
         onObservation: (observation) => {
-          this.logger.info("Observation", { observation });
+          this.logger.debug("Observation", { observation });
         },
       };
 
-      this.logger.info("About to create reasoning machine", {
+      this.logger.debug("About to create reasoning machine", {
         hasCallbacks: !!callbacks,
         callbackKeys: Object.keys(callbacks),
         maxIterations: this.config.max_reasoning_steps || 5,
@@ -745,7 +745,7 @@ IMPORTANT:
         machine = createReasoningMachine(callbacks, {
           maxIterations: this.config.max_reasoning_steps || 5,
         });
-        this.logger.info("Reasoning machine created successfully");
+        this.logger.debug("Reasoning machine created successfully");
       } catch (error) {
         this.logger.error("Failed to create reasoning machine", {
           error: error instanceof Error ? error.message : String(error),
@@ -830,7 +830,7 @@ IMPORTANT:
         } as ReasoningResult;
       });
 
-      this.logger.info("Reasoning completed", {
+      this.logger.debug("Reasoning completed", {
         status: result.status,
         steps: result.reasoning.totalIterations,
         achieved: result.jobResults.achieved,
