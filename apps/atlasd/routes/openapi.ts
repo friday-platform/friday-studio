@@ -1,4 +1,4 @@
-import { openAPISpecs } from "hono-openapi";
+import { OpenAPIHono } from "@hono/zod-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Hono } from "hono";
 import type { AppVariables } from "../src/factory.ts";

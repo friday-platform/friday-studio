@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute } from "hono-openapi";
-import { resolver, validator } from "hono-openapi/zod";
+import { createRoute } from "@hono/zod-openapi";
 import "@hono/zod-validator"; // Ensure this dependency is bundled
 import "zod-openapi"; // Ensure this dependency is bundled
 import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
