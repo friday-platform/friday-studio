@@ -117,15 +117,17 @@ workspacesRoutes.get(
     },
   }),
   async (c) => {
-  try {
-    const manager = await getWorkspaceManager();
-    const workspaces = await manager.listWorkspaces();
-    return c.json(workspaces);
-  } catch (error) {
-    return c.json({
-      error: `Failed to list workspaces: ${error instanceof Error ? error.message : String(error)}`,
-    }, 500);
-  }
+    try {
+      const manager = await getWorkspaceManager();
+      const workspaces = await manager.listWorkspaces();
+      return c.json(workspaces);
+    } catch (error) {
+      return c.json({
+        error: `Failed to list workspaces: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      }, 500);
+    }
   },
 );
 
@@ -166,33 +168,33 @@ workspacesRoutes.get(
   }),
   validator("param", workspaceIdParamSchema),
   async (c) => {
-  const { workspaceId } = c.req.valid("param");
+    const { workspaceId } = c.req.valid("param");
 
-  try {
-    const manager = await getWorkspaceManager();
-    const workspace = await manager.getWorkspace(workspaceId);
+    try {
+      const manager = await getWorkspaceManager();
+      const workspace = await manager.getWorkspace(workspaceId);
 
-    if (!workspace) {
+      if (!workspace) {
+        return c.json({
+          error: `Workspace not found: ${workspaceId}`,
+        }, 404);
+      }
+
+      return c.json(workspace);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if it's a "not found" error
+      if (errorMessage.includes("not found")) {
+        return c.json({
+          error: errorMessage,
+        }, 404);
+      }
+
       return c.json({
-        error: `Workspace not found: ${workspaceId}`,
-      }, 404);
+        error: `Failed to get workspace: ${errorMessage}`,
+      }, 500);
     }
-
-    return c.json(workspace);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    // Check if it's a "not found" error
-    if (errorMessage.includes("not found")) {
-      return c.json({
-        error: errorMessage,
-      }, 404);
-    }
-
-    return c.json({
-      error: `Failed to get workspace: ${errorMessage}`,
-    }, 500);
-  }
   },
 );
 

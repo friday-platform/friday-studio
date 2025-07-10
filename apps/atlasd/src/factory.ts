@@ -30,6 +30,5 @@ export const createApp = (context: AppContext) => {
   return app;
 };
 
-
 // Helper to create handlers that have access to app context
 export const createHandler = daemonFactory.createHandlers;

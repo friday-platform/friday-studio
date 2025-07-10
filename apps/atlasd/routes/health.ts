@@ -51,19 +51,19 @@ healthRoutes.get(
     },
   }),
   (c) => {
-  const ctx = c.get("app");
+    const ctx = c.get("app");
 
-  const response: HealthResponse = {
-    activeWorkspaces: ctx.runtimes.size,
-    uptime: Date.now() - ctx.startTime,
-    timestamp: new Date().toISOString(),
-    version: {
-      deno: Deno.version.deno,
-      v8: Deno.version.v8,
-      typescript: Deno.version.typescript,
-    },
-  };
-  return c.json(response);
+    const response: HealthResponse = {
+      activeWorkspaces: ctx.runtimes.size,
+      uptime: Date.now() - ctx.startTime,
+      timestamp: new Date().toISOString(),
+      version: {
+        deno: Deno.version.deno,
+        v8: Deno.version.v8,
+        typescript: Deno.version.typescript,
+      },
+    };
+    return c.json(response);
   },
 );
 
