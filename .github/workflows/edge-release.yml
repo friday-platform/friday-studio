@@ -71,6 +71,13 @@ jobs:
       - name: Install dependencies
         run: deno install
 
+      - name: Clear npm cache for clean build
+        run: |
+          # Clear potential corrupted npm cache entries
+          rm -rf "$HOME/.cache/deno/npm" "$HOME/Library/Caches/deno/npm" 2>/dev/null || true
+          deno clean
+          deno cache --reload src/cli.tsx
+
       - name: Setup cross-compilation for ARM64 (Linux only)
         if: matrix.os == 'linux' && matrix.arch == 'arm64'
         run: |
