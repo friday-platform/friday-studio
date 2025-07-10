@@ -8,6 +8,13 @@ import type { IAtlasAgent } from "../../../src/types/core.ts";
 import { LLMProvider } from "../../../src/utils/llm/provider.ts";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { Tool } from "ai";
+import {
+  createReasoningMachine,
+  type ReasoningAction,
+  type ReasoningCallbacks,
+  type ReasoningContext,
+  type ReasoningResult,
+} from "@atlas/reasoning";
 
 export interface ConversationAgentConfig {
   model?: string;
@@ -15,6 +22,8 @@ export interface ConversationAgentConfig {
   tools?: string[];
   temperature?: number;
   max_tokens?: number;
+  use_reasoning?: boolean;
+  max_reasoning_steps?: number;
   [key: string]: any; // Allow additional properties from agent config
 }
 
@@ -38,6 +47,8 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       tools: [],
       temperature: 0.7,
       max_tokens: 2000,
+      use_reasoning: false,
+      max_reasoning_steps: 5,
       ...config,
     };
 
@@ -111,6 +122,16 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     });
 
     try {
+      // Check if reasoning is enabled
+      if (this.config.use_reasoning) {
+        this.logger.info("Using reasoning-based conversation", {
+          maxSteps: this.config.max_reasoning_steps,
+          message: message.substring(0, 100),
+        });
+
+        return await this.executeWithReasoning(message, streamId);
+      }
+
       // Check if we have tools configured
       const hasTools = this.config.tools && this.config.tools.length > 0;
 
@@ -379,6 +400,240 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
   }
 
   /**
+   * Execute conversation with reasoning capabilities
+   */
+  private async executeWithReasoning(
+    message: string,
+    streamId?: string,
+  ): Promise<unknown> {
+    // Create reasoning context
+    const userContext = {
+      message,
+      streamId,
+      conversationId: streamId || this.id,
+      tools: await this.getDaemonCapabilityTools(streamId),
+    };
+
+    // Create reasoning callbacks
+    const callbacks: ReasoningCallbacks<typeof userContext> = {
+      // Generate thinking based on conversation context
+      think: async (context) => {
+        const previousSteps = context.steps.map((s) => ({
+          thinking: s.thinking,
+          action: s.action,
+          observation: s.observation,
+        }));
+
+        const thinkingPrompt = `
+You are having a conversation with a user. Analyze what they need and plan your response.
+
+User message: ${context.userContext.message}
+
+${
+          previousSteps.length > 0
+            ? `Previous reasoning steps:
+${JSON.stringify(previousSteps, null, 2)}`
+            : ""
+        }
+
+Think step-by-step about:
+1. What is the user asking for?
+2. Do I need to use any tools to help them?
+3. What would be the most helpful response?
+4. Should I stream the response using stream_reply?
+
+Provide your thinking in a structured way that leads to a clear action.`;
+
+        const thinking = await LLMProvider.generateText(thinkingPrompt, {
+          systemPrompt: "You are a reasoning engine that plans conversations step by step.",
+          model: this.config.model || "claude-3-5-sonnet-20241022",
+          provider: "anthropic",
+          temperature: 0.3,
+          maxTokens: 1000,
+        });
+
+        return {
+          thinking,
+          confidence: 0.8, // Could analyze thinking to determine confidence
+        };
+      },
+
+      // Parse action from thinking
+      parseAction: (thinking: string): ReasoningAction | null => {
+        this.logger.debug("Parsing action from thinking", {
+          thinkingLength: thinking.length,
+        });
+
+        // Look for tool usage patterns in thinking
+        if (thinking.includes("stream_reply") || thinking.includes("respond to the user")) {
+          return {
+            type: "tool_call",
+            toolName: "stream_reply",
+            parameters: {},
+            reasoning: "Streaming response to user",
+          };
+        }
+
+        // Check if task is complete
+        if (
+          thinking.includes("task is complete") || thinking.includes("conversation is finished")
+        ) {
+          return {
+            type: "complete",
+            parameters: {},
+            reasoning: "Conversation goal achieved",
+          };
+        }
+
+        // Default to completing if no clear action
+        return {
+          type: "complete",
+          parameters: {},
+          reasoning: "No specific action needed",
+        };
+      },
+
+      // Execute the determined action
+      executeAction: async (action, context) => {
+        this.logger.info("Executing reasoning action", {
+          type: action.type,
+          toolName: action.toolName,
+        });
+
+        if (action.type === "tool_call" && action.toolName) {
+          const tools = context.userContext.tools;
+          const tool = tools[action.toolName];
+
+          if (tool) {
+            // Generate appropriate parameters based on the tool
+            let parameters: any = {};
+
+            if (action.toolName === "stream_reply") {
+              // Generate response based on conversation context and reasoning
+              const responsePrompt = `
+Based on the conversation and reasoning, generate a helpful response.
+
+User message: ${context.userContext.message}
+
+Reasoning: ${context.currentStep?.thinking || ""}
+
+Generate a natural, helpful response that addresses the user's needs.`;
+
+              const response = await LLMProvider.generateText(responsePrompt, {
+                systemPrompt: this.prompts.system,
+                model: this.config.model || "claude-3-5-sonnet-20241022",
+                provider: "anthropic",
+                temperature: this.config.temperature || 0.7,
+                maxTokens: this.config.max_tokens || 2000,
+              });
+
+              parameters = {
+                stream_id: context.userContext.streamId,
+                message: response,
+              };
+            }
+
+            const result = await tool.execute(parameters);
+            return {
+              result,
+              observation: `Tool ${action.toolName} executed successfully`,
+            };
+          }
+        }
+
+        return {
+          result: null,
+          observation: "Action completed",
+        };
+      },
+
+      // Check if conversation goal is achieved
+      isComplete: (context) => {
+        // Complete after responding or reaching max iterations
+        const hasResponded = context.steps.some(
+          (step) => step.action?.toolName === "stream_reply",
+        );
+        return hasResponded || context.currentIteration >= context.maxIterations;
+      },
+
+      // Stream reasoning updates
+      onThinkingStart: () => {
+        this.logger.debug("Reasoning started");
+      },
+      onThinkingUpdate: (partial) => {
+        this.logger.debug("Reasoning update", { partial: partial.substring(0, 100) });
+      },
+      onActionDetermined: (action) => {
+        this.logger.info("Action determined", { action });
+      },
+      onObservation: (observation) => {
+        this.logger.info("Observation", { observation });
+      },
+    };
+
+    // Create and run reasoning machine
+    const machine = createReasoningMachine(callbacks, {
+      maxIterations: this.config.max_reasoning_steps || 5,
+    });
+
+    // Run the machine with user context
+    const result = await new Promise<ReasoningResult>((resolve) => {
+      const actor = machine.createActor({
+        input: userContext,
+      });
+
+      actor.subscribe({
+        complete: () => {
+          const snapshot = actor.getSnapshot();
+          resolve(snapshot.output as ReasoningResult);
+        },
+        error: (error) => {
+          this.logger.error("Reasoning machine error", { error });
+          resolve({
+            status: "failed",
+            reasoning: {
+              steps: [],
+              totalIterations: 0,
+              finalThinking: "Error occurred",
+              confidence: 0,
+            },
+            execution: {
+              agentsExecuted: [],
+              toolsExecuted: [],
+              totalDuration: 0,
+            },
+            jobResults: {
+              goal: "Respond to user",
+              achieved: false,
+              output: null,
+              artifacts: {},
+            },
+            metrics: {
+              llmTokens: 0,
+              llmCost: 0,
+              agentCalls: 0,
+              toolCalls: 0,
+            },
+          });
+        },
+      });
+
+      actor.start();
+    });
+
+    this.logger.info("Reasoning completed", {
+      status: result.status,
+      steps: result.reasoning.totalIterations,
+      achieved: result.jobResults.achieved,
+    });
+
+    return {
+      reasoning: result,
+      response: result.jobResults.output,
+    };
+  }
+
+  /**
    * Static method to get agent metadata for registry
    */
   static getMetadata() {
@@ -401,6 +656,8 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         tools: { type: "array", default: [] },
         temperature: { type: "number", default: 0.7, min: 0, max: 2 },
         max_tokens: { type: "number", default: 2000, min: 1 },
+        use_reasoning: { type: "boolean", default: false },
+        max_reasoning_steps: { type: "number", default: 5, min: 1, max: 20 },
       },
     };
   }
@@ -434,6 +691,20 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     if (config.max_tokens !== undefined) {
       if (typeof config.max_tokens !== "number" || config.max_tokens < 1) {
         errors.push("max_tokens must be a positive number");
+      }
+    }
+
+    if (config.use_reasoning !== undefined && typeof config.use_reasoning !== "boolean") {
+      errors.push("use_reasoning must be a boolean");
+    }
+
+    if (config.max_reasoning_steps !== undefined) {
+      if (
+        typeof config.max_reasoning_steps !== "number" ||
+        config.max_reasoning_steps < 1 ||
+        config.max_reasoning_steps > 20
+      ) {
+        errors.push("max_reasoning_steps must be a number between 1 and 20");
       }
     }
 

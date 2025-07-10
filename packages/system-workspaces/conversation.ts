@@ -144,6 +144,8 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
         model: "claude-3-5-sonnet-20241022",
         temperature: 0.7,
         max_tokens: 4000,
+        use_reasoning: true, // Enable reasoning for structured thinking
+        max_reasoning_steps: 5,
       },
       purpose: "Handle conversations with scope awareness and workspace creation",
       tools: [
