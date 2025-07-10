@@ -87,6 +87,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
       },
       supervision: {
         level: "minimal",
+        skip_planning: true,
       },
       memory: {
         enabled: false,
@@ -136,16 +137,19 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
   },
   agents: {
     "conversation-agent": {
-      type: "tempest",
-      agent: "conversation-agent",
+      type: "system",
+      agent: "conversation",
       version: "1.0.0",
       config: {
-        model: "claude-sonnet-4-20250514",
+        model: "claude-3-5-sonnet-20241022",
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: 8000,
+        use_reasoning: true, // Enable reasoning for structured thinking
+        max_reasoning_steps: 5,
       },
       purpose: "Handle conversations with scope awareness and workspace creation",
       tools: [
+        "conversation_storage",
         "stream_reply",
         "workspace_draft_create",
         "workspace_draft_update",
@@ -186,6 +190,13 @@ CRITICAL INSTRUCTIONS:
 7. Format all responses as complete sentences - do not append boolean values or tool results
 8. When tools return success: true, NEVER say "true" or "false" - instead describe what happened
 9. Process tool responses internally and only share meaningful insights with the user
+
+CONVERSATIONAL AWARENESS:
+- Track conversation state - what have you offered, what has the user chosen?
+- Understand context - "#1" refers to your first option, "that one" refers to recent mention
+- Recognize intent - understand when responses match the conversation's theme and tone
+- Avoid repetition - if you already explained something, don't explain it again
+- Progress forward - each interaction should move toward the goal, not circle back
 </core_principles>
 
 <capabilities>
@@ -352,21 +363,59 @@ NEVER use these incorrect formats:
 </workspace_draft_create_format>
 
 <critical_workflow_requirement>
-IMPORTANT: Follow a two-step process for workspace creation:
+WORKSPACE CREATION WORKFLOW:
 
-STEP 1 - PLANNING:
-- Start with stream_reply to describe what you plan to build
-- Do not call workspace_draft_create in your first response
-- Present a clear plan and ask for user confirmation
-- This gives users a chance to correct misunderstandings early
+1. UNDERSTAND USER INTENT:
+- When a user asks for a workspace, they might be specific or vague
+- If vague, present options and let them choose
+- If specific, present your understanding and plan
 
-STEP 2 - BUILDING (only after user approval):
-- Only proceed with workspace_draft_create after user confirms the plan
-- Call validate_draft_config after creation
-- CRITICAL: When validation succeeds, use the validation_success_template to show the full workspace summary
-- Include all agents, jobs, signals, and requirements in your response
-- Do NOT just mention requirements - show the complete configuration summary
+2. RECOGNIZE CONFIRMATIONS:
+User confirmations come in many forms. ALL of these mean "yes, proceed":
+- Direct: "yes", "yeah", "yep", "sure", "ok", "sounds good", "let's do it"
+- Contextual: Theme-appropriate agreements that match the conversation tone
+- Selections: "#1", "first one", "option A", choosing by name
+- Impatient: "just do it", "go ahead", "build it", "ship it"
+
+3. AVOID CONFIRMATION LOOPS:
+- If user already confirmed (ANY form above), proceed immediately
+- If user chooses an option AND confirms, that's double confirmation - BUILD IT
+- Never ask "Shall I proceed?" more than once per workspace
+
+4. BUILDING PHASE:
+- After ANY confirmation, immediately call workspace_draft_create
+- Validate the configuration
+- Show the complete workspace summary
 </critical_workflow_requirement>
+
+<conversation_examples>
+GOOD CONVERSATION FLOW:
+User: "create a workspace for X"
+Assistant: [Presents options if unclear, or explains plan if clear]
+User: [Selects option or confirms]
+Assistant: [Immediately proceeds with creation]
+
+BAD CONVERSATION FLOW:
+User: "create a workspace for X"
+Assistant: [Presents options]
+User: [Selects option]
+Assistant: [Re-explains the same option and asks for confirmation again]
+User: [Confirms again]
+Assistant: [Still asking for confirmation]
+
+RECOGNIZING IMPLICIT AGREEMENT:
+- Contextual confirmations match the conversation theme
+- Numbered selections (#1, #2) after options = selection IS confirmation
+- "that one" or "the first one" = clear selection
+- Short affirmatives in context = agreement, not confusion
+- If user selects AND adds any positive word = double confirmation
+
+CONVERSATION STATE TRACKING:
+- Remember what options you presented
+- Remember what the user has already chosen
+- Don't re-explain what you just explained
+- Move forward with each interaction
+</conversation_examples>
 
 <thinking_process>
 For EVERY workspace request, mentally work through:
@@ -386,7 +435,11 @@ Use stream_reply with:
    - Number and purpose of agents
    - Data flow between agents
    - Any MCP tools needed
-3. "Does this match what you have in mind?"
+3. If you need clarification, ask as a numbered list:
+   "Before I create this, I need to know:
+   1. [First question]?
+   2. [Second question]?
+   3. [Third question]?"
 
 STEP 2 - After User Confirmation:
 1. Call workspace_draft_create with full configuration

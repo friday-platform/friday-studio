@@ -176,6 +176,11 @@ export class AtlasDaemon implements AppContext {
     // Register cron signals for all existing workspaces
     await this.discoverAndRegisterExistingCronSignals();
 
+    // Initialize system agent registry
+    logger.info("Initializing system agent registry...");
+    const { SystemAgentRegistry } = await import("../../../src/core/system-agent-registry.ts");
+    await SystemAgentRegistry.initialize(kvStorage);
+
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
   }
@@ -744,6 +749,21 @@ export class AtlasDaemon implements AppContext {
       } catch (error) {
         return c.json({
           error: `Failed to refresh config: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        }, 500);
+      }
+    });
+
+    // Refresh atlas config cache
+    this.app.post("/api/atlas/refresh-config", async (c) => {
+      try {
+        const manager = await getWorkspaceManager();
+        await manager.refreshAtlasConfig();
+        return c.json({ message: "Atlas config cache refreshed" });
+      } catch (error) {
+        return c.json({
+          error: `Failed to refresh atlas config: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);

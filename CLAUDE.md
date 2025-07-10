@@ -276,39 +276,49 @@ organizations like Google Research, not merely functional code.
 
 ## Import Pattern Guidelines
 
-**Prefer static imports** (at the top of modules) over dynamic imports unless there's a specific
-reason:
+**STRONGLY PREFER static imports** (at the top of modules). Dynamic imports should be **AVOIDED** in
+this codebase.
 
-### When to use static imports (preferred):
+### Always use static imports:
 
 ```typescript
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
+import { load } from "@std/dotenv";
+import { join } from "@std/path";
 ```
 
-Use static imports when:
+**Benefits of static imports:**
 
-- No circular dependency issues exist
-- The imported modules are always used in the file
-- No conditional loading logic is needed
-- Better performance is desired (modules loaded once at startup)
-- Better type safety and IDE support is needed
+- Better performance (modules loaded once at startup)
+- Superior type safety and IDE support
+- Cleaner, more maintainable code
+- Easier dependency tracking
+- Better tree-shaking and bundle optimization
 
-### When to use dynamic imports:
+### When dynamic imports are absolutely necessary:
+
+Dynamic imports (`await import()`) should **ONLY** be used in these rare cases:
+
+1. **Breaking circular dependencies** (but prefer restructuring code instead)
+2. **Loading optional plugins** that may not be installed
+3. **True conditional loading** based on runtime configuration
+
+**IMPORTANT**: If you find yourself using dynamic imports, first consider whether the code can be
+restructured to avoid them. In 99% of cases, static imports are the correct choice.
+
+Example of converting dynamic to static:
 
 ```typescript
+// ❌ AVOID - Dynamic import
 const { ConfigLoader } = await import("@atlas/config");
+
+// ✅ PREFERRED - Static import at top of file
+import { ConfigLoader } from "@atlas/config";
 ```
 
-Only use dynamic imports when:
-
-- Breaking circular dependency chains
-- Conditional loading based on runtime conditions
-- Lazy loading for rarely used code paths
-- Loading optional dependencies that might not be installed
-
 **Default to static imports** for cleaner code, better performance, and improved developer
-experience.
+experience. Dynamic imports should be considered a code smell in this codebase.
 
 ### Avoid Barrel Imports
 

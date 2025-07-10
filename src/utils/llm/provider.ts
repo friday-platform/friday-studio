@@ -25,7 +25,10 @@ const LLMConfigSchema = z.object({
 const LLMGenerationOptionsSchema = z.object({
   includeMemoryContext: z.boolean().optional(),
   systemPrompt: z.string().optional(),
-  memoryContext: z.string().optional(),
+  messages: z.array(z.object({
+    role: z.enum(["system", "user", "assistant"]),
+    content: z.string(),
+  })).optional(),
   operationContext: z.record(z.string(), z.any()).optional(),
 });
 
@@ -47,7 +50,7 @@ const LLMGenerationOptionsWithToolsSchema = LLMGenerationOptionsSchema.extend({
     .optional(),
 });
 
-export type LLMProvider = z.infer<typeof LLMProviderSchema>;
+export type LLMProviderType = z.infer<typeof LLMProviderSchema>;
 export type LLMConfig = z.infer<typeof LLMConfigSchema>;
 export type LLMGenerationOptions = z.infer<typeof LLMGenerationOptionsSchema>;
 export type LLMGenerationOptionsWithTools = z.infer<typeof LLMGenerationOptionsWithToolsSchema>;
@@ -65,7 +68,7 @@ const PROVIDER_ENV_VARS = {
  * Simplified multi-provider LLM manager using AI SDK patterns
  * Replaces complex abstraction layers with direct AI SDK usage
  */
-export class LLMProviderManager {
+export class LLMProvider {
   private static clients: Map<string, ProviderClient> = new Map();
   private static mcpManager = new MCPManager();
 
@@ -202,6 +205,7 @@ export class LLMProviderManager {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -209,14 +213,15 @@ export class LLMProviderManager {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       const modelToUse = config.model;
@@ -349,6 +354,7 @@ export class LLMProviderManager {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -356,14 +362,15 @@ export class LLMProviderManager {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       const modelToUse = config.model;
@@ -550,8 +557,35 @@ export class LLMProviderManager {
       );
     }
 
+    // Import jsonSchema for tool format conversion
+    const { jsonSchema } = await import("ai");
+
     // Prepare tools - combine provided tools with MCP tools
-    const allTools: Record<string, Tool> = { ...options.tools };
+    const allTools: Record<string, Tool> = {};
+
+    // Convert provided tools to ensure proper format
+    if (options.tools) {
+      for (const [toolName, tool] of Object.entries(options.tools)) {
+        // Ensure tool has proper format with jsonSchema-wrapped parameters
+        // Check if parameters need to be wrapped with jsonSchema
+        const params = tool.parameters;
+        const needsWrapping = params &&
+          typeof params === "object" &&
+          !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped by AI SDK
+          !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
+
+        if (needsWrapping) {
+          // Wrap schema with jsonSchema - works for both Zod schemas and JSON Schema objects
+          allTools[toolName] = {
+            ...tool,
+            parameters: jsonSchema(params),
+          };
+        } else {
+          // Tool already has proper format or no parameters
+          allTools[toolName] = tool;
+        }
+      }
+    }
 
     // Add MCP tools if servers are specified
     if (options.mcpServers && options.mcpServers.length > 0) {
@@ -567,7 +601,28 @@ export class LLMProviderManager {
         const mcpTools = await this.mcpManager.getToolsForServers(
           options.mcpServers,
         );
-        Object.assign(allTools, mcpTools);
+
+        // Convert MCP tools to ensure proper format
+        for (const [toolName, tool] of Object.entries(mcpTools)) {
+          if (tool && typeof tool === "object") {
+            const toolObj = tool as any;
+            // Check if MCP tool parameters need wrapping
+            const params = toolObj.parameters;
+            const needsWrapping = params &&
+              typeof params === "object" &&
+              !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped
+              !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
+
+            if (needsWrapping) {
+              allTools[toolName] = {
+                ...toolObj,
+                parameters: jsonSchema(params),
+              };
+            } else {
+              allTools[toolName] = toolObj;
+            }
+          }
+        }
 
         // Add MCP tool count to parent span
         span?.setAttribute("mcp.tool_count", Object.keys(mcpTools).length);
@@ -597,6 +652,7 @@ export class LLMProviderManager {
 
       const messages: CoreMessage[] = [];
 
+      // Add system prompt if provided
       if (options.systemPrompt) {
         messages.push({
           role: "system",
@@ -604,14 +660,15 @@ export class LLMProviderManager {
         });
       }
 
-      let contextualPrompt = userPrompt;
-      if (options.memoryContext) {
-        contextualPrompt = `${options.memoryContext}\n\nUser request: ${userPrompt}`;
+      // Add provided messages (conversation history)
+      if (options.messages && options.messages.length > 0) {
+        messages.push(...options.messages);
       }
 
+      // Add the current user message
       messages.push({
         role: "user",
-        content: contextualPrompt,
+        content: userPrompt,
       });
 
       logger.debug("LLM generation with MCP tools starting", {
@@ -619,23 +676,87 @@ export class LLMProviderManager {
         provider: config.provider,
         model: config.model,
         toolCount: Object.keys(allTools).length,
+        toolNames: Object.keys(allTools),
         mcpServerCount: options.mcpServers?.length || 0,
         maxSteps: options.maxSteps || 1,
         toolChoice: options.toolChoice,
         ...options.operationContext,
       });
 
+      // Log first tool structure for debugging
+      const firstToolName = Object.keys(allTools)[0];
+      if (firstToolName) {
+        const firstTool = allTools[firstToolName];
+        logger.debug("First tool structure before AI SDK call", {
+          name: firstToolName,
+          type: typeof firstTool,
+          keys: Object.keys(firstTool || {}),
+          hasDescription: !!firstTool?.description,
+          hasParameters: !!firstTool?.parameters,
+          hasInputSchema: !!(firstTool as any)?.input_schema,
+          hasExecute: !!firstTool?.execute,
+          parametersType: typeof firstTool?.parameters,
+          inputSchemaType: typeof (firstTool as any)?.input_schema,
+        });
+      }
+
       // Use actual AI SDK tool calling with MCP tools
-      const result = await generateText({
-        model: client(config.model),
-        messages,
-        tools: Object.keys(allTools).length > 0 ? allTools : undefined,
-        toolChoice: options.toolChoice,
-        maxSteps: options.maxSteps || 10,
-        maxTokens: config.maxTokens,
-        temperature: config.temperature,
-        abortSignal: controller.signal,
-      });
+      let result;
+      try {
+        logger.debug("Calling AI SDK generateText", {
+          hasTools: Object.keys(allTools).length > 0,
+          messageCount: messages.length,
+        });
+
+        // Log the exact structure we're passing
+        if (Object.keys(allTools).length > 0) {
+          logger.debug("Tools being passed to AI SDK", {
+            toolNames: Object.keys(allTools),
+            toolStructure: JSON.stringify(
+              Object.entries(allTools).map(([name, tool]) => ({
+                name,
+                keys: Object.keys(tool),
+                hasDescription: !!tool.description,
+                hasInputSchema: !!(tool as any).input_schema,
+                hasParameters: !!tool.parameters,
+                hasExecute: typeof tool.execute === "function",
+              })),
+            ),
+          });
+        }
+
+        result = await generateText({
+          model: client(config.model),
+          messages,
+          tools: Object.keys(allTools).length > 0 ? allTools : undefined,
+          toolChoice: options.toolChoice,
+          maxSteps: options.maxSteps || 10,
+          maxTokens: config.maxTokens,
+          temperature: config.temperature,
+          abortSignal: controller.signal,
+        });
+      } catch (genError) {
+        // Extract more detailed error information
+        const errorDetails: any = {
+          error: genError instanceof Error ? genError.message : String(genError),
+          errorName: genError instanceof Error ? genError.constructor.name : typeof genError,
+          stack: genError instanceof Error ? genError.stack : undefined,
+          // Check for specific AI SDK error properties
+          statusCode: (genError as any)?.statusCode,
+          statusText: (genError as any)?.statusText,
+          responseBody: (genError as any)?.responseBody,
+          data: (genError as any)?.data,
+        };
+
+        // Check for validation errors
+        if (genError instanceof Error && genError.message.includes("Field required")) {
+          errorDetails.validationError = true;
+          errorDetails.errorPattern = genError.message;
+        }
+
+        logger.error("generateText call failed", errorDetails);
+        throw genError;
+      }
 
       clearTimeout(timeout);
       const duration = Date.now() - startTime;
@@ -709,7 +830,17 @@ export class LLMProviderManager {
         duration,
         mcpServerCount: options.mcpServers?.length || 0,
         toolCount: Object.keys(allTools).length,
+        toolNames: Object.keys(allTools),
         error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        fullError: String(error),
+        cause: error instanceof Error && (error as any).cause
+          ? String((error as any).cause)
+          : undefined,
+        responseBody: error instanceof Error && (error as any).response
+          ? JSON.stringify((error as any).response)
+          : undefined,
         ...options.operationContext,
       });
 

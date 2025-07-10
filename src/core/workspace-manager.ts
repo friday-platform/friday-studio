@@ -7,7 +7,12 @@
  * storage implementation details behind clean domain-specific interfaces.
  */
 
-import { ConfigLoader, WorkspaceConfig, WorkspaceConfigSchema } from "@atlas/config";
+import {
+  type AtlasConfig,
+  ConfigLoader,
+  WorkspaceConfig,
+  WorkspaceConfigSchema,
+} from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
@@ -131,9 +136,24 @@ export class WorkspaceManager {
     const isTestMode = Deno.env.get("DENO_TEST") === "true";
 
     if (!isTestMode && !options?.skipAutoImport) {
-      const imported = await this.importExistingWorkspaces();
-      if (imported > 0) {
-        logger.info(`Imported ${imported} workspace(s) into registry`);
+      try {
+        // Import any new workspaces
+        const imported = await this.importExistingWorkspaces();
+        if (imported > 0) {
+          logger.info(`Imported ${imported} workspace(s) into registry`);
+        }
+
+        // NEW: Auto-discover and register atlas.yml
+        const atlasConfigPath = await this.discoverAtlasConfig();
+        if (atlasConfigPath) {
+          await this.registerAtlasConfig(atlasConfigPath);
+        }
+
+        // Validate existing workspaces and show cache status
+        await this.validateExistingWorkspaces();
+      } catch (error) {
+        logger.error("Failed to initialize workspace manager", { error: error.message });
+        throw error;
       }
       await this.validateExistingWorkspaces();
     }
@@ -793,6 +813,152 @@ export class WorkspaceManager {
       if (!exists) {
         logger.warn(`Workspace directory not found: ${workspace.name}`);
       }
+    }
+  }
+
+  /**
+   * Discover atlas.yml in current directory or git root
+   */
+  async discoverAtlasConfig(searchPath?: string): Promise<string | null> {
+    const rootPath = searchPath || Deno.env.get("ATLAS_CONFIG_PATH") || Deno.cwd();
+
+    // Check current directory first
+    const atlasYmlPath = join(rootPath, "atlas.yml");
+    if (await exists(atlasYmlPath)) {
+      return rootPath;
+    }
+
+    // Check git root (same logic as workspace discovery)
+    try {
+      const gitRoot = new Deno.Command("git", {
+        args: ["rev-parse", "--show-toplevel"],
+        cwd: rootPath,
+      }).outputSync();
+
+      if (gitRoot.success) {
+        const gitRootPath = new TextDecoder().decode(gitRoot.stdout).trim();
+        const gitAtlasPath = join(gitRootPath, "atlas.yml");
+        if (await exists(gitAtlasPath)) {
+          return gitRootPath;
+        }
+      }
+    } catch {
+      // Not in git repo or git command failed
+    }
+
+    return null;
+  }
+
+  /**
+   * Register atlas.yml configuration in KV storage
+   */
+  async registerAtlasConfig(configPath?: string): Promise<void> {
+    const basePath = configPath || ".";
+
+    try {
+      // Load atlas config using existing ConfigLoader
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, basePath);
+      const atlasConfig = await configLoader.loadAtlasConfig();
+
+      // Generate config hash for change detection (same pattern as workspaces)
+      const configJson = JSON.stringify(atlasConfig, Object.keys(atlasConfig).sort());
+      const encoder = new TextEncoder();
+      const data = encoder.encode(configJson);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const configHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      // Store in KV with special atlas key structure
+      const atlasEntry = {
+        id: "atlas-platform", // Hardcoded ID for global workspace
+        name: atlasConfig.workspace.name, // Use name from config, same as workspace registration
+        path: await Deno.realPath(basePath),
+        config: atlasConfig, // Store full AtlasConfig, not just workspace portion
+        configHash,
+        createdAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+        metadata: {
+          platform: true,
+          atlasVersion: Deno.version.deno,
+        },
+      };
+
+      // Store under ["atlas", "config"] key
+      await this.registry!.getStorage().set(["atlas", "config"], atlasEntry);
+
+      logger.info("Atlas configuration registered", {
+        path: basePath,
+        configHash: configHash.substring(0, 8) + "...",
+      });
+    } catch (error) {
+      logger.error("Failed to register atlas configuration", {
+        path: basePath,
+        error: error.message,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get cached atlas configuration from KV storage
+   */
+  async getAtlasConfig(): Promise<AtlasConfig | null> {
+    if (!this.registry) await this.initialize();
+
+    const entry = await this.registry!.getStorage().get(["atlas", "config"]);
+    return entry.value?.config || null;
+  }
+
+  /**
+   * Refresh atlas configuration cache (check for changes and reload)
+   */
+  async refreshAtlasConfig(): Promise<void> {
+    if (!this.registry) await this.initialize();
+
+    const entry = await this.registry!.getStorage().get(["atlas", "config"]);
+    if (!entry.value) {
+      throw new Error("Atlas configuration not found in registry");
+    }
+
+    const currentEntry = entry.value;
+
+    try {
+      // Reload from filesystem
+      const adapter = new FilesystemConfigAdapter();
+      const configLoader = new ConfigLoader(adapter, currentEntry.path);
+      const atlasConfig = await configLoader.loadAtlasConfig();
+
+      // Generate new hash
+      const configJson = JSON.stringify(atlasConfig, Object.keys(atlasConfig).sort());
+      const encoder = new TextEncoder();
+      const data = encoder.encode(configJson);
+      const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const newConfigHash = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+      if (currentEntry.configHash === newConfigHash) {
+        logger.debug("Atlas config unchanged, using cached version");
+        return;
+      }
+
+      // Update entry with new config and hash
+      const updatedEntry = {
+        ...currentEntry,
+        config: atlasConfig,
+        configHash: newConfigHash,
+        lastSeen: new Date().toISOString(),
+      };
+
+      await this.registry!.getStorage().set(["atlas", "config"], updatedEntry);
+
+      logger.info("Atlas config cache refreshed", {
+        oldHash: currentEntry.configHash?.substring(0, 8) + "...",
+        newHash: newConfigHash.substring(0, 8) + "...",
+      });
+    } catch (error) {
+      logger.error("Failed to refresh atlas config", { error: error.message });
+      throw error;
     }
   }
 

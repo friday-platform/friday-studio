@@ -3,7 +3,7 @@
  * Supports ACP and MCP protocols
  */
 
-import type { RemoteAgentConfig } from "../../session-supervisor.ts";
+import type { RemoteAgentConfig } from "./remote-agent.ts";
 import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./adapters/base-remote-adapter.ts";
 import { logger } from "../../../utils/logger.ts";
 

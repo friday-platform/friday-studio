@@ -70,7 +70,7 @@ agents:
 
   # Content synthesis agent
   tempest-synthesizer:
-    type: "tempest"
+    type: "system"
     agent: "content-synthesizer"
     version: "2.1.0"
     purpose: "Synthesizes multiple inputs into coherent summaries and analyses"

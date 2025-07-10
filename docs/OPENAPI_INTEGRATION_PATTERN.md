@@ -42,20 +42,27 @@ Create schemas for request/response bodies with proper metadata:
 
 ```typescript
 // Response schemas
-export const workspaceResponseSchema = z.object({
-  id: z.string().meta({ description: "Unique workspace identifier" }),
-  name: z.string().meta({ description: "Workspace name" }),
-  status: z.enum(["active", "inactive"]).meta({ description: "Workspace status" }),
-  // ... other fields
-}).meta({
-  description: "Workspace information",
-});
+export const workspaceResponseSchema = z
+  .object({
+    id: z.string().meta({ description: "Unique workspace identifier" }),
+    name: z.string().meta({ description: "Workspace name" }),
+    status: z
+      .enum(["active", "inactive"])
+      .meta({ description: "Workspace status" }),
+    // ... other fields
+  })
+  .meta({
+    description: "Workspace information",
+  });
 
 // Request body schemas
 export const createWorkspaceSchema = z.object({
   path: z.string().meta({ description: "Filesystem path to workspace" }),
   name: z.string().optional().meta({ description: "Optional workspace name" }),
-  description: z.string().optional().meta({ description: "Optional description" }),
+  description: z
+    .string()
+    .optional()
+    .meta({ description: "Optional description" }),
 });
 
 // Query parameter schemas
@@ -110,11 +117,14 @@ workspacesRoutes.get(
       const workspaces = await manager.listWorkspaces();
       return c.json(workspaces);
     } catch (error) {
-      return c.json({
-        error: `Failed to list workspaces: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      }, 500);
+      return c.json(
+        {
+          error: `Failed to list workspaces: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+        500,
+      );
     }
   },
 );
@@ -131,9 +141,11 @@ workspacesRoutes.delete(
         description: "Workspace deleted successfully",
         content: {
           "application/json": {
-            schema: resolver(z.object({
-              message: z.string(),
-            })),
+            schema: resolver(
+              z.object({
+                message: z.string(),
+              }),
+            ),
           },
         },
       },
@@ -280,7 +292,10 @@ If the route needs additional context, update `apps/atlasd/src/factory.ts`:
 export interface AppContext {
   runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
-  sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>>;
+  sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  >;
   // Add new context items here if needed
   libraryStorage?: LibraryStorageAdapter;
 }
@@ -368,13 +383,18 @@ deno fmt src/cli/commands/workspace/status.tsx
 Create a reusable error response schema:
 
 ```typescript
-export const errorResponseSchema = z.object({
-  error: z.string().meta({ description: "Error message" }),
-  code: z.string().optional().meta({ description: "Error code" }),
-  details: z.unknown().optional().meta({ description: "Additional error details" }),
-}).meta({
-  description: "Standard error response",
-});
+export const errorResponseSchema = z
+  .object({
+    error: z.string().meta({ description: "Error message" }),
+    code: z.string().optional().meta({ description: "Error code" }),
+    details: z
+      .unknown()
+      .optional()
+      .meta({ description: "Additional error details" }),
+  })
+  .meta({
+    description: "Standard error response",
+  });
 ```
 
 ### Pagination Schema
@@ -428,12 +448,13 @@ describeRoute({
 ### Priority 1 - Core CRUD Operations
 
 - [ ] **Workspace Routes** (`/api/workspaces/*`)
-  - [x] GET `/api/workspaces` - List workspaces ✅
-  - [x] GET `/api/workspaces/:id` - Get workspace details ✅
-  - [ ] POST `/api/workspaces` - Create workspace
-  - [ ] DELETE `/api/workspaces/:id` - Delete workspace
-  - [ ] POST `/api/workspaces/add` - Add existing workspace
-  - [ ] POST `/api/workspaces/add-batch` - Batch add workspaces
+
+- [x] GET `/api/workspaces` - List workspaces ✅
+- [x] GET `/api/workspaces/:id` - Get workspace details ✅
+- [ ] POST `/api/workspaces` - Create workspace
+- [ ] DELETE `/api/workspaces/:id` - Delete workspace
+- [ ] POST `/api/workspaces/add` - Add existing workspace
+- [ ] POST `/api/workspaces/add-batch` - Batch add workspaces
 
 - [ ] **Session Routes** (`/api/sessions/*`)
   - [ ] GET `/api/sessions` - List all sessions
@@ -443,11 +464,12 @@ describeRoute({
 ### Priority 2 - Extended Operations
 
 - [ ] **Library Routes** (`/api/library/*`)
-  - [ ] GET `/api/library` - Search library items
-  - [ ] GET `/api/library/:id` - Get library item
-  - [ ] POST `/api/library` - Create library item
-  - [ ] DELETE `/api/library/:id` - Delete library item
-  - [ ] GET `/api/library/stats` - Get library statistics
+
+- [ ] GET `/api/library` - Search library items
+- [ ] GET `/api/library/:id` - Get library item
+- [ ] POST `/api/library` - Create library item
+- [ ] DELETE `/api/library/:id` - Delete library item
+- [ ] GET `/api/library/stats` - Get library statistics
 
 - [ ] **Template Routes** (`/api/templates/*`)
   - [ ] GET `/api/templates` - List templates
@@ -456,16 +478,19 @@ describeRoute({
 ### Priority 3 - Advanced Features
 
 - [ ] **Signal Routes** (`/api/workspaces/:id/signals/*`)
-  - [ ] GET `/api/workspaces/:id/signals` - List signals
-  - [ ] POST `/api/workspaces/:id/signals/:signalId` - Trigger signal
+
+- [ ] GET `/api/workspaces/:id/signals` - List signals
+- [ ] POST `/api/workspaces/:id/signals/:signalId` - Trigger signal
 
 - [ ] **Agent Routes** (`/api/workspaces/:id/agents/*`)
-  - [ ] GET `/api/workspaces/:id/agents` - List agents
-  - [ ] GET `/api/workspaces/:id/agents/:agentId` - Get agent details
+
+- [ ] GET `/api/workspaces/:id/agents` - List agents
+- [ ] GET `/api/workspaces/:id/agents/:agentId` - Get agent details
 
 - [ ] **Workspace-specific Routes** (`/api/workspaces/:id/*`)
-  - [ ] GET `/api/workspaces/:id/jobs` - List jobs in workspace
-  - [ ] GET `/api/workspaces/:id/sessions` - List sessions in workspace
+
+- [ ] GET `/api/workspaces/:id/jobs` - List jobs in workspace
+- [ ] GET `/api/workspaces/:id/sessions` - List sessions in workspace
 
 - [ ] **Stream Routes** (`/api/stream/*`)
   - [ ] POST `/api/streams` - Create stream session
@@ -476,8 +501,9 @@ describeRoute({
 ### Priority 4 - System Routes
 
 - [ ] **Daemon Routes** (`/api/daemon/*`)
-  - [ ] GET `/api/daemon/status` - Daemon status
-  - [ ] POST `/api/daemon/shutdown` - Shutdown daemon
+
+- [ ] GET `/api/daemon/status` - Daemon status
+- [ ] POST `/api/daemon/shutdown` - Shutdown daemon
 
 - [ ] **MCP Routes** (`/mcp`)
   - [ ] ALL `/mcp` - MCP protocol endpoint
@@ -485,28 +511,32 @@ describeRoute({
 ## Best Practices
 
 1. **Schema Organization**:
-   - Group related schemas in the same file
-   - Export schemas for reuse
-   - Use descriptive names ending with `Schema`
-   - Create type aliases using `z.infer<typeof schema>`
+
+- Group related schemas in the same file
+- Export schemas for reuse
+- Use descriptive names ending with `Schema`
+- Create type aliases using `z.infer<typeof schema>`
 
 2. **Route Organization**:
-   - One route module per resource type
-   - Keep route files focused and cohesive
-   - Extract complex logic to service functions
-   - When getting an entity by ID, check for "not found" errors and return 404 status
+
+- One route module per resource type
+- Keep route files focused and cohesive
+- Extract complex logic to service functions
+- When getting an entity by ID, check for "not found" errors and return 404 status
 
 3. **Documentation Quality**:
-   - Write clear, actionable summaries
-   - Include example values in descriptions
-   - Document all edge cases and errors
-   - Specify required vs optional fields
+
+- Write clear, actionable summaries
+- Include example values in descriptions
+- Document all edge cases and errors
+- Specify required vs optional fields
 
 4. **Type Safety**:
-   - Use `z.coerce` for query parameters
-   - Validate request bodies with schemas
-   - Type handler responses explicitly
-   - Avoid `any` types (use `z.unknown()` and handle them in the route handler)
+
+- Use `z.coerce` for query parameters
+- Validate request bodies with schemas
+- Type handler responses explicitly
+- Avoid `any` types (use `z.unknown()` and handle them in the route handler)
 
 5. **Consistency**:
    - Use consistent naming conventions
@@ -565,7 +595,10 @@ const workspaces = data;
 The OpenAPI client doesn't auto-start the daemon, so provide helpful error messages:
 
 ```typescript
-if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {
+if (
+  errorMessage.includes("Failed to fetch") ||
+  errorMessage.includes("NetworkError")
+) {
   console.error(
     "Error: Unable to connect to Atlas daemon. Make sure it's running with 'atlas daemon start'",
   );
@@ -636,7 +669,9 @@ export const handler = async (argv: { json?: boolean }) => {
     // Handle connection errors gracefully
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes("Failed to fetch")) {
-      console.error("Error: Atlas daemon not running. Start with 'atlas daemon start'");
+      console.error(
+        "Error: Atlas daemon not running. Start with 'atlas daemon start'",
+      );
     } else {
       console.error(`Error: ${errorMessage}`);
     }

@@ -3,6 +3,45 @@
  * These are orthogonal to workspaces and handle daemon-level operations
  */
 
+// In-memory conversation storage (temporary implementation)
+interface ConversationMessage {
+  messageId: string;
+  userId?: string;
+  content: string;
+  timestamp: string;
+  role: "user" | "assistant";
+  metadata?: any;
+}
+
+class InMemoryConversationStorage {
+  private static instance: InMemoryConversationStorage;
+  private conversations = new Map<string, ConversationMessage[]>();
+
+  static getInstance(): InMemoryConversationStorage {
+    if (!this.instance) {
+      this.instance = new InMemoryConversationStorage();
+    }
+    return this.instance;
+  }
+
+  async getConversationHistory(streamId: string) {
+    const messages = this.conversations.get(streamId) || [];
+    return { messages };
+  }
+
+  async saveMessage(streamId: string, message: ConversationMessage) {
+    const messages = this.conversations.get(streamId) || [];
+    messages.push(message);
+    this.conversations.set(streamId, messages);
+  }
+
+  formatHistoryForContext(messages: ConversationMessage[]): string {
+    return messages
+      .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
+      .join("\n");
+  }
+}
+
 export interface DaemonCapability {
   id: string;
   name: string;
@@ -83,13 +122,36 @@ export class DaemonCapabilityRegistry {
       },
       implementation: async (
         context,
-        stream_id: string,
-        message: string,
-        metadata?: any,
-        conversationId?: string,
+        ...args: any[]
       ) => {
+        // Handle both parameter styles:
+        // 1. Direct parameters: (stream_id, message, metadata, conversationId)
+        // 2. Object parameters: ({ stream_id, message, metadata, conversationId })
+        let stream_id: string;
+        let message: string;
+        let metadata: any;
+        let conversationId: string | undefined;
+
+        if (args.length === 1 && typeof args[0] === "object" && args[0] !== null) {
+          // Object style parameters
+          const params = args[0];
+          stream_id = params.stream_id;
+          message = params.message;
+          metadata = params.metadata;
+          conversationId = params.conversationId;
+        } else {
+          // Direct parameters
+          [stream_id, message, metadata, conversationId] = args;
+        }
+
         // Use HTTP to emit SSE events via daemon API
         try {
+          // Validate message
+          if (!message) {
+            console.error("[stream_reply] ERROR: No message provided", { args, stream_id });
+            throw new Error("Message is required for stream_reply");
+          }
+
           // Generate messageId for this response
           const messageId = crypto.randomUUID();
 
@@ -248,16 +310,28 @@ export class DaemonCapabilityRegistry {
       },
       implementation: async (
         context,
-        action: string,
-        stream_id: string,
-        message?: { role: "user" | "assistant"; content: string; userId: string },
+        ...args: any[]
       ) => {
+        // Handle both parameter styles
+        let action: string;
+        let stream_id: string;
+        let message: { role: "user" | "assistant"; content: string; metadata?: any } | undefined;
+
+        if (args.length === 1 && typeof args[0] === "object" && args[0] !== null) {
+          // Object style parameters
+          const params = args[0];
+          action = params.action;
+          stream_id = params.stream_id;
+          message = params.message;
+        } else {
+          // Direct parameters
+          [action, stream_id, message] = args;
+        }
         try {
           console.log(`[conversation_storage] ${action} for stream ${stream_id}`);
 
-          // Import conversation storage
-          const { getConversationStorage } = await import("./agents/conversation-storage.ts");
-          const conversationStorage = getConversationStorage();
+          // Use in-memory conversation storage
+          const conversationStorage = InMemoryConversationStorage.getInstance();
 
           if (action === "load_history") {
             const history = await conversationStorage.getConversationHistory(stream_id);
@@ -280,13 +354,14 @@ export class DaemonCapabilityRegistry {
           if (action === "save_message" && message) {
             const messageObj = {
               messageId: crypto.randomUUID(),
-              userId: message.userId,
+              userId: message.metadata?.userId,
               content: message.content,
-              timestamp: new Date().toISOString(),
+              timestamp: message.metadata?.timestamp || new Date().toISOString(),
               role: message.role,
               metadata: {
                 streamId: stream_id,
                 workspaceContext: context.workspaceId,
+                ...message.metadata,
               },
             };
 

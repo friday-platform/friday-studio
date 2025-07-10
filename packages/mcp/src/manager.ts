@@ -298,7 +298,24 @@ export class MCPManager {
         // Get tools directly from AI SDK MCP client
         const tools = await wrapper.client.tools();
 
-        // Apply tool filtering
+        // Debug log the first tool structure
+        const toolNames = Object.keys(tools);
+        if (toolNames.length > 0) {
+          const firstToolName = toolNames[0];
+          const firstTool = tools[firstToolName];
+          logger.debug(`MCP tool structure for ${serverId}`, {
+            operation: "mcp_tool_structure_debug",
+            serverId,
+            firstToolName,
+            firstToolType: typeof firstTool,
+            firstToolKeys: firstTool && typeof firstTool === "object" ? Object.keys(firstTool) : [],
+            hasParameters: firstTool && typeof firstTool === "object" && "parameters" in firstTool,
+            hasInputSchema: firstTool && typeof firstTool === "object" &&
+              "input_schema" in firstTool,
+          });
+        }
+
+        // Apply tool filtering and conversion
         const filteredTools = this.filterTools(tools, wrapper.config.tools);
 
         // Add to combined tools object
@@ -348,39 +365,51 @@ export class MCPManager {
   }
 
   /**
-   * Filters tools based on allowed/denied configuration
+   * Filters tools based on allowed/denied configuration and converts to AI SDK format
    * @param tools Raw tools object from MCP server
    * @param filterConfig Tool filtering configuration
-   * @returns Filtered tools object
+   * @returns Filtered and converted tools object
    */
   private filterTools(
     tools: Record<string, unknown>,
     filterConfig?: MCPToolsConfig,
   ): Record<string, unknown> {
-    if (!filterConfig) return tools;
-
     const filtered: Record<string, unknown> = {};
 
     for (const [toolName, tool] of Object.entries(tools)) {
       // Apply allowed list
-      if (filterConfig.allowed && !filterConfig.allowed.includes(toolName)) {
+      if (filterConfig?.allowed && !filterConfig.allowed.includes(toolName)) {
         continue;
       }
 
       // Apply denied list
-      if (filterConfig.denied && filterConfig.denied.includes(toolName)) {
+      if (filterConfig?.denied && filterConfig.denied.includes(toolName)) {
         continue;
       }
 
-      filtered[toolName] = tool;
+      // Convert MCP tool format to AI SDK format if needed
+      // MCP tools may have 'parameters' but AI SDK expects 'input_schema'
+      if (tool && typeof tool === "object" && "parameters" in tool && !("input_schema" in tool)) {
+        // Create a new tool object with input_schema instead of parameters
+        const toolObj = tool as Record<string, unknown>;
+        const convertedTool: any = {
+          ...toolObj,
+          input_schema: toolObj.parameters,
+        };
+        // Remove the original parameters property to avoid confusion
+        delete convertedTool.parameters;
+        filtered[toolName] = convertedTool;
+      } else {
+        filtered[toolName] = tool;
+      }
     }
 
-    logger.debug("Applied tool filtering", {
+    logger.debug("Applied tool filtering and conversion", {
       operation: "mcp_tool_filtering",
       originalCount: Object.keys(tools).length,
       filteredCount: Object.keys(filtered).length,
-      allowedList: filterConfig.allowed,
-      deniedList: filterConfig.denied,
+      allowedList: filterConfig?.allowed,
+      deniedList: filterConfig?.denied,
       filteredTools: Object.keys(filtered),
     });
 
@@ -577,7 +606,7 @@ export class MCPManager {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             // Try to get tools as a connection test
-            const tools = await Promise.race([
+            const _tools = await Promise.race([
               client.tools(),
               new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("Connection verification timeout")), 2000)

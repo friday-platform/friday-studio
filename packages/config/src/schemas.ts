@@ -39,7 +39,7 @@ export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
 export type MCPToolsConfig = z.infer<typeof MCPToolsConfigSchema>;
 
 // Agent type schema
-export const AgentTypeSchema = z.enum(["tempest", "llm", "remote"]);
+export const AgentTypeSchema = z.enum(["system", "llm", "remote"]);
 
 // Environment variable configuration schema
 export const EnvironmentVariableSchema = z.union([
@@ -274,7 +274,7 @@ export const WorkspaceAgentConfigSchema = z
         }),
       ])
       .optional(), // Tool choice control
-    // Tempest agent specific
+    // System agent specific
     agent: z.string().optional(),
     version: z.string().optional(),
     config: z.record(z.string(), z.any()).optional(),
@@ -306,11 +306,11 @@ export const WorkspaceAgentConfigSchema = z
   })
   .superRefine((value, ctx) => {
     // Type-specific validation with detailed error messages
-    if (value.type === "tempest") {
+    if (value.type === "system") {
       if (!value.agent) {
         ctx.addIssue({
           code: "custom",
-          message: "Tempest agents require 'agent' field",
+          message: "System agents require 'agent' field",
           path: ["agent"],
           input: value,
         });
@@ -318,7 +318,7 @@ export const WorkspaceAgentConfigSchema = z
       if (!value.version) {
         ctx.addIssue({
           code: "custom",
-          message: "Tempest agents require 'version' field",
+          message: "System agents require 'version' field",
           path: ["version"],
           input: value,
         });
@@ -585,11 +585,10 @@ export const SupervisorDefaultsSchema = z.object({
 export const AtlasConfigSchema = z.object({
   version: z.string(),
 
-  // Workspace identity (atlas.yml IS a workspace)
+  // Workspace identity (atlas.yml IS a workspace, same as WorkspaceConfig)
   workspace: WorkspaceIdentitySchema.extend({
-    id: z.string().default("atlas-platform"),
-    name: z.string().default("Atlas Platform"),
-  }),
+    name: z.string().min(1, "Workspace name cannot be empty"),
+  }), // ID is generated during registration, not in config
 
   // Server configuration (how this platform workspace exposes itself)
   server: ServerConfigSchema.optional(),
@@ -611,7 +610,7 @@ export const AtlasConfigSchema = z.object({
   ).optional(),
 
   // Platform capabilities as jobs, signals, and agents (same as workspace.yml)
-  jobs: z.record(z.string(), JobSpecificationSchema).optional(),
+  jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(), // Job keys become MCP tools, same as WorkspaceConfig
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
 
@@ -772,6 +771,9 @@ export const AtlasConfigSchema = z.object({
         .optional(),
     })
     .optional(),
+
+  // MCP servers configuration (same as WorkspaceConfig)
+  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 // Inferred types from Zod schemas

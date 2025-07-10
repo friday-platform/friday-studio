@@ -1,7 +1,6 @@
 import type { IWorkspace, IWorkspaceAgent } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
-import type { RuntimeAgentConfig } from "./workspace-runtime.ts";
-import { ConfigLoader } from "@atlas/config";
+import { ConfigLoader, WorkspaceAgentConfig } from "@atlas/config";
 
 export interface AgentLoadResult {
   loaded: IWorkspaceAgent[];
@@ -18,7 +17,7 @@ export class AgentLoader {
    */
   static async loadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, RuntimeAgentConfig>,
+    agentConfigs: Record<string, WorkspaceAgentConfig>,
   ): Promise<AgentLoadResult> {
     const result: AgentLoadResult = {
       loaded: [],
@@ -56,7 +55,7 @@ export class AgentLoader {
           result.failed.push({ id: agentId, error: addError.message });
         } else {
           logger.info(
-            `Loaded agent: ${agentId} (${(agent as any).type || "unknown"})`,
+            `Loaded agent: ${agentId})`,
             {
               workspaceId: workspace.id,
               agentId,
@@ -86,18 +85,16 @@ export class AgentLoader {
   private static loadSingleAgent(
     _workspace: IWorkspace,
     agentId: string,
-    agentConfig: RuntimeAgentConfig,
+    agentConfig: WorkspaceAgentConfig,
   ): IWorkspaceAgent {
     // Create a metadata-only agent object that the AgentSupervisor can use
     const metadataAgent = {
       id: agentId,
-      name: agentConfig.name || agentId,
-      nickname: agentConfig.nickname || agentId,
       version: agentConfig.version || "1.0.0",
       provider: agentConfig.provider || "user",
       purpose: agentConfig.purpose || "",
       type: agentConfig.type,
-      config: ConfigLoader.convertWorkspaceAgentConfig(agentConfig as any),
+      config: ConfigLoader.convertWorkspaceAgentConfig(agentConfig),
       // Add metadata flag so supervisor knows this is config-only
       isMetadata: true,
       // Required IWorkspaceAgent interface methods
@@ -149,7 +146,7 @@ export class AgentLoader {
    */
   static async reloadAgents(
     workspace: IWorkspace,
-    agentConfigs: Record<string, RuntimeAgentConfig>,
+    agentConfigs: Record<string, WorkspaceAgentConfig>,
   ): Promise<AgentLoadResult> {
     // Clear existing agents
     for (const agentId of Object.keys(workspace.agents)) {
