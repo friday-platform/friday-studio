@@ -5,7 +5,7 @@
  * for maximum type safety and excellent Deno compatibility.
  */
 
-import createClient from "openapi-fetch";
+import createClient from "npm:openapi-fetch";
 import type { paths } from "./types.gen.ts";
 
 // Re-export convenient type aliases for the client

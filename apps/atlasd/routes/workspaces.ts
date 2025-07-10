@@ -85,6 +85,7 @@ export const errorResponseSchema = z.object({
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
 export type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
 
+
 // ============================================================================
 // Route Implementations
 // ============================================================================
@@ -102,7 +103,7 @@ workspacesRoutes.get(
         description: "Successfully retrieved workspaces",
         content: {
           "application/json": {
-            schema: resolver(z.array(workspaceResponseSchema)),
+            schema: resolver(z.array(workspaceResponseSchema) as any),
           },
         },
       },
@@ -110,7 +111,7 @@ workspacesRoutes.get(
         description: "Internal server error",
         content: {
           "application/json": {
-            schema: resolver(errorResponseSchema),
+            schema: resolver(errorResponseSchema as any),
           },
         },
       },
@@ -144,7 +145,7 @@ workspacesRoutes.get(
         description: "Successfully retrieved workspace details",
         content: {
           "application/json": {
-            schema: resolver(workspaceDetailsResponseSchema),
+            schema: resolver(workspaceDetailsResponseSchema as any),
           },
         },
       },
@@ -152,7 +153,7 @@ workspacesRoutes.get(
         description: "Workspace not found",
         content: {
           "application/json": {
-            schema: resolver(errorResponseSchema),
+            schema: resolver(errorResponseSchema as any),
           },
         },
       },
@@ -160,13 +161,13 @@ workspacesRoutes.get(
         description: "Internal server error",
         content: {
           "application/json": {
-            schema: resolver(errorResponseSchema),
+            schema: resolver(errorResponseSchema as any),
           },
         },
       },
     },
   }),
-  validator("param", workspaceIdParamSchema),
+  validator("param", workspaceIdParamSchema as any),
   async (c) => {
     const { workspaceId } = c.req.valid("param");
 

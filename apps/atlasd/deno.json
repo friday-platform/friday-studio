@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "imports": {
-    "@hono/zod-openapi": "npm:@hono/zod-openapi@^1.0.0-beta.1",
     "@hono/mcp": "npm:@hono/mcp@^0.1.0",
-    "zod-openapi": "npm:zod-openapi@^5.0.1"
+    "zod-openapi": "npm:zod-openapi@^5.1.0"
   }
 }
