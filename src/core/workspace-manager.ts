@@ -21,7 +21,7 @@ import type { IWorkspace } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
 import { createRegistryStorage, RegistryStorageAdapter, StorageConfigs } from "./storage/index.ts";
 import { generateUniqueWorkspaceName } from "./utils/id-generator.ts";
-import type { WorkspaceRuntime } from "./workspace-runtime-v2.ts";
+import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 
 // Define types in the same file for better cohesion
 export const WorkspaceStatusSchema = z.enum([

@@ -3,11 +3,21 @@
  * Replaces worker-based supervisor management with direct actor orchestration
  */
 
+import { ConfigLoader, MergedConfig } from "@atlas/config";
+import { FilesystemConfigAdapter } from "@atlas/storage";
+import { load } from "@std/dotenv";
+import { exists } from "@std/fs";
+import { join } from "@std/path";
 import { assign, createMachine, fromPromise } from "xstate";
-import { WorkspaceSupervisorActor } from "./actors/workspace-supervisor-actor.ts";
+import type {
+  AtlasConfig,
+  WorkspaceAgentConfig,
+  WorkspaceConfig,
+} from "../../packages/config/src/schemas.ts";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import type { AtlasConfig, WorkspaceConfig } from "../../packages/config/src/schemas.ts";
 import { logger } from "../utils/logger.ts";
+import { WorkspaceSupervisorActor } from "./actors/workspace-supervisor-actor.ts";
+import { AgentLoader } from "./agent-loader.ts";
 import { ProviderRegistry } from "./providers/registry.ts";
 import { type ISignalProvider, ProviderType } from "./providers/types.ts";
 import { Session } from "./session.ts";
@@ -118,9 +128,7 @@ export function createWorkspaceRuntimeMachine(
             // Load workspace .env file if available
             if (context.options.workspacePath) {
               try {
-                const { load } = await import("@std/dotenv");
-                const { join } = await import("@std/path");
-                const { exists } = await import("@std/fs");
+                // Using static imports from top of file
 
                 const envFilePath = join(context.options.workspacePath, ".env");
                 if (await exists(envFilePath)) {
@@ -139,7 +147,7 @@ export function createWorkspaceRuntimeMachine(
             }
 
             // Load or use provided configuration
-            let mergedConfig: Record<string, unknown>;
+            let mergedConfig: MergedConfig;
             if (context.config) {
               mergedConfig = context.config;
               logger.debug("Using provided configuration", {
@@ -150,21 +158,20 @@ export function createWorkspaceRuntimeMachine(
               logger.debug("Loading configuration from disk", {
                 workspaceId: context.workspace.id,
               });
-              const { ConfigLoader } = await import("@atlas/config");
-              const { FilesystemConfigAdapter } = await import("@atlas/storage");
+              // Using static imports from top of file
               const adapter = new FilesystemConfigAdapter();
               const configLoader = new ConfigLoader(adapter, context.options.workspacePath);
               mergedConfig = await configLoader.load();
             }
 
             // Load all agents (platform + user)
-            const allAgents = {
-              ...(mergedConfig.atlas?.agents || {}),
-              ...(mergedConfig.workspace?.agents || {}),
+            const allAgents: Record<string, WorkspaceAgentConfig> = {
+              ...mergedConfig.atlas.agents,
+              ...mergedConfig.workspace.agents,
             };
 
             if (Object.keys(allAgents).length > 0) {
-              const { AgentLoader } = await import("./agent-loader.ts");
+              // Using static import from top of file
               const loadResult = await AgentLoader.loadAgents(
                 context.workspace,
                 allAgents,

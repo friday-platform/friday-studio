@@ -26,7 +26,7 @@ import {
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
 import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
-import { WorkspaceRuntime } from "../../../src/core/workspace-runtime-v2.ts";
+import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";

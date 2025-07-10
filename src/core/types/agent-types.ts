@@ -4,22 +4,6 @@
  */
 
 /**
- * Runtime agent configuration
- */
-export interface RuntimeAgentConfig {
-  id: string;
-  type: "llm" | "system" | "remote";
-  model?: string;
-  purpose?: string;
-  prompts?: {
-    system?: string;
-    user?: string;
-  };
-  tools?: string[] | { mcp?: string[] };
-  config?: Record<string, unknown>;
-}
-
-/**
  * Job specification for execution
  */
 export interface JobSpecification {
