@@ -64,7 +64,7 @@
     "@ai-sdk/google": "npm:@ai-sdk/google@^1.2.22",
     "xstate": "npm:xstate@^5.20.1",
     "zod": "npm:zod@^3.25.74",
-    "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",
+    "@inkjs/ui": "npm:@inkjs/ui@^1.0.0",
     "hono": "npm:hono@^4.8.4",
     "hono/cors": "npm:hono@^4.8.4/cors",
     "hono/logger": "npm:hono@^4.8.4/logger",
