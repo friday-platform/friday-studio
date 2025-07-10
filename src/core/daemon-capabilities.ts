@@ -255,12 +255,13 @@ export class DaemonCapabilityRegistry {
         try {
           console.log(`[conversation_storage] ${action} for stream ${stream_id}`);
 
-          // For now, use in-memory storage since the old file was deleted
-          // TODO: Implement proper conversation storage
-          const storage = new Map<string, any[]>();
+          // Import conversation storage
+          const { getConversationStorage } = await import("./agents/conversation-storage.ts");
+          const conversationStorage = getConversationStorage();
 
           if (action === "load_history") {
-            const messages = storage.get(stream_id) || [];
+            const history = await conversationStorage.getConversationHistory(stream_id);
+            const messages = history?.messages || [];
 
             console.log(
               `[conversation_storage] Loaded ${messages.length} messages for stream ${stream_id}`,
@@ -270,7 +271,9 @@ export class DaemonCapabilityRegistry {
               success: true,
               messages,
               messageCount: messages.length,
-              historyContext: "",
+              historyContext: messages.length > 0
+                ? conversationStorage.formatHistoryForContext(messages)
+                : "",
             };
           }
 
@@ -287,9 +290,7 @@ export class DaemonCapabilityRegistry {
               },
             };
 
-            const messages = storage.get(stream_id) || [];
-            messages.push(messageObj);
-            storage.set(stream_id, messages);
+            await conversationStorage.saveMessage(stream_id, messageObj);
 
             console.log(
               `[conversation_storage] Saved ${message.role} message to stream ${stream_id}`,
