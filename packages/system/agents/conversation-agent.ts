@@ -758,7 +758,11 @@ IMPORTANT:
 - Use ACTION: complete when the conversation is done and no more actions are needed
 - After confirming workspace creation, your NEXT action should be workspace_draft_create
 - Don't stop after just acknowledging - complete the task
-- The PARAMETERS must be valid JSON on a single line`;
+- The PARAMETERS must be valid JSON on a single line
+- For workspace_draft_create, the PARAMETERS must contain: name, description, and initialConfig
+- The initialConfig follows the WorkspaceConfig schema shown in workspace_draft_create_format section
+- Example PARAMETERS format: {"name": "workspace-name", "description": "workspace description", "initialConfig": {... full workspace config ...}}
+- NEVER call workspace_draft_create with empty parameters {}`;
 
             this.logger.debug("Generating thinking with LLM", {
               promptLength: thinkingPrompt.length,
@@ -852,11 +856,25 @@ IMPORTANT:
               }
 
               // Track the draft ID from workspace_draft_create
-              if (action.toolName === "workspace_draft_create" && result?.draftId) {
-                context.userContext.draftId = result.draftId;
-                this.logger.info("Captured draft ID from workspace creation", {
-                  draftId: result.draftId,
+              if (action.toolName === "workspace_draft_create") {
+                this.logger.info("workspace_draft_create result", {
+                  result: JSON.stringify(result),
+                  hasDraftId: !!result?.draftId,
+                  hasSuccess: !!result?.success,
+                  keys: result ? Object.keys(result) : [],
                 });
+
+                if (result?.draftId) {
+                  context.userContext.draftId = result.draftId;
+                  this.logger.info("Captured draft ID from workspace creation", {
+                    draftId: result.draftId,
+                  });
+                } else if (result?.error) {
+                  this.logger.error("workspace_draft_create failed", {
+                    error: result.error,
+                    result: JSON.stringify(result),
+                  });
+                }
               }
 
               // Use stored draft ID for subsequent workspace operations
