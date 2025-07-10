@@ -182,6 +182,45 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     try {
       // Check if reasoning is enabled
       if (this.config.use_reasoning) {
+        // Check if this is a simple greeting or acknowledgment
+        const isSimpleMessage = this.isSimpleMessage(message);
+
+        if (isSimpleMessage) {
+          this.logger.info("Using fast-path for simple message", {
+            message: message.substring(0, 100),
+          });
+
+          // Fast path - generate response directly without full reasoning
+          const response = await this.generateSimpleResponse(message, historyContext);
+
+          // Save the response
+          if (streamId) {
+            await this.saveMessage(streamId, {
+              role: "assistant",
+              content: response,
+              metadata: {
+                timestamp: new Date().toISOString(),
+                fastPath: true,
+              },
+            });
+          }
+
+          // Stream the response if we have a streamId
+          if (streamId) {
+            await this.handleStreamReply(streamId, response);
+          }
+
+          return {
+            response,
+            conversationMetadata: {
+              streamId,
+              messagesInHistory: messagesInHistory + 2,
+              isNewConversation,
+              fastPath: true,
+            },
+          };
+        }
+
         this.logger.info("Using reasoning-based conversation", {
           maxSteps: this.config.max_reasoning_steps,
           message: message.substring(0, 100),
@@ -978,5 +1017,46 @@ IMPORTANT:
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * Check if a message is simple enough to bypass reasoning
+   */
+  private isSimpleMessage(message: string): boolean {
+    const normalized = message.toLowerCase().trim();
+
+    // Simple greetings and responses
+    const simplePatterns = [
+      /^(hi|hello|hey|good morning|good afternoon|good evening)[\s!.]*$/,
+      /^(thanks|thank you|thx|ty)[\s!.]*$/,
+      /^(ok|okay|sure|got it|understood|cool|great|awesome)[\s!.]*$/,
+      /^(bye|goodbye|see you|later|farewell)[\s!.]*$/,
+      /^(yes|yeah|yep|no|nope|maybe)[\s!.]*$/,
+      /^what'?s my name\??$/,
+      /^who am i\??$/,
+    ];
+
+    return simplePatterns.some((pattern) => pattern.test(normalized));
+  }
+
+  /**
+   * Generate a simple response without reasoning
+   */
+  private async generateSimpleResponse(message: string, historyContext?: string): Promise<string> {
+    const prompt = `${historyContext ? historyContext + "\n\n" : ""}User: ${message}`;
+
+    const response = await LLMProvider.generateText(prompt, {
+      systemPrompt: this.prompts.system,
+      model: this.config.model || "claude-3-5-sonnet-20241022",
+      provider: "anthropic",
+      temperature: this.config.temperature || 0.7,
+      maxTokens: 500, // Smaller token limit for simple responses
+      operationContext: {
+        operation: "conversation_agent_simple",
+        agentId: this.id,
+      },
+    });
+
+    return response;
   }
 }
