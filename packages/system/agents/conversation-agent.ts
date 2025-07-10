@@ -245,37 +245,21 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
    * Convert daemon capabilities to tool format for LLM
    */
   private async getDaemonCapabilityTools(): Promise<Record<string, Tool>> {
-    const { z } = await import("zod/v4");
     const tools: Record<string, any> = {};
 
     // Get all daemon capabilities that match our configured tools
     for (const toolName of this.config.tools || []) {
       const capability = DaemonCapabilityRegistry.getCapability(toolName);
       if (capability) {
-        // Create proper Zod schema based on capability
-        let parameters: any;
+        // Use the capability's inputSchema directly if available
+        // Otherwise create a minimal schema
+        const parameters = capability.inputSchema || {
+          type: "object",
+          properties: {},
+          additionalProperties: true,
+        };
 
-        if (capability.id === "stream_reply") {
-          parameters = z.object({
-            streamId: z.string().describe("Stream ID for the conversation"),
-            message: z.string().describe("The message to stream to the user"),
-            metadata: z.any().optional().describe("Optional metadata"),
-            conversationId: z.string().optional().describe("Conversation ID"),
-          });
-        } else if (capability.id === "conversation_storage") {
-          parameters = z.object({
-            method: z.enum(["save", "load", "list", "delete"]).describe("Storage operation"),
-            conversationId: z.string().optional().describe("Conversation ID"),
-            data: z.any().optional().describe("Data to save"),
-          });
-        } else {
-          // Generic schema for other capabilities
-          parameters = z.object({
-            args: z.array(z.any()).optional().describe("Arguments for the capability"),
-          });
-        }
-
-        // Pass Zod schema directly - LLMProvider will wrap with jsonSchema
+        // Pass schema directly - LLMProvider will wrap with jsonSchema if needed
         tools[capability.id] = {
           description: capability.description,
           parameters: parameters,
@@ -291,12 +275,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               conversationId: args.conversationId || this.id,
             };
 
-            // Handle stream_reply specially
+            // Handle stream_reply - note the parameter names match the inputSchema
             if (capability.id === "stream_reply") {
               const result = await DaemonCapabilityRegistry.executeCapability(
                 capability.id,
                 context,
-                args.streamId || this.id,
+                args.stream_id || args.streamId || this.id, // Support both naming conventions
                 args.message,
                 args.metadata,
                 args.conversationId || this.id,
@@ -316,11 +300,11 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               return result;
             }
 
-            // Execute the capability with proper argument unpacking
+            // For other capabilities, pass args as-is
             const result = await DaemonCapabilityRegistry.executeCapability(
               capability.id,
               context,
-              ...(args.args || []),
+              args,
             );
 
             return result;

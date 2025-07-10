@@ -565,10 +565,10 @@ export class LLMProvider {
         const needsWrapping = params &&
           typeof params === "object" &&
           !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped by AI SDK
-          (params._def || params.shape); // Is a Zod schema
+          !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
 
         if (needsWrapping) {
-          // Wrap Zod schema with jsonSchema
+          // Wrap schema with jsonSchema - works for both Zod schemas and JSON Schema objects
           allTools[toolName] = {
             ...tool,
             parameters: jsonSchema(params),
@@ -604,7 +604,7 @@ export class LLMProvider {
             const needsWrapping = params &&
               typeof params === "object" &&
               !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped
-              (params._def || params.shape || params.type); // Is a schema object
+              !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
 
             if (needsWrapping) {
               allTools[toolName] = {
