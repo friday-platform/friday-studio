@@ -12,7 +12,8 @@
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { getWorkspaceManager } from "../workspace-manager.ts";
 import { AgentExecutionActor } from "./agent-execution-actor.ts";
-import { MultiStepReasoningEngine } from "../multi-step-reasoning.ts";
+import { createReasoningMachine, generateThinking, parseAction } from "@atlas/reasoning";
+import { createActor, toPromise } from "xstate";
 import { BehaviorTreeStrategy } from "../execution/strategies/behavior-tree-strategy.ts";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 import type { JobSpecification, WorkspaceConfig } from "../../../packages/config/src/schemas.ts";
@@ -90,7 +91,7 @@ export class SessionSupervisorActor {
   private id: string;
   private sessionContext?: SessionContext;
   private workspaceConfig?: WorkspaceConfig;
-  private reasoningEngine: MultiStepReasoningEngine;
+  // Reasoning is now handled by the @atlas/reasoning package
   private executionStrategy: BehaviorTreeStrategy;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
 
@@ -107,7 +108,7 @@ export class SessionSupervisorActor {
     });
 
     // Initialize reasoning and execution engines
-    this.reasoningEngine = new MultiStepReasoningEngine();
+    // Reasoning machine created on-demand in createExecutionPlan
     this.executionStrategy = new BehaviorTreeStrategy();
 
     this.logger.info("Session supervisor actor initialized");
@@ -200,11 +201,43 @@ export class SessionSupervisorActor {
       });
     };
 
-    const reasoningResult = await this.reasoningEngine.reason(
-      reasoningContext,
-      agentExecutor,
-      toolExecutor,
-    );
+    // Create reasoning machine with our executors
+    const machine = createReasoningMachine({
+      think: generateThinking,
+      parseAction,
+      executeAction: async (action, context) => {
+        if (action.type === "agent_call" && action.agentId) {
+          const result = await agentExecutor(action.agentId, action.parameters);
+          return {
+            result,
+            observation: `Agent ${action.agentId} executed successfully`,
+          };
+        } else if (action.type === "tool_call" && action.toolName) {
+          const toolResult = await toolExecutor(action.toolName, action.parameters);
+          return {
+            result: toolResult.result,
+            observation: toolResult.success
+              ? `Tool ${action.toolName} executed successfully`
+              : `Tool ${action.toolName} failed`,
+          };
+        } else if (action.type === "complete") {
+          return {
+            result: action.parameters,
+            observation: "Reasoning completed",
+          };
+        }
+        return { result: null, observation: "Unknown action type" };
+      },
+    }, {
+      maxIterations: reasoningContext.maxIterations,
+      supervisorId: this.id,
+      jobGoal: reasoningContext.signal.id,
+    });
+
+    // Run the reasoning machine
+    const actor = createActor(machine, { input: reasoningContext });
+    actor.start();
+    const reasoningResult = await toPromise(actor);
 
     // 3. Convert reasoning result to execution plan
     const executionPlan = this.convertReasoningToExecutionPlan(reasoningResult);
@@ -515,26 +548,13 @@ export class SessionSupervisorActor {
     this.logger.debug("Caching execution plan", { planId: plan.id });
   }
 
-  private convertReasoningToExecutionPlan(reasoningResult: {
-    success: boolean;
-    steps: Array<{
-      iteration: number;
-      thinking: string;
-      action: { type: string; agentId?: string; parameters: Record<string, unknown> } | null;
-      observation: string;
-      confidence: number;
-    }>;
-    finalSolution: unknown;
-    totalIterations: number;
-    totalDuration: number;
-    totalCost: number;
-  }): ExecutionPlan {
+  private convertReasoningToExecutionPlan(reasoningResult: any): ExecutionPlan {
     const planId = crypto.randomUUID();
 
     // Extract agent interactions from reasoning steps
-    const agentInteractions = reasoningResult.steps
-      .filter((step) => step.action?.type === "agent_call" && step.action.agentId)
-      .map((step) => ({
+    const agentInteractions = reasoningResult.reasoning.steps
+      .filter((step: any) => step.action?.type === "agent_call" && step.action.agentId)
+      .map((step: any) => ({
         agentId: step.action!.agentId!,
         task: (step.action!.parameters.task as string) || "Process input",
         inputSource: "previous",
@@ -557,7 +577,7 @@ export class SessionSupervisorActor {
     }];
 
     // Convert reasoning steps to the interface format
-    const reasoningSteps = reasoningResult.steps.map((step) => ({
+    const reasoningSteps = reasoningResult.reasoning.steps.map((step: any) => ({
       iteration: step.iteration,
       thinking: step.thinking,
       action: step.action
@@ -567,19 +587,20 @@ export class SessionSupervisorActor {
     }));
 
     // Calculate overall confidence from steps
-    const avgConfidence = reasoningResult.steps.length > 0
-      ? reasoningResult.steps.reduce((sum, step) => sum + step.confidence, 0) /
-        reasoningResult.steps.length
+    const avgConfidence = reasoningResult.reasoning.steps.length > 0
+      ? reasoningResult.reasoning.steps.reduce(
+        (sum: number, step: any) => sum + (step.confidence || 0.7),
+        0,
+      ) /
+        reasoningResult.reasoning.steps.length
       : 0.5;
 
     return {
       id: planId,
       phases,
       reasoning:
-        `Multi-step reasoning completed in ${reasoningResult.totalIterations} iterations. Final solution: ${
-          JSON.stringify(reasoningResult.finalSolution)
-        }`,
-      strategy: "multi-step-reasoning",
+        `Reasoning completed with ${reasoningResult.reasoning.steps.length} steps. Status: ${reasoningResult.status}`,
+      strategy: "reasoning-machine",
       confidence: avgConfidence,
       reasoningSteps,
     };
