@@ -1358,11 +1358,18 @@ CRITICAL INSTRUCTIONS:
 3. If the user is responding to something you previously said (like choosing an option), handle it appropriately
 4. Use parameters: {"stream_id": "${streamId}", "message": "your response"}
 
+WORKSPACE PUBLISHING CONTEXT:
+- If the user says "yes" to a publishing question, check for drafts using list_session_drafts
+- If you find a recent draft, proceed with pre_publish_check and publish_workspace
+- If no drafts found, explain that and ask for clarification
+
 ONLY return "NEEDS_REASONING" if you truly need multi-step reasoning or complex analysis.
 
 Examples of what you SHOULD handle:
 - User says "#1" or "first one" -> They're choosing option 1 from your list
-- User says "yes" or "yeah" -> They're agreeing to your last question
+- User says "yes" or "yeah" -> Check conversation context:
+  * If agreeing to publish -> list_session_drafts, then publish the found draft
+  * If agreeing to other question -> respond appropriately
 - User provides a short answer -> They're responding to your question
 
 DO NOT ask for clarification if the context is clear from the conversation history.`;
@@ -1373,10 +1380,10 @@ DO NOT ask for clarification if the context is clear from the conversation histo
       model: this.config.model || "claude-3-5-sonnet-20241022",
       provider: "anthropic",
       temperature: this.config.temperature || 0.7,
-      maxTokens: 1000, // Increased for proper responses
+      maxTokens: 2000, // Increased for workspace operations
       tools: tools,
       toolChoice: "required", // Force tool use
-      maxSteps: 2, // Allow one tool call plus response
+      maxSteps: 5, // Allow multiple tool calls for publish flow
       operationContext: {
         operation: "conversation_agent_simple_tools",
         agentId: this.id,
