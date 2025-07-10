@@ -48,7 +48,9 @@ export function parseAction(thinking: string): ReasoningAction | null {
     const actionMatch = thinking.match(/ACTION:\s*(\w+)/i);
     const agentMatch = thinking.match(/AGENT_ID:\s*([^\n]+)/i);
     const toolMatch = thinking.match(/TOOL_NAME:\s*([^\n]+)/i);
-    const parametersMatch = thinking.match(/PARAMETERS:\s*({[^}]*}|\[[^\]]*\])/i);
+    // Match JSON that might span multiple lines
+    const parametersMatch = thinking.match(/PARAMETERS:\s*({[\s\S]*?})\s*(?:REASONING:|$)/im) ||
+      thinking.match(/PARAMETERS:\s*(\[[^\]]*\])/i);
     const reasoningMatch = thinking.match(/REASONING:\s*([^\n]+)/i);
 
     if (!actionMatch) {

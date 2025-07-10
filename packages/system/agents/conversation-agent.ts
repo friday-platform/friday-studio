@@ -424,27 +424,22 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               conversationId: args.conversationId || streamId || this.id,
             };
 
-            // Handle stream_reply - note the parameter names match the inputSchema
+            // Handle stream_reply - pass the entire args object
             if (capability.id === "stream_reply") {
               const result = await DaemonCapabilityRegistry.executeCapability(
                 capability.id,
                 context,
-                args.stream_id || args.streamId || streamId || this.id, // Use provided streamId
-                args.message,
-                args.metadata,
-                args.conversationId || streamId || this.id,
+                args, // Pass the whole args object
               );
               return result;
             }
 
-            // Handle conversation_storage
+            // Handle conversation_storage - pass the entire args object
             if (capability.id === "conversation_storage") {
               const result = await DaemonCapabilityRegistry.executeCapability(
                 capability.id,
                 context,
-                args.method,
-                args.conversationId,
-                args.data,
+                args, // Pass the whole args object
               );
               return result;
             }
@@ -603,7 +598,10 @@ PARAMETERS: {"stream_id": "${
             }", "message": "[Your response to the user]"}
 REASONING: [Why you chose this action]
 
-Note: Always use stream_reply to respond to the user.`;
+IMPORTANT: 
+- The PARAMETERS must be valid JSON on a single line
+- Replace [Your response to the user] with your actual response message
+- Always use stream_reply to respond to the user`;
 
             this.logger.debug("Generating thinking with LLM", {
               promptLength: thinkingPrompt.length,
@@ -685,6 +683,9 @@ Note: Always use stream_reply to respond to the user.`;
               this.logger.debug("Executing tool with parameters", {
                 toolName: action.toolName,
                 parameters,
+                parametersKeys: Object.keys(parameters),
+                message: parameters.message,
+                stream_id: parameters.stream_id,
               });
 
               const result = await tool.execute(parameters);
