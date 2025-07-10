@@ -122,11 +122,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         });
 
         // Convert daemon capabilities to MCP-style tools
-        const daemonTools = await this.getDaemonCapabilityTools();
+        const daemonTools = await this.getDaemonCapabilityTools(streamId);
 
         this.logger.info("Daemon tools prepared", {
           toolCount: Object.keys(daemonTools).length,
           toolKeys: Object.keys(daemonTools),
+          streamId,
         });
 
         // Log tool format for debugging
@@ -150,9 +151,14 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         });
 
         try {
+          // Create enhanced system prompt with streamId context
+          const enhancedSystemPrompt = streamId
+            ? `${this.prompts.system}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`
+            : this.prompts.system;
+
           // Use LLMProvider directly for tool-enabled completion
           const result = await LLMProvider.generateTextWithTools(message, {
-            systemPrompt: this.prompts.system,
+            systemPrompt: enhancedSystemPrompt,
             model: this.config.model || "claude-3-5-sonnet-20241022",
             provider: "anthropic",
             temperature: this.config.temperature || 0.7,
@@ -244,7 +250,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
   /**
    * Convert daemon capabilities to tool format for LLM
    */
-  private async getDaemonCapabilityTools(): Promise<Record<string, Tool>> {
+  private async getDaemonCapabilityTools(streamId?: string): Promise<Record<string, Tool>> {
     const tools: Record<string, any> = {};
 
     // Get all daemon capabilities that match our configured tools
@@ -264,15 +270,15 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           description: capability.description,
           parameters: parameters,
           execute: async (args: any) => {
-            this.logger.info(`Executing daemon capability: ${capability.id}`, { args });
+            this.logger.info(`Executing daemon capability: ${capability.id}`, { args, streamId });
 
             // Create daemon execution context
             const context = {
-              sessionId: this.id,
+              sessionId: streamId || this.id,
               agentId: this.id,
               workspaceId: "atlas-conversation",
               daemon: DaemonCapabilityRegistry.getDaemonInstance(),
-              conversationId: args.conversationId || this.id,
+              conversationId: args.conversationId || streamId || this.id,
             };
 
             // Handle stream_reply - note the parameter names match the inputSchema
@@ -280,10 +286,10 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               const result = await DaemonCapabilityRegistry.executeCapability(
                 capability.id,
                 context,
-                args.stream_id || args.streamId || this.id, // Support both naming conventions
+                args.stream_id || args.streamId || streamId || this.id, // Use provided streamId
                 args.message,
                 args.metadata,
-                args.conversationId || this.id,
+                args.conversationId || streamId || this.id,
               );
               return result;
             }
