@@ -48,9 +48,6 @@ export function parseAction(thinking: string): ReasoningAction | null {
     const actionMatch = thinking.match(/ACTION:\s*(\w+)/i);
     const agentMatch = thinking.match(/AGENT_ID:\s*([^\n]+)/i);
     const toolMatch = thinking.match(/TOOL_NAME:\s*([^\n]+)/i);
-    // Match JSON that might span multiple lines
-    const parametersMatch = thinking.match(/PARAMETERS:\s*({[\s\S]*?})\s*(?:REASONING:|$)/im) ||
-      thinking.match(/PARAMETERS:\s*(\[[^\]]*\])/i);
     const reasoningMatch = thinking.match(/REASONING:\s*([^\n]+)/i);
 
     if (!actionMatch) {
@@ -62,12 +59,66 @@ export function parseAction(thinking: string): ReasoningAction | null {
       return null;
     }
 
+    // Extract parameters with better JSON handling
     let parameters: Record<string, unknown> = {};
-    if (parametersMatch) {
-      try {
-        parameters = JSON.parse(parametersMatch[1]);
-      } catch {
-        parameters = {};
+    const parametersStartMatch = thinking.match(/PARAMETERS:\s*/i);
+    if (parametersStartMatch) {
+      const startIndex = parametersStartMatch.index! + parametersStartMatch[0].length;
+      const remainingText = thinking.substring(startIndex);
+
+      // Try to extract JSON by counting braces
+      if (remainingText.trimStart().startsWith("{")) {
+        let braceCount = 0;
+        let inString = false;
+        let escapeNext = false;
+        let jsonEnd = -1;
+
+        for (let i = 0; i < remainingText.length; i++) {
+          const char = remainingText[i];
+
+          if (escapeNext) {
+            escapeNext = false;
+            continue;
+          }
+
+          if (char === "\\") {
+            escapeNext = true;
+            continue;
+          }
+
+          if (char === '"' && !escapeNext) {
+            inString = !inString;
+            continue;
+          }
+
+          if (!inString) {
+            if (char === "{") {
+              braceCount++;
+            } else if (char === "}") {
+              braceCount--;
+              if (braceCount === 0) {
+                jsonEnd = i + 1;
+                break;
+              }
+            }
+          }
+        }
+
+        if (jsonEnd > 0) {
+          try {
+            const jsonString = remainingText.substring(0, jsonEnd);
+            parameters = JSON.parse(jsonString);
+          } catch (e) {
+            // If JSON parsing fails, try to clean it up
+            try {
+              // Remove any trailing content after the JSON
+              const cleanJson = jsonString.trim();
+              parameters = JSON.parse(cleanJson);
+            } catch {
+              parameters = {};
+            }
+          }
+        }
       }
     }
 
