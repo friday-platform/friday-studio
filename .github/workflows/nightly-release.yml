@@ -99,6 +99,9 @@ jobs:
       - name: Install dependencies
         run: deno install
 
+      - name: Validate imports
+        run: deno run --allow-read --allow-write scripts/validate-imports.ts
+
       - name: Setup cross-compilation for ARM64 (Linux only)
         if: matrix.platform == 'linux' && matrix.arch == 'arm64'
         run: |

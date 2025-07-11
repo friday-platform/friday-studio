@@ -9,7 +9,7 @@ import {
   KnowledgeGraphManager,
   KnowledgeRelationType,
 } from "./knowledge-graph.ts";
-import { BaseAgent } from "../agents/base-agent.ts";
+import { BaseAgent } from "../agents/base-agent-v2.ts";
 import type { AtlasMemoryConfig } from "../memory-config.ts";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 

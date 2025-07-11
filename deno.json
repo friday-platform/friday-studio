@@ -34,7 +34,9 @@
     "test-mcp-weather": "deno run --allow-all packages/mcp/tests/mocks/weather-mcp-server.ts",
     "test-mcp-file-tools": "deno run --allow-all packages/mcp/tests/mocks/file-tools-mcp-server.ts",
     "test-mcp-echo": "deno run --allow-all packages/mcp/tests/mocks/echo-mcp-server.ts",
-    "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts"
+    "clean": "deno run --allow-read --allow-write --allow-env scripts/clean.ts",
+    "validate-imports": "deno run --allow-read --allow-write scripts/validate-imports.ts",
+    "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts"
   },
   "imports": {
     "@hono/swagger-ui": "npm:@hono/swagger-ui@^0.5.2",

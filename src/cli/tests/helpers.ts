@@ -133,7 +133,7 @@ runtime:
   await Deno.writeTextFile(
     `${workspaceDir}/agents/test-agent.ts`,
     `
-import { BaseAgent } from "../../../core/agents/base-agent.ts";
+import { BaseAgent } from "../../../core/agents/base-agent-v2.ts";
 
 export class TestAgent extends BaseAgent {
   constructor() {
