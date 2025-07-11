@@ -176,7 +176,7 @@ jobs:
           pattern: atlas-*
           merge-multiple: true
 
-      - name: Download installer artifacts  
+      - name: Download installer artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./dist/
@@ -192,7 +192,7 @@ jobs:
               zip_name="${app%.app}.zip"
               echo "Creating release ZIP: $zip_name"
               zip -r "$zip_name" "$app"
-              
+
               # Generate checksum for the ZIP
               if command -v shasum >/dev/null 2>&1; then
                 shasum -a 256 "$zip_name" > "$zip_name.sha256"
@@ -226,7 +226,6 @@ jobs:
           find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip|AppImage)$" || echo "No installer files found"
           echo "All files:"
           ls -la ./dist/
-
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2

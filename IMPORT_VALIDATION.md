@@ -1,10 +1,12 @@
 # Import Validation System
 
-Atlas includes a comprehensive import validation system to prevent build failures caused by missing or incorrect import paths.
+Atlas includes a comprehensive import validation system to prevent build failures caused by missing
+or incorrect import paths.
 
 ## Problem Solved
 
 TypeScript/JavaScript builds can fail when imports reference files that don't exist, such as:
+
 - Typos in file paths
 - Files that have been renamed or moved
 - Missing file extensions
@@ -25,6 +27,7 @@ The import validation system catches these issues early through:
 ### Full Validation (`validate-imports.ts`)
 
 Scans all TypeScript/JavaScript files in the project and validates that:
+
 - Relative imports point to existing files
 - File extensions are handled correctly
 - Directory imports with index files work
@@ -33,6 +36,7 @@ Scans all TypeScript/JavaScript files in the project and validates that:
 ### Staged Validation (`validate-imports-staged.ts`)
 
 Optimized for pre-commit hooks:
+
 - Only validates files staged for commit
 - Uses `git diff --cached` to find changed files
 - Faster execution for better developer experience
@@ -42,6 +46,7 @@ Optimized for pre-commit hooks:
 ### 1. Pre-commit Hook
 
 Automatically runs when you commit changes:
+
 ```bash
 git add .
 git commit -m "Fix imports"
@@ -51,14 +56,16 @@ git commit -m "Fix imports"
 ### 2. GitHub Actions
 
 Validates imports in all build workflows:
+
 - Before edge builds
-- Before nightly builds  
+- Before nightly builds
 - Before releases
 - In standalone validation workflow
 
 ### 3. Local Development
 
 Run validation manually:
+
 ```bash
 # Validate all files
 deno task validate-imports
@@ -93,6 +100,7 @@ deno task validate-imports-staged
 ## Configuration
 
 The validation system is configured in:
+
 - `lint-staged.config.js` - Pre-commit hook configuration
 - `.github/workflows/*.yml` - CI/CD integration
 - `deno.json` - Task definitions for local usage
@@ -106,7 +114,9 @@ The validation system is configured in:
 
 ## Historical Context
 
-This system was created after a build failure where `base-agent.ts` was imported but the actual file was named `base-agent-v2.ts`. The validation system would have caught this issue before it caused a CI/CD failure.
+This system was created after a build failure where `base-agent.ts` was imported but the actual file
+was named `base-agent-v2.ts`. The validation system would have caught this issue before it caused a
+CI/CD failure.
 
 ## Future Enhancements
 

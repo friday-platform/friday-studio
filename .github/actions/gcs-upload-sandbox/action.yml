@@ -19,7 +19,6 @@ runs:
         path: ./artifacts/
         merge-multiple: true
 
-
     - name: Authenticate to Google Cloud (Sandbox)
       uses: google-github-actions/auth@v2
       with:

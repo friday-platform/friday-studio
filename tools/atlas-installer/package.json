@@ -35,7 +35,7 @@
     },
     "files": [
       "main.js",
-      "renderer.js", 
+      "renderer.js",
       "index.html",
       "styles.css",
       "preload.js",

@@ -1,43 +1,43 @@
 class AtlasInstaller {
-    constructor() {
-        this.currentStep = 0;
-        this.totalSteps = 4;
-        this.isInstalling = false;
-        this.platformInfo = null;
-        
-        this.initializeEventListeners();
-        this.loadLicenseText();
-        this.loadPlatformInfo();
-    }
+  constructor() {
+    this.currentStep = 0;
+    this.totalSteps = 4;
+    this.isInstalling = false;
+    this.platformInfo = null;
 
-    async loadPlatformInfo() {
-        try {
-            this.platformInfo = await window.electronAPI.getPlatform();
-            console.log('Platform info:', this.platformInfo);
-        } catch (error) {
-            console.error('Failed to load platform info:', error);
-        }
-    }
+    this.initializeEventListeners();
+    this.loadLicenseText();
+    this.loadPlatformInfo();
+  }
 
-    initializeEventListeners() {
-        document.getElementById('next-btn').addEventListener('click', () => this.handleNext());
-        document.getElementById('back-btn').addEventListener('click', () => this.handleBack());
-        
-        document.getElementById('license-checkbox').addEventListener('change', (e) => {
-            this.updateNextButton();
-        });
-        
-        document.getElementById('api-key').addEventListener('input', (e) => {
-            this.handleApiKeyInput(e.target.value);
-        });
-        
-        document.getElementById('show-hide-btn').addEventListener('click', () => {
-            this.toggleApiKeyVisibility();
-        });
+  async loadPlatformInfo() {
+    try {
+      this.platformInfo = await window.electronAPI.getPlatform();
+      console.log("Platform info:", this.platformInfo);
+    } catch (error) {
+      console.error("Failed to load platform info:", error);
     }
+  }
 
-    loadLicenseText() {
-        const licenseText = `End-User License Agreement (EULA) for Atlas
+  initializeEventListeners() {
+    document.getElementById("next-btn").addEventListener("click", () => this.handleNext());
+    document.getElementById("back-btn").addEventListener("click", () => this.handleBack());
+
+    document.getElementById("license-checkbox").addEventListener("change", (e) => {
+      this.updateNextButton();
+    });
+
+    document.getElementById("api-key").addEventListener("input", (e) => {
+      this.handleApiKeyInput(e.target.value);
+    });
+
+    document.getElementById("show-hide-btn").addEventListener("click", () => {
+      this.toggleApiKeyVisibility();
+    });
+  }
+
+  loadLicenseText() {
+    const licenseText = `End-User License Agreement (EULA) for Atlas
 
 IMPORTANT - READ CAREFULLY
 
@@ -90,255 +90,272 @@ This Agreement will be governed by and construed in accordance with the laws of 
 
 BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.`;
 
-        document.getElementById('license-text').textContent = licenseText;
+    document.getElementById("license-text").textContent = licenseText;
+  }
+
+  validateApiKey(apiKey) {
+    // Empty is valid (skip case)
+    if (!apiKey || apiKey.trim() === "") return true;
+
+    // Non-empty must match pattern
+    const pattern = /^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$/;
+    return pattern.test(apiKey.trim());
+  }
+
+  isApiKeyValid() {
+    const apiKey = document.getElementById("api-key").value;
+    return this.validateApiKey(apiKey);
+  }
+
+  toggleApiKeyVisibility() {
+    const apiKeyInput = document.getElementById("api-key");
+    const eyeIcon = document.getElementById("eye-icon");
+
+    if (apiKeyInput.type === "password") {
+      apiKeyInput.type = "text";
+      eyeIcon.textContent = "🙈"; // Closed eye when showing
+    } else {
+      apiKeyInput.type = "password";
+      eyeIcon.textContent = "👁️"; // Open eye when hidden
+    }
+  }
+
+  handleApiKeyInput(value) {
+    const validationEl = document.getElementById("api-key-validation");
+
+    if (!value || value.trim() === "") {
+      // Empty is valid (skip case)
+      validationEl.classList.add("hidden");
+    } else if (this.validateApiKey(value)) {
+      // Valid API key format
+      validationEl.classList.add("hidden");
+    } else {
+      // Invalid API key format - show error and prevent continue
+      validationEl.textContent =
+        'Invalid API key format. Must start with "sk-ant-" followed by valid characters.';
+      validationEl.classList.remove("hidden");
     }
 
-    validateApiKey(apiKey) {
-        // Empty is valid (skip case)
-        if (!apiKey || apiKey.trim() === '') return true;
-        
-        // Non-empty must match pattern
-        const pattern = /^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$/;
-        return pattern.test(apiKey.trim());
+    this.updateNextButton();
+  }
+
+  updateStepIndicator() {
+    for (let i = 0; i <= this.totalSteps; i++) {
+      const stepElement = document.getElementById(`step-${i}`);
+      const contentElement = document.getElementById(`content-${i}`);
+
+      if (stepElement) {
+        stepElement.classList.remove("active", "completed");
+        if (i < this.currentStep) {
+          stepElement.classList.add("completed");
+        } else if (i === this.currentStep) {
+          stepElement.classList.add("active");
+        }
+      }
+
+      if (contentElement) {
+        contentElement.classList.remove("active");
+        if (i === this.currentStep) {
+          contentElement.classList.add("active");
+        }
+      }
     }
 
-    isApiKeyValid() {
-        const apiKey = document.getElementById('api-key').value;
-        return this.validateApiKey(apiKey);
+    this.updateNavigationButtons();
+  }
+
+  updateNavigationButtons() {
+    const backBtn = document.getElementById("back-btn");
+    const nextBtn = document.getElementById("next-btn");
+
+    // Back button
+    if (this.currentStep > 0 && this.currentStep < this.totalSteps && !this.isInstalling) {
+      backBtn.classList.remove("hidden");
+    } else {
+      backBtn.classList.add("hidden");
     }
 
-    toggleApiKeyVisibility() {
-        const apiKeyInput = document.getElementById('api-key');
-        const eyeIcon = document.getElementById('eye-icon');
-        
-        if (apiKeyInput.type === 'password') {
-            apiKeyInput.type = 'text';
-            eyeIcon.textContent = '🙈'; // Closed eye when showing
+    // Next button
+    this.updateNextButton();
+  }
+
+  updateNextButton() {
+    const nextBtn = document.getElementById("next-btn");
+
+    switch (this.currentStep) {
+      case 0: // Welcome
+        nextBtn.textContent = "Continue";
+        nextBtn.disabled = false;
+        nextBtn.className = "btn btn-primary";
+        break;
+
+      case 1: // License
+        const licenseAccepted = document.getElementById("license-checkbox").checked;
+        nextBtn.textContent = "Agree & Continue";
+        nextBtn.disabled = !licenseAccepted;
+        nextBtn.className = "btn btn-primary";
+        break;
+
+      case 2: // API Key
+        const isApiKeyValid = this.isApiKeyValid();
+        nextBtn.textContent = "Continue";
+        nextBtn.disabled = !isApiKeyValid;
+        nextBtn.className = "btn btn-primary";
+        break;
+
+      case 3: // Installation
+        if (this.isInstalling) {
+          nextBtn.classList.add("hidden");
         } else {
-            apiKeyInput.type = 'password';
-            eyeIcon.textContent = '👁️'; // Open eye when hidden
+          nextBtn.classList.remove("hidden");
+          nextBtn.textContent = "Install";
+          nextBtn.disabled = false;
+          nextBtn.className = "btn btn-success";
         }
+        break;
+
+      case 4: // Completion
+        nextBtn.textContent = "Finish";
+        nextBtn.disabled = false;
+        nextBtn.className = "btn btn-primary";
+        break;
+    }
+  }
+
+  async handleNext() {
+    switch (this.currentStep) {
+      case 0: // Welcome -> License
+        this.currentStep = 1;
+        break;
+
+      case 1: // License -> API Key
+        if (document.getElementById("license-checkbox").checked) {
+          this.currentStep = 2;
+        }
+        break;
+
+      case 2: // API Key -> Installation
+        this.prepareInstallation();
+        this.currentStep = 3;
+        break;
+
+      case 3: // Start Installation
+        await this.startInstallation();
+        break;
+
+      case 4: // Finish
+        await window.electronAPI.quitApp();
+        break;
     }
 
-    handleApiKeyInput(value) {
-        const validationEl = document.getElementById('api-key-validation');
-        
-        if (!value || value.trim() === '') {
-            // Empty is valid (skip case)
-            validationEl.classList.add('hidden');
-        } else if (this.validateApiKey(value)) {
-            // Valid API key format
-            validationEl.classList.add('hidden');
+    this.updateStepIndicator();
+  }
+
+  handleBack() {
+    if (this.currentStep > 0 && !this.isInstalling) {
+      this.currentStep--;
+      this.updateStepIndicator();
+    }
+  }
+
+  prepareInstallation() {
+    const apiKey = document.getElementById("api-key").value;
+    const apiKeyItem = document.getElementById("api-key-item");
+
+    if (apiKey.trim()) {
+      apiKeyItem.classList.remove("hidden");
+    } else {
+      apiKeyItem.classList.add("hidden");
+    }
+  }
+
+  async startInstallation() {
+    this.isInstalling = true;
+    this.updateNextButton();
+
+    // Show progress UI
+    document.getElementById("install-title").textContent = "Installing Atlas...";
+    document.getElementById("install-description").textContent =
+      "Please wait while Atlas is being installed.";
+    document.getElementById("install-summary").classList.add("hidden");
+    document.getElementById("progress-container").classList.remove("hidden");
+
+    const steps = [
+      {
+        progress: 20,
+        message: "Creating Atlas directory...",
+        action: () => window.electronAPI.createAtlasDir(),
+      },
+      {
+        progress: 40,
+        message: "Installing Atlas binary...",
+        action: () => window.electronAPI.installAtlasBinary(),
+      },
+      { progress: 60, message: "Configuring API key...", action: () => this.configureApiKey() },
+      { progress: 80, message: "Setting up PATH...", action: () => window.electronAPI.setupPath() },
+      {
+        progress: 100,
+        message: "Installation complete!",
+        action: () => Promise.resolve({ success: true }),
+      },
+    ];
+
+    let log = "";
+
+    for (const step of steps) {
+      log += `${step.message}\n`;
+      this.updateInstallationUI(step.progress, log);
+
+      try {
+        const result = await step.action();
+        if (result.success) {
+          log += `✓ ${step.message.replace("...", " completed")}\n`;
         } else {
-            // Invalid API key format - show error and prevent continue
-            validationEl.textContent = 'Invalid API key format. Must start with "sk-ant-" followed by valid characters.';
-            validationEl.classList.remove('hidden');
+          log += `✗ Error: ${result.error}\n`;
         }
-        
-        this.updateNextButton();
+      } catch (error) {
+        log += `✗ Error: ${error.message}\n`;
+      }
+
+      this.updateInstallationUI(step.progress, log);
+
+      // Simulate realistic timing
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
 
-    updateStepIndicator() {
-        for (let i = 0; i <= this.totalSteps; i++) {
-            const stepElement = document.getElementById(`step-${i}`);
-            const contentElement = document.getElementById(`content-${i}`);
-            
-            if (stepElement) {
-                stepElement.classList.remove('active', 'completed');
-                if (i < this.currentStep) {
-                    stepElement.classList.add('completed');
-                } else if (i === this.currentStep) {
-                    stepElement.classList.add('active');
-                }
-            }
-            
-            if (contentElement) {
-                contentElement.classList.remove('active');
-                if (i === this.currentStep) {
-                    contentElement.classList.add('active');
-                }
-            }
-        }
-        
-        this.updateNavigationButtons();
-    }
+    // Move to completion step
+    setTimeout(() => {
+      this.currentStep = 4;
+      this.isInstalling = false;
+      this.updateStepIndicator();
+    }, 1000);
+  }
 
-    updateNavigationButtons() {
-        const backBtn = document.getElementById('back-btn');
-        const nextBtn = document.getElementById('next-btn');
-        
-        // Back button
-        if (this.currentStep > 0 && this.currentStep < this.totalSteps && !this.isInstalling) {
-            backBtn.classList.remove('hidden');
-        } else {
-            backBtn.classList.add('hidden');
-        }
-        
-        // Next button
-        this.updateNextButton();
-    }
+  async configureApiKey() {
+    const apiKey = document.getElementById("api-key").value;
 
-    updateNextButton() {
-        const nextBtn = document.getElementById('next-btn');
-        
-        switch (this.currentStep) {
-            case 0: // Welcome
-                nextBtn.textContent = 'Continue';
-                nextBtn.disabled = false;
-                nextBtn.className = 'btn btn-primary';
-                break;
-                
-            case 1: // License
-                const licenseAccepted = document.getElementById('license-checkbox').checked;
-                nextBtn.textContent = 'Agree & Continue';
-                nextBtn.disabled = !licenseAccepted;
-                nextBtn.className = 'btn btn-primary';
-                break;
-                
-            case 2: // API Key
-                const isApiKeyValid = this.isApiKeyValid();
-                nextBtn.textContent = 'Continue';
-                nextBtn.disabled = !isApiKeyValid;
-                nextBtn.className = 'btn btn-primary';
-                break;
-                
-            case 3: // Installation
-                if (this.isInstalling) {
-                    nextBtn.classList.add('hidden');
-                } else {
-                    nextBtn.classList.remove('hidden');
-                    nextBtn.textContent = 'Install';
-                    nextBtn.disabled = false;
-                    nextBtn.className = 'btn btn-success';
-                }
-                break;
-                
-            case 4: // Completion
-                nextBtn.textContent = 'Finish';
-                nextBtn.disabled = false;
-                nextBtn.className = 'btn btn-primary';
-                break;
-        }
+    if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
+      return await window.electronAPI.saveApiKey(apiKey.trim());
+    } else {
+      return {
+        success: true,
+        message: "API key skipped - no changes made to existing configuration",
+      };
     }
+  }
 
-    async handleNext() {
-        switch (this.currentStep) {
-            case 0: // Welcome -> License
-                this.currentStep = 1;
-                break;
-                
-            case 1: // License -> API Key
-                if (document.getElementById('license-checkbox').checked) {
-                    this.currentStep = 2;
-                }
-                break;
-                
-            case 2: // API Key -> Installation
-                this.prepareInstallation();
-                this.currentStep = 3;
-                break;
-                
-            case 3: // Start Installation
-                await this.startInstallation();
-                break;
-                
-            case 4: // Finish
-                await window.electronAPI.quitApp();
-                break;
-        }
-        
-        this.updateStepIndicator();
-    }
+  updateInstallationUI(progress, log) {
+    document.getElementById("progress-fill").style.width = `${progress}%`;
+    document.getElementById("progress-text").textContent = `${progress}% Complete`;
+    document.getElementById("install-log").textContent = log;
 
-    handleBack() {
-        if (this.currentStep > 0 && !this.isInstalling) {
-            this.currentStep--;
-            this.updateStepIndicator();
-        }
-    }
-
-    prepareInstallation() {
-        const apiKey = document.getElementById('api-key').value;
-        const apiKeyItem = document.getElementById('api-key-item');
-        
-        if (apiKey.trim()) {
-            apiKeyItem.classList.remove('hidden');
-        } else {
-            apiKeyItem.classList.add('hidden');
-        }
-    }
-
-    async startInstallation() {
-        this.isInstalling = true;
-        this.updateNextButton();
-        
-        // Show progress UI
-        document.getElementById('install-title').textContent = 'Installing Atlas...';
-        document.getElementById('install-description').textContent = 'Please wait while Atlas is being installed.';
-        document.getElementById('install-summary').classList.add('hidden');
-        document.getElementById('progress-container').classList.remove('hidden');
-        
-        const steps = [
-            { progress: 20, message: 'Creating Atlas directory...', action: () => window.electronAPI.createAtlasDir() },
-            { progress: 40, message: 'Installing Atlas binary...', action: () => window.electronAPI.installAtlasBinary() },
-            { progress: 60, message: 'Configuring API key...', action: () => this.configureApiKey() },
-            { progress: 80, message: 'Setting up PATH...', action: () => window.electronAPI.setupPath() },
-            { progress: 100, message: 'Installation complete!', action: () => Promise.resolve({ success: true }) }
-        ];
-        
-        let log = '';
-        
-        for (const step of steps) {
-            log += `${step.message}\n`;
-            this.updateInstallationUI(step.progress, log);
-            
-            try {
-                const result = await step.action();
-                if (result.success) {
-                    log += `✓ ${step.message.replace('...', ' completed')}\n`;
-                } else {
-                    log += `✗ Error: ${result.error}\n`;
-                }
-            } catch (error) {
-                log += `✗ Error: ${error.message}\n`;
-            }
-            
-            this.updateInstallationUI(step.progress, log);
-            
-            // Simulate realistic timing
-            await new Promise(resolve => setTimeout(resolve, 800));
-        }
-        
-        // Move to completion step
-        setTimeout(() => {
-            this.currentStep = 4;
-            this.isInstalling = false;
-            this.updateStepIndicator();
-        }, 1000);
-    }
-
-    async configureApiKey() {
-        const apiKey = document.getElementById('api-key').value;
-        
-        if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
-            return await window.electronAPI.saveApiKey(apiKey.trim());
-        } else {
-            return { success: true, message: 'API key skipped - no changes made to existing configuration' };
-        }
-    }
-
-    updateInstallationUI(progress, log) {
-        document.getElementById('progress-fill').style.width = `${progress}%`;
-        document.getElementById('progress-text').textContent = `${progress}% Complete`;
-        document.getElementById('install-log').textContent = log;
-        
-        // Auto-scroll to bottom
-        const logElement = document.getElementById('install-log');
-        logElement.scrollTop = logElement.scrollHeight;
-    }
+    // Auto-scroll to bottom
+    const logElement = document.getElementById("install-log");
+    logElement.scrollTop = logElement.scrollHeight;
+  }
 }
 
 // Initialize the installer when the page loads
-document.addEventListener('DOMContentLoaded', () => {
-    new AtlasInstaller();
+document.addEventListener("DOMContentLoaded", () => {
+  new AtlasInstaller();
 });

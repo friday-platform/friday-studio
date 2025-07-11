@@ -102,7 +102,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Load environment variables
     await load({ export: true });
-    
+
     // Load global Atlas configuration as fallback
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {

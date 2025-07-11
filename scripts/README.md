@@ -9,6 +9,7 @@ This directory contains utility scripts for the Atlas project.
 Validates all TypeScript/JavaScript imports in the codebase to ensure they reference existing files.
 
 **Usage:**
+
 ```bash
 deno task validate-imports
 # or
@@ -16,6 +17,7 @@ deno run --allow-read --allow-write scripts/validate-imports.ts
 ```
 
 **Features:**
+
 - Scans all TypeScript/JavaScript files in the project
 - Validates relative imports (e.g., `./file.ts`, `../dir/file.ts`)
 - Handles different file extensions (`.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`)
@@ -28,6 +30,7 @@ deno run --allow-read --allow-write scripts/validate-imports.ts
 Validates imports only for staged files (used in pre-commit hooks).
 
 **Usage:**
+
 ```bash
 deno task validate-imports-staged
 # or
@@ -35,6 +38,7 @@ deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.
 ```
 
 **Features:**
+
 - Only validates files that are staged for commit
 - Faster than full validation for pre-commit hooks
 - Uses `git diff --cached` to find staged files
@@ -44,19 +48,22 @@ deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.
 
 ### Pre-commit Hook
 
-The import validation is automatically run on staged files via `lint-staged` when you commit changes.
+The import validation is automatically run on staged files via `lint-staged` when you commit
+changes.
 
 ### GitHub Actions
 
 Import validation runs in all build workflows:
+
 - `validate-imports.yml` - Standalone validation workflow
 - `edge-release.yml` - Validates before edge builds
-- `nightly-release.yml` - Validates before nightly builds  
+- `nightly-release.yml` - Validates before nightly builds
 - `release.yml` - Validates before releases
 
 ### Local Development
 
 Run validation manually:
+
 ```bash
 # Validate all files
 deno task validate-imports
@@ -73,7 +80,7 @@ The validator will catch issues like:
 // ❌ This will fail validation
 import { BaseAgent } from "./base-agent.ts"; // File doesn't exist
 
-// ✅ This will pass validation  
+// ✅ This will pass validation
 import { BaseAgent } from "./base-agent-v2.ts"; // File exists
 ```
 

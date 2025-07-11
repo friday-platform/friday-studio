@@ -47,20 +47,20 @@ runs:
     - name: Setup Node.js for Electron installer
       uses: actions/setup-node@v4
       with:
-        node-version: '22'
-        cache: 'npm'
-        cache-dependency-path: 'tools/atlas-installer/package-lock.json'
+        node-version: "22"
+        cache: "npm"
+        cache-dependency-path: "tools/atlas-installer/package-lock.json"
 
     - name: Install Electron installer dependencies
       shell: bash
       run: |
         cd tools/atlas-installer
-        
+
         # Clean install approach from Stack Overflow for size optimization
         rm -rf node_modules
         npm install
         npm prune
-        
+
         echo "Dependencies optimized for minimal bundle size"
 
     - name: Prepare Atlas binary for installer
@@ -68,25 +68,25 @@ runs:
       run: |
         # Create a staging directory for the installer
         mkdir -p tools/atlas-installer/atlas-binary
-        
+
         # Copy the binary to the installer directory
         cp "${{ inputs.binary-path }}" "tools/atlas-installer/atlas-binary/atlas"
-        
+
         # Make sure it's executable
         chmod +x "tools/atlas-installer/atlas-binary/atlas"
-        
+
         echo "Binary prepared for installer at: tools/atlas-installer/atlas-binary/atlas"
 
     - name: Verify installer has real binary integration
       shell: bash
       run: |
         cd tools/atlas-installer
-        
+
         # The main.js file already has real binary installation code
         # Just verify the binary will be available at runtime
         echo "Binary source: tools/atlas-installer/atlas-binary/atlas"
         echo "Installer main.js already has install-atlas-binary handler"
-        
+
         # Verify the binary exists
         if [ -f "atlas-binary/atlas" ]; then
           echo "Atlas binary found and ready for installation"
@@ -100,7 +100,7 @@ runs:
       shell: bash
       run: |
         cd tools/atlas-installer
-        
+
         # Convert version to valid semver format for npm
         version="${{ inputs.version }}"
         if [[ "$version" == edge-* ]]; then
@@ -122,22 +122,22 @@ runs:
           # Use as-is if already valid semver
           semver_version="$version"
         fi
-        
+
         echo "Converting version '$version' to semver '$semver_version'"
         npm version "$semver_version" --no-git-tag-version
-        
+
         # Set up notarization environment for Electron Builder (macOS only)
         if [ "${{ inputs.platform }}" == "darwin" ] && [ -n "${{ inputs.macos-notary-issuer-id }}" ]; then
           export APPLE_API_ISSUER="${{ inputs.macos-notary-issuer-id }}"
           export APPLE_API_KEY_ID="${{ inputs.macos-notary-key-id }}"
-          
+
           # Create API key file for Electron Builder
           echo "${{ inputs.macos-notary-key }}" | base64 --decode > AuthKey_${{ inputs.macos-notary-key-id }}.p8
           export APPLE_API_KEY="$(pwd)/AuthKey_${{ inputs.macos-notary-key-id }}.p8"
-          
+
           echo "Configured Electron Builder notarization"
         fi
-        
+
         # Build for the current platform with specific target format
         if [ "${{ inputs.platform }}" == "darwin" ]; then
           if [ "${{ inputs.arch }}" == "arm64" ]; then
@@ -158,38 +158,37 @@ runs:
             npm run build:linux:x64
           fi
         fi
-        
+
         # Clean up API key file
         if [ "${{ inputs.platform }}" == "darwin" ] && [ -f "AuthKey_${{ inputs.macos-notary-key-id }}.p8" ]; then
           rm "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
         fi
 
-
     - name: Rename installers to consistent naming format
       shell: bash
       run: |
         cd tools/atlas-installer
-        
+
         echo "Checking what Electron Builder created..."
         ls -la dist/
-        
+
         if [ "${{ inputs.platform }}" == "darwin" ]; then
           # Find the ZIP installer that Electron Builder created (already signed and notarized)
           original_zip=$(find dist/ -name "*.zip" -not -name "*.blockmap" | head -1)
-          
+
           if [ -n "$original_zip" ]; then
             echo "Found original Electron Builder ZIP: $original_zip"
-            
+
             # Rename to consistent binary naming format (preserving signatures)
             if [ "${{ inputs.arch }}" == "arm64" ]; then
               target_name="atlas_${{ inputs.version }}_darwin_arm64.zip"
             else
               target_name="atlas_${{ inputs.version }}_darwin_amd64.zip"
             fi
-            
+
             echo "Renaming to: $target_name"
             mv "$original_zip" "dist/$target_name"
-            
+
             echo "Using electron-builder ZIP directly (already optimized and signed): $target_name"
           else
             echo "ERROR: No ZIP installer found"
@@ -200,20 +199,20 @@ runs:
         elif [ "${{ inputs.platform }}" == "windows" ]; then
           # Find the EXE installer that Electron Builder created
           original_exe=$(find dist/ -name "*.exe" | head -1)
-          
+
           if [ -n "$original_exe" ]; then
             echo "Found original Electron Builder EXE: $original_exe"
-            
+
             # Rename to consistent binary naming format
             if [ "${{ inputs.arch }}" == "arm64" ]; then
               target_name="atlas_${{ inputs.version }}_windows_arm64.exe"
             else
               target_name="atlas_${{ inputs.version }}_windows_amd64.exe"
             fi
-            
+
             echo "Renaming to: $target_name"
             mv "$original_exe" "dist/$target_name"
-            
+
             echo "Renamed Windows installer: $target_name"
           else
             echo "ERROR: No EXE installer found"
@@ -224,20 +223,20 @@ runs:
         elif [ "${{ inputs.platform }}" == "linux" ]; then
           # Find the AppImage installer that Electron Builder created
           original_appimage=$(find dist/ -name "*.AppImage" | head -1)
-          
+
           if [ -n "$original_appimage" ]; then
             echo "Found original Electron Builder AppImage: $original_appimage"
-            
+
             # Rename to consistent binary naming format
             if [ "${{ inputs.arch }}" == "arm64" ]; then
               target_name="atlas_${{ inputs.version }}_linux_arm64.AppImage"
             else
               target_name="atlas_${{ inputs.version }}_linux_amd64.AppImage"
             fi
-            
+
             echo "Renaming to: $target_name"
             mv "$original_appimage" "dist/$target_name"
-            
+
             echo "Renamed Linux installer: $target_name"
           else
             echo "ERROR: No AppImage installer found"
@@ -252,7 +251,7 @@ runs:
       shell: bash
       run: |
         cd tools/atlas-installer
-        
+
         # Find the created installer based on platform using consistent naming
         if [ "${{ inputs.platform }}" == "darwin" ]; then
           if [ "${{ inputs.arch }}" == "arm64" ]; then
@@ -273,11 +272,11 @@ runs:
             installer_path="dist/atlas_${{ inputs.version }}_linux_amd64.AppImage"
           fi
         fi
-        
+
         # Check if installer exists
         if [ -f "$installer_path" ] || [ -d "$installer_path" ]; then
           echo "Found installer: $installer_path"
-          
+
           # Generate checksum
           if [ -f "$installer_path" ]; then
             if [ "${{ inputs.platform }}" == "darwin" ]; then
@@ -286,7 +285,7 @@ runs:
               sha256sum "$installer_path" > "$installer_path.sha256"
             fi
           fi
-          
+
           # Copy to main dist directory
           mkdir -p ../../dist
           if [ -f "$installer_path" ]; then
@@ -295,7 +294,7 @@ runs:
           elif [ -d "$installer_path" ]; then
             cp -r "$installer_path" "../../dist/"
           fi
-          
+
           # Set outputs
           installer_name=$(basename "$installer_path")
           echo "installer-path=./dist/$installer_name" >> $GITHUB_OUTPUT

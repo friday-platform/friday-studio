@@ -12,7 +12,7 @@ permissions:
 jobs:
   validate-imports:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,7 +27,7 @@ jobs:
 
       - name: Validate imports
         run: deno run --allow-read --allow-write scripts/validate-imports.ts
-        
+
       - name: Upload validation results
         if: failure()
         uses: actions/upload-artifact@v4

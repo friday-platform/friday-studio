@@ -33,7 +33,8 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **macOS:**
 
-- Download the Atlas installer `.zip` file (recommended) - Professional installation experience with:
+- Download the Atlas installer `.zip` file (recommended) - Professional installation experience
+  with:
   - License agreement integration
   - Optional API key collection and secure storage
   - Automatic PATH configuration
@@ -42,15 +43,18 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
 
 **Linux:**
 
-- Download the Atlas installer `.AppImage` file (recommended) - Cross-platform graphical installer with:
+- Download the Atlas installer `.AppImage` file (recommended) - Cross-platform graphical installer
+  with:
   - Universal Linux compatibility
   - API key configuration with validation
   - Automatic binary installation and PATH setup
-- Or download the `.tar.gz` archive for your architecture (amd64 or arm64) and extract to `/usr/local/bin/`
+- Or download the `.tar.gz` archive for your architecture (amd64 or arm64) and extract to
+  `/usr/local/bin/`
 
 **Windows:**
 
-- Download the Atlas installer `.exe` file (recommended) - Complete installation experience featuring:
+- Download the Atlas installer `.exe` file (recommended) - Complete installation experience
+  featuring:
   - License agreement and professional UI
   - API key collection and secure storage in ~/.atlas/.env
   - Automatic PATH configuration and system integration
@@ -344,4 +348,3 @@ atlas daemon logs
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
