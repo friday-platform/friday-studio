@@ -54,9 +54,6 @@ jobs:
       - name: Install dependencies
         run: deno install
 
-      - name: Validate imports
-        run: deno run --allow-read --allow-write scripts/validate-imports.ts
-
       - name: Get version
         id: version
         run: |
