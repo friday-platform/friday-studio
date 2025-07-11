@@ -141,8 +141,8 @@ jobs:
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.AppImage
             ./dist/atlas_*.sha256
           retention-days: 5
 
@@ -220,23 +220,28 @@ jobs:
             echo ""
             echo "### macOS"
             echo ""
-            echo "**Option 1: Package Installer (Recommended)**"
-            echo "Simply double-click the .pkg file to install. If macOS shows a security warning:"
-            echo "1. Right-click the .pkg file → Open"
-            echo "2. Or go to System Preferences → Security & Privacy → Allow"
+            echo "**Option 1: Electron Installer (Recommended)**"
+            echo "Double-click the Atlas*.dmg file and run the Atlas Installer app. The installer provides:"
+            echo "- Professional installation experience with license agreement"
+            echo "- Optional API key collection and secure storage"
+            echo "- Automatic PATH configuration"
+            echo "- Real-time installation progress"
             echo ""
-            echo "**Option 2: Command Line Installation**"
-            echo '```bash'
-            echo 'sudo installer -pkg atlas_*_darwin_*.pkg -target /'
-            echo '```'
-            echo ""
-            echo "**Option 3: Manual Installation**"
+            echo "**Option 2: Manual Installation**"
             echo '```bash'
             echo 'tar -xzf atlas_*_darwin_*.tar.gz'
             echo 'sudo mv atlas /usr/local/bin/'
             echo '```'
             echo ""
             echo "### Linux"
+            echo ""
+            echo "**Option 1: AppImage Installer (Recommended)**"
+            echo "Double-click the Atlas*.AppImage file to run the graphical installer. Features:"
+            echo "- Cross-platform compatibility (works on all Linux distributions)"
+            echo "- API key configuration with validation"
+            echo "- Automatic binary installation and PATH setup"
+            echo ""
+            echo "**Option 2: Manual Installation**"
             echo '```bash'
             echo 'tar -xzf atlas_*_linux_*.tar.gz'
             echo 'sudo mv atlas /usr/local/bin/'
@@ -244,21 +249,18 @@ jobs:
             echo ""
             echo "### Windows"
             echo ""
-            echo "**Option 1: MSI Installer (Recommended)**"
-            echo '```powershell'
-            echo 'msiexec /i atlas_*_windows_*.msi /quiet'
-            echo '```'
-            echo "Or double-click the .msi file to install with the GUI."
+            echo "**Option 1: Electron Installer (Recommended)**"
+            echo "Run the Atlas*.exe installer for a complete installation experience:"
+            echo "- License agreement and professional UI"
+            echo "- API key collection and secure storage in ~/.atlas/.env"
+            echo "- Automatic PATH configuration"
+            echo "- System integration"
             echo ""
             echo "**Option 2: Manual Installation**"
             echo "Extract the ZIP file and add the atlas.exe to your PATH."
             echo ""
           } >> changelog.md
 
-      - name: Create checksums file
-        run: |
-          cd ./dist
-          cat ./*.sha256 > checksums.txt
 
       - name: Create release
         uses: softprops/action-gh-release@v2
@@ -272,9 +274,8 @@ jobs:
           files: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
-            ./dist/checksums.txt
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

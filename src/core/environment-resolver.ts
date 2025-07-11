@@ -6,6 +6,8 @@
 import { z } from "zod/v4";
 import { parse as parseEnvFile } from "@std/dotenv";
 import type { EnvironmentVariable } from "@atlas/config";
+import { getAtlasHome } from "../utils/paths.ts";
+import { join } from "@std/path";
 
 export class EnvironmentResolutionError extends Error {
   constructor(
@@ -43,11 +45,12 @@ export class EnvironmentResolver {
       };
     }
 
-    // Evaluation order: from_env_file → from_env → from_file → default
+    // Evaluation order: from_env_file → from_env → from_file → global_atlas_env → value → default
     const sources = [
       { type: "from_env_file" as const, getValue: () => this.resolveFromEnvFile(config) },
       { type: "from_env" as const, getValue: () => this.resolveFromEnv(config) },
       { type: "from_file" as const, getValue: () => this.resolveFromFile(config) },
+      { type: "from_file" as const, getValue: () => this.resolveFromGlobalAtlasEnv(variableName) },
       { type: "value" as const, getValue: () => this.resolveValue(config) },
       { type: "default" as const, getValue: () => this.resolveDefault(config) },
     ];
@@ -163,6 +166,17 @@ export class EnvironmentResolver {
     return config.default;
   }
 
+  private async resolveFromGlobalAtlasEnv(variableName: string): Promise<string | undefined> {
+    try {
+      const globalAtlasEnvPath = join(getAtlasHome(), ".env");
+      const envFile = await this.loadEnvFile(globalAtlasEnvPath);
+      return envFile[variableName];
+    } catch (error) {
+      // Global Atlas env file not found or not readable, continue to next source
+      return undefined;
+    }
+  }
+
   private async loadEnvFile(filePath: string): Promise<Record<string, string>> {
     if (this.envFileCache.has(filePath)) {
       return this.envFileCache.get(filePath)!;
@@ -243,7 +257,7 @@ Environment Variable Configuration Options:
      default: ""                     # Finally default
      required: false
 
-Evaluation Order: from_env_file → from_env → from_file → value → default
+Evaluation Order: from_env_file → from_env → from_file → global_atlas_env → value → default
 `.trim();
   }
 }

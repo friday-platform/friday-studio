@@ -139,15 +139,24 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
-      - name: Upload artifacts
+      - name: Upload binary archives
         uses: actions/upload-artifact@v4
         with:
           name: atlas-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
+            ./dist/atlas_*.sha256
+          retention-days: 1
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-installer-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            ./dist/atlas_*.zip
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.AppImage
             ./dist/atlas_*.sha256
           retention-days: 1
 
@@ -160,11 +169,38 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Download all artifacts
+      - name: Download binary artifacts
         uses: actions/download-artifact@v4
         with:
           path: ./dist/
+          pattern: atlas-*
           merge-multiple: true
+
+      - name: Download installer artifacts  
+        uses: actions/download-artifact@v4
+        with:
+          path: ./dist/
+          pattern: atlas-installer-*
+          merge-multiple: true
+
+      - name: Create ZIP files for release distribution
+        run: |
+          cd ./dist
+          # Create ZIP files for macOS .app bundles for release
+          for app in *.app; do
+            if [ -d "$app" ]; then
+              zip_name="${app%.app}.zip"
+              echo "Creating release ZIP: $zip_name"
+              zip -r "$zip_name" "$app"
+              
+              # Generate checksum for the ZIP
+              if command -v shasum >/dev/null 2>&1; then
+                shasum -a 256 "$zip_name" > "$zip_name.sha256"
+              else
+                sha256sum "$zip_name" > "$zip_name.sha256"
+              fi
+            fi
+          done
 
       - name: Generate changelog
         run: |
@@ -182,10 +218,15 @@ jobs:
             echo "**Warning:** Edge builds are experimental and may contain unstable features."
           } >> changelog.md
 
-      - name: Create checksums file
+      - name: List downloaded files
         run: |
-          cd ./dist
-          cat ./*.sha256 > checksums.txt
+          echo "Binary files:"
+          find ./dist -type f -name "atlas_*" | grep -v "\.exe$\|\.zip$\|\.AppImage$" || echo "No binary files found"
+          echo "Installer files:"
+          find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip|AppImage)$" || echo "No installer files found"
+          echo "All files:"
+          ls -la ./dist/
+
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
@@ -199,9 +240,8 @@ jobs:
           files: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
-            ./dist/checksums.txt
+            ./dist/atlas_*.exe
+            ./dist/atlas_*.AppImage
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

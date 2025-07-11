@@ -174,9 +174,12 @@ jobs:
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
+            ./dist/Atlas*.dmg
+            ./dist/Atlas*.exe
+            ./dist/Atlas*.AppImage
+            ./dist/Atlas*.app
             ./dist/atlas_*.sha256
+            ./dist/Atlas*.sha256
           retention-days: 1
 
   release:
@@ -236,8 +239,9 @@ jobs:
           files: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
-            ./dist/atlas_*.pkg
-            ./dist/atlas_*.msi
+            ./dist/Atlas*.dmg
+            ./dist/Atlas*.exe
+            ./dist/Atlas*.AppImage
             ./dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

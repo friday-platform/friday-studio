@@ -19,13 +19,6 @@ runs:
         path: ./artifacts/
         merge-multiple: true
 
-    - name: Create checksums file
-      shell: bash
-      run: |
-        cd ./artifacts
-        cat *.sha256 > checksums.txt
-        echo "Generated checksums:"
-        cat checksums.txt
 
     - name: Authenticate to Google Cloud (Sandbox)
       uses: google-github-actions/auth@v2
@@ -57,7 +50,13 @@ runs:
         if ls atlas_*.msi 1> /dev/null 2>&1; then
           gsutil -m cp atlas_*.msi gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
-        gsutil -m cp checksums.txt gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${VERSION}.txt
+        # Upload Electron installers (new naming convention)
+        if ls atlas_*.exe 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.exe gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas_*.AppImage 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.AppImage gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
 
         echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to sandbox GCS bucket"
 
@@ -80,12 +79,6 @@ runs:
             head -20 | \
             xargs -r gsutil -m rm || echo "No old ${CHANNEL} artifacts to clean"
 
-          # Also cleanup old checksums: Keep last 7 versions
-          gsutil ls gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}checksums-${CHANNEL}-*.txt | \
-            sort -r | \
-            tail -n +8 | \
-            head -10 | \
-            xargs -r gsutil -m rm || echo "No old ${CHANNEL} checksums to clean"
 
           echo "Sandbox ${{ inputs.bucket-prefix }} cleanup completed"
         else

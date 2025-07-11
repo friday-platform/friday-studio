@@ -1,0 +1,470 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    color: #333;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.header {
+    padding: 20px 30px 10px;
+    text-align: center;
+    background: #ffffff;
+    border-radius: 0;
+    flex-shrink: 0;
+}
+
+.logo {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.logo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 12px;
+}
+
+.title {
+    font-size: 28px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: #1a1a1a;
+}
+
+.subtitle {
+    font-size: 16px;
+    color: #666;
+    margin-bottom: 16px;
+}
+
+.step-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    background: #f0f0f0;
+    color: #666;
+}
+
+.step.active {
+    background: #3b82f6;
+    color: white;
+}
+
+.step.completed {
+    background: #10b981;
+    color: white;
+}
+
+.step-number {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: bold;
+}
+
+.content {
+    flex: 1;
+    padding: 15px 30px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: center;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.step-content {
+    display: none;
+    width: 100%;
+    max-width: 500px;
+    margin-top: 20px;
+}
+
+.step-content.active {
+    display: block;
+}
+
+.step-icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+}
+
+.step-title {
+    font-size: 22px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #1a1a1a;
+}
+
+.step-description {
+    font-size: 16px;
+    color: #666;
+    line-height: 1.5;
+    margin-bottom: 24px;
+}
+
+.features {
+    text-align: left;
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 16px 0;
+}
+
+.features h4 {
+    margin-bottom: 12px;
+    color: #333;
+}
+
+.features ul {
+    list-style: none;
+    padding: 0;
+}
+
+.features li {
+    padding: 4px 0;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.features li::before {
+    content: "✓";
+    color: #10b981;
+    font-weight: bold;
+}
+
+.license-container {
+    text-align: left;
+    margin: 20px 0;
+}
+
+.license-scroll {
+    height: 200px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 16px;
+    background: #f8f9fa;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    white-space: pre-wrap;
+}
+
+.license-agreement {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.license-agreement input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+}
+
+.api-key-container {
+    position: relative;
+    margin: 16px 0;
+}
+
+.api-key-input {
+    width: 100%;
+    padding: 12px 50px 12px 16px;
+    border: 2px solid #e1e5e9;
+    border-radius: 8px;
+    font-size: 16px;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+    transition: border-color 0.2s;
+}
+
+.show-hide-btn {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.show-hide-btn:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+#eye-icon {
+    font-size: 16px;
+    user-select: none;
+}
+
+.api-key-input:focus {
+    outline: none;
+    border-color: #3b82f6;
+}
+
+.input-help {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 8px;
+}
+
+.validation-message {
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 8px;
+    font-weight: 500;
+}
+
+.optional-note {
+    font-size: 12px;
+    color: #999;
+    font-style: italic;
+}
+
+.installation-summary {
+    background: #f8f9fa;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+    text-align: left;
+}
+
+.installation-summary h4 {
+    margin-bottom: 12px;
+    color: #333;
+}
+
+.progress-container {
+    margin: 20px 0;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #e1e5e9;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea, #764ba2);
+    transition: width 0.3s ease;
+    border-radius: 4px;
+}
+
+.progress-text {
+    margin-top: 8px;
+    font-size: 14px;
+    color: #666;
+}
+
+.installation-log {
+    background: #1a1a1a;
+    color: #00ff00;
+    border-radius: 8px;
+    padding: 16px;
+    height: 120px;
+    overflow-y: auto;
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New", monospace;
+    font-size: 12px;
+    margin: 16px 0;
+    white-space: pre-wrap;
+}
+
+.footer {
+    padding: 15px 30px;
+    background: #ffffff;
+    border-radius: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+    border-top: 1px solid #e5e7eb;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-secondary {
+    background: #f1f3f4;
+    color: #333;
+}
+
+.btn-secondary:hover:not(:disabled) {
+    background: #e8eaed;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.btn-success {
+    background: #10b981;
+    color: white;
+}
+
+.btn-success:hover:not(:disabled) {
+    background: #059669;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+    .container {
+        background: #1f2937;
+        color: #e5e7eb;
+    }
+    
+    .header {
+        background: #1f2937;
+    }
+    
+    .title {
+        color: #f9fafb;
+    }
+    
+    .subtitle {
+        color: #d1d5db;
+    }
+    
+    .step-title {
+        color: #f9fafb !important;
+    }
+    
+    .step-description {
+        color: #d1d5db !important;
+    }
+    
+    .features {
+        background: #374151;
+        color: #e5e7eb;
+    }
+    
+    .features h4 {
+        color: #f9fafb;
+    }
+    
+    .features li {
+        color: #d1d5db;
+    }
+    
+    .license-scroll {
+        background: #374151;
+        border-color: #6b7280;
+        color: #e5e7eb;
+    }
+    
+    .api-key-input {
+        background: #374151;
+        border-color: #6b7280;
+        color: #f9fafb;
+    }
+    
+    .show-hide-btn:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .input-help {
+        color: #d1d5db !important;
+    }
+    
+    .optional-note {
+        color: #9ca3af !important;
+    }
+    
+    .installation-summary {
+        background: #374151;
+        color: #e5e7eb;
+    }
+    
+    .installation-summary h4 {
+        color: #f9fafb;
+    }
+    
+    .installation-summary li {
+        color: #d1d5db;
+    }
+    
+    .footer {
+        background: #1f2937;
+        border-top: 1px solid #374151;
+    }
+}

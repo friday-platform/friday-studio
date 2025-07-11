@@ -5,6 +5,9 @@ import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
 import { displayDaemonStatus, fetchDaemonStatus } from "../../utils/daemon-status.ts";
 import { getAtlasClient } from "@atlas/client";
+import { getAtlasHome } from "../../../utils/paths.ts";
+import { join } from "@std/path";
+import { exists } from "@std/fs";
 
 interface StartArgs {
   port?: number;
@@ -99,6 +102,12 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Load environment variables
     await load({ export: true });
+    
+    // Load global Atlas configuration as fallback
+    const globalAtlasEnv = join(getAtlasHome(), ".env");
+    if (await exists(globalAtlasEnv)) {
+      await load({ export: true, envPath: globalAtlasEnv, override: false });
+    }
 
     // Set atlas config path if provided
     if (argv.atlasConfig) {

@@ -29,3 +29,15 @@ tasks
 lgtm/
 build/
 .claude/
+
+# Atlas installer build artifacts
+tools/atlas-installer/dist/
+tools/atlas-installer/atlas-binary/
+tools/atlas-installer/*.dmg
+tools/atlas-installer/*.exe
+tools/atlas-installer/*.AppImage
+tools/atlas-installer/*.app
+tools/atlas-installer/*.blockmap
+tools/atlas-installer/builder-debug.yml
+tools/atlas-installer/*.backup
+tools/atlas-installer/*.bak

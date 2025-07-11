@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Atlas Installer v3</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo"><img src="logo.png" alt="Tempest Logo" /></div>
+            <div class="title">Atlas Installer</div>
+            <div class="subtitle">AI Agent Orchestration Platform</div>
+            
+            <div class="step-indicator">
+                <div class="step active" id="step-0">
+                    <div class="step-number">1</div>
+                    <span>Welcome</span>
+                </div>
+                <div class="step" id="step-1">
+                    <div class="step-number">2</div>
+                    <span>License</span>
+                </div>
+                <div class="step" id="step-2">
+                    <div class="step-number">3</div>
+                    <span>API Key</span>
+                </div>
+                <div class="step" id="step-3">
+                    <div class="step-number">4</div>
+                    <span>Install</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <!-- Welcome Step -->
+            <div class="step-content active" id="content-0">
+                <div class="step-icon">📦</div>
+                <div class="step-title">Welcome to Atlas</div>
+                <div class="step-description">
+                    Atlas enables seamless human/AI collaboration through specialized, autonomous agents in a secure, auditable, and scalable environment.
+                </div>
+            </div>
+
+            <!-- License Step -->
+            <div class="step-content" id="content-1">
+                <div class="step-icon">📄</div>
+                <div class="step-title">License Agreement</div>
+                <div class="step-description">
+                    Please read and accept the End-User License Agreement to continue.
+                </div>
+                
+                <div class="license-container">
+                    <div class="license-scroll" id="license-text">
+                        Loading license...
+                    </div>
+                    
+                    <div class="license-agreement">
+                        <input type="checkbox" id="license-checkbox">
+                        <label for="license-checkbox">I agree to the license terms and conditions</label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Key Step -->
+            <div class="step-content" id="content-2">
+                <div class="step-icon">🔑</div>
+                <div class="step-title">API Key Configuration</div>
+                <div class="step-description">
+                    Enter your Anthropic API key to enable AI agent functionality.
+                </div>
+                
+                <div class="input-help">
+                    Your API key starts with "sk-ant-" and can be found at 
+                    <a href="https://atlas.tempestdx.com" target="_blank">Atlas page</a>
+                </div>
+                
+                <div class="api-key-container">
+                    <input type="password" 
+                           class="api-key-input" 
+                           id="api-key" 
+                           placeholder="sk-ant-..."
+                           autocomplete="off">
+                    <button type="button" class="show-hide-btn" id="show-hide-btn" title="Show/Hide API key">
+                        <span id="eye-icon">👁️</span>
+                    </button>
+                </div>
+                
+                <div class="validation-message hidden" id="api-key-validation"></div>
+                
+                <div class="optional-note">
+                    This step is optional - you can configure your API key later by editing ~/.atlas/.env
+                </div>
+            </div>
+
+            <!-- Installation Step -->
+            <div class="step-content" id="content-3">
+                <div class="step-icon">⚙️</div>
+                <div class="step-title" id="install-title">Ready to Install</div>
+                <div class="step-description" id="install-description">
+                    Click Install to begin the installation process.
+                </div>
+                
+                <div class="installation-summary" id="install-summary">
+                    <h4>Installation Summary:</h4>
+                    <ul id="install-list">
+                        <li>Create ~/.atlas directory</li>
+                        <li>Install Atlas CLI binary</li>
+                        <li id="api-key-item" class="hidden">Configure API key</li>
+                        <li>Set up system PATH</li>
+                    </ul>
+                </div>
+                
+                <div class="progress-container hidden" id="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <div class="progress-text" id="progress-text">0% Complete</div>
+                    
+                    <div class="installation-log" id="install-log"></div>
+                </div>
+            </div>
+
+            <!-- Completion Step -->
+            <div class="step-content" id="content-4">
+                <div class="step-icon">✅</div>
+                <div class="step-title">Installation Complete!</div>
+                <div class="step-description">
+                    Atlas has been successfully installed and is ready to use.
+                </div>
+                
+                <div class="features">
+                    <h4>Next Steps:</h4>
+                    <ul>
+                        <li>Open your terminal and run <code>atlas --help</code></li>
+                        <li>Visit <a href="https://atlas.tempestdx.com" target="_blank">atlas.tempestdx.com</a> for documentation</li>
+                        <li>Start building AI agent workflows</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <button class="btn btn-secondary hidden" id="back-btn">Back</button>
+            <div></div>
+            <button class="btn btn-primary" id="next-btn">Continue</button>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
