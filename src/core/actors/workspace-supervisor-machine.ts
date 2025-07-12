@@ -3,7 +3,7 @@
  * Manages signal processing and session actor spawning with proper concurrency control
  */
 
-import { assign, createMachine, raise, sendTo } from "xstate";
+import { assign, createMachine, fromPromise, raise, sendTo } from "xstate";
 import { SessionSupervisorActor } from "./session-supervisor-actor.ts";
 import type { IWorkspace, IWorkspaceSignal } from "../../types/core.ts";
 import type { WorkspaceConfig } from "../../../packages/config/src/schemas.ts";

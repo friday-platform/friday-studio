@@ -132,21 +132,11 @@ Deno.test({
     const anthropicExecuteMessage = createAgentExecuteMessage(
       {
         agent_id: "test-anthropic-agent",
-        agent_config: {
-          type: "llm",
-          model: "claude-3-5-haiku-20241022",
-          parameters: {
-            provider: "anthropic",
-            temperature: 0,
-            max_tokens: 50,
-          },
-          prompts: {
-            system: "You are a helpful assistant.",
-          },
-          tools: [],
-        },
         task: "What is 2+2?",
         input: "What is 2+2?",
+        sessionId: "test-session",
+        workspaceId: "test-workspace",
+        signal: {},
         environment: {
           worker_config: {
             memory_limit: 128,
@@ -198,21 +188,11 @@ Deno.test({
     const openaiExecuteMessage = createAgentExecuteMessage(
       {
         agent_id: "test-openai-agent",
-        agent_config: {
-          type: "llm",
-          model: "gpt-3.5-turbo",
-          parameters: {
-            provider: "openai",
-            temperature: 0,
-            max_tokens: 50,
-          },
-          prompts: {
-            system: "You are a helpful assistant.",
-          },
-          tools: [],
-        },
         task: "What is 3+3?",
         input: "What is 3+3?",
+        sessionId: "test-session",
+        workspaceId: "test-workspace",
+        signal: {},
         environment: {
           worker_config: {
             memory_limit: 128,
@@ -264,21 +244,11 @@ Deno.test({
     const googleExecuteMessage = createAgentExecuteMessage(
       {
         agent_id: "test-google-agent",
-        agent_config: {
-          type: "llm",
-          model: "gemini-1.5-flash",
-          parameters: {
-            provider: "google",
-            temperature: 0,
-            max_tokens: 50,
-          },
-          prompts: {
-            system: "You are a helpful assistant.",
-          },
-          tools: [],
-        },
         task: "What is 4+4?",
         input: "What is 4+4?",
+        sessionId: "test-session",
+        workspaceId: "test-workspace",
+        signal: {},
         environment: {
           worker_config: {
             memory_limit: 128,

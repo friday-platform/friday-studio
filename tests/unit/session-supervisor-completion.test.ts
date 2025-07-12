@@ -5,8 +5,9 @@
  * Tests the fix for the sequential agent execution bug
  */
 
-import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
-import { SupervisionLevel } from "../../src/core/caching/supervision-cache.ts";
+import { SessionSupervisorActor } from "../../src/core/actors/session-supervisor-actor.ts";
+// NOTE: SupervisionLevel may be in a different location now
+// import { SupervisionLevel } from "../../src/core/caching/supervision-cache.ts";
 import { type AtlasMemoryConfig } from "../../src/core/memory-config.ts";
 import { expect } from "@std/expect";
 

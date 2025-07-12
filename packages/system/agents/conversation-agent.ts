@@ -5,7 +5,7 @@
 
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { IAtlasAgent } from "../../../src/types/core.ts";
-import { LLMProvider } from "../../../src/utils/llm/provider.ts";
+import { LLMProvider } from "@atlas/core";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
 import type { Tool } from "ai";
@@ -314,15 +314,15 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
               `${enhancedSystemPrompt}\n\nIMPORTANT: When using the stream_reply tool, you MUST use stream_id: "${streamId}" (not "default" or any other value).`;
           }
 
-          // Use LLMProvider directly for tool-enabled completion
-          const result = await LLMProvider.generateTextWithTools(message, {
+          // Use LLMProvider with unified API for tool-enabled completion
+          const result = await LLMProvider.generateText(message, {
             systemPrompt: enhancedSystemPrompt,
             model: this.config.model || "claude-3-5-sonnet-20241022",
             provider: "anthropic",
             temperature: this.config.temperature || 0.7,
-            maxTokens: this.config.max_tokens || 4000,
+            max_tokens: this.config.max_tokens || 4000,
             tools: daemonTools,
-            maxSteps: 10,
+            max_steps: 10,
             operationContext: {
               operation: "conversation_agent",
               agentId: this.id,
@@ -383,7 +383,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           model: this.config.model || "claude-3-5-sonnet-20241022",
           provider: "anthropic",
           temperature: this.config.temperature || 0.7,
-          maxTokens: this.config.max_tokens || 4000,
+          max_tokens: this.config.max_tokens || 4000,
           operationContext: {
             operation: "conversation_agent",
             agentId: this.id,
@@ -391,16 +391,16 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         });
 
         this.logger.info("ConversationAgent response received", {
-          responseLength: response.length || 0,
+          responseLength: response.text.length || 0,
         });
 
         // If we have a streamId, stream the response via daemon capability
-        if (streamId && response) {
+        if (streamId && response.text) {
           this.logger.info("Streaming response", {
             streamId,
-            contentLength: response.length,
+            contentLength: response.text.length,
           });
-          await this.handleStreamReply(streamId, response);
+          await this.handleStreamReply(streamId, response.text);
         } else {
           this.logger.warn("Not streaming response", {
             hasStreamId: !!streamId,
@@ -409,10 +409,10 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         }
 
         // Save assistant response
-        if (streamId && response) {
+        if (streamId && response.text) {
           await this.saveMessage(streamId, {
             role: "assistant",
-            content: response,
+            content: response.text,
             metadata: {
               timestamp: new Date().toISOString(),
             },
@@ -420,7 +420,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         }
 
         return {
-          response,
+          response: response.text,
           conversationMetadata: {
             streamId,
             messagesInHistory: messagesInHistory + 2, // user + assistant
@@ -798,15 +798,15 @@ For workspace_draft_create parameters, include:
               },
             };
 
-            const result = await LLMProvider.generateTextWithTools(thinkingPrompt, {
+            const result = await LLMProvider.generateText(thinkingPrompt, {
               systemPrompt:
                 `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
               model: this.config.model || "claude-3-5-sonnet-20241022",
               provider: "anthropic",
               temperature: 0.3,
-              maxTokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
+              max_tokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
               tools: reasoningTool,
-              toolChoice: "required",
+              tool_choice: "required",
               operationContext: {
                 operation: "conversation_reasoning",
                 agentId: this.id,
@@ -1374,16 +1374,16 @@ Examples of what you SHOULD handle:
 
 DO NOT ask for clarification if the context is clear from the conversation history.`;
 
-    const result = await LLMProvider.generateTextWithTools(message, {
+    const result = await LLMProvider.generateText(message, {
       systemPrompt,
-      messages: historyMessages || [],
+      // Note: messages parameter not supported in new API - context is passed via systemPrompt
       model: this.config.model || "claude-3-5-sonnet-20241022",
       provider: "anthropic",
       temperature: this.config.temperature || 0.7,
-      maxTokens: 2000, // Increased for workspace operations
+      max_tokens: 2000, // Increased for workspace operations
       tools: tools,
-      toolChoice: "required", // Force tool use
-      maxSteps: 5, // Allow multiple tool calls for publish flow
+      tool_choice: "required", // Force tool use
+      max_steps: 5, // Allow multiple tool calls for publish flow
       operationContext: {
         operation: "conversation_agent_simple_tools",
         agentId: this.id,

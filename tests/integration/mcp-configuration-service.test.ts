@@ -26,7 +26,7 @@ Deno.test("MCP Configuration Service - Dual Mode Resolution", async (t) => {
       },
     };
 
-    MCPServerRegistry.initialize(undefined, { mcp_servers: workspaceMcpServers });
+    MCPServerRegistry.initialize(undefined, { tools: { mcp: { servers: workspaceMcpServers } } });
 
     // Create service without direct configs (registry mode)
     const service = new WorkspaceMCPConfigurationService("test-workspace", "test-session");

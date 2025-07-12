@@ -13,8 +13,7 @@ Deno.test("CLI Signal Provider - Registry Integration", async (t) => {
   await t.step("should register CLI provider factory", async () => {
     const registry = ProviderRegistry.getInstance();
 
-    // Register builtin providers (including CLI)
-    ProviderRegistry.registerBuiltinProviders();
+    // Providers are automatically available through static imports
 
     const config: ProviderConfig = {
       id: "test-cli-signal",

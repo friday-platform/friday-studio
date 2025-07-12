@@ -19,7 +19,7 @@ import type {
 import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
 import { MessageManager as Messages } from "../messages.ts";
-import { LLMProvider } from "../../utils/llm/provider.ts";
+import { LLMProvider } from "@atlas/core";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
 
@@ -134,18 +134,18 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     const systemMessage = messages.find((m) => m.role === "system")?.content || "";
     const userMessage = messages.find((m) => m.role === "user")?.content || "";
 
-    // Use static LLMProvider method
-    const result = await LLMProvider.generateText(userMessage, {
+    // Use static LLMProvider method with new unified API
+    const response = await LLMProvider.generateText(userMessage, {
       systemPrompt: systemMessage,
       model,
       temperature: options?.temperature,
-      maxTokens: options?.maxTokens,
-      streaming: options?.stream,
+      max_tokens: options?.maxTokens,
+      // Note: streaming is handled differently in the new API
     });
 
     return {
-      content: result,
-      usage: undefined, // LLMProvider.generateText doesn't return usage info
+      content: response.text,
+      usage: undefined, // Usage info not available in simplified API
     };
   }
 

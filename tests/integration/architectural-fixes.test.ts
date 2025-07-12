@@ -6,7 +6,7 @@
 import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
+import { SessionSupervisorActor } from "../../src/core/actors/session-supervisor-actor.ts";
 import type { AtlasMemoryConfig } from "../../src/core/memory-config.ts";
 
 const testMemoryConfig: AtlasMemoryConfig = {

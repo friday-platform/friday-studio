@@ -218,11 +218,11 @@ export const ATLAS_MESSAGE_DOMAINS = {
 
 export const AgentExecutePayloadSchema = z.object({
   agent_id: z.string(),
-  agent_config: z.object({
-    type: z.string(),
-  }).passthrough(),
-  task: z.string(),
   input: z.unknown(),
+  task: z.string(),
+  sessionId: z.string(),
+  workspaceId: z.string(),
+  signal: z.unknown(),
   environment: z.record(z.string(), z.unknown()),
 });
 

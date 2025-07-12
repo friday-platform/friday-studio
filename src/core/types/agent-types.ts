@@ -24,6 +24,7 @@ export interface JobSpecification {
       input_source?: "signal" | "previous" | "context";
       config?: Record<string, unknown>;
     }>;
+    context?: Record<string, unknown>;
   };
   supervision?: {
     level?: "minimal" | "standard" | "paranoid";

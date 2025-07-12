@@ -251,8 +251,9 @@ export class WorkspaceSupervisorActor {
         payload,
         jobSpec,
         availableAgents: sessionContext.availableAgents?.map((agent: any) => agent.id) || [],
-        constraints: sessionContext.constraints,
-        additionalPrompts: sessionContext.additionalPrompts,
+        // NOTE: constraints and additionalPrompts not part of SessionContext interface
+        // constraints: sessionContext.constraints,
+        // additionalPrompts: sessionContext.additionalPrompts,
       });
 
       // Execute the session

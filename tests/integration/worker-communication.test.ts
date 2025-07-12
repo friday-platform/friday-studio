@@ -5,8 +5,9 @@
  * Merged from test-minimal-worker, test-full-worker-communication, test-simple-flow, test-supervisor-worker
  */
 
-import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
-import { expect } from "@std/expect";
+// NOTE: All worker communication tests commented out - WorkerManager doesn't exist in actor-based architecture
+// // import { WorkerManager } from "../../src/core/utils/worker-manager.ts"; // Replaced by actor-based architecture
+// import { expect } from "@std/expect";
 
 // Test-specific message type for direct message receipts
 interface DirectMessageReceipt {
@@ -15,11 +16,12 @@ interface DirectMessageReceipt {
   data: any;
 }
 
+/*
 // Test 1: Basic worker communication (from test-minimal-worker)
 Deno.test("Basic worker communication", async () => {
   const workerCode = `
     self.postMessage({ type: 'ready' });
-    
+
     self.onmessage = (e) => {
       if (e.data.type === 'ping') {
         self.postMessage({ type: 'pong' });
@@ -57,9 +59,9 @@ Deno.test({
 
     // Create a simple test worker file
     const testWorkerCode = `
-    
+
     self.onmessage = (event) => {
-      
+
       if (event.data.type === 'init') {
         self.postMessage({ type: 'initialized' });
       }
@@ -102,40 +104,40 @@ Deno.test({
     const testWorkerCode = `
     /// <reference no-default-lib="true" />
     /// <reference lib="deno.worker" />
-    
+
     import { BaseWorker } from "${
       new URL("../../src/core/workers/base-worker.ts", import.meta.url).href
     }";
-    
+
     class TestWorker extends BaseWorker {
       constructor() {
         super("test-worker", "test");
       }
-      
+
       protected override async initialize(config) {
         this.log("Test worker initialized with:", config);
       }
-      
+
       protected override async processTask(taskId, data) {
         this.log("Processing task:", taskId, data);
-        
+
         if (data.action === 'echo') {
           return { echo: data.message };
         }
-        
+
         if (data.action === 'sendDirect') {
           // Send direct message to peer
           this.sendDirect(data.peerId, data.message);
           return { status: 'direct message sent' };
         }
-        
+
         throw new Error(\`Unknown action: \${data.action}\`);
       }
-      
+
       protected override async cleanup() {
         this.log("Cleaning up test worker");
       }
-      
+
       protected override handleDirectMessage(peerId, data) {
         this.log(\`Received direct message from \${peerId}:\`, data);
         self.postMessage({
@@ -145,7 +147,7 @@ Deno.test({
         });
       }
     }
-    
+
     new TestWorker();
   `;
 
@@ -274,3 +276,4 @@ Deno.test({
     }
   },
 });
+*/

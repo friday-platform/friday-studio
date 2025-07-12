@@ -589,21 +589,23 @@ Deno.test("Integration: ConfigLoader handles environment variable configurations
 workspace:
   name: "env-test-workspace"
 
-mcp_servers:
-  test-server:
-    transport:
-      type: "stdio"
-      command: "test-mcp-server"
-      args: ["-y", "test-server"]
-    env:
-      API_KEY:
-        from_env: "TEST_API_KEY"
-        required: true
-      ENDPOINT:
-        from_env: "TEST_ENDPOINT"
-        default: "https://default.example.com"
-      STATIC_VALUE:
-        value: "static-config"
+tools:
+  mcp:
+    servers:
+      test-server:
+        transport:
+          type: "stdio"
+          command: "test-mcp-server"
+          args: ["-y", "test-server"]
+        env:
+          API_KEY:
+            from_env: "TEST_API_KEY"
+            required: true
+          ENDPOINT:
+            from_env: "TEST_ENDPOINT"
+            default: "https://default.example.com"
+          STATIC_VALUE:
+            value: "static-config"
 
 agents:
   env-aware-agent:
@@ -684,8 +686,8 @@ memory:
     const config = await loader.load();
 
     // Check that environment variables are properly configured
-    expect(config.workspace.mcp_servers?.["test-server"]).toBeDefined();
-    const serverConfig = config.workspace.mcp_servers!["test-server"];
+    expect(config.workspace.tools?.mcp?.servers?.["test-server"]).toBeDefined();
+    const serverConfig = config.workspace.tools!.mcp!.servers!["test-server"];
     expect(serverConfig.env).toBeDefined();
     expect(serverConfig.env!["API_KEY"]).toEqual({
       from_env: "TEST_API_KEY",

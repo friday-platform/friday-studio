@@ -5,11 +5,8 @@
  */
 
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { CliSignalProvider } from "../../../src/core/providers/builtin/cli-signal.ts";
-import type {
-  CliSignalConfig,
-  CliTriggerData,
-} from "../../../src/core/providers/builtin/cli-signal.ts";
+import { CliSignalProvider } from "@atlas/signals";
+import type { CliSignalConfig, CliTriggerData } from "@atlas/signals";
 
 Deno.test("CliSignalProvider - initialization", async (t) => {
   await t.step("should initialize with valid CLI config", () => {

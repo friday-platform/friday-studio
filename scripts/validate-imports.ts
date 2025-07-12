@@ -70,8 +70,15 @@ function extractImports(content: string): Array<{ import: string; line: number }
         continue;
       }
 
-      // Find line number
+      // Find line number and check if it's commented
       const lineNumber = content.substring(0, match.index).split("\n").length;
+      const lineContent = content.split("\n")[lineNumber - 1];
+
+      // Skip commented lines
+      if (lineContent.trim().startsWith("//") || lineContent.trim().startsWith("/*")) {
+        continue;
+      }
+
       imports.push({ import: importPath, line: lineNumber });
     }
   }

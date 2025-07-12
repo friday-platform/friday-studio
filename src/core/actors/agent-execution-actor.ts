@@ -115,50 +115,59 @@ export class AgentExecutionActor {
     });
 
     // Use existing LLM infrastructure directly - no need for wrapper class
-    const { LLMProvider } = await import("../../utils/llm/provider.ts");
+    const { LLMProvider } = await import("@atlas/core");
 
     const systemPrompt = agentConfig.prompts?.system || "You are a helpful AI assistant.";
-    const userPrompt = request.input as string;
 
-    // Use generateTextWithTools if MCP servers or tools are configured
-    const hasMcpServers = agentConfig.mcp_servers?.length > 0;
-    const hasTools = Array.isArray(agentConfig.tools)
-      ? agentConfig.tools.length > 0
-      : Object.keys(agentConfig.tools || {}).length > 0;
-
-    if (hasMcpServers || hasTools) {
-      const result = await LLMProvider.generateTextWithTools(userPrompt, {
-        systemPrompt,
-        model: agentConfig.model || "claude-3-5-sonnet-20241022",
-        provider: agentConfig.provider || "anthropic",
-        temperature: agentConfig.temperature || 0.7,
-        maxTokens: agentConfig.max_tokens || 4000,
-        mcpServers: agentConfig.mcp_servers,
-        maxSteps: agentConfig.max_steps || 10,
-        toolChoice: agentConfig.tool_choice,
-        operationContext: {
-          operation: "llm_agent_execution",
-          agentId: request.agent_id,
-          workspaceId: this.workspaceId,
-        },
-      });
-
-      return result.text;
+    // Handle different input types - convert to string for LLM processing
+    let userPrompt: string;
+    if (typeof request.input === "string") {
+      userPrompt = request.input;
+    } else if (typeof request.input === "object" && request.input !== null) {
+      // If input is an object, use the task description as the primary prompt
+      // and include the input data as context
+      userPrompt = request.task || "Complete the requested task.";
+      if (Object.keys(request.input).length > 0) {
+        userPrompt += `\n\nContext data: ${JSON.stringify(request.input, null, 2)}`;
+      }
     } else {
-      // Use simple text generation for agents without tools
-      return await LLMProvider.generateText(userPrompt, {
-        systemPrompt,
-        model: agentConfig.model || "claude-3-5-sonnet-20241022",
-        provider: agentConfig.provider || "anthropic",
-        temperature: agentConfig.temperature || 0.7,
-        maxTokens: agentConfig.max_tokens || 4000,
-        operationContext: {
-          operation: "llm_agent_execution",
-          agentId: request.agent_id,
-          workspaceId: this.workspaceId,
-        },
-      });
+      // Fallback to task description
+      userPrompt = request.task || "Complete the requested task.";
     }
+
+    this.logger.debug("DEBUG: Agent execution input analysis", {
+      agentId: request.agent_id,
+      inputType: typeof request.input,
+      inputIsString: typeof request.input === "string",
+      inputLength: typeof request.input === "string" ? request.input.length : 0,
+      inputPreview: typeof request.input === "string"
+        ? request.input.substring(0, 100)
+        : JSON.stringify(request.input),
+      taskDescription: request.task || "none",
+      userPromptLength: userPrompt.length,
+      userPromptPreview: userPrompt.substring(0, 100),
+      systemPromptLength: systemPrompt.length,
+      hasSystemPrompt: !!agentConfig.prompts?.system,
+    });
+
+    // Use unified API - tools are optional
+    const result = await LLMProvider.generateText(userPrompt, {
+      systemPrompt,
+      model: agentConfig.model || "claude-3-5-sonnet-20241022",
+      provider: agentConfig.provider || "anthropic",
+      temperature: agentConfig.temperature || 0.7,
+      max_tokens: agentConfig.max_tokens || 4000,
+      mcpServers: this.extractMcpServers(agentConfig),
+      max_steps: agentConfig.max_steps || 10,
+      tool_choice: agentConfig.tool_choice,
+      operationContext: {
+        operation: "llm_agent_execution",
+        agentId: request.agent_id,
+        workspaceId: this.workspaceId,
+      },
+    });
+
+    return result.text;
   }
 
   private async executeRemoteAgent(
@@ -182,6 +191,22 @@ export class AgentExecutionActor {
 
     // Use invoke method from BaseAgent
     return await remoteAgent.invoke(request.input as string);
+  }
+
+  /**
+   * Extract MCP servers from modern tools.mcp format only
+   */
+  private extractMcpServers(agentConfig: WorkspaceAgentConfig): string[] | undefined {
+    if (
+      agentConfig.tools && typeof agentConfig.tools === "object" &&
+      !Array.isArray(agentConfig.tools)
+    ) {
+      const toolsConfig = agentConfig.tools as { mcp?: string[] };
+      if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp)) {
+        return toolsConfig.mcp;
+      }
+    }
+    return undefined;
   }
 
   /**

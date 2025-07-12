@@ -83,7 +83,7 @@ export class RemoteAdapterFactory {
     config: RemoteAgentConfig,
   ): Promise<BaseRemoteAdapter> {
     try {
-      const { MCPAdapter } = await import("./adapters/mcp-adapter.ts");
+      const { MCPAdapter } = await import("../../../../packages/mcp/src/adapters/mcp-adapter.ts");
 
       const mcpConfig = {
         ...baseConfig,
