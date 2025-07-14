@@ -69,7 +69,6 @@
       "helperBundleId": null
     },
     "buildDependenciesFromSource": false,
-    "electronVersion": "37.2.1",
     "compression": "normal",
     "removePackageScripts": true,
     "removePackageKeywords": true,
