@@ -135,7 +135,7 @@ runs:
           fi
         fi
 
-        echo "✅ All installer pre-flight checks passed"
+        echo "All installer pre-flight checks passed"
 
     - name: Build cross-platform Electron installer
       shell: bash
@@ -220,13 +220,13 @@ runs:
             # Test that the main executable exists and has proper permissions
             main_exec="$app_path/Contents/MacOS/Atlas Installer"
             if [ -f "$main_exec" ]; then
-              echo "✅ Main executable found: $main_exec"
+              echo "Main executable found: $main_exec"
 
               # Check if executable
               if [ -x "$main_exec" ]; then
-                echo "✅ Main executable is executable"
+                echo "Main executable is executable"
               else
-                echo "❌ Main executable is not executable"
+                echo "ERROR: Main executable is not executable"
                 exit 1
               fi
 
@@ -235,29 +235,29 @@ runs:
               if [ -f "$main_js" ]; then
                 echo "Testing main.js syntax..."
                 node --check "$main_js" || {
-                  echo "❌ Runtime syntax error in main.js"
+                  echo "ERROR: Runtime syntax error in main.js"
                   exit 1
                 }
-                echo "✅ main.js syntax check passed"
+                echo "main.js syntax check passed"
               fi
             else
-              echo "❌ Main executable not found"
+              echo "ERROR: Main executable not found"
               exit 1
             fi
           else
-            echo "⚠️  No .app found in dist/ for testing"
+            echo "WARNING: No .app found in dist/ for testing"
           fi
         elif [ "${{ inputs.platform }}" == "linux" ]; then
           # For Linux AppImage, we can test the extracted structure
           appimage_path=$(find dist/ -name "*.AppImage" | head -1)
           if [ -n "$appimage_path" ]; then
-            echo "✅ Linux AppImage built: $appimage_path"
+            echo "Linux AppImage built: $appimage_path"
 
             # Check if AppImage is executable
             if [ -x "$appimage_path" ]; then
-              echo "✅ AppImage is executable"
+              echo "AppImage is executable"
             else
-              echo "❌ AppImage is not executable"
+              echo "ERROR: AppImage is not executable"
               exit 1
             fi
           fi
@@ -265,14 +265,14 @@ runs:
           # For Windows, just check the installer exists
           exe_path=$(find dist/ -name "*.exe" | head -1)
           if [ -n "$exe_path" ]; then
-            echo "✅ Windows installer built: $exe_path"
+            echo "Windows installer built: $exe_path"
           else
-            echo "❌ Windows installer not found"
+            echo "ERROR: Windows installer not found"
             exit 1
           fi
         fi
 
-        echo "✅ Installer functionality tests passed"
+        echo "Installer functionality tests passed"
 
     - name: Rename installers to consistent naming format
       shell: bash
