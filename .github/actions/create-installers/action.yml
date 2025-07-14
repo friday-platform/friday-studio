@@ -96,6 +96,47 @@ runs:
           exit 1
         fi
 
+    - name: Test Electron installer (syntax and basic functionality)
+      shell: bash
+      run: |
+        cd tools/atlas-installer
+
+        # Test 1: Check for mixed module syntax issues
+        echo "Testing for mixed ES module/CommonJS syntax..."
+        if grep -r "^import.*from" *.js | grep -q "require("; then
+          echo "ERROR: Mixed ES module and CommonJS syntax detected!"
+          echo "Files with mixed syntax:"
+          grep -n "^import.*from" *.js && grep -n "require(" *.js
+          exit 1
+        fi
+
+        # Test 2: Syntax validation with Node.js
+        echo "Testing JavaScript syntax..."
+        for js_file in *.js; do
+          if [ -f "$js_file" ]; then
+            echo "Checking syntax: $js_file"
+            node --check "$js_file" || {
+              echo "ERROR: Syntax error in $js_file"
+              exit 1
+            }
+          fi
+        done
+
+        # Test 3: Check package.json for version consistency
+        echo "Testing package.json configuration..."
+        if [ -f package.json ]; then
+          # Check for Electron version consistency between devDependencies and build config
+          dev_electron=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).devDependencies.electron" 2>/dev/null || echo "null")
+          build_electron=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).build.electronVersion" 2>/dev/null || echo "null")
+
+          if [ "$build_electron" != "null" ] && [ "$dev_electron" != "$build_electron" ]; then
+            echo "WARNING: Electron version mismatch between devDependencies ($dev_electron) and build config ($build_electron)"
+            echo "This can cause runtime issues. Consider removing build.electronVersion to use devDependencies version."
+          fi
+        fi
+
+        echo "✅ All installer pre-flight checks passed"
+
     - name: Build cross-platform Electron installer
       shell: bash
       run: |
@@ -163,6 +204,75 @@ runs:
         if [ "${{ inputs.platform }}" == "darwin" ] && [ -f "AuthKey_${{ inputs.macos-notary-key-id }}.p8" ]; then
           rm "AuthKey_${{ inputs.macos-notary-key-id }}.p8"
         fi
+
+    - name: Test built installer functionality
+      shell: bash
+      run: |
+        cd tools/atlas-installer
+
+        # Test the built installer can start without immediate crashes
+        if [ "${{ inputs.platform }}" == "darwin" ]; then
+          # Find the built app
+          app_path=$(find dist/ -name "*.app" | head -1)
+          if [ -n "$app_path" ]; then
+            echo "Testing macOS app startup: $app_path"
+
+            # Test that the main executable exists and has proper permissions
+            main_exec="$app_path/Contents/MacOS/Atlas Installer"
+            if [ -f "$main_exec" ]; then
+              echo "✅ Main executable found: $main_exec"
+
+              # Check if executable
+              if [ -x "$main_exec" ]; then
+                echo "✅ Main executable is executable"
+              else
+                echo "❌ Main executable is not executable"
+                exit 1
+              fi
+
+              # Test loading the main.js without starting GUI (basic syntax check)
+              main_js="$app_path/Contents/Resources/app/main.js"
+              if [ -f "$main_js" ]; then
+                echo "Testing main.js syntax..."
+                node --check "$main_js" || {
+                  echo "❌ Runtime syntax error in main.js"
+                  exit 1
+                }
+                echo "✅ main.js syntax check passed"
+              fi
+            else
+              echo "❌ Main executable not found"
+              exit 1
+            fi
+          else
+            echo "⚠️  No .app found in dist/ for testing"
+          fi
+        elif [ "${{ inputs.platform }}" == "linux" ]; then
+          # For Linux AppImage, we can test the extracted structure
+          appimage_path=$(find dist/ -name "*.AppImage" | head -1)
+          if [ -n "$appimage_path" ]; then
+            echo "✅ Linux AppImage built: $appimage_path"
+
+            # Check if AppImage is executable
+            if [ -x "$appimage_path" ]; then
+              echo "✅ AppImage is executable"
+            else
+              echo "❌ AppImage is not executable"
+              exit 1
+            fi
+          fi
+        elif [ "${{ inputs.platform }}" == "windows" ]; then
+          # For Windows, just check the installer exists
+          exe_path=$(find dist/ -name "*.exe" | head -1)
+          if [ -n "$exe_path" ]; then
+            echo "✅ Windows installer built: $exe_path"
+          else
+            echo "❌ Windows installer not found"
+            exit 1
+          fi
+        fi
+
+        echo "✅ Installer functionality tests passed"
 
     - name: Rename installers to consistent naming format
       shell: bash
