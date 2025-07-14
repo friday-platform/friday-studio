@@ -5,6 +5,7 @@ import { createTempFileAndOpen } from "../../utils/file-opener.ts";
 import { GitDiff } from "../../components/git-diff.tsx";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandContext, OutputEntry } from "./types.ts";
+import { MarkdownSandboxCommand } from "./MarkdownSandboxCommand.tsx";
 
 export const handleWorkspacesCommand = (
   _args: string[],
@@ -204,6 +205,20 @@ function processOrder(order) {
       ),
     },
   ];
+};
+
+export const handleMarkdownCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  const markdownEntry = new MarkdownSandboxCommand({
+    onComplete: () => {
+      // No additional action needed after completion
+    },
+  });
+
+  context.addEntry(markdownEntry);
+  return [];
 };
 
 /**

@@ -5,13 +5,17 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
-import { MarkdownDisplay } from "../components/markdown-display.tsx";
 import { OutputEntry } from "../modules/conversation/index.ts";
 
 interface AtlasConfig {
   apiKey: string;
   daemonPort: string;
   streamMessages: boolean;
+}
+
+interface TypingState {
+  isTyping: boolean;
+  elapsedSeconds: number;
 }
 
 interface AppContextType {
@@ -30,12 +34,8 @@ interface AppContextType {
   conversationSessionId: string | null;
   setConversationSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sseAbortControllerRef: React.RefObject<AbortController | null>;
-  sseStream: AsyncIterable<unknown> | null;
-  setSseStream: React.Dispatch<
-    React.SetStateAction<AsyncIterable<unknown> | null>
-  >;
-  isTyping: boolean;
-  setIsTyping: React.Dispatch<React.SetStateAction<boolean>>;
+  typingState: TypingState;
+  setTypingState: React.Dispatch<React.SetStateAction<TypingState>>;
   isInitializing: boolean;
   initializeSystem: () => Promise<void>;
 }
@@ -62,22 +62,53 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     string | null
   >(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
-  const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
-    null,
-  );
-  const [isTyping, setIsTyping] = useState(false);
+  const [typingState, setTypingState] = useState<TypingState>({
+    isTyping: false,
+    elapsedSeconds: 0,
+  });
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
-  const sseListenerStarted = useRef(false);
+  const timerIntervalRef = useRef<number | null>(null);
 
   // Store transport reference for cleanup
   const mcpTransportRef = useRef<StreamableHTTPClientTransport | null>(null);
 
   // Store config in a ref so SSE handler always has latest value
   const configRef = useRef(config);
+
   useEffect(() => {
     configRef.current = config;
   }, [config]);
+
+  // Timer effect for non-streaming mode
+  useEffect(() => {
+    if (typingState.isTyping && !config.streamMessages) {
+      const startTime = Date.now();
+      setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
+
+      const interval = setInterval(() => {
+        const now = Date.now();
+        const elapsed = Math.floor((now - startTime) / 1000);
+        setTypingState((prev) => ({ ...prev, elapsedSeconds: elapsed }));
+      }, 1000);
+
+      timerIntervalRef.current = interval;
+
+      return () => {
+        if (timerIntervalRef.current) {
+          clearInterval(timerIntervalRef.current);
+          timerIntervalRef.current = null;
+        }
+      };
+    } else if (!typingState.isTyping) {
+      // Clean up timer when typing stops
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
+    }
+  }, [typingState.isTyping, config.streamMessages]);
 
   useEffect(() => {
     return () => {
@@ -88,12 +119,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       }
 
       setMcpClient(null);
-
-      // Clean up SSE connection
-      if (sseAbortControllerRef.current) {
-        sseAbortControllerRef.current.abort();
-        sseAbortControllerRef.current = null;
-      }
     };
   }, []);
 
@@ -119,7 +144,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       mcpTransportRef.current = transport;
       await client.connect(transport);
       setMcpClient(client);
-    } catch (error) {
+    } catch {
       // Silently fail - MCP features won't be available
     }
   };
@@ -169,107 +194,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         // Store the SSE URL for later use
         newConversationClient.sseUrl = session.sseUrl;
 
-        // Start persistent SSE listener with AbortController
+        // Create AbortController for SSE
         const abortController = new AbortController();
         sseAbortControllerRef.current = abortController;
-
-        const sseIterator = newConversationClient.streamEvents(
-          session.sessionId,
-          session.sseUrl,
-          abortController.signal,
-        );
-        setSseStream(sseIterator);
-
-        // Start listening for SSE events in background (only once)
-        if (!sseListenerStarted.current) {
-          sseListenerStarted.current = true;
-          (async () => {
-            try {
-              for await (const event of sseIterator) {
-                // Check if we should stop
-                if (abortController.signal.aborted) {
-                  break;
-                }
-
-                // @ts-expect-error event is currently untyped.
-                if (event.type === "message_chunk") {
-                  // @ts-expect-error event is currently untyped.
-                  const responseMessage = event.data.content;
-                  // @ts-expect-error event is currently untyped.
-                  const isPartial = event.data.partial;
-
-                  // If streaming is enabled, show all chunks
-                  // If streaming is disabled, only show when partial is false (complete message)
-                  if (configRef.current.streamMessages || !isPartial) {
-                    // Update streaming message
-                    const responseTimestamp = new Date()
-                      .toLocaleTimeString([], {
-                        hour: "numeric",
-                        minute: "2-digit",
-                      })
-                      .toLowerCase()
-                      .replace(/\s/g, "");
-
-                    const streamingMessageId = `llm-response-current`;
-
-                    setOutputBuffer((prev) => {
-                      const filtered = prev.filter(
-                        (entry) => entry.id !== streamingMessageId,
-                      );
-                      return [
-                        ...filtered,
-                        {
-                          id: streamingMessageId,
-                          component: (
-                            <Box flexDirection="column">
-                              <Box flexDirection="row" gap={1}>
-                                <Text color="blue" bold>
-                                  Δ Atlas
-                                </Text>
-                                <Text color="blue" dimColor bold>
-                                  [{responseTimestamp}]
-                                </Text>
-                              </Box>
-                              <Box>
-                                <MarkdownDisplay content={responseMessage} />
-                              </Box>
-                            </Box>
-                          ),
-                        },
-                      ];
-                    });
-                  }
-                }
-                // @ts-expect-error event is currently untyped.
-                if (event.type === "message_complete") {
-                  // Update streaming message ID to make it permanent
-                  const streamingMessageId = `llm-response-current`;
-                  const permanentMessageId = `message-received-${Date.now()}`;
-
-                  setOutputBuffer((prev) => {
-                    return prev.map((entry) => {
-                      if (entry.id === streamingMessageId) {
-                        return {
-                          ...entry,
-                          id: permanentMessageId,
-                        };
-                      }
-                      return entry;
-                    });
-                  });
-
-                  // Stop typing indicator
-                  setIsTyping(false);
-                }
-              }
-            } catch {
-              // Ignore errors from aborted streams
-              if (!abortController.signal.aborted) {
-                // Add error handling here if needed
-              }
-            }
-          })();
-        }
       } catch {
         // Add error handling here if needed
       } finally {
@@ -361,10 +288,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         conversationSessionId,
         setConversationSessionId,
         sseAbortControllerRef,
-        sseStream,
-        setSseStream,
-        isTyping,
-        setIsTyping,
+        typingState,
+        setTypingState,
         isInitializing,
         initializeSystem,
       }}

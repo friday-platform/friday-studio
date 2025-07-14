@@ -26,7 +26,7 @@ export class WorkspaceRuntime {
   private workspace: IWorkspace;
   private options: WorkspaceRuntimeOptions;
   private config?: Record<string, unknown>;
-  private stateMachine: Actor<typeof createWorkspaceRuntimeMachine>;
+  private stateMachine: Actor<ReturnType<typeof createWorkspaceRuntimeMachine>>;
   private sessions: Map<string, IWorkspaceSession> = new Map();
   private fsmId: string;
 
@@ -98,15 +98,13 @@ export class WorkspaceRuntime {
       "workspace.processSignal",
       async (span) => {
         // Add workspace and signal attributes
-        AtlasTelemetry.addComponentAttributes(span, "workspace", { id: this.workspace.id });
-        AtlasTelemetry.addComponentAttributes(
-          span,
-          "signal",
-          {
-            id: signal.id,
-            type: signal.provider?.name || signal.provider?.id || "unknown",
-          },
-        );
+        AtlasTelemetry.addComponentAttributes(span, "workspace", {
+          id: this.workspace.id,
+        });
+        AtlasTelemetry.addComponentAttributes(span, "signal", {
+          id: signal.id,
+          type: signal.provider?.name || signal.provider?.id || "unknown",
+        });
 
         const state = this.stateMachine.getSnapshot();
 
@@ -200,10 +198,7 @@ export class WorkspaceRuntime {
   /**
    * Wait for specific states
    */
-  private waitForState(
-    targetStates: string[],
-    timeout = 30000,
-  ): Promise<void> {
+  private waitForState(targetStates: string[], timeout = 30000): Promise<void> {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
         reject(
@@ -314,11 +309,15 @@ export class WorkspaceRuntime {
    * List all jobs in the workspace
    */
   listJobs(): Array<{ name: string; description?: string }> {
-    const jobs =
-      (this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown> || {};
+    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
+      string,
+      unknown
+    >) || {};
     return Object.entries(jobs).map(([name, config]) => ({
       name,
-      description: (config as Record<string, unknown>)?.description as string | undefined,
+      description: (config as Record<string, unknown>)?.description as
+        | string
+        | undefined,
     }));
   }
 
@@ -329,20 +328,27 @@ export class WorkspaceRuntime {
     jobName: string,
     payload?: Record<string, unknown>,
   ): Promise<{ sessionId: string }> {
-    const jobs =
-      (this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown> || {};
+    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
+      string,
+      unknown
+    >) || {};
     if (!jobs[jobName]) {
       throw new Error(`Job '${jobName}' not found`);
     }
 
     // Find signal that triggers this job
-    const signals =
-      (this.config?.workspace as Record<string, unknown>)?.signals as Record<string, unknown> || {};
+    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
+      string,
+      unknown
+    >) || {};
     for (const [signalName, signalConfig] of Object.entries(signals)) {
       const jobConfig = jobs[jobName];
-      const triggers =
-        (jobConfig as Record<string, unknown>)?.triggers as Array<{ signal: string }> || [];
-      const hasMatchingTrigger = triggers.some((trigger) => trigger.signal === signalName);
+      const triggers = ((jobConfig as Record<string, unknown>)?.triggers as Array<{
+        signal: string;
+      }>) || [];
+      const hasMatchingTrigger = triggers.some(
+        (trigger) => trigger.signal === signalName,
+      );
 
       if (hasMatchingTrigger) {
         const signal = {
@@ -362,8 +368,10 @@ export class WorkspaceRuntime {
    * Get detailed information about a job
    */
   describeJob(jobName: string): Record<string, unknown> {
-    const jobs =
-      (this.config?.workspace as Record<string, unknown>)?.jobs as Record<string, unknown> || {};
+    const jobs = ((this.config?.workspace as Record<string, unknown>)?.jobs as Record<
+      string,
+      unknown
+    >) || {};
     if (!jobs[jobName]) {
       throw new Error(`Job '${jobName}' not found`);
     }
@@ -401,20 +409,29 @@ export class WorkspaceRuntime {
    * List all signals in the workspace
    */
   listSignals(): Array<{ name: string; description?: string }> {
-    const signals =
-      (this.config?.workspace as Record<string, unknown>)?.signals as Record<string, unknown> || {};
+    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
+      string,
+      unknown
+    >) || {};
     return Object.entries(signals).map(([name, config]) => ({
       name,
-      description: (config as Record<string, unknown>)?.description as string | undefined,
+      description: (config as Record<string, unknown>)?.description as
+        | string
+        | undefined,
     }));
   }
 
   /**
    * Trigger a signal in the workspace
    */
-  async triggerSignal(signalName: string, payload?: Record<string, unknown>): Promise<void> {
-    const signals =
-      (this.config?.workspace as Record<string, unknown>)?.signals as Record<string, unknown> || {};
+  async triggerSignal(
+    signalName: string,
+    payload?: Record<string, unknown>,
+  ): Promise<void> {
+    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
+      string,
+      unknown
+    >) || {};
     const signalConfig = signals[signalName];
     if (!signalConfig) {
       throw new Error(`Signal '${signalName}' not found`);
@@ -431,12 +448,16 @@ export class WorkspaceRuntime {
    * List all agents in the workspace
    */
   listAgents(): Array<{ id: string; type: string; purpose?: string }> {
-    const agents =
-      (this.config?.workspace as Record<string, unknown>)?.agents as Record<string, unknown> || {};
+    const agents = ((this.config?.workspace as Record<string, unknown>)?.agents as Record<
+      string,
+      unknown
+    >) || {};
     return Object.entries(agents).map(([id, config]) => ({
       id,
-      type: (config as Record<string, unknown>)?.type as string || "unknown",
-      purpose: (config as Record<string, unknown>)?.purpose as string | undefined,
+      type: ((config as Record<string, unknown>)?.type as string) || "unknown",
+      purpose: (config as Record<string, unknown>)?.purpose as
+        | string
+        | undefined,
     }));
   }
 
@@ -444,8 +465,10 @@ export class WorkspaceRuntime {
    * Get detailed information about an agent
    */
   describeAgent(agentId: string): Record<string, unknown> {
-    const agents =
-      (this.config?.workspace as Record<string, unknown>)?.agents as Record<string, unknown> || {};
+    const agents = ((this.config?.workspace as Record<string, unknown>)?.agents as Record<
+      string,
+      unknown
+    >) || {};
     if (!agents[agentId]) {
       throw new Error(`Agent '${agentId}' not found`);
     }

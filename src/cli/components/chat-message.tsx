@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { MarkdownDisplay } from "./markdown-display.tsx";
 
 // Chat Message Component
 interface ChatMessageProps {
@@ -15,7 +16,7 @@ export const ChatMessage = ({
   authorColor = "blue",
 }: ChatMessageProps) => {
   return (
-    <>
+    <Box flexDirection="column" flexShrink={0}>
       <Box flexDirection="row" gap={1}>
         <Text color={authorColor} bold>
           {author}
@@ -24,9 +25,8 @@ export const ChatMessage = ({
           [{date}]
         </Text>
       </Box>
-      <Box>
-        <Text wrap="wrap">{message}</Text>
-      </Box>
-    </>
+
+      <MarkdownDisplay content={message} />
+    </Box>
   );
 };

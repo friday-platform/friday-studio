@@ -3,32 +3,36 @@ import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver } from "hono-openapi/zod";
 
-export const healthResponseSchema = z.object({
-  activeWorkspaces: z.int().min(0).meta({
-    description: "Number of currently active workspaces",
-  }),
-  uptime: z.int().min(0).meta({
-    description: "Daemon uptime in milliseconds",
-  }),
-  timestamp: z.iso.datetime().meta({
-    description: "Current server timestamp in ISO 8601 format",
-  }),
-  version: z.object({
-    deno: z.string().meta({
-      description: "Deno runtime version",
+export const healthResponseSchema = z
+  .object({
+    activeWorkspaces: z.int().min(0).meta({
+      description: "Number of currently active workspaces",
     }),
-    v8: z.string().meta({
-      description: "V8 engine version",
+    uptime: z.int().min(0).meta({
+      description: "Daemon uptime in milliseconds",
     }),
-    typescript: z.string().meta({
-      description: "TypeScript version",
+    timestamp: z.iso.datetime().meta({
+      description: "Current server timestamp in ISO 8601 format",
     }),
-  }).meta({
-    description: "Version information for runtime components",
-  }),
-}).meta({
-  description: "Health check response containing daemon status and metrics",
-});
+    version: z
+      .object({
+        deno: z.string().meta({
+          description: "Deno runtime version",
+        }),
+        v8: z.string().meta({
+          description: "V8 engine version",
+        }),
+        typescript: z.string().meta({
+          description: "TypeScript version",
+        }),
+      })
+      .meta({
+        description: "Version information for runtime components",
+      }),
+  })
+  .meta({
+    description: "Health check response containing daemon status and metrics",
+  });
 
 // Type inference from schema
 type HealthResponse = z.infer<typeof healthResponseSchema>;

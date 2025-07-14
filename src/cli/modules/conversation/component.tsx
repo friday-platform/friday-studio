@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
-import { Spinner } from "@inkjs/ui";
+
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandInput } from "../../components/command-input.tsx";
+import { MessageBuffer } from "../../components/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 import { ConfigView } from "../../views/ConfigView.tsx";
@@ -24,14 +25,11 @@ import { LibraryCommand } from "./LibraryCommand.tsx";
 
 export function Component() {
   const {
-    config,
-    outputBuffer,
     setOutputBuffer,
     conversationClient,
     conversationSessionId,
     sseAbortControllerRef,
-    isTyping,
-    setIsTyping,
+    setTypingState,
     isInitializing,
     initializeSystem,
   } = useAppContext();
@@ -54,42 +52,6 @@ export function Component() {
       exit();
     }
   });
-
-  const [_typingStartTime, setTypingStartTime] = useState<number | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const timerIntervalRef = useRef<number | null>(null);
-
-  // Timer effect for non-streaming mode
-  useEffect(() => {
-    if (isTyping && !config.streamMessages) {
-      const startTime = Date.now();
-      setTypingStartTime(startTime);
-      setElapsedSeconds(0);
-
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - startTime) / 1000);
-        setElapsedSeconds(elapsed);
-      }, 1000);
-
-      timerIntervalRef.current = interval;
-
-      return () => {
-        if (timerIntervalRef.current) {
-          clearInterval(timerIntervalRef.current);
-          timerIntervalRef.current = null;
-        }
-      };
-    } else if (!isTyping) {
-      // Clean up timer when typing stops
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-      setTypingStartTime(null);
-      setElapsedSeconds(0);
-    }
-  }, [isTyping, config.streamMessages]);
 
   // Initialize system on startup
   useEffect(() => {
@@ -144,20 +106,18 @@ export function Component() {
       {
         id: `user-${Date.now()}`,
         component: (
-          <Box flexDirection="column">
-            <ChatMessage
-              author={currentUser}
-              date={userTimestamp}
-              message={input}
-              authorColor="green"
-            />
-          </Box>
+          <ChatMessage
+            author={currentUser}
+            date={userTimestamp}
+            message={input}
+            authorColor="green"
+          />
         ),
       },
     ]);
 
     // Show typing indicator
-    setIsTyping(true);
+    setTypingState((prev) => ({ ...prev, isTyping: true }));
 
     try {
       // Just send the message - the persistent SSE listener will handle the response
@@ -165,7 +125,7 @@ export function Component() {
 
       // The persistent SSE listener will handle the response
     } catch (error) {
-      setIsTyping(false);
+      setTypingState((prev) => ({ ...prev, isTyping: false }));
       addOutputEntry({
         id: `llm-error-${Date.now()}`,
         component: (
@@ -343,21 +303,8 @@ export function Component() {
 
       {view === "command" && (
         <>
-          {/* Output buffer display */}
-          {outputBuffer.length > 0 && (
-            <Box flexDirection="column" gap={1}>
-              {outputBuffer.map((entry) => <Box key={entry.id}>{entry.component}</Box>)}
-            </Box>
-          )}
-
-          {/* Typing indicator */}
-          {isTyping && (
-            <Box marginTop={1}>
-              {config.streamMessages
-                ? <Spinner label="Typing..." />
-                : <Spinner label={`Typing... (${elapsedSeconds}s)`} />}
-            </Box>
-          )}
+          {/* Message buffer for SSE handling and output display */}
+          <MessageBuffer />
 
           {/* Command components */}
           {activeCommand === "signal" && (
