@@ -1,4 +1,3 @@
-import React from "react";
 import { Box, Text } from "ink";
 import { getAtlasClient } from "@atlas/client";
 import { formatVersionDisplay, getVersionInfo } from "../../../utils/version.ts";
@@ -200,11 +199,7 @@ function processOrder(order) {
             message="Here's an example git diff:"
             authorColor="blue"
           />
-          <GitDiff
-            diffContent={exampleDiff}
-            startingLine={1}
-            endingLine={15}
-          />
+          <GitDiff diffContent={exampleDiff} startingLine={1} endingLine={15} />
         </Box>
       ),
     },

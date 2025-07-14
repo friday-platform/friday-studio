@@ -35,22 +35,21 @@ export class MCPAdapter extends BaseRemoteAdapter {
   private mcpConfig: MCPAdapterConfig;
   private mcpLogger = logger.createChildLogger({ component: "MCPAdapter" });
   private connected = false;
-  private tools: Array<{ name: string; description?: string; inputSchema?: unknown }> = [];
+  private tools: Array<{
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+  }> = [];
 
   constructor(config: MCPAdapterConfig) {
     super(config);
     this.mcpConfig = config;
 
     // Create MCP client
-    this.client = new Client(
-      {
-        name: "atlas-mcp-client",
-        version: "1.0.0",
-      },
-      {
-        capabilities: {},
-      },
-    );
+    this.client = new Client({
+      name: "atlas-mcp-client",
+      version: "1.0.0",
+    });
 
     // Create HTTP transport
     this.transport = new StreamableHTTPClientTransport(
@@ -135,9 +134,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
         this.mcpConfig.allowed_tools &&
         !this.mcpConfig.allowed_tools.includes(toolCall.name)
       ) {
-        throw new Error(
-          `Tool '${toolCall.name}' not in allowed tools list`,
-        );
+        throw new Error(`Tool '${toolCall.name}' not in allowed tools list`);
       }
 
       if (
@@ -167,10 +164,12 @@ export class MCPAdapter extends BaseRemoteAdapter {
 
       return {
         executionId,
-        output: result.content.map((c): RemoteMessagePart => ({
-          content_type: c.type === "text" ? "text/plain" : "application/json",
-          content: c.type === "text" ? c.text : JSON.stringify(c),
-        })),
+        output: result.content.map(
+          (c): RemoteMessagePart => ({
+            content_type: c.type === "text" ? "text/plain" : "application/json",
+            content: c.type === "text" ? c.text : JSON.stringify(c),
+          }),
+        ),
         status: result.isError ? "failed" : "completed",
         error: result.isError ? "Tool execution failed" : undefined,
         metadata: {
@@ -239,7 +238,9 @@ export class MCPAdapter extends BaseRemoteAdapter {
     this.mcpLogger.warn("MCP execution cancellation not supported", {
       executionId,
     });
-    return Promise.reject(new Error("Execution cancellation not supported by MCP protocol"));
+    return Promise.reject(
+      new Error("Execution cancellation not supported by MCP protocol"),
+    );
   }
 
   resumeExecution(
@@ -250,7 +251,9 @@ export class MCPAdapter extends BaseRemoteAdapter {
     this.mcpLogger.warn("MCP execution resumption not supported", {
       executionId,
     });
-    return Promise.reject(new Error("Execution resumption not supported by MCP protocol"));
+    return Promise.reject(
+      new Error("Execution resumption not supported by MCP protocol"),
+    );
   }
 
   async healthCheck(): Promise<HealthStatus> {
@@ -317,9 +320,10 @@ export class MCPAdapter extends BaseRemoteAdapter {
     }
   }
 
-  private parseToolCall(
-    input: string | RemoteMessagePart[],
-  ): { name: string; arguments: Record<string, unknown> } {
+  private parseToolCall(input: string | RemoteMessagePart[]): {
+    name: string;
+    arguments: Record<string, unknown>;
+  } {
     const inputStr = typeof input === "string" ? input : input[0]?.content?.toString() || "";
 
     try {

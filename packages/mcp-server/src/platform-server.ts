@@ -9,6 +9,8 @@ import { registerTools } from "./tools/index.ts";
 import type { ToolContext } from "./tools/types.ts";
 import { registerResources } from "./resources/index.ts";
 import type { ResourceContext } from "./resources/types.ts";
+import { PromptContext } from "./prompts/types.ts";
+import { registerPrompts } from "./prompts/index.ts";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -36,6 +38,11 @@ export class PlatformMCPServer {
     this.server = new McpServer({
       name: "atlas-platform",
       version: "1.0.0",
+      capabilities: {
+        prompts: {},
+        tools: {},
+        resources: {},
+      },
     });
 
     // Create shared context for all tools
@@ -52,6 +59,13 @@ export class PlatformMCPServer {
       logger: this.logger,
     };
     registerResources(this.server, resourceContext);
+
+    // Register prompts with same DI pattern
+    const promptContext: PromptContext = {
+      daemonUrl: this.daemonUrl,
+      logger: this.logger,
+    };
+    registerPrompts(this.server, promptContext);
 
     this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,

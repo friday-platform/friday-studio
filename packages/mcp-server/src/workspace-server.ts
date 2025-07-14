@@ -36,7 +36,10 @@ export interface WorkspaceMCPServerDependencies {
   workspaceRuntime: {
     // SECURITY: Only expose safe, workspace-scoped job operations
     listJobs(): Promise<Array<{ name: string; description?: string }>>;
-    triggerJob(jobName: string, payload?: unknown): Promise<{ sessionId: string }>;
+    triggerJob(
+      jobName: string,
+      payload?: unknown,
+    ): Promise<{ sessionId: string }>;
     describeJob(jobName: string): Promise<unknown>;
     // REMOVED: session management, signal triggering, agent introspection
     // These are platform-level capabilities that workspace MCP should not expose
@@ -71,6 +74,7 @@ export class WorkspaceMCPServer {
       {
         capabilities: {
           tools: {},
+          prompts: {},
         },
       },
     );
@@ -97,7 +101,9 @@ export class WorkspaceMCPServer {
 
       // Filter capabilities based on discoverable configuration
       const discoverableCapabilities = serverConfig.discoverable?.capabilities || [];
-      const allowedCapabilities = this.filterAllowedCapabilities(discoverableCapabilities);
+      const allowedCapabilities = this.filterAllowedCapabilities(
+        discoverableCapabilities,
+      );
 
       // Only add allowed capabilities
       for (const capability of allowedCapabilities) {
@@ -211,7 +217,9 @@ export class WorkspaceMCPServer {
       try {
         // Check if it's an allowed capability
         const discoverableCapabilities = serverConfig.discoverable?.capabilities || [];
-        const allowedCapabilities = this.filterAllowedCapabilities(discoverableCapabilities);
+        const allowedCapabilities = this.filterAllowedCapabilities(
+          discoverableCapabilities,
+        );
 
         if (allowedCapabilities.includes(name)) {
           switch (name) {
@@ -237,7 +245,9 @@ export class WorkspaceMCPServer {
 
             case "workspace_jobs_describe": {
               const { jobName } = args as { jobName: string };
-              const job = await this.dependencies.workspaceRuntime.describeJob(jobName);
+              const job = await this.dependencies.workspaceRuntime.describeJob(
+                jobName,
+              );
               return {
                 content: [
                   {
@@ -261,7 +271,10 @@ export class WorkspaceMCPServer {
           // Check concurrent session limit before triggering job
           this.checkRateLimit(); // Additional check for session limit
 
-          const result = await this.dependencies.workspaceRuntime.triggerJob(name, payload);
+          const result = await this.dependencies.workspaceRuntime.triggerJob(
+            name,
+            payload,
+          );
 
           // Track session for concurrent session limiting
           this.trackSessionStart(result.sessionId);
@@ -301,7 +314,9 @@ export class WorkspaceMCPServer {
           discoverableJobs,
         });
 
-        throw new Error(`Tool '${name}' is not available in this workspace's MCP configuration`);
+        throw new Error(
+          `Tool '${name}' is not available in this workspace's MCP configuration`,
+        );
       } catch (error) {
         return {
           content: [
@@ -327,7 +342,9 @@ export class WorkspaceMCPServer {
   private getDiscoverableJobs(): string[] {
     const serverConfig = this.dependencies.workspaceConfig.server;
     const discoverableJobs = serverConfig?.mcp?.discoverable?.jobs || [];
-    const availableJobs = Object.keys(this.dependencies.workspaceConfig.jobs || {});
+    const availableJobs = Object.keys(
+      this.dependencies.workspaceConfig.jobs || {},
+    );
 
     const matchingJobs: string[] = [];
 
@@ -355,7 +372,9 @@ export class WorkspaceMCPServer {
    * Filter allowed workspace capabilities based on discoverable configuration
    * SECURITY: Only allows safe, workspace-scoped capabilities
    */
-  private filterAllowedCapabilities(discoverableCapabilities: string[]): string[] {
+  private filterAllowedCapabilities(
+    discoverableCapabilities: string[],
+  ): string[] {
     // Define the secure subset of workspace capabilities that can be exposed
     const safeWorkspaceCapabilities = [
       "workspace_jobs_list",
@@ -516,7 +535,9 @@ export class WorkspaceMCPServer {
 
     // Get filtered capabilities based on configuration
     const discoverableCapabilities = serverConfig.discoverable?.capabilities || [];
-    const allowedCapabilities = this.filterAllowedCapabilities(discoverableCapabilities);
+    const allowedCapabilities = this.filterAllowedCapabilities(
+      discoverableCapabilities,
+    );
 
     // Get discoverable jobs
     const discoverableJobs = this.getDiscoverableJobs();
