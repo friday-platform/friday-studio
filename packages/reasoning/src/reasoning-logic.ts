@@ -13,7 +13,7 @@ export async function generateThinking<T>(
   customPrompt?: string,
 ): Promise<{ thinking: string; confidence: number }> {
   // Dynamically import LLMProvider to avoid circular dependencies
-  const { LLMProvider } = await import("../../../src/utils/llm/provider.ts");
+  const { LLMProvider } = await import("@atlas/core");
 
   const prompt = customPrompt || createDefaultPrompt(context);
 
@@ -23,7 +23,7 @@ export async function generateThinking<T>(
     model: "claude-3-5-sonnet-20241022",
     provider: "anthropic",
     temperature: 0.1,
-    maxTokens: 4000, // Reasonable default for reasoning steps
+    max_tokens: 4000, // Reasonable default for reasoning steps
     operationContext: {
       operation: "reasoning_think_step",
       iteration: context.currentIteration + 1,
@@ -32,10 +32,10 @@ export async function generateThinking<T>(
     },
   });
 
-  const confidence = calculateConfidence(result, context.currentIteration);
+  const confidence = calculateConfidence(result.text, context.currentIteration);
 
   return {
-    thinking: result,
+    thinking: result.text,
     confidence,
   };
 }

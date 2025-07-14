@@ -1,5 +1,6 @@
 import { expect } from "@std/expect";
-import { LLMProviderManager } from "../../src/core/agents/llm-provider-manager.ts";
+// NOTE: LLMProviderManager doesn't exist in actor-based architecture
+// // import { LLMProviderManager } from "../../src/core/agents/llm-provider-manager.ts"; // Replaced by actor-based architecture
 
 const TEST_PROMPT = "What is 2+2? Answer with just the number.";
 

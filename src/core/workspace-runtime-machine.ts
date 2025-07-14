@@ -18,8 +18,7 @@ import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/c
 import { logger } from "../utils/logger.ts";
 import { WorkspaceSupervisorActor } from "./actors/workspace-supervisor-actor.ts";
 import { AgentLoader } from "./agent-loader.ts";
-import { ProviderRegistry } from "./providers/registry.ts";
-import { type ISignalProvider, ProviderType } from "./providers/types.ts";
+import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
 
@@ -244,8 +243,6 @@ export function createWorkspaceRuntimeMachine(
             const { context } = input;
             const activeStreamSignals = new Map<string, StreamSignalData>();
 
-            // Register built-in providers
-            ProviderRegistry.registerBuiltinProviders();
             const registry = ProviderRegistry.getInstance();
 
             logger.info("Initializing stream signals", {

@@ -18,7 +18,6 @@ interface AgentData {
   model?: string;
   purpose?: string;
   max_steps?: number;
-  mcp_servers?: string[];
   tools?: string[];
   prompts?: Record<string, string>;
   path?: string;
@@ -159,11 +158,14 @@ export const AgentDetails = ({ workspaceId, agentId }: AgentDetailsProps) => {
       });
       llmConfig += "\n";
     }
-    if (agentData.mcp_servers && agentData.mcp_servers.length > 0) {
-      llmConfig += "**MCP Servers:**\n";
-      agentData.mcp_servers.forEach((server) => {
-        llmConfig += `- ${server}\n`;
-      });
+    if (agentData.tools && typeof agentData.tools === "object" && (agentData.tools as any).mcp) {
+      const mcpServers = (agentData.tools as any).mcp;
+      if (Array.isArray(mcpServers) && mcpServers.length > 0) {
+        llmConfig += "**MCP Servers:**\n";
+        mcpServers.forEach((server) => {
+          llmConfig += `- ${server}\n`;
+        });
+      }
     }
     if (llmConfig) {
       markdown = appendSection(markdown, "LLM Configuration", llmConfig);

@@ -1,0 +1,412 @@
+import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
+import {
+  type CoreMessage,
+  generateText,
+  jsonSchema,
+  streamText,
+  Tool,
+  ToolCall,
+  ToolResult,
+} from "ai";
+import { z } from "zod/v4";
+import { MCPManager } from "@atlas/mcp";
+import { logger } from "../../../src/utils/logger.ts";
+
+// Runtime validation schemas
+const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
+
+const LLMOptionsSchema = z.object({
+  provider: LLMProviderSchema.optional().default("anthropic"),
+  model: z.string(),
+  temperature: z.number().min(0).max(1).optional(),
+  max_tokens: z.number().positive().optional(),
+  max_steps: z.number().positive().optional(),
+  tool_choice: z
+    .union([
+      z.literal("auto"),
+      z.literal("required"),
+      z.literal("none"),
+      z.object({
+        type: z.literal("tool"),
+        toolName: z.string(),
+      }),
+    ])
+    .optional(),
+  apiKey: z.string().optional(),
+  timeout: z.number().positive().optional(),
+  systemPrompt: z.string().optional(),
+  memoryContext: z.string().optional(),
+  operationContext: z.record(z.string(), z.unknown()).optional(),
+  tools: z.record(z.string(), z.any()).optional(),
+  mcpServers: z.array(z.string()).optional(),
+});
+
+/**
+ * Unified options for LLM operations - separates provider config from runtime context
+ */
+export interface LLMOptions {
+  provider?: "anthropic" | "openai" | "google";
+  model: string;
+  temperature?: number;
+  max_tokens?: number;
+  max_steps?: number;
+  tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
+  apiKey?: string;
+  timeout?: number;
+  systemPrompt?: string;
+  memoryContext?: string;
+  operationContext?: Record<string, unknown>;
+  tools?: Record<string, Tool>;
+  mcpServers?: string[];
+}
+
+/**
+ * Always returns the same shape whether tools are used or not
+ */
+export interface LLMResponse {
+  text: string;
+  toolCalls: ToolCall<string, unknown>[];
+  toolResults: ToolResult<string, unknown, unknown>[];
+  steps: unknown[];
+}
+
+type ProviderClient = AnthropicProvider | OpenAIProvider | GoogleGenerativeAIProvider;
+
+const PROVIDER_ENV_VARS = {
+  anthropic: "ANTHROPIC_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GOOGLE_GENERATIVE_AI_API_KEY",
+} as const;
+
+/**
+ * Unified LLM provider that automatically detects when tools are needed.
+ * Design principle: One method, consistent returns, automatic tool wrapping.
+ */
+export class LLMProvider {
+  private static clients: Map<string, ProviderClient> = new Map();
+  private static mcpManager = new MCPManager();
+
+  /**
+   * Single entry point for all LLM operations - tools are detected automatically
+   */
+  static async generateText(
+    userPrompt: string,
+    options: LLMOptions,
+  ): Promise<LLMResponse> {
+    const validatedOptions = LLMOptionsSchema.parse(options);
+
+    const startTime = Date.now();
+    const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);
+
+    logger.info("LLM generation started", {
+      provider: providerConfig.provider,
+      model: providerConfig.model,
+      hasTools: !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0),
+      hasMcpServers: !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0),
+    });
+
+    try {
+      const model = this.getModel(providerConfig);
+
+      const messages = this.buildMessages(userPrompt, runtimeContext);
+
+      const hasTools = !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0);
+      const hasMcpServers = !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0);
+      const needsTools = hasTools || hasMcpServers;
+
+      const tools: Record<string, Tool> | undefined = needsTools
+        ? await this.prepareTools(runtimeContext)
+        : undefined;
+
+      if (tools) {
+        logger.debug("Tools structure before AI SDK call", {
+          toolCount: Object.keys(tools).length,
+          toolNames: Object.keys(tools),
+          firstToolStructure: tools[Object.keys(tools)[0]]
+            ? {
+              type: typeof tools[Object.keys(tools)[0]],
+              keys: Object.keys(tools[Object.keys(tools)[0]]),
+              hasDescription: !!tools[Object.keys(tools)[0]].description,
+              hasParameters: !!tools[Object.keys(tools)[0]].parameters,
+              hasExecute: !!tools[Object.keys(tools)[0]].execute,
+            }
+            : null,
+        });
+      }
+
+      const result = await generateText({
+        model,
+        messages,
+        tools: tools && Object.keys(tools).length > 0 ? tools : undefined,
+        toolChoice: providerConfig.tool_choice,
+        maxSteps: providerConfig.max_steps,
+        maxTokens: providerConfig.max_tokens,
+        temperature: providerConfig.temperature,
+        abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
+      });
+
+      return {
+        text: result.text,
+        toolCalls: result.toolCalls || [],
+        toolResults: result.toolResults || [],
+        steps: result.steps || [],
+      };
+    } catch (error) {
+      logger.error("LLM generation failed", {
+        error: error instanceof Error ? error.message : String(error),
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+        duration: Date.now() - startTime,
+      });
+      throw error;
+    } finally {
+      logger.info("LLM generation completed", {
+        duration: Date.now() - startTime,
+      });
+    }
+  }
+
+  /**
+   * Streaming variant for real-time responses
+   */
+  static async *generateTextStream(
+    userPrompt: string,
+    options: LLMOptions,
+  ): AsyncGenerator<string> {
+    const validatedOptions = LLMOptionsSchema.parse(options);
+    const validatedPrompt = z.string().parse(userPrompt);
+
+    const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);
+
+    logger.info("LLM stream generation started", {
+      provider: providerConfig.provider,
+      model: providerConfig.model,
+    });
+
+    try {
+      const model = this.getModel(providerConfig);
+      const messages = this.buildMessages(validatedPrompt, runtimeContext);
+
+      const stream = await streamText({
+        model,
+        messages,
+        maxTokens: providerConfig.max_tokens,
+        temperature: providerConfig.temperature,
+        abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
+      });
+
+      for await (const chunk of stream.textStream) {
+        yield chunk;
+      }
+    } catch (error) {
+      logger.error("LLM stream generation failed", {
+        error: error instanceof Error ? error.message : String(error),
+        provider: providerConfig.provider,
+        model: providerConfig.model,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Design pattern: Separate immutable provider config from per-request context
+   */
+  private static extractProviderConfig(options: LLMOptions): {
+    providerConfig: {
+      provider: "anthropic" | "openai" | "google";
+      model: string;
+      temperature?: number;
+      max_tokens?: number;
+      max_steps?: number;
+      tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
+      apiKey?: string;
+      timeout?: number;
+    };
+    runtimeContext: {
+      systemPrompt?: string;
+      memoryContext?: string;
+      operationContext?: Record<string, unknown>;
+      tools?: Record<string, Tool>;
+      mcpServers?: string[];
+    };
+  } {
+    const providerConfig = {
+      provider: options.provider || "anthropic",
+      model: options.model,
+      temperature: options.temperature,
+      max_tokens: options.max_tokens,
+      max_steps: options.max_steps,
+      tool_choice: options.tool_choice,
+      apiKey: options.apiKey,
+      timeout: options.timeout,
+    };
+
+    const runtimeContext = {
+      systemPrompt: options.systemPrompt,
+      memoryContext: options.memoryContext,
+      operationContext: options.operationContext,
+      tools: options.tools,
+      mcpServers: options.mcpServers,
+    };
+
+    return { providerConfig, runtimeContext };
+  }
+
+  /**
+   * Constructs the conversation with system prompts, memory, and user input
+   */
+  private static buildMessages(
+    userPrompt: string,
+    context: {
+      systemPrompt?: string;
+      memoryContext?: string;
+      operationContext?: Record<string, unknown>;
+    },
+  ): CoreMessage[] {
+    const messages: CoreMessage[] = [];
+
+    if (context.systemPrompt) {
+      messages.push({
+        role: "system",
+        content: context.systemPrompt,
+      });
+    }
+
+    if (context.memoryContext) {
+      messages.push({
+        role: "system",
+        content: `Memory Context:\n${context.memoryContext}`,
+      });
+    }
+
+    if (context.operationContext && Object.keys(context.operationContext).length > 0) {
+      messages.push({
+        role: "system",
+        content: `Operation Context:\n${JSON.stringify(context.operationContext, null, 2)}`,
+      });
+    }
+
+    if (userPrompt.length > 0) {
+      messages.push({
+        role: "user",
+        content: userPrompt,
+      });
+    }
+
+    return messages;
+  }
+
+  /**
+   * Ensures all tools have AI SDK's required internal symbols via jsonSchema wrapper
+   */
+  private static async prepareTools(
+    context: {
+      tools?: Record<string, Tool>;
+      mcpServers?: string[];
+    },
+  ): Promise<Record<string, Tool>> {
+    const allTools: Record<string, Tool> = {};
+
+    if (context.tools) {
+      for (const [toolName, tool] of Object.entries(context.tools)) {
+        // AI SDK requires Symbol.for("vercel.ai.schema") on parameters
+        const params = tool.parameters;
+
+        const needsWrapping = params &&
+          typeof params === "object" &&
+          !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped by AI SDK
+          !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
+
+        if (needsWrapping) {
+          logger.debug("Wrapping tool parameters with jsonSchema", {
+            tool: toolName,
+            originalParams: params,
+          });
+          allTools[toolName] = {
+            ...tool,
+            parameters: jsonSchema(params),
+          } as Tool;
+        } else {
+          logger.debug("Tool already has proper format", {
+            tool: toolName,
+            hasAiSchema: !!params?.[Symbol.for("vercel.ai.schema")],
+            hasValidator: !!params?.[Symbol.for("vercel.ai.validator")],
+          });
+          allTools[toolName] = tool;
+        }
+      }
+    }
+
+    if (context.mcpServers && context.mcpServers.length > 0) {
+      try {
+        const mcpTools = await this.mcpManager.getToolsForServers(context.mcpServers);
+        Object.assign(allTools, mcpTools);
+      } catch (error) {
+        logger.error("Failed to get MCP tools", {
+          servers: context.mcpServers,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return allTools;
+  }
+
+  /**
+   * Provider clients are cached by API key to avoid recreation
+   * Returns a model instance ready for generation
+   */
+  private static getModel(
+    config: {
+      provider: "anthropic" | "openai" | "google";
+      model: string;
+      apiKey?: string;
+    },
+  ) {
+    const cacheKey = `${config.provider}:${config.apiKey || "env"}`;
+
+    let client: ProviderClient;
+    if (this.clients.has(cacheKey)) {
+      client = this.clients.get(cacheKey)!;
+    } else {
+      const apiKey = config.apiKey || Deno.env.get(PROVIDER_ENV_VARS[config.provider]);
+      if (!apiKey) {
+        throw new Error(
+          `API key not found for ${config.provider}. ` +
+            `Set ${
+              PROVIDER_ENV_VARS[config.provider]
+            } environment variable or provide apiKey in config.`,
+        );
+      }
+
+      switch (config.provider) {
+        case "anthropic":
+          client = createAnthropic({ apiKey });
+          break;
+        case "openai":
+          client = createOpenAI({ apiKey });
+          break;
+        case "google":
+          client = createGoogleGenerativeAI({ apiKey });
+          break;
+        default:
+          throw new Error(`Unsupported provider: ${config.provider}`);
+      }
+
+      this.clients.set(cacheKey, client);
+    }
+
+    // Provider clients are callable functions: client(modelName) => LanguageModelV1
+    return client(config.model);
+  }
+
+  /**
+   * Clears provider cache - useful for testing or API key rotation
+   */
+  static clearClients(): void {
+    this.clients.clear();
+    logger.debug("Provider client cache cleared");
+  }
+}

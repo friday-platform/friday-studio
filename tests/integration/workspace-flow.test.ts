@@ -7,7 +7,7 @@
 
 import { Workspace } from "../../src/core/workspace.ts";
 import { WorkspaceRuntime } from "../../src/core/workspace-runtime.ts";
-// import { WorkspaceServer } from "../../src/core/workspace-server.ts";  // TODO: WorkspaceServer not implemented yet
+// // import { WorkspaceServer } from "../../src/core/workspace-server.ts"; // Replaced by actor-based architecture  // TODO: WorkspaceServer not implemented yet
 import { AtlasScope } from "../../src/core/scope.ts";
 import type { IWorkspaceSignal } from "../../src/types/core.ts";
 import { expect } from "@std/expect";

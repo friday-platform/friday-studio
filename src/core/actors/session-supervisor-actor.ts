@@ -196,11 +196,13 @@ export class SessionSupervisorActor {
       );
 
       const payload: AgentExecutePayload = {
-        agentId,
-        input,
+        agent_id: agentId,
+        input: JSON.stringify(input),
+        task: "reasoning_task",
         sessionId: this.sessionContext?.sessionId || "unknown",
         workspaceId: this.sessionContext?.workspaceId || "global",
         signal: this.sessionContext?.signal || {},
+        environment: {},
       };
 
       return await agentActor.executeTask(crypto.randomUUID(), payload);
@@ -381,12 +383,28 @@ export class SessionSupervisorActor {
       }
     }
 
+    this.logger.debug("DEBUG: Session supervisor task input preparation", {
+      agentId: agentTask.agentId,
+      task: agentTask.task,
+      inputSource: agentTask.inputSource,
+      inputType: typeof input,
+      inputKeys: input && typeof input === "object" ? Object.keys(input) : [],
+      inputPreview: input && typeof input === "object"
+        ? JSON.stringify(input).substring(0, 200)
+        : String(input),
+      sessionPayload: this.sessionContext?.payload,
+      hasSessionContext: !!this.sessionContext,
+    });
+
     // Create agent execution payload
     const payload: AgentExecutePayload = {
       agent_id: agentTask.agentId,
-      input,
       task: agentTask.task,
-      reasoning: agentTask.reasoning,
+      input,
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+      signal: this.sessionContext?.signal || {},
+      environment: {},
     };
 
     // Execute agent through AgentExecutionActor

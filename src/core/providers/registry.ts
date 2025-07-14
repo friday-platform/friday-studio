@@ -1,4 +1,5 @@
 import type { IProvider, IProviderRegistry, ProviderConfig, ProviderType } from "./types.ts";
+import { PROVIDER_CLASSES } from "@atlas/signals";
 
 export class ProviderRegistry implements IProviderRegistry {
   private static instance: ProviderRegistry;
@@ -46,102 +47,55 @@ export class ProviderRegistry implements IProviderRegistry {
       return existing;
     }
 
-    // Get factory
-    const factory = this.factories.get(config.provider);
-    if (!factory) {
-      throw new Error(`No factory registered for provider: ${config.provider}`);
+    // Get provider class from static map
+    const ProviderClass = PROVIDER_CLASSES[config.provider as keyof typeof PROVIDER_CLASSES];
+    if (!ProviderClass) {
+      throw new Error(`No provider registered for type: ${config.provider}`);
     }
 
     // Create and register provider
-    const provider = await factory(config);
+    const provider = this.createProviderInstance(ProviderClass, config);
     this.register(provider);
 
     return provider;
   }
 
-  // Built-in provider factories
-  static registerBuiltinProviders() {
-    const registry = ProviderRegistry.getInstance();
+  private createProviderInstance(ProviderClass: any, config: ProviderConfig): IProvider {
+    // Preserve existing configuration transformation logic
+    switch (config.provider) {
+      case "http":
+        return new ProviderClass({
+          id: config.id,
+          description: config.config?.description || `HTTP signal for ${config.id}`,
+          provider: "http" as const,
+          path: config.config?.path,
+          method: config.config?.method,
+        });
 
-    // Register built-in signal providers
-    registry.registerFactory("http", async (config) => {
-      const { HTTPSignalProvider } = await import("./builtin/http-signal.ts");
+      case "timer":
+      case "schedule":
+      case "cron":
+      case "cron-scheduler":
+        return new ProviderClass({
+          id: config.id,
+          description: config.config?.description || `Timer signal for ${config.id}`,
+          provider: config.provider,
+          schedule: config.config?.schedule,
+          timezone: config.config?.timezone,
+        });
 
-      // Transform ProviderConfig to HTTPSignalConfig
-      const httpConfig = {
-        id: config.id,
-        description: config.config?.description || `HTTP signal for ${config.id}`,
-        provider: "http" as const,
-        path: config.config?.path,
-        method: config.config?.method,
-      };
+      case "cli":
+        return new ProviderClass({
+          id: config.id,
+          description: config.config?.description || `CLI signal for ${config.id}`,
+          provider: "cli" as const,
+          command: config.config?.command,
+          args: config.config?.args,
+          flags: config.config?.flags,
+        });
 
-      return new HTTPSignalProvider(httpConfig);
-    });
-
-    registry.registerFactory("http-webhook", async (config) => {
-      const { HttpWebhookProvider } = await import("./builtin/http-webhook.ts");
-      return new HttpWebhookProvider(config);
-    });
-
-    // Timer/Cron signal providers (all variants use the same implementation)
-    const createTimerProvider = async (config: ProviderConfig) => {
-      const { TimerSignalProvider } = await import("./builtin/timer-signal.ts");
-
-      // Transform ProviderConfig to TimerSignalConfig
-      const timerConfig = {
-        id: config.id,
-        description: config.config?.description || `Timer signal for ${config.id}`,
-        provider: config.provider as "timer" | "schedule" | "cron" | "cron-scheduler",
-        schedule: config.config?.schedule,
-        timezone: config.config?.timezone,
-      };
-
-      return new TimerSignalProvider(timerConfig);
-    };
-
-    registry.registerFactory("timer", createTimerProvider);
-    registry.registerFactory("schedule", createTimerProvider);
-    registry.registerFactory("cron", createTimerProvider);
-    registry.registerFactory("cron-scheduler", createTimerProvider);
-
-    registry.registerFactory("stream", async (_config) => {
-      const { StreamSignalProvider } = await import("./builtin/stream-signal.ts");
-      return new StreamSignalProvider();
-    });
-
-    registry.registerFactory("k8s-events", async (_config) => {
-      const { K8sEventsSignalProvider } = await import("./builtin/k8s-events.ts");
-      return new K8sEventsSignalProvider();
-    });
-
-    registry.registerFactory("cli", async (config) => {
-      const { CliSignalProvider } = await import("./builtin/cli-signal.ts");
-
-      // Transform ProviderConfig to CliSignalConfig
-      const cliConfig = {
-        id: config.id,
-        description: config.config?.description || `CLI signal for ${config.id}`,
-        provider: "cli" as const,
-        command: config.config?.command,
-        args: config.config?.args,
-        flags: config.config?.flags,
-      };
-
-      return new CliSignalProvider(cliConfig);
-    });
-
-    // Register built-in agent providers
-    registry.registerFactory("anthropic", async (config) => {
-      const { AnthropicAgentProvider } = await import(
-        "./builtin/anthropic-agent.ts"
-      );
-      return new AnthropicAgentProvider(config);
-    });
-
-    registry.registerFactory("openai", async (config) => {
-      const { OpenAIAgentProvider } = await import("./builtin/openai-agent.ts");
-      return new OpenAIAgentProvider(config);
-    });
+      default:
+        return new ProviderClass(config);
+    }
   }
 }

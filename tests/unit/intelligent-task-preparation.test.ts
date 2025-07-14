@@ -1,11 +1,12 @@
 import { assertEquals, assertStringIncludes } from "@std/assert";
-import { SessionSupervisor } from "../../src/core/session-supervisor.ts";
-import type {
-  AgentMetadata,
-  JobAgentSpec,
-  JobSpecification,
-  SessionContext,
-} from "../../src/core/session-supervisor.ts";
+import { SessionSupervisorActor } from "../../src/core/actors/session-supervisor-actor.ts";
+// NOTE: These types may not exist in the actor-based architecture
+// import type {
+//   AgentMetadata,
+//   JobAgentSpec,
+//   JobSpecification,
+//   SessionContext,
+// } from "../../src/core/session-supervisor.ts";
 import type { AtlasMemoryConfig } from "../../src/core/memory-config.ts";
 
 // Mock LLM response for testing

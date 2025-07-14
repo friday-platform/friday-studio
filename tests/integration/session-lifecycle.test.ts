@@ -6,7 +6,7 @@
  */
 
 import { Session, SessionIntent } from "../../src/core/session.ts";
-import { WorkspaceSupervisor } from "../../src/core/supervisor.ts";
+import { WorkspaceSupervisorActor } from "../../src/core/actors/workspace-supervisor-actor.ts";
 import { expect } from "@std/expect";
 import { createMockSignal } from "../fixtures/mocks.ts";
 import { createTestSession } from "../../src/testing/helpers.ts";

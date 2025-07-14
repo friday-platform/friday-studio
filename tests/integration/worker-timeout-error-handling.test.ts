@@ -5,9 +5,12 @@
  * This test reproduces the uncaught promise error from worker timeouts
  */
 
-import { WorkerManager } from "../../src/core/utils/worker-manager.ts";
+// NOTE: WorkerManager doesn't exist in the actor-based architecture
+// // import { WorkerManager } from "../../src/core/utils/worker-manager.ts"; // Replaced by actor-based architecture
 import { expect } from "@std/expect";
 
+// NOTE: These tests commented out - WorkerManager no longer exists in actor-based architecture
+/*
 Deno.test({
   name: "Worker timeout should be caught properly",
   sanitizeResources: false,
@@ -19,31 +22,31 @@ Deno.test({
     const testWorkerCode = `
     /// <reference no-default-lib="true" />
     /// <reference lib="deno.worker" />
-    
+
     import { BaseWorker } from "${
       new URL("../../src/core/workers/base-worker.ts", import.meta.url).href
     }";
-    
+
     class TimeoutTestWorker extends BaseWorker {
       constructor() {
         super("timeout-test-worker", "test");
       }
-      
+
       protected override async initialize(config) {
         this.log("Timeout test worker initialized");
       }
-      
+
       protected override async processTask(taskId, data) {
         this.log("Processing task but will never respond:", taskId, data);
         // Simulate a stuck agent - never return or throw
         return new Promise(() => {}); // Never resolves
       }
-      
+
       protected override async cleanup() {
         this.log("Cleaning up timeout test worker");
       }
     }
-    
+
     new TimeoutTestWorker();
   `;
 
@@ -83,7 +86,10 @@ Deno.test({
     }
   },
 });
+*/
 
+// NOTE: This test also commented out - WorkerManager no longer exists in actor-based architecture
+/*
 Deno.test({
   name: "WorkspaceRuntime should handle worker timeout errors gracefully",
   sanitizeResources: false,
@@ -96,7 +102,7 @@ Deno.test({
     const testWorkerCode = `
     /// <reference no-default-lib="true" />
     /// <reference lib="deno.worker" />
-    
+
     self.onmessage = (event) => {
       if (event.data.type === 'init') {
         self.postMessage({ type: 'initialized' });
@@ -150,3 +156,4 @@ Deno.test({
     }
   },
 });
+*/

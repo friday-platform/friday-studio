@@ -11,7 +11,7 @@ import {
 } from "@atlas/config";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Span } from "@opentelemetry/api";
-import { experimental_createMCPClient as createMCPClient } from "ai";
+import { experimental_createMCPClient as createMCPClient, Tool } from "ai";
 import { Experimental_StdioMCPTransport as StdioMCPTransport } from "ai/mcp-stdio";
 import { z } from "zod/v4";
 import { logger } from "../../../src/utils/logger.ts";
@@ -221,7 +221,7 @@ export class MCPManager {
    * @param serverIds Array of server IDs to get tools from
    * @returns Promise<Record<string, unknown>> Combined tools object
    */
-  async getToolsForServers(serverIds: string[]): Promise<Record<string, unknown>> {
+  async getToolsForServers(serverIds: string[]): Promise<Record<string, Tool>> {
     return await AtlasTelemetry.withMCPSpan(
       serverIds.join(","),
       "tool_call",
@@ -238,8 +238,8 @@ export class MCPManager {
   private async _getToolsForServersInternal(
     serverIds: string[],
     span: Span | null,
-  ): Promise<Record<string, unknown>> {
-    const allTools: Record<string, unknown> = {};
+  ): Promise<Record<string, Tool>> {
+    const allTools: Record<string, Tool> = {};
 
     // Add telemetry attributes
     span?.setAttribute("mcp.requested_servers_count", serverIds.length);

@@ -12,7 +12,7 @@ class AtlasInstaller {
 
   async loadPlatformInfo() {
     try {
-      this.platformInfo = await window.electronAPI.getPlatform();
+      this.platformInfo = await globalThis.electronAPI.getPlatform();
       console.log("Platform info:", this.platformInfo);
     } catch (error) {
       console.error("Failed to load platform info:", error);
@@ -244,7 +244,7 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
         break;
 
       case 4: // Finish
-        await window.electronAPI.quitApp();
+        await globalThis.electronAPI.quitApp();
         break;
     }
 
@@ -284,15 +284,19 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
       {
         progress: 20,
         message: "Creating Atlas directory...",
-        action: () => window.electronAPI.createAtlasDir(),
+        action: () => globalThis.electronAPI.createAtlasDir(),
       },
       {
         progress: 40,
         message: "Installing Atlas binary...",
-        action: () => window.electronAPI.installAtlasBinary(),
+        action: () => globalThis.electronAPI.installAtlasBinary(),
       },
       { progress: 60, message: "Configuring API key...", action: () => this.configureApiKey() },
-      { progress: 80, message: "Setting up PATH...", action: () => window.electronAPI.setupPath() },
+      {
+        progress: 80,
+        message: "Setting up PATH...",
+        action: () => globalThis.electronAPI.setupPath(),
+      },
       {
         progress: 100,
         message: "Installation complete!",
@@ -335,7 +339,7 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
     const apiKey = document.getElementById("api-key").value;
 
     if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
-      return await window.electronAPI.saveApiKey(apiKey.trim());
+      return await globalThis.electronAPI.saveApiKey(apiKey.trim());
     } else {
       return {
         success: true,

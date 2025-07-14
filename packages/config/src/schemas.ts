@@ -260,8 +260,6 @@ export const WorkspaceAgentConfigSchema = z
     prompts: z.record(z.string(), z.string()).optional(),
     temperature: z.number().min(0).max(2).optional(),
     max_tokens: z.number().positive().optional(),
-    // MCP integration (only for LLM agents) - DEPRECATED, use tools.mcp instead
-    mcp_servers: z.array(z.string()).optional(), // Legacy: References to MCP servers (LLM agents only)
     max_steps: z.number().positive().optional(), // For multi-step tool calling (LLM agents only)
     tool_choice: z
       .union([
@@ -495,6 +493,7 @@ export const JobSpecificationSchema = z.object({
   }).optional(),
   supervision: z.object({
     level: z.enum(["minimal", "standard", "paranoid"]).optional(),
+    skip_planning: z.boolean().optional(),
   }).optional(),
   memory: z.object({
     enabled: z.boolean().optional().default(true),
@@ -544,9 +543,6 @@ export const WorkspaceConfigSchema = z.object({
   jobs: z.record(MCPToolNameSchema, JobSpecificationSchema).optional(), // Job keys become MCP tools
   signals: z.record(z.string(), WorkspaceSignalConfigSchema).optional(),
   agents: z.record(z.string(), WorkspaceAgentConfigSchema).optional(),
-
-  // Legacy MCP servers configuration (keeping for backward compatibility)
-  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 export const SupervisorConfigSchema = z.object({
@@ -771,9 +767,6 @@ export const AtlasConfigSchema = z.object({
         .optional(),
     })
     .optional(),
-
-  // MCP servers configuration (same as WorkspaceConfig)
-  mcp_servers: z.record(z.string(), WorkspaceMCPServerConfigSchema).optional(),
 });
 
 // Inferred types from Zod schemas

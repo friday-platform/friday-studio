@@ -81,6 +81,11 @@ type SessionContext = {
   progress: number;
   currentIteration?: number;
   maxIterations?: number;
+  constraints?: Record<string, unknown>;
+  additionalPrompts?: {
+    planning?: string;
+    evaluation?: string;
+  };
 };
 
 type SessionEvent =

@@ -469,26 +469,12 @@ export class ConfigLoader {
         } as TempestAgentConfig;
 
       case "llm": {
-        // Extract MCP servers from new format: tools.mcp
-        let mcpServers: string[] | undefined;
-
-        if (
-          workspaceAgentConfig.tools && typeof workspaceAgentConfig.tools === "object" &&
-          !Array.isArray(workspaceAgentConfig.tools)
-        ) {
-          const toolsConfig = workspaceAgentConfig.tools as { mcp?: string[] };
-          if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp)) {
-            mcpServers = toolsConfig.mcp;
-          }
-        }
-
         return {
           type: "llm",
           model: workspaceAgentConfig.model!,
           purpose: workspaceAgentConfig.purpose,
           tools: workspaceAgentConfig.tools,
           prompts: workspaceAgentConfig.prompts,
-          mcp_servers: mcpServers,
           max_steps: workspaceAgentConfig.max_steps,
           tool_choice: workspaceAgentConfig.tool_choice,
         } as LLMAgentConfig;
