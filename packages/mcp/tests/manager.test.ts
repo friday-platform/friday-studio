@@ -22,7 +22,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
       });
 
@@ -55,7 +55,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
           allowed: ["get_weather"],
@@ -89,7 +89,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
       });
 
@@ -124,7 +124,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
       });
 
@@ -133,7 +133,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/file-tools-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/file-tools-mcp-server.ts"],
         },
       });
 
@@ -142,7 +142,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/echo-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/echo-mcp-server.ts"],
         },
       });
 
@@ -259,7 +259,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
           allowed: ["get_weather"],
@@ -272,7 +272,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
           denied: ["get_forecast"],
@@ -347,7 +347,7 @@ Deno.test({
         transport: {
           type: "stdio",
           command: "deno",
-          args: ["run", "--allow-all", "tests/mocks/weather-mcp-server.ts"],
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
       });
 

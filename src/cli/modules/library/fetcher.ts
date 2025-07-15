@@ -1,6 +1,5 @@
-import { z } from "zod/v4";
-import { type LibraryItem, LibraryItemSchema } from "./library-list-component.tsx";
-import { getAtlasClient, type LibrarySearchQuery } from "@atlas/client";
+import { type LibraryItem } from "./library-list-component.tsx";
+import { AtlasApiError, getAtlasClient, type LibrarySearchQuery } from "@atlas/client";
 
 export interface LibraryFetchOptions {
   type?: string;
@@ -24,24 +23,7 @@ export interface LibraryFetchError {
 
 export type LibraryFetchResponse = LibraryFetchResult | LibraryFetchError;
 
-// Build query parameters for API call
-export function buildLibraryQueryParams(options: LibraryFetchOptions): URLSearchParams {
-  const params = new URLSearchParams();
-
-  if (options.type) params.append("type", options.type);
-  if (options.tags) params.append("tags", options.tags);
-  if (options.since) params.append("since", options.since);
-  if (options.limit) params.append("limit", options.limit.toString());
-  if (options.workspace) {
-    if (typeof options.workspace === "boolean") {
-      params.append("workspace", "true");
-    } else {
-      params.append("workspace", options.workspace);
-    }
-  }
-
-  return params;
-}
+// Note: Query parameter building is handled by AtlasClient internally
 
 // Fetch library items from server API
 export async function fetchLibraryItems(
@@ -56,7 +38,9 @@ export async function fetchLibraryItems(
     // Convert LibraryFetchOptions to LibrarySearchQuery format
     const searchQuery: LibrarySearchQuery = {
       type: options.type,
-      tags: options.tags ? options.tags.split(",") : undefined,
+      tags: options.tags && options.tags.trim()
+        ? options.tags.split(",").map((tag) => tag.trim())
+        : undefined,
       since: options.since,
       limit: options.limit,
     };
@@ -82,6 +66,33 @@ export async function fetchLibraryItems(
       items,
     };
   } catch (error) {
+    if (error instanceof AtlasApiError) {
+      // Handle AtlasApiError with status codes
+      if (error.status === 503) {
+        return {
+          success: false,
+          error: `Cannot connect to server on port ${
+            options.port || 8080
+          }. Make sure the workspace server is running.`,
+          reason: "server_not_running",
+        };
+      }
+
+      if (error.status >= 400 && error.status < 500) {
+        return {
+          success: false,
+          error: error.message,
+          reason: "api_error",
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message,
+        reason: "network_error",
+      };
+    }
+
     if (error instanceof Error) {
       // Check for common network errors
       if (

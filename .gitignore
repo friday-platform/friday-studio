@@ -6,6 +6,7 @@
 
 # Deno
 .deno/
+coverage/
 
 # Node modules (from npm imports)
 node_modules/

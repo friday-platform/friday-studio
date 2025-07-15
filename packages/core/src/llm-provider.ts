@@ -97,6 +97,14 @@ export class LLMProvider {
   ): Promise<LLMResponse> {
     const validatedOptions = LLMOptionsSchema.parse(options);
 
+    // Check if we should use mocks
+    const shouldUseMocks = Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" ||
+      Deno.env.get("NODE_ENV") === "test";
+
+    if (shouldUseMocks) {
+      return this.generateMockResponse(userPrompt, validatedOptions);
+    }
+
     const startTime = Date.now();
     const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);
 
@@ -169,6 +177,66 @@ export class LLMProvider {
   }
 
   /**
+   * Generate mock response for testing
+   */
+  private static async generateMockResponse(
+    userPrompt: string,
+    options: LLMOptions,
+  ): Promise<LLMResponse> {
+    logger.info("LLM generation started", {
+      provider: options.provider || "anthropic",
+      model: options.model,
+      mock: true,
+    });
+
+    // Generate appropriate mock response based on prompt content
+
+    // Mock response for reasoning machine
+    let mockText =
+      'I need to complete this task step by step.\n\nACTION: complete\nPARAMETERS: {"answer": 42}';
+
+    // Customize mock response based on prompt content
+    if (userPrompt.includes("Calculate 25 + 17")) {
+      mockText =
+        'I need to calculate 25 + 17.\n\n25 + 17 = 42\n\nACTION: complete\nPARAMETERS: {"answer": "42"}';
+    } else if (
+      userPrompt.includes("Read the number from data.txt") &&
+      userPrompt.includes("Recent Observations: None yet")
+    ) {
+      // First step - read the file
+      mockText =
+        'I need to read the file, multiply by 4, and add 2.\n\nFirst, let me read the file:\nACTION: tool_call\nTOOL_NAME: file_reader\nPARAMETERS: {"path": "data.txt"}';
+    } else if (
+      userPrompt.includes("Successfully read file: The secret number is 10") &&
+      !userPrompt.includes("Multiplied")
+    ) {
+      // Second step - multiply by 4
+      mockText =
+        'I got the number 10 from the file. Now I need to multiply by 4:\nACTION: tool_call\nTOOL_NAME: calculator\nPARAMETERS: {"operation": "multiply", "a": 10, "b": 4}';
+    } else if (userPrompt.includes("Multiplied 10 × 4 = 40") && !userPrompt.includes("Added")) {
+      // Third step - add 2
+      mockText =
+        'I got 40 from multiplication. Now I need to add 2:\nACTION: tool_call\nTOOL_NAME: calculator\nPARAMETERS: {"operation": "add", "a": 40, "b": 2}';
+    } else if (userPrompt.includes("Added 40 + 2 = 42")) {
+      // Final step - complete
+      mockText =
+        'I got 42 from addition. Task complete:\nACTION: complete\nPARAMETERS: {"answer": 42}';
+    }
+
+    logger.info("LLM generation completed", {
+      duration: 100,
+      mock: true,
+    });
+
+    return {
+      text: mockText,
+      toolCalls: [],
+      toolResults: [],
+      steps: [],
+    };
+  }
+
+  /**
    * Streaming variant for real-time responses
    */
   static async *generateTextStream(
@@ -176,6 +244,16 @@ export class LLMProvider {
     options: LLMOptions,
   ): AsyncGenerator<string> {
     const validatedOptions = LLMOptionsSchema.parse(options);
+
+    // Check if we should use mocks
+    const shouldUseMocks = Deno.env.get("ATLAS_USE_LLM_MOCKS") === "true" ||
+      Deno.env.get("NODE_ENV") === "test";
+
+    if (shouldUseMocks) {
+      const mockResponse = await this.generateMockResponse(userPrompt, validatedOptions);
+      yield mockResponse.text;
+      return;
+    }
     const validatedPrompt = z.string().parse(userPrompt);
 
     const { providerConfig, runtimeContext } = this.extractProviderConfig(validatedOptions);

@@ -49,7 +49,7 @@ healthRoutes.get(
       200: {
         description: "Daemon is healthy and operational",
         content: {
-          "application/json": { schema: resolver(healthResponseSchema) },
+          "application/json": { schema: resolver(healthResponseSchema) as any },
         },
       },
     },

@@ -1,5 +1,5 @@
 import { formatSessionForJson, type Session } from "./session-list-component.tsx";
-import { getAtlasClient, type SessionInfo } from "@atlas/client";
+import { AtlasApiError, getAtlasClient, type SessionInfo } from "@atlas/client";
 
 export interface SessionFetchOptions {
   workspace?: string;
@@ -54,6 +54,31 @@ export async function fetchSessions(
       filteredSessions,
     };
   } catch (error) {
+    if (error instanceof AtlasApiError) {
+      // Handle AtlasApiError with status codes
+      if (error.status === 503) {
+        return {
+          success: false,
+          error: `No workspace server running. Start a workspace with 'atlas workspace serve'`,
+          reason: "server_not_running",
+        };
+      }
+
+      if (error.status >= 400 && error.status < 500) {
+        return {
+          success: false,
+          error: error.message,
+          reason: "api_error",
+        };
+      }
+
+      return {
+        success: false,
+        error: error.message,
+        reason: "network_error",
+      };
+    }
+
     if (error instanceof Error) {
       // Check for connection refused (no server running)
       if (

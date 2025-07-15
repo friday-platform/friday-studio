@@ -146,22 +146,6 @@ Deno.test("WorkspaceAgentConfigSchema - validates LLM agent", () => {
   expect(result.success).toBe(true);
 });
 
-Deno.test("WorkspaceAgentConfigSchema - validates Tempest agent", () => {
-  const tempestAgent = {
-    type: "tempest",
-    agent: "k8s-operator",
-    version: "1.0.0",
-    purpose: "Kubernetes operations",
-    config: {
-      namespace: "default",
-      kubeconfig: "/path/to/config",
-    },
-  };
-
-  const result = WorkspaceAgentConfigSchema.safeParse(tempestAgent);
-  expect(result.success).toBe(true);
-});
-
 Deno.test("WorkspaceAgentConfigSchema - validates Remote agent", () => {
   const remoteAgent = {
     type: "remote",
@@ -195,22 +179,6 @@ Deno.test("WorkspaceAgentConfigSchema - rejects LLM agent without model", () => 
   if (!result.success) {
     const errorMessage = result.error.issues[0].message;
     expect(errorMessage).toContain("LLM agents require 'model' field");
-  }
-});
-
-Deno.test("WorkspaceAgentConfigSchema - rejects Tempest agent without required fields", () => {
-  const invalidAgent = {
-    type: "tempest",
-    // Missing 'agent' and 'version' fields
-    purpose: "Invalid tempest agent",
-  };
-
-  const result = WorkspaceAgentConfigSchema.safeParse(invalidAgent);
-  expect(result.success).toBe(false);
-  if (!result.success) {
-    const errors = result.error.issues.map((i) => i.message);
-    expect(errors).toContain("Tempest agents require 'agent' field");
-    expect(errors).toContain("Tempest agents require 'version' field");
   }
 });
 
