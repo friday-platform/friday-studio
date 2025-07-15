@@ -12,7 +12,9 @@ export interface MCPDescribeOptions {
   promptName: string;
   itemType: string;
   setOutputBuffer: React.Dispatch<React.SetStateAction<OutputEntry[]>>;
-  setIsTyping: React.Dispatch<React.SetStateAction<boolean>>;
+  setTypingState: React.Dispatch<
+    React.SetStateAction<{ isTyping: boolean; elapsedSeconds: number }>
+  >;
 }
 
 export async function handleDescribeMCP({
@@ -24,7 +26,7 @@ export async function handleDescribeMCP({
   promptName,
   itemType,
   setOutputBuffer,
-  setIsTyping,
+  setTypingState,
 }: MCPDescribeOptions): Promise<void> {
   // Get the describe prompt from MCP
   const args: Record<string, string> = {
@@ -64,17 +66,17 @@ export async function handleDescribeMCP({
       const promptText = message.content.text as string;
 
       // Send directly to conversation without showing in output buffer
-      setIsTyping(true);
+      setTypingState((prev) => ({ ...prev, isTyping: true }));
 
       try {
         await conversationClient.sendMessage(
           conversationSessionId,
           promptText,
         );
-        // Note: setIsTyping(false) will be called by the SSE handler when message_complete is received
+        // Note: setTypingState will be called by the SSE handler when message_complete is received
       } catch (error) {
         // Reset typing on error
-        setIsTyping(false);
+        setTypingState((prev) => ({ ...prev, isTyping: false }));
         throw error;
       }
     }

@@ -26,7 +26,7 @@ export function SignalCommand({ onComplete }: SignalCommandProps) {
     conversationClient,
     conversationSessionId,
     setOutputBuffer,
-    setIsTyping,
+    setTypingState,
   } = useAppContext();
 
   const [flowState, setFlowState] = useState<SignalFlowState>(
@@ -90,7 +90,7 @@ export function SignalCommand({ onComplete }: SignalCommandProps) {
           promptName: "signal_describe",
           itemType: "signal",
           setOutputBuffer,
-          setIsTyping,
+          setTypingState,
         });
       } catch (error) {
         addOutputEntry({

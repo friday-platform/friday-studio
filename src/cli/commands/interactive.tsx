@@ -36,5 +36,8 @@ export function handler() {
         <Component />
       </AppProvider>
     </ThemeProvider>,
+    {
+      exitOnCtrlC: false,
+    },
   );
 }

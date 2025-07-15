@@ -18,7 +18,7 @@ export function AgentCommand({ onComplete }: AgentCommandProps) {
     conversationClient,
     conversationSessionId,
     setOutputBuffer,
-    setIsTyping,
+    setTypingState,
   } = useAppContext();
 
   const [flowState, setFlowState] = useState<AgentFlowState>(
@@ -75,7 +75,7 @@ export function AgentCommand({ onComplete }: AgentCommandProps) {
         promptName: "agent_describe",
         itemType: "agent",
         setOutputBuffer,
-        setIsTyping,
+        setTypingState,
       });
     } catch (error) {
       addOutputEntry({

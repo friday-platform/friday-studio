@@ -38,7 +38,7 @@ interface AppContextType {
   typingState: TypingState;
   setTypingState: React.Dispatch<React.SetStateAction<TypingState>>;
   isInitializing: boolean;
-  initializeSystem: () => Promise<void>;
+  exitApp: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -77,6 +77,23 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   // Store config in a ref so SSE handler always has latest value
   const configRef = useRef(config);
 
+  async function cleanup() {
+    if (mcpTransportRef.current) {
+      await mcpTransportRef.current.close();
+    }
+
+    // Clean up SSE connection before exit
+    if (sseAbortControllerRef.current) {
+      sseAbortControllerRef.current.abort();
+      sseAbortControllerRef.current = null;
+    }
+  }
+
+  async function exitApp() {
+    await cleanup();
+    Deno.exit(0);
+  }
+
   useEffect(() => {
     configRef.current = config;
   }, [config]);
@@ -112,15 +129,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   }, [typingState.isTyping, config.streamMessages]);
 
   useEffect(() => {
-    return () => {
-      // Close the transport connection
-      if (mcpTransportRef.current) {
-        mcpTransportRef.current.close();
-        mcpTransportRef.current = null;
-      }
-
-      setMcpClient(null);
-    };
+    initializeSystem();
   }, []);
 
   const setLeaderKeyActive = (active: boolean) => {
@@ -271,7 +280,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         typingState,
         setTypingState,
         isInitializing,
-        initializeSystem,
+        exitApp,
       }}
     >
       {children}

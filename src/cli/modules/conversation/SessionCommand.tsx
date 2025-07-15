@@ -18,7 +18,7 @@ export function SessionCommand({ onComplete }: SessionCommandProps) {
     conversationClient,
     conversationSessionId,
     setOutputBuffer,
-    setIsTyping,
+    setTypingState,
   } = useAppContext();
 
   const [flowState, setFlowState] = useState<SessionFlowState>(
@@ -75,7 +75,7 @@ export function SessionCommand({ onComplete }: SessionCommandProps) {
         promptName: "session_describe",
         itemType: "session",
         setOutputBuffer,
-        setIsTyping,
+        setTypingState,
       });
     } catch (error) {
       addOutputEntry({

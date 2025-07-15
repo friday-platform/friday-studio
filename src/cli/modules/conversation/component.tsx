@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { useState } from "react";
+import { Box, Static, Text, useInput, useStdout } from "ink";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
@@ -27,10 +27,10 @@ export function Component() {
     setOutputBuffer,
     conversationClient,
     conversationSessionId,
-    sseAbortControllerRef,
+
     setTypingState,
     isInitializing,
-    initializeSystem,
+    exitApp,
   } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -42,20 +42,15 @@ export function Component() {
     null,
   );
   const { stdout: _stdout } = useStdout();
-  const { exit } = useApp();
+
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Handle Ctrl+C for graceful shutdown
-  useInput((_input, key) => {
-    if (key.ctrl && _input === "c") {
-      exit();
+  useInput((input, key) => {
+    if (key.ctrl && input === "c") {
+      exitApp();
     }
   });
-
-  // Initialize system on startup
-  useEffect(() => {
-    initializeSystem();
-  }, []); // Only run once on mount
 
   // Add entry to output buffer
   const addOutputEntry = (entry: OutputEntry) => {
@@ -159,13 +154,8 @@ export function Component() {
       parsed.command === "quit" ||
       parsed.command === "q"
     ) {
-      // Clean up SSE connection before exit
-      if (sseAbortControllerRef.current) {
-        sseAbortControllerRef.current.abort();
-        sseAbortControllerRef.current = null;
-      }
       // Use Ink's exit function for graceful shutdown
-      exit();
+      exitApp();
       return;
     }
 
@@ -259,8 +249,8 @@ export function Component() {
     // Execute command handler
     const outputs = commandDef.handler(parsed.args, {
       addEntry: addOutputEntry,
-      exit,
     });
+
     outputs.forEach(addOutputEntry);
   };
 

@@ -9,7 +9,6 @@ export interface OutputEntry {
 // Command context for handlers
 export interface CommandContext {
   addEntry: (entry: OutputEntry) => void;
-  exit: () => void;
 }
 
 // Command definition interface

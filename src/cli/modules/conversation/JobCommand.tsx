@@ -18,7 +18,7 @@ export function JobCommand({ onComplete }: JobCommandProps) {
     conversationClient,
     conversationSessionId,
     setOutputBuffer,
-    setIsTyping,
+    setTypingState,
   } = useAppContext();
 
   const [flowState, setFlowState] = useState<JobFlowState>(
@@ -75,7 +75,7 @@ export function JobCommand({ onComplete }: JobCommandProps) {
         promptName: "job_describe",
         itemType: "job",
         setOutputBuffer,
-        setIsTyping,
+        setTypingState,
       });
     } catch (error) {
       addOutputEntry({
