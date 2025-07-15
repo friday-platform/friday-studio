@@ -6,6 +6,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
 import { OutputEntry } from "../modules/conversation/index.ts";
+import { ChatMessage } from "../components/chat-message.tsx";
 
 interface AtlasConfig {
   apiKey: string;
@@ -216,36 +217,15 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         {
           id: `welcome-${Date.now()}`,
           component: (
-            <Box flexDirection="column">
-              <Box flexDirection="row" gap={1}>
-                <Text color="blue" bold>
-                  Δ Atlas
-                </Text>
-                <Text color="blue" dimColor bold>
-                  [{welcomeTimestamp}]
-                </Text>
-              </Box>
-              <Box>
-                <Text wrap="wrap">
-                  How can I help you today? Here are some options to get started:
-                </Text>
-              </Box>
-              <Box marginTop={1}>
-                <UnorderedList>
-                  <UnorderedList.Item>
-                    <Text>"Tell me about the features in Atlas"</Text>
-                  </UnorderedList.Item>
-                  <UnorderedList.Item>
-                    <Text>"Create a new workspace called..."</Text>
-                  </UnorderedList.Item>
-                  <UnorderedList.Item>
-                    <Text>
-                      "Show me any available Workspaces that I can use right now"
-                    </Text>
-                  </UnorderedList.Item>
-                </UnorderedList>
-              </Box>
-            </Box>
+            <ChatMessage
+              author="Atlas"
+              date={welcomeTimestamp}
+              message={`How can I help you today? Here are some options to get started:
+- "Tell me about the features in Atlas dummy"
+- "Create a new workspace called..."
+- "Show me any available Workspaces that I can use right now"`}
+              authorColor="blue"
+            />
           ),
         },
       ]);

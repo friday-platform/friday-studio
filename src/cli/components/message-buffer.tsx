@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Box, Text } from "ink";
 import { Spinner } from "@inkjs/ui";
-import { z } from "npm:zod@3.23.8";
+import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
 
@@ -29,7 +29,7 @@ const SSEEventSchema = z.union([
   ErrorEventSchema,
 ]);
 
-type SSEEvent = z.infer<typeof SSEEventSchema>;
+// type SSEEvent = z.infer<typeof SSEEventSchema>;
 
 export const MessageBuffer = () => {
   const {
