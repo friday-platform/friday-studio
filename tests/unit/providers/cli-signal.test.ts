@@ -4,7 +4,7 @@
  * RED PHASE: These tests should fail initially since CliSignalProvider doesn't exist yet
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { CliSignalProvider } from "@atlas/signals";
 import type { CliSignalConfig, CliTriggerData } from "@atlas/signals";
 
@@ -134,7 +134,12 @@ Deno.test("CliSignalProvider - command processing", async (t) => {
     assertEquals(signal.id, "test-cli");
     assertEquals(signal.type, "cli");
     assertEquals(signal.data.command, "deploy");
-    assertEquals(signal.data.args, ["--env", "staging", "--region", "us-west-2"]);
+    assertEquals(signal.data.args, [
+      "--env",
+      "staging",
+      "--region",
+      "us-west-2",
+    ]);
     assertEquals(signal.data.flags.verbose, true);
     assertEquals(signal.data.flags.force, false); // from config
     assertEquals(signal.data.flags.dryrun, true); // from trigger
@@ -163,7 +168,12 @@ Deno.test("CliSignalProvider - command processing", async (t) => {
 
     // Should merge config and trigger data
     assertEquals(signal.data.command, "deploy");
-    assertEquals(signal.data.args, ["--base-env", "staging", "--override", "production"]);
+    assertEquals(signal.data.args, [
+      "--base-env",
+      "staging",
+      "--override",
+      "production",
+    ]);
     assertEquals(signal.data.flags.verbose, true); // from config
     assertEquals(signal.data.flags.force, true); // overridden by trigger
     assertEquals(signal.data.flags.newFlag, "value"); // from trigger

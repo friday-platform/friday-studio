@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
-
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";

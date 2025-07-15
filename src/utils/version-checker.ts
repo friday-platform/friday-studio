@@ -4,8 +4,7 @@
  */
 
 import { getVersionInfo } from "./version.ts";
-import { existsSync } from "https://deno.land/std@0.224.0/fs/exists.ts";
-import { ensureDir } from "https://deno.land/std@0.224.0/fs/ensure_dir.ts";
+import { ensureDir, existsSync } from "@std/fs";
 
 export interface VersionResponse {
   channel: string;
@@ -77,7 +76,10 @@ function parseVersionDate(version: string): Date | null {
 /**
  * Check if current version is older than server version
  */
-function isVersionOlder(currentVersion: string, serverVersion: string): boolean {
+function isVersionOlder(
+  currentVersion: string,
+  serverVersion: string,
+): boolean {
   const currentDate = parseVersionDate(currentVersion);
   const serverDate = parseVersionDate(serverVersion);
 
@@ -176,21 +178,26 @@ async function saveCache(result: VersionCheckResult): Promise<void> {
 /**
  * Fetch version information from the Atlas update server
  */
-async function fetchLatestVersion(channel: string): Promise<VersionResponse | null> {
+async function fetchLatestVersion(
+  channel: string,
+): Promise<VersionResponse | null> {
   try {
-    const response = await fetch(`https://atlas.tempestdx.com/version/${channel}`, {
-      method: "GET",
-      headers: {
-        "User-Agent": "Atlas-CLI",
+    const response = await fetch(
+      `https://atlas.tempestdx.com/version/${channel}`,
+      {
+        method: "GET",
+        headers: {
+          "User-Agent": "Atlas-CLI",
+        },
+        signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 5)
       },
-      signal: AbortSignal.timeout(2000), // 2 second timeout (reduced from 5)
-    });
+    );
 
     if (!response.ok) {
       return null;
     }
 
-    return await response.json() as VersionResponse;
+    return (await response.json()) as VersionResponse;
   } catch (_error) {
     // Fail silently - network errors should not interrupt CLI usage
     return null;
@@ -201,7 +208,9 @@ async function fetchLatestVersion(channel: string): Promise<VersionResponse | nu
  * Check for available updates with daily caching
  * @param forceCheck Skip cache and force fresh remote check
  */
-export async function checkForUpdates(forceCheck: boolean = false): Promise<VersionCheckResult> {
+export async function checkForUpdates(
+  forceCheck: boolean = false,
+): Promise<VersionCheckResult> {
   const versionInfo = getVersionInfo();
   const currentVersion = versionInfo.version;
 

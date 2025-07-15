@@ -3,7 +3,7 @@
  * Just verifies the XState machine works correctly, not LLM behavior
  */
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { createReasoningMachine } from "@atlas/reasoning";
 import { createActor, toPromise } from "xstate";
 

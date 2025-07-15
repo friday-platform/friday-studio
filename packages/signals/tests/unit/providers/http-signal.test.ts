@@ -3,7 +3,7 @@
  * TDD implementation - tests first, then implementation
  */
 
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { HTTPSignalProvider } from "../../../src/providers/http-signal.ts";
 import type { HTTPSignalConfig } from "../../../src/providers/http-signal.ts";
 
@@ -193,9 +193,12 @@ Deno.test("HTTPSignalProvider - signal processing", async (t) => {
 
     const provider = new HTTPSignalProvider(config);
 
-    const mockRequest = new Request("http://localhost:8080/test?param1=value1&param2=value2", {
-      method: "GET",
-    });
+    const mockRequest = new Request(
+      "http://localhost:8080/test?param1=value1&param2=value2",
+      {
+        method: "GET",
+      },
+    );
 
     const signal = await provider.processRequest(mockRequest);
 

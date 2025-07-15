@@ -4,7 +4,7 @@
  * RED PHASE: These tests should fail initially since CLI provider factory is not registered
  */
 
-import { assertEquals, assertRejects } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertRejects } from "@std/assert";
 import { ProviderRegistry } from "../../../src/core/providers/registry.ts";
 import { ProviderType } from "../../../src/core/providers/types.ts";
 import type { ProviderConfig } from "../../../src/core/providers/types.ts";
@@ -86,116 +86,129 @@ Deno.test("CLI Signal Provider - Registry Integration", async (t) => {
     await registry.loadFromConfig(config);
 
     const signalProviders = registry.getByType(ProviderType.SIGNAL);
-    const cliProviders = signalProviders.filter((p) => p.name === "CLI Signal Provider");
+    const cliProviders = signalProviders.filter(
+      (p) => p.name === "CLI Signal Provider",
+    );
 
     assertEquals(cliProviders.length >= 1, true);
   });
 
-  await t.step("should handle CLI provider lifecycle through registry", async () => {
-    const registry = ProviderRegistry.getInstance();
+  await t.step(
+    "should handle CLI provider lifecycle through registry",
+    async () => {
+      const registry = ProviderRegistry.getInstance();
 
-    const config: ProviderConfig = {
-      id: "lifecycle-cli",
-      type: ProviderType.SIGNAL,
-      provider: "cli",
-      config: {
-        command: "lifecycle-test",
-      },
-    };
+      const config: ProviderConfig = {
+        id: "lifecycle-cli",
+        type: ProviderType.SIGNAL,
+        provider: "cli",
+        config: {
+          command: "lifecycle-test",
+        },
+      };
 
-    const provider = await registry.loadFromConfig(config);
+      const provider = await registry.loadFromConfig(config);
 
-    // Setup provider
-    provider.setup();
-    let state = provider.getState();
-    assertEquals(state.status, "ready");
+      // Setup provider
+      provider.setup();
+      let state = provider.getState();
+      assertEquals(state.status, "ready");
 
-    // Check health
-    const health = await provider.checkHealth();
-    assertEquals(health.healthy, true);
+      // Check health
+      const health = await provider.checkHealth();
+      assertEquals(health.healthy, true);
 
-    // Teardown provider
-    provider.teardown();
-    state = provider.getState();
-    assertEquals(state.status, "disabled");
-  });
+      // Teardown provider
+      provider.teardown();
+      state = provider.getState();
+      assertEquals(state.status, "disabled");
+    },
+  );
 });
 
-Deno.test("CLI Signal Provider - Configuration Schema Integration", async (t) => {
-  await t.step("should handle complex CLI configurations", async () => {
-    const registry = ProviderRegistry.getInstance();
+Deno.test(
+  "CLI Signal Provider - Configuration Schema Integration",
+  async (t) => {
+    await t.step("should handle complex CLI configurations", async () => {
+      const registry = ProviderRegistry.getInstance();
 
-    const config: ProviderConfig = {
-      id: "complex-cli",
-      type: ProviderType.SIGNAL,
-      provider: "cli",
-      config: {
-        description: "Complex CLI deployment signal",
-        command: "deploy",
-        args: ["--env", "production", "--region", "us-west-2"],
-        flags: {
-          verbose: true,
-          force: false,
-          timeout: 300,
-          dryRun: false,
+      const config: ProviderConfig = {
+        id: "complex-cli",
+        type: ProviderType.SIGNAL,
+        provider: "cli",
+        config: {
+          description: "Complex CLI deployment signal",
+          command: "deploy",
+          args: ["--env", "production", "--region", "us-west-2"],
+          flags: {
+            verbose: true,
+            force: false,
+            timeout: 300,
+            dryRun: false,
+          },
+          timeout_ms: 30000,
+          retry_config: {
+            max_retries: 3,
+            retry_delay_ms: 1000,
+          },
         },
-        timeout_ms: 30000,
-        retry_config: {
-          max_retries: 3,
-          retry_delay_ms: 1000,
+      };
+
+      const provider = await registry.loadFromConfig(config);
+      provider.setup();
+
+      // Should be able to access configuration
+      assertEquals(provider.id, "complex-cli");
+
+      const state = provider.getState();
+      assertEquals(state.status, "ready");
+      assertEquals(state.config?.command, "deploy");
+      assertEquals(state.config?.args, [
+        "--env",
+        "production",
+        "--region",
+        "us-west-2",
+      ]);
+      assertEquals(state.config?.flags.verbose, true);
+      assertEquals(state.config?.flags.timeout, 300);
+    });
+
+    await t.step("should validate configuration schema", async () => {
+      const registry = ProviderRegistry.getInstance();
+
+      // Test with invalid args type
+      const invalidArgsConfig: ProviderConfig = {
+        id: "invalid-args-cli",
+        type: ProviderType.SIGNAL,
+        provider: "cli",
+        config: {
+          command: "test",
+          args: "invalid-args-should-be-array",
         },
-      },
-    };
+      };
 
-    const provider = await registry.loadFromConfig(config);
-    provider.setup();
+      await assertRejects(
+        () => registry.loadFromConfig(invalidArgsConfig),
+        Error,
+        "args",
+      );
 
-    // Should be able to access configuration
-    assertEquals(provider.id, "complex-cli");
+      // Test with invalid flags type
+      const invalidFlagsConfig: ProviderConfig = {
+        id: "invalid-flags-cli",
+        type: ProviderType.SIGNAL,
+        provider: "cli",
+        config: {
+          command: "test",
+          flags: ["invalid", "flags", "should", "be", "object"],
+        },
+      };
 
-    const state = provider.getState();
-    assertEquals(state.status, "ready");
-    assertEquals(state.config?.command, "deploy");
-    assertEquals(state.config?.args, ["--env", "production", "--region", "us-west-2"]);
-    assertEquals(state.config?.flags.verbose, true);
-    assertEquals(state.config?.flags.timeout, 300);
-  });
-
-  await t.step("should validate configuration schema", async () => {
-    const registry = ProviderRegistry.getInstance();
-
-    // Test with invalid args type
-    const invalidArgsConfig: ProviderConfig = {
-      id: "invalid-args-cli",
-      type: ProviderType.SIGNAL,
-      provider: "cli",
-      config: {
-        command: "test",
-        args: "invalid-args-should-be-array",
-      },
-    };
-
-    await assertRejects(
-      () => registry.loadFromConfig(invalidArgsConfig),
-      Error,
-      "args",
-    );
-
-    // Test with invalid flags type
-    const invalidFlagsConfig: ProviderConfig = {
-      id: "invalid-flags-cli",
-      type: ProviderType.SIGNAL,
-      provider: "cli",
-      config: {
-        command: "test",
-        flags: ["invalid", "flags", "should", "be", "object"],
-      },
-    };
-
-    await assertRejects(
-      () => registry.loadFromConfig(invalidFlagsConfig),
-      Error,
-      "flags",
-    );
-  });
-});
+      await assertRejects(
+        () => registry.loadFromConfig(invalidFlagsConfig),
+        Error,
+        "flags",
+      );
+    });
+  },
+);

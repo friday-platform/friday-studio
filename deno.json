@@ -57,6 +57,7 @@
     "lint-staged": "npm:lint-staged@^16.1.2",
     "marked": "npm:marked@^16.0.0",
     "marked-terminal": "npm:marked-terminal@^7.3.0",
+    "openapi-fetch": "npm:openapi-fetch@^0.14.0",
     "react": "npm:react@^19.1.0",
     "@types/react": "npm:@types/react@^19.1.8",
     "meow": "npm:meow@^13.2.0",

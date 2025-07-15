@@ -4,6 +4,7 @@
     "jsr:@std/assert@1": "1.0.13",
     "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@1": "1.0.6",
+    "jsr:@std/cli@^1.0.20": "1.0.20",
     "jsr:@std/dotenv@0.225": "0.225.5",
     "jsr:@std/expect@^1.0.16": "1.0.16",
     "jsr:@std/fs@1": "1.0.19",
@@ -37,10 +38,15 @@
     "npm:hono@^4.8.4": "4.8.5",
     "npm:ink@^6.0.1": "6.0.1_@types+react@19.1.8_react@19.1.0",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
+    "npm:lint-staged@16": "16.1.2",
     "npm:lint-staged@^16.1.2": "16.1.2",
+    "npm:marked-terminal@*": "7.3.0_marked@16.0.0",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.0.0",
+    "npm:marked@*": "16.0.0",
     "npm:marked@16": "16.0.0",
     "npm:meow@^13.2.0": "13.2.0",
+    "npm:openapi-fetch@*": "0.12.5",
+    "npm:openapi-fetch@0.14": "0.14.0",
     "npm:openapi-fetch@~0.12.4": "0.12.5",
     "npm:openapi-typescript@^7.4.4": "7.8.0_typescript@5.8.3",
     "npm:react@^19.1.0": "19.1.0",
@@ -59,6 +65,9 @@
     },
     "@std/async@1.0.6": {
       "integrity": "6d262156dd35c4a72ee1a2f8679be40264f370cfb92e2e13d4eca2ae05e16f34"
+    },
+    "@std/cli@1.0.20": {
+      "integrity": "a8c384a2c98cec6ec6a2055c273a916e2772485eb784af0db004c5ab8ba52333"
     },
     "@std/dotenv@0.225.5": {
       "integrity": "9ce6f9d0ec3311f74a32535aa1b8c62ed88b1ab91b7f0815797d77a6f60c922f"
@@ -1128,6 +1137,12 @@
         "openapi-typescript-helpers"
       ]
     },
+    "openapi-fetch@0.14.0": {
+      "integrity": "sha512-PshIdm1NgdLvb05zp8LqRQMNSKzIlPkyMxYFxwyHR+UlKD4t2nUjkDhNxeRbhRSEd3x5EUNh2w5sJYwkhOH4fg==",
+      "dependencies": [
+        "openapi-typescript-helpers"
+      ]
+    },
     "openapi-types@12.1.3": {
       "integrity": "sha512-N4YtSYJqghVu4iek2ZUvcN/0aqH1kRDuNqzcycDxhOUpg7GdvLa2F3DgS6yBNhInhv2r/6I0Flkn7CqL8+nIcw=="
     },
@@ -1768,6 +1783,9 @@
     "https://deno.land/std@0.224.0/assert/unreachable.ts": "5ae3dbf63ef988615b93eb08d395dda771c96546565f9e521ed86f6510c29e19",
     "https://deno.land/std@0.224.0/fmt/colors.ts": "508563c0659dd7198ba4bbf87e97f654af3c34eb56ba790260f252ad8012e1c5",
     "https://deno.land/std@0.224.0/fmt/printf.ts": "8d01408076e2f956b03dd8377010c4974515d6cc909978d2edc5c8cd75077eeb",
+    "https://deno.land/std@0.224.0/fs/_get_file_info_type.ts": "da7bec18a7661dba360a1db475b826b18977582ce6fc9b25f3d4ee0403fe8cbd",
+    "https://deno.land/std@0.224.0/fs/ensure_dir.ts": "51a6279016c65d2985f8803c848e2888e206d1b510686a509fa7cc34ce59d29f",
+    "https://deno.land/std@0.224.0/fs/exists.ts": "3d38cb7dcbca3cf313be343a7b8af18a87bddb4b5ca1bd2314be12d06533b50f",
     "https://deno.land/std@0.224.0/internal/diff.ts": "6234a4b493ebe65dc67a18a0eb97ef683626a1166a1906232ce186ae9f65f4e6",
     "https://deno.land/std@0.224.0/internal/format.ts": "0a98ee226fd3d43450245b1844b47003419d34d210fa989900861c79820d21c2",
     "https://deno.land/std@0.224.0/internal/mod.ts": "534125398c8e7426183e12dc255bb635d94e06d0f93c60a297723abe69d3b22e",
@@ -1913,6 +1931,7 @@
       "npm:marked-terminal@^7.3.0",
       "npm:marked@16",
       "npm:meow@^13.2.0",
+      "npm:openapi-fetch@0.14",
       "npm:react@^19.1.0",
       "npm:xstate@^5.20.1",
       "npm:zod-openapi@4",
@@ -1950,6 +1969,11 @@
         "dependencies": [
           "npm:openapi-fetch@~0.12.4",
           "npm:openapi-typescript@^7.4.4"
+        ]
+      },
+      "tools/memory_manager": {
+        "dependencies": [
+          "jsr:@std/cli@^1.0.20"
         ]
       }
     }

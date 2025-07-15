@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Box, Text } from "ink";
-import { Spinner, UnorderedList } from "@inkjs/ui";
+import { Spinner } from "@inkjs/ui";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";

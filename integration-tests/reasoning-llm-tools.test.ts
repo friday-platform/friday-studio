@@ -3,7 +3,7 @@
  * Shows the full Think→Act→Observe loop
  */
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { createReasoningMachine, generateThinking, parseAction } from "@atlas/reasoning";
 import { createActor, toPromise } from "xstate";
 
@@ -43,129 +43,167 @@ Deno.test({
     let stepCount = 0;
     const executionLog: string[] = [];
 
-    const machine = createReasoningMachine({
-      think: async (context) => {
-        stepCount++;
-        const result = await generateThinking(context);
-        return result;
-      },
+    const machine = createReasoningMachine(
+      {
+        think: async (context) => {
+          stepCount++;
+          const result = await generateThinking(context);
+          return result;
+        },
 
-      parseAction: (thinking) => {
-        const action = parseAction(thinking);
+        parseAction: (thinking) => {
+          const action = parseAction(thinking);
 
-        // Extract answer from complete action since it won't go through executeAction
-        if (action?.type === "complete") {
-          finalAnswer = action.parameters.answer || action.parameters.result ||
-            action.parameters.value;
-        }
+          // Extract answer from complete action since it won't go through executeAction
+          if (action?.type === "complete") {
+            finalAnswer = action.parameters.answer ||
+              action.parameters.result ||
+              action.parameters.value;
+          }
 
-        return action;
-      },
+          return action;
+        },
 
-      executeAction: async (action, context) => {
-        executionLog.push(`${action.type}: ${action.toolName || "N/A"}`);
+        executeAction: async (action, context) => {
+          executionLog.push(`${action.type}: ${action.toolName || "N/A"}`);
 
-        if (action.type === "tool_call") {
-          try {
-            // Handle file_reader tool (with or without .read suffix)
-            if (action.toolName === "file_reader" || action.toolName === "file_reader.read") {
-              const path = action.parameters.path || action.parameters.file ||
-                action.parameters.filename;
-              const content = mockTools.file_reader.read(path as string);
-              return {
-                result: { content },
-                observation: `Successfully read file: ${content}`,
-              };
-            }
+          if (action.type === "tool_call") {
+            try {
+              // Handle file_reader tool (with or without .read suffix)
+              if (
+                action.toolName === "file_reader" ||
+                action.toolName === "file_reader.read"
+              ) {
+                const path = action.parameters.path ||
+                  action.parameters.file ||
+                  action.parameters.filename;
+                const content = mockTools.file_reader.read(path as string);
+                return {
+                  result: { content },
+                  observation: `Successfully read file: ${content}`,
+                };
+              }
 
-            // Handle calculator tool (detect operation from parameters)
-            if (action.toolName === "calculator" || action.toolName?.startsWith("calculator.")) {
-              const operation = action.parameters.operation ||
-                (action.toolName.includes("multiply")
-                  ? "multiply"
-                  : action.toolName.includes("add")
-                  ? "add"
-                  : null);
+              // Handle calculator tool (detect operation from parameters)
+              if (
+                action.toolName === "calculator" ||
+                action.toolName?.startsWith("calculator.")
+              ) {
+                const operation = action.parameters.operation ||
+                  (action.toolName.includes("multiply")
+                    ? "multiply"
+                    : action.toolName.includes("add")
+                    ? "add"
+                    : null);
 
-              if (operation === "multiply") {
-                const a = action.parameters.a || action.parameters.x || action.parameters.num1 ||
+                if (operation === "multiply") {
+                  const a = action.parameters.a ||
+                    action.parameters.x ||
+                    action.parameters.num1 ||
+                    action.parameters.number1;
+                  const b = action.parameters.b ||
+                    action.parameters.y ||
+                    action.parameters.num2 ||
+                    action.parameters.number2 ||
+                    action.parameters.factor;
+                  const result = mockTools.calculator.multiply(
+                    Number(a),
+                    Number(b),
+                  );
+                  return {
+                    result: { value: result },
+                    observation: `Multiplied ${a} × ${b} = ${result}`,
+                  };
+                }
+
+                if (operation === "add") {
+                  const a = action.parameters.a ||
+                    action.parameters.x ||
+                    action.parameters.num1 ||
+                    action.parameters.number1;
+                  const b = action.parameters.b ||
+                    action.parameters.y ||
+                    action.parameters.num2 ||
+                    action.parameters.number2 ||
+                    action.parameters.addend;
+                  const result = mockTools.calculator.add(Number(a), Number(b));
+                  return {
+                    result: { value: result },
+                    observation: `Added ${a} + ${b} = ${result}`,
+                  };
+                }
+              }
+
+              // Handle direct multiply/add tool names
+              if (action.toolName === "multiply") {
+                const a = action.parameters.a ||
+                  action.parameters.x ||
+                  action.parameters.num1 ||
                   action.parameters.number1;
-                const b = action.parameters.b || action.parameters.y || action.parameters.num2 ||
-                  action.parameters.number2 || action.parameters.factor;
-                const result = mockTools.calculator.multiply(Number(a), Number(b));
+                const b = action.parameters.b ||
+                  action.parameters.y ||
+                  action.parameters.num2 ||
+                  action.parameters.number2 ||
+                  action.parameters.factor;
+                const result = mockTools.calculator.multiply(
+                  Number(a),
+                  Number(b),
+                );
                 return {
                   result: { value: result },
                   observation: `Multiplied ${a} × ${b} = ${result}`,
                 };
               }
 
-              if (operation === "add") {
-                const a = action.parameters.a || action.parameters.x || action.parameters.num1 ||
+              if (action.toolName === "add") {
+                const a = action.parameters.a ||
+                  action.parameters.x ||
+                  action.parameters.num1 ||
                   action.parameters.number1;
-                const b = action.parameters.b || action.parameters.y || action.parameters.num2 ||
-                  action.parameters.number2 || action.parameters.addend;
+                const b = action.parameters.b ||
+                  action.parameters.y ||
+                  action.parameters.num2 ||
+                  action.parameters.number2 ||
+                  action.parameters.addend;
                 const result = mockTools.calculator.add(Number(a), Number(b));
                 return {
                   result: { value: result },
                   observation: `Added ${a} + ${b} = ${result}`,
                 };
               }
-            }
 
-            // Handle direct multiply/add tool names
-            if (action.toolName === "multiply") {
-              const a = action.parameters.a || action.parameters.x || action.parameters.num1 ||
-                action.parameters.number1;
-              const b = action.parameters.b || action.parameters.y || action.parameters.num2 ||
-                action.parameters.number2 || action.parameters.factor;
-              const result = mockTools.calculator.multiply(Number(a), Number(b));
               return {
-                result: { value: result },
-                observation: `Multiplied ${a} × ${b} = ${result}`,
+                result: null,
+                observation: `Unknown tool: ${action.toolName}`,
+              };
+            } catch (error) {
+              return {
+                result: null,
+                observation: `Tool execution failed: ${error.message}`,
               };
             }
+          }
 
-            if (action.toolName === "add") {
-              const a = action.parameters.a || action.parameters.x || action.parameters.num1 ||
-                action.parameters.number1;
-              const b = action.parameters.b || action.parameters.y || action.parameters.num2 ||
-                action.parameters.number2 || action.parameters.addend;
-              const result = mockTools.calculator.add(Number(a), Number(b));
-              return {
-                result: { value: result },
-                observation: `Added ${a} + ${b} = ${result}`,
-              };
-            }
-
+          if (action.type === "complete") {
+            finalAnswer = action.parameters.answer ||
+              action.parameters.result ||
+              action.parameters.value;
             return {
-              result: null,
-              observation: `Unknown tool: ${action.toolName}`,
-            };
-          } catch (error) {
-            return {
-              result: null,
-              observation: `Tool execution failed: ${error.message}`,
+              result: { answer: finalAnswer },
+              observation: "Task completed successfully",
             };
           }
-        }
 
-        if (action.type === "complete") {
-          finalAnswer = action.parameters.answer || action.parameters.result ||
-            action.parameters.value;
           return {
-            result: { answer: finalAnswer },
-            observation: "Task completed successfully",
+            result: null,
+            observation: "Action not recognized",
           };
-        }
-
-        return {
-          result: null,
-          observation: "Action not recognized",
-        };
+        },
       },
-    }, {
-      maxIterations: 5, // Allow more steps for multi-tool usage
-    });
+      {
+        maxIterations: 5, // Allow more steps for multi-tool usage
+      },
+    );
 
     const actor = createActor(machine, { input: userContext });
 
@@ -201,6 +239,10 @@ Deno.test({
 
     assertEquals(hasFileRead, true, "Should have used file_reader");
     assertEquals(hasCalculator, true, "Should have used calculator");
-    assertEquals(executionLog.length >= 3, true, "Should have at least 3 tool calls");
+    assertEquals(
+      executionLog.length >= 3,
+      true,
+      "Should have at least 3 tool calls",
+    );
   },
 });

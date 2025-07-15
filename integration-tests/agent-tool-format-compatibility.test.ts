@@ -4,14 +4,9 @@
  * across the entire system without backwards compatibility issues.
  */
 
-import {
-  assertEquals,
-  assertExists,
-  assertStringIncludes,
-} from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals, assertExists } from "@std/assert";
 import { ConfigLoader } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { SessionSupervisorActor } from "../src/core/actors/session-supervisor-actor.ts";
 
 /**
  * Test agent tool checking logic directly
@@ -36,7 +31,11 @@ Deno.test("Agent tool checking handles new hierarchical tool format", () => {
   const hasComputerUse = agent.tools?.mcp?.includes("computer_use") ||
     agent.tools?.workspace?.includes("computer_use");
 
-  assertEquals(hasComputerUse, true, "Should correctly detect computer_use tool in new format");
+  assertEquals(
+    hasComputerUse,
+    true,
+    "Should correctly detect computer_use tool in new format",
+  );
 
   // Test that old format access would fail (this is what was broken)
   let oldFormatWouldFail = false;
@@ -64,10 +63,7 @@ Deno.test({
   sanitizeOps: false,
   async fn() {
     // Only test workspaces that have their own atlas.yml files
-    const workspaceExamples = [
-      "telephone",
-      "atlas-codebase-analyzer",
-    ];
+    const workspaceExamples = ["telephone", "atlas-codebase-analyzer"];
 
     for (const workspaceName of workspaceExamples) {
       const workspacePath = `./examples/${workspaceName}`;
@@ -78,7 +74,11 @@ Deno.test({
         const config = await loader.load();
 
         // Verify agents use new format
-        for (const [agentId, agent] of Object.entries(config.workspace.agents || {})) {
+        for (
+          const [agentId, agent] of Object.entries(
+            config.workspace.agents || {},
+          )
+        ) {
           // Agent tools should be object format {mcp: [], workspace: []} or undefined
           if (agent.tools) {
             assertEquals(
@@ -98,7 +98,9 @@ Deno.test({
 
         // Configuration loaded successfully
       } catch (error) {
-        throw new Error(`❌ ${workspaceName} workspace failed to load: ${error.message}`);
+        throw new Error(
+          `❌ ${workspaceName} workspace failed to load: ${error.message}`,
+        );
       }
     }
   },
@@ -171,12 +173,18 @@ Deno.test("Agent tool checking handles new format correctly", () => {
 
   // Simulate the tool checking logic used in SessionSupervisor
   function hasComputerUse(agent: any): boolean {
-    return agent.tools?.mcp?.includes("computer_use") ||
-      agent.tools?.workspace?.includes("computer_use");
+    return (
+      agent.tools?.mcp?.includes("computer_use") ||
+      agent.tools?.workspace?.includes("computer_use")
+    );
   }
 
   // Test assertions
-  assertEquals(hasComputerUse(agentWithMCPTools), true, "Should detect computer_use in MCP tools");
+  assertEquals(
+    hasComputerUse(agentWithMCPTools),
+    true,
+    "Should detect computer_use in MCP tools",
+  );
   assertEquals(
     hasComputerUse(agentWithWorkspaceTools),
     true,
@@ -211,12 +219,17 @@ Deno.test({
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
         // Look for agent-level mcp_servers (indented under an agent)
-        if (line.includes("mcp_servers:") && (line.startsWith("    ") || line.startsWith("\t"))) {
+        if (
+          line.includes("mcp_servers:") &&
+          (line.startsWith("    ") || line.startsWith("\t"))
+        ) {
           // Check if this is under an agent definition
           for (let j = i - 1; j >= 0; j--) {
             const prevLine = lines[j].trim();
             if (
-              prevLine.endsWith(":") && !prevLine.startsWith("#") && !prevLine.includes("mcp") &&
+              prevLine.endsWith(":") &&
+              !prevLine.startsWith("#") &&
+              !prevLine.includes("mcp") &&
               !prevLine.includes("tools")
             ) {
               // This looks like an agent name
@@ -239,7 +252,10 @@ Deno.test({
         if (line.startsWith("tools:") && line.includes("[")) {
           // This might be old array format - check context
           const nextLines = lines.slice(i + 1, i + 3).join(" ");
-          if (!nextLines.includes("mcp:") && !nextLines.includes("workspace:")) {
+          if (
+            !nextLines.includes("mcp:") &&
+            !nextLines.includes("workspace:")
+          ) {
             throw new Error(
               `${workspaceFile}:${
                 i + 1

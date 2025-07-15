@@ -3,8 +3,8 @@
  * Handles various Kubernetes authentication methods including kubeconfig parsing
  */
 
-import { parse as parseYaml } from "https://deno.land/std@0.208.0/yaml/mod.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { parse as parseYaml } from "@std/yaml";
+import { join } from "@std/path";
 
 export interface K8sAuthConfig {
   server: string;
@@ -70,7 +70,11 @@ export class K8sAuthManager {
     const resolvedPath = new URL(`file://${filePath}`).pathname;
 
     // Check for path traversal patterns
-    if (filePath.includes("..") || filePath.includes("~") || resolvedPath.includes("..")) {
+    if (
+      filePath.includes("..") ||
+      filePath.includes("~") ||
+      resolvedPath.includes("..")
+    ) {
       throw new Error("Path traversal detected in certificate path");
     }
 
@@ -131,7 +135,9 @@ export class K8sAuthManager {
   /**
    * Load authentication from kubeconfig file
    */
-  static async loadFromKubeconfigFile(kubeconfigPath?: string): Promise<K8sAuthConfig> {
+  static async loadFromKubeconfigFile(
+    kubeconfigPath?: string,
+  ): Promise<K8sAuthConfig> {
     // Cross-platform tilde expansion
     const path = kubeconfigPath
       ? kubeconfigPath.replace(/^~/, this.getHomeDir())
@@ -142,14 +148,18 @@ export class K8sAuthManager {
       return await this.loadFromKubeconfigContent(content);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to read kubeconfig from ${path}: ${errorMessage}`);
+      throw new Error(
+        `Failed to read kubeconfig from ${path}: ${errorMessage}`,
+      );
     }
   }
 
   /**
    * Load authentication from kubeconfig YAML content
    */
-  static async loadFromKubeconfigContent(content: string): Promise<K8sAuthConfig> {
+  static async loadFromKubeconfigContent(
+    content: string,
+  ): Promise<K8sAuthConfig> {
     try {
       const kubeconfig = parseYaml(content) as KubeconfigFile;
       return await this.parseKubeconfig(kubeconfig);
@@ -185,7 +195,9 @@ export class K8sAuthManager {
       };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to load service account credentials: ${errorMessage}`);
+      throw new Error(
+        `Failed to load service account credentials: ${errorMessage}`,
+      );
     }
   }
 
@@ -194,7 +206,7 @@ export class K8sAuthManager {
    */
   static createAuthHeaders(config: K8sAuthConfig): Record<string, string> {
     const headers: Record<string, string> = {
-      "Accept": "application/json",
+      Accept: "application/json",
       "User-Agent": "atlas-k8s-watch/1.0.0",
     };
 
@@ -237,9 +249,13 @@ export class K8sAuthManager {
   /**
    * Parse kubeconfig and extract authentication info
    */
-  private static async parseKubeconfig(kubeconfig: KubeconfigFile): Promise<K8sAuthConfig> {
+  private static async parseKubeconfig(
+    kubeconfig: KubeconfigFile,
+  ): Promise<K8sAuthConfig> {
     if (!kubeconfig.contexts || !kubeconfig.clusters || !kubeconfig.users) {
-      throw new Error("Invalid kubeconfig: missing contexts, clusters, or users");
+      throw new Error(
+        "Invalid kubeconfig: missing contexts, clusters, or users",
+      );
     }
 
     // Find current context
@@ -248,21 +264,33 @@ export class K8sAuthManager {
       throw new Error("No current-context set in kubeconfig");
     }
 
-    const currentContext = kubeconfig.contexts.find((ctx) => ctx.name === currentContextName);
+    const currentContext = kubeconfig.contexts.find(
+      (ctx) => ctx.name === currentContextName,
+    );
     if (!currentContext) {
-      throw new Error(`Current context '${currentContextName}' not found in kubeconfig`);
+      throw new Error(
+        `Current context '${currentContextName}' not found in kubeconfig`,
+      );
     }
 
     // Find cluster
-    const cluster = kubeconfig.clusters.find((c) => c.name === currentContext.context.cluster);
+    const cluster = kubeconfig.clusters.find(
+      (c) => c.name === currentContext.context.cluster,
+    );
     if (!cluster) {
-      throw new Error(`Cluster '${currentContext.context.cluster}' not found in kubeconfig`);
+      throw new Error(
+        `Cluster '${currentContext.context.cluster}' not found in kubeconfig`,
+      );
     }
 
     // Find user
-    const user = kubeconfig.users.find((u) => u.name === currentContext.context.user);
+    const user = kubeconfig.users.find(
+      (u) => u.name === currentContext.context.user,
+    );
     if (!user) {
-      throw new Error(`User '${currentContext.context.user}' not found in kubeconfig`);
+      throw new Error(
+        `User '${currentContext.context.user}' not found in kubeconfig`,
+      );
     }
 
     // Build auth config
@@ -291,7 +319,9 @@ export class K8sAuthManager {
     } else if (cluster.cluster["certificate-authority"]) {
       try {
         // SECURITY FIX: Use safe file reading
-        authConfig.ca = await this.readCertificateFile(cluster.cluster["certificate-authority"]);
+        authConfig.ca = await this.readCertificateFile(
+          cluster.cluster["certificate-authority"],
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed to read CA certificate: ${errorMessage}`);
@@ -305,13 +335,21 @@ export class K8sAuthManager {
         throw new Error("Invalid token format");
       }
       authConfig.token = user.user.token;
-    } else if (user.user["client-certificate-data"] && user.user["client-key-data"]) {
+    } else if (
+      user.user["client-certificate-data"] &&
+      user.user["client-key-data"]
+    ) {
       // SECURITY FIX: Validate base64 certificate data
       try {
         const certData = user.user["client-certificate-data"];
         const keyData = user.user["client-key-data"];
 
-        if (!certData || !keyData || typeof certData !== "string" || typeof keyData !== "string") {
+        if (
+          !certData ||
+          !keyData ||
+          typeof certData !== "string" ||
+          typeof keyData !== "string"
+        ) {
           throw new Error("Invalid client certificate data");
         }
 
@@ -323,7 +361,8 @@ export class K8sAuthManager {
           throw new Error("Invalid client certificate format");
         }
         if (
-          !authConfig.key.includes("-----BEGIN") || !authConfig.key.includes("PRIVATE KEY-----")
+          !authConfig.key.includes("-----BEGIN") ||
+          !authConfig.key.includes("PRIVATE KEY-----")
         ) {
           throw new Error("Invalid client key format");
         }
@@ -334,8 +373,12 @@ export class K8sAuthManager {
     } else if (user.user["client-certificate"] && user.user["client-key"]) {
       try {
         // SECURITY FIX: Use safe file reading
-        authConfig.cert = await this.readCertificateFile(user.user["client-certificate"]);
-        authConfig.key = await this.readCertificateFile(user.user["client-key"]);
+        authConfig.cert = await this.readCertificateFile(
+          user.user["client-certificate"],
+        );
+        authConfig.key = await this.readCertificateFile(
+          user.user["client-key"],
+        );
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         throw new Error(`Failed to read client certificates: ${errorMessage}`);
@@ -344,7 +387,9 @@ export class K8sAuthManager {
       // Handle exec authentication (e.g., kubectl plugins)
       authConfig.token = await this.executeAuthCommand(user.user.exec);
     } else {
-      throw new Error("No supported authentication method found in kubeconfig user");
+      throw new Error(
+        "No supported authentication method found in kubeconfig user",
+      );
     }
 
     return authConfig;
@@ -384,7 +429,12 @@ export class K8sAuthManager {
           throw new Error("Invalid argument type in auth command");
         }
         // Prevent argument injection
-        if (arg.includes(";") || arg.includes("&") || arg.includes("|") || arg.includes("`")) {
+        if (
+          arg.includes(";") ||
+          arg.includes("&") ||
+          arg.includes("|") ||
+          arg.includes("`")
+        ) {
           throw new Error("Invalid characters in auth command arguments");
         }
       }
@@ -394,7 +444,10 @@ export class K8sAuthManager {
     const env: Record<string, string> = {};
     if (exec.env) {
       for (const envVar of exec.env) {
-        if (typeof envVar.name !== "string" || typeof envVar.value !== "string") {
+        if (
+          typeof envVar.name !== "string" ||
+          typeof envVar.value !== "string"
+        ) {
           throw new Error("Invalid environment variable type in auth command");
         }
         // Only allow safe environment variable names

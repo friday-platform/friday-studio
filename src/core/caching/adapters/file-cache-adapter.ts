@@ -3,8 +3,8 @@
  * Persistent local storage, good for development/single-instance deployments
  */
 
-import { ensureDir, exists } from "https://deno.land/std@0.208.0/fs/mod.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { ensureDir, exists } from "@std/fs";
+import { join } from "@std/path";
 import type {
   CacheStats,
   SupervisionCacheAdapter,
@@ -62,7 +62,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
     try {
       const filePath = this.getFilePath(key);
 
-      if (!await exists(filePath)) {
+      if (!(await exists(filePath))) {
         this.stats.totalMisses++;
         return null;
       }
@@ -101,7 +101,9 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
 
       // Check file size limits
       if (data.length > this.config.maxFileSize!) {
-        console.warn(`Cache entry too large for key ${key}: ${data.length} bytes`);
+        console.warn(
+          `Cache entry too large for key ${key}: ${data.length} bytes`,
+        );
         return;
       }
 
@@ -150,7 +152,9 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
     }
   }
 
-  async getMultiple(keys: string[]): Promise<Map<string, SupervisionCacheEntry>> {
+  async getMultiple(
+    keys: string[],
+  ): Promise<Map<string, SupervisionCacheEntry>> {
     const result = new Map<string, SupervisionCacheEntry>();
 
     // Process in parallel with concurrency limit
@@ -170,7 +174,9 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
     return result;
   }
 
-  async setMultiple(entries: Map<string, SupervisionCacheEntry>): Promise<void> {
+  async setMultiple(
+    entries: Map<string, SupervisionCacheEntry>,
+  ): Promise<void> {
     // Process in parallel with concurrency limit
     const concurrency = 10;
     const entryArray = Array.from(entries.entries());
@@ -247,7 +253,7 @@ export class FileCacheAdapter implements SupervisionCacheAdapter {
       const keys = await this.keys();
       for (const key of keys) {
         const entry = await this.get(key);
-        if (entry && entry.ttl && (now - entry.timestamp) > entry.ttl) {
+        if (entry && entry.ttl && now - entry.timestamp > entry.ttl) {
           const deleted = await this.delete(key);
           if (deleted) {
             cleaned++;

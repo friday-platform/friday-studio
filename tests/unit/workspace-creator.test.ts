@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertExists } from "@std/assert";
 import { createAndRegisterWorkspace } from "../../src/cli/modules/workspaces/creator.ts";
 
 Deno.test({
@@ -20,7 +20,9 @@ Deno.test({
 
       // Verify content contains expected values
       assertExists(content.match(/name: Test Workspace Current/));
-      assertExists(content.match(/description: 'Atlas workspace: Test Workspace Current'/));
+      assertExists(
+        content.match(/description: 'Atlas workspace: Test Workspace Current'/),
+      );
       assertExists(content.match(/version: '1.0'/));
     } finally {
       // Cleanup
@@ -53,7 +55,9 @@ Deno.test({
 
       // Verify content contains expected values
       assertExists(content.match(/name: Nested Test Workspace/));
-      assertExists(content.match(/description: A test workspace in nested directories/));
+      assertExists(
+        content.match(/description: A test workspace in nested directories/),
+      );
     } finally {
       // Cleanup
       try {

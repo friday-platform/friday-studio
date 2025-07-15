@@ -7,5 +7,8 @@
     "export": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts --export",
     "validate": "deno run --allow-read --allow-write --allow-env --unstable-kv main.ts --validate",
     "check": "deno check main.ts src/tui.ts utils/memory-loader.ts utils/memory-operations.ts types/memory-types.ts"
+  },
+  "imports": {
+    "@std/cli": "jsr:@std/cli@^1.0.20"
   }
 }

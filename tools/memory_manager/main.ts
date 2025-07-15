@@ -9,7 +9,7 @@
  *   deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts [workspace-path]
  */
 
-import { parseArgs } from "jsr:@std/cli";
+import { parseArgs } from "@std/cli";
 import { join as _join } from "@std/path";
 import { AtlasMemoryLoader } from "./utils/memory-loader.ts";
 import { AtlasMemoryOperations } from "./utils/memory-operations.ts";
@@ -150,8 +150,9 @@ async function showStats(
   console.log();
 
   for (const [memoryType, typeStats] of Object.entries(stats)) {
-    const storageInfo = storageStats
-      .memoryTypes[memoryType as keyof typeof storageStats.memoryTypes];
+    const storageInfo = storageStats.memoryTypes[
+      memoryType as keyof typeof storageStats.memoryTypes
+    ];
 
     console.log(`${memoryType.toUpperCase()} Memory:`);
     console.log(`  Entries: ${typeStats.count}`);

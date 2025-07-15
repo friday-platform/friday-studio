@@ -1,6 +1,6 @@
-import { Text, useStdout } from "ink";
-import { marked } from "npm:marked";
-import TerminalRenderer from "npm:marked-terminal";
+import { Text } from "ink";
+import { marked } from "marked";
+import TerminalRenderer from "marked-terminal";
 import { Collapsible } from "./collapsible.tsx";
 import chalk from "chalk";
 

@@ -4,7 +4,7 @@
  * RED PHASE: These tests should fail initially since enhanced CLI config validation doesn't exist yet
  */
 
-import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
+import { assertEquals } from "@std/assert";
 import { WorkspaceSignalConfigSchema } from "../../../packages/config/src/schemas.ts";
 import { z } from "zod/v4";
 
@@ -13,9 +13,10 @@ const CliSignalConfigSchema = WorkspaceSignalConfigSchema.extend({
   provider: z.literal("cli"),
   command: z.string().min(1, "Command cannot be empty"),
   args: z.array(z.string()).optional().default([]),
-  flags: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().default(
-    {},
-  ),
+  flags: z
+    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
+    .optional()
+    .default({}),
 }).strict();
 
 Deno.test("CLI Signal Configuration Schema - Basic validation", async (t) => {
@@ -88,7 +89,12 @@ Deno.test("CLI Signal Configuration Schema - Args validation", async (t) => {
     assertEquals(result.success, true);
 
     if (result.success) {
-      assertEquals(result.data.args, ["--env", "production", "--region", "us-west-2"]);
+      assertEquals(result.data.args, [
+        "--env",
+        "production",
+        "--region",
+        "us-west-2",
+      ]);
     }
   });
 
@@ -215,77 +221,84 @@ Deno.test("CLI Signal Configuration Schema - Flags validation", async (t) => {
   });
 });
 
-Deno.test("CLI Signal Configuration Schema - Complex configurations", async (t) => {
-  await t.step("should validate complete CLI configuration", () => {
-    const config = {
-      description: "Complete CLI deployment signal",
-      provider: "cli",
-      command: "deploy",
-      args: ["--env", "production", "--region", "us-west-2"],
-      flags: {
-        verbose: true,
-        force: false,
-        timeout: 300,
-        dryRun: false,
-        environment: "production",
-      },
-      timeout_ms: 30000,
-      retry_config: {
-        max_retries: 3,
-        retry_delay_ms: 1000,
-      },
-      schema: {
-        type: "object",
-        properties: {
-          environment: { type: "string" },
-          force: { type: "boolean" },
-        },
-        required: ["environment"],
-      },
-    };
-
-    const result = CliSignalConfigSchema.safeParse(config);
-    assertEquals(result.success, true);
-
-    if (result.success) {
-      assertEquals(result.data.command, "deploy");
-      assertEquals(result.data.args.length, 4);
-      assertEquals(result.data.flags.verbose, true);
-      assertEquals(result.data.timeout_ms, 30000);
-      assertEquals(result.data.retry_config?.max_retries, 3);
-    }
-  });
-
-  await t.step("should reject extra fields in strict mode", () => {
-    const config = {
-      description: "Test CLI signal",
-      provider: "cli",
-      command: "deploy",
-      invalidExtraField: "should-not-be-allowed", // Extra field
-    };
-
-    const result = CliSignalConfigSchema.safeParse(config);
-    assertEquals(result.success, false);
-  });
-
-  await t.step("should validate command naming conventions", () => {
-    const validCommands = [
-      "deploy",
-      "build-and-deploy",
-      "k8s-restart",
-      "cleanup_old_logs",
-      "status",
-    ];
-
-    validCommands.forEach((command) => {
+Deno.test(
+  "CLI Signal Configuration Schema - Complex configurations",
+  async (t) => {
+    await t.step("should validate complete CLI configuration", () => {
       const config = {
-        description: "Test CLI signal",
+        description: "Complete CLI deployment signal",
         provider: "cli",
-        command,
+        command: "deploy",
+        args: ["--env", "production", "--region", "us-west-2"],
+        flags: {
+          verbose: true,
+          force: false,
+          timeout: 300,
+          dryRun: false,
+          environment: "production",
+        },
+        timeout_ms: 30000,
+        retry_config: {
+          max_retries: 3,
+          retry_delay_ms: 1000,
+        },
+        schema: {
+          type: "object",
+          properties: {
+            environment: { type: "string" },
+            force: { type: "boolean" },
+          },
+          required: ["environment"],
+        },
       };
 
       const result = CliSignalConfigSchema.safeParse(config);
-      assertEquals(result.success, true, `Command '${command}' should be valid`);
+      assertEquals(result.success, true);
+
+      if (result.success) {
+        assertEquals(result.data.command, "deploy");
+        assertEquals(result.data.args.length, 4);
+        assertEquals(result.data.flags.verbose, true);
+        assertEquals(result.data.timeout_ms, 30000);
+        assertEquals(result.data.retry_config?.max_retries, 3);
+      }
     });
-  });
-});
+
+    await t.step("should reject extra fields in strict mode", () => {
+      const config = {
+        description: "Test CLI signal",
+        provider: "cli",
+        command: "deploy",
+        invalidExtraField: "should-not-be-allowed", // Extra field
+      };
+
+      const result = CliSignalConfigSchema.safeParse(config);
+      assertEquals(result.success, false);
+    });
+
+    await t.step("should validate command naming conventions", () => {
+      const validCommands = [
+        "deploy",
+        "build-and-deploy",
+        "k8s-restart",
+        "cleanup_old_logs",
+        "status",
+      ];
+
+      validCommands.forEach((command) => {
+        const config = {
+          description: "Test CLI signal",
+          provider: "cli",
+          command,
+        };
+
+        const result = CliSignalConfigSchema.safeParse(config);
+        assertEquals(
+          result.success,
+          true,
+          `Command '${command}' should be valid`,
+        );
+      });
+    });
+  },
+);

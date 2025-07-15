@@ -345,27 +345,80 @@ import { SomeUtility } from "./utils/some-utility.ts";
 **Exception**: Only use barrel imports for external package entry points or when creating a clean
 public API for packages intended for external consumption.
 
+### Avoid prefixed Imports
+
+#### Avoid npm: prefixed imports
+
+**IMPORTANT**: Avoid adding imports from packages using the `npm:` prefix. Instead, check if the
+package is already in `deno.json`, otherwise add the package via `deno add npm:{{package_name}}` and
+import it without the `npm:` prefix in the file where it's used:
+
+```typescript
+// ❌ Avoid prefixed imports
+import { dependency } from "npm:package_name";
+
+// ✅ Prefer non-prefixed imports
+import { dependency } from "package_name";
+```
+
+#### Avoid jsr: prefixed imports
+
+**IMPORTANT**: Avoid adding imports from packages using the `jsr:` prefix. Instead, check if the
+package is already in `deno.json`, otherwise add the package via `deno add jsr:{{package_name}}` and
+import it without the `jsr:` prefix in the file where it's used:
+
+```typescript
+// ❌ Avoid prefixed imports
+import { dependency } from "jsr:package_name";
+
+// ✅ Prefer non-prefixed imports
+import { dependency } from "package_name";
+```
+
+#### Avoid url imports
+
+**IMPORTANT**: Avoid adding imports directly from `http://` or `https://` sources. Instead, check if
+the package is already in `deno.json`, otherwise add the package via `deno add {{package_name}}` and
+import it directly
+
+```typescript
+// ❌ Avoid prefixed imports
+import { dependency } from "https//deno.land/package_name";
+
+// ✅ Prefer non-prefixed imports
+import { dependency } from "package_name";
+```
+
+**Why avoid prefixed imports:**
+
+- It can create inaccurate dependency tree graphs in the `deno.lock` file
+- It can cause multiple versions of a dependency to be used in the same codebase
+
 ## TypeScript Type Error Resolution Best Practices
 
 When fixing TypeScript type errors:
 
 1. **Avoid `any` types**: Never use `any` to bypass type errors. Instead:
+
    - Use `unknown` when the type is truly unknown
    - Use proper type definitions or interfaces
    - Use generic types where appropriate
 
 2. **Avoid `as` type assertions**: Instead of using `as` casts:
+
    - Use type guards for runtime type checking
    - Use Zod schemas for validation and type inference
    - Let TypeScript infer types where possible
 
 3. **Prefer existing types**: Always check if types already exist in the codebase before creating
    new ones
+
    - Look for existing interfaces and type definitions
    - Check imported packages for exported types
    - Reuse types from `@atlas/config`, `@atlas/storage`, etc.
 
 4. **Use Zod for API responses**: When handling external data (API responses, JSON parsing):
+
    ```typescript
    import { z } from "zod/v4";
 
@@ -380,6 +433,7 @@ When fixing TypeScript type errors:
    ```
 
 5. **Record types in Zod v4**: When using `z.record()`, always provide both key and value types:
+
    ```typescript
    // Correct for Zod v4
    z.record(z.string(), z.unknown());
@@ -391,7 +445,10 @@ When fixing TypeScript type errors:
 6. **Generic type parameters**: When creating reusable functions that work with different types:
    ```typescript
    // Good: Use generics instead of any
-   async function fetchData<T>(url: string, schema: z.ZodSchema<T>): Promise<T> {
+   async function fetchData<T>(
+     url: string,
+     schema: z.ZodSchema<T>,
+   ): Promise<T> {
      const response = await fetch(url);
      const data = await response.json();
      return schema.parse(data);
