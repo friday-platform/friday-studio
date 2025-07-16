@@ -1723,14 +1723,16 @@ export class AtlasDaemon implements AppContext {
       Deno.exit(0);
     };
 
-    const sigtermHandler = () => handleShutdown("SIGTERM");
     const sigintHandler = () => handleShutdown("SIGINT");
-
-    Deno.addSignalListener("SIGTERM", sigtermHandler);
     Deno.addSignalListener("SIGINT", sigintHandler);
-
-    this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
     this.signalHandlers.push({ signal: "SIGINT", handler: sigintHandler });
+
+    // SIGTERM is not supported on Windows
+    if (Deno.build.os !== "windows") {
+      const sigtermHandler = () => handleShutdown("SIGTERM");
+      Deno.addSignalListener("SIGTERM", sigtermHandler);
+      this.signalHandlers.push({ signal: "SIGTERM", handler: sigtermHandler });
+    }
   }
 
   async start() {

@@ -18,6 +18,7 @@ permissions:
 
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
@@ -120,6 +121,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        if: matrix.platform != 'linux'
         id: installers
         uses: ./.github/actions/create-installers
         with:
@@ -134,6 +136,25 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      - name: Build Linux packages
+        if: matrix.platform == 'linux'
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y rpm debhelper devscripts
+
+          # Create build directory and copy binary
+          mkdir -p build
+          cp "${{ steps.build.outputs.binary-path }}" build/atlas
+          chmod +x build/atlas
+
+          # Build DEB package
+          ARCH="${{ matrix.arch }}" VERSION="${{ steps.version.outputs.version }}" ./scripts/build-deb.sh
+
+          # Build RPM package (skip ARM64 on x86_64 runners)
+          ARCH="${{ matrix.arch }}" VERSION="${{ steps.version.outputs.version }}" ./scripts/build-rpm.sh
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -142,7 +163,8 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/atlas_*.AppImage
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
           retention-days: 5
 
@@ -235,11 +257,26 @@ jobs:
             echo ""
             echo "### Linux"
             echo ""
-            echo "**Option 1: AppImage Installer (Recommended)**"
-            echo "Double-click the Atlas*.AppImage file to run the graphical installer. Features:"
-            echo "- Cross-platform compatibility (works on all Linux distributions)"
-            echo "- API key configuration with validation"
-            echo "- Automatic binary installation and PATH setup"
+            echo "**Option 1: Native Package Manager (Recommended)**"
+            echo ""
+            echo "For Debian/Ubuntu-based distributions:"
+            echo '```bash'
+            echo 'sudo dpkg -i atlas_*_amd64.deb  # For AMD64'
+            echo '# or'
+            echo 'sudo dpkg -i atlas_*_arm64.deb  # For ARM64'
+            echo '```'
+            echo ""
+            echo "For RedHat/Fedora-based distributions:"
+            echo '```bash'
+            echo 'sudo rpm -i atlas-*.x86_64.rpm  # For AMD64'
+            echo '# or'
+            echo 'sudo rpm -i atlas-*.aarch64.rpm  # For ARM64'
+            echo '```'
+            echo ""
+            echo "Native packages include:"
+            echo "- Automatic systemd service configuration"
+            echo "- Interactive EULA acceptance and API key setup"
+            echo "- Proper system integration with dedicated atlas user"
             echo ""
             echo "**Option 2: Manual Installation**"
             echo '```bash'
@@ -274,7 +311,8 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/atlas_*.AppImage
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

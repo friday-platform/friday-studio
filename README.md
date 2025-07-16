@@ -23,7 +23,7 @@ autonomous agents in a secure, auditable, and scalable environment.
 ### Prerequisites
 
 - [Deno](https://deno.land/) 2.4.0+ installed
-- Anthropic API key (for Claude) - [Get one here](https://console.anthropic.com/)
+- Anthropic API key (for Claude) - [Get one here](https://atlas.tempestdx.com/)
 
 ### Installation
 
@@ -38,16 +38,19 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
   - License agreement integration
   - Optional API key collection and secure storage
   - Automatic PATH configuration
+  - Automatic service installation and startup
   - Support for both Intel and Apple Silicon
 - Or download the `.tar.gz` archive and extract to `/usr/local/bin/`
 
 **Linux:**
 
-- Download the Atlas installer `.AppImage` file (recommended) - Cross-platform graphical installer
-  with:
-  - Universal Linux compatibility
-  - API key configuration with validation
-  - Automatic binary installation and PATH setup
+- Download the native package for your distribution (recommended):
+  - `.deb` file for Debian/Ubuntu - Features interactive installation with:
+    - License agreement acceptance
+    - API key configuration
+    - Automatic systemd service setup
+    - Dedicated atlas system user
+  - `.rpm` file for RedHat/Fedora - Features post-install configuration
 - Or download the `.tar.gz` archive for your architecture (amd64 or arm64) and extract to
   `/usr/local/bin/`
 
@@ -58,6 +61,7 @@ Download from [releases](https://github.com/tempestteam/atlas/releases):
   - License agreement and professional UI
   - API key collection and secure storage in ~/.atlas/.env
   - Automatic PATH configuration and system integration
+  - Automatic scheduled task creation for service startup
 - Or download the `.zip` archive and add to PATH
 
 All binaries are signed and notarized for security.

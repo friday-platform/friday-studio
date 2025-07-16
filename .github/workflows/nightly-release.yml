@@ -63,6 +63,7 @@ jobs:
   build:
     needs: check-changes
     if: needs.check-changes.outputs.should_release == 'true'
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
@@ -153,6 +154,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        if: matrix.platform != 'linux'
         id: installers
         uses: ./.github/actions/create-installers
         with:
@@ -167,6 +169,25 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      - name: Build Linux packages
+        if: matrix.platform == 'linux'
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y rpm debhelper devscripts
+
+          # Create build directory and copy binary
+          mkdir -p build
+          cp "${{ steps.build.outputs.binary-path }}" build/atlas
+          chmod +x build/atlas
+
+          # Build DEB package
+          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-deb.sh
+
+          # Build RPM package (skip ARM64 on x86_64 runners)
+          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-rpm.sh
+        shell: bash
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -176,8 +197,9 @@ jobs:
             ./dist/atlas_*.zip
             ./dist/Atlas*.dmg
             ./dist/Atlas*.exe
-            ./dist/Atlas*.AppImage
             ./dist/Atlas*.app
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
             ./dist/Atlas*.sha256
           retention-days: 1
@@ -241,7 +263,8 @@ jobs:
             ./dist/atlas_*.zip
             ./dist/Atlas*.dmg
             ./dist/Atlas*.exe
-            ./dist/Atlas*.AppImage
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
             ./dist/checksums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -122,8 +122,16 @@ runs:
           --key-id "${{ inputs.macos-notary-key-id }}" \
           --key notary_key.p8 \
           --wait; then
-          echo "Notarization successful"
-          echo "notarized=true" >> $GITHUB_OUTPUT
+          echo "Notarization successful, now stapling ticket to binary"
+
+          # Staple the notarization ticket to the binary
+          if xcrun stapler staple "${{ inputs.binary-path }}"; then
+            echo "Notarization ticket stapled successfully"
+            echo "notarized=true" >> $GITHUB_OUTPUT
+          else
+            echo "Failed to staple notarization ticket"
+            echo "notarized=false" >> $GITHUB_OUTPUT
+          fi
         else
           echo "Notarization failed, but continuing build"
           echo "notarized=false" >> $GITHUB_OUTPUT

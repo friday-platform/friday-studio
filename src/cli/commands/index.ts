@@ -3,6 +3,7 @@ import * as daemonCmd from "./daemon.ts";
 import * as interactiveCmd from "./interactive.tsx";
 import * as libraryCmd from "./library/index.ts";
 import * as psCmd from "./ps.ts";
+import * as serviceCmd from "./service.ts";
 import * as sessionCmd from "./session.ts";
 import * as signalCmd from "./signal.ts";
 import * as versionCmd from "./version.ts";
@@ -17,5 +18,6 @@ export const commands = [
   signalCmd,
   libraryCmd,
   daemonCmd,
+  serviceCmd,
   interactiveCmd,
 ];

@@ -56,6 +56,13 @@ runs:
         if ls atlas_*.AppImage 1> /dev/null 2>&1; then
           gsutil -m cp atlas_*.AppImage gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
+        # Upload Linux packages
+        if ls atlas_*.deb 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.deb gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}packages/
+        fi
+        if ls atlas-*.rpm 1> /dev/null 2>&1; then
+          gsutil -m cp atlas-*.rpm gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}packages/
+        fi
 
         echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to sandbox GCS bucket"
 

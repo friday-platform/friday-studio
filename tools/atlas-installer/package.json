@@ -3,6 +3,11 @@
   "version": "1.0.0",
   "description": "Cross-platform installer for Atlas CLI",
   "main": "main.js",
+  "homepage": "https://atlas.tempestdx.com",
+  "author": {
+    "name": "Tempest Labs, Inc.",
+    "email": "support@tempestdx.com"
+  },
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
@@ -21,7 +26,6 @@
     "cleanup-build": "echo 'Cleaning up build artifacts'",
     "optimize-size": "node optimize-electron.js"
   },
-  "author": "Tempest Labs, Inc.",
   "license": "PROPRIETARY",
   "devDependencies": {
     "electron": "^37.2.1",
@@ -40,8 +44,8 @@
       "styles.css",
       "preload.js",
       "logo.png",
-      "atlas-binary/**/*",
       "entitlements.mac.plist",
+      "../../EULA.txt",
       "!**/*.map",
       "!**/node_modules/**/*",
       "!**/.git/**/*",
@@ -56,7 +60,10 @@
         "to": "atlas-binary"
       }
     ],
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "atlas-binary/**/*"
+    ],
     "electronLanguages": ["en"],
     "mac": {
       "category": "public.app-category.developer-tools",
@@ -66,7 +73,18 @@
       "entitlements": "entitlements.mac.plist",
       "entitlementsInherit": "entitlements.mac.plist",
       "minimumSystemVersion": "10.15.0",
-      "helperBundleId": null
+      "helperBundleId": null,
+      "extendInfo": {
+        "NSBluetoothAlwaysUsageDescription": false,
+        "NSBluetoothPeripheralUsageDescription": false,
+        "NSCameraUsageDescription": false,
+        "NSMicrophoneUsageDescription": false,
+        "NSAppleEventsUsageDescription": "Atlas Installer needs to run administrative commands to install the Atlas binary to /usr/local/bin/",
+        "NSSystemAdministrationUsageDescription": "Atlas Installer needs administrative access to install the Atlas binary to /usr/local/bin/",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
+      }
     },
     "buildDependenciesFromSource": false,
     "compression": "normal",
@@ -74,17 +92,14 @@
     "removePackageKeywords": true,
     "nodeGypRebuild": false,
     "npmRebuild": false,
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
     "win": {
-      "target": "nsis",
+      "target": "portable",
       "icon": "icons/icon.ico"
     },
     "linux": {
       "target": "AppImage",
-      "icon": "icons/icon.png"
+      "category": "Development",
+      "icon": "icons"
     },
     "electronDownload": {
       "cache": "./electron-cache"

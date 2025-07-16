@@ -432,8 +432,6 @@ export class WorkspaceManager {
     );
 
     // Future system workspaces can be added here
-    // const { ATLAS_MONITORING_CONFIG } = await import("./system-workspaces/monitoring-config.ts");
-    // await this.registerVirtualWorkspace("atlas-monitoring", ATLAS_MONITORING_CONFIG, {...});
 
     logger.info("System workspaces registered successfully");
   }
@@ -1002,7 +1000,11 @@ if (typeof Deno !== "undefined") {
   Deno.addSignalListener("SIGINT", () => {
     resetWorkspaceManager();
   });
-  Deno.addSignalListener("SIGTERM", () => {
-    resetWorkspaceManager();
-  });
+
+  // SIGTERM is not supported on Windows
+  if (Deno.build.os !== "windows") {
+    Deno.addSignalListener("SIGTERM", () => {
+      resetWorkspaceManager();
+    });
+  }
 }

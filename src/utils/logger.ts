@@ -1,5 +1,6 @@
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
+import { getAtlasLogsDir } from "./paths.ts";
 
 export interface LogEntry {
   timestamp: string;
@@ -71,10 +72,8 @@ export class AtlasLogger {
 
     // Start initialization
     this.initPromise = (async () => {
-      // Set up paths now that we have permission to access env
-      const homeDir = Deno.env.get("HOME") || Deno.env.get("USERPROFILE") ||
-        Deno.cwd();
-      this.logDir = join(homeDir, ".atlas", "logs");
+      // Set up paths using centralized path utility
+      this.logDir = getAtlasLogsDir();
       this.globalLogPath = join(this.logDir, "global.log");
 
       // Ensure log directories exist

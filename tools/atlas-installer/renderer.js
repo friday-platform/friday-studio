@@ -43,61 +43,16 @@ class AtlasInstaller {
     });
   }
 
-  loadLicenseText() {
-    const licenseText = `End-User License Agreement (EULA) for Atlas
-
-IMPORTANT - READ CAREFULLY
-
-This End-User License Agreement ("Agreement") is a legal agreement between you (either an individual or a single entity, hereinafter "You" or "Licensee") and Tempest Labs, Inc. ("Licensor") for the software product named Atlas, including any associated media, printed materials, and "online" or electronic documentation (collectively, the "Software").
-
-By installing, copying, or otherwise using the Software, you agree to be bound by the terms of this Agreement. If you do not agree to the terms of this Agreement, do not install or use the Software.
-
-1. Definitions
-
-"Software" refers to the CLI tool "Atlas" and all related files and documentation provided by Tempest Labs, Inc.
-
-"Internal Use" means the use of the Software by the Licensee's employees or authorized contractors for the Licensee's own internal business purposes. It explicitly excludes use for the benefit of any third party or for any commercial purpose.
-
-"Commercial Use" means any use of the Software for direct or indirect financial gain, including but not limited to, embedding it in a commercial product, using it to provide paid services, or distributing it for a fee.
-
-2. Grant of License
-
-Subject to the terms and conditions of this Agreement, Tempest Labs, Inc. hereby grants you a non-exclusive, non-transferable, non-sublicensable, revocable license to install and use the Software on devices owned or controlled by you, solely for your Internal Use.
-
-3. License Restrictions
-
-You may not, and shall not permit any third party to, do any of the following:
-
-(a) Commercial Use: Use the Software for any Commercial Use.
-(b) Reverse Engineering: Reverse engineer, decompile, disassemble, or otherwise attempt to discover the source code or underlying ideas or algorithms of the Software.
-(c) Modification: Modify, translate, or create derivative works based on the Software.
-(d) Redistribution: Sell, rent, lease, lend, redistribute, or sublicense the Software to any third party.
-(e) Proprietary Notices: Remove, alter, or obscure any proprietary notices (including copyright and trademark notices) of Tempest Labs, Inc. or its suppliers on the Software.
-(f) Competitive Use: Use the Software to develop a competing product or service.
-
-4. Intellectual Property Ownership
-
-The Software is licensed, not sold. Tempest Labs, Inc. and its licensors retain all right, title, and interest in and to the Software, including all copyrights, patents, trade secrets, trademarks, and other intellectual property rights.
-
-5. Termination
-
-This Agreement is effective until terminated. Your rights under this license will terminate automatically without notice from Tempest Labs, Inc. if you fail to comply with any term(s) of this Agreement.
-
-6. Disclaimer of Warranties
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITH ALL FAULTS AND WITHOUT WARRANTY OF ANY KIND.
-
-7. Limitation of Liability
-
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL TEMPEST LABS, INC. BE LIABLE FOR ANY INCIDENTAL, SPECIAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER.
-
-8. Governing Law and Jurisdiction
-
-This Agreement will be governed by and construed in accordance with the laws of the State of Delaware.
-
-BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERSTAND IT, AND AGREE TO BE BOUND BY ITS TERMS AND CONDITIONS.`;
-
-    document.getElementById("license-text").textContent = licenseText;
+  async loadLicenseText() {
+    try {
+      // Request the EULA text from the main process
+      const licenseText = await window.electronAPI.getEulaText();
+      document.getElementById("license-text").textContent = licenseText;
+    } catch (error) {
+      console.error("Failed to load EULA:", error);
+      document.getElementById("license-text").textContent =
+        "Error loading license text. Please contact support.";
+    }
   }
 
   validateApiKey(apiKey) {
@@ -112,6 +67,21 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
   isApiKeyValid() {
     const apiKey = document.getElementById("api-key").value;
     return this.validateApiKey(apiKey);
+  }
+
+  hasValidApiKey() {
+    const apiKey = document.getElementById("api-key").value;
+    return apiKey && apiKey.trim() && this.validateApiKey(apiKey);
+  }
+
+  async hasExistingApiKey() {
+    // Check if API key already exists in ~/.atlas/.env
+    try {
+      const result = await globalThis.electronAPI.checkExistingApiKey();
+      return result.exists;
+    } catch {
+      return false;
+    }
   }
 
   toggleApiKeyVisibility() {
@@ -294,24 +264,29 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
 
     const steps = [
       {
-        progress: 20,
+        progress: 16,
         message: "Creating Atlas directory...",
         action: () => globalThis.electronAPI.createAtlasDir(),
       },
       {
-        progress: 40,
+        progress: 32,
         message: "Installing Atlas binary...",
         action: () => globalThis.electronAPI.installAtlasBinary(),
       },
       {
-        progress: 60,
+        progress: 48,
         message: "Configuring API key...",
         action: () => this.configureApiKey(),
       },
       {
-        progress: 80,
+        progress: 64,
         message: "Setting up PATH...",
         action: () => globalThis.electronAPI.setupPath(),
+      },
+      {
+        progress: 80,
+        message: "Starting Atlas service...",
+        action: () => this.manageDaemon(),
       },
       {
         progress: 100,
@@ -329,7 +304,12 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
       try {
         const result = await step.action();
         if (result.success) {
-          log += `✓ ${step.message.replace("...", " completed")}\n`;
+          if (result.warning) {
+            log += `⚠ ${step.message.replace("...", " completed with warning")}\n`;
+            log += `  ${result.warning}\n`;
+          } else {
+            log += `✓ ${step.message.replace("...", " completed")}\n`;
+          }
         } else {
           log += `✗ Error: ${result.error}\n`;
         }
@@ -347,6 +327,7 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
     setTimeout(() => {
       this.currentStep = 4;
       this.isInstalling = false;
+      this.updateCompletionStatus();
       this.updateStepIndicator();
     }, 1000);
   }
@@ -354,12 +335,71 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
   async configureApiKey() {
     const apiKey = document.getElementById("api-key").value;
 
-    if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
-      return await globalThis.electronAPI.saveApiKey(apiKey.trim());
+    if (apiKey && apiKey.trim()) {
+      // User provided an API key - validate and save (will override existing)
+      if (this.validateApiKey(apiKey)) {
+        return await globalThis.electronAPI.saveApiKey(apiKey.trim());
+      } else {
+        return {
+          success: false,
+          error: "Invalid API key format. Cannot proceed with installation.",
+        };
+      }
     } else {
+      // No API key provided - skip configuration step
       return {
         success: true,
-        message: "API key skipped - no changes made to existing configuration",
+        message: "API key configuration skipped - no changes made",
+      };
+    }
+  }
+
+  async manageDaemon() {
+    try {
+      // Check if API key exists (either just entered or already in file)
+      const hasInputApiKey = this.hasValidApiKey();
+      const hasExistingApiKey = await this.hasExistingApiKey();
+
+      if (!hasInputApiKey && !hasExistingApiKey) {
+        // No API key available - Atlas daemon will return error about it when started
+        return {
+          success: true,
+          message:
+            "Daemon start skipped - no API key configured. Configure API key in ~/.atlas/.env and run 'atlas service start'.",
+        };
+      }
+
+      // Check if Atlas binary was successfully installed before trying to start service
+      const binaryCheck = await globalThis.electronAPI.checkAtlasBinary();
+      if (!binaryCheck.exists) {
+        return {
+          success: false,
+          error:
+            `Atlas binary not found at expected location. Binary installation may have failed: ${
+              binaryCheck.error || "Binary not accessible"
+            }`,
+        };
+      }
+
+      // Start Atlas service (on Windows this will create scheduled task if needed)
+      const startResult = await globalThis.electronAPI.manageService("start");
+      if (!startResult.success) {
+        const platform = navigator.userAgent.includes("Windows") ? "windows" : "unix";
+        const manualCommand = platform === "windows"
+          ? "Run installer as Administrator or manually create scheduled task"
+          : "atlas service install && atlas service start";
+        return {
+          success: true,
+          warning: `Service start failed: ${startResult.error}. ${manualCommand}`,
+        };
+      }
+      return startResult;
+    } catch (error) {
+      // If daemon management fails, continue with warning
+      return {
+        success: true,
+        warning:
+          `Daemon management error: ${error.message}. Start manually with 'atlas daemon start'.`,
       };
     }
   }
@@ -374,6 +414,42 @@ BY USING THE SOFTWARE, YOU ACKNOWLEDGE THAT YOU HAVE READ THIS AGREEMENT, UNDERS
     // Auto-scroll to bottom
     const logElement = document.getElementById("install-log");
     logElement.scrollTop = logElement.scrollHeight;
+  }
+
+  updateCompletionStatus() {
+    // Show API key status if one was configured
+    const apiKey = document.getElementById("api-key").value;
+    const apiKeyStatus = document.getElementById("api-key-status");
+
+    if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
+      apiKeyStatus.classList.remove("hidden");
+    }
+
+    // Update daemon status based on installation log
+    const daemonStatus = document.getElementById("daemon-status");
+    const installLog = document.getElementById("install-log").textContent;
+
+    if (installLog.includes("Starting Atlas daemon...")) {
+      if (
+        installLog.includes("✓ Starting Atlas daemon completed") ||
+        installLog.includes("⚠ Starting Atlas daemon completed with warning")
+      ) {
+        // Daemon step completed successfully or with warning
+        if (installLog.includes("warning")) {
+          daemonStatus.textContent = "⚠️ Atlas daemon - check manually with 'atlas daemon status'";
+          daemonStatus.style.color = "#f39c12";
+        } else {
+          daemonStatus.textContent = "✅ Atlas daemon started and running";
+        }
+      } else if (
+        installLog.includes("✗ Error:") &&
+        installLog.lastIndexOf("✗ Error:") > installLog.lastIndexOf("Starting Atlas daemon...")
+      ) {
+        // Daemon step failed
+        daemonStatus.textContent = "❌ Atlas daemon - start manually with 'atlas daemon start'";
+        daemonStatus.style.color = "#e74c3c";
+      }
+    }
   }
 }
 

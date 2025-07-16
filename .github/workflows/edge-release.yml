@@ -34,6 +34,7 @@ jobs:
 
   build:
     needs: check-changes
+    timeout-minutes: 30
     strategy:
       matrix:
         include:
@@ -125,6 +126,7 @@ jobs:
         shell: bash
 
       - name: Create installers
+        if: matrix.os != 'linux'
         id: installers
         uses: ./.github/actions/create-installers
         with:
@@ -139,6 +141,25 @@ jobs:
           macos-notary-key-id: ${{ secrets.MACOS_NOTARY_KEY_ID }}
           macos-notary-key: ${{ secrets.MACOS_NOTARY_KEY }}
 
+      - name: Build Linux packages
+        if: matrix.os == 'linux'
+        run: |
+          # Install build dependencies
+          sudo apt-get update
+          sudo apt-get install -y rpm debhelper devscripts
+
+          # Create build directory and copy binary
+          mkdir -p build
+          cp "${{ steps.build.outputs.binary-path }}" build/atlas
+          chmod +x build/atlas
+
+          # Build DEB package
+          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-deb.sh
+
+          # Build RPM package (skip ARM64 on x86_64 runners)
+          ARCH="${{ matrix.arch }}" VERSION="${{ needs.check-changes.outputs.version }}" ./scripts/build-rpm.sh
+        shell: bash
+
       - name: Upload binary archives
         uses: actions/upload-artifact@v4
         with:
@@ -146,17 +167,19 @@ jobs:
           path: |
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
             ./dist/atlas_*.sha256
           retention-days: 1
 
       - name: Upload installers
+        if: matrix.os != 'linux'
         uses: actions/upload-artifact@v4
         with:
           name: atlas-installer-${{ needs.check-changes.outputs.version }}-${{ matrix.os }}-${{ matrix.arch }}
           path: |
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/atlas_*.AppImage
             ./dist/atlas_*.sha256
           retention-days: 1
 
@@ -221,9 +244,11 @@ jobs:
       - name: List downloaded files
         run: |
           echo "Binary files:"
-          find ./dist -type f -name "atlas_*" | grep -v "\.exe$\|\.zip$\|\.AppImage$" || echo "No binary files found"
+          find ./dist -type f -name "atlas_*" | grep -v "\.exe$\|\.zip$" || echo "No binary files found"
+          echo "Package files:"
+          find ./dist -type f -name "atlas*" | grep -E "\.(deb|rpm)$" || echo "No package files found"
           echo "Installer files:"
-          find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip|AppImage)$" || echo "No installer files found"
+          find ./dist -type f -name "atlas_*" | grep -E "\.(exe|zip)$" || echo "No installer files found"
           echo "All files:"
           ls -la ./dist/
 
@@ -240,7 +265,8 @@ jobs:
             ./dist/atlas_*.tar.gz
             ./dist/atlas_*.zip
             ./dist/atlas_*.exe
-            ./dist/atlas_*.AppImage
+            ./dist/atlas_*.deb
+            ./dist/atlas-*.rpm
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

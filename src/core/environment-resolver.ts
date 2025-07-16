@@ -45,12 +45,19 @@ export class EnvironmentResolver {
       };
     }
 
-    // Evaluation order: from_env_file → from_env → from_file → global_atlas_env → value → default
+    // Evaluation order: from_env_file → from_env → from_file → system_atlas_env → global_atlas_env → value → default
     const sources = [
       { type: "from_env_file" as const, getValue: () => this.resolveFromEnvFile(config) },
       { type: "from_env" as const, getValue: () => this.resolveFromEnv(config) },
       { type: "from_file" as const, getValue: () => this.resolveFromFile(config) },
-      { type: "from_file" as const, getValue: () => this.resolveFromGlobalAtlasEnv(variableName) },
+      {
+        type: "system_atlas_env" as const,
+        getValue: () => this.resolveFromSystemAtlasEnv(variableName),
+      },
+      {
+        type: "global_atlas_env" as const,
+        getValue: () => this.resolveFromGlobalAtlasEnv(variableName),
+      },
       { type: "value" as const, getValue: () => this.resolveValue(config) },
       { type: "default" as const, getValue: () => this.resolveDefault(config) },
     ];
@@ -164,6 +171,21 @@ export class EnvironmentResolver {
 
   private resolveDefault(config: any): string | undefined {
     return config.default;
+  }
+
+  private async resolveFromSystemAtlasEnv(variableName: string): Promise<string | undefined> {
+    if (Deno.build.os !== "linux") {
+      return undefined;
+    }
+
+    try {
+      const systemAtlasEnvPath = "/etc/atlas/env";
+      const envFile = await this.loadEnvFile(systemAtlasEnvPath);
+      return envFile[variableName];
+    } catch (error) {
+      // System Atlas env file not found or not readable, continue to next source
+      return undefined;
+    }
   }
 
   private async resolveFromGlobalAtlasEnv(variableName: string): Promise<string | undefined> {

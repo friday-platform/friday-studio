@@ -110,7 +110,7 @@ INTERACTIVE COMMANDS:
     ↑/↓ or j/k              Navigate up/down in memory list
     Enter                    View selected memory entry details
     e                        Edit selected entry (future feature)
-    n                        Create new entry (future feature)  
+    n                        Create new entry (future feature)
     d                        Delete selected entry (future feature)
     /                        Search in current memory type
     r                        Reload memory from disk
@@ -120,7 +120,7 @@ INTERACTIVE COMMANDS:
 
 MEMORY TYPES:
     Working       Short-term, active processing memory
-    Episodic      Specific experiences and events  
+    Episodic      Specific experiences and events
     Semantic      General knowledge and concepts
     Procedural    How-to knowledge and skills
 

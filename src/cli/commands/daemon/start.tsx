@@ -103,7 +103,16 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     // Load environment variables
     await load({ export: true });
 
+    // Load system Atlas configuration (Linux packages)
+    if (Deno.build.os === "linux") {
+      const systemAtlasEnv = "/etc/atlas/env";
+      if (await exists(systemAtlasEnv)) {
+        await load({ export: true, envPath: systemAtlasEnv, override: false });
+      }
+    }
+
     // Load global Atlas configuration as fallback
+    // Note: getAtlasHome() will return the appropriate path based on system/user mode
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
       await load({ export: true, envPath: globalAtlasEnv, override: false });
@@ -114,7 +123,10 @@ export const handler = async (argv: StartArgs): Promise<void> => {
       Deno.env.set("ATLAS_CONFIG_PATH", argv.atlasConfig);
     }
 
-    if (argv.detached) {
+    // Check if we're running as a detached process - if so, run in foreground mode
+    const isDetachedProcess = Deno.env.get("ATLAS_DETACHED") === "true";
+
+    if (argv.detached && !isDetachedProcess) {
       await startDetached(argv);
     } else {
       await startForeground(argv);
@@ -132,36 +144,72 @@ async function checkDaemonRunning(port: number): Promise<boolean> {
 
 async function startDetached(argv: StartArgs): Promise<void> {
   // For detached mode, spawn a new process
-  const cmd = new Deno.Command(Deno.execPath(), {
-    args: [
-      "run",
-      "--allow-all",
-      "--unstable-kv",
-      "--unstable-broadcast-channel",
-      "--unstable-worker-options",
-      "--env-file",
-      Deno.mainModule,
-      "daemon",
-      "start",
-      "--port",
-      (argv.port || 8080).toString(),
-      "--hostname",
-      argv.hostname || "localhost",
-      "--max-workspaces",
-      (argv.maxWorkspaces || 10).toString(),
-      "--idle-timeout",
-      (argv.idleTimeout || 300).toString(),
-      ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
-      ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
-    ],
-    env: {
-      ...Deno.env.toObject(),
-      ATLAS_DETACHED: "true",
-    },
-    stdout: "null",
-    stderr: "null",
-    stdin: "null",
-  });
+  const execPath = Deno.execPath();
+  const mainModule = Deno.mainModule;
+
+  // Check if we're running as a compiled binary
+  const isCompiledBinary = execPath.endsWith("atlas-test") || execPath.endsWith("atlas") ||
+    execPath.endsWith("atlas.exe");
+
+  let cmd;
+  if (isCompiledBinary) {
+    // For compiled binaries, run the binary directly
+    cmd = new Deno.Command(execPath, {
+      args: [
+        "daemon",
+        "start",
+        "--port",
+        (argv.port || 8080).toString(),
+        "--hostname",
+        argv.hostname || "localhost",
+        "--max-workspaces",
+        (argv.maxWorkspaces || 10).toString(),
+        "--idle-timeout",
+        (argv.idleTimeout || 300).toString(),
+        ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
+        ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
+      ],
+      env: {
+        ...Deno.env.toObject(),
+        ATLAS_DETACHED: "true",
+      },
+      stdout: "null",
+      stderr: "null",
+      stdin: "null",
+    });
+  } else {
+    // For source code execution, use deno run
+    cmd = new Deno.Command(execPath, {
+      args: [
+        "run",
+        "--allow-all",
+        "--unstable-kv",
+        "--unstable-broadcast-channel",
+        "--unstable-worker-options",
+        "--env-file",
+        mainModule,
+        "daemon",
+        "start",
+        "--port",
+        (argv.port || 8080).toString(),
+        "--hostname",
+        argv.hostname || "localhost",
+        "--max-workspaces",
+        (argv.maxWorkspaces || 10).toString(),
+        "--idle-timeout",
+        (argv.idleTimeout || 300).toString(),
+        ...(argv.logLevel ? ["--log-level", argv.logLevel] : []),
+        ...(argv.atlasConfig ? ["--atlas-config", argv.atlasConfig] : []),
+      ],
+      env: {
+        ...Deno.env.toObject(),
+        ATLAS_DETACHED: "true",
+      },
+      stdout: "null",
+      stderr: "null",
+      stdin: "null",
+    });
+  }
 
   const child = cmd.spawn();
   const pid = child.pid;
@@ -202,7 +250,11 @@ async function startForeground(argv: StartArgs): Promise<void> {
   };
 
   Deno.addSignalListener("SIGINT", shutdown);
-  Deno.addSignalListener("SIGTERM", shutdown);
+
+  // SIGTERM is not supported on Windows
+  if (Deno.build.os !== "windows") {
+    Deno.addSignalListener("SIGTERM", shutdown);
+  }
 
   infoOutput(
     `Starting Atlas daemon on http://${argv.hostname || "localhost"}:${argv.port || 8080}...`,
