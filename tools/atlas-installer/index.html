@@ -1,118 +1,124 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Atlas Installer v3</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="reset.css" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="container">
+      <button class="btn-secondary hidden" id="back-btn" aria-label="Go Back">
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 16 16"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M12.0003 7.99999H3.9997M3.9997 7.99999L7.49971 11.5M3.9997 7.99999L7.49971 4.49999"
+            stroke="currentColor"
+            stroke-width="1.5"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+
       <div class="header">
         <div class="logo"><img src="logo.png" alt="Tempest Logo" /></div>
-        <div class="title">Atlas Installer</div>
-        <div class="subtitle">AI Agent Orchestration Platform</div>
-
-        <div class="step-indicator">
-          <div class="step active" id="step-0">
-            <div class="step-number">1</div>
-            <span>Welcome</span>
-          </div>
-          <div class="step" id="step-1">
-            <div class="step-number">2</div>
-            <span>License</span>
-          </div>
-          <div class="step" id="step-2">
-            <div class="step-number">3</div>
-            <span>API Key</span>
-          </div>
-          <div class="step" id="step-3">
-            <div class="step-number">4</div>
-            <span>Install</span>
-          </div>
-        </div>
+        <div class="title">Install Atlas</div>
       </div>
 
       <div class="content">
         <!-- Welcome Step -->
         <div class="step-content active" id="content-0">
-          <div class="step-icon">📦</div>
-          <div class="step-title">Welcome to Atlas</div>
-          <div class="step-description">
-            Atlas enables seamless human/AI collaboration through specialized, autonomous agents in
-            a secure, auditable, and scalable environment.
-          </div>
+          <p class="step-description">
+            Build powerful, multi-agent workflows in natural language with Atlas, the safest way to
+            automate complex tasks, coordinate agents, and scale intelligent execution.
+          </p>
         </div>
 
         <!-- License Step -->
         <div class="step-content" id="content-1">
-          <div class="step-icon">📄</div>
-          <div class="step-title">License Agreement</div>
-          <div class="step-description">
-            Please read and accept the End-User License Agreement to continue.
-          </div>
+          <div class="license-scroll" id="license-text">Loading license...</div>
 
-          <div class="license-container">
-            <div class="license-scroll" id="license-text">
-              Loading license...
-            </div>
-
-            <div class="license-agreement">
-              <input type="checkbox" id="license-checkbox">
-              <label for="license-checkbox">I agree to the license terms and conditions</label>
-            </div>
+          <div class="license-agreement">
+            <input type="checkbox" id="license-checkbox" />
+            <label for="license-checkbox">
+              I agree to the End-User License Agreement.
+            </label>
           </div>
         </div>
 
         <!-- API Key Step -->
         <div class="step-content" id="content-2">
-          <div class="step-icon">🔑</div>
-          <div class="step-title">API Key Configuration</div>
-          <div class="step-description">
-            Enter your Anthropic API key to enable AI agent functionality.
-          </div>
+          <label class="form-label-container">
+            <span class="form-label"
+            >Enter your Anthropic API key to enable AI agent functionality.</span>
 
-          <div class="input-help">
-            Your API key starts with "sk-ant-" and can be found at
-            <a href="https://atlas.tempestdx.com" target="_blank">Atlas page</a>
-          </div>
+            <div class="api-key-container">
+              <input
+                type="password"
+                class="api-key-input"
+                id="api-key"
+                placeholder="sk-ant-..."
+                spellcheck="false"
+                autocapitalize="off"
+                autocorrect="off"
+                data-1p-ignore="true"
+                autocomplete="new-password"
+              />
+              <button
+                type="button"
+                class="show-hide-btn"
+                id="show-hide-btn"
+                title="Show/Hide API key"
+              >
+                <span id="eye-icon">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
+                    <path
+                      fill-rule="evenodd"
+                      clip-rule="evenodd"
+                      d="M13.1015 8.32167C12.216 9.67671 10.5368 11.5 7.99998 11.5C5.46312 11.5 3.78396 9.67671 2.89844 8.32167C2.76652 8.1198 2.76652 7.8802 2.89844 7.67833C3.78396 6.32329 5.46312 4.5 7.99998 4.5C10.5368 4.5 12.216 6.32329 13.1015 7.67833C13.2334 7.8802 13.2334 8.1198 13.1015 8.32167ZM14.3572 6.85776C14.8149 7.55817 14.8149 8.44183 14.3572 9.14224C13.3927 10.6181 11.3216 13 7.99998 13C4.67835 13 2.60723 10.6181 1.64279 9.14224C1.18507 8.44183 1.18507 7.55817 1.64279 6.85776C2.60723 5.38195 4.67835 3 7.99998 3C11.3216 3 13.3927 5.38195 14.3572 6.85776ZM7.99998 10C9.10455 10 9.99998 9.10457 9.99998 8C9.99998 6.89543 9.10455 6 7.99998 6C6.89541 6 5.99998 6.89543 5.99998 8C5.99998 9.10457 6.89541 10 7.99998 10Z"
+                      fill="currentColor"
+                    />
+                  </svg>
+                </span>
+              </button>
+            </div>
 
-          <div class="api-key-container">
-            <input
-              type="password"
-              class="api-key-input"
-              id="api-key"
-              placeholder="sk-ant-..."
-              autocomplete="off"
+            <p class="form-description">
+              Your API key starts with "sk-ant-" and can be found
+              <a href="https://atlas.tempestdx.com" target="_blank">here</a>.
+              <br />You can also configure your API key later by editing ~/.atlas/.env
+            </p>
+
+            <div
+              class="validation-message hidden"
+              id="api-key-validation"
             >
-            <button
-              type="button"
-              class="show-hide-btn"
-              id="show-hide-btn"
-              title="Show/Hide API key"
-            >
-              <span id="eye-icon">👁️</span>
-            </button>
-          </div>
-
-          <div class="validation-message hidden" id="api-key-validation"></div>
-
-          <div class="optional-note">
-            This step is optional - you can configure your API key later by editing ~/.atlas/.env
-          </div>
+            </div>
+          </label>
         </div>
 
         <!-- Installation Step -->
         <div class="step-content" id="content-3">
-          <div class="step-icon">⚙️</div>
-          <div class="step-title" id="install-title">Ready to Install</div>
-          <div class="step-description" id="install-description">
+          <p class="step-description" id="install-description">
             Click Install to begin the installation process.
-          </div>
+          </p>
 
-          <div class="installation-summary" id="install-summary">
-            <h4>Installation Summary:</h4>
-            <ul id="install-list">
+          <h4 class="features-title">Installation Summary:</h4>
+
+          <div class="features">
+            <ul>
               <li>Create ~/.atlas directory</li>
               <li>Install Atlas CLI binary</li>
               <li id="api-key-item" class="hidden">Configure API key</li>
@@ -132,31 +138,54 @@
 
         <!-- Completion Step -->
         <div class="step-content" id="content-4">
-          <div class="step-icon">✅</div>
-          <div class="step-title">Installation Complete!</div>
           <div class="step-description">
             Atlas has been successfully installed and is ready to use.
           </div>
 
+          <h4 class="features-title">What's Installed:</h4>
+
           <div class="features">
-            <h4>Next Steps:</h4>
             <ul>
+              <li>Atlas CLI binary installed to system PATH</li>
+              <li>Configuration directory created at <code>~/.atlas</code></li>
+              <li id="api-key-status" class="hidden">API key configured</li>
+              <li id="daemon-status">Atlas daemon started and running</li>
+            </ul>
+          </div>
+          <h4 class="features-title">Next Steps:</h4>
+          <div class="features">
+            <ol>
               <li>Open your terminal and run <code>atlas --help</code></li>
+              <li>Check daemon status with <code>atlas daemon status</code></li>
               <li>
-                Visit <a href="https://atlas.tempestdx.com" target="_blank">atlas.tempestdx.com</a>
+                Visit
+                <a href="https://atlas.tempestdx.com" target="_blank">atlas.tempestdx.com</a>
                 for documentation
               </li>
               <li>Start building AI agent workflows</li>
-            </ul>
+            </ol>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="footer">
-        <button class="btn btn-secondary hidden" id="back-btn">Back</button>
-        <div></div>
-        <button class="btn btn-primary" id="next-btn">Continue</button>
+    <div class="footer">
+      <div class="step-indicator">
+        <div class="step active" id="step-0">
+          <span>Getting Started</span>
+        </div>
+        <div class="step" id="step-1">
+          <span>License</span>
+        </div>
+        <div class="step" id="step-2">
+          <span>API Key</span>
+        </div>
+        <div class="step" id="step-3">
+          <span>Review</span>
+        </div>
       </div>
+
+      <button class="btn btn-primary" id="next-btn">Continue</button>
     </div>
 
     <script src="renderer.js"></script>
