@@ -45,7 +45,6 @@
       "preload.js",
       "logo.png",
       "entitlements.mac.plist",
-      "../../EULA.txt",
       "!**/*.map",
       "!**/node_modules/**/*",
       "!**/.git/**/*",
@@ -58,14 +57,21 @@
       {
         "from": "atlas-binary",
         "to": "atlas-binary"
+      },
+      {
+        "from": "../../EULA.txt",
+        "to": "EULA.txt"
       }
     ],
     "asar": true,
     "asarUnpack": [
       "atlas-binary/**/*"
     ],
-    "electronLanguages": ["en"],
+    "electronLanguages": [
+      "en"
+    ],
     "mac": {
+      "target": "zip",
       "category": "public.app-category.developer-tools",
       "icon": "icons/icon.icns",
       "notarize": true,

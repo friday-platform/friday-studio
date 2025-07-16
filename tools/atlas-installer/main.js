@@ -997,11 +997,10 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
 
 ipcMain.handle("get-eula-text", async () => {
   try {
-    // In production, EULA.txt is bundled with the app
     let eulaPath;
     if (app.isPackaged) {
-      // In packaged app, EULA.txt is in the app directory
-      eulaPath = path.join(__dirname, "EULA.txt");
+      // In packaged app, EULA.txt is in the resources directory
+      eulaPath = path.join(process.resourcesPath, "EULA.txt");
     } else {
       // In development, go up to project root
       eulaPath = path.join(__dirname, "..", "..", "EULA.txt");
