@@ -635,19 +635,28 @@ body {
 }
 
 .show-hide-btn {
+  all: unset;
+  align-items: center;
+  background: none;
+  block-size: var(--size-6);
+  border-radius: var(--radius-1);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  inline-size: var(--size-6);
+  justify-content: center;
+  padding: var(--size-1);
   position: absolute;
   right: var(--size-2);
   top: 50%;
   transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: var(--size-1);
-  border-radius: var(--radius-1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   transition: background-color 0.2s;
+
+  span {
+    block-size: var(--size-4);
+    display: block;
+    inline-size: var(--size-4);
+  }
 }
 
 .show-hide-btn:hover {
@@ -722,6 +731,7 @@ body {
 }
 
 .btn {
+  all: unset;
   border-radius: var(--radius-2-5);
   border-top: 1px solid var(--background-1);
   background: linear-gradient(
@@ -776,6 +786,7 @@ body {
 }
 
 .btn-secondary {
+  all: unset;
   align-items: center;
   block-size: var(--size-6-5);
   border-radius: var(--radius-2-5);
