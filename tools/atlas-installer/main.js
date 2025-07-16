@@ -10,9 +10,12 @@ function createWindow() {
     width: 950,
     height: 850,
     resizable: true,
-    minWidth: 900,
-    minHeight: 800,
+    minWidth: 600,
+    minHeight: 400,
     titleBarStyle: "hiddenInset",
+    fullscreenable: false,
+    maximizable: false,
+    ...(process.platform !== "darwin" ? { titleBarOverlay: true } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -124,7 +127,11 @@ ipcMain.handle("save-api-key", async (event, apiKey) => {
       fs.chmodSync(envFile, 0o600);
     }
 
-    return { success: true, path: envFile, message: "API key saved successfully" };
+    return {
+      success: true,
+      path: envFile,
+      message: "API key saved successfully",
+    };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -152,7 +159,10 @@ ipcMain.handle("install-atlas-binary", async () => {
 
     // Check if source binary exists
     if (!binarySource || !fs.existsSync(binarySource)) {
-      return { success: false, error: "Atlas binary not found in installer package" };
+      return {
+        success: false,
+        error: "Atlas binary not found in installer package",
+      };
     }
 
     // Determine installation path based on platform
@@ -160,7 +170,13 @@ ipcMain.handle("install-atlas-binary", async () => {
     if (process.platform === "win32") {
       // Windows: Install to user's local app data to avoid admin permissions
       const userProfile = process.env.USERPROFILE || process.env.HOME || "C:\\Users\\Default";
-      installPath = path.join(userProfile, "AppData", "Local", "Atlas", "atlas.exe");
+      installPath = path.join(
+        userProfile,
+        "AppData",
+        "Local",
+        "Atlas",
+        "atlas.exe",
+      );
       const installDir = path.dirname(installPath);
 
       // Create directory if it doesn't exist
@@ -223,15 +239,25 @@ ipcMain.handle("install-atlas-binary", async () => {
         }
       } else {
         // Unsupported platform
-        return { success: false, error: `Unsupported platform: ${process.platform}` };
+        return {
+          success: false,
+          error: `Unsupported platform: ${process.platform}`,
+        };
       }
     }
 
     // Verify the installation
     if (fs.existsSync(installPath)) {
-      return { success: true, path: installPath, message: "Atlas binary installed successfully" };
+      return {
+        success: true,
+        path: installPath,
+        message: "Atlas binary installed successfully",
+      };
     } else {
-      return { success: false, error: "Binary installation failed - file not found after copy" };
+      return {
+        success: false,
+        error: "Binary installation failed - file not found after copy",
+      };
     }
   } catch (error) {
     return { success: false, error: error.message };
@@ -271,7 +297,9 @@ ipcMain.handle("setup-path", async () => {
           $Shortcut.IconLocation = '${binaryPath},0'
           $Shortcut.Description = 'Atlas AI Development Assistant'
           $Shortcut.Save()
-        `.trim().replace(/\n\s*/g, "; ");
+        `
+          .trim()
+          .replace(/\n\s*/g, "; ");
 
         try {
           execSync(`powershell -Command "${createShortcutPS}"`, {
@@ -281,7 +309,10 @@ ipcMain.handle("setup-path", async () => {
         } catch {
           // Fallback to batch file if PowerShell fails
           const atlasShortcut = `@echo off\nstart "" "${binaryPath}"`;
-          fs.writeFileSync(path.join(startMenuPath, "Atlas.bat"), atlasShortcut);
+          fs.writeFileSync(
+            path.join(startMenuPath, "Atlas.bat"),
+            atlasShortcut,
+          );
         }
 
         // Try to update PATH using PowerShell (more reliable than setx)
@@ -563,16 +594,21 @@ cd /d "${userProfile}"
 
             // Delete existing task if any
             try {
-              execSync('schtasks /delete /tn "AtlasDaemon" /f', { stdio: "ignore" });
+              execSync('schtasks /delete /tn "AtlasDaemon" /f', {
+                stdio: "ignore",
+              });
             } catch {
               // Task doesn't exist
             }
 
             // Create the task
-            execSync(`schtasks /create /xml "${taskXmlPath}" /tn "AtlasDaemon"`, {
-              encoding: "utf8",
-              stdio: "ignore",
-            });
+            execSync(
+              `schtasks /create /xml "${taskXmlPath}" /tn "AtlasDaemon"`,
+              {
+                encoding: "utf8",
+                stdio: "ignore",
+              },
+            );
 
             // Start the task immediately
             execSync('schtasks /run /tn "AtlasDaemon"', {
@@ -586,15 +622,22 @@ cd /d "${userProfile}"
             } catch {}
           } catch (taskError) {
             // If Task Scheduler fails, start daemon directly
-            console.error("Task Scheduler failed, starting daemon directly:", taskError);
+            console.error(
+              "Task Scheduler failed, starting daemon directly:",
+              taskError,
+            );
 
-            const daemonProc = spawn(binaryPath, ["daemon", "start", "--port", "8080"], {
-              detached: true,
-              stdio: "ignore",
-              env: envConfig,
-              cwd: userProfile,
-              windowsHide: true,
-            });
+            const daemonProc = spawn(
+              binaryPath,
+              ["daemon", "start", "--port", "8080"],
+              {
+                detached: true,
+                stdio: "ignore",
+                env: envConfig,
+                cwd: userProfile,
+                windowsHide: true,
+              },
+            );
             daemonProc.unref();
           }
 
@@ -618,7 +661,9 @@ cd /d "${userProfile}"
             $Shortcut.IconLocation = '${binaryPath},0'
             $Shortcut.Description = 'Atlas AI Development Assistant'
             $Shortcut.Save()
-          `.trim().replace(/\n\s*/g, "; ");
+          `
+            .trim()
+            .replace(/\n\s*/g, "; ");
 
           try {
             execSync(`powershell -Command "${createShortcutPS}"`, {
@@ -628,7 +673,10 @@ cd /d "${userProfile}"
           } catch {
             // Fallback to batch file if PowerShell fails
             const atlasShortcut = `@echo off\nstart "" "${binaryPath}"`;
-            fs.writeFileSync(path.join(startMenuPath, "Atlas.bat"), atlasShortcut);
+            fs.writeFileSync(
+              path.join(startMenuPath, "Atlas.bat"),
+              atlasShortcut,
+            );
           }
 
           // Wait for daemon to start
@@ -636,11 +684,14 @@ cd /d "${userProfile}"
 
           // Verify daemon is running
           try {
-            const statusResult = execSync(`"${binaryPath}" daemon status --json`, {
-              encoding: "utf8",
-              env: envConfig,
-              timeout: 5000,
-            });
+            const statusResult = execSync(
+              `"${binaryPath}" daemon status --json`,
+              {
+                encoding: "utf8",
+                env: envConfig,
+                timeout: 5000,
+              },
+            );
 
             return {
               success: true,
@@ -680,7 +731,9 @@ cd /d "${userProfile}"
 
         // Remove scheduled task
         try {
-          execSync('schtasks /delete /tn "AtlasDaemon" /f', { stdio: "ignore" });
+          execSync('schtasks /delete /tn "AtlasDaemon" /f', {
+            stdio: "ignore",
+          });
         } catch {}
 
         return {
@@ -737,7 +790,10 @@ cd /d "${userProfile}"
       };
     } else {
       // Unsupported platform
-      return { success: false, error: `Unsupported platform: ${process.platform}` };
+      return {
+        success: false,
+        error: `Unsupported platform: ${process.platform}`,
+      };
     }
   } catch (error) {
     return {
