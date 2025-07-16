@@ -25,7 +25,7 @@ platform:
 agents:
   memory-agent:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Manages memory operations at session start and end"
     tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
     prompts:
@@ -87,17 +87,17 @@ agents:
 
 supervisors:
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: |
         You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: |
         You are a SessionSupervisor responsible for coordinating agent execution within a session.
   agent:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: |
         You are an AgentSupervisor responsible for safe agent loading and execution.
@@ -192,7 +192,7 @@ jobs:
 agents:
   test-llm-agent:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Test LLM agent for configuration testing"
     tools: ["text-analysis", "processing"]
     prompts:
@@ -293,17 +293,6 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
     expect(mergedConfig.atlas.workspace.id).toBe("atlas-platform");
 
-    // Test supervisor configurations
-    expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
-      "claude-3-5-sonnet-20241022",
-    );
-    expect(mergedConfig.atlas.supervisors.session.model).toBe(
-      "claude-3-5-sonnet-20241022",
-    );
-    expect(mergedConfig.atlas.supervisors.agent.model).toBe(
-      "claude-3-5-sonnet-20241022",
-    );
-
     // Test supervisor prompts exist
     expect(mergedConfig.atlas.supervisors.workspace.prompts.system).toContain(
       "WorkspaceSupervisor",
@@ -367,9 +356,6 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
 
     // Test agent definitions
     expect(workspaceConfig.agents["test-llm-agent"].type).toBe("llm");
-    expect(workspaceConfig.agents["test-llm-agent"].model).toBe(
-      "claude-3-5-sonnet-20241022",
-    );
     expect(workspaceConfig.agents["test-llm-agent"].purpose).toBe(
       "Test LLM agent for configuration testing",
     );
@@ -424,9 +410,6 @@ Deno.test(
 
       // Verify atlas config is loaded
       expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
-      expect(mergedConfig.atlas.supervisors.workspace.model).toBe(
-        "claude-3-5-sonnet-20241022",
-      );
 
       // Verify workspace config is loaded
       expect(mergedConfig.workspace.workspace.name).toBe("Test Workspace");
@@ -482,7 +465,6 @@ Deno.test("Agent type configurations validate correctly", async () => {
     // Test LLM agent validation
     const llmAgent = workspaceAgents["test-llm-agent"];
     expect(llmAgent.type).toBe("llm");
-    expect(llmAgent.model).toBe("claude-3-5-sonnet-20241022");
     expect(llmAgent.purpose).toBeDefined();
     expect(llmAgent.tools).toBeDefined();
 

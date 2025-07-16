@@ -171,7 +171,7 @@ const atlasDefaultsUnvalidated: AtlasConfig = {
 
   supervisors: {
     workspace: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "workspace",
       prompts: {
         system: `You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
@@ -187,7 +187,7 @@ Key responsibilities:
     },
 
     session: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "session",
       prompts: {
         system:
@@ -204,7 +204,7 @@ Key responsibilities:
     },
 
     agent: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "agent",
       prompts: {
         system: `You are an AgentSupervisor responsible for safe agent loading and execution.

@@ -307,15 +307,15 @@ export class ConfigLoader {
       ...atlasConfig,
       supervisors: supervisorDefaults.supervisors || {
         workspace: {
-          model: "claude-3-5-sonnet-20241022",
+          model: "gemini-2.5-flash",
           prompts: { system: "You are a WorkspaceSupervisor." },
         },
         session: {
-          model: "claude-3-5-sonnet-20241022",
+          model: "gemini-2.5-flash",
           prompts: { system: "You are a SessionSupervisor." },
         },
         agent: {
-          model: "claude-3-5-sonnet-20241022",
+          model: "gemini-2.5-flash",
           prompts: { system: "You are an AgentSupervisor." },
         },
       },

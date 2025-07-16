@@ -32,8 +32,8 @@ tools:
 agents:
   web-analyzer:
     type: "llm"
-    provider: "anthropic"
-    model: "claude-3-5-sonnet-20241022"
+    provider: "google"
+    model: "gemini-2.5-flash"
     purpose: "Comprehensive web page analysis using browser automation tools"
     tools:
       mcp: ["playwright"]

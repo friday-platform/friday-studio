@@ -16,7 +16,7 @@ Deno.test("Agent tool checking handles new hierarchical tool format", () => {
   // Create test agent with new hierarchical format
   const agent = {
     type: "llm",
-    model: "claude-3-5-haiku-20241022",
+    model: "gemini-2.5-flash",
     purpose: "Test agent with new tool format",
     default_tools: ["workspace.memory.recall"],
     tools: {

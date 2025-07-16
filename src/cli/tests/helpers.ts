@@ -76,7 +76,7 @@ workspace:
   description: "Test workspace for CLI tests"
 
 supervisor:
-  model: "claude-4-sonnet-20250514"
+  model: "gemini-2.5-flash"
   prompts:
     system: "You are a test supervisor"
 

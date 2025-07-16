@@ -50,7 +50,7 @@ agents:
   # Performance analysis agent with secure filesystem context
   performance-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Deep performance analysis using Atlas EMCP filesystem context"
     max_steps: 3
     prompts:
@@ -63,7 +63,7 @@ agents:
   # Developer experience analyzer with metadata capabilities
   dx-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Developer experience analysis with advanced filesystem metadata"
     max_steps: 3
     prompts:
@@ -76,7 +76,7 @@ agents:
   # Architecture analysis agent with comprehensive context
   architecture-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "System architecture analysis using comprehensive codebase context"
     max_steps: 3
     prompts:
@@ -89,7 +89,7 @@ agents:
   # Report generator with secure context access
   report-generator:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Generate comprehensive reports using secure filesystem context"
     max_steps: 2
     prompts:
@@ -105,9 +105,13 @@ jobs:
     description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
     triggers:
       - signal: "manual-analysis"
-        condition: {
-          "or": [{ "!": { "var": "type" } }, { "==": [{ "var": "type" }, "comprehensive"] }],
-        }
+        condition:
+          {
+            "or": [
+              { "!": { "var": "type" } },
+              { "==": [{ "var": "type" }, "comprehensive"] },
+            ],
+          }
     session_prompts:
       planning: |
         Focus your analysis on these key areas of the Atlas codebase:
@@ -149,14 +153,16 @@ jobs:
           # Enhanced EMCP provider configuration with security controls
           provider_config:
             allowedDirectories: ["/Users/kenneth/tempest/atlas"]
-            deniedPaths: [
-              "/Users/kenneth/tempest/atlas/node_modules",
-              "/Users/kenneth/tempest/atlas/.git",
-            ]
+            deniedPaths:
+              [
+                "/Users/kenneth/tempest/atlas/node_modules",
+                "/Users/kenneth/tempest/atlas/.git",
+              ]
             readOnly: true # Analysis workspace should be read-only for security
             maxFileSize: "100kb"
             maxTotalSize: "5mb"
-            allowedExtensions: [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
+            allowedExtensions:
+              [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
       agents:
         - id: "performance-analyzer"
           input_source: "filesystem_context"

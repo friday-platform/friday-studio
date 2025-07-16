@@ -121,7 +121,7 @@ jobs:
 agents:
   github-researcher:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "GitHub repository discovery specialist for AI agent projects"
     tools:
       mcp: ["github-api"]
@@ -220,7 +220,7 @@ agents:
 
   topic-summarizer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "AI project analysis and trend summarization specialist"
     tools:
       mcp: ["atlas-platform"]

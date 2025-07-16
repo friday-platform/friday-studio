@@ -69,8 +69,8 @@ export async function createAndRegisterWorkspace(options: WorkspaceCreationOptio
       if (agent === "llm") {
         workspaceConfig.agents["llm-agent"] = {
           type: "llm",
-          provider: "anthropic",
-          model: "claude-3-5-sonnet-20241022",
+          provider: "google",
+          model: "gemini-2.5-flash",
           purpose: "AI-powered agent for complex reasoning tasks",
         };
       } else if (agent === "tempest") {

@@ -22,15 +22,15 @@ Deno.test("AtlasConfigSchema - validates complete atlas configuration", () => {
     },
     supervisors: {
       workspace: {
-        model: "claude-3-5-sonnet-20241022",
+        model: "gemini-2.5-flash",
         prompts: { system: "You are a workspace supervisor" },
       },
       session: {
-        model: "claude-3-5-sonnet-20241022",
+        model: "gemini-2.5-flash",
         prompts: { system: "You are a session supervisor" },
       },
       agent: {
-        model: "claude-3-5-sonnet-20241022",
+        model: "gemini-2.5-flash",
         prompts: { system: "You are an agent supervisor" },
       },
     },
@@ -101,7 +101,7 @@ Deno.test("WorkspaceConfigSchema - validates workspace configuration", () => {
     agents: {
       "test-agent": {
         type: "llm",
-        model: "claude-3-5-haiku-20241022",
+        model: "gemini-2.5-flash",
         purpose: "Testing agent",
       },
     },
@@ -132,7 +132,7 @@ Deno.test("WorkspaceConfigSchema - validates workspace configuration", () => {
 Deno.test("WorkspaceAgentConfigSchema - validates LLM agent", () => {
   const llmAgent = {
     type: "llm",
-    model: "claude-3-5-sonnet-20241022",
+    model: "gemini-2.5-flash",
     purpose: "General purpose LLM agent",
     temperature: 0.7,
     max_tokens: 4096,
@@ -254,7 +254,7 @@ Deno.test("JobSpecificationSchema - validates complex job configuration", () => 
 
 Deno.test("SupervisorConfigSchema - validates supervisor configuration", () => {
   const supervisor = {
-    model: "claude-3-5-sonnet-20241022",
+    model: "gemini-2.5-flash",
     memory: "workspace",
     supervision: {
       level: "detailed",
@@ -367,8 +367,8 @@ Deno.test("Schema validation - validates supported model names", () => {
   // Valid Anthropic model
   const validAnthropic = {
     type: "llm",
-    provider: "anthropic",
-    model: "claude-3-5-sonnet-20241022",
+    provider: "google",
+    model: "gemini-2.5-flash",
     purpose: "Test",
   };
   expect(WorkspaceAgentConfigSchema.safeParse(validAnthropic).success).toBe(true);

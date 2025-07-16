@@ -11,7 +11,7 @@ const supervisorDefaultsUnvalidated: SupervisorDefaults = {
   version: "1.0",
   supervisors: {
     workspace: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "workspace",
       supervision: {
         level: "standard",
@@ -86,7 +86,7 @@ Format as structured session config for immediate execution.`,
     },
 
     session: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "session",
       supervision: {
         level: "detailed",
@@ -220,7 +220,7 @@ Generate the task description now following the OUTPUT FORMAT exactly. Focus on 
     },
 
     agent: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       memory: "agent",
       supervision: {
         level: "minimal",

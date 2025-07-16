@@ -104,21 +104,21 @@ jobs:
 agents:
   mishearing-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022" # Use Claude Haiku for faster responses
+    model: "gemini-2.5-flash" # Use Claude Haiku for faster responses
     purpose: "Specializes in phonetic errors and mishearing transformations"
     tools:
       mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
 
   embellishment-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Adds creative details and context to messages"
     tools:
       mcp: ["filesystem-context", "atlas-platform"]
 
   reinterpretation-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Dramatically transforms and reinterprets messages"
     tools:
       mcp: ["filesystem-context", "atlas-platform"]

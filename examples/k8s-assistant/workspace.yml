@@ -17,14 +17,15 @@ tools:
             LINEAR_API_KEY: "auto"
         capabilities:
           tools:
-            allowed: [
-              "linear_create_issue",
-              "linear_update_issue",
-              "linear_get_issue",
-              "linear_search_issues",
-              "linear_get_user_issues",
-              "linear_add_comment",
-            ]
+            allowed:
+              [
+                "linear_create_issue",
+                "linear_update_issue",
+                "linear_get_issue",
+                "linear_search_issues",
+                "linear_get_user_issues",
+                "linear_add_comment",
+              ]
         timeout_ms: 30000
 
 # =============================================================================
@@ -205,7 +206,7 @@ agents:
 
   linear-writer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Complete Linear integration agent that manages DevOps workflow coordination and ticket lifecycle"
     tools:
       mcp: ["linear"]

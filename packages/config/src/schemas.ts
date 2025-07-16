@@ -332,7 +332,7 @@ export const WorkspaceAgentConfigSchema = z
       }
 
       // Validate provider and model combination
-      const provider = value.provider || "anthropic";
+      const provider = value.provider || "google";
       const model = value.model;
 
       const supportedModels = {
@@ -356,6 +356,8 @@ export const WorkspaceAgentConfigSchema = z
         google: [
           "gemini-1.5-pro",
           "gemini-1.5-flash",
+          "gemini-2.5-flash",
+          "gemini-2.5-pro",
           "gemini-pro",
         ],
       };

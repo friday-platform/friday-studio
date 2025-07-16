@@ -123,7 +123,7 @@ agents:
   # Basic LLM agent
   processor:
     type: "llm"
-    model: "claude-3-5-haiku-20241022" # Fast, efficient model
+    model: "gemini-2.5-flash" # Fast, efficient model
     purpose: "Process and respond to incoming requests"
 
     prompts:
@@ -135,7 +135,7 @@ agents:
   # Agent with MCP tools
   extractor:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022" # More capable model
+    model: "gemini-2.5-flash" # More capable model
     purpose: "Extract and validate data from various sources"
 
     prompts:
@@ -155,7 +155,7 @@ agents:
   # Agent with context window optimization
   enricher:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Enrich data with additional context"
 
     prompts:
@@ -177,7 +177,7 @@ agents:
   # Report generation agent
   reporter:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Generate comprehensive reports"
 
     prompts:

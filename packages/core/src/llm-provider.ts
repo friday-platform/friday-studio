@@ -18,7 +18,7 @@ import { logger } from "../../../src/utils/logger.ts";
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
 const LLMOptionsSchema = z.object({
-  provider: LLMProviderSchema.optional().default("anthropic"),
+  provider: LLMProviderSchema.optional().default("google"),
   model: z.string(),
   temperature: z.number().min(0).max(1).optional(),
   max_tokens: z.number().positive().optional(),
@@ -184,7 +184,7 @@ export class LLMProvider {
     options: LLMOptions,
   ): Promise<LLMResponse> {
     logger.info("LLM generation started", {
-      provider: options.provider || "anthropic",
+      provider: options.provider || "google",
       model: options.model,
       mock: true,
     });
@@ -311,7 +311,7 @@ export class LLMProvider {
     };
   } {
     const providerConfig = {
-      provider: options.provider || "anthropic",
+      provider: options.provider || "google",
       model: options.model,
       temperature: options.temperature,
       max_tokens: options.max_tokens,
@@ -389,6 +389,42 @@ export class LLMProvider {
 
     if (context.tools) {
       for (const [toolName, tool] of Object.entries(context.tools)) {
+        // Special handling for workspace_draft_update to avoid jsonSchema wrapper issues
+        if (toolName === "workspace_draft_update") {
+          logger.error(
+            "DEBUG: Using raw schema for workspace_draft_update to avoid jsonSchema wrapper",
+          );
+          const params = tool.parameters;
+          const paramsCopy = JSON.parse(JSON.stringify(params));
+
+          // Use a simpler schema that Gemini can handle
+          const simplifiedSchema = {
+            type: "object",
+            properties: {
+              draftId: {
+                type: "string",
+                description: "Draft workspace ID",
+              },
+              updates: {
+                type: "string",
+                description: "Configuration updates to apply as JSON string",
+              },
+              updateDescription: {
+                type: "string",
+                description: "Natural language description of what changed",
+              },
+            },
+            required: ["draftId", "updates", "updateDescription"],
+            additionalProperties: false,
+          };
+
+          allTools[toolName] = {
+            ...tool,
+            parameters: jsonSchema(simplifiedSchema),
+          } as Tool;
+          continue;
+        }
+
         // AI SDK requires Symbol.for("vercel.ai.schema") on parameters
         const params = tool.parameters;
 
@@ -402,9 +438,13 @@ export class LLMProvider {
             tool: toolName,
             originalParams: params,
           });
+
+          // Create a deep copy of params to avoid mutation issues
+          const paramsCopy = JSON.parse(JSON.stringify(params));
+
           allTools[toolName] = {
             ...tool,
-            parameters: jsonSchema(params),
+            parameters: jsonSchema(paramsCopy),
           } as Tool;
         } else {
           logger.debug("Tool already has proper format", {

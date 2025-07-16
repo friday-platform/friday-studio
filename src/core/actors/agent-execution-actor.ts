@@ -154,7 +154,7 @@ export class AgentExecutionActor {
     const result = await LLMProvider.generateText(userPrompt, {
       systemPrompt,
       model: agentConfig.model || "claude-3-5-sonnet-20241022",
-      provider: agentConfig.provider || "anthropic",
+      provider: agentConfig.provider || "google",
       temperature: agentConfig.temperature || 0.7,
       max_tokens: agentConfig.max_tokens || 4000,
       mcpServers: this.extractMcpServers(agentConfig),

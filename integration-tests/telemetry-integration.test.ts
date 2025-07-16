@@ -70,7 +70,7 @@ async function simulateWorkspaceFlow() {
               id: "agent-1",
               type: "llm",
             }, {
-              model: "claude-3-5-sonnet",
+              model: "gemini-2.5-flash",
             });
             await delay(20);
             return "analysis-complete";

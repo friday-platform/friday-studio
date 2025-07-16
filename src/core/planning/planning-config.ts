@@ -59,7 +59,7 @@ export const DEFAULT_VALIDATION_PLANNING_CONFIG: ValidationPlanningConfig = {
   confidenceThreshold: 0.8,
   maxRetries: 3,
   enableDetailedLogging: false,
-  llmModel: "claude-3-5-sonnet-20241022",
+  llmmodel: "gemini-2.5-flash",
   customRules: [],
 };
 

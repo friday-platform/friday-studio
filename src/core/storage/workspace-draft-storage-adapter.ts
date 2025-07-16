@@ -308,7 +308,7 @@ export class WorkspaceDraftStorageAdapter {
         // Create agent config using WorkspaceAgentConfig type
         const agentConfig: WorkspaceAgentConfig = {
           type: (agentType as "llm" | "system" | "remote") || "llm",
-          model: config.model as string || "claude-3-5-haiku-20241022",
+          model: config.model as string || "gemini-2.5-flash",
           purpose: agentPurpose,
           ...(config.system_prompt ? { prompts: { system: config.system_prompt as string } } : {}),
           ...(config.tools ? { tools: { mcp: config.tools as string[] } } : {}),

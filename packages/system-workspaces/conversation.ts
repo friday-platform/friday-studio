@@ -13,6 +13,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
       schema: {
         type: "object",
         properties: {
+          streamId: { type: "string" },
           message: { type: "string" },
           userId: { type: "string" },
           conversationId: { type: "string" },
@@ -31,7 +32,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
             },
           },
         },
-        required: ["message", "userId"],
+        required: ["streamId", "message", "userId"],
       },
     },
     "conversation-list": {
@@ -153,7 +154,7 @@ export const ATLAS_CONVERSATION_CONFIG: WorkspaceConfig = {
       agent: "conversation",
       version: "1.0.0",
       config: {
-        model: "claude-3-5-sonnet-20241022",
+        model: "gemini-2.5-flash",
         temperature: 0.7,
         max_tokens: 8000,
         use_reasoning: true, // Enable reasoning for structured thinking
@@ -349,7 +350,7 @@ generating workspaces:
    signal: "signal-name" execution: strategy: "sequential" # or "parallel" agents: - id: "agent-1"
    input_source: "signal" - id: "agent-2" input_source: "previous"
 
-4. **Agent Configuration**: agents: agent-name: type: "llm" model: "claude-3-5-haiku-20241022"
+4. **Agent Configuration**: agents: agent-name: type: "llm" model: "gemini-2.5-flash"
    purpose: "Clear purpose statement" prompts: system: | Detailed instructions for what this agent
    does tools: mcp: ["tool-1", "tool-2"]
 
@@ -378,7 +379,7 @@ description: string }, signals: { "signal-name": { description: string, provider
 method?: "GET" | "POST" } }, jobs: { "job-name": { name: string, description: string, triggers: [{
 signal: "signal-name" }], execution: { strategy: "sequential" | "parallel", agents: [ { id:
 "agent-name", input_source: "signal" }, { id: "other-agent", input_source: "previous" } ] } } },
-agents: { "agent-name": { type: "llm", model: "claude-3-5-haiku-20241022", purpose: string, prompts:
+agents: { "agent-name": { type: "llm", model: "gemini-2.5-flash", purpose: string, prompts:
 { system: string // The agent's system prompt } } }, tools?: { mcp?: { servers: { "server-name": {
 transport: { type: "stdio", command: string, args: string[] } } } } } }
 </workspace_draft_create_format>
@@ -456,7 +457,7 @@ For example: 'Process webhooks from Stripe' or 'Daily CSV export to S3'."
 
 <model_selection_guide> When choosing models for agents:
 
-- **claude-3-5-haiku-20241022**: Use for simple tasks like data extraction, formatting, basic
+- **gemini-2.5-flash**: Use for simple tasks like data extraction, formatting, basic
   analysis
 - **claude-3-5-sonnet-20241022**: Use for complex tasks like research, detailed analysis, creative
   writing
@@ -650,7 +651,7 @@ library_list, library_get, library_search
     },
     "conversation-query": {
       type: "llm",
-      model: "claude-3-5-haiku-20241022",
+      model: "gemini-2.5-flash",
       purpose: "Query conversation history based on scope",
       prompts: {
         system: `Query the conversation storage to list conversations.
@@ -660,7 +661,7 @@ Return formatted list with metadata.`,
     },
     "conversation-loader": {
       type: "llm",
-      model: "claude-3-5-haiku-20241022",
+      model: "gemini-2.5-flash",
       purpose: "Load conversation history for resumption",
       prompts: {
         system: `Load conversation metadata and message history.

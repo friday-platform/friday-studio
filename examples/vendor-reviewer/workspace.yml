@@ -50,7 +50,7 @@ agents:
   # Agent 1: Document reader for vendor files in selected directory
   document-reader:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Read and analyze vendor documentation from specified directory"
     max_steps: 5
     tools: ["filesystem", "commands"]
@@ -97,7 +97,7 @@ agents:
   # Agent 2: Document analysis and security evaluation specialist
   questionnaire-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
     max_steps: 5
     tools: ["filesystem", "commands"]
@@ -144,7 +144,7 @@ agents:
   # Agent 3: Evaluator that creates vendor recommendation
   vendor-evaluator:
     type: "llm"
-    model: "claude-opus-4-20250514"
+    model: "gemini-2.5-pro"
     purpose: "Evaluate evidence from document and questionnaire analysis to create vendor recommendation"
     max_steps: 1
     prompts:

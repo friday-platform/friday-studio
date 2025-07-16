@@ -398,7 +398,6 @@ export class WorkspaceCapabilityRegistry {
         properties: {
           draftId: {
             type: "string",
-            format: "uuid",
             description: "Draft workspace ID",
           },
           updates: {
@@ -479,7 +478,6 @@ export class WorkspaceCapabilityRegistry {
         properties: {
           draftId: {
             type: "string",
-            format: "uuid",
             description: "Draft workspace ID to validate",
           },
         },
@@ -562,7 +560,6 @@ export class WorkspaceCapabilityRegistry {
         properties: {
           draftId: {
             type: "string",
-            format: "uuid",
             description: "Draft workspace ID to check",
           },
         },
@@ -645,7 +642,6 @@ export class WorkspaceCapabilityRegistry {
         properties: {
           draftId: {
             type: "string",
-            format: "uuid",
             description: "Draft workspace ID to publish",
           },
           path: {
@@ -790,7 +786,6 @@ export class WorkspaceCapabilityRegistry {
         properties: {
           draftId: {
             type: "string",
-            format: "uuid",
             description: "Draft workspace ID",
           },
           format: {

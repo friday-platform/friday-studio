@@ -49,7 +49,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     });
 
     this.config = {
-      model: "claude-3-5-sonnet-20241022",
+      model: "gemini-2.5-flash",
       system_prompt: "You are a helpful AI assistant for Atlas workspace conversations.",
       tools: [],
       temperature: 0.7,
@@ -318,7 +318,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           const result = await LLMProvider.generateText(message, {
             systemPrompt: enhancedSystemPrompt,
             model: this.config.model || "claude-3-5-sonnet-20241022",
-            provider: "anthropic",
+            provider: "google",
             temperature: this.config.temperature || 0.7,
             max_tokens: this.config.max_tokens || 4000,
             tools: daemonTools,
@@ -381,7 +381,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         const response = await LLMProvider.generateText(message, {
           systemPrompt: enhancedSystemPrompt,
           model: this.config.model || "claude-3-5-sonnet-20241022",
-          provider: "anthropic",
+          provider: "google",
           temperature: this.config.temperature || 0.7,
           max_tokens: this.config.max_tokens || 4000,
           operationContext: {
@@ -451,6 +451,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     // Ensure workspace capabilities are initialized
     WorkspaceCapabilityRegistry.initialize();
 
+    // Debug logging
+    this.logger.error("DEBUG: ConversationAgent getDaemonCapabilityTools called", {
+      configuredTools: this.config.tools || [],
+      streamId,
+    });
+
     // Get all daemon and workspace capabilities that match our configured tools
     for (const toolName of this.config.tools || []) {
       // First check daemon capabilities
@@ -479,10 +485,13 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           additionalProperties: true,
         };
 
-        // Pass schema directly - LLMProvider will wrap with jsonSchema if needed
+        // Create a deep copy of the schema to avoid mutation issues
+        const parametersCopy = JSON.parse(JSON.stringify(parameters));
+
+        // Pass schema copy - LLMProvider will wrap with jsonSchema if needed
         tools[capability.id] = {
           description: capability.description,
-          parameters: parameters,
+          parameters: parametersCopy,
           execute: async (args: any) => {
             this.logger.info(`Executing capability: ${capability.id}`, { args, streamId });
 
@@ -802,7 +811,7 @@ For workspace_draft_create parameters, include:
               systemPrompt:
                 `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
               model: this.config.model || "claude-3-5-sonnet-20241022",
-              provider: "anthropic",
+              provider: "google",
               temperature: 0.3,
               max_tokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
               tools: reasoningTool,
@@ -1378,7 +1387,7 @@ DO NOT ask for clarification if the context is clear from the conversation histo
       systemPrompt,
       // Note: messages parameter not supported in new API - context is passed via systemPrompt
       model: this.config.model || "claude-3-5-sonnet-20241022",
-      provider: "anthropic",
+      provider: "google",
       temperature: this.config.temperature || 0.7,
       max_tokens: 2000, // Increased for workspace operations
       tools: tools,

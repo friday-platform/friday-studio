@@ -30,17 +30,17 @@ agents: {}
 # Use default supervisors (inherit from platform)
 supervisors:
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     memory: "workspace"
     prompts:
       system: "You are a WorkspaceSupervisor for the telephone game workspace."
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     memory: "session"
     prompts:
       system: "You are a SessionSupervisor for the telephone game workspace."
   agent:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     memory: "agent"
     prompts:
       system: "You are an AgentSupervisor for the telephone game workspace."

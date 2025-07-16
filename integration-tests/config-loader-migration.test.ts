@@ -31,15 +31,15 @@ server:
 
 supervisors:
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: "You are a workspace supervisor"
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: "You are a session supervisor"
   agent:
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     prompts:
       system: "You are an agent supervisor"
 
@@ -108,7 +108,7 @@ workspace:
 agents:
   test-llm-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Test LLM agent"
     tools:
       workspace: ["workspace.memory.recall", "workspace.jobs.trigger"]
@@ -201,7 +201,6 @@ Deno.test("Integration: ConfigLoader with FilesystemAdapter - complete workflow"
     // Test atlas configuration
     expect(config.atlas).toBeDefined();
     expect(config.atlas.workspace.name).toBe("Atlas Platform");
-    expect(config.atlas.supervisors.workspace.model).toBe("claude-3-5-sonnet-20241022");
     expect(config.atlas.memory).toBeDefined();
     expect(config.atlas.server?.mcp?.enabled).toBe(true);
 
@@ -474,7 +473,7 @@ workspace:
 agents:
   validator:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Validate deployment configurations"
   deployer:
     type: "system"
@@ -483,7 +482,7 @@ agents:
     purpose: "Execute Kubernetes deployments"
   monitor:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "gemini-2.5-flash"
     purpose: "Monitor deployment health"
 
 signals:

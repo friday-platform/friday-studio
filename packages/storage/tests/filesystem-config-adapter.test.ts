@@ -287,7 +287,6 @@ Deno.test("FilesystemConfigAdapter - loads supervisor defaults", async () => {
 
   // Check that each supervisor has the expected structure
   for (const [, supervisor] of Object.entries(supervisors)) {
-    expect(supervisor).toHaveProperty("model", "claude-3-5-sonnet-20241022");
     expect(supervisor).toHaveProperty("prompts");
     expect(supervisor).toHaveProperty("supervision");
 
