@@ -3,7 +3,7 @@
  * Handles cross-workspace access control and scope resolution
  */
 
-import type { AtlasConfig, FederationConfig, FederationSharing } from "@atlas/config";
+import type { AtlasConfig, FederationConfig, FederationSharingEntry } from "@atlas/config";
 
 export class FederationAccessError extends Error {
   constructor(
@@ -261,7 +261,7 @@ export class FederationManager {
 
   // Private helper methods
 
-  private isWorkspaceShared(sharing: FederationSharing, targetWorkspace: string): boolean {
+  private isWorkspaceShared(sharing: FederationSharingEntry, targetWorkspace: string): boolean {
     // Check simple workspaces list
     if (sharing.workspaces) {
       if (typeof sharing.workspaces === "string") {
@@ -279,7 +279,7 @@ export class FederationManager {
     return false;
   }
 
-  private getApplicableScopes(sharing: FederationSharing, targetWorkspace: string): string[] {
+  private getApplicableScopes(sharing: FederationSharingEntry, targetWorkspace: string): string[] {
     // Check for workspace-specific grant first
     if (sharing.grants) {
       const grant = sharing.grants.find((g) => g.workspace === targetWorkspace);
@@ -296,7 +296,7 @@ export class FederationManager {
     return [];
   }
 
-  private getAccessibleWorkspacesFromSharing(sharing: FederationSharing): string[] {
+  private getAccessibleWorkspacesFromSharing(sharing: FederationSharingEntry): string[] {
     const workspaces: string[] = [];
 
     if (sharing.workspaces) {

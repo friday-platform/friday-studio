@@ -91,8 +91,8 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     } else {
       // Use current workspace (detect from current directory)
       try {
-        const adapter = new FilesystemConfigAdapter();
-        const configLoader = new ConfigLoader(adapter);
+        const adapter = new FilesystemConfigAdapter(Deno.cwd());
+        const configLoader = new ConfigLoader(adapter, Deno.cwd());
         const config = await configLoader.load();
         const currentWorkspaceName = config.workspace.workspace.name;
 
@@ -257,7 +257,7 @@ function WorkspaceStatusCommand({
   jobs: WorkspaceJob[];
   sessions: WorkspaceSession[];
 }) {
-  const statusColor = workspace.status === "running" || workspace.hasActiveRuntime
+  const statusColor = workspace.status === "running"
     ? "green"
     : workspace.status === "stopped"
     ? "yellow"
@@ -303,8 +303,8 @@ function WorkspaceStatusCommand({
 
         <Box>
           <Text bold>Runtime Active:</Text>
-          <Text color={workspace.hasActiveRuntime ? "green" : "red"}>
-            {workspace.hasActiveRuntime ? "Yes" : "No"}
+          <Text color={workspace.status === "running" ? "green" : "red"}>
+            {workspace.status === "running" ? "Yes" : "No"}
           </Text>
         </Box>
 

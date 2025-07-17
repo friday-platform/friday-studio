@@ -115,12 +115,12 @@ function WorkspaceList({
 
   // Format runtime status
   const formatRuntimeStatus = (workspace: WorkspaceResponse): string => {
-    if (workspace.hasActiveRuntime) {
-      return "Active";
-    } else if (workspace.status === "running") {
+    if (workspace.status === "running") {
       return "Running";
+    } else if (workspace.status === "stopped") {
+      return "Stopped";
     } else {
-      return "-";
+      return workspace.status;
     }
   };
 
@@ -158,7 +158,7 @@ function WorkspaceList({
           : "gray";
 
         const runtimeDisplay = formatRuntimeStatus(workspace);
-        const runtimeColor = workspace.hasActiveRuntime ? "green" : "gray";
+        const runtimeColor = workspace.status === "running" ? "green" : "gray";
 
         // Format last seen time
         const lastSeenDate = new Date(workspace.lastSeen);

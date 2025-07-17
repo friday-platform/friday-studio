@@ -4,15 +4,17 @@ import { MarkdownDisplay } from "./markdown-display.tsx";
 // Chat Message Component
 interface ChatMessageProps {
   author: string;
-  date: string;
-  message: string;
+  date?: string;
+  message?: string;
   authorColor?: string;
+  children?: React.ReactNode;
 }
 
 export const ChatMessage = ({
   author,
   date,
   message,
+  children,
   authorColor = "blue",
 }: ChatMessageProps) => {
   return (
@@ -21,12 +23,16 @@ export const ChatMessage = ({
         <Text color={authorColor} bold>
           {author}
         </Text>
-        <Text color={authorColor} dimColor bold>
-          [{date}]
-        </Text>
+        {date && (
+          <Text color={authorColor} dimColor bold>
+            [{date}]
+          </Text>
+        )}
       </Box>
 
-      <MarkdownDisplay content={message} />
+      {message && <MarkdownDisplay content={message} />}
+
+      {children}
     </Box>
   );
 };

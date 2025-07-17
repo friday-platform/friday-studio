@@ -21,6 +21,7 @@ import { JobCommand } from "./JobCommand.tsx";
 import { SessionCommand } from "./SessionCommand.tsx";
 import { WorkspacesCommand } from "./WorkspacesCommand.tsx";
 import { LibraryCommand } from "./LibraryCommand.tsx";
+import { handleComponentsCommand } from "./components-command.tsx";
 
 export function Component() {
   const {
@@ -41,6 +42,7 @@ export function Component() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
     null,
   );
+  const [disableCommandInput, setDisableCommandInput] = useState(false);
   const { stdout: _stdout } = useStdout();
 
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
@@ -232,6 +234,11 @@ export function Component() {
       return;
     }
 
+    if (parsed.command === "components") {
+      handleComponentsCommand(setOutputBuffer);
+      return;
+    }
+
     // Check command registry
     const commandDef = COMMAND_REGISTRY[parsed.command];
     if (!commandDef) {
@@ -343,6 +350,7 @@ export function Component() {
             <CommandInput
               onSubmit={handleCommand}
               selectedWorkspace={selectedWorkspace}
+              isDisabled={disableCommandInput}
             />
           )}
         </>

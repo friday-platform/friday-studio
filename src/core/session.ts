@@ -11,7 +11,6 @@ import { AtlasScope } from "./scope.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type ChildLogger, logger } from "../utils/logger.ts";
-import type { TriggerResponseConfig } from "@atlas/config";
 import { globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
 
 // Response channel interfaces - moved to daemon layer

@@ -7,6 +7,7 @@ import chalk from "chalk";
 interface MarkdownDisplayProps {
   content: string;
   showCollapsible?: boolean;
+  dimColor?: boolean;
 }
 
 const BULLET_POINT_REGEX = "\\*";
@@ -99,7 +100,42 @@ marked.setOptions({
 export const MarkdownDisplay = ({
   content,
   showCollapsible = false,
+  dimColor = false,
 }: MarkdownDisplayProps) => {
+  marked.setOptions({
+    renderer: new TerminalRenderer({
+      code: chalk.dim,
+      blockquote: chalk.gray.italic.dim,
+      html: chalk.gray.dim,
+      heading: dimColor ? chalk.reset.bold.dim : chalk.reset.bold,
+      firstHeading: dimColor ? chalk.reset.bold.dim : chalk.reset.bold,
+      hr: dimColor ? chalk.reset.dim.dim : chalk.reset.dim,
+      list: function (body: string, ordered: boolean, indent: number) {
+        body = body.trim();
+        body = ordered ? numberedLines(body, indent) : bulletPointLines(body, indent);
+        return body;
+      },
+      listitem: dimColor ? chalk.reset.dim : chalk.reset,
+      table: dimColor ? chalk.reset.dim : chalk.reset,
+      tablerow: dimColor ? chalk.reset.dim : chalk.reset,
+      tableheader: dimColor ? chalk.reset.bold.dim : chalk.reset.bold,
+      tablecell: dimColor ? chalk.reset.dim : chalk.reset,
+      paragraph: dimColor ? chalk.reset.dim : chalk.reset,
+      strong: dimColor ? chalk.bold.dim : chalk.bold,
+      em: dimColor ? chalk.italic.dim : chalk.italic,
+      codespan: dimColor ? chalk.reset.dim : chalk.yellow,
+      del: dimColor ? chalk.strikethrough.dim : chalk.dim.gray.strikethrough,
+      link: dimColor ? chalk.reset.dim : chalk.yellow,
+      href: dimColor ? chalk.reset.underline.dim : chalk.yellow.underline,
+      tab: 2,
+      tableOptions: {
+        style: {
+          head: ["white", "bold"],
+        },
+      },
+    }),
+  });
+
   let markdown = marked(content) as string;
   markdown = markdown.replace(/[\r\n]+$/g, "");
   const lines = markdown.split("\n");
@@ -107,8 +143,8 @@ export const MarkdownDisplay = ({
   return showCollapsible
     ? (
       <Collapsible totalLines={lines.length}>
-        <Text>{markdown}</Text>
+        <Text dimColor={dimColor}>{markdown}</Text>
       </Collapsible>
     )
-    : <Text>{markdown}</Text>;
+    : <Text dimColor={dimColor}>{markdown}</Text>;
 };

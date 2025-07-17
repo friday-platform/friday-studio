@@ -29,7 +29,7 @@ export function registerWorkspaceListTool(server: McpServer, ctx: ToolContext) {
         ctx.logger.info("MCP workspace_list response", {
           totalWorkspaces: workspaces.length,
           // deno-lint-ignore no-explicit-any
-          activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
+          runningWorkspaces: workspaces.filter((w: any) => w.status === "running").length,
         });
 
         return createSuccessResponse({

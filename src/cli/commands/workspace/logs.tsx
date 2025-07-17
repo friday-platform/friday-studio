@@ -1,6 +1,6 @@
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
-import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
+import { getWorkspaceManager } from "@atlas/core";
 import { YargsInstance } from "../../utils/yargs.ts";
 import {
   formatLog,
@@ -87,15 +87,15 @@ export const handler = async (argv: LogsArgs): Promise<void> => {
     let workspaceId: string;
     if (!argv.workspace) {
       // Try to get current workspace
-      const workspace = await registry.findByPath(Deno.cwd());
+      const workspace = await registry.find({ path: Deno.cwd() });
       if (!workspace) {
         throw new Error("No workspace specified and not in a workspace directory");
       }
       workspaceId = workspace.id;
     } else {
       // Find workspace by ID or name
-      const workspace = await registry.findById(argv.workspace) ||
-        await registry.findByName(argv.workspace);
+      const workspace = await registry.find({ id: argv.workspace }) ||
+        await registry.find({ name: argv.workspace });
       if (!workspace) {
         throw new Error(`Workspace '${argv.workspace}' not found`);
       }

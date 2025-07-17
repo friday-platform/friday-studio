@@ -1,6 +1,6 @@
 /**
  * Integration tests for agent tool format compatibility
- * These tests ensure the new hierarchical tool format works correctly
+ * These tests ensure the new simple array tool format works correctly
  * across the entire system without backwards compatibility issues.
  */
 
@@ -12,24 +12,20 @@ import { FilesystemConfigAdapter } from "@atlas/storage";
  * Test agent tool checking logic directly
  * This test would have caught the "agent.config?.tools?.includes is not a function" bug
  */
-Deno.test("Agent tool checking handles new hierarchical tool format", () => {
-  // Create test agent with new hierarchical format
+Deno.test("Agent tool checking handles simple array tool format", () => {
+  // Create test agent with new simple array format
   const agent = {
     type: "llm",
     model: "gemini-2.5-flash",
     purpose: "Test agent with new tool format",
     default_tools: ["workspace.memory.recall"],
-    tools: {
-      mcp: ["computer_use", "filesystem-context"],
-      workspace: ["workspace.sessions.describe"],
-    },
+    tools: ["computer_use", "filesystem-context", "workspace.sessions.describe"],
     config: {},
   };
 
   // Test the actual logic used in SessionSupervisor (line 1145)
   // This should not throw "agent.config?.tools?.includes is not a function"
-  const hasComputerUse = agent.tools?.mcp?.includes("computer_use") ||
-    agent.tools?.workspace?.includes("computer_use");
+  const hasComputerUse = agent.tools?.includes("computer_use");
 
   assertEquals(
     hasComputerUse,
@@ -69,7 +65,7 @@ Deno.test({
       const workspacePath = `./examples/${workspaceName}`;
 
       try {
-        const adapter = new FilesystemConfigAdapter();
+        const adapter = new FilesystemConfigAdapter(workspacePath);
         const loader = new ConfigLoader(adapter, workspacePath);
         const config = await loader.load();
 
@@ -79,12 +75,12 @@ Deno.test({
             config.workspace.agents || {},
           )
         ) {
-          // Agent tools should be object format {mcp: [], workspace: []} or undefined
+          // Agent tools should be simple array format ["tool1", "tool2"] or undefined
           if (agent.tools) {
             assertEquals(
-              typeof agent.tools,
-              "object",
-              `Agent ${agentId} in ${workspaceName} should use object format for tools, not array`,
+              Array.isArray(agent.tools),
+              true,
+              `Agent ${agentId} in ${workspaceName} should use simple array format for tools`,
             );
 
             // Should not have old mcp_servers property
@@ -114,7 +110,7 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter("./examples/telephone");
     const loader = new ConfigLoader(adapter, "./examples/telephone");
     const config = await loader.load();
 
@@ -148,35 +144,23 @@ Deno.test({
 /**
  * Test that agent tool checking works correctly with new format
  */
-Deno.test("Agent tool checking handles new format correctly", () => {
-  // Test data with new hierarchical format
+Deno.test("Agent tool checking validates simple array format", () => {
+  // Test data with new simple array format
   const agentWithMCPTools = {
-    tools: {
-      mcp: ["computer_use", "filesystem"],
-      workspace: ["workspace.memory.recall"],
-    },
+    tools: ["computer_use", "filesystem", "workspace.memory.recall"],
   };
 
   const agentWithWorkspaceTools = {
-    tools: {
-      mcp: [],
-      workspace: ["computer_use", "workspace.sessions.describe"],
-    },
+    tools: ["computer_use", "workspace.sessions.describe"],
   };
 
   const agentWithNoTools = {
-    tools: {
-      mcp: [],
-      workspace: [],
-    },
+    tools: [],
   };
 
   // Simulate the tool checking logic used in SessionSupervisor
   function hasComputerUse(agent: any): boolean {
-    return (
-      agent.tools?.mcp?.includes("computer_use") ||
-      agent.tools?.workspace?.includes("computer_use")
-    );
+    return agent.tools?.includes("computer_use");
   }
 
   // Test assertions
@@ -201,7 +185,7 @@ Deno.test("Agent tool checking handles new format correctly", () => {
  * Test configuration migration completeness
  */
 Deno.test({
-  name: "No workspace examples use deprecated tool format",
+  name: "All workspace examples use proper tool format",
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
@@ -246,20 +230,57 @@ Deno.test({
         `${workspaceFile} should not contain deprecated agent-level 'mcp_servers' property`,
       );
 
-      // Check for old array-style tools
+      // Check for old hierarchical-style tools in agent configurations
+      let inAgentSection = false;
+      let currentAgentName = "";
+
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i].trim();
-        if (line.startsWith("tools:") && line.includes("[")) {
-          // This might be old array format - check context
+
+        // Check if we're entering an agent section
+        if (line === "agents:") {
+          inAgentSection = true;
+          continue;
+        }
+
+        // Check if we're leaving the agents section
+        if (inAgentSection && line.match(/^[a-zA-Z-]+:$/) && !line.startsWith("  ")) {
+          if (
+            ![
+              "agents:",
+              "signals:",
+              "jobs:",
+              "tools:",
+              "memory:",
+              "federation:",
+              "server:",
+              "workspace:",
+            ].includes(line)
+          ) {
+            inAgentSection = false;
+          }
+        }
+
+        // Track current agent name
+        if (inAgentSection && line.match(/^  [a-zA-Z-]+:$/) && !line.startsWith("    ")) {
+          currentAgentName = line.replace(":", "").trim();
+        }
+
+        // Check for agent-level tools configuration
+        if (
+          inAgentSection && currentAgentName && line.startsWith("      tools:") &&
+          !line.includes("[")
+        ) {
+          // This might be old hierarchical format - check context
           const nextLines = lines.slice(i + 1, i + 3).join(" ");
           if (
-            !nextLines.includes("mcp:") &&
-            !nextLines.includes("workspace:")
+            nextLines.includes("mcp:") ||
+            nextLines.includes("workspace:")
           ) {
             throw new Error(
               `${workspaceFile}:${
                 i + 1
-              } appears to use old array format for tools. Should use hierarchical format with mcp/workspace keys.`,
+              } appears to use old hierarchical format for agent tools. Agent '${currentAgentName}' should use simple array format like tools: ["tool1", "tool2"].`,
             );
           }
         }

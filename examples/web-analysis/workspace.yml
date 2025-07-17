@@ -14,7 +14,7 @@ tools:
           command: "npx"
           args: ["@playwright/mcp@latest"]
         tools:
-          allowed:
+          allow:
             [
               "browser_navigate",
               "browser_snapshot",
@@ -26,21 +26,31 @@ tools:
               "browser_console_messages",
               "browser_pdf_save",
             ]
-        timeout_ms: 30000
-
+        client_config:
+          timeout: "30s"
 # User-defined agents for web analysis
 agents:
   web-analyzer:
     type: "llm"
-    provider: "google"
-    model: "gemini-2.5-flash"
-    purpose: "Comprehensive web page analysis using browser automation tools"
-    tools:
-      mcp: ["playwright"]
-    max_steps: 5
-    tool_choice: "auto"
-    prompts:
-      system: |
+    description: "Comprehensive web page analysis using browser automation tools"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools:
+        [
+          "browser_navigate",
+          "browser_snapshot",
+          "browser_take_screenshot",
+          "browser_click",
+          "browser_type",
+          "browser_wait_for",
+          "browser_network_requests",
+          "browser_console_messages",
+          "browser_pdf_save",
+        ]
+      max_steps: 5
+      tool_choice: "auto"
+      prompt: |
         You are a professional web analyst with access to browser automation tools via Playwright MCP.
 
         Available tools:
@@ -65,35 +75,39 @@ agents:
         Always use browser_snapshot first as it provides structured data about the page content and accessibility tree.
 
 # Top-level job definitions
-jobs:
-  analyze-webpage:
-    name: "analyze-webpage"
-    description: |
-      Comprehensive web page analysis workflow using Playwright MCP integration:
-      1. Navigate to the specified URL using browser automation
-      2. Capture screenshot for visual analysis
-      3. Extract page title, content, and structural elements
-      4. Analyze content quality, accessibility, and user experience
-      5. Generate detailed report with insights and recommendations
-
-      This showcases Atlas MCP integration capabilities:
-      - Browser automation with Playwright MCP server
-      - Multi-step tool execution workflows
-      - Real-world web analysis
-    triggers:
-      - signal: "webpage-analysis"
-        condition: "payload.url"
-    execution:
-      strategy: "sequential"
-      agents:
-        - id: "web-analyzer"
-          task: "Analyze the webpage at {{payload.url}} with analysis type {{payload.analysis_type}}"
+# jobs:
+#   analyze-webpage:
+#     name: "analyze-webpage"
+#     description: |
+#       Comprehensive web page analysis workflow using Playwright MCP integration:
+#       1. Navigate to the specified URL using browser automation
+#       2. Capture screenshot for visual analysis
+#       3. Extract page title, content, and structural elements
+#       4. Analyze content quality, accessibility, and user experience
+#       5. Generate detailed report with insights and recommendations
+#
+#       This showcases Atlas MCP integration capabilities:
+#       - Browser automation with Playwright MCP server
+#       - Multi-step tool execution workflows
+#       - Real-world web analysis
+#     triggers:
+#       - signal: "webpage-analysis"
+#         condition:
+#           prompt: "payload.url"
+#     execution:
+#       strategy: "sequential"
+#       agents:
+#         - id: "web-analyzer"
+#           context:
+#             task: "Analyze the webpage at {{payload.url}} with analysis type {{payload.analysis_type}}"
 
 # Signal definitions
 signals:
   webpage-analysis:
     description: "Trigger web page analysis with a URL"
-    provider: "cli"
+    provider: "http"
+    config:
+      path: "/webpage-analysis"
     schema:
       type: "object"
       properties:

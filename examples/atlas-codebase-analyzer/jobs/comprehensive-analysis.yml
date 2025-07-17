@@ -1,3 +1,9 @@
+version: "1.0"
+
+workspace:
+  name: "Atlas Codebase Analyzer"
+  description: "Analyzes Atlas codebase for performance, DX, and architecture improvements"
+
 name: "comprehensive-analysis"
 description: "Complete Atlas codebase analysis covering performance, DX, and architecture"
 

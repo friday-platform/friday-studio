@@ -2,14 +2,8 @@
  * XState reasoning machine for Think→Act→Observe loops
  */
 
-import { assign, createMachine, emit, fromPromise, sendTo } from "xstate";
-import type {
-  ReasoningAction,
-  ReasoningCallbacks,
-  ReasoningContext,
-  ReasoningResult,
-  ReasoningStep,
-} from "./types.ts";
+import { assign, createMachine, emit, fromPromise } from "xstate";
+import type { ReasoningCallbacks, ReasoningContext, ReasoningResult } from "./types.ts";
 
 export interface ReasoningMachineOptions {
   maxIterations?: number;

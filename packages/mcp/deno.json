@@ -3,8 +3,6 @@
   "version": "0.1.0",
   "exports": "./mod.ts",
   "imports": {
-    "@atlas/config": "../config/mod.ts",
-    "@atlas/storage": "../storage/mod.ts",
     "ai": "npm:ai@^4.0.7",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.12.1"
   },

@@ -9,13 +9,12 @@ import { RemoteAdapterFactory } from "./adapter-factory.ts";
 import { BaseRemoteAdapter } from "./adapters/base-remote-adapter.ts";
 import type {
   HealthStatus,
-  RemoteAgentError,
   RemoteAgentInfo,
-  RemoteConnectionError,
   RemoteExecutionRequest,
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "./types.ts";
+import { RemoteAgentError, RemoteConnectionError } from "./types.ts";
 
 // Define RemoteAgentConfig locally since session-supervisor.ts is gone
 export interface RemoteAgentConfig {

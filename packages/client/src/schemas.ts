@@ -29,7 +29,6 @@ export const WorkspaceInfoSchema = z.object({
   description: z.string().optional(),
   status: z.string(),
   path: z.string(),
-  hasActiveRuntime: z.boolean(),
   createdAt: z.string(),
   lastSeen: z.string(),
 });

@@ -232,6 +232,38 @@ const configLoader = new ConfigLoader(adapter, workspacePath);
 const config = await configLoader.load();
 ```
 
+### Workspace Management
+
+The WorkspaceManager has been refactored for simplicity:
+
+- **`@atlas/core` package**: Contains the new WorkspaceManager
+- **System Workspaces**: Built-in workspaces (like atlas-conversation) are embedded at build time
+- **Unified API**: Single `find()` method replaces findById, findByName, findByPath
+- **Type Safety**: All workspace types defined in `@atlas/core/types/workspace.ts`
+
+**Key patterns**:
+
+```typescript
+// Import from @atlas/core package
+import { WorkspaceManager } from "@atlas/core";
+
+// Use unified find() method
+const workspace = await manager.find({ id: "workspace-id" });
+const workspace = await manager.find({ name: "My Workspace" });
+const workspace = await manager.find({ path: "/path/to/workspace" });
+
+// List workspaces (excludes system workspaces by default)
+const userWorkspaces = await manager.list();
+const allWorkspaces = await manager.list({ includeSystem: true });
+```
+
+**System Workspaces**:
+
+- Defined as YAML files in `packages/system/workspaces/`
+- Embedded at build time using Deno's text imports
+- Identified by `metadata.system = true` and `system://` path prefix
+- Cannot be deleted without force option
+
 ## Technology Stack
 
 - **Language**: TypeScript

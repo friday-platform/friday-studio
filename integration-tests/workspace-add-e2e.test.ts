@@ -8,34 +8,44 @@ import { AtlasClient } from "@atlas/client";
 import { assertEquals, assertExists } from "@std/assert";
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { getWorkspaceManager, resetWorkspaceManager } from "../src/core/workspace-manager.ts";
+// Tests will use client API for verification instead of direct workspace manager access
 
 // Helper to create a test workspace directory with workspace.yml
 async function createTestWorkspace(basePath: string, name: string): Promise<string> {
   const workspacePath = join(basePath, name);
   await ensureDir(workspacePath);
 
-  // Create a minimal workspace.yml
-  const workspaceYml = `
+  // Create a minimal workspace.yml that matches v2 schema
+  const workspaceYml = `version: "1.0"
+
 workspace:
   name: ${name}
   description: Test workspace for integration tests
-  version: 1.0.0
 
 signals:
   test-signal:
-    provider: cli
-    name: test-signal
+    provider: http
     description: Test signal
+    config:
+      path: /test-signal
 
 jobs:
   test-job:
     name: test-job
     description: Test job
-    steps:
-      - tool: echo
-        arguments:
-          message: "Hello from test job"
+    execution:
+      agents: ["test-agent"]
+      strategy: sequential
+
+agents:
+  test-agent:
+    type: llm
+    description: Test agent for integration tests
+    config:
+      model: claude-3-5-sonnet-20241022
+      prompt: |
+        You are a test agent for integration tests. 
+        Please respond to requests in a helpful and concise manner.
 `;
 
   await Deno.writeTextFile(join(workspacePath, "workspace.yml"), workspaceYml);
@@ -55,7 +65,6 @@ async function cleanupTestDirectory(path: string) {
 
 // Helper to reset state between tests
 async function resetTestState() {
-  resetWorkspaceManager();
   // Clear any persisted data
   const testKvPath = join(Deno.env.get("HOME") || "", ".atlas", "test.db");
   try {
@@ -161,10 +170,10 @@ Deno.test({
       assertEquals(result.added.length, 4);
       assertEquals(result.failed.length, 0);
 
-      // Verify each workspace
-      const manager = await getWorkspaceManager();
+      // Verify each workspace through client API
+      const workspaces = await client.listWorkspaces();
       for (const added of result.added) {
-        const workspace = await manager.findById(added.id);
+        const workspace = workspaces.find((w) => w.id === added.id);
         assertExists(workspace);
         assertEquals(workspace.path, added.path);
       }

@@ -96,109 +96,112 @@ export const useTextInput = ({
     return renderedPlaceholder;
   }, [state.value.length, renderedValue, renderedPlaceholder]);
 
-  useInput((input, key) => {
-    // Handle Meta+b (backward word) and Meta+f (forward word)
-    if (key.meta && input) {
-      if (input === "b") {
-        // Meta+b: move to previous word
-        state.moveCursorWordLeft();
+  useInput(
+    (input, key) => {
+      // Handle Meta+b (backward word) and Meta+f (forward word)
+      if (key.meta && input) {
+        if (input === "b") {
+          // Meta+b: move to previous word
+          state.moveCursorWordLeft();
+          return;
+        }
+        if (input === "f") {
+          // Meta+f: move to next word
+          state.moveCursorWordRight();
+          return;
+        }
+      }
+
+      // Handle Ctrl+a (beginning of line) and Ctrl+e (end of line)
+      if (key.ctrl && input) {
+        if (input === "a") {
+          // Ctrl+a: move to beginning of line
+          state.moveCursorLineStart();
+          return;
+        }
+        if (input === "e") {
+          // Ctrl+e: move to end of line
+          state.moveCursorLineEnd();
+          return;
+        }
+        if (input === "u") {
+          // Ctrl+u: delete from cursor to beginning of line
+          state.deleteToLineStart();
+          return;
+        }
+      }
+
+      if (key.leftArrow) {
+        // Normal left arrow
+        state.moveCursorLeft();
         return;
       }
-      if (input === "f") {
-        // Meta+f: move to next word
-        state.moveCursorWordRight();
+
+      if (key.rightArrow) {
+        // Normal right arrow
+        state.moveCursorRight();
         return;
       }
-    }
 
-    // Handle Ctrl+a (beginning of line) and Ctrl+e (end of line)
-    if (key.ctrl && input) {
-      if (input === "a") {
-        // Ctrl+a: move to beginning of line
-        state.moveCursorLineStart();
+      if (key.upArrow) {
+        state.moveCursorUp();
         return;
       }
-      if (input === "e") {
-        // Ctrl+e: move to end of line
-        state.moveCursorLineEnd();
+
+      if (key.downArrow) {
+        state.moveCursorDown();
         return;
       }
-      if (input === "u") {
-        // Ctrl+u: delete from cursor to beginning of line
-        state.deleteToLineStart();
+
+      if (key.return) {
+        // Check for multi-line key combinations
+        if (key.shift) {
+          // Shift+Enter: Insert \n
+          state.insert("\n");
+        } else if (key.meta) {
+          // Option+Enter: Insert \r
+          state.insert("\r");
+        } else {
+          // Normal enter submits
+          state.submit();
+        }
         return;
       }
-    }
 
-    if (key.leftArrow) {
-      // Normal left arrow
-      state.moveCursorLeft();
-      return;
-    }
-
-    if (key.rightArrow) {
-      // Normal right arrow
-      state.moveCursorRight();
-      return;
-    }
-
-    if (key.upArrow) {
-      state.moveCursorUp();
-      return;
-    }
-
-    if (key.downArrow) {
-      state.moveCursorDown();
-      return;
-    }
-
-    if (key.return) {
-      // Check for multi-line key combinations
-      if (key.shift) {
-        // Shift+Enter: Insert \n
-        state.insert("\n");
-      } else if (key.meta) {
-        // Option+Enter: Insert \r
-        state.insert("\r");
-      } else {
-        // Normal enter submits
-        state.submit();
+      if (key.backspace || key.delete) {
+        if (key.meta) {
+          // Meta+delete: delete word
+          state.deleteWord();
+        } else {
+          // Normal delete
+          state.delete();
+        }
+        return;
       }
-      return;
-    }
 
-    if (key.backspace || key.delete) {
-      if (key.meta) {
-        // Meta+delete: delete word
-        state.deleteWord();
-      } else {
-        // Normal delete
-        state.delete();
+      if (key.tab) {
+        if (state.suggestion && !state.justAcceptedSuggestion) {
+          // Accept the suggestion
+          state.acceptSuggestion();
+        } else {
+          // Either no suggestion or just accepted one, pass tab through for focus handling
+          state.clearSuggestionFlag();
+          onTabFocus?.();
+        }
+        return;
       }
-      return;
-    }
 
-    if (key.tab) {
-      if (state.suggestion && !state.justAcceptedSuggestion) {
-        // Accept the suggestion
-        state.acceptSuggestion();
-      } else {
-        // Either no suggestion or just accepted one, pass tab through for focus handling
-        state.clearSuggestionFlag();
-        onTabFocus?.();
+      if (input) {
+        // Don't insert characters when modifier keys (except shift) are pressed
+        const hasModifierKeys = key.ctrl || key.meta;
+
+        if (!hasModifierKeys) {
+          state.insert(input);
+        }
       }
-      return;
-    }
-
-    if (input) {
-      // Don't insert characters when modifier keys (except shift) are pressed
-      const hasModifierKeys = key.ctrl || key.meta;
-
-      if (!hasModifierKeys) {
-        state.insert(input);
-      }
-    }
-  });
+    },
+    { isActive: !isDisabled },
+  );
 
   return {
     inputValue,

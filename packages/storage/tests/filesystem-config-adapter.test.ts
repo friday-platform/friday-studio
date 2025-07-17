@@ -1,5 +1,5 @@
 import { expect } from "@std/expect";
-import { FilesystemConfigAdapter } from "../src/adapters/filesystem-config-adapter.ts";
+import { FilesystemConfigAdapter } from "../src/adapters/config/fs.ts";
 import { join } from "@std/path";
 
 // Set testing environment to prevent logger file operations
@@ -8,15 +8,20 @@ Deno.env.set("DENO_TESTING", "true");
 // Temp directory will be created per test to avoid leaks
 let tempDir: string;
 
-Deno.test("FilesystemConfigAdapter - loads YAML files", async () => {
+Deno.test("FilesystemConfigAdapter - constructor requires workspace path", () => {
+  const adapter = new FilesystemConfigAdapter("/test/workspace");
+  expect(adapter.getWorkspacePath()).toBe("/test/workspace");
+});
+
+Deno.test("FilesystemConfigAdapter - reads YAML files", async () => {
   tempDir = await Deno.makeTempDir();
   try {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter(tempDir);
     const testFile = join(tempDir, "test.yml");
 
     await Deno.writeTextFile(testFile, "name: test\nvalue: 123\nlist:\n  - item1\n  - item2");
 
-    const content = await adapter.loadYamlFile(testFile);
+    const content = await adapter.readYaml(testFile);
     expect(content).toEqual({
       name: "test",
       value: 123,
@@ -30,7 +35,7 @@ Deno.test("FilesystemConfigAdapter - loads YAML files", async () => {
 Deno.test("FilesystemConfigAdapter - handles YAML parsing errors", async () => {
   tempDir = await Deno.makeTempDir();
   try {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter(tempDir);
     const testFile = join(tempDir, "invalid.yml");
 
     // This YAML is actually valid, so let's create truly invalid YAML
@@ -40,7 +45,7 @@ Deno.test("FilesystemConfigAdapter - handles YAML parsing errors", async () => {
     );
 
     try {
-      await adapter.loadYamlFile(testFile);
+      await adapter.readYaml(testFile);
       throw new Error("Expected YAML parsing to fail");
     } catch (error) {
       // Should throw a YAML parsing error
@@ -54,11 +59,11 @@ Deno.test("FilesystemConfigAdapter - handles YAML parsing errors", async () => {
 Deno.test("FilesystemConfigAdapter - throws on missing files", async () => {
   tempDir = await Deno.makeTempDir();
   try {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter(tempDir);
     const missingFile = join(tempDir, "does-not-exist.yml");
 
     try {
-      await adapter.loadYamlFile(missingFile);
+      await adapter.readYaml(missingFile);
       throw new Error("Expected file not found error");
     } catch (error) {
       // Check that it's a file not found error
@@ -73,266 +78,29 @@ Deno.test("FilesystemConfigAdapter - throws on missing files", async () => {
 Deno.test("FilesystemConfigAdapter - checks file existence", async () => {
   tempDir = await Deno.makeTempDir();
   try {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter(tempDir);
     const existingFile = join(tempDir, "exists.yml");
     const missingFile = join(tempDir, "missing.yml");
 
     await Deno.writeTextFile(existingFile, "test: true");
 
-    expect(await adapter.fileExists(existingFile)).toBe(true);
-    expect(await adapter.fileExists(missingFile)).toBe(false);
+    expect(await adapter.exists(existingFile)).toBe(true);
+    expect(await adapter.exists(missingFile)).toBe(false);
   } finally {
     await Deno.remove(tempDir, { recursive: true });
   }
 });
 
-Deno.test("FilesystemConfigAdapter - resolves atlas.yml path from CWD", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const workspaceDir = join(tempDir, "workspace1");
-
-    await Deno.mkdir(workspaceDir, { recursive: true });
-
-    // Test CWD resolution
-    const cwdAtlas = join(workspaceDir, "atlas.yml");
-    await Deno.writeTextFile(cwdAtlas, "version: 1.0");
-
-    const resolvedPath = await adapter.resolveAtlasConfigPath(workspaceDir);
-    expect(resolvedPath).toBe(cwdAtlas);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - resolves atlas.yml from git root", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-
-    // Create an isolated git repository
-    const gitRepoDir = join(tempDir, "test-repo");
-    await Deno.mkdir(gitRepoDir, { recursive: true });
-
-    // Initialize git repo
-    const gitInit = new Deno.Command("git", {
-      args: ["init"],
-      cwd: gitRepoDir,
-      stdout: "piped",
-      stderr: "piped",
-    });
-    await gitInit.output();
-
-    // Create atlas.yml in git root
-    const gitRootAtlasPath = join(gitRepoDir, "atlas.yml");
-    await Deno.writeTextFile(gitRootAtlasPath, "version: 1.0\nname: git-root-config");
-
-    // Create a subdirectory to test from
-    const workspaceDir = join(gitRepoDir, "subdir", "workspace");
-    await Deno.mkdir(workspaceDir, { recursive: true });
-
-    // Change to the subdirectory and resolve config
-    const originalCwd = Deno.cwd();
-    try {
-      Deno.chdir(workspaceDir);
-
-      // Should find the atlas.yml in git root
-      const resolvedPath = await adapter.resolveAtlasConfigPath(workspaceDir);
-
-      // Compare using real paths to handle symlinks (e.g., /var -> /private/var on macOS)
-      const expectedRealPath = await Deno.realPath(gitRootAtlasPath);
-      const actualRealPath = await Deno.realPath(resolvedPath);
-      expect(actualRealPath).toBe(expectedRealPath);
-
-      // Verify it's actually the git root file
-      const content = await adapter.loadYamlFile(resolvedPath);
-      expect(content).toEqual({
-        version: 1.0,
-        name: "git-root-config",
-      });
-    } finally {
-      Deno.chdir(originalCwd);
-    }
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - falls back when not in git repo", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const nonGitDir = join(tempDir, "not-a-git-repo");
-    await Deno.mkdir(nonGitDir, { recursive: true });
-
-    // Change to the non-git directory
-    const originalCwd = Deno.cwd();
-    try {
-      Deno.chdir(nonGitDir);
-
-      // Should return the CWD path as default (since no atlas.yml exists anywhere)
-      const resolvedPath = await adapter.resolveAtlasConfigPath(nonGitDir);
-      expect(resolvedPath).toBe(join(nonGitDir, "atlas.yml"));
-    } finally {
-      Deno.chdir(originalCwd);
-    }
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - resolves workspace.yml path", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const workspaceDir = join(tempDir, "workspace3");
-
-    const resolvedPath = await adapter.resolveWorkspaceConfigPath(workspaceDir);
-    expect(resolvedPath).toBe(join(workspaceDir, "workspace.yml"));
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - loads job files from directory", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const jobsDir = join(tempDir, "jobs");
-
-    await Deno.mkdir(jobsDir, { recursive: true });
-
-    // Create various job files
-    await Deno.writeTextFile(
-      join(jobsDir, "job1.yml"),
-      "name: job1\ntask: test\ndescription: First job",
-    );
-    await Deno.writeTextFile(
-      join(jobsDir, "job2.yaml"),
-      "name: job2\ntask: test\ndescription: Second job",
-    );
-    await Deno.writeTextFile(
-      join(jobsDir, "not-yaml.txt"),
-      "This should be ignored",
-    );
-    await Deno.writeTextFile(
-      join(jobsDir, "README.md"),
-      "# Jobs Documentation",
-    );
-
-    const jobs = await adapter.loadJobFiles(jobsDir);
-
-    expect(jobs.size).toBe(2);
-    expect(jobs.has("job1")).toBe(true);
-    expect(jobs.has("job2")).toBe(true);
-    expect(jobs.has("not-yaml")).toBe(false);
-    expect(jobs.has("README")).toBe(false);
-
-    const job1 = jobs.get("job1");
-    expect(job1).toEqual({
-      name: "job1",
-      task: "test",
-      description: "First job",
-    });
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - handles empty jobs directory", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const emptyJobsDir = join(tempDir, "empty-jobs");
-
-    await Deno.mkdir(emptyJobsDir, { recursive: true });
-
-    const jobs = await adapter.loadJobFiles(emptyJobsDir);
-    expect(jobs.size).toBe(0);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - handles non-existent jobs directory", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const nonExistentDir = join(tempDir, "does-not-exist");
-
-    const jobs = await adapter.loadJobFiles(nonExistentDir);
-    expect(jobs.size).toBe(0);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - loads supervisor defaults", async () => {
-  const adapter = new FilesystemConfigAdapter();
-
-  const defaults = await adapter.loadSupervisorDefaults();
-
-  expect(defaults).toBeDefined();
-  expect(defaults).toHaveProperty("version");
-  expect(defaults).toHaveProperty("supervisors");
-
-  // Just check the basic structure without comparing all the long prompt strings
-  expect(defaults).toHaveProperty("version", "1.0");
-  expect(defaults).toHaveProperty("supervisors");
-
-  const supervisors = (defaults as { supervisors: Record<string, unknown> }).supervisors;
-  expect(supervisors).toHaveProperty("workspace");
-  expect(supervisors).toHaveProperty("session");
-  expect(supervisors).toHaveProperty("agent");
-
-  // Check that each supervisor has the expected structure
-  for (const [, supervisor] of Object.entries(supervisors)) {
-    expect(supervisor).toHaveProperty("prompts");
-    expect(supervisor).toHaveProperty("supervision");
-
-    const prompts = (supervisor as { prompts: Record<string, unknown> }).prompts;
-    expect(prompts).toHaveProperty("system");
-    expect(typeof prompts.system).toBe("string");
-  }
-});
-
-Deno.test("FilesystemConfigAdapter - handles special characters in filenames", async () => {
-  tempDir = await Deno.makeTempDir();
-  try {
-    const adapter = new FilesystemConfigAdapter();
-    const specialJobsDir = join(tempDir, "special-jobs");
-
-    await Deno.mkdir(specialJobsDir, { recursive: true });
-
-    // Create job files with special characters
-    await Deno.writeTextFile(
-      join(specialJobsDir, "job-with-dash.yml"),
-      "name: job-with-dash\ntask: test",
-    );
-    await Deno.writeTextFile(
-      join(specialJobsDir, "job_with_underscore.yml"),
-      "name: job_with_underscore\ntask: test",
-    );
-    await Deno.writeTextFile(
-      join(specialJobsDir, "job.with.dots.yml"),
-      "name: job.with.dots\ntask: test",
-    );
-
-    const jobs = await adapter.loadJobFiles(specialJobsDir);
-
-    expect(jobs.size).toBe(3);
-    expect(jobs.has("job-with-dash")).toBe(true);
-    expect(jobs.has("job_with_underscore")).toBe(true);
-    expect(jobs.has("job.with.dots")).toBe(true);
-  } finally {
-    await Deno.remove(tempDir, { recursive: true });
-  }
+Deno.test("FilesystemConfigAdapter - returns workspace path", () => {
+  const workspacePath = "/custom/workspace/path";
+  const adapter = new FilesystemConfigAdapter(workspacePath);
+  expect(adapter.getWorkspacePath()).toBe(workspacePath);
 });
 
 Deno.test("FilesystemConfigAdapter - preserves YAML structure correctly", async () => {
   tempDir = await Deno.makeTempDir();
   try {
-    const adapter = new FilesystemConfigAdapter();
+    const adapter = new FilesystemConfigAdapter(tempDir);
     const complexFile = join(tempDir, "complex.yml");
 
     const complexYaml = `
@@ -360,7 +128,7 @@ nested:
 
     await Deno.writeTextFile(complexFile, complexYaml);
 
-    const content = await adapter.loadYamlFile(complexFile);
+    const content = await adapter.readYaml(complexFile);
 
     expect(content).toEqual({
       version: "1.0",

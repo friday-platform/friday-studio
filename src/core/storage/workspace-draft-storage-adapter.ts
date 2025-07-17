@@ -6,14 +6,8 @@
  * while maintaining complete storage backend independence.
  */
 
+import type { WorkspaceConfig } from "@atlas/config";
 import { type KVStorage } from "./kv-storage.ts";
-import type {
-  JobSpecification,
-  WorkspaceAgentConfig,
-  WorkspaceConfig,
-  WorkspaceMCPServerConfig,
-  WorkspaceSignalConfig,
-} from "@atlas/config";
 
 export interface WorkspaceDraft {
   id: string;
@@ -280,125 +274,6 @@ export class WorkspaceDraftStorageAdapter {
     }
 
     return abandonedIds;
-  }
-
-  /**
-   * Apply an operation to a draft
-   */
-  private applyOperation(
-    draft: WorkspaceDraft,
-    operation: string,
-    config: Record<string, unknown>,
-  ): void {
-    switch (operation) {
-      case "add_agent": {
-        // Ensure agents object exists
-        if (!draft.config.agents) draft.config.agents = {};
-
-        // Handle both formats: id/purpose and name/description
-        const agentId = (config.id || config.name) as string;
-        const agentPurpose = (config.purpose || config.description) as string;
-
-        // Map 'transformation' type to valid WorkspaceAgentConfig type
-        let agentType = config.type as string;
-        if (agentType === "transformation") {
-          agentType = "llm"; // Default to LLM for transformation agents
-        }
-
-        // Create agent config using WorkspaceAgentConfig type
-        const agentConfig: WorkspaceAgentConfig = {
-          type: (agentType as "llm" | "system" | "remote") || "llm",
-          model: config.model as string || "gemini-2.5-flash",
-          purpose: agentPurpose,
-          ...(config.system_prompt ? { prompts: { system: config.system_prompt as string } } : {}),
-          ...(config.tools ? { tools: { mcp: config.tools as string[] } } : {}),
-        };
-
-        draft.config.agents[agentId] = agentConfig;
-        break;
-      }
-
-      case "update_agent": {
-        if (draft.config.agents && draft.config.agents[config.id as string]) {
-          Object.assign(draft.config.agents[config.id as string], config.updates);
-        }
-        break;
-      }
-
-      case "remove_agent": {
-        if (draft.config.agents && config.id) {
-          delete draft.config.agents[config.id as string];
-        }
-        break;
-      }
-
-      case "add_job": {
-        // Ensure jobs object exists
-        if (!draft.config.jobs) draft.config.jobs = {};
-
-        // Create job config using JobSpecification type
-        const jobId = config.name as string || config.id as string;
-        const jobConfig: JobSpecification = {
-          name: jobId,
-          description: config.description as string,
-          triggers: config.triggers
-            ? (Array.isArray(config.triggers) && typeof config.triggers[0] === "string"
-              ? (config.triggers as string[]).map((t) => ({ signal: t }))
-              : config.triggers as Array<{ signal: string }>)
-            : [{ signal: `${draft.name}-trigger` }],
-          execution: config.execution as JobSpecification["execution"],
-        };
-
-        draft.config.jobs[jobId] = jobConfig;
-        break;
-      }
-
-      case "update_job": {
-        if (draft.config.jobs && draft.config.jobs[config.id as string]) {
-          Object.assign(draft.config.jobs[config.id as string], config.updates);
-        }
-        break;
-      }
-
-      case "remove_job": {
-        if (draft.config.jobs && config.id) {
-          delete draft.config.jobs[config.id as string];
-        }
-        break;
-      }
-
-      case "set_trigger": {
-        // Ensure signals object exists
-        if (!draft.config.signals) draft.config.signals = {};
-
-        const signalId = `${draft.name}-trigger`;
-        // Create signal config using WorkspaceSignalConfig type
-        const signalConfig: WorkspaceSignalConfig = {
-          description: config.description as string || `Trigger for ${draft.name}`,
-          provider: config.provider as string,
-          ...(config.providerConfig as Record<string, unknown>),
-        };
-
-        draft.config.signals[signalId] = signalConfig;
-        break;
-      }
-
-      case "add_tool": {
-        if (!draft.config.tools) draft.config.tools = {};
-        if (!draft.config.tools.mcp) draft.config.tools.mcp = {};
-        if (!draft.config.tools.mcp.servers) draft.config.tools.mcp.servers = {};
-        draft.config.tools.mcp.servers[config.provider as string] = config
-          .config as WorkspaceMCPServerConfig;
-        break;
-      }
-
-      case "remove_tool": {
-        if (draft.config.tools?.mcp?.servers && config.provider) {
-          delete draft.config.tools.mcp.servers[config.provider as string];
-        }
-        break;
-      }
-    }
   }
 
   /**

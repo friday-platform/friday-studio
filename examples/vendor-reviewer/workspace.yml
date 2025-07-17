@@ -14,8 +14,9 @@ tools:
           command: "npx"
           args: ["-y", "@modelcontextprotocol/server-filesystem", "~"]
         tools:
-          allowed: ["read_file", "list_directory"]
-        timeout_ms: 30000
+          allow: ["read_file", "list_directory"]
+        client_config:
+          timeout: "30s"
 
       # Shell access for running pdftotext commands
       commands:
@@ -24,9 +25,9 @@ tools:
           command: "npx"
           args: ["mcp-server-commands"]
         tools:
-          allowed: ["run_command"]
-        timeout_ms: 30000
-
+          allow: ["run_command"]
+        client_config:
+          timeout: "30s"
 # =============================================================================
 # SIGNAL CONFIGURATION
 # =============================================================================
@@ -37,8 +38,9 @@ signals:
   # CLI trigger for complete vendor review including final evaluation
   cli-vendor-review:
     description: "CLI trigger for complete SOC 2 vendor review and evaluation"
-    provider: "cli"
-    command: "vendor-review"
+    provider: "http"
+    config:
+      path: "/cli/vendor-review"
 
 # =============================================================================
 # AGENT CONFIGURATION
@@ -50,12 +52,13 @@ agents:
   # Agent 1: Document reader for vendor files in selected directory
   document-reader:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Read and analyze vendor documentation from specified directory"
-    max_steps: 5
-    tools: ["filesystem", "commands"]
-    prompts:
-      system: |
+    description: "Read and analyze vendor documentation from specified directory"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      max_steps: 5
+      tools: ["filesystem", "commands"]
+      prompt: |
         You are a document analysis specialist for SOC 2 vendor reviews.
         Your role is to read and analyze vendor documentation from a specified directory.
 
@@ -97,12 +100,13 @@ agents:
   # Agent 2: Document analysis and security evaluation specialist
   questionnaire-analyzer:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
-    max_steps: 5
-    tools: ["filesystem", "commands"]
-    prompts:
-      system: |
+    description: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      max_steps: 5
+      tools: ["filesystem", "commands"]
+      prompt: |
         You are a comprehensive security analysis specialist for SOC 2 vendor reviews.
         Your role is to analyze ALL vendor documentation that was processed by the document-reader agent.
 
@@ -144,11 +148,12 @@ agents:
   # Agent 3: Evaluator that creates vendor recommendation
   vendor-evaluator:
     type: "llm"
-    model: "gemini-2.5-pro"
-    purpose: "Evaluate evidence from document and questionnaire analysis to create vendor recommendation"
-    max_steps: 1
-    prompts:
-      system: |
+    description: "Evaluate evidence from document and questionnaire analysis to create vendor recommendation"
+    config:
+      model: "gemini-2.5-pro"
+      provider: "google"
+      max_steps: 1
+      prompt: |
         You are a SOC 2 vendor evaluation specialist responsible for making final vendor recommendations.
         Your role is to synthesize findings from previous agents' analysis.
 
@@ -208,70 +213,70 @@ agents:
 # SOC 2 vendor review workflow with three-stage analysis
 # =============================================================================
 
-jobs:
-  # Complete analysis including final evaluation
-  soc2-vendor-complete-analysis:
-    name: "soc2-vendor-complete-analysis"
-    description: "Complete SOC 2 vendor analysis including document review, questionnaire analysis, and final evaluation"
-    triggers:
-      - signal: "cli-vendor-review"
-        condition:
-          {
-            "and": [
-              { "var": "vendor_name" },
-              { "var": "documents_path" },
-              { "var": "questionnaire_path" },
-            ],
-          }
-    session_prompts:
-      planning: |
-        Conduct complete SOC 2 vendor analysis in three sequential stages:
-
-        Stage 1: Comprehensive Document Analysis
-        - Process ALL PDF files in the vendor documents directory using pdftotext
-        - Extract SOC 2 relevant information from ALL documents (SOC 2 reports, DPAs, pen test reports, certifications, policies)
-        - Identify security controls, compliance gaps and strengths across all documentation
-        - Provide comprehensive summary of findings from all processed documents
-
-        Stage 2: Cross-Document Security Analysis
-        - Synthesize information from ALL processed documents
-        - Cross-reference findings for consistency and completeness
-        - Evaluate evidence quality across all documentation against SOC 2 Trust Services Criteria
-        - Provide integrated analysis summary covering all vendor materials
-
-        Stage 3: Final Vendor Evaluation
-        - Generate structured SOC 2 vendor security questionnaire with 10 critical questions
-        - Use findings from Stage 1 and Stage 2 as supporting evidence
-        - Create executive-ready vendor recommendation with clear proceed/don't proceed decision
-        - Ensure professional format suitable for SOC 2 compliance documentation
-      evaluation: |
-        Evaluate whether the complete SOC 2 vendor analysis has covered all critical areas:
-        - Have ALL PDF files in the vendor directory been processed using pdftotext?
-        - Have all vendor documents been thoroughly analyzed with comprehensive findings?
-        - Has cross-document analysis been completed with integrated evaluation?
-        - Has the final vendor evaluation been generated with structured questionnaire format?
-        - Are findings documented covering ALL processed documents in actionable format?
-        - Is the final report ready for executive review and SOC 2 compliance documentation?
-
-        The session is complete when all three analysis stages are finished including the final vendor recommendation.
-    execution:
-      strategy: "sequential"
-      context:
-        filesystem:
-          patterns:
-            - "vendor-reviewer/**/*"
-          base_path: "~"
-          max_file_size: 1000000
-          include_content: true
-      agents:
-        - id: "document-reader"
-          input_source: "signal"
-          context_filter: "documents_path"
-        - id: "questionnaire-analyzer"
-          input_source: "signal"
-          context_filter: "questionnaire_path"
-        - id: "vendor-evaluator"
-          input_source: "signal"
+# jobs:
+# Complete analysis including final evaluation
+# soc2-vendor-complete-analysis:
+#   name: "soc2-vendor-complete-analysis"
+#   description: "Complete SOC 2 vendor analysis including document review, questionnaire analysis, and final evaluation"
+#   triggers:
+#     - signal: "cli-vendor-review"
+#       condition:
+#         jsonlogic:
+#           and:
+#             - { "var": "vendor_name" }
+#             - { "var": "documents_path" }
+#             - { "var": "questionnaire_path" }
+#   prompt: |
+#     Planning:
+#       Conduct complete SOC 2 vendor analysis in three sequential stages:
+#
+#       Stage 1: Comprehensive Document Analysis
+#       - Process ALL PDF files in the vendor documents directory using pdftotext
+#       - Extract SOC 2 relevant information from ALL documents (SOC 2 reports, DPAs, pen test reports, certifications, policies)
+#       - Identify security controls, compliance gaps and strengths across all documentation
+#       - Provide comprehensive summary of findings from all processed documents
+#
+#       Stage 2: Cross-Document Security Analysis
+#       - Synthesize information from ALL processed documents
+#       - Cross-reference findings for consistency and completeness
+#       - Evaluate evidence quality across all documentation against SOC 2 Trust Services Criteria
+#       - Provide integrated analysis summary covering all vendor materials
+#
+#       Stage 3: Final Vendor Evaluation
+#       - Generate structured SOC 2 vendor security questionnaire with 10 critical questions
+#       - Use findings from Stage 1 and Stage 2 as supporting evidence
+#       - Create executive-ready vendor recommendation with clear proceed/don't proceed decision
+#       - Ensure professional format suitable for SOC 2 compliance documentation
+#
+#     Evaluation:
+#       Evaluate whether the complete SOC 2 vendor analysis has covered all critical areas:
+#       - Have ALL PDF files in the vendor directory been processed using pdftotext?
+#       - Have all vendor documents been thoroughly analyzed with comprehensive findings?
+#       - Has cross-document analysis been completed with integrated evaluation?
+#       - Has the final vendor evaluation been generated with structured questionnaire format?
+#       - Are findings documented covering ALL processed documents in actionable format?
+#       - Is the final report ready for executive review and SOC 2 compliance documentation?
+#
+#       The session is complete when all three analysis stages are finished including the final vendor recommendation.
+#   execution:
+#     strategy: "sequential"
+#     context:
+#       files:
+#         patterns:
+#           - "vendor-reviewer/**/*"
+#         base_path: "~"
+#         max_file_size: 1000000
+#         include_content: true
+#     agents:
+#       - id: "document-reader"
+#         context:
+#           signal: true
+#       - id: "questionnaire-analyzer"
+#         context:
+#           signal: true
+#       - id: "vendor-evaluator"
+#         context:
+#           signal: true
 
 # =============================================================================
 # MEMORY CONFIGURATION

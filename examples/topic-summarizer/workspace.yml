@@ -19,39 +19,38 @@ tools:
           type: "stdio"
           command: "npx"
           args: ["-y", "@modelcontextprotocol/server-github"]
-          env:
-            GITHUB_PERSONAL_ACCESS_TOKEN: "auto"
-        capabilities:
-          tools:
-            allowed:
-              [
-                "search_repositories",
-                "get_repository",
-                "list_repository_contents",
-                "get_file_contents",
-                "search_issues",
-                "search_code",
-              ]
-        timeout_ms: 30000
+        env:
+          GITHUB_PERSONAL_ACCESS_TOKEN: "auto"
+        tools:
+          allow:
+            [
+              "search_repositories",
+              "get_repository",
+              "list_repository_contents",
+              "get_file_contents",
+              "search_issues",
+              "search_code",
+            ]
+        client_config:
+          timeout: "30s"
 
       # Atlas Platform Integration - Library and Workspace Management
       atlas-platform:
         transport:
           type: "http"
           url: "http://localhost:8080/mcp"
-        capabilities:
-          tools:
-            allowed:
-              [
-                "atlas_library_list",
-                "atlas_library_get",
-                "atlas_library_search",
-                "atlas_library_store",
-                "atlas_library_stats",
-                "atlas_library_templates",
-              ]
-        timeout_ms: 30000
-
+        tools:
+          allow:
+            [
+              "atlas_library_list",
+              "atlas_library_get",
+              "atlas_library_search",
+              "atlas_library_store",
+              "atlas_library_stats",
+              "atlas_library_templates",
+            ]
+        client_config:
+          timeout: "30s"
 # =============================================================================
 # JOB DEFINITIONS - AUTOMATED AI DISCOVERY WORKFLOW
 # =============================================================================
@@ -66,15 +65,16 @@ jobs:
     triggers:
       - signal: "timer-github-scan"
       - signal: "manual-scan"
-    session_prompts:
-      planning: |
+    prompt: |
+      Planning:
         Plan a comprehensive AI repository discovery and analysis session:
         1. Search GitHub for recently created AI agent repositories
         2. Filter results by quality indicators (stars, documentation, code structure)
         3. Extract key information about each repository
         4. Generate detailed summaries with trend analysis
         5. Store findings in workspace memory for historical tracking
-      evaluation: |
+
+      Evaluation:
         Evaluate the success of the AI discovery session:
         - Were new AI agent repositories successfully discovered?
         - Was the content analysis comprehensive and accurate?
@@ -84,13 +84,15 @@ jobs:
       strategy: "sequential"
       agents:
         - id: "github-researcher"
-          task: "Search GitHub for new AI agent repositories, extract metadata and content, perform initial filtering"
-          input_source: "signal"
+          context:
+            signal: true
+            task: "Search GitHub for new AI agent repositories, extract metadata and content, perform initial filtering"
         - id: "topic-summarizer"
-          task: "Analyze discovered repositories, generate comprehensive summaries, and store insights"
-          input_source: "previous"
+          context:
+            steps: "previous"
+            task: "Analyze discovered repositories, generate comprehensive summaries, and store insights"
       context:
-        filesystem:
+        files:
           patterns: ["summaries/*.md", "reports/*.json"]
           base_path: "."
           max_file_size: 1048576 # 1MB
@@ -101,15 +103,18 @@ jobs:
     description: "On-demand research for specific AI topics or repositories"
     triggers:
       - signal: "manual-scan"
-        condition: |
-          data.mode === "custom" && data.topic
+        condition:
+          prompt: |
+            data.mode === "custom" && data.topic
     execution:
       strategy: "sequential"
       agents:
         - id: "github-researcher"
-          task: "Research the specified topic or repository in detail"
+          context:
+            task: "Research the specified topic or repository in detail"
         - id: "topic-summarizer"
-          task: "Create comprehensive analysis and summary of findings"
+          context:
+            task: "Create comprehensive analysis and summary of findings"
 
 # =============================================================================
 # AGENT CONFIGURATION - AI RESEARCH SPECIALISTS
@@ -121,17 +126,17 @@ jobs:
 agents:
   github-researcher:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "GitHub repository discovery specialist for AI agent projects"
-    tools:
-      mcp: ["github-api"]
-    max_steps: 15
-    tool_choice: "auto"
-    temperature: 0.3
-    max_tokens: 4000
+    description: "GitHub repository discovery specialist for AI agent projects"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools: ["github-api"]
+      max_steps: 15
+      tool_choice: "auto"
+      temperature: 0.3
+      max_tokens: 4000
 
-    prompts:
-      system: |
+      prompt: |
         You are a GitHub research specialist focused on discovering and analyzing AI Agent repositories.
 
         **Your Research Process**:
@@ -220,17 +225,17 @@ agents:
 
   topic-summarizer:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "AI project analysis and trend summarization specialist"
-    tools:
-      mcp: ["atlas-platform"]
-    max_steps: 8
-    tool_choice: "auto"
-    temperature: 0.4
-    max_tokens: 4000
+    description: "AI project analysis and trend summarization specialist"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools: ["atlas-platform"]
+      max_steps: 8
+      tool_choice: "auto"
+      temperature: 0.4
+      max_tokens: 4000
 
-    prompts:
-      system: |
+      prompt: |
         You are an AI project analysis specialist who creates comprehensive summaries and trend analysis.
 
         **Your Analysis Process**:
@@ -311,9 +316,10 @@ signals:
   # Automated Timer-Based Discovery
   timer-github-scan:
     description: "Automated timer signal for GitHub AI repository discovery every 30 minutes"
-    provider: "cron-scheduler"
-    schedule: "*/30 * * * *" # Every 30 minutes
-    timezone: "UTC"
+    provider: "schedule"
+    config:
+      schedule: "*/30 * * * *" # Every 30 minutes
+      timezone: "UTC"
     schema:
       type: "object"
       properties:
@@ -329,8 +335,8 @@ signals:
   manual-scan:
     description: "Manual HTTP trigger for on-demand AI repository research"
     provider: "http"
-    path: "/scan"
-    method: "POST"
+    config:
+      path: "/scan"
     schema:
       type: "object"
       properties:

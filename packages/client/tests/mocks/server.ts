@@ -28,7 +28,6 @@ export function createMockAtlasServer() {
         description: "A test workspace",
         status: "active",
         path: "/path/to/workspace",
-        hasActiveRuntime: true,
         createdAt: new Date().toISOString(),
         lastSeen: new Date().toISOString(),
       },

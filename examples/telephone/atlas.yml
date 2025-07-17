@@ -19,10 +19,10 @@ server:
 tools:
   mcp:
     client_config:
-      timeout: 30000
-    policies:
+      timeout: "30s"
+    tool_policy:
       type: "allowlist"
-      allowed: ["filesystem-mcp", "memory-mcp"]
+      allow: ["filesystem-mcp", "memory-mcp"]
 
 # No platform-specific agents for this example
 agents: {}
@@ -32,16 +32,43 @@ supervisors:
   workspace:
     model: "gemini-2.5-flash"
     memory: "workspace"
+    supervision:
+      level: "standard"
+      cache_enabled: true
+      cache_adapter: "memory"
+      cache_ttl_hours: 1
+      parallel_llm_calls: true
+      timeouts:
+        analysis: "10s"
+        validation: "8s"
     prompts:
       system: "You are a WorkspaceSupervisor for the telephone game workspace."
   session:
     model: "gemini-2.5-flash"
     memory: "session"
+    supervision:
+      level: "standard"
+      cache_enabled: true
+      cache_adapter: "memory"
+      cache_ttl_hours: 1
+      parallel_llm_calls: true
+      timeouts:
+        analysis: "10s"
+        validation: "8s"
     prompts:
       system: "You are a SessionSupervisor for the telephone game workspace."
   agent:
     model: "gemini-2.5-flash"
     memory: "agent"
+    supervision:
+      level: "minimal"
+      cache_enabled: true
+      cache_adapter: "memory"
+      cache_ttl_hours: 1
+      parallel_llm_calls: true
+      timeouts:
+        analysis: "2s"
+        validation: "1s"
     prompts:
       system: "You are an AgentSupervisor for the telephone game workspace."
 

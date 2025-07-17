@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
-import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
+import { WorkspaceManager } from "@atlas/core";
 
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();
@@ -28,9 +28,6 @@ export const workspaceResponseSchema = z.object({
   description: z.string().optional().meta({ description: "Workspace description" }),
   status: workspaceStatusSchema,
   path: z.string().meta({ description: "Filesystem path to the workspace" }),
-  hasActiveRuntime: z.boolean().meta({
-    description: "Whether the workspace has an active runtime",
-  }),
   createdAt: z.string().meta({ description: "ISO 8601 timestamp when workspace was created" }),
   lastSeen: z.string().meta({ description: "ISO 8601 timestamp when workspace was last seen" }),
 }).meta({
@@ -54,9 +51,6 @@ export const workspaceDetailsResponseSchema = z.object({
   description: z.string().optional().meta({ description: "Workspace description" }),
   status: workspaceStatusSchema,
   path: z.string().meta({ description: "Filesystem path to the workspace" }),
-  hasActiveRuntime: z.boolean().meta({
-    description: "Whether the workspace has an active runtime",
-  }),
   createdAt: z.string().meta({ description: "ISO 8601 timestamp when workspace was created" }),
   lastSeen: z.string().meta({ description: "ISO 8601 timestamp when workspace was last seen" }),
   config: z.unknown().meta({ description: "Full workspace configuration" }),
@@ -118,8 +112,9 @@ workspacesRoutes.get(
   }),
   async (c) => {
     try {
-      const manager = await getWorkspaceManager();
-      const workspaces = await manager.listWorkspaces();
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspaces = await manager.list({ includeSystem: true });
       return c.json(workspaces);
     } catch (error) {
       return c.json({
@@ -171,8 +166,9 @@ workspacesRoutes.get(
     const { workspaceId } = c.req.valid("param");
 
     try {
-      const manager = await getWorkspaceManager();
-      const workspace = await manager.getWorkspace(workspaceId);
+      const ctx = c.get("app");
+      const manager = ctx.getWorkspaceManager();
+      const workspace = await manager.find({ id: workspaceId });
 
       if (!workspace) {
         return c.json({

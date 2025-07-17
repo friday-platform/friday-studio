@@ -7,7 +7,7 @@ import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
 import { AtlasDaemon } from "@atlas/atlasd";
 import { AtlasClient } from "@atlas/client";
-import { getWorkspaceManager, resetWorkspaceManager } from "../src/core/workspace-manager.ts";
+// Tests will use client API for verification instead of direct workspace manager access
 
 // Helper to create a test workspace directory with workspace.yml
 async function createTestWorkspaceWithYaml(
@@ -19,9 +19,8 @@ async function createTestWorkspaceWithYaml(
   const workspacePath = join(basePath, dirName);
   await ensureDir(workspacePath);
 
-  // Create a workspace.yml with the specified name
-  const workspaceYml = `
-version: "1.0"
+  // Create a workspace.yml with the specified name that matches v2 schema
+  const workspaceYml = `version: "1.0"
 
 workspace:
   name: "${workspaceName}"${
@@ -33,16 +32,28 @@ workspace:
 
 signals:
   test-signal:
-    provider: cli
-    name: test-signal
+    provider: http
+    description: Test signal for integration tests
+    config:
+      path: /test-signal
 
 jobs:
   test-job:
     name: test-job
-    steps:
-      - tool: echo
-        arguments:
-          message: "Hello"
+    description: Test job for integration tests
+    execution:
+      agents: ["test-agent"]
+      strategy: sequential
+
+agents:
+  test-agent:
+    type: llm
+    description: Test agent for integration tests
+    config:
+      model: claude-3-5-sonnet-20241022
+      prompt: |
+        You are a test agent for integration tests. 
+        Please respond to requests in a helpful and concise manner.
 `;
 
   await Deno.writeTextFile(join(workspacePath, "workspace.yml"), workspaceYml);
@@ -51,7 +62,7 @@ jobs:
 
 // Helper to reset state between tests
 async function resetTestState() {
-  resetWorkspaceManager();
+  // Workspace manager cleanup now handled by daemon shutdown
   // Clear any persisted data
   const testKvPath = join(Deno.env.get("HOME") || "", ".atlas", "test.db");
   try {

@@ -1,17 +1,9 @@
 import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
-import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
-import {
-  type CoreMessage,
-  generateText,
-  jsonSchema,
-  streamText,
-  Tool,
-  ToolCall,
-  ToolResult,
-} from "ai";
-import { z } from "zod/v4";
+import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
 import { MCPManager } from "@atlas/mcp";
+import { type CoreMessage, generateText, streamText, Tool, ToolCall, ToolResult } from "ai";
+import { z } from "zod";
 import { logger } from "../../../src/utils/logger.ts";
 
 // Runtime validation schemas
@@ -144,6 +136,24 @@ export class LLMProvider {
         });
       }
 
+      // Enhanced logging before AI SDK call
+      if (tools?.stream_reply) {
+        logger.info("stream_reply tool details before AI SDK call", {
+          hasParameters: !!tools.stream_reply.parameters,
+          parametersType: tools.stream_reply.parameters?.constructor.name,
+          parameterSchema: tools.stream_reply.parameters?._def
+            ? {
+              typeName: tools.stream_reply.parameters._def.typeName,
+              shape: tools.stream_reply.parameters._def.shape
+                ? (typeof tools.stream_reply.parameters._def.shape === "function"
+                  ? Object.keys(tools.stream_reply.parameters._def.shape() || {})
+                  : Object.keys(tools.stream_reply.parameters._def.shape || {}))
+                : "no shape",
+            }
+            : "no _def",
+        });
+      }
+
       const result = await generateText({
         model,
         messages,
@@ -153,6 +163,20 @@ export class LLMProvider {
         maxTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
         abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
+      });
+
+      // Log the raw result from AI SDK
+      logger.info("AI SDK generateText result", {
+        hasText: !!result.text,
+        textLength: result.text?.length || 0,
+        toolCallsCount: result.toolCalls?.length || 0,
+        toolCalls: result.toolCalls?.map((tc) => ({
+          toolName: tc.toolName,
+          hasArgs: !!tc.args,
+          argsType: typeof tc.args,
+          args: tc.args,
+        })),
+        steps: result.steps?.length || 0,
       });
 
       return {
@@ -179,7 +203,7 @@ export class LLMProvider {
   /**
    * Generate mock response for testing
    */
-  private static async generateMockResponse(
+  private static generateMockResponse(
     userPrompt: string,
     options: LLMOptions,
   ): Promise<LLMResponse> {
@@ -228,12 +252,12 @@ export class LLMProvider {
       mock: true,
     });
 
-    return {
+    return Promise.resolve({
       text: mockText,
       toolCalls: [],
       toolResults: [],
       steps: [],
-    };
+    });
   }
 
   /**
@@ -377,7 +401,7 @@ export class LLMProvider {
   }
 
   /**
-   * Ensures all tools have AI SDK's required internal symbols via jsonSchema wrapper
+   * Aggregate tools from all sources - all tools are already AI SDK-compatible
    */
   private static async prepareTools(
     context: {
@@ -387,76 +411,12 @@ export class LLMProvider {
   ): Promise<Record<string, Tool>> {
     const allTools: Record<string, Tool> = {};
 
+    // All tools are already AI SDK Tools - no conversion needed
     if (context.tools) {
-      for (const [toolName, tool] of Object.entries(context.tools)) {
-        // Special handling for workspace_draft_update to avoid jsonSchema wrapper issues
-        if (toolName === "workspace_draft_update") {
-          logger.error(
-            "DEBUG: Using raw schema for workspace_draft_update to avoid jsonSchema wrapper",
-          );
-          const params = tool.parameters;
-          const paramsCopy = JSON.parse(JSON.stringify(params));
-
-          // Use a simpler schema that Gemini can handle
-          const simplifiedSchema = {
-            type: "object",
-            properties: {
-              draftId: {
-                type: "string",
-                description: "Draft workspace ID",
-              },
-              updates: {
-                type: "string",
-                description: "Configuration updates to apply as JSON string",
-              },
-              updateDescription: {
-                type: "string",
-                description: "Natural language description of what changed",
-              },
-            },
-            required: ["draftId", "updates", "updateDescription"],
-            additionalProperties: false,
-          };
-
-          allTools[toolName] = {
-            ...tool,
-            parameters: jsonSchema(simplifiedSchema),
-          } as Tool;
-          continue;
-        }
-
-        // AI SDK requires Symbol.for("vercel.ai.schema") on parameters
-        const params = tool.parameters;
-
-        const needsWrapping = params &&
-          typeof params === "object" &&
-          !params[Symbol.for("vercel.ai.schema")] && // Not already wrapped by AI SDK
-          !params[Symbol.for("vercel.ai.validator")]; // Also check validator symbol
-
-        if (needsWrapping) {
-          logger.debug("Wrapping tool parameters with jsonSchema", {
-            tool: toolName,
-            originalParams: params,
-          });
-
-          // Create a deep copy of params to avoid mutation issues
-          const paramsCopy = JSON.parse(JSON.stringify(params));
-
-          allTools[toolName] = {
-            ...tool,
-            parameters: jsonSchema(paramsCopy),
-          } as Tool;
-        } else {
-          logger.debug("Tool already has proper format", {
-            tool: toolName,
-            hasAiSchema: !!params?.[Symbol.for("vercel.ai.schema")],
-            hasValidator: !!params?.[Symbol.for("vercel.ai.validator")],
-          });
-          allTools[toolName] = tool;
-        }
-      }
+      Object.assign(allTools, context.tools);
     }
 
+    // MCP tools already return AI SDK Tools
     if (context.mcpServers && context.mcpServers.length > 0) {
       try {
         const mcpTools = await this.mcpManager.getToolsForServers(context.mcpServers);
@@ -468,6 +428,24 @@ export class LLMProvider {
         });
       }
     }
+
+    // Debug logging for prepared tools
+    logger.info("Prepared tools for LLM", {
+      toolCount: Object.keys(allTools).length,
+      toolNames: Object.keys(allTools),
+      // Detailed logging for stream_reply tool
+      streamReplyDetails: allTools.stream_reply
+        ? {
+          hasParameters: !!allTools.stream_reply.parameters,
+          parametersType: allTools.stream_reply.parameters?.constructor.name,
+          parameterKeys: allTools.stream_reply.parameters?._def?.shape
+            ? (typeof allTools.stream_reply.parameters._def.shape === "function"
+              ? Object.keys(allTools.stream_reply.parameters._def.shape() || {})
+              : Object.keys(allTools.stream_reply.parameters._def.shape || {}))
+            : "no shape available",
+        }
+        : "stream_reply not found",
+    });
 
     return allTools;
   }

@@ -17,6 +17,7 @@ interface AtlasConfig {
 interface TypingState {
   isTyping: boolean;
   elapsedSeconds: number;
+  message?: string;
 }
 
 interface AppContextType {
@@ -230,7 +231,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
               author="Atlas"
               date={welcomeTimestamp}
               message={`How can I help you today? Here are some options to get started:
-- "Tell me about the features in Atlas dummy"
+- "Tell me about the features in Atlas"
 - "Create a new workspace called..."
 - "Show me any available Workspaces that I can use right now"`}
               authorColor="blue"

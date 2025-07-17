@@ -1,7 +1,7 @@
 import { exists } from "@std/fs";
 import { ConfigLoader, WorkspaceConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
+import { getWorkspaceManager } from "@atlas/core"; // TODO: Use @atlas/client instead
 
 // Helper function to resolve workspace and load config
 export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
@@ -16,8 +16,8 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find workspace by ID or name in the registry
-    const targetWorkspace = (await registry.findById(workspaceId)) ||
-      (await registry.findByName(workspaceId));
+    const targetWorkspace = (await registry.find({ id: workspaceId })) ||
+      (await registry.find({ name: workspaceId }));
 
     if (!targetWorkspace) {
       throw new Error(
@@ -54,8 +54,8 @@ export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const adapter = new FilesystemConfigAdapter();
-    const configLoader = new ConfigLoader(adapter);
+    const adapter = new FilesystemConfigAdapter(workspacePath);
+    const configLoader = new ConfigLoader(adapter, workspacePath);
     const mergedConfig = await configLoader.load();
     return { workspace: workspaceInfo, config: mergedConfig.workspace };
   } finally {
@@ -70,14 +70,14 @@ export async function resolveWorkspaceAndConfigNoCwd(workspaceId: string): Promi
 }> {
   const registry = await getWorkspaceManager();
   await registry.initialize();
-  const targetWorkspace = await registry.findById(workspaceId);
+  const targetWorkspace = await registry.find({ id: workspaceId });
 
   if (!targetWorkspace) {
     throw new Error(`Workspace ${workspaceId} not found`);
   }
 
   // ConfigLoader with absolute path - no directory change needed!
-  const adapter = new FilesystemConfigAdapter();
+  const adapter = new FilesystemConfigAdapter(targetWorkspace.path);
   const configLoader = new ConfigLoader(adapter, targetWorkspace.path);
   const mergedConfig = await configLoader.load();
 
@@ -101,8 +101,8 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
 
   if (workspaceId) {
     // Find by ID or name in registry
-    const workspace = (await registry.findById(workspaceId)) ||
-      (await registry.findByName(workspaceId));
+    const workspace = (await registry.find({ id: workspaceId })) ||
+      (await registry.find({ name: workspaceId }));
 
     if (!workspace) {
       throw new Error(
@@ -118,7 +118,7 @@ export async function resolveWorkspaceOnly(workspaceId?: string): Promise<{
     };
   } else {
     // Try current directory
-    const currentWorkspace = await registry.findByPath(Deno.cwd());
+    const currentWorkspace = await registry.find({ path: Deno.cwd() });
 
     if (currentWorkspace) {
       return {
@@ -151,8 +151,8 @@ export async function loadWorkspaceConfig(workspacePath: string): Promise<Worksp
   const originalCwd = Deno.cwd();
   try {
     Deno.chdir(workspacePath);
-    const adapter = new FilesystemConfigAdapter();
-    const configLoader = new ConfigLoader(adapter);
+    const adapter = new FilesystemConfigAdapter(workspacePath);
+    const configLoader = new ConfigLoader(adapter, workspacePath);
     const mergedConfig = await configLoader.load();
     return mergedConfig.workspace;
   } finally {
@@ -162,7 +162,7 @@ export async function loadWorkspaceConfig(workspacePath: string): Promise<Worksp
 
 // Load workspace config without directory change (for interactive)
 export async function loadWorkspaceConfigNoCwd(workspacePath: string): Promise<WorkspaceConfig> {
-  const adapter = new FilesystemConfigAdapter();
+  const adapter = new FilesystemConfigAdapter(workspacePath);
   const configLoader = new ConfigLoader(adapter, workspacePath);
   const mergedConfig = await configLoader.load();
   return mergedConfig.workspace;

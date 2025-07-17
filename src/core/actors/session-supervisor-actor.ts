@@ -1,24 +1,40 @@
 /**
- * Session Supervisor Actor - Direct orchestration for session management
- * Migrated from SessionSupervisorWorker to eliminate worker complexity
+ * Session Supervisor Actor
  *
- * Handles:
- * - Multi-step reasoning with transparent thinking
- * - Tool call orchestration with optimized LLM calls
- * - Pre-computed job specs from registry cache
- * - Supervision level-based execution strategies
+ * Orchestrates the execution of agent sessions within Atlas workspaces.
+ * Manages the complete lifecycle of a session from planning through execution.
+ *
+ * Key responsibilities:
+ * - Creates execution plans using multi-step reasoning or cached job specs
+ * - Executes agents in sequential or parallel phases
+ * - Monitors progress and applies supervision-level controls
+ * - Handles memory operations for fact extraction and summaries
  */
 
-import { type ChildLogger, logger } from "../../utils/logger.ts";
-import { getWorkspaceManager } from "../workspace-manager.ts";
-import { AgentExecutionActor } from "./agent-execution-actor.ts";
+import type { JobSpecification } from "@atlas/config";
+import type {
+  ActorInitParams,
+  AgentExecutePayload,
+  AgentExecutionConfig,
+  AgentTask,
+  BaseActor,
+  CombinedAgentInput,
+  ExecutionPlanReasoningStep,
+  SessionResult,
+  SessionSupervisorConfig,
+  ToolExecutorResult,
+} from "@atlas/core";
+import type {
+  ReasoningExecutionResult,
+  ReasoningResult,
+  SessionReasoningContext,
+} from "@atlas/reasoning";
 import { createReasoningMachine, generateThinking, parseAction } from "@atlas/reasoning";
 import { createActor, toPromise } from "xstate";
-import { BehaviorTreeStrategy } from "../execution/strategies/behavior-tree-strategy.ts";
-import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
-import type { JobSpecification, WorkspaceConfig } from "../../../packages/config/src/schemas.ts";
 import type { IWorkspaceSignal } from "../../types/core.ts";
-import type { AgentExecutePayload } from "../../types/messages.ts";
+import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
+import { AgentExecutionActor } from "./agent-execution-actor.ts";
 
 export interface SessionContext {
   sessionId: string;
@@ -52,25 +68,14 @@ export interface ExecutionPlan {
   reasoning: string;
   strategy: string;
   confidence: number;
-  reasoningSteps?: Array<{
-    iteration: number;
-    thinking: string;
-    action: string;
-    observation: string;
-  }>;
+  reasoningSteps?: ExecutionPlanReasoningStep[];
 }
 
 export interface ExecutionPhase {
   id: string;
   name: string;
   executionStrategy: "sequential" | "parallel";
-  agents: Array<{
-    agentId: string;
-    task: string;
-    inputSource?: string;
-    dependencies?: string[];
-    reasoning?: string;
-  }>;
+  agents: AgentTask[];
   reasoning?: string;
 }
 
@@ -84,21 +89,27 @@ export interface SessionSummary {
   results: AgentResult[];
 }
 
-export class SessionSupervisorActor {
+export class SessionSupervisorActor implements BaseActor {
+  readonly type = "session" as const;
   private sessionId: string;
   private workspaceId?: string;
   private logger: ChildLogger;
-  private id: string;
+  id: string;
   private sessionContext?: SessionContext;
-  private workspaceConfig?: WorkspaceConfig;
-  // Reasoning is now handled by the @atlas/reasoning package
-  private executionStrategy: BehaviorTreeStrategy;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
+  private status: "idle" | "planning" | "executing" | "completed" | "failed" = "idle";
+  private config?: SessionSupervisorConfig;
 
-  constructor(sessionId: string, workspaceId?: string, id?: string) {
+  constructor(
+    sessionId: string,
+    workspaceId?: string,
+    id?: string,
+    config?: SessionSupervisorConfig,
+  ) {
     this.id = id || crypto.randomUUID();
     this.sessionId = sessionId;
     this.workspaceId = workspaceId;
+    this.config = config;
 
     this.logger = logger.createChildLogger({
       actorId: this.id,
@@ -107,24 +118,47 @@ export class SessionSupervisorActor {
       workspaceId: this.workspaceId,
     });
 
-    // Initialize reasoning and execution engines
-    // Reasoning machine created on-demand in createExecutionPlan
-    this.executionStrategy = new BehaviorTreeStrategy();
-
     this.logger.info("Session supervisor actor initialized");
   }
 
-  async initialize(): Promise<void> {
+  setConfig(config: SessionSupervisorConfig): void {
+    this.config = config;
+    this.logger.info("Session config set", {
+      sessionId: this.sessionId,
+      agentCount: Object.keys(config.agents).length,
+      jobName: config.job.name,
+    });
+  }
+
+  initialize(params?: ActorInitParams): void {
+    if (params && "actorId" in params) {
+      this.id = params.actorId;
+      this.sessionId = params.parentId || this.sessionId;
+
+      this.logger = logger.createChildLogger({
+        actorId: this.id,
+        actorType: "session-supervisor",
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+      });
+    }
+
     this.logger.info("Initializing session supervisor actor");
 
-    // Load workspace config and determine supervision level
-    this.workspaceConfig = await this.loadWorkspaceConfig();
     this.supervisionLevel = this.getSupervisionLevel();
 
     this.logger.info("Session supervisor actor initialized", {
       supervisionLevel: this.supervisionLevel,
       workspaceId: this.workspaceId || "global",
     });
+  }
+
+  shutdown(): void {
+    this.logger.info("Session supervisor actor shutting down", {
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+    });
+    this.status = "completed";
   }
 
   initializeSession(context: SessionContext): void {
@@ -145,7 +179,7 @@ export class SessionSupervisorActor {
 
     const startTime = Date.now();
 
-    // 1. Check for pre-computed job specs in registry cache
+    // Check for pre-computed job specs
     const cachedPlan = this.getCachedJobSpec();
     if (cachedPlan) {
       this.logger.info("Using cached execution plan", {
@@ -155,11 +189,10 @@ export class SessionSupervisorActor {
       return cachedPlan;
     }
 
-    // Check if planning should be skipped based on job supervision settings
-    const skipPlanning = this.sessionContext.jobSpec?.supervision?.skip_planning;
+    // Check if planning should be skipped
+    const skipPlanning = this.sessionContext.jobSpec?.config?.supervision?.skip_planning;
     if (skipPlanning) {
       this.logger.info("Skipping planning phase due to job configuration");
-      // Return a simple plan with no agents if job spec is missing
       return {
         id: crypto.randomUUID(),
         phases: [],
@@ -169,10 +202,10 @@ export class SessionSupervisorActor {
       };
     }
 
-    // 2. Compute execution plan on-demand using multi-step reasoning engine
+    // Compute execution plan using reasoning engine
     this.logger.info("Computing execution plan using multi-step reasoning");
 
-    const reasoningContext = {
+    const reasoningContext: SessionReasoningContext = {
       sessionId: this.sessionContext.sessionId,
       workspaceId: this.sessionContext.workspaceId || "global",
       signal: this.sessionContext.signal,
@@ -182,34 +215,37 @@ export class SessionSupervisorActor {
         name: id,
         purpose: "System agent",
         type: "system" as const,
-        config: {} as any,
+        config: {},
       })),
       maxIterations: 5,
       timeLimit: 60000, // 1 minute
     };
 
-    // Create agent executor that uses AgentExecutionActor
     const agentExecutor = async (agentId: string, input: Record<string, unknown>) => {
+      // Get actual agent configuration
+      const agentExecutionConfig = this.getAgentExecutionConfig(agentId);
+
       const agentActor = new AgentExecutionActor(
-        agentId,
-        this.sessionContext?.workspaceId || "global",
+        crypto.randomUUID(),
+        agentExecutionConfig,
       );
 
       const payload: AgentExecutePayload = {
-        agent_id: agentId,
-        input: JSON.stringify(input),
-        task: "reasoning_task",
-        sessionId: this.sessionContext?.sessionId || "unknown",
-        workspaceId: this.sessionContext?.workspaceId || "global",
-        signal: this.sessionContext?.signal || {},
-        environment: {},
+        agentId,
+        input,
+        sessionContext: {
+          sessionId: this.sessionContext?.sessionId || "unknown",
+          workspaceId: this.sessionContext?.workspaceId || "global",
+        },
       };
 
-      return await agentActor.executeTask(crypto.randomUUID(), payload);
+      return await agentActor.executeTask(payload);
     };
 
-    // Create tool executor (for future tool integration)
-    const toolExecutor = (toolName: string, parameters: Record<string, unknown>) => {
+    const toolExecutor = (
+      toolName: string,
+      parameters: Record<string, unknown>,
+    ): Promise<ToolExecutorResult> => {
       return Promise.resolve({
         success: true,
         result: `Tool ${toolName} executed with parameters: ${JSON.stringify(parameters)}`,
@@ -217,11 +253,10 @@ export class SessionSupervisorActor {
       });
     };
 
-    // Create reasoning machine with our executors
     const machine = createReasoningMachine({
       think: generateThinking,
       parseAction,
-      executeAction: async (action, context) => {
+      executeAction: async (action): Promise<ReasoningExecutionResult> => {
         if (action.type === "agent_call" && action.agentId) {
           const result = await agentExecutor(action.agentId, action.parameters);
           return {
@@ -250,15 +285,12 @@ export class SessionSupervisorActor {
       jobGoal: reasoningContext.signal.id,
     });
 
-    // Run the reasoning machine
     const actor = createActor(machine, { input: reasoningContext });
     actor.start();
     const reasoningResult = await toPromise(actor);
 
-    // 3. Convert reasoning result to execution plan
     const executionPlan = this.convertReasoningToExecutionPlan(reasoningResult);
 
-    // 4. Cache the computed plan if caching is enabled
     if (this.shouldCachePlan()) {
       this.cachePlan(executionPlan);
     }
@@ -332,13 +364,11 @@ export class SessionSupervisorActor {
     const phaseResults: AgentResult[] = [];
 
     if (phase.executionStrategy === "sequential") {
-      // Sequential execution
       for (const agentTask of phase.agents) {
         const result = await this.executeAgent(agentTask, previousResults, phaseResults);
         phaseResults.push(result);
       }
     } else {
-      // Parallel execution
       const promises = phase.agents.map((agentTask) =>
         this.executeAgent(agentTask, previousResults, phaseResults)
       );
@@ -350,68 +380,50 @@ export class SessionSupervisorActor {
   }
 
   private async executeAgent(
-    agentTask: {
-      agentId: string;
-      task: string;
-      inputSource?: string;
-      dependencies?: string[];
-      reasoning?: string;
-    },
+    agentTask: AgentTask,
     previousResults: AgentResult[],
     _phaseResults: AgentResult[],
   ): Promise<AgentResult> {
     const startTime = Date.now();
 
-    // Resolve input based on input source
-    let input = this.sessionContext?.payload;
+    let input: unknown = this.sessionContext?.payload;
 
     if (agentTask.inputSource === "previous" && previousResults.length > 0) {
-      input = previousResults[previousResults.length - 1].output as Record<string, unknown>;
+      input = previousResults[previousResults.length - 1].output;
     } else if (agentTask.inputSource === "combined") {
-      input = {
-        original: this.sessionContext?.payload,
+      const combinedInput: CombinedAgentInput = {
+        original: this.sessionContext?.payload || {},
         previous: previousResults.map((r) => ({
           agentId: r.agentId,
           output: r.output,
         })),
       };
+      input = combinedInput;
     } else if (agentTask.dependencies?.length) {
       const lastDep = agentTask.dependencies[agentTask.dependencies.length - 1];
       const depResult = previousResults.find((r) => r.agentId === lastDep);
       if (depResult) {
-        input = depResult.output as Record<string, unknown>;
+        input = depResult.output;
       }
     }
 
-    this.logger.debug("DEBUG: Session supervisor task input preparation", {
-      agentId: agentTask.agentId,
-      task: agentTask.task,
-      inputSource: agentTask.inputSource,
-      inputType: typeof input,
-      inputKeys: input && typeof input === "object" ? Object.keys(input) : [],
-      inputPreview: input && typeof input === "object"
-        ? JSON.stringify(input).substring(0, 200)
-        : String(input),
-      sessionPayload: this.sessionContext?.payload,
-      hasSessionContext: !!this.sessionContext,
-    });
-
-    // Create agent execution payload
     const payload: AgentExecutePayload = {
-      agent_id: agentTask.agentId,
-      task: agentTask.task,
+      agentId: agentTask.agentId,
       input,
-      sessionId: this.sessionId,
-      workspaceId: this.workspaceId,
-      signal: this.sessionContext?.signal || {},
-      environment: {},
+      sessionContext: {
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId || "global",
+        task: agentTask.task,
+        reasoning: agentTask.reasoning,
+      },
     };
 
-    // Execute agent through AgentExecutionActor
+    // Get agent execution configuration
+    const agentExecutionConfig = this.getAgentExecutionConfig(agentTask.agentId);
+
     const agentActor = new AgentExecutionActor(
-      this.sessionId,
-      this.workspaceId,
       crypto.randomUUID(),
+      agentExecutionConfig,
     );
 
     await agentActor.initialize();
@@ -423,11 +435,19 @@ export class SessionSupervisorActor {
       reasoning: agentTask.reasoning,
     });
 
-    const result = await agentActor.executeTask(crypto.randomUUID(), payload);
+    let result;
+    try {
+      result = await agentActor.executeTask(payload);
+    } catch (error) {
+      this.logger.error("Agent execution failed", {
+        agentId: agentTask.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
 
     const duration = Date.now() - startTime;
 
-    // Extract reasoning and tool calls if available
     const agentResult: AgentResult = {
       agentId: agentTask.agentId,
       task: agentTask.task,
@@ -436,9 +456,8 @@ export class SessionSupervisorActor {
       duration,
       timestamp: new Date().toISOString(),
       reasoning: agentTask.reasoning,
-      // Tool calls would be extracted from result if the agent supports them
-      toolCalls: (result as { toolCalls?: unknown[] }).toolCalls,
-      toolResults: (result as { toolResults?: unknown[] }).toolResults,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
     };
 
     this.logger.info("Agent execution completed", {
@@ -455,16 +474,12 @@ export class SessionSupervisorActor {
     results: AgentResult[],
     _plan: ExecutionPlan,
   ): boolean {
-    // Simple evaluation - in practice this would use LLM analysis
-    // based on supervision level and job success criteria
-
     const supervisionConfig = getSupervisionConfig(this.supervisionLevel);
 
     if (!supervisionConfig.postExecutionValidation) {
-      return true; // Continue execution
+      return true;
     }
 
-    // Check if we have results and no obvious failures
     const hasResults = results.length > 0;
     const hasFailures = results.some((r) => !r.output);
 
@@ -472,7 +487,6 @@ export class SessionSupervisorActor {
       return false; // Stop on any failure in paranoid mode
     }
 
-    // Continue if we have more phases to execute
     return hasResults;
   }
 
@@ -483,7 +497,6 @@ export class SessionSupervisorActor {
   ): SessionSummary {
     const status = results.every((r) => r.output) ? "completed" : "partial";
 
-    // In practice, this would use LLM to generate reasoning about the session
     const reasoning =
       `Session executed ${results.length} agents across ${plan.phases.length} phases. ` +
       `Strategy: ${plan.strategy}, Confidence: ${plan.confidence}`;
@@ -501,7 +514,7 @@ export class SessionSupervisorActor {
 
   private handleMemoryOperations(summary: SessionSummary): void {
     const jobSpec = this.sessionContext?.jobSpec;
-    const memoryConfig = jobSpec?.memory;
+    const memoryConfig = jobSpec?.config?.memory;
     const memoryEnabled = memoryConfig?.enabled !== false;
 
     if (!memoryEnabled) {
@@ -509,7 +522,6 @@ export class SessionSupervisorActor {
       return;
     }
 
-    // Extract and store semantic facts
     if (memoryConfig?.fact_extraction !== false) {
       try {
         this.extractAndStoreSemanticFacts(summary);
@@ -519,8 +531,7 @@ export class SessionSupervisorActor {
       }
     }
 
-    // Generate working memory summary
-    if (memoryConfig?.working_memory_summary !== false) {
+    if (memoryConfig?.summary !== false) {
       try {
         this.generateWorkingMemorySummary(summary);
         this.logger.info("Working memory summary generated");
@@ -530,63 +541,46 @@ export class SessionSupervisorActor {
     }
   }
 
-  // Helper methods
-  private async loadWorkspaceConfig(): Promise<WorkspaceConfig> {
-    const workspaceManager = await getWorkspaceManager();
-
-    if (!this.workspaceId) {
-      const atlasConfig = await workspaceManager.getAtlasConfig();
-      if (!atlasConfig) {
-        throw new Error("Global atlas.yml configuration not found");
-      }
-      return atlasConfig;
-    } else {
-      const workspaceConfig = await workspaceManager.getWorkspaceConfigBySlug(this.workspaceId);
-      if (!workspaceConfig) {
-        throw new Error(`Workspace configuration not found: ${this.workspaceId}`);
-      }
-      return workspaceConfig;
-    }
-  }
-
   private getSupervisionLevel(): SupervisionLevel {
     const jobSpec = this.sessionContext?.jobSpec;
-    const levelStr = jobSpec?.supervision?.level || "standard";
+    const levelStr = jobSpec?.config?.supervision?.level || "standard";
 
     switch (levelStr) {
       case "minimal":
         return SupervisionLevel.MINIMAL;
-      case "paranoid":
+      case "detailed": // Config schema uses "detailed", maps to PARANOID
         return SupervisionLevel.PARANOID;
+      case "standard":
       default:
         return SupervisionLevel.STANDARD;
     }
   }
 
   private getCachedJobSpec(): ExecutionPlan | null {
-    // Check if we have a job spec from the workspace configuration
     if (!this.sessionContext?.jobSpec) {
       return null;
     }
 
     const jobSpec = this.sessionContext.jobSpec;
-
-    // Convert job spec to execution plan
     const planId = crypto.randomUUID();
-
-    // Create execution phases from job configuration
     const agents = jobSpec.execution?.agents || [];
+
     const phases: ExecutionPhase[] = [{
       id: crypto.randomUUID(),
       name: jobSpec.name || "Job Execution",
       executionStrategy: jobSpec.execution?.strategy || "sequential",
-      agents: agents.map((agent: any) => ({
-        agentId: agent.id,
-        task: agent.task || "Execute job task",
-        inputSource: agent.input_source || "signal",
-        dependencies: agent.dependencies,
-        reasoning: "Defined by job configuration",
-      })),
+      agents: agents.map((agent) => {
+        const agentId = typeof agent === "string" ? agent : agent.id;
+        const agentObj = typeof agent === "string" ? null : agent;
+
+        return {
+          agentId,
+          task: agentObj?.context?.task || "Execute job task",
+          inputSource: "signal",
+          dependencies: agentObj?.dependencies,
+          reasoning: "Defined by job configuration",
+        };
+      }),
     }];
 
     return {
@@ -604,31 +598,29 @@ export class SessionSupervisorActor {
   }
 
   private cachePlan(plan: ExecutionPlan): void {
-    // Cache the execution plan in the registry
-    // This would integrate with the WorkspaceManager's caching system
     this.logger.debug("Caching execution plan", { planId: plan.id });
   }
 
-  private convertReasoningToExecutionPlan(reasoningResult: any): ExecutionPlan {
+  private convertReasoningToExecutionPlan(reasoningResult: ReasoningResult): ExecutionPlan {
     const planId = crypto.randomUUID();
 
-    // Extract agent interactions from reasoning steps
-    const agentInteractions = reasoningResult.reasoning.steps
-      .filter((step: any) => step.action?.type === "agent_call" && step.action.agentId)
-      .map((step: any) => ({
-        agentId: step.action!.agentId!,
-        task: (step.action!.parameters.task as string) || "Process input",
+    const agentInteractions: AgentTask[] = reasoningResult.reasoning.steps
+      .filter((step) => step.action.type === "agent_call" && step.action.agentId)
+      .map((step) => ({
+        agentId: step.action.agentId!,
+        task: typeof step.action.parameters.task === "string"
+          ? step.action.parameters.task
+          : "Process input",
         inputSource: "previous",
         reasoning: step.thinking,
       }));
 
-    // Create execution phases based on reasoning steps
     const phases: ExecutionPhase[] = [{
       id: crypto.randomUUID(),
       name: "Multi-Step Reasoning Execution",
       executionStrategy: "sequential",
       agents: agentInteractions.length > 0
-        ? agentInteractions // Fallback to available agents if no specific agents were called
+        ? agentInteractions
         : this.sessionContext?.availableAgents.map((agentId) => ({
           agentId,
           task: "Process signal based on reasoning",
@@ -637,8 +629,9 @@ export class SessionSupervisorActor {
         })) || [],
     }];
 
-    // Convert reasoning steps to the interface format
-    const reasoningSteps = reasoningResult.reasoning.steps.map((step: any) => ({
+    const reasoningSteps: ExecutionPlanReasoningStep[] = reasoningResult.reasoning.steps.map((
+      step,
+    ) => ({
       iteration: step.iteration,
       thinking: step.thinking,
       action: step.action
@@ -647,10 +640,9 @@ export class SessionSupervisorActor {
       observation: step.observation,
     }));
 
-    // Calculate overall confidence from steps
     const avgConfidence = reasoningResult.reasoning.steps.length > 0
       ? reasoningResult.reasoning.steps.reduce(
-        (sum: number, step: any) => sum + (step.confidence || 0.7),
+        (sum, step) => sum + (step.confidence || 0.7),
         0,
       ) /
         reasoningResult.reasoning.steps.length
@@ -668,14 +660,74 @@ export class SessionSupervisorActor {
   }
 
   private extractAndStoreSemanticFacts(_summary: SessionSummary): void {
-    // Extract semantic facts from session results and store in knowledge graph
-    // This would integrate with the memory system
     this.logger.debug("Extracting semantic facts", { sessionId: this.sessionId });
   }
 
   private generateWorkingMemorySummary(_summary: SessionSummary): void {
-    // Generate working memory summary and store in episodic memory
-    // This would integrate with the memory system
     this.logger.debug("Generating working memory summary", { sessionId: this.sessionId });
+  }
+
+  /**
+   * Get agent configuration and create execution config
+   * Centralizes agent configuration access
+   */
+  private getAgentExecutionConfig(agentId: string): AgentExecutionConfig {
+    const agentConfig = this.config?.agents?.[agentId];
+    if (!agentConfig) {
+      this.logger.error("Agent configuration not found", {
+        agentId,
+        availableAgents: Object.keys(this.config?.agents || {}),
+        hasConfig: !!this.config,
+        hasAgents: !!this.config?.agents,
+      });
+      throw new Error(`Agent configuration not found: ${agentId}`);
+    }
+
+    return {
+      agentId,
+      agent: agentConfig,
+      tools: this.config?.tools?.mcp?.servers,
+      memory: this.config?.memory,
+    };
+  }
+
+  async execute(): Promise<SessionResult> {
+    const startTime = Date.now();
+    this.status = "executing";
+
+    try {
+      const summary = await this.executeSession();
+      const duration = Date.now() - startTime;
+      this.status = "completed";
+
+      return {
+        sessionId: this.sessionId,
+        status: summary.status === "completed" ? "success" : "error",
+        result: {
+          totalPhases: summary.totalPhases,
+          totalAgents: summary.totalAgents,
+          reasoning: summary.reasoning,
+          results: summary.results,
+        },
+        duration,
+      };
+    } catch (error) {
+      this.status = "failed";
+      return {
+        sessionId: this.sessionId,
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+        duration: Date.now() - startTime,
+      };
+    }
+  }
+
+  abort(): void {
+    this.logger.info("Aborting session", { sessionId: this.sessionId });
+    this.status = "failed";
+  }
+
+  getStatus(): "idle" | "planning" | "executing" | "completed" | "failed" {
+    return this.status;
   }
 }

@@ -1,65 +1,89 @@
 /**
- * Agent Execution Actor - Runs agents in main thread with direct function calls
- * Migrated from AgentExecutionWorker - preserves all functionality without worker complexity
+ * Agent Execution Actor - Executes agents (LLM, System, or Remote) within the Atlas actor hierarchy.
+ * Receives typed configuration and task payloads from SessionSupervisor, dispatches to appropriate
+ * agent implementation based on type, and returns execution results.
  */
 
+import type { LLMAgentConfig, RemoteAgentConfig, SystemAgentConfig } from "@atlas/config";
+import { parseDuration } from "@atlas/config";
+import type {
+  ActorInitParams,
+  AgentContext,
+  AgentExecutePayload,
+  AgentExecutionActor as IAgentExecutionActor,
+  AgentExecutionConfig,
+  AgentExecutionResult,
+  AgentResult,
+} from "@atlas/core";
+import { LLMProvider } from "@atlas/core";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
-import type { WorkspaceAgentConfig } from "../../../packages/config/src/schemas.ts";
-import { getWorkspaceManager } from "../workspace-manager.ts";
-import { SystemAgentRegistry } from "../system-agent-registry.ts";
 import { RemoteAgent } from "../agents/remote/remote-agent.ts";
-import type { AgentExecutePayload } from "../../types/messages.ts";
+import { SystemAgentRegistry } from "../system-agent-registry.ts";
 
-// Simple response wrapper - just for timing and error handling
-interface AgentExecutionResult {
-  output: unknown;
-  duration: number;
-}
-
-export class AgentExecutionActor {
-  private sessionId?: string;
-  private workspaceId?: string;
+export class AgentExecutionActor implements IAgentExecutionActor {
+  readonly type = "agent" as const;
   private logger: ChildLogger;
-  private id: string;
+  id: string;
+  private config: AgentExecutionConfig;
 
-  constructor(sessionId?: string, workspaceId?: string, id?: string) {
-    this.id = id || crypto.randomUUID();
-    this.sessionId = sessionId;
-    this.workspaceId = workspaceId;
+  constructor(
+    id: string,
+    config: AgentExecutionConfig,
+  ) {
+    this.id = id;
+    this.config = config;
 
     // Initialize logger
     this.logger = logger.createChildLogger({
       actorId: this.id,
       actorType: "agent-execution",
-      sessionId: this.sessionId,
-      workspaceId: this.workspaceId,
     });
   }
 
-  async initialize(): Promise<void> {
-    this.logger.info("Agent execution actor initialized");
+  initialize(params?: ActorInitParams): Promise<void> {
+    if (params) {
+      this.id = params.actorId;
+
+      // Update logger with new actor ID
+      this.logger = logger.createChildLogger({
+        actorId: this.id,
+        actorType: "agent-execution",
+      });
+    }
+
+    this.logger.info("Agent execution actor initialized", {
+      agentId: this.config.agentId,
+      agentType: this.config.agent.type,
+    });
+
+    return Promise.resolve();
   }
 
-  async executeTask(taskId: string, data: AgentExecutePayload): Promise<AgentExecutionResult> {
+  shutdown(): Promise<void> {
+    this.logger.info("Agent execution actor shutting down");
+    return Promise.resolve();
+  }
+
+  async executeTask(data: AgentExecutePayload): Promise<AgentExecutionResult> {
     const executionStart = Date.now();
 
-    // Get workspace configuration transparently
-    const workspaceConfig = await this.loadWorkspaceConfig();
+    // Get agent ID from payload
+    const agentId = data.agentId;
 
-    // Get agent config from workspace
-    const agentConfig = workspaceConfig.agents?.[data.agent_id];
-    if (!agentConfig) {
+    // Validate agent ID matches configuration
+    if (this.config.agentId !== agentId) {
       throw new Error(
-        `Agent configuration not found: ${data.agent_id} in workspace: ${
-          this.workspaceId || "global"
-        }`,
+        `Agent ID mismatch: expected ${this.config.agentId} but got ${agentId}`,
       );
     }
 
-    // Dispatch based on agent type - simple orchestration
+    const agentConfig = this.config.agent;
+
+    // Dispatch based on agent type
+    // @FIXME: results can be typed better. This requires work in the base-agent v2.
     let result: unknown;
     switch (agentConfig.type) {
-      case "system": // System agents in schema
+      case "system":
         result = await this.executeSystemAgent(agentConfig, data);
         break;
       case "llm":
@@ -68,8 +92,6 @@ export class AgentExecutionActor {
       case "remote":
         result = await this.executeRemoteAgent(agentConfig, data);
         break;
-      default:
-        throw new Error(`Unsupported agent type: ${agentConfig.type}`);
     }
 
     const duration = Date.now() - executionStart;
@@ -77,93 +99,63 @@ export class AgentExecutionActor {
   }
 
   private async executeSystemAgent(
-    agentConfig: WorkspaceAgentConfig,
+    agentConfig: SystemAgentConfig,
     request: AgentExecutePayload,
   ): Promise<unknown> {
     // For system agents, the 'agent' field specifies which system agent to use
-    const systemAgentId = (agentConfig as any).agent || request.agent_id;
+    const systemAgentId = agentConfig.agent;
 
     // Create system agent instance from registry
-    // Pass the full agent config including tools, prompts, etc.
-    const fullConfig = {
-      ...agentConfig.config,
-      tools: agentConfig.tools,
-      prompts: agentConfig.prompts,
-      model: agentConfig.model || agentConfig.config?.model,
-      temperature: agentConfig.temperature || agentConfig.config?.temperature,
-      max_tokens: agentConfig.max_tokens || agentConfig.config?.max_tokens,
-    };
+    // System agents have optional config object
+    const fullConfig = agentConfig.config || {};
 
     const systemAgent = SystemAgentRegistry.createAgent(
       systemAgentId,
       fullConfig,
     );
 
-    this.logger.debug(`Executing system agent: ${systemAgentId} (requested: ${request.agent_id})`);
+    this.logger.debug(`Executing system agent: ${systemAgentId}`, {
+      agentId: request.agentId,
+      sessionId: request.sessionContext?.sessionId,
+      workspaceId: request.sessionContext?.workspaceId,
+    });
 
-    // Use invoke method from BaseAgent - pass input as-is for system agents
+    // System agents receive input as-is without transformation
     return await systemAgent.invoke(request.input);
   }
 
   private async executeLLMAgent(
-    agentConfig: WorkspaceAgentConfig,
+    agentConfig: LLMAgentConfig,
     request: AgentExecutePayload,
-  ): Promise<unknown> {
-    this.logger.debug(`Executing LLM agent: ${request.agent_id}`, {
-      provider: agentConfig.provider,
-      model: agentConfig.model,
+  ): Promise<string> {
+    const llmConfig = agentConfig.config;
+
+    this.logger.debug(`Executing LLM agent: ${request.agentId}`, {
+      provider: llmConfig.provider,
+      model: llmConfig.model,
     });
 
-    // Use existing LLM infrastructure directly - no need for wrapper class
-    const { LLMProvider } = await import("@atlas/core");
+    const systemPrompt = llmConfig.prompt;
+    const userPrompt = request.input;
 
-    const systemPrompt = agentConfig.prompts?.system || "You are a helpful AI assistant.";
+    // Use generateTextWithTools if MCP servers or tools are configured
+    // Tools can come from the agent's config or from the execution config
+    const mcpServers = this.config.tools;
 
-    // Handle different input types - convert to string for LLM processing
-    let userPrompt: string;
-    if (typeof request.input === "string") {
-      userPrompt = request.input;
-    } else if (typeof request.input === "object" && request.input !== null) {
-      // If input is an object, use the task description as the primary prompt
-      // and include the input data as context
-      userPrompt = request.task || "Complete the requested task.";
-      if (Object.keys(request.input).length > 0) {
-        userPrompt += `\n\nContext data: ${JSON.stringify(request.input, null, 2)}`;
-      }
-    } else {
-      // Fallback to task description
-      userPrompt = request.task || "Complete the requested task.";
-    }
-
-    this.logger.debug("DEBUG: Agent execution input analysis", {
-      agentId: request.agent_id,
-      inputType: typeof request.input,
-      inputIsString: typeof request.input === "string",
-      inputLength: typeof request.input === "string" ? request.input.length : 0,
-      inputPreview: typeof request.input === "string"
-        ? request.input.substring(0, 100)
-        : JSON.stringify(request.input),
-      taskDescription: request.task || "none",
-      userPromptLength: userPrompt.length,
-      userPromptPreview: userPrompt.substring(0, 100),
-      systemPromptLength: systemPrompt.length,
-      hasSystemPrompt: !!agentConfig.prompts?.system,
-    });
-
-    // Use unified API - tools are optional
-    const result = await LLMProvider.generateText(userPrompt, {
+    // @FIXME: This is a temporary fix to get the agent execution actor working.
+    const result = await LLMProvider.generateText(JSON.stringify(userPrompt), {
       systemPrompt,
-      model: agentConfig.model || "claude-3-5-sonnet-20241022",
-      provider: agentConfig.provider || "google",
-      temperature: agentConfig.temperature || 0.7,
-      max_tokens: agentConfig.max_tokens || 4000,
-      mcpServers: this.extractMcpServers(agentConfig),
-      max_steps: agentConfig.max_steps || 10,
-      tool_choice: agentConfig.tool_choice,
+      model: llmConfig.model,
+      provider: llmConfig.provider,
+      temperature: llmConfig.temperature,
+      max_tokens: llmConfig.max_tokens,
+      mcpServers: mcpServers,
+      max_steps: llmConfig.max_steps,
+      tool_choice: llmConfig.tool_choice,
       operationContext: {
         operation: "llm_agent_execution",
-        agentId: request.agent_id,
-        workspaceId: this.workspaceId,
+        agentId: request.agentId,
+        workspaceId: request.sessionContext?.workspaceId,
       },
     });
 
@@ -171,70 +163,59 @@ export class AgentExecutionActor {
   }
 
   private async executeRemoteAgent(
-    agentConfig: WorkspaceAgentConfig,
+    agentConfig: RemoteAgentConfig,
     request: AgentExecutePayload,
   ): Promise<unknown> {
     // Create remote agent instance using existing infrastructure
     const remoteAgent = new RemoteAgent({
-      id: request.agent_id,
+      id: request.agentId,
       type: "remote" as const,
-      config: agentConfig as any, // Type conversion needed - will fix with proper types
+      config: {
+        type: "remote" as const,
+        protocol: agentConfig.config.protocol,
+        endpoint: agentConfig.config.endpoint,
+        // Convert Duration string to milliseconds if present
+        timeout: agentConfig.config.timeout ? parseDuration(agentConfig.config.timeout) : undefined,
+        // Include other config fields, excluding those we've already handled
+        ...Object.fromEntries(
+          Object.entries(agentConfig.config)
+            .filter(([key]) => !["type", "protocol", "endpoint", "timeout"].includes(key)),
+        ),
+      },
     });
 
     // Initialize with workspace context
     await remoteAgent.initialize();
 
-    this.logger.debug(`Executing remote agent: ${request.agent_id}`, {
-      protocol: agentConfig.protocol,
-      endpoint: agentConfig.endpoint,
+    this.logger.debug(`Executing remote agent: ${request.agentId}`, {
+      protocol: agentConfig.config.protocol,
+      endpoint: agentConfig.config.endpoint,
+      sessionId: request.sessionContext?.sessionId,
+      workspaceId: request.sessionContext?.workspaceId,
     });
 
-    // Use invoke method from BaseAgent
     return await remoteAgent.invoke(request.input as string);
   }
 
-  /**
-   * Extract MCP servers from modern tools.mcp format only
-   */
-  private extractMcpServers(agentConfig: WorkspaceAgentConfig): string[] | undefined {
-    if (
-      agentConfig.tools && typeof agentConfig.tools === "object" &&
-      !Array.isArray(agentConfig.tools)
-    ) {
-      const toolsConfig = agentConfig.tools as { mcp?: string[] };
-      if (toolsConfig.mcp && Array.isArray(toolsConfig.mcp)) {
-        return toolsConfig.mcp;
-      }
-    }
-    return undefined;
-  }
+  async execute(context: AgentContext): Promise<AgentResult> {
+    const payload: AgentExecutePayload = {
+      agentId: this.config.agentId,
+      input: context.input,
+      sessionContext: {
+        sessionId: context.sessionId,
+        workspaceId: context.workspaceId,
+        task: context.task,
+        reasoning: context.reasoning,
+      },
+    };
 
-  /**
-   * Load workspace configuration transparently
-   * - If workspaceId is provided: load specific workspace config from WorkspaceManager
-   * - If workspaceId is undefined: load global atlas.yml config from WorkspaceManager
-   */
-  private async loadWorkspaceConfig() {
-    const workspaceManager = await getWorkspaceManager();
+    const result = await this.executeTask(payload);
 
-    if (!this.workspaceId) {
-      // No workspace ID means we're in the global workspace (atlas.yml only)
-      this.logger.debug("Loading global atlas.yml configuration from WorkspaceManager");
-
-      const atlasConfig = await workspaceManager.getAtlasConfig();
-      if (!atlasConfig) {
-        throw new Error("Global atlas.yml configuration not found in registry");
-      }
-
-      // AtlasConfig is now a superset of WorkspaceConfig, use directly
-      return atlasConfig;
-    } else {
-      // Load specific workspace config from WorkspaceManager
-      const workspaceConfig = await workspaceManager.getWorkspaceConfigBySlug(this.workspaceId);
-      if (!workspaceConfig) {
-        throw new Error(`Workspace configuration not found: ${this.workspaceId}`);
-      }
-      return workspaceConfig;
-    }
+    return {
+      agentId: this.config.agentId,
+      output: result.output,
+      duration: result.duration,
+      metadata: result.metadata,
+    };
   }
 }

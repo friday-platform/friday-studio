@@ -34,6 +34,8 @@ export class AtlasLogger {
   private isInitialized = false;
   private isDetached = false;
   private detachedFileHandle?: Deno.FsFile;
+  private pendingOperations: Set<Promise<void>> = new Set();
+  private isClosing = false;
 
   private constructor() {
     // Paths will be set during initialization
@@ -51,9 +53,9 @@ export class AtlasLogger {
   /**
    * Reset the singleton instance - used for testing
    */
-  static resetInstance(): void {
+  static async resetInstance(): Promise<void> {
     if (AtlasLogger.instance) {
-      AtlasLogger.instance.close();
+      await AtlasLogger.instance.close();
       AtlasLogger.instance = undefined as any;
     }
   }
@@ -143,6 +145,11 @@ export class AtlasLogger {
       return;
     }
 
+    // Don't start new operations if we're closing
+    if (this.isClosing) {
+      return;
+    }
+
     const line = JSON.stringify(entry) + "\n";
     const encoder = new TextEncoder();
     const data = encoder.encode(line);
@@ -210,6 +217,11 @@ export class AtlasLogger {
     message: string,
     context?: LogContext,
   ): Promise<void> {
+    // Skip all logging during tests to prevent leaks
+    if (Deno.env.get("DENO_TESTING") === "true") {
+      return;
+    }
+
     const entry = this.formatMessage(level, message, context);
 
     // Skip console output in detached mode
@@ -240,8 +252,9 @@ export class AtlasLogger {
         }[level] || "\x1b[0m";
 
         const reset = "\x1b[0m";
+        const contextString = context ? ` ${JSON.stringify(context)}` : "";
         console.log(
-          `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}`,
+          `${color}${entry.timestamp} ${level.toUpperCase()} ${prefix}${reset} ${message}${contextString}`,
         );
       }
     }
@@ -260,7 +273,15 @@ export class AtlasLogger {
     // File output (now always available after initialization)
     if (this.fileWriter) {
       const target = context?.workspaceId ? `workspace:${context.workspaceId}` : "global";
-      await this.writeLog(target, entry);
+      const operation = this.writeLog(target, entry);
+
+      // Track this operation to ensure it completes before closing
+      this.pendingOperations.add(operation);
+      operation.finally(() => {
+        this.pendingOperations.delete(operation);
+      });
+
+      await operation;
     }
   }
 
@@ -315,7 +336,16 @@ export class AtlasLogger {
     }
   }
 
-  close(): void {
+  async close(): Promise<void> {
+    // Set closing flag to prevent new operations
+    this.isClosing = true;
+
+    // Wait for all pending operations to complete
+    if (this.pendingOperations.size > 0) {
+      await Promise.all(Array.from(this.pendingOperations));
+    }
+
+    // Now close all file handles
     if (this.fileWriter) {
       try {
         this.fileWriter.close();
@@ -347,6 +377,8 @@ export class AtlasLogger {
     this.isInitialized = false;
     this.initPromise = undefined;
     this.isDetached = false;
+    this.isClosing = false;
+    this.pendingOperations.clear();
   }
 }
 

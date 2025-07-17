@@ -3,13 +3,17 @@
  * Replaces worker-based orchestration with direct actor management
  */
 
-import { type Actor, createActor } from "xstate";
+import { MergedConfig } from "@atlas/config";
+import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
-import { createWorkspaceRuntimeMachine } from "./workspace-runtime-machine.ts";
+import {
+  createWorkspaceRuntimeMachine,
+  type WorkspaceRuntimeMachineInput,
+} from "./workspace-runtime-machine.ts";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
@@ -25,14 +29,14 @@ export interface WorkspaceRuntimeOptions {
 export class WorkspaceRuntime {
   private workspace: IWorkspace;
   private options: WorkspaceRuntimeOptions;
-  private config?: Record<string, unknown>;
-  private stateMachine: Actor<ReturnType<typeof createWorkspaceRuntimeMachine>>;
+  private config?: MergedConfig;
+  private stateMachine: ActorRefFrom<ReturnType<typeof createWorkspaceRuntimeMachine>>;
   private sessions: Map<string, IWorkspaceSession> = new Map();
   private fsmId: string;
 
   constructor(
     workspace: IWorkspace,
-    config?: Record<string, unknown>,
+    config: MergedConfig,
     options: WorkspaceRuntimeOptions = {},
   ) {
     this.workspace = workspace;
@@ -42,15 +46,20 @@ export class WorkspaceRuntime {
     // Create unique FSM instance ID for monitoring
     this.fsmId = crypto.randomUUID().slice(0, 8);
 
-    // Create and start the state machine
-    const machine = createWorkspaceRuntimeMachine({
+    // Create machine input
+    const machineInput: WorkspaceRuntimeMachineInput = {
       workspace,
       config,
       workspacePath: options.workspacePath,
       libraryStorage: options.libraryStorage,
-    });
+    };
 
-    this.stateMachine = createActor(machine);
+    // Create and start the state machine
+    const machine = createWorkspaceRuntimeMachine(machineInput);
+
+    this.stateMachine = createActor(machine, {
+      input: machineInput,
+    });
 
     // Subscribe to state changes for debugging
     this.stateMachine.subscribe((state) => {
@@ -117,9 +126,50 @@ export class WorkspaceRuntime {
         if (state.value !== "ready") {
           // If uninitialized, initialize first
           if (state.value === "uninitialized") {
+            logger.info("Workspace uninitialized, starting initialization", {
+              workspaceId: this.workspace.id,
+              currentState: state.value,
+            });
+
             this.stateMachine.send({ type: "INITIALIZE" });
             // Wait for ready state
             await this.waitForState(["ready"]);
+
+            // Get fresh state after initialization completes
+            const freshState = this.stateMachine.getSnapshot();
+            logger.info("Fresh state after initialization", {
+              workspaceId: this.workspace.id,
+              state: freshState.value,
+              hasSupervisor: !!freshState.context.supervisor,
+              supervisorId: freshState.context.supervisor?.id,
+              contextKeys: Object.keys(freshState.context),
+            });
+
+            if (freshState.value !== "ready") {
+              throw new Error(
+                `Failed to initialize workspace: expected 'ready' but got '${freshState.value}'`,
+              );
+            }
+
+            // Verify supervisor is initialized
+            if (!freshState.context.supervisor) {
+              logger.error("Supervisor not found in context", {
+                workspaceId: this.workspace.id,
+                contextKeys: Object.keys(freshState.context),
+                hasWorkspace: !!freshState.context.workspace,
+                hasConfig: !!freshState.context.config,
+                hasOptions: !!freshState.context.options,
+              });
+              throw new Error(
+                "Workspace reached ready state but supervisor is not initialized",
+              );
+            }
+
+            logger.info("Workspace initialization complete", {
+              workspaceId: this.workspace.id,
+              newState: freshState.value,
+              hasSupervisor: !!freshState.context.supervisor,
+            });
           } else {
             throw new Error(`Cannot process signal in state: ${state.value}`);
           }
@@ -131,27 +181,28 @@ export class WorkspaceRuntime {
         });
 
         // Use session ID from payload (for conversation continuity), otherwise generate new one
-        const sessionId = payload?.sessionId || crypto.randomUUID();
+        const sessionId = (typeof payload?.sessionId === "string" ? payload.sessionId : null) ||
+          crypto.randomUUID();
 
         // Create session
         const session = new Session(
           this.workspace.id,
           {
             triggers: [signal],
-            // deno-lint-ignore require-await
-            callback: async (result) => {
+            callback: (result) => {
               logger.info(`Session completed`, {
                 workspaceId: this.workspace.id,
-                sessionId,
+                sessionId: sessionId,
                 result,
               });
 
               // Notify state machine about completion
               this.stateMachine.send({
                 type: "SESSION_COMPLETED",
-                sessionId,
+                sessionId: sessionId,
                 result,
               });
+              return Promise.resolve();
             },
           },
           undefined, // agents
@@ -162,9 +213,12 @@ export class WorkspaceRuntime {
           true, // enableCognitiveLoop
         );
 
-        // Override session ID
-        // deno-lint-ignore no-explicit-any
-        (session as any).id = sessionId;
+        // Store session with proper ID
+        Object.defineProperty(session, "id", {
+          value: sessionId,
+          writable: false,
+          configurable: true,
+        });
 
         // Store session
         this.sessions.set(sessionId, session);
@@ -214,9 +268,6 @@ export class WorkspaceRuntime {
         }
       };
 
-      // Check immediately
-      checkState();
-
       // Subscribe to state changes
       const subscription = this.stateMachine.subscribe((state) => {
         if (targetStates.includes(state.value as string)) {
@@ -225,6 +276,9 @@ export class WorkspaceRuntime {
           resolve();
         }
       });
+
+      // Check immediately after subscribing
+      checkState();
     });
   }
 
@@ -530,7 +584,7 @@ export class WorkspaceRuntime {
 
     if (state.context.supervisor) {
       workers.push({
-        id: state.context.supervisor.id,
+        id: `supervisor-${this.workspace.id}`,
         type: "supervisor",
         state: "ready",
         metadata: {

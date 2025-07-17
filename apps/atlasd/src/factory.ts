@@ -1,11 +1,13 @@
 import { createFactory } from "hono/factory";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
+import type { WorkspaceManager } from "@atlas/core";
 
 // Define app context that will be available to all routes
 export interface AppContext {
   runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
   sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>>;
+  getWorkspaceManager(): WorkspaceManager;
   // Add other app internals as needed
 }
 

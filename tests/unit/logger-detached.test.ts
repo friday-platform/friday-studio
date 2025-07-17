@@ -27,7 +27,7 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
       await logger.error("Test error message");
 
       // Close to ensure writes are flushed
-      logger.close();
+      await logger.close();
 
       // Read the log file
       const content = await Deno.readTextFile(logFile);
@@ -68,7 +68,7 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
       // Write a log (if console output was happening, we'd see it in test output)
       await logger.info("This should not appear in console");
 
-      logger.close();
+      await logger.close();
 
       // Verify it was written to file
       const content = await Deno.readTextFile(logFile2);
@@ -77,7 +77,7 @@ Deno.test("AtlasLogger - detached mode", async (t) => {
     });
   } finally {
     // Cleanup
-    AtlasLogger.getInstance().close();
+    await AtlasLogger.getInstance().close();
 
     // Restore test mode
     if (originalTestMode) {
@@ -105,11 +105,12 @@ Deno.test("AtlasLogger - normal mode after detached", async () => {
     // First use detached mode
     await logger.initializeDetached(detachedLog);
     await logger.info("Detached message");
-    logger.close();
+    await logger.close();
 
     // Then use normal mode
     await logger.initialize();
     await logger.info("Normal message");
+    await logger.close();
 
     // The normal message should have gone to the global log, not the detached log
     const detachedContent = await Deno.readTextFile(detachedLog);
@@ -118,7 +119,7 @@ Deno.test("AtlasLogger - normal mode after detached", async () => {
     // Detached log should only have 2 entries (startup + detached message)
     assertEquals(detachedLines.length, 2);
   } finally {
-    AtlasLogger.getInstance().close();
+    await AtlasLogger.getInstance().close();
 
     // Restore test mode
     if (originalTestMode) {

@@ -8,6 +8,8 @@ export type {
   ReasoningAction,
   ReasoningCallbacks,
   ReasoningContext,
+  ReasoningExecutionResult,
   ReasoningResult,
   ReasoningStep,
+  SessionReasoningContext,
 } from "./types.ts";

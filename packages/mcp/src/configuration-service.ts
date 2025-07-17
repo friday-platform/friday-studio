@@ -141,7 +141,7 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
         agentId,
         serverId,
         hasOverrides: !!agentOverrides,
-        finalToolCount: secureConfig.tools?.allowed?.length || 0,
+        finalToolCount: secureConfig.tools?.allow?.length || 0,
         scope: secureConfig.scope,
       });
     }
@@ -281,10 +281,10 @@ export class WorkspaceMCPConfigurationService implements MCPConfigurationService
       ...baseConfig,
       tools: overrides.tools
         ? {
-          allowed: overrides.tools.allowed || baseConfig.tools?.allowed,
-          denied: [
-            ...(baseConfig.tools?.denied || []),
-            ...(overrides.tools.denied || []),
+          allow: overrides.tools.allow || baseConfig.tools?.allow,
+          deny: [
+            ...(baseConfig.tools?.deny || []),
+            ...(overrides.tools.deny || []),
           ],
         }
         : baseConfig.tools,

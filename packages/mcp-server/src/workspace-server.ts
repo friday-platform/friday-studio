@@ -17,21 +17,6 @@ export interface Logger {
   debug(message: string, context?: Record<string, unknown>): void;
 }
 
-// Rate limiting state
-interface RateLimitState {
-  requestCounts: Map<string, { count: number; resetTime: number }>; // key -> {count, resetTime}
-  activeSessions: Set<string>;
-}
-
-// Rate limit error
-class RateLimitError extends Error {
-  constructor(message: string, public retryAfter?: number) {
-    super(message);
-    this.name = "RateLimitError";
-    (this as unknown as { code: number }).code = -32000; // MCP server error code
-  }
-}
-
 export interface WorkspaceMCPServerDependencies {
   workspaceRuntime: {
     // SECURITY: Only expose safe, workspace-scoped job operations
@@ -52,18 +37,11 @@ export class WorkspaceMCPServer {
   private server: Server;
   private transport: StdioServerTransport;
   private dependencies: WorkspaceMCPServerDependencies;
-  private rateLimitState: RateLimitState;
   private logger: Logger;
 
   constructor(dependencies: WorkspaceMCPServerDependencies) {
     this.dependencies = dependencies;
     this.logger = dependencies.logger;
-
-    // Initialize rate limiting state
-    this.rateLimitState = {
-      requestCounts: new Map(),
-      activeSessions: new Set(),
-    };
 
     // Create server
     this.server = new Server(
@@ -187,33 +165,6 @@ export class WorkspaceMCPServer {
         throw new Error("MCP server is disabled for this workspace");
       }
 
-      // Rate limiting check - prevents abuse
-      try {
-        this.checkRateLimit(); // TODO: Extract actual client ID from request context
-      } catch (error) {
-        if (error instanceof RateLimitError) {
-          return {
-            content: [
-              {
-                type: "text",
-                text: JSON.stringify(
-                  {
-                    error: true,
-                    type: "rate_limit_exceeded",
-                    message: error.message,
-                    retryAfter: error.retryAfter,
-                  },
-                  null,
-                  2,
-                ),
-              },
-            ],
-            isError: true,
-          };
-        }
-        throw error;
-      }
-
       try {
         // Check if it's an allowed capability
         const discoverableCapabilities = serverConfig.discoverable?.capabilities || [];
@@ -268,16 +219,7 @@ export class WorkspaceMCPServer {
         if (discoverableJobs.includes(name)) {
           const { payload } = args as { payload?: unknown };
 
-          // Check concurrent session limit before triggering job
-          this.checkRateLimit(); // Additional check for session limit
-
-          const result = await this.dependencies.workspaceRuntime.triggerJob(
-            name,
-            payload,
-          );
-
-          // Track session for concurrent session limiting
-          this.trackSessionStart(result.sessionId);
+          const result = await this.dependencies.workspaceRuntime.triggerJob(name, payload);
 
           this.logger.info("WorkspaceMCPServer job triggered", {
             workspaceId: this.dependencies.workspaceConfig.workspace.id,
@@ -398,108 +340,6 @@ export class WorkspaceMCPServer {
     }
 
     return [...new Set(allowedCapabilities)]; // Remove duplicates
-  }
-
-  /**
-   * Check and enforce rate limits
-   * SECURITY: Prevents abuse of workspace MCP server
-   */
-  private checkRateLimit(clientId: string = "default"): void {
-    const serverConfig = this.dependencies.workspaceConfig.server?.mcp;
-    const rateLimits = serverConfig?.rate_limits;
-
-    if (!rateLimits) {
-      return; // No rate limits configured
-    }
-
-    const now = Date.now();
-    const hourInMs = 60 * 60 * 1000;
-
-    // Check requests per hour limit
-    if (rateLimits.requests_per_hour) {
-      const clientState = this.rateLimitState.requestCounts.get(clientId);
-      const resetTime = Math.floor(now / hourInMs) * hourInMs + hourInMs; // Next hour boundary
-
-      if (!clientState || clientState.resetTime <= now) {
-        // Reset or initialize counter
-        this.rateLimitState.requestCounts.set(clientId, {
-          count: 1,
-          resetTime,
-        });
-      } else {
-        // Increment counter and check limit
-        clientState.count++;
-        if (clientState.count > rateLimits.requests_per_hour) {
-          const retryAfter = Math.ceil((resetTime - now) / 1000); // seconds until reset
-
-          this.logger.warn("WorkspaceMCPServer rate limit exceeded", {
-            workspaceId: this.dependencies.workspaceConfig.workspace.id,
-            clientId,
-            requestCount: clientState.count,
-            limit: rateLimits.requests_per_hour,
-            retryAfter,
-          });
-
-          throw new RateLimitError(
-            `Rate limit exceeded: ${clientState.count}/${rateLimits.requests_per_hour} requests per hour`,
-            retryAfter,
-          );
-        }
-      }
-    }
-
-    // Check concurrent sessions limit
-    if (
-      rateLimits.concurrent_sessions &&
-      this.rateLimitState.activeSessions.size >= rateLimits.concurrent_sessions
-    ) {
-      this.logger.warn("WorkspaceMCPServer concurrent session limit exceeded", {
-        workspaceId: this.dependencies.workspaceConfig.workspace.id,
-        activeSessions: this.rateLimitState.activeSessions.size,
-        limit: rateLimits.concurrent_sessions,
-      });
-
-      throw new RateLimitError(
-        `Concurrent session limit exceeded: ${this.rateLimitState.activeSessions.size}/${rateLimits.concurrent_sessions} active sessions`,
-      );
-    }
-  }
-
-  /**
-   * Track session start for concurrent session limiting
-   */
-  private trackSessionStart(sessionId: string): void {
-    const serverConfig = this.dependencies.workspaceConfig.server?.mcp;
-    const rateLimits = serverConfig?.rate_limits;
-
-    if (rateLimits?.concurrent_sessions) {
-      this.rateLimitState.activeSessions.add(sessionId);
-
-      this.logger.debug("WorkspaceMCPServer session started", {
-        workspaceId: this.dependencies.workspaceConfig.workspace.id,
-        sessionId,
-        activeSessions: this.rateLimitState.activeSessions.size,
-        limit: rateLimits.concurrent_sessions,
-      });
-    }
-  }
-
-  /**
-   * Track session end for concurrent session limiting
-   */
-  private trackSessionEnd(sessionId: string): void {
-    const serverConfig = this.dependencies.workspaceConfig.server?.mcp;
-    const rateLimits = serverConfig?.rate_limits;
-
-    if (rateLimits?.concurrent_sessions) {
-      this.rateLimitState.activeSessions.delete(sessionId);
-
-      this.logger.debug("WorkspaceMCPServer session ended", {
-        workspaceId: this.dependencies.workspaceConfig.workspace.id,
-        sessionId,
-        activeSessions: this.rateLimitState.activeSessions.size,
-      });
-    }
   }
 
   /**

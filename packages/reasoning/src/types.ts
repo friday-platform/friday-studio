@@ -2,6 +2,26 @@
  * Core types for the reasoning machine
  */
 
+// User context for session-based reasoning
+export interface SessionReasoningContext {
+  sessionId: string;
+  workspaceId: string;
+  signal: {
+    id: string;
+    [key: string]: unknown;
+  };
+  payload: Record<string, unknown>;
+  availableAgents: Array<{
+    id: string;
+    name: string;
+    purpose: string;
+    type: "system" | "llm" | "remote";
+    config: Record<string, unknown>;
+  }>;
+  maxIterations: number;
+  timeLimit: number;
+}
+
 export interface ReasoningAction {
   type: "agent_call" | "tool_call" | "complete";
   agentId?: string;
@@ -20,7 +40,7 @@ export interface ReasoningStep {
   timestamp: number;
 }
 
-export interface ReasoningContext<TUserContext = any> {
+export interface ReasoningContext<TUserContext = SessionReasoningContext> {
   // User-provided context
   userContext: TUserContext;
 
@@ -32,7 +52,7 @@ export interface ReasoningContext<TUserContext = any> {
   currentIteration: number;
 }
 
-export interface ReasoningCallbacks<TUserContext = any> {
+export interface ReasoningCallbacks<TUserContext = SessionReasoningContext> {
   // Required: Generate thinking based on current state
   think: (context: ReasoningContext<TUserContext>) => Promise<{
     thinking: string;
@@ -97,4 +117,9 @@ export interface ReasoningResult {
     agentCalls: number;
     toolCalls: number;
   };
+}
+
+export interface ReasoningExecutionResult {
+  result: unknown;
+  observation: string;
 }

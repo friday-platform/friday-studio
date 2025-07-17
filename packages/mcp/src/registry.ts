@@ -33,8 +33,8 @@ export interface AgentConfig {
 
 export interface MCPServerOverrides {
   tools?: {
-    allowed?: string[];
-    denied?: string[];
+    allow?: string[];
+    deny?: string[];
   };
   timeout_ms?: number;
 }
@@ -230,11 +230,11 @@ export class MCPServerRegistry {
       auth: workspaceConfig.auth || platformConfig.auth,
       // Merge tools: workspace denied list appends to platform denied list
       tools: {
-        allowed: workspaceConfig.tools?.allowed ||
-          platformConfig.tools?.allowed,
-        denied: [
-          ...(platformConfig.tools?.denied || []),
-          ...(workspaceConfig.tools?.denied || []),
+        allow: workspaceConfig.tools?.allow ||
+          platformConfig.tools?.allow,
+        deny: [
+          ...(platformConfig.tools?.deny || []),
+          ...(workspaceConfig.tools?.deny || []),
         ],
       },
       // Workspace timeout overrides platform timeout

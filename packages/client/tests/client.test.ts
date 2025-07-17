@@ -76,7 +76,6 @@ Deno.test("AtlasClient - handles successful API responses", async () => {
     name: "Test Workspace",
     status: "active",
     path: "/test/workspace",
-    hasActiveRuntime: true,
     createdAt: "2024-01-01T10:00:00Z",
     lastSeen: "2024-01-01T10:00:00Z",
   }];

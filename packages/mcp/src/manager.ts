@@ -5,8 +5,8 @@
 import {
   type MCPAuthConfig,
   MCPAuthConfigSchema,
-  type MCPToolsConfig,
-  MCPToolsConfigSchema,
+  type MCPServerToolFilter,
+  MCPServerToolFilterSchema,
   MCPTransportConfigSchema,
 } from "@atlas/config";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -25,9 +25,10 @@ export const MCPServerConfigSchema = z.object({
   id: z.string(),
   transport: MCPTransportConfigSchema,
   auth: MCPAuthConfigSchema.optional(),
-  tools: MCPToolsConfigSchema.optional(),
+  tools: MCPServerToolFilterSchema.optional(),
   timeout_ms: z.number().positive().optional().default(30000),
   scope: z.enum(["platform", "workspace", "merged"]).optional(),
+  env: z.record(z.string(), z.string()).optional(),
 });
 
 // Infer TypeScript type from extended schema
@@ -103,7 +104,8 @@ export class MCPManager {
         }
 
         case "stdio": {
-          const { command, args, env } = validatedConfig.transport;
+          const { command, args } = validatedConfig.transport;
+          const env = validatedConfig.env;
 
           // Process environment variables and resolve "auto" values
           const processedEnv: Record<string, string> = {};
@@ -372,21 +374,22 @@ export class MCPManager {
    */
   private filterTools(
     tools: Record<string, unknown>,
-    filterConfig?: MCPToolsConfig,
+    filterConfig?: MCPServerToolFilter,
   ): Record<string, unknown> {
     const filtered: Record<string, unknown> = {};
 
     for (const [toolName, tool] of Object.entries(tools)) {
       // Apply allowed list
-      if (filterConfig?.allowed && !filterConfig.allowed.includes(toolName)) {
+      if (filterConfig?.allow && !filterConfig.allow.includes(toolName)) {
         continue;
       }
 
       // Apply denied list
-      if (filterConfig?.denied && filterConfig.denied.includes(toolName)) {
+      if (filterConfig?.deny && filterConfig.deny.includes(toolName)) {
         continue;
       }
 
+      // @FIXME: this is probably wrong.
       // Convert MCP tool format to AI SDK format if needed
       // MCP tools may have 'parameters' but AI SDK expects 'input_schema'
       if (tool && typeof tool === "object" && "parameters" in tool && !("input_schema" in tool)) {
@@ -408,8 +411,8 @@ export class MCPManager {
       operation: "mcp_tool_filtering",
       originalCount: Object.keys(tools).length,
       filteredCount: Object.keys(filtered).length,
-      allowedList: filterConfig?.allowed,
-      deniedList: filterConfig?.denied,
+      allowedList: filterConfig?.allow,
+      deniedList: filterConfig?.deny,
       filteredTools: Object.keys(filtered),
     });
 

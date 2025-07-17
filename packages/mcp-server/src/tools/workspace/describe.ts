@@ -36,7 +36,7 @@ export function registerWorkspaceDescribeTool(server: McpServer, ctx: ToolContex
 
         ctx.logger.info("Workspace described via daemon API", {
           workspaceId,
-          hasActiveRuntime: workspace.hasActiveRuntime,
+          status: workspace.status,
         });
 
         return createSuccessResponse({

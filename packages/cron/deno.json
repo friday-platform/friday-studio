@@ -3,8 +3,6 @@
   "version": "1.0.0",
   "exports": "./mod.ts",
   "imports": {
-    "@atlas/config": "../config/mod.ts",
-    "@atlas/storage": "../storage/mod.ts",
     "@std/path": "jsr:@std/path@^1.0.0",
     "@std/assert": "jsr:@std/assert@^1.0.0"
   },

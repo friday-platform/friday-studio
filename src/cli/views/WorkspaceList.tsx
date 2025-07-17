@@ -1,6 +1,6 @@
 import { Box, Text } from "ink";
 import { useEffect, useState } from "react";
-import { WorkspaceEntry, WorkspaceStatus as WSStatus } from "../../core/workspace-manager.ts";
+import { WorkspaceEntry, WorkspaceStatus as WSStatus } from "@atlas/core";
 // import { discoverWorkspaces } from "../modules/workspaces/discovery.ts";
 
 export const WorkspaceList = () => {

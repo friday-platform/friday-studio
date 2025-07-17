@@ -3,65 +3,121 @@
  * Extends BaseAgent with conversation-specific capabilities
  */
 
-import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
-import type { IAtlasAgent } from "../../../src/types/core.ts";
+import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
 import { LLMProvider } from "@atlas/core";
-import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
-import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
-import type { Tool } from "ai";
 import {
   createReasoningMachine,
   parseAction as parseReasoningAction,
   type ReasoningAction,
   type ReasoningCallbacks,
-  type ReasoningContext,
   type ReasoningResult,
 } from "@atlas/reasoning";
+import type { Tool } from "ai";
 import { createActor } from "xstate";
+import { z } from "zod";
+import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
+import {
+  ConversationStorageOutput,
+  createStreamsImplementation,
+  DaemonCapabilityRegistry,
+  type DaemonExecutionContext,
+} from "../../../src/core/daemon-capabilities.ts";
+import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
+import {
+  type AgentExecutionContext,
+  WorkspaceCapabilityRegistry,
+} from "../../../src/core/workspace-capabilities.ts";
+import { ValidationError } from "../../../src/utils/errors.ts";
 
-export interface ConversationAgentConfig {
+// Schema for execute method input validation
+const ConversationInputSchema = z.object({
+  message: z.string(),
+  streamId: z.string().optional(),
+  userId: z.string().optional(),
+  conversationId: z.string().optional(),
+});
+
+type ConversationInput = z.infer<typeof ConversationInputSchema>;
+
+// Interface for controls() method return type
+interface ConversationAgentControls {
   model?: string;
-  system_prompt?: string;
-  prompts?: {
-    system?: string;
-    user?: string;
-  };
-  tools?: string[];
   temperature?: number;
   max_tokens?: number;
-  use_reasoning?: boolean;
-  max_reasoning_steps?: number;
-  [key: string]: any; // Allow additional properties from agent config
+  tools?: string[];
 }
 
-export class ConversationAgent extends BaseAgent implements IAtlasAgent {
-  private config: ConversationAgentConfig;
+// Interface for tool execution options
+interface ConversationToolExecutionOptions {
+  toolCallId: string;
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  agentId: string;
+  streamId?: string;
+}
 
-  constructor(config: ConversationAgentConfig = {}, id?: string) {
+// Schema for reasoning action arguments
+const ReasoningActionArgsSchema = z.object({
+  thinking: z.string(),
+  action: z.enum(["tool_call", "complete"]),
+  toolName: z.string().optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
+  reasoning: z.string(),
+  messageContent: z.string().optional(),
+});
+
+type ReasoningActionArgs = z.infer<typeof ReasoningActionArgsSchema>;
+
+// Interface for reasoning user context
+interface ReasoningUserContext {
+  message: string;
+  streamId?: string;
+  conversationId: string;
+  tools: Record<string, Tool>;
+  historyContext?: string;
+  draftId: string | null;
+  streamedMessage?: string;
+}
+
+// Using SystemAgentMetadata from system-agent-registry.ts
+
+export class ConversationAgent extends BaseAgent {
+  private agentConfig: SystemAgentConfigObject;
+
+  constructor(config: SystemAgentConfigObject, id?: string) {
     super(undefined, id);
 
+    // Parse and validate the configuration
+    let parsedConfig: SystemAgentConfigObject;
+    try {
+      parsedConfig = SystemAgentConfigObjectSchema.parse(config);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        throw new ValidationError("Invalid configuration for ConversationAgent", e);
+      }
+      throw e;
+    }
+
     this.logger.info("ConversationAgent constructor called", {
-      configKeys: Object.keys(config),
-      config: JSON.stringify(config),
-      hasTools: !!config.tools,
-      toolsLength: config.tools?.length,
-      tools: config.tools,
+      configKeys: Object.keys(parsedConfig),
+      config: JSON.stringify(parsedConfig),
+      hasTools: !!parsedConfig.tools,
+      toolsLength: parsedConfig.tools?.length,
+      tools: parsedConfig.tools,
     });
 
-    this.config = {
+    this.agentConfig = {
       model: "gemini-2.5-flash",
-      system_prompt: "You are a helpful AI assistant for Atlas workspace conversations.",
+      prompt: "You are a helpful AI assistant for Atlas workspace conversations.",
       tools: [],
       temperature: 0.7,
       max_tokens: 2000,
       use_reasoning: false,
       max_reasoning_steps: 5,
-      ...config,
+      ...parsedConfig,
     };
 
-    // Check for prompts in config (passed from workspace) or use system_prompt
-    const systemPrompt = config.prompts?.system ||
-      this.config.system_prompt ||
+    // Use prompt from config or default
+    const systemPrompt = this.agentConfig.prompt ||
       "You are a helpful AI assistant.";
 
     // Set agent prompts based on configuration
@@ -89,12 +145,12 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     return "Interactive conversation agent for workspace collaboration";
   }
 
-  controls(): object {
+  controls(): ConversationAgentControls {
     return {
-      model: this.config.model,
-      temperature: this.config.temperature,
-      max_tokens: this.config.max_tokens,
-      tools: this.config.tools,
+      model: this.agentConfig.model,
+      temperature: this.agentConfig.temperature,
+      max_tokens: this.agentConfig.max_tokens,
+      tools: this.agentConfig.tools,
     };
   }
 
@@ -102,7 +158,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
    * Get default model for this agent
    */
   protected override getDefaultModel(): string {
-    return this.config.model || super.getDefaultModel();
+    return this.agentConfig.model || super.getDefaultModel();
   }
 
   /**
@@ -118,16 +174,24 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       input: JSON.stringify(input).substring(0, 200),
     });
 
-    // Extract message, streamId, and other metadata from input
-    const message = typeof input === "string" ? input : (input as any)?.message || "Hello";
-    const streamId = (input as any)?.streamId;
-    const userId = (input as any)?.userId;
-    const conversationId = (input as any)?.conversationId || streamId;
+    // Validate and extract input parameters
+    let validatedInput: ConversationInput;
+    try {
+      validatedInput = ConversationInputSchema.parse(input);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        throw new ValidationError("Invalid input for ConversationAgent", e);
+      }
+      throw e;
+    }
+
+    const { message, streamId, userId } = validatedInput;
+    const conversationId = validatedInput.conversationId || streamId;
 
     this.logger.info("Processing message", {
       message: message.substring(0, 100),
       systemPrompt: this.prompts.system.substring(0, 100),
-      model: this.config.model,
+      model: this.agentConfig.model,
       streamId,
       userId,
       conversationId,
@@ -142,13 +206,15 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     if (streamId) {
       try {
         const historyResult = await this.loadConversationHistory(streamId);
-        if (historyResult.success && historyResult.messages?.length > 0) {
+        if (
+          historyResult.success && "messages" in historyResult && historyResult.messages.length > 0
+        ) {
           historyContext = historyResult.historyContext || "";
           messagesInHistory = historyResult.messages.length;
           isNewConversation = false;
 
           // Convert messages to proper format
-          historyMessages = historyResult.messages.map((msg: any) => ({
+          historyMessages = historyResult.messages.map((msg) => ({
             role: msg.role,
             content: msg.content,
           }));
@@ -189,7 +255,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
 
     try {
       // Check if reasoning is enabled
-      if (this.config.use_reasoning) {
+      if (this.agentConfig.use_reasoning) {
         // Check if this is a simple greeting or acknowledgment
         const isSimpleMessage = this.isSimpleMessage(message);
 
@@ -235,7 +301,7 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         }
 
         this.logger.info("Using reasoning-based conversation", {
-          maxSteps: this.config.max_reasoning_steps,
+          maxSteps: this.agentConfig.max_reasoning_steps,
           message: message.substring(0, 100),
         });
 
@@ -265,17 +331,17 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
       }
 
       // Check if we have tools configured
-      const hasTools = this.config.tools && this.config.tools.length > 0;
+      const hasTools = this.agentConfig.tools && this.agentConfig.tools.length > 0;
 
       if (hasTools) {
         // Use tool-enabled completion for reasoning
         this.logger.info("Using tool-enabled completion", {
-          toolCount: this.config.tools.length,
-          tools: this.config.tools,
+          toolCount: this.agentConfig.tools.length,
+          tools: this.agentConfig.tools,
         });
 
         // Convert daemon capabilities to MCP-style tools
-        const daemonTools = await this.getDaemonCapabilityTools(streamId);
+        const daemonTools = this.getDaemonCapabilityTools(streamId);
 
         this.logger.info("Daemon tools prepared", {
           toolCount: Object.keys(daemonTools).length,
@@ -299,8 +365,8 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         this.logger.info("About to call generateTextWithTools", {
           message: message.substring(0, 100),
           toolCount: Object.keys(daemonTools).length,
-          model: this.config.model || "claude-3-5-sonnet-20241022",
-          temperature: this.config.temperature || 0.7,
+          model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
+          temperature: this.agentConfig.temperature || 0.7,
         });
 
         try {
@@ -317,10 +383,10 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
           // Use LLMProvider with unified API for tool-enabled completion
           const result = await LLMProvider.generateText(message, {
             systemPrompt: enhancedSystemPrompt,
-            model: this.config.model || "claude-3-5-sonnet-20241022",
+            model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
             provider: "google",
-            temperature: this.config.temperature || 0.7,
-            max_tokens: this.config.max_tokens || 4000,
+            temperature: this.agentConfig.temperature || 0.7,
+            max_tokens: this.agentConfig.max_tokens || 4000,
             tools: daemonTools,
             max_steps: 10,
             operationContext: {
@@ -364,11 +430,11 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
             stack: toolError instanceof Error ? toolError.stack : undefined,
             errorName: toolError instanceof Error ? toolError.constructor.name : typeof toolError,
             fullError: String(toolError),
-            cause: toolError instanceof Error && (toolError as any).cause
-              ? String((toolError as any).cause)
+            cause: toolError instanceof Error && toolError.cause
+              ? String(toolError.cause)
               : undefined,
             tools: Object.keys(daemonTools),
-            model: this.config.model,
+            model: this.agentConfig.model,
           });
           throw toolError;
         }
@@ -380,10 +446,10 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         }
         const response = await LLMProvider.generateText(message, {
           systemPrompt: enhancedSystemPrompt,
-          model: this.config.model || "claude-3-5-sonnet-20241022",
+          model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
           provider: "google",
-          temperature: this.config.temperature || 0.7,
-          max_tokens: this.config.max_tokens || 4000,
+          temperature: this.agentConfig.temperature || 0.7,
+          max_tokens: this.agentConfig.max_tokens || 4000,
           operationContext: {
             operation: "conversation_agent",
             agentId: this.id,
@@ -435,8 +501,8 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         errorType: error instanceof Error ? error.constructor.name : typeof error,
         fullError: String(error),
         cause: error instanceof Error && error.cause ? String(error.cause) : undefined,
-        hasTools: !!this.config.tools?.length,
-        toolCount: this.config.tools?.length || 0,
+        hasTools: !!this.agentConfig.tools?.length,
+        toolCount: this.agentConfig.tools?.length || 0,
       });
       throw error;
     }
@@ -445,168 +511,68 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
   /**
    * Convert daemon and workspace capabilities to tool format for LLM
    */
-  private async getDaemonCapabilityTools(streamId?: string): Promise<Record<string, Tool>> {
-    const tools: Record<string, any> = {};
+  private getDaemonCapabilityTools(streamId?: string): Record<string, Tool> {
+    const tools: Record<string, Tool> = {};
 
     // Ensure workspace capabilities are initialized
     WorkspaceCapabilityRegistry.initialize();
 
-    // Debug logging
-    this.logger.error("DEBUG: ConversationAgent getDaemonCapabilityTools called", {
-      configuredTools: this.config.tools || [],
-      streamId,
-    });
-
     // Get all daemon and workspace capabilities that match our configured tools
-    for (const toolName of this.config.tools || []) {
+    for (const toolName of this.agentConfig.tools || []) {
       // First check daemon capabilities
-      let capability = DaemonCapabilityRegistry.getCapability(toolName);
-
-      // If not found in daemon capabilities, check workspace capabilities
-      if (!capability) {
-        const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(toolName);
-        if (workspaceCapability) {
-          // Convert workspace capability to the same format as daemon capability
-          capability = {
-            id: workspaceCapability.id,
-            description: workspaceCapability.description,
-            inputSchema: workspaceCapability.inputSchema,
-            // The implementation will be wrapped below
-          };
-        }
-      }
+      const capability = DaemonCapabilityRegistry.getCapability(toolName);
 
       if (capability) {
-        // Use the capability's inputSchema directly if available
-        // Otherwise create a minimal schema
-        const parameters = capability.inputSchema || {
-          type: "object",
-          properties: {},
-          additionalProperties: true,
+        // Create execution context for daemon capabilities
+        const daemonContext: DaemonExecutionContext = {
+          sessionId: streamId || this.id,
+          agentId: this.id,
+          workspaceId: "atlas-conversation",
+          daemon: DaemonCapabilityRegistry.getDaemonInstance(),
+          conversationId: streamId || this.id,
+          streams: createStreamsImplementation(),
         };
 
-        // Create a deep copy of the schema to avoid mutation issues
-        const parametersCopy = JSON.parse(JSON.stringify(parameters));
+        // Use toTool method directly
+        const tool = capability.toTool(daemonContext);
+        tools[capability.id] = tool;
 
-        // Pass schema copy - LLMProvider will wrap with jsonSchema if needed
-        tools[capability.id] = {
-          description: capability.description,
-          parameters: parametersCopy,
-          execute: async (args: any) => {
-            this.logger.info(`Executing capability: ${capability.id}`, { args, streamId });
+        // Debug logging for tool structure
+        this.logger.info("Created daemon capability tool", {
+          toolId: capability.id,
+          toolDescription: tool.description,
+          hasParameters: !!tool.parameters,
+          parametersType: typeof tool.parameters,
+          hasExecute: !!tool.execute,
+          // Log the actual parameter schema for stream_reply
+          ...(capability.id === "stream_reply" && tool.parameters && {
+            streamReplySchema: {
+              type: tool.parameters.constructor.name,
+              // Safely access shape - it might be a function or property depending on Zod version
+              shape: tool.parameters._def?.shape
+                ? (typeof tool.parameters._def.shape === "function"
+                  ? Object.keys(tool.parameters._def.shape() || {})
+                  : Object.keys(tool.parameters._def.shape || {}))
+                : "no shape available",
+            },
+          }),
+        });
+        continue;
+      }
 
-            // Check if this is a workspace capability
-            const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(capability.id);
-            if (workspaceCapability) {
-              // Create workspace execution context
-              const context = {
-                sessionId: streamId || this.id,
-                agentId: this.id,
-                workspaceId: "atlas-conversation",
-                conversationId: args.conversationId || streamId || this.id,
-              };
-
-              // Execute workspace capability
-              // For workspace capabilities, we need to pass arguments based on the expected parameters
-              // Most workspace capabilities expect individual parameters, not an args object
-
-              // Special handling for known workspace capabilities
-              if (capability.id === "publish_workspace") {
-                const result = await workspaceCapability.implementation(
-                  context,
-                  args.draftId,
-                  args.path,
-                );
-                return result;
-              } else if (capability.id === "workspace_draft_create") {
-                const result = await workspaceCapability.implementation(
-                  context,
-                  args.name,
-                  args.description,
-                  args.initialConfig,
-                );
-                return result;
-              } else if (capability.id === "workspace_draft_update") {
-                const result = await workspaceCapability.implementation(
-                  context,
-                  args.draftId,
-                  args.updates,
-                  args.updateDescription,
-                );
-                return result;
-              } else if (capability.id === "validate_draft_config") {
-                const result = await workspaceCapability.implementation(context, args.draftId);
-                return result;
-              } else if (capability.id === "pre_publish_check") {
-                const result = await workspaceCapability.implementation(context, args.draftId);
-                return result;
-              } else if (capability.id === "show_draft_config") {
-                const result = await workspaceCapability.implementation(context, args.draftId);
-                return result;
-              } else if (capability.id === "list_session_drafts") {
-                const result = await workspaceCapability.implementation(context);
-                return result;
-              } else if (capability.id === "library_list") {
-                const result = await workspaceCapability.implementation(context, args.category);
-                return result;
-              } else if (capability.id === "library_get") {
-                const result = await workspaceCapability.implementation(context, args.id);
-                return result;
-              } else if (capability.id === "library_search") {
-                const result = await workspaceCapability.implementation(
-                  context,
-                  args.query,
-                  args.category,
-                );
-                return result;
-              } else {
-                // For other workspace capabilities, pass all args as individual parameters
-                const argValues = Object.values(args);
-                const result = await workspaceCapability.implementation(context, ...argValues);
-                return result;
-              }
-            }
-
-            // Otherwise it's a daemon capability
-            // Create daemon execution context
-            const context = {
-              sessionId: streamId || this.id,
-              agentId: this.id,
-              workspaceId: "atlas-conversation",
-              daemon: DaemonCapabilityRegistry.getDaemonInstance(),
-              conversationId: args.conversationId || streamId || this.id,
-            };
-
-            // Handle stream_reply - pass the entire args object
-            if (capability.id === "stream_reply") {
-              const result = await DaemonCapabilityRegistry.executeCapability(
-                capability.id,
-                context,
-                args, // Pass the whole args object
-              );
-              return result;
-            }
-
-            // Handle conversation_storage - pass the entire args object
-            if (capability.id === "conversation_storage") {
-              const result = await DaemonCapabilityRegistry.executeCapability(
-                capability.id,
-                context,
-                args, // Pass the whole args object
-              );
-              return result;
-            }
-
-            // For other capabilities, pass args as-is
-            const result = await DaemonCapabilityRegistry.executeCapability(
-              capability.id,
-              context,
-              args,
-            );
-
-            return result;
-          },
+      // If not found in daemon capabilities, check workspace capabilities
+      const workspaceCapability = WorkspaceCapabilityRegistry.getCapability(toolName);
+      if (workspaceCapability) {
+        // Create execution context for workspace capabilities
+        const workspaceContext: AgentExecutionContext = {
+          workspaceId: "atlas-conversation",
+          sessionId: streamId || this.id,
+          agentId: this.id,
+          conversationId: streamId || this.id,
         };
+
+        // Use toTool method directly
+        tools[workspaceCapability.id] = workspaceCapability.toTool(workspaceContext);
       }
     }
 
@@ -625,12 +591,13 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
     this.logger.info("handleStreamReply called", { streamId, messageLength: message.length });
 
     try {
-      const context = {
+      const context: DaemonExecutionContext = {
         sessionId: streamId,
         agentId: this.id,
         workspaceId: "atlas-conversation",
-        daemon: null, // Will be set by registry
+        daemon: DaemonCapabilityRegistry.getDaemonInstance(),
         conversationId: streamId,
+        streams: createStreamsImplementation(),
       };
 
       this.logger.info("Calling stream_reply capability", {
@@ -639,14 +606,27 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
         context,
       });
 
-      const result = await DaemonCapabilityRegistry.executeCapability(
-        "stream_reply",
-        context,
+      const streamReplyCapability = DaemonCapabilityRegistry.getCapability("stream_reply");
+      if (!streamReplyCapability) {
+        throw new Error("Stream reply capability not found");
+      }
+
+      const tool = streamReplyCapability.toTool(context);
+
+      // Create execution options required by AI SDK
+      const executionOptions: ConversationToolExecutionOptions = {
+        toolCallId: crypto.randomUUID(),
+        messages: [],
+        agentId: this.id,
         streamId,
+      };
+
+      const result = await tool.execute({
+        stream_id: streamId,
         message,
-        undefined, // metadata
-        streamId, // conversationId
-      );
+        metadata: undefined,
+        conversationId: streamId,
+      }, executionOptions);
 
       this.logger.info("Stream reply completed", {
         success: result?.success,
@@ -685,29 +665,30 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
 
     try {
       // Create reasoning context
-      const tools = await this.getDaemonCapabilityTools(streamId);
+      const tools = this.getDaemonCapabilityTools(streamId);
 
       this.logger.info("Reasoning context tools prepared", {
         toolCount: Object.keys(tools).length,
         toolNames: Object.keys(tools),
       });
 
-      const userContext = {
+      const userContext: ReasoningUserContext = {
         message,
         streamId,
         conversationId: streamId || this.id,
         tools,
         historyContext,
         // Track draft ID across reasoning steps
-        draftId: null as string | null,
+        draftId: null,
       };
 
       // Create reasoning callbacks
-      const callbacks = {
+      const callbacks: ReasoningCallbacks<ReasoningUserContext> = {
         // Generate thinking based on conversation context
         think: async (context) => {
+          const userCtx = context.userContext;
           this.logger.info("Think callback invoked", {
-            message: context.userContext.message.substring(0, 100),
+            message: userCtx.message.substring(0, 100),
             stepCount: context.steps.length,
             currentIteration: context.currentIteration,
           });
@@ -723,10 +704,10 @@ export class ConversationAgent extends BaseAgent implements IAtlasAgent {
 You are having a conversation with a user. Use the reasoning_action tool to analyze what they need and plan your response.
 
 ${
-              context.userContext.historyContext
-                ? `Conversation history:\n${context.userContext.historyContext}\n\n`
+              userCtx.historyContext
+                ? `Conversation history:\n${userCtx.historyContext}\n\n`
                 : ""
-            }User message: ${context.userContext.message}
+            }User message: ${userCtx.message}
 
 ${
               previousSteps.length > 0
@@ -735,10 +716,10 @@ ${JSON.stringify(previousSteps, null, 2)}`
                 : ""
             }
 
-Available tools: ${Object.keys(context.userContext.tools).join(", ")}
+Available tools: ${Object.keys(userCtx.tools).join(", ")}
 ${
-              context.userContext.draftId
-                ? `\nCurrent draft ID: ${context.userContext.draftId} (use this for workspace operations)\n`
+              userCtx.draftId
+                ? `\nCurrent draft ID: ${userCtx.draftId} (use this for workspace operations)\n`
                 : ""
             }
 
@@ -762,6 +743,23 @@ For the reasoning_action tool:
 - parameters: The complete parameters for the tool call (if action is tool_call)
 - reasoning: Why you chose this action
 
+CRITICAL: For stream_reply tool calls, ALWAYS include these required parameters:
+- stream_id: "${userCtx.streamId}" (use this exact value)
+- message: "your response message to the user" (REQUIRED - cannot be empty)
+
+EXAMPLES of proper parameters for stream_reply:
+{
+  "parameters": {
+    "stream_id": "${userCtx.streamId}",
+    "message": "I'll help you create an email monitoring workspace. Let me understand your requirements..."
+  }
+}
+
+Or you can use messageContent field instead:
+{
+  "messageContent": "I'll help you create an email monitoring workspace. Let me understand your requirements..."
+}
+
 For workspace_draft_create parameters, include:
 - name: workspace name
 - description: workspace description  
@@ -773,49 +771,51 @@ For workspace_draft_create parameters, include:
             });
 
             // Use structured output for better reliability
-            const reasoningTool = {
+            const reasoningTool: Record<string, Tool> = {
               reasoning_action: {
                 description: "Determine the next action in the reasoning process",
-                parameters: {
-                  type: "object",
-                  properties: {
-                    thinking: {
-                      type: "string",
-                      description:
-                        "Your detailed analysis of what the user needs and your current progress",
-                    },
-                    action: {
-                      type: "string",
-                      enum: ["tool_call", "complete"],
-                      description: "The type of action to take",
-                    },
-                    toolName: {
-                      type: "string",
-                      description: "The name of the tool to call (if action is tool_call)",
-                    },
-                    parameters: {
-                      type: "object",
-                      description: "The parameters for the tool call (if action is tool_call)",
-                    },
-                    reasoning: {
-                      type: "string",
-                      description: "Why you chose this action",
-                    },
-                  },
-                  required: ["thinking", "action", "reasoning"],
+                parameters: z.object({
+                  thinking: z.string().describe(
+                    "Your detailed analysis of what the user needs and your current progress",
+                  ),
+                  action: z.enum(["tool_call", "complete"]).describe("The type of action to take"),
+                  toolName: z.string().optional().describe(
+                    "The name of the tool to call (if action is tool_call)",
+                  ),
+                  parameters: z.record(z.string(), z.unknown()).optional().describe(
+                    "The parameters for the tool call (if action is tool_call). For stream_reply, include 'message' with the content to send. For workspace_draft_create, include 'name', 'description', and 'initialConfig'.",
+                  ),
+                  reasoning: z.string().describe("Why you chose this action"),
+                  // Add explicit field for stream_reply message content
+                  messageContent: z.string().optional().describe(
+                    "If using stream_reply, put the full message content here instead of in parameters",
+                  ),
+                }),
+                execute: (args) => {
+                  // This tool is only used for structured output, not actual execution
+                  return args;
                 },
               },
             };
 
+            // Include all available tools so the LLM knows what's available
+            // The reasoning_action tool should be first for priority
+            const allToolsForReasoning = {
+              ...reasoningTool,
+              ...context.userContext.tools, // Include all tools from userContext
+            };
+
             const result = await LLMProvider.generateText(thinkingPrompt, {
               systemPrompt:
-                `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
-              model: this.config.model || "claude-3-5-sonnet-20241022",
+                `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.\n\nAvailable tools: ${
+                  Object.keys(context.userContext.tools).join(", ")
+                }`,
+              model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
               provider: "google",
               temperature: 0.3,
               max_tokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
-              tools: reasoningTool,
-              tool_choice: "required",
+              tools: allToolsForReasoning,
+              tool_choice: { type: "tool", toolName: "reasoning_action" }, // Force use of reasoning_action
               operationContext: {
                 operation: "conversation_reasoning",
                 agentId: this.id,
@@ -825,14 +825,31 @@ For workspace_draft_create parameters, include:
             // Extract the structured output from tool calls
             const toolCall = result.toolCalls?.[0];
             if (toolCall?.toolName === "reasoning_action" && toolCall.args) {
-              const { thinking, action, toolName, parameters, reasoning } = toolCall.args;
+              let validatedArgs: ReasoningActionArgs;
+              try {
+                validatedArgs = ReasoningActionArgsSchema.parse(toolCall.args);
+              } catch (e) {
+                if (e instanceof z.ZodError) {
+                  throw new ValidationError("Invalid reasoning action arguments", e);
+                }
+                throw e;
+              }
+
+              const { thinking, action, toolName, parameters, reasoning, messageContent } =
+                validatedArgs;
+
+              // If messageContent is provided for stream_reply, ensure it's in parameters
+              let finalParameters = parameters || {};
+              if (toolName === "stream_reply" && messageContent) {
+                finalParameters = { message: messageContent, ...finalParameters };
+              }
 
               // Embed the structured action data in the thinking for the parseAction callback
               const thinkingWithAction = `${thinking}\n\n[ACTION_DATA]${
                 JSON.stringify({
                   action,
                   toolName,
-                  parameters,
+                  parameters: finalParameters,
                   reasoning,
                 })
               }[/ACTION_DATA]`;
@@ -885,8 +902,26 @@ For workspace_draft_create parameters, include:
           try {
             // Look for embedded JSON in the thinking
             const jsonMatch = thinking.match(/\[ACTION_DATA\](.*)\[\/ACTION_DATA\]/s);
-            if (jsonMatch) {
+            if (jsonMatch && typeof jsonMatch.index === "number") {
               const actionData = JSON.parse(jsonMatch[1]);
+              const thinkingText = thinking.substring(0, jsonMatch.index).trim();
+
+              // If stream_reply is called without a message, use the thinking text as a fallback
+              if (
+                actionData.toolName === "stream_reply" &&
+                (!actionData.parameters || !actionData.parameters.message) &&
+                thinkingText
+              ) {
+                this.logger.info(
+                  "stream_reply is missing a message, using thinking text as fallback.",
+                  { thinkingText: thinkingText.substring(0, 100) },
+                );
+                if (!actionData.parameters) {
+                  actionData.parameters = {};
+                }
+                actionData.parameters.message = thinkingText;
+              }
+
               this.logger.info("Parsed structured action", {
                 type: actionData.action,
                 toolName: actionData.toolName,
@@ -894,7 +929,7 @@ For workspace_draft_create parameters, include:
               });
 
               return {
-                type: actionData.action as ReasoningAction["type"],
+                type: actionData.action,
                 toolName: actionData.toolName,
                 parameters: actionData.parameters || {},
                 reasoning: actionData.reasoning || "No reasoning provided",
@@ -923,13 +958,14 @@ For workspace_draft_create parameters, include:
 
         // Execute the determined action
         executeAction: async (action, context) => {
+          const userCtx = context.userContext;
           this.logger.info("Executing reasoning action", {
             type: action.type,
             toolName: action.toolName,
           });
 
           if (action.type === "tool_call" && action.toolName) {
-            const tools = context.userContext.tools;
+            const tools = userCtx.tools;
             const tool = tools[action.toolName];
 
             if (tool) {
@@ -939,8 +975,32 @@ For workspace_draft_create parameters, include:
               // For stream_reply, ensure we have the required fields
               if (action.toolName === "stream_reply") {
                 // Use streamId from context if not in parameters
-                if (!parameters.stream_id && context.userContext.streamId) {
-                  parameters.stream_id = context.userContext.streamId;
+                if (!parameters.stream_id && userCtx.streamId) {
+                  parameters.stream_id = userCtx.streamId;
+                }
+
+                // If message is missing, this suggests the reasoning failed to provide proper parameters
+                // Log the issue and provide a default friendly response
+                if (!parameters.message || typeof parameters.message !== "string") {
+                  this.logger.warn("stream_reply called without proper message parameter", {
+                    toolName: action.toolName,
+                    parameters: JSON.stringify(parameters),
+                    reasoning: action.reasoning,
+                    userMessage: userCtx.message,
+                  });
+
+                  // Provide a default friendly response based on the user's message
+                  if (
+                    userCtx.message.toLowerCase().trim().match(
+                      /^(hi|hello|hey|good morning|good afternoon|good evening)/,
+                    )
+                  ) {
+                    parameters.message =
+                      "Hi! I'm here to help you with Atlas. What would you like to work on?";
+                  } else {
+                    parameters.message =
+                      "I'm here to help! Could you tell me more about what you'd like to do?";
+                  }
                 }
               }
 
@@ -949,7 +1009,14 @@ For workspace_draft_create parameters, include:
                 parameters: JSON.stringify(parameters),
               });
 
-              const result = await tool.execute(parameters);
+              const toolExecutionOptions: ConversationToolExecutionOptions = {
+                toolCallId: crypto.randomUUID(),
+                messages: [], // Could be populated with conversation history if needed
+                agentId: this.id,
+                streamId: userCtx.streamId,
+              };
+
+              const result = await tool.execute(parameters, toolExecutionOptions);
 
               // Track the message that was sent for stream_reply
               if (action.toolName === "stream_reply" && parameters.message) {
@@ -1018,7 +1085,7 @@ For workspace_draft_create parameters, include:
 
           // Check if we're in the middle of a workspace creation flow
           const lastStep = context.steps[context.steps.length - 1];
-          const lastMessage = (context.userContext as any).streamedMessage ||
+          const lastMessage = context.userContext.streamedMessage ||
             lastStep?.action?.parameters?.message || "";
 
           // If we just confirmed we're creating something, don't stop
@@ -1063,14 +1130,14 @@ For workspace_draft_create parameters, include:
       this.logger.info("About to create reasoning machine", {
         hasCallbacks: !!callbacks,
         callbackKeys: Object.keys(callbacks),
-        maxIterations: this.config.max_reasoning_steps || 5,
+        maxIterations: this.agentConfig.max_reasoning_steps || 5,
       });
 
       // Create and run reasoning machine
       let machine;
       try {
         machine = createReasoningMachine(callbacks, {
-          maxIterations: this.config.max_reasoning_steps || 5,
+          maxIterations: this.agentConfig.max_reasoning_steps || 5,
         });
         this.logger.info("Reasoning machine created successfully");
       } catch (error) {
@@ -1095,7 +1162,7 @@ For workspace_draft_create parameters, include:
             complete: () => {
               this.logger.info("Reasoning actor completed");
               const snapshot = actor.getSnapshot();
-              resolve(snapshot.output as ReasoningResult);
+              resolve(snapshot.output);
             },
             error: (error) => {
               this.logger.error("Reasoning machine error", {
@@ -1154,7 +1221,7 @@ For workspace_draft_create parameters, include:
             agentCalls: 0,
             toolCalls: 0,
           },
-        } as ReasoningResult;
+        };
       });
 
       this.logger.info("Reasoning completed", {
@@ -1165,7 +1232,8 @@ For workspace_draft_create parameters, include:
       });
 
       // Get the actual message that was streamed to the user
-      const streamedMessage = (userContext as any).streamedMessage || result.jobResults.output;
+      const streamedMessage = userContext.streamedMessage ||
+        result.jobResults.output;
 
       return {
         reasoning: result,
@@ -1184,7 +1252,7 @@ For workspace_draft_create parameters, include:
   /**
    * Static method to get agent metadata for registry
    */
-  static getMetadata() {
+  static getMetadata(): SystemAgentMetadata {
     return {
       id: "conversation",
       name: "ConversationAgent",
@@ -1200,7 +1268,7 @@ For workspace_draft_create parameters, include:
       ],
       configSchema: {
         model: { type: "string", default: "claude-3-5-sonnet-20241022" },
-        system_prompt: { type: "string", default: "You are a helpful AI assistant." },
+        prompt: { type: "string", default: "You are a helpful AI assistant." },
         tools: { type: "array", default: [] },
         temperature: { type: "number", default: 0.7, min: 0, max: 2 },
         max_tokens: { type: "number", default: 2000, min: 1 },
@@ -1211,65 +1279,23 @@ For workspace_draft_create parameters, include:
   }
 
   /**
-   * Validate configuration for this agent type
-   */
-  static validateConfig(config: Record<string, unknown>): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (config.model && typeof config.model !== "string") {
-      errors.push("model must be a string");
-    }
-
-    if (config.system_prompt && typeof config.system_prompt !== "string") {
-      errors.push("system_prompt must be a string");
-    }
-
-    if (config.tools && !Array.isArray(config.tools)) {
-      errors.push("tools must be an array");
-    }
-
-    if (config.temperature !== undefined) {
-      if (
-        typeof config.temperature !== "number" || config.temperature < 0 || config.temperature > 2
-      ) {
-        errors.push("temperature must be a number between 0 and 2");
-      }
-    }
-
-    if (config.max_tokens !== undefined) {
-      if (typeof config.max_tokens !== "number" || config.max_tokens < 1) {
-        errors.push("max_tokens must be a positive number");
-      }
-    }
-
-    if (config.use_reasoning !== undefined && typeof config.use_reasoning !== "boolean") {
-      errors.push("use_reasoning must be a boolean");
-    }
-
-    if (config.max_reasoning_steps !== undefined) {
-      if (
-        typeof config.max_reasoning_steps !== "number" ||
-        config.max_reasoning_steps < 1 ||
-        config.max_reasoning_steps > 20
-      ) {
-        errors.push("max_reasoning_steps must be a number between 1 and 20");
-      }
-    }
-
-    return { valid: errors.length === 0, errors };
-  }
-
-  /**
    * Load conversation history using daemon capability
    */
-  private async loadConversationHistory(streamId: string): Promise<any> {
+  private async loadConversationHistory(streamId: string): Promise<ConversationStorageOutput> {
     try {
-      const tools = await this.getDaemonCapabilityTools(streamId);
+      const tools = this.getDaemonCapabilityTools(streamId);
       if (tools.conversation_storage?.execute) {
+        const executionOptions: ConversationToolExecutionOptions = {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+          agentId: this.id,
+          streamId,
+        };
+
         return await tools.conversation_storage.execute({
           action: "load_history",
           stream_id: streamId,
-        }, {});
+        }, executionOptions);
       }
     } catch (error) {
       this.logger.error("Failed to load conversation history", {
@@ -1277,7 +1303,7 @@ For workspace_draft_create parameters, include:
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    return { success: false, messages: [] };
+    return { success: false, error: "Failed to load conversation history" };
   }
 
   /**
@@ -1292,13 +1318,20 @@ For workspace_draft_create parameters, include:
     },
   ): Promise<void> {
     try {
-      const tools = await this.getDaemonCapabilityTools(streamId);
+      const tools = this.getDaemonCapabilityTools(streamId);
       if (tools.conversation_storage?.execute) {
+        const executionOptions: ConversationToolExecutionOptions = {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+          agentId: this.id,
+          streamId,
+        };
+
         await tools.conversation_storage.execute({
           action: "save_message",
           stream_id: streamId,
           message,
-        }, {});
+        }, executionOptions);
       }
     } catch (error) {
       this.logger.error("Failed to save message to history", {
@@ -1348,7 +1381,7 @@ For workspace_draft_create parameters, include:
     historyMessages?: Array<{ role: "user" | "assistant"; content: string }>,
   ): Promise<string | null> {
     // Get daemon capability tools
-    const tools = await this.getDaemonCapabilityTools(streamId);
+    const tools = this.getDaemonCapabilityTools(streamId);
 
     // Build proper system prompt
     let systemPrompt = this.prompts.system;
@@ -1383,12 +1416,26 @@ Examples of what you SHOULD handle:
 
 DO NOT ask for clarification if the context is clear from the conversation history.`;
 
+    // Log tools being passed to LLM
+    this.logger.info("Calling generateSimpleResponseWithTools", {
+      message,
+      streamId,
+      toolCount: Object.keys(tools).length,
+      toolNames: Object.keys(tools),
+      streamReplyTool: tools.stream_reply
+        ? {
+          hasParameters: !!tools.stream_reply.parameters,
+          description: tools.stream_reply.description,
+        }
+        : "not found",
+    });
+
     const result = await LLMProvider.generateText(message, {
       systemPrompt,
       // Note: messages parameter not supported in new API - context is passed via systemPrompt
-      model: this.config.model || "claude-3-5-sonnet-20241022",
+      model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
       provider: "google",
-      temperature: this.config.temperature || 0.7,
+      temperature: this.agentConfig.temperature || 0.7,
       max_tokens: 2000, // Increased for workspace operations
       tools: tools,
       tool_choice: "required", // Force tool use
@@ -1421,7 +1468,8 @@ DO NOT ask for clarification if the context is clear from the conversation histo
     if (result.toolCalls && result.toolCalls.length > 0) {
       const streamReplyCall = result.toolCalls.find((tc) => tc.toolName === "stream_reply");
       if (
-        streamReplyCall && streamReplyCall.args && typeof streamReplyCall.args.message === "string"
+        streamReplyCall && streamReplyCall.args &&
+        typeof streamReplyCall.args.message === "string"
       ) {
         streamedMessage = streamReplyCall.args.message;
         this.logger.info("Extracted streamed message from tool call", {

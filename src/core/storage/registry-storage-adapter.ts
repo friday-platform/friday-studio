@@ -7,12 +7,7 @@
  */
 
 import { type KVStorage } from "./kv-storage.ts";
-import {
-  type WorkspaceEntry,
-  WorkspaceEntrySchema,
-  WorkspaceStatus,
-} from "../workspace-manager.ts";
-import { type WorkspaceConfig } from "@atlas/config";
+import { WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatus } from "@atlas/core";
 
 /**
  * Registry-specific storage operations
@@ -50,53 +45,8 @@ export class RegistryStorageAdapter {
     // Validate workspace entry
     const validatedWorkspace = WorkspaceEntrySchema.parse(workspace);
 
-    let workspaceToStore = validatedWorkspace;
-
-    // For virtual workspaces, always embed config regardless of size
-    if (validatedWorkspace.metadata?.virtual) {
-      // Virtual workspaces must have embedded config since there's no filesystem fallback
-      workspaceToStore = validatedWorkspace;
-    } else {
-      // For regular workspaces, check if workspace is too large and handle separately
-      const workspaceSize = new TextEncoder().encode(JSON.stringify(validatedWorkspace)).length;
-
-      // If workspace is too large, store config separately and reference it
-      if (workspaceSize > 30000) { // Conservative limit to avoid Deno KV size issues
-        // Store config in separate key
-        if (validatedWorkspace.config) {
-          const configSize =
-            new TextEncoder().encode(JSON.stringify(validatedWorkspace.config)).length;
-
-          // For very large configs, skip storing them entirely and rely on runtime loading
-          if (configSize > 32000) {
-            // Config too large for Deno KV, will be loaded from source at runtime
-          } else {
-            const configAtomic = this.storage.atomic();
-            configAtomic.set(
-              ["workspace-configs", validatedWorkspace.id],
-              validatedWorkspace.config,
-            );
-            const configSuccess = await configAtomic.commit();
-            if (!configSuccess) {
-              throw new Error(`Failed to store config for workspace ${validatedWorkspace.id}`);
-            }
-          }
-        }
-
-        // Store workspace without embedded config, but with a reference
-        workspaceToStore = {
-          ...validatedWorkspace,
-          config: undefined,
-          metadata: {
-            ...validatedWorkspace.metadata,
-            configStoredSeparately: true,
-          },
-        };
-      }
-    }
-
     const workspaceAtomic = this.storage.atomic();
-    workspaceAtomic.set(["workspaces", validatedWorkspace.id], workspaceToStore);
+    workspaceAtomic.set(["workspaces", validatedWorkspace.id], validatedWorkspace);
     const workspaceSuccess = await workspaceAtomic.commit();
     if (!workspaceSuccess) {
       throw new Error(
@@ -128,23 +78,12 @@ export class RegistryStorageAdapter {
    * Unregister a workspace
    */
   async unregisterWorkspace(id: string): Promise<void> {
-    // Check if workspace has separately stored config
-    const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
-    const hasSeparateConfig = workspace?.metadata?.configStoredSeparately;
-
     // Delete workspace in separate atomic operation
     const workspaceAtomic = this.storage.atomic();
     workspaceAtomic.delete(["workspaces", id]);
     const workspaceSuccess = await workspaceAtomic.commit();
     if (!workspaceSuccess) {
       throw new Error(`Failed to unregister workspace ${id} - atomic operation failed`);
-    }
-
-    // Delete separately stored config if it exists
-    if (hasSeparateConfig) {
-      const configAtomic = this.storage.atomic();
-      configAtomic.delete(["workspace-configs", id]);
-      await configAtomic.commit(); // Don't fail if this fails, workspace is already deleted
     }
 
     // Update registry metadata in separate atomic operation
@@ -171,21 +110,6 @@ export class RegistryStorageAdapter {
    */
   async getWorkspace(id: string): Promise<WorkspaceEntry | null> {
     const workspace = await this.storage.get<WorkspaceEntry>(["workspaces", id]);
-    if (!workspace) return null;
-
-    // If config is stored separately, retrieve it
-    if (workspace.metadata?.configStoredSeparately) {
-      const config = await this.storage.get<WorkspaceConfig>(["workspace-configs", id]);
-      return {
-        ...workspace,
-        config: config || undefined, // Ensure config is undefined if null/empty
-        metadata: {
-          ...workspace.metadata,
-          configStoredSeparately: undefined, // Remove the flag from returned object
-        },
-      };
-    }
-
     return workspace;
   }
 

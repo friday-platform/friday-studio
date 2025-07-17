@@ -8,7 +8,6 @@ export interface WorkspaceInfo {
   description?: string;
   status: string;
   path: string;
-  hasActiveRuntime: boolean;
   createdAt: string;
   lastSeen: string;
 }

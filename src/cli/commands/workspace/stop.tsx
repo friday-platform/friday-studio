@@ -1,8 +1,5 @@
-import { WorkspaceStatus as WSStatus } from "../../../core/workspace-manager.ts";
-import { getWorkspaceManager } from "../../../core/workspace-manager.ts";
-// import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
-import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
-import { spinner } from "../../utils/prompts.tsx";
+import { getWorkspaceManager } from "@atlas/core";
+import { errorOutput, successOutput } from "../../utils/output.ts";
 
 interface StopArgs {
   workspace?: string;
@@ -43,7 +40,7 @@ export const handler = async (argv: StopArgs): Promise<void> => {
 };
 
 async function stopSingleWorkspace(idOrName?: string): Promise<void> {
-  const registry = await getWorkspaceManager();
+  // const registry = await getWorkspaceManager();
   // const processManager = new WorkspaceProcessManager();
 
   // let workspace;

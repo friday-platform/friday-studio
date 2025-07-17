@@ -21,6 +21,8 @@ These tests verify complete workflows and system interactions:
 - **`agent-tool-format-compatibility.test.ts`** - Agent tool format compatibility verification
 - **`reasoning-llm-simple.test.ts`** - Simple ReasoningMachine integration with real LLM
 - **`reasoning-llm-tools.test.ts`** - ReasoningMachine integration with tool usage
+- **`config-flow.integration.test.ts`** - Configuration flow validation through actor hierarchy
+  (WorkspaceRuntime → WorkspaceSupervisor → SessionSupervisor → AgentExecutionActor)
 
 ### 2. Remote Agents Integration Tests (`/integration-tests/remote-agents/`)
 

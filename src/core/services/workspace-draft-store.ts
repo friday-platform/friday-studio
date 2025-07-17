@@ -107,34 +107,6 @@ export class WorkspaceDraftStore {
     return draft;
   }
 
-  private getInitialConfig(
-    name: string,
-    description: string,
-    pattern?: string,
-  ): Partial<WorkspaceConfig> {
-    // Return minimal config based on pattern using proper types
-    const config: Partial<WorkspaceConfig> = {
-      version: "1.0",
-      workspace: {
-        name,
-        description: description || "",
-      },
-      signals: {},
-      jobs: {},
-      agents: {},
-    };
-
-    // Add pattern-specific defaults
-    if (pattern === "pipeline") {
-      config.signals![`${name}-trigger`] = {
-        description: `Start the ${name} pipeline`,
-        provider: "cli",
-      };
-    }
-
-    return config;
-  }
-
   async publishDraft(draftId: string): Promise<void> {
     const key = ["workspace_drafts", draftId];
     const entry = await this.kv.get<WorkspaceDraft>(key);

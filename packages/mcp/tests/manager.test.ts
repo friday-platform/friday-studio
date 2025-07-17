@@ -58,8 +58,7 @@ Deno.test({
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
-          allowed: ["get_weather"],
-          denied: ["get_forecast"],
+          allow: ["get_weather"],
         },
       });
 
@@ -262,7 +261,7 @@ Deno.test({
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
-          allowed: ["get_weather"],
+          allow: ["get_weather"],
         },
       });
 
@@ -275,7 +274,7 @@ Deno.test({
           args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
         },
         tools: {
-          denied: ["get_forecast"],
+          deny: ["get_forecast"],
         },
       });
 
@@ -288,6 +287,59 @@ Deno.test({
       const deniedTools = await manager.getToolsForServers(["denied-filter-server"]);
       expect("get_weather" in deniedTools).toBe(true);
       expect("get_forecast" in deniedTools).toBe(false);
+    } finally {
+      await manager.dispose();
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  },
+});
+
+Deno.test({
+  name: "MCPManager - Empty Tool Filter Lists",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    // Test edge cases with empty allow and deny lists
+    const manager = new MCPManager();
+
+    try {
+      // Register a server with empty allow list (should filter out ALL tools)
+      await manager.registerServer({
+        id: "empty-allow-server",
+        transport: {
+          type: "stdio",
+          command: "deno",
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
+        },
+        tools: {
+          allow: [],
+        },
+      });
+
+      // Register a server with empty deny list (should allow ALL tools)
+      await manager.registerServer({
+        id: "empty-deny-server",
+        transport: {
+          type: "stdio",
+          command: "deno",
+          args: ["run", "--allow-all", "integration-tests/mocks/weather-mcp-server.ts"],
+        },
+        tools: {
+          deny: [],
+        },
+      });
+
+      // Test empty allow list (should have NO tools)
+      const emptyAllowTools = await manager.getToolsForServers(["empty-allow-server"]);
+      expect("get_weather" in emptyAllowTools).toBe(false);
+      expect("get_forecast" in emptyAllowTools).toBe(false);
+      expect(Object.keys(emptyAllowTools).length).toBe(0);
+
+      // Test empty deny list (should have ALL tools)
+      const emptyDenyTools = await manager.getToolsForServers(["empty-deny-server"]);
+      expect("get_weather" in emptyDenyTools).toBe(true);
+      expect("get_forecast" in emptyDenyTools).toBe(true);
+      expect(Object.keys(emptyDenyTools).length).toBe(2);
     } finally {
       await manager.dispose();
       await new Promise((resolve) => setTimeout(resolve, 500));

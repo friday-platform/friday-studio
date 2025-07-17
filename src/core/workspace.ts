@@ -1,3 +1,4 @@
+import { MergedConfig, WorkspaceConfig } from "@atlas/config";
 import type {
   IWorkspace,
   IWorkspaceAction,
@@ -136,33 +137,9 @@ export class Workspace extends AtlasScope implements IWorkspace {
   }
 
   /**
-   * Export the full workspace configuration
-   */
-  toConfig(): any {
-    return {
-      id: this.id,
-      members: this.members,
-      signals: Object.values(this.signals).map((s) => ({
-        id: s.id,
-        provider: s.provider,
-        // Add other signal properties as needed
-      })),
-      agents: Object.values(this.agents).map((a) => ({
-        id: a.id,
-        name: a.name(),
-        type: (a as any).type || "unknown",
-        status: a.status,
-      })),
-      workflows: Object.values(this.workflows),
-      sources: Object.values(this.sources),
-      actions: Object.values(this.actions),
-    };
-  }
-
-  /**
    * Create a workspace from configuration
    */
-  static fromConfig(config: any, owner: IWorkspaceMember): Workspace {
+  static fromConfig(config: WorkspaceConfig, owner: IWorkspaceMember): Workspace {
     const workspace = new Workspace(owner);
 
     // Set ID from owner (which comes from registry entry)
@@ -172,19 +149,13 @@ export class Workspace extends AtlasScope implements IWorkspace {
 
     // Add signals - handle both array and object formats
     if (config.signals) {
-      if (Array.isArray(config.signals)) {
-        for (const signal of config.signals) {
-          workspace.addSignal(signal);
-        }
-      } else {
-        // Handle object format from YAML
-        for (const [id, signalConfig] of Object.entries(config.signals)) {
-          const typedSignalConfig = signalConfig as Record<string, any>;
-          workspace.addSignal({
-            id,
-            ...typedSignalConfig,
-          } as IWorkspaceSignal);
-        }
+      // Handle object format from YAML
+      for (const [id, signalConfig] of Object.entries(config.signals)) {
+        const typedSignalConfig = signalConfig as Record<string, any>;
+        workspace.addSignal({
+          id,
+          ...typedSignalConfig,
+        } as IWorkspaceSignal);
       }
     }
 

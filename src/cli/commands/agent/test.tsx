@@ -61,7 +61,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
         const workspace = await client.getWorkspace(argv.workspace);
         workspaceId = workspace.id;
         workspaceName = workspace.name;
-      } catch (error) {
+      } catch (_error) {
         // Try to find by name if ID lookup failed
         const allWorkspaces = await client.listWorkspaces();
         const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
@@ -75,8 +75,8 @@ export const handler = async (argv: TestArgs): Promise<void> => {
     } else {
       // Use current workspace (detect from current directory)
       try {
-        const adapter = new FilesystemConfigAdapter();
-        const configLoader = new ConfigLoader(adapter);
+        const adapter = new FilesystemConfigAdapter(Deno.cwd());
+        const configLoader = new ConfigLoader(adapter, Deno.cwd());
         const config = await configLoader.load();
         const currentWorkspaceName = config.workspace.workspace.name;
 
@@ -92,7 +92,7 @@ export const handler = async (argv: TestArgs): Promise<void> => {
             `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
           );
         }
-      } catch (error) {
+      } catch (_error) {
         throw new Error(
           "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
         );

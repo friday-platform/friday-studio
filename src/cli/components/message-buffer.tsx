@@ -4,6 +4,10 @@ import { Spinner } from "@inkjs/ui";
 import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
+import { GitDiff } from "./git-diff.tsx";
+import { MultiSelect } from "./multi-select.tsx";
+import { MarkdownDisplay } from "./markdown-display.tsx";
+import { DirectoryTree } from "./directory-tree.tsx";
 
 // Define SSE event schemas
 const MessageChunkEventSchema = z.object({
@@ -23,11 +27,94 @@ const ErrorEventSchema = z.object({
   data: z.string().optional(),
 });
 
+const LlmThinkingEventSchema = z.object({
+  type: z.literal("llm_thinking"),
+  data: z.object({
+    content: z.string(),
+  }),
+});
+
+const SelectionListEventSchema = z.object({
+  type: z.literal("selection_list"),
+  data: z.object({
+    label: z.string(),
+    options: z.array(
+      z.object({
+        label: z.string(),
+        value: z.string(),
+      }),
+    ),
+  }),
+});
+
+const FileDiffEventSchema = z.object({
+  type: z.literal("file_diff"),
+  data: z.object({
+    diffContent: z.string(),
+    startingLine: z.number(),
+    endingLine: z.number(),
+    message: z.string(),
+  }),
+});
+
+// Define the recursive directory node schema
+const DirectoryNodeSchema: z.ZodType<{
+  name: string;
+  type: "file" | "directory";
+  active?: boolean;
+  children?: Array<{
+    name: string;
+    type: "file" | "directory";
+    active?: boolean;
+    children?: any;
+  }>;
+}> = z.object({
+  name: z.string(),
+  type: z.enum(["file", "directory"]),
+  active: z.boolean().optional(),
+  children: z.array(z.lazy(() => DirectoryNodeSchema)).optional(),
+});
+
+const DirectoryListingEventSchema = z.object({
+  type: z.literal("directory_listing"),
+  data: z.object({
+    tree: z.lazy(() => DirectoryNodeSchema),
+  }),
+});
+
+const RespondingEventSchema = z.object({
+  type: z.literal("responding"),
+  data: z.object({
+    message: z.string(),
+  }),
+});
+
+const RespondingStopEventSchema = z.object({
+  type: z.literal("responding_stop"),
+});
+
 const SSEEventSchema = z.union([
   MessageChunkEventSchema,
   MessageCompleteEventSchema,
   ErrorEventSchema,
+  LlmThinkingEventSchema,
+  SelectionListEventSchema,
+  FileDiffEventSchema,
+  DirectoryListingEventSchema,
+  RespondingEventSchema,
+  RespondingStopEventSchema,
 ]);
+
+function generateTimestamp() {
+  const now = new Date();
+  return now
+    .toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    .toLowerCase()
+    .replace(/\s/g, "");
+}
 
 // type SSEEvent = z.infer<typeof SSEEventSchema>;
 
@@ -102,15 +189,8 @@ export const MessageBuffer = () => {
               // If streaming is disabled, only show when partial is false (complete message)
               if (responseMessage && (config.streamMessages || !isPartial)) {
                 setTypingState((prev) => ({ ...prev, isTyping: true }));
-                const now = new Date();
-                const responseTimestamp = now
-                  .toLocaleTimeString([], {
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })
-                  .toLowerCase()
-                  .replace(/\s/g, "");
 
+                const timestamp = generateTimestamp();
                 const streamingMessageId = `llm-response-current`;
 
                 setOutputBuffer((prev) => {
@@ -124,7 +204,7 @@ export const MessageBuffer = () => {
                       component: (
                         <ChatMessage
                           author="Atlas"
-                          date={responseTimestamp}
+                          date={timestamp}
                           message={responseMessage}
                         />
                       ),
@@ -182,6 +262,99 @@ export const MessageBuffer = () => {
               ]);
               break;
             }
+
+            case "llm_thinking": {
+              const { content } = sseEvent.data;
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `llm-thinking-${Date.now()}`,
+                  component: <MarkdownDisplay content={content} dimColor />,
+                },
+              ]);
+              break;
+            }
+
+            case "selection_list": {
+              const { label, options } = sseEvent.data;
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `selection-list-${Date.now()}`,
+                  component: (
+                    <ChatMessage author={label} authorColor="yellow">
+                      <MultiSelect options={options} isDisabled={false} />
+                    </ChatMessage>
+                  ),
+                },
+              ]);
+              break;
+            }
+
+            case "file_diff": {
+              const { diffContent, startingLine, endingLine, message } = sseEvent.data;
+
+              const timestamp = generateTimestamp();
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `file-diff-${Date.now()}`,
+                  component: (
+                    <ChatMessage
+                      author="Atlas"
+                      date={timestamp}
+                      message={message}
+                    >
+                      <GitDiff
+                        diffContent={diffContent}
+                        startingLine={startingLine}
+                        endingLine={endingLine}
+                      />
+                    </ChatMessage>
+                  ),
+                },
+              ]);
+              break;
+            }
+
+            case "directory_listing": {
+              const { tree } = sseEvent.data;
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `directory-listing-${Date.now()}`,
+                  component: (
+                    <Box paddingLeft={1}>
+                      <DirectoryTree tree={tree} />
+                    </Box>
+                  ),
+                },
+              ]);
+              break;
+            }
+
+            case "responding": {
+              const { message } = sseEvent.data;
+              setTypingState((prev) => ({
+                ...prev,
+                isTyping: true,
+                message,
+              }));
+              break;
+            }
+
+            case "responding_stop": {
+              setTypingState((prev) => ({
+                ...prev,
+                isTyping: false,
+                message: undefined,
+              }));
+              break;
+            }
           }
         }
       } catch (error) {
@@ -223,8 +396,12 @@ export const MessageBuffer = () => {
         {typingState.isTyping && (
           <Box>
             {config.streamMessages
-              ? <Spinner label="Typing..." />
-              : <Spinner label={`Typing... (${typingState.elapsedSeconds}s)`} />}
+              ? <Spinner label={typingState.message || "Typing..."} />
+              : (
+                <Spinner
+                  label={`${typingState.message || "Typing..."} (${typingState.elapsedSeconds}s)`}
+                />
+              )}
           </Box>
         )}
       </Box>

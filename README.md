@@ -271,6 +271,50 @@ Atlas uses a modern daemon-based architecture:
 - **Persistent State**: Workspace registrations survive daemon restarts
 - **Auto-Discovery**: Automatic workspace detection and import
 
+### Actor System Type Safety
+
+Atlas implements a type-safe actor hierarchy with full TypeScript support:
+
+#### Actor Hierarchy
+
+```typescript
+WorkspaceRuntime → WorkspaceSupervisor → SessionSupervisor → AgentExecutionActor
+```
+
+Each actor level has:
+
+- **Strongly-typed interfaces** with discriminated unions
+- **Type-safe configuration slices** (no `any` types)
+- **Validated payloads** using Zod schemas
+- **Context-aware XState machines** with typed events
+
+#### Key Type Safety Features
+
+1. **Discriminated Actor Types**
+   ```typescript
+   type ActorConfig =
+     | { type: "workspace"; config: WorkspaceSupervisorConfig }
+     | { type: "session"; config: SessionSupervisorConfig }
+     | { type: "agent"; config: AgentExecutionConfig };
+   ```
+
+2. **Type-Safe Payloads**
+   - All inter-actor messages validated with Zod
+   - Consistent camelCase field naming
+   - Session context preserved through hierarchy
+
+3. **Configuration Encapsulation**
+   - Each actor receives only its required config slice
+   - No configuration reconstruction or transformation
+   - Direct type-safe access using Config V2 helpers
+
+4. **XState Integration**
+   - Typed actor references (no `any` refs)
+   - Context narrowing in state transitions
+   - Type-safe event discrimination
+
+See [`docs/ACTOR_TYPE_SAFETY_PLAN.md`](docs/ACTOR_TYPE_SAFETY_PLAN.md) for implementation details.
+
 ## Examples
 
 Explore example workspaces in `examples/workspaces/`:

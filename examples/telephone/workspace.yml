@@ -11,37 +11,30 @@ server:
     discoverable:
       capabilities:
         - "workspace_jobs_*"
-        # Fixed: removed invalid dot notation "workspace_sessions.*"
       jobs:
         - telephone
-    rate_limits:
-      requests_per_hour: 100
-      concurrent_sessions: 3
 
 # Tools configuration - MCP servers this workspace connects to
 tools:
   mcp:
     client_config:
-      timeout: 30000
-      retry_policy:
-        max_attempts: 3
+      timeout: 30s
     servers:
       filesystem-context:
         transport:
           type: "stdio"
           command: "npx"
           args: ["-y", "@modelcontextprotocol/server-filesystem"]
-          env:
-            FILESYSTEM_ROOT: "/workspace"
+        env:
+          FILESYSTEM_ROOT: "/workspace"
         tools:
-          allowed: ["read_file", "list_directory"]
-
+          allow: ["read_file", "list_directory"]
       atlas-platform:
         transport:
           type: "http"
           url: "http://localhost:8080/mcp"
         tools:
-          allowed:
+          allow:
             [
               "atlas_library_list",
               "atlas_library_get",
@@ -50,14 +43,14 @@ tools:
               "atlas_library_stats",
               "atlas_library_templates",
             ]
-
 # Signal definitions
 signals:
   telephone-message:
     description: "Trigger a telephone game with a message"
     provider: "http"
-    path: "/telephone"
-    method: "POST"
+    config:
+      path: "/telephone"
+      timeout: 30s
 
 # Job definitions
 jobs:
@@ -73,22 +66,17 @@ jobs:
     triggers:
       - signal: "telephone-message"
         condition:
-          {
-            "and": [
-              { "var": "message" },
-              { ">": [{ "length": { "var": "message" } }, 0] },
-              { "<": [{ "length": { "var": "message" } }, 100] },
-            ],
-          }
+          jsonlogic:
+            and:
+              - { "var": "message" }
+              - { ">": [{ "length": { "var": "message" } }, 0] }
+              - { "<": [{ "length": { "var": "message" } }, 100] }
     execution:
       strategy: "sequential"
       agents:
-        - id: "mishearing-agent"
-          input_source: "signal"
-        - id: "embellishment-agent"
-          input_source: "previous"
-        - id: "reinterpretation-agent"
-          input_source: "previous"
+        - "mishearing-agent"
+        - "embellishment-agent"
+        - "reinterpretation-agent"
 
   # Test job that should NOT be discoverable (not in discoverable.jobs list)
   private_test:
@@ -97,28 +85,45 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "mishearing-agent"
-          input_source: "signal"
+        - "mishearing-agent"
 
 # Agent definitions
 agents:
   mishearing-agent:
     type: "llm"
-    model: "gemini-2.5-flash" # Use Claude Haiku for faster responses
-    purpose: "Specializes in phonetic errors and mishearing transformations"
-    tools:
-      mcp: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
+    description: "Specializes in phonetic errors and mishearing transformations"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
+      prompt: |
+        You are a specialized agent in the telephone game focusing on phonetic errors and mishearing.
+        Your task is to introduce realistic phonetic distortions and sound-alike substitutions to messages.
+        Focus on words that sound similar but have different meanings, and common mishearing patterns.
+        The transformations should be plausible and natural, as if someone slightly misheard the message.
 
   embellishment-agent:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Adds creative details and context to messages"
-    tools:
-      mcp: ["filesystem-context", "atlas-platform"]
+    description: "Adds creative details and context to messages"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools: ["filesystem-context", "atlas-platform"]
+      prompt: |
+        You are a creative embellishment agent in the telephone game.
+        Your task is to add vivid details, context, and narrative elements to the message you receive.
+        Enhance the story with descriptive language, background information, and creative flourishes.
+        The core message should remain recognizable but enriched with additional elements.
 
   reinterpretation-agent:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Dramatically transforms and reinterprets messages"
-    tools:
-      mcp: ["filesystem-context", "atlas-platform"]
+    description: "Dramatically transforms and reinterprets messages"
+    config:
+      model: "gemini-2.5-flash"
+      provider: "google"
+      tools: ["filesystem-context", "atlas-platform"]
+      prompt: |
+        You are a reinterpretation agent in the telephone game.
+        Your task is to dramatically transform and reinterpret the message while maintaining some plausible connection.
+        Apply creative misunderstandings, context shifts, and meaning transformations.
+        The result should show how information can mutate through sequential processing.

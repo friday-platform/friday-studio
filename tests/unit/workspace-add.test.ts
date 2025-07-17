@@ -1,6 +1,6 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { WorkspaceManager } from "../../src/core/workspace-manager.ts";
+import { WorkspaceManager } from "@atlas/core";
 import { AtlasClient } from "@atlas/client";
 import { ensureDir, exists } from "@std/fs";
 
@@ -66,7 +66,6 @@ class MockDaemonServer {
           description,
           status: "stopped",
           path,
-          hasActiveRuntime: false,
           createdAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
         };
@@ -114,7 +113,6 @@ class MockDaemonServer {
             name: path.split("/").pop(),
             status: "stopped",
             path,
-            hasActiveRuntime: false,
             createdAt: new Date().toISOString(),
             lastSeen: new Date().toISOString(),
           };
@@ -160,7 +158,6 @@ class MockDaemonServer {
       name: name || path.split("/").pop(),
       status: "stopped",
       path,
-      hasActiveRuntime: false,
       createdAt: new Date().toISOString(),
       lastSeen: new Date().toISOString(),
     };
@@ -191,7 +188,6 @@ Deno.test({
       assertExists(result.id);
       assertEquals(result.name, "My Test Workspace");
       assertEquals(result.path, "/tmp/test-workspace");
-      assertEquals(result.hasActiveRuntime, false);
     } finally {
       await mockServer.stop();
     }

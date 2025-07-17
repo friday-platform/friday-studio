@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Box, Text, useInput } from "ink";
 import { Select } from "../../components/select/index.ts";
-import { WorkspaceEntry, WorkspaceStatus } from "../../../core/workspace-manager.ts";
+import { WorkspaceEntry, WorkspaceStatus } from "@atlas/core";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
 

@@ -1,19 +1,13 @@
 import {
-  atlasDefaults,
   ConfigLoader,
   formatZodError,
-  type MergedConfig,
   type SupervisorDefaults,
-  supervisorDefaults,
+  supervisorDefaultsWrapped,
   WorkspaceConfigSchema,
 } from "@atlas/config";
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
 import { PlatformMCPServer } from "@atlas/mcp-server";
-import {
-  FilesystemConfigAdapter,
-  FilesystemTemplateAdapter,
-  FilesystemWorkspaceCreationAdapter,
-} from "@atlas/storage";
+import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
@@ -22,10 +16,10 @@ import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
   createKVStorage,
   createLibraryStorage,
+  createRegistryStorage,
   StorageConfigs,
 } from "../../../src/core/storage/index.ts";
 import type { LibraryStorageAdapter } from "../../../src/core/storage/library-storage-adapter.ts";
-import { getWorkspaceManager } from "../../../src/core/workspace-manager.ts";
 import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
@@ -35,6 +29,9 @@ import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces.ts";
 import { type AppContext, createApp } from "./factory.ts";
+import { WorkspaceManager } from "@atlas/core";
+import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
+import { parse } from "@std/yaml";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -66,10 +63,10 @@ export class AtlasDaemon implements AppContext {
   private isInitialized = false;
   private supervisorDefaults: SupervisorDefaults | null = null;
   private libraryStorage: LibraryStorageAdapter | null = null;
-  private templateAdapter: FilesystemTemplateAdapter | null = null;
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
   private mcpServer: PlatformMCPServer | null = null;
+  private workspaceManager: WorkspaceManager | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -80,6 +77,13 @@ export class AtlasDaemon implements AppContext {
     this.app = createApp(this);
     this.setupRoutes();
     this.setupSignalHandlers();
+  }
+
+  public getWorkspaceManager(): WorkspaceManager {
+    if (!this.workspaceManager) {
+      throw new Error("WorkspaceManager not initialized. Call initialize() first.");
+    }
+    return this.workspaceManager;
   }
 
   /**
@@ -95,14 +99,13 @@ export class AtlasDaemon implements AppContext {
     // Load supervisor defaults once at startup
     this.loadSupervisorDefaults();
 
-    // Initialize WorkspaceManager singleton (with auto-import)
+    // Initialize WorkspaceManager
     logger.info("Initializing WorkspaceManager...");
-    const manager = await getWorkspaceManager();
-    await manager.initialize();
+    const registry = await createRegistryStorage(StorageConfigs.defaultKV());
+    this.workspaceManager = new WorkspaceManager(registry);
+    await this.workspaceManager.initialize();
 
-    // NEW: Register system workspaces
-    logger.info("Registering system workspaces...");
-    await manager.registerSystemWorkspaces();
+    // System workspaces are now registered automatically during manager.initialize()
 
     // Initialize LibraryStorage with hybrid storage
     logger.info("Initializing LibraryStorage...");
@@ -112,17 +115,6 @@ export class AtlasDaemon implements AppContext {
       organizeByType: true,
       organizeByDate: true,
     });
-
-    // Initialize template adapter with path to starters
-    logger.info("Initializing template adapter...");
-    // Use import.meta.url to get absolute path relative to this file
-    const currentFileUrl = new URL(import.meta.url);
-    const atlasRoot = join(currentFileUrl.pathname, "..", "..", "..");
-    const templatePath = join(atlasRoot, "packages", "starters");
-    logger.info(`Template path: ${templatePath}`);
-    this.templateAdapter = new FilesystemTemplateAdapter(templatePath);
-
-    // System workspaces initialization removed - conversations now use standard workspace pattern
 
     // Initialize daemon-level capabilities
     logger.info("Initializing daemon capabilities...");
@@ -178,7 +170,6 @@ export class AtlasDaemon implements AppContext {
 
     // Initialize system agent registry
     logger.info("Initializing system agent registry...");
-    const { SystemAgentRegistry } = await import("../../../src/core/system-agent-registry.ts");
     await SystemAgentRegistry.initialize(kvStorage);
 
     this.isInitialized = true;
@@ -192,7 +183,7 @@ export class AtlasDaemon implements AppContext {
     const logger = AtlasLogger.getInstance();
 
     // Use compiled-in defaults - no file I/O needed
-    this.supervisorDefaults = supervisorDefaults;
+    this.supervisorDefaults = supervisorDefaultsWrapped;
 
     logger.info("Loaded supervisor defaults", {
       source: "compiled",
@@ -287,8 +278,8 @@ export class AtlasDaemon implements AppContext {
         // Unregister cron signals before deleting workspace
         await this.unregisterWorkspaceCronSignals(workspaceId);
 
-        const manager = await getWorkspaceManager();
-        await manager.deleteWorkspace(workspaceId, force);
+        const manager = this.getWorkspaceManager();
+        await manager.deleteWorkspace(workspaceId, { force });
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {
         return c.json({
@@ -336,7 +327,6 @@ export class AtlasDaemon implements AppContext {
         // Only read workspace.yml if name wasn't explicitly provided
         if (!providedName) {
           try {
-            const { parse } = await import("@std/yaml");
             const yamlContent = await Deno.readTextFile(workspaceYmlPath);
             const config = parse(yamlContent) as {
               workspace?: { name?: string; description?: string };
@@ -354,10 +344,10 @@ export class AtlasDaemon implements AppContext {
           }
         }
 
-        const manager = await getWorkspaceManager();
+        const manager = this.getWorkspaceManager();
 
         // Check if workspace already exists at this path
-        const existingByPath = await manager.findByPath(path);
+        const existingByPath = await manager.find({ path });
         if (existingByPath) {
           return c.json({
             error: `Workspace already registered at path: ${path}`,
@@ -366,7 +356,7 @@ export class AtlasDaemon implements AppContext {
 
         // If name is determined (provided or from config), check for naming conflicts
         if (workspaceName) {
-          const existingByName = await manager.findByName(workspaceName);
+          const existingByName = await manager.find({ name: workspaceName });
           if (existingByName) {
             return c.json({
               error: `Workspace with name '${workspaceName}' already exists`,
@@ -390,7 +380,6 @@ export class AtlasDaemon implements AppContext {
           description: entry.metadata?.description,
           status: entry.status,
           path: entry.path,
-          hasActiveRuntime: false,
           createdAt: entry.createdAt,
           lastSeen: entry.lastSeen,
         };
@@ -415,7 +404,7 @@ export class AtlasDaemon implements AppContext {
           return c.json({ error: "Paths array is required" }, 400);
         }
 
-        const manager = await getWorkspaceManager();
+        const manager = this.getWorkspaceManager();
         const results: {
           added: Array<{
             id: string;
@@ -423,7 +412,6 @@ export class AtlasDaemon implements AppContext {
             description?: string;
             status: string;
             path: string;
-            hasActiveRuntime: boolean;
             createdAt: string;
             lastSeen: string;
           }>;
@@ -475,7 +463,7 @@ export class AtlasDaemon implements AppContext {
               }
 
               // Check if workspace already exists at this path
-              const existingByPath = await manager.findByPath(path);
+              const existingByPath = await manager.find({ path });
               if (existingByPath) {
                 results.failed.push({
                   path,
@@ -489,7 +477,6 @@ export class AtlasDaemon implements AppContext {
               let workspaceDescription: string | undefined;
 
               try {
-                const { parse } = await import("@std/yaml");
                 const yamlContent = await Deno.readTextFile(workspaceYmlPath);
                 const config = parse(yamlContent) as {
                   workspace?: { name?: string; description?: string };
@@ -520,7 +507,6 @@ export class AtlasDaemon implements AppContext {
                 description: entry.metadata?.description,
                 status: entry.status,
                 path: entry.path,
-                hasActiveRuntime: false,
                 createdAt: entry.createdAt,
                 lastSeen: entry.lastSeen,
               });
@@ -539,95 +525,6 @@ export class AtlasDaemon implements AppContext {
       } catch (error) {
         return c.json({
           error: `Failed to add workspaces: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
-
-    // List available workspace templates
-    this.app.get("/api/templates", async (c) => {
-      try {
-        if (!this.templateAdapter) {
-          return c.json({ error: "Template system not initialized" }, 500);
-        }
-
-        const templates = await this.templateAdapter.listTemplates();
-        return c.json(templates);
-      } catch (error) {
-        return c.json({
-          error: `Failed to list templates: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
-
-    // Create workspace from template
-    this.app.post("/api/workspaces/create-from-template", async (c) => {
-      try {
-        if (!this.templateAdapter) {
-          return c.json({ error: "Template system not initialized" }, 500);
-        }
-
-        const body = await c.req.json() as {
-          templateId: string;
-          name: string;
-          path: string;
-        };
-
-        const { templateId, name, path } = body;
-
-        if (!templateId || !name || !path) {
-          return c.json({ error: "templateId, name, and path are required" }, 400);
-        }
-
-        // Check if template exists
-        if (!await this.templateAdapter.templateExists(templateId)) {
-          return c.json({ error: `Template '${templateId}' not found` }, 404);
-        }
-
-        // Check if target path already exists
-        try {
-          await Deno.stat(path);
-          return c.json({ error: `Path already exists: ${path}` }, 409);
-        } catch {
-          // Path doesn't exist, which is what we want
-        }
-
-        // Create parent directory if needed
-        const parentDir = join(path, "..");
-        await Deno.mkdir(parentDir, { recursive: true });
-
-        // Copy template files with replacements
-        const replacements = {
-          WORKSPACE_NAME: name,
-          WORKSPACE_PATH: path,
-          TIMESTAMP: new Date().toISOString(),
-        };
-
-        await this.templateAdapter.copyTemplate(templateId, path, replacements);
-
-        // Register the new workspace
-        const manager = await getWorkspaceManager();
-        const entry = await manager.registerWorkspace(path, {
-          name,
-          description: `Created from ${templateId} template`,
-        });
-
-        // Extract and register cron signals
-        await this.registerWorkspaceCronSignals(entry.id, path);
-
-        return c.json({
-          id: entry.id,
-          name: entry.name,
-          path: entry.path,
-          templateId,
-          message: `Workspace created successfully from ${templateId} template`,
-        }, 201);
-      } catch (error) {
-        return c.json({
-          error: `Failed to create workspace from template: ${
             error instanceof Error ? error.message : String(error)
           }`,
         }, 500);
@@ -657,7 +554,7 @@ export class AtlasDaemon implements AppContext {
           return c.json({
             valid: false,
             errors: validationResult.error.issues,
-            formattedError: formatZodError(validationResult.error, "workspace.yml"),
+            formattedError: formatZodError(validationResult.error),
           });
         }
       } catch (error) {
@@ -713,7 +610,7 @@ export class AtlasDaemon implements AppContext {
         await this.workspaceCreationAdapter.writeWorkspaceFiles(workspacePath, config);
 
         // Register the new workspace
-        const manager = await getWorkspaceManager();
+        const manager = this.getWorkspaceManager();
         const entry = await manager.registerWorkspace(workspacePath, {
           name,
           description,
@@ -739,13 +636,20 @@ export class AtlasDaemon implements AppContext {
     });
 
     // Refresh workspace config cache
-    this.app.post("/api/workspaces/:workspaceId/refresh-config", async (c) => {
+    this.app.post("/api/workspaces/:workspaceId/refresh-config", (c) => {
       const workspaceId = c.req.param("workspaceId");
 
       try {
-        const manager = await getWorkspaceManager();
-        await manager.refreshConfig(workspaceId);
-        return c.json({ message: `Workspace ${workspaceId} config cache refreshed` });
+        // TODO/FIXME: The refreshConfig method was removed from WorkspaceManager in the refactor
+        // Need to reimplement config refresh functionality
+        // Previously: await manager.refreshConfig(workspaceId);
+
+        // For now, return a placeholder response
+        return c.json({
+          message:
+            `Config refresh not implemented - refreshConfig method removed from WorkspaceManager`,
+          workspaceId,
+        }, 501);
       } catch (error) {
         return c.json({
           error: `Failed to refresh config: ${
@@ -756,11 +660,17 @@ export class AtlasDaemon implements AppContext {
     });
 
     // Refresh atlas config cache
-    this.app.post("/api/atlas/refresh-config", async (c) => {
+    this.app.post("/api/atlas/refresh-config", (c) => {
       try {
-        const manager = await getWorkspaceManager();
-        await manager.refreshAtlasConfig();
-        return c.json({ message: "Atlas config cache refreshed" });
+        // TODO/FIXME: The refreshAtlasConfig method was removed from WorkspaceManager in the refactor
+        // Need to reimplement atlas config refresh functionality
+        // Previously: await manager.refreshAtlasConfig();
+
+        // For now, return a placeholder response
+        return c.json({
+          message:
+            `Atlas config refresh not implemented - refreshAtlasConfig method removed from WorkspaceManager`,
+        }, 501);
       } catch (error) {
         return c.json({
           error: `Failed to refresh atlas config: ${
@@ -794,7 +704,17 @@ export class AtlasDaemon implements AppContext {
               if (error.message.includes("not found")) {
                 AtlasLogger.getInstance().warn(`Signal not found: ${signalId}`);
               } else {
-                AtlasLogger.getInstance().error(`Error processing signal ${signalId}:`, error);
+                AtlasLogger.getInstance().error(`Error processing signal ${signalId}:`, {
+                  error: error instanceof Error
+                    ? {
+                      message: error.message,
+                      stack: error.stack,
+                      name: error.name,
+                    }
+                    : error,
+                  workspaceId,
+                  signalId,
+                });
               }
             });
 
@@ -1453,10 +1373,10 @@ export class AtlasDaemon implements AppContext {
 
       // Find workspace in registry (manager already initialized at daemon startup)
       logger.debug(`Looking up workspace in registry: ${workspaceId}`);
-      const manager = await getWorkspaceManager();
+      const manager = this.getWorkspaceManager();
 
-      const workspace = await manager.findById(workspaceId) ||
-        await manager.findByName(workspaceId);
+      const workspace = await manager.find({ id: workspaceId }) ||
+        await manager.find({ name: workspaceId });
 
       if (!workspace) {
         const error = `Workspace not found: ${workspaceId}`;
@@ -1468,8 +1388,8 @@ export class AtlasDaemon implements AppContext {
         `Creating runtime for workspace: ${workspace.name} (${workspace.id}) at path: ${workspace.path}`,
       );
 
-      // Virtual workspace check - skip filesystem validation
-      if (!workspace.metadata?.virtual) {
+      // System workspace check - skip filesystem validation
+      if (!workspace.metadata?.system) {
         // Validate workspace path exists
         try {
           const stat = await Deno.stat(workspace.path);
@@ -1481,64 +1401,25 @@ export class AtlasDaemon implements AppContext {
           throw new Error(`Workspace path does not exist: ${workspace.path}`);
         }
       } else {
-        logger.debug("Loading virtual workspace", {
+        logger.debug("Loading system workspace", {
           workspaceId: workspace.id,
           system: workspace.metadata?.system,
         });
       }
 
-      // Use cached configuration from workspace registry
-      let mergedConfig: MergedConfig;
-
-      if (workspace.metadata?.virtual) {
-        // For virtual workspaces, load configuration dynamically
-        logger.debug(`Loading virtual workspace configuration dynamically`, {
-          workspaceId: workspace.id,
-          system: workspace.metadata?.system,
-        });
-
-        const workspaceConfig = await manager.getWorkspaceConfigBySlug(workspace.id);
-        if (!workspaceConfig) {
-          throw new Error(`Failed to load configuration for virtual workspace: ${workspace.id}`);
-        }
-
-        mergedConfig = {
-          atlas: atlasDefaults, // Use full atlas defaults which includes memory config
-          workspace: workspaceConfig, // Use dynamically loaded workspace config
-          jobs: workspaceConfig.jobs || {},
-          supervisorDefaults: this.supervisorDefaults!, // Keep supervisor defaults for compatibility
-        };
-        logger.debug(`Virtual workspace configuration loaded successfully`, {
-          workspaceId: workspace.id,
-          signals: Object.keys(workspaceConfig.signals || {}).length,
-          jobs: Object.keys(workspaceConfig.jobs || {}).length,
-          agents: Object.keys(workspaceConfig.agents || {}).length,
-        });
-      } else if (workspace.config) {
-        // Use pre-cached configuration (preferred - no I/O at signal time)
-        // Normalize cached WorkspaceConfig to MergedConfig structure
-        const adapter = new FilesystemConfigAdapter();
-        const configLoader = new ConfigLoader(adapter, workspace.path);
-        const fullConfig = await configLoader.load();
-        mergedConfig = {
-          ...fullConfig,
-          workspace: workspace.config, // Use cached workspace config for performance
-        };
-        logger.debug(`Using cached workspace configuration with fresh platform config`, {
-          workspaceId: workspace.id,
-          configHash: workspace.configHash?.substring(0, 8) + "...",
-        });
-      } else {
-        // Fallback: load configuration (should only happen for legacy registrations)
-        logger.warn(`No cached config found, falling back to live loading`, {
-          workspaceId: workspace.id,
-          path: workspace.path,
-        });
-        const adapter = new FilesystemConfigAdapter();
-        const configLoader = new ConfigLoader(adapter, workspace.path);
-        mergedConfig = await configLoader.load();
-        logger.debug(`Configuration loaded from disk as fallback`);
+      // Load configuration using the new WorkspaceManager
+      const mergedConfig = await manager.getWorkspaceConfig(workspace.id);
+      if (!mergedConfig) {
+        throw new Error(`Failed to load workspace configuration: ${workspace.id}`);
       }
+
+      logger.debug(`Workspace configuration loaded`, {
+        workspaceId: workspace.id,
+        isSystem: workspace.metadata?.system,
+        signals: Object.keys(mergedConfig.workspace?.signals || {}).length,
+        jobs: Object.keys(mergedConfig.workspace?.jobs || {}).length,
+        agents: Object.keys(mergedConfig.workspace?.agents || {}).length,
+      });
 
       logger.debug(`Creating Workspace object from config...`);
       logger.debug(
@@ -1564,7 +1445,7 @@ export class AtlasDaemon implements AppContext {
       logger.debug(`Creating WorkspaceRuntime...`);
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
-        workspacePath: workspace.metadata?.virtual ? undefined : workspace.path, // Pass workspace path for daemon mode
+        workspacePath: workspace.metadata?.system ? undefined : workspace.path, // Pass workspace path for daemon mode
         libraryStorage: this.libraryStorage, // Share daemon's library storage
       });
       logger.debug(`WorkspaceRuntime created successfully`);
@@ -1573,10 +1454,7 @@ export class AtlasDaemon implements AppContext {
       logger.debug(`Runtime stored in daemon registry`);
 
       // Register runtime with WorkspaceManager
-      await manager.registerRuntime(workspace.id, runtime, workspaceObj, {
-        name: workspace.name,
-        description: workspace.metadata?.description,
-      });
+      manager.registerRuntime(workspace.id, runtime);
       logger.debug(`Runtime registered with WorkspaceManager`);
 
       // Set idle timeout
@@ -1694,7 +1572,7 @@ export class AtlasDaemon implements AppContext {
     this.runtimes.delete(workspaceId);
 
     // Unregister runtime from WorkspaceManager
-    const manager = await getWorkspaceManager();
+    const manager = this.getWorkspaceManager();
     manager.unregisterRuntime(workspaceId);
 
     // Clear idle timeout
@@ -1851,6 +1729,12 @@ export class AtlasDaemon implements AppContext {
       this.cronManager = null;
     }
 
+    // Shutdown WorkspaceManager
+    if (this.workspaceManager) {
+      await this.workspaceManager.close();
+      this.workspaceManager = null;
+    }
+
     // Shutdown HTTP server
     if (this.server && this.server.shutdown) {
       await this.server.shutdown();
@@ -1903,7 +1787,7 @@ export class AtlasDaemon implements AppContext {
       }
 
       // Load workspace configuration
-      const adapter = new FilesystemConfigAdapter();
+      const adapter = new FilesystemConfigAdapter(workspacePath);
       const configLoader = new ConfigLoader(adapter, workspacePath);
       const config = await configLoader.load();
 
@@ -1915,7 +1799,7 @@ export class AtlasDaemon implements AppContext {
         // Check if this is a timer signal with cron schedule
         if (
           signalConfig && typeof signalConfig === "object" &&
-          "provider" in signalConfig && signalConfig.provider === "cron-scheduler" &&
+          "provider" in signalConfig && signalConfig.provider === "schedule" &&
           "schedule" in signalConfig && typeof signalConfig.schedule === "string"
         ) {
           const cronConfig: CronTimerConfig = {
@@ -1996,8 +1880,8 @@ export class AtlasDaemon implements AppContext {
     }
 
     try {
-      const manager = await getWorkspaceManager();
-      const workspaces = await manager.listAllPersisted();
+      const manager = this.getWorkspaceManager();
+      const workspaces = await manager.list();
 
       AtlasLogger.getInstance().info("Discovering cron signals for existing workspaces", {
         workspaceCount: workspaces.length,

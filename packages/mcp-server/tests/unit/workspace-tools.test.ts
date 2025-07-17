@@ -20,14 +20,14 @@ const mockWorkspaces = [
     id: "test-workspace-1",
     name: "Test Workspace 1",
     path: "/path/to/workspace1",
-    hasActiveRuntime: true,
+    status: "running",
     config: { version: "1.0.0" },
   },
   {
     id: "test-workspace-2",
     name: "Test Workspace 2",
     path: "/path/to/workspace2",
-    hasActiveRuntime: false,
+    status: "stopped",
     config: { version: "1.0.0" },
   },
 ];
@@ -37,7 +37,7 @@ const mockWorkspaceDetails = {
   id: "test-workspace-1",
   name: "Test Workspace 1",
   path: "/path/to/workspace1",
-  hasActiveRuntime: true,
+  status: "running",
   config: { version: "1.0.0" },
   jobs: ["job1", "job2"],
   agents: ["agent1"],
@@ -57,7 +57,7 @@ async function workspaceListToolLogic(ctx: { daemonUrl: string; logger: any }) {
 
     ctx.logger.info("MCP workspace_list response", {
       totalWorkspaces: workspaces.length,
-      activeRuntimes: workspaces.filter((w: any) => w.hasActiveRuntime).length,
+      runningWorkspaces: workspaces.filter((w: any) => w.status === "running").length,
     });
 
     return createSuccessResponse({
@@ -89,7 +89,7 @@ async function workspaceDescribeToolLogic(
 
     ctx.logger.info("MCP workspace_describe response", {
       workspaceId: params.workspaceId,
-      hasActiveRuntime: workspace.hasActiveRuntime,
+      status: workspace.status,
     });
 
     return createSuccessResponse({
@@ -160,7 +160,7 @@ Deno.test("workspace list tool - lists workspaces successfully", async () => {
     assertEquals(response.workspaces.length, 2);
     assertEquals(response.workspaces[0].id, "test-workspace-1");
     assertEquals(response.workspaces[0].name, "Test Workspace 1");
-    assertEquals(response.workspaces[0].hasActiveRuntime, true);
+    assertEquals(response.workspaces[0].status, "running");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -225,7 +225,7 @@ Deno.test("workspace describe tool - describes workspace successfully", async ()
     // Check workspace details
     assertEquals(response.workspace.id, "test-workspace-1");
     assertEquals(response.workspace.name, "Test Workspace 1");
-    assertEquals(response.workspace.hasActiveRuntime, true);
+    assertEquals(response.workspace.status, "running");
     assertExists(response.workspace.jobs);
     assertExists(response.workspace.agents);
   } finally {

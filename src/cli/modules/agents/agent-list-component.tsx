@@ -5,7 +5,6 @@ export interface Agent {
   type: string;
   model: string;
   status: string;
-  purpose: string;
 }
 
 // Component that renders the agent list
@@ -69,9 +68,6 @@ export function AgentListComponent({
               </Box>
               <Box width={10}>
                 <Text color="green">{agent.status}</Text>
-              </Box>
-              <Box width={45}>
-                <Text>{agent.purpose}</Text>
               </Box>
             </Box>
           ))}

@@ -91,7 +91,6 @@ class MockDaemonServer {
           description: workspaceDescription,
           status: "stopped",
           path,
-          hasActiveRuntime: false,
           createdAt: new Date().toISOString(),
           lastSeen: new Date().toISOString(),
         };

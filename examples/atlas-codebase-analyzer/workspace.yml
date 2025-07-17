@@ -8,53 +8,38 @@ workspace:
 
 # Signal definitions for autonomous operation
 signals:
-  # Built-in codebase watcher - fires on significant code changes
-  codebase-watcher:
-    provider: "codebase-watcher"
+  # File change trigger - fires on significant code changes
+  file-change:
+    provider: "http"
     description: "File monitoring for autonomous analysis"
-    path: "/Users/kenneth/tempest/atlas"
-    watch_patterns:
-      - "src/**/*.ts"
-      - "src/**/*.tsx"
-      - "*.yml"
-      - "*.md"
-      - "tests/**/*.ts"
-    ignore_patterns:
-      - "node_modules/**"
-      - ".git/**"
-      - "lgtm/**"
-      - "**/target/**"
-    debounce_seconds: 300 # Wait 5 minutes after last change
-    min_changes: 3 # Require at least 3 file changes
-    analysis_triggers:
-      - "performance_patterns"
-      - "developer_experience"
-      - "architecture_changes"
+    config:
+      path: "/file-change"
 
   # Manual trigger for immediate analysis
   manual-analysis:
     provider: "http"
-    path: "/analyze"
-    method: "POST"
     description: "Manual trigger for codebase analysis"
+    config:
+      path: "/analyze"
 
   # Weekly comprehensive analysis
   weekly-review:
-    provider: "cron-scheduler"
+    provider: "schedule"
     description: "Scheduled weekly analysis"
-    schedule: "0 9 * * 1" # Every Monday at 9 AM
-    timezone: "America/Los_Angeles"
+    config:
+      schedule: "0 9 * * 1" # Every Monday at 9 AM
+      timezone: "America/Los_Angeles"
 
 # Agent definitions - using EMCP context provisioning (no MCP servers)
 agents:
   # Performance analysis agent with secure filesystem context
   performance-analyzer:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Deep performance analysis using Atlas EMCP filesystem context"
-    max_steps: 3
-    prompts:
-      system: |
+    description: "Deep performance analysis using Atlas EMCP filesystem context"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      max_steps: 3
+      prompt: |
         You are a performance analysis expert with secure read-only access to the Atlas codebase.
         You receive comprehensive codebase context through Atlas EMCP filesystem provisioning.
         Analyze code patterns, identify bottlenecks, and suggest optimizations.
@@ -63,11 +48,11 @@ agents:
   # Developer experience analyzer with metadata capabilities
   dx-analyzer:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Developer experience analysis with advanced filesystem metadata"
-    max_steps: 3
-    prompts:
-      system: |
+    description: "Developer experience analysis with advanced filesystem metadata"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      max_steps: 3
+      prompt: |
         You are a developer experience expert with access to enhanced filesystem analysis.
         You receive detailed codebase context with metadata through Atlas EMCP.
         Understand code complexity, dependencies, and maintainability patterns.
@@ -76,11 +61,11 @@ agents:
   # Architecture analysis agent with comprehensive context
   architecture-analyzer:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "System architecture analysis using comprehensive codebase context"
-    max_steps: 3
-    prompts:
-      system: |
+    description: "System architecture analysis using comprehensive codebase context"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      max_steps: 3
+      prompt: |
         You are an architecture expert with advanced codebase analysis capabilities.
         You receive comprehensive system context through Atlas EMCP context provisioning.
         Understand system design, patterns, and relationships.
@@ -89,11 +74,11 @@ agents:
   # Report generator with secure context access
   report-generator:
     type: "llm"
-    model: "gemini-2.5-flash"
-    purpose: "Generate comprehensive reports using secure filesystem context"
-    max_steps: 2
-    prompts:
-      system: |
+    description: "Generate comprehensive reports using secure filesystem context"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      max_steps: 2
+      prompt: |
         You are a technical report generator with read-only filesystem context.
         Synthesize analysis findings into actionable markdown reports with priorities.
         Use the provided context to understand file relationships and generate comprehensive documentation.
@@ -106,14 +91,12 @@ jobs:
     triggers:
       - signal: "manual-analysis"
         condition:
-          {
-            "or": [
-              { "!": { "var": "type" } },
-              { "==": [{ "var": "type" }, "comprehensive"] },
-            ],
-          }
-    session_prompts:
-      planning: |
+          jsonlogic:
+            or:
+              - "!": { "var": "type" }
+              - "==": [{ "var": "type" }, "comprehensive"]
+    prompt: |
+      Planning:
         Focus your analysis on these key areas of the Atlas codebase:
         - Worker architecture and communication patterns
         - XState FSM implementations
@@ -124,7 +107,8 @@ jobs:
         - Hierarchical resource scoping (Memory vs Context vs Tools)
 
         Provide specific, actionable recommendations based on the actual codebase implementation.
-      evaluation: |
+
+      Evaluation:
         Evaluate whether the analysis has covered all critical architectural aspects:
         - Is the worker communication analysis comprehensive?
         - Are the FSM patterns properly evaluated?
@@ -136,7 +120,7 @@ jobs:
     execution:
       strategy: "sequential"
       context:
-        filesystem:
+        files:
           patterns:
             - "src/core/workspace-runtime.ts"
             - "src/core/session-supervisor.ts"
@@ -150,64 +134,53 @@ jobs:
           base_path: "/Users/kenneth/tempest/atlas"
           max_file_size: 100000
           include_content: true
-          # Enhanced EMCP provider configuration with security controls
-          provider_config:
-            allowedDirectories: ["/Users/kenneth/tempest/atlas"]
-            deniedPaths:
-              [
-                "/Users/kenneth/tempest/atlas/node_modules",
-                "/Users/kenneth/tempest/atlas/.git",
-              ]
-            readOnly: true # Analysis workspace should be read-only for security
-            maxFileSize: "100kb"
-            maxTotalSize: "5mb"
-            allowedExtensions:
-              [".ts", ".tsx", ".js", ".md", ".yml", ".yaml", ".json"]
       agents:
-        - id: "performance-analyzer"
-          input_source: "filesystem_context"
-        - id: "dx-analyzer"
-          input_source: "filesystem_context"
-        - id: "architecture-analyzer"
-          input_source: "filesystem_context"
-        - id: "report-generator"
-          input_source: "combined"
+        - "performance-analyzer"
+        - "dx-analyzer"
+        - "architecture-analyzer"
+        - "report-generator"
 
   performance-focused:
     name: "performance-focused"
     description: "Performance analysis and optimization recommendations"
     triggers:
       - signal: "manual-analysis"
-        condition: { "==": [{ "var": "type" }, "performance"] }
+        condition:
+          jsonlogic:
+            "==": [{ "var": "type" }, "performance"]
     execution:
       strategy: "sequential"
       agents:
-        - id: "performance-analyzer"
-        - id: "report-generator"
+        - "performance-analyzer"
+        - "report-generator"
 
   dx-focused:
     name: "dx-focused"
     description: "Developer experience analysis and improvements"
     triggers:
       - signal: "manual-analysis"
-        condition: { "==": [{ "var": "type" }, "dx"] }
+        condition:
+          jsonlogic:
+            "==": [{ "var": "type" }, "dx"]
     execution:
       strategy: "sequential"
       agents:
-        - id: "dx-analyzer"
-        - id: "report-generator"
+        - "dx-analyzer"
+        - "report-generator"
 
   architecture-review:
     name: "architecture-review"
     description: "System architecture analysis and design recommendations"
     triggers:
       - signal: "manual-analysis"
-        condition: { "==": [{ "var": "type" }, "architecture"] }
+        condition:
+          jsonlogic:
+            "==": [{ "var": "type" }, "architecture"]
     execution:
       strategy: "sequential"
       agents:
-        - id: "architecture-analyzer"
-        - id: "report-generator"
+        - "architecture-analyzer"
+        - "report-generator"
 
   weekly-health-check:
     name: "weekly-health-check"
@@ -217,7 +190,7 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "performance-analyzer"
-        - id: "dx-analyzer"
-        - id: "architecture-analyzer"
-        - id: "report-generator"
+        - "performance-analyzer"
+        - "dx-analyzer"
+        - "architecture-analyzer"
+        - "report-generator"
