@@ -8,8 +8,6 @@ updates:
       day: "monday"
       time: "09:00"
     open-pull-requests-limit: 10
-    reviewers:
-      - "ljagiello"
     assignees:
       - "ljagiello"
     commit-message:
@@ -28,8 +26,6 @@ updates:
       day: "tuesday"
       time: "09:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "ljagiello"
     assignees:
       - "ljagiello"
     commit-message:
@@ -48,8 +44,6 @@ updates:
       day: "wednesday"
       time: "09:00"
     open-pull-requests-limit: 5
-    reviewers:
-      - "ljagiello"
     assignees:
       - "ljagiello"
     commit-message:
