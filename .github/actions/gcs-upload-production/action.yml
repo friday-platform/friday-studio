@@ -58,10 +58,10 @@ runs:
         fi
         # Upload Linux packages
         if ls atlas_*.deb 1> /dev/null 2>&1; then
-          gsutil -m cp atlas_*.deb gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}packages/
+          gsutil -m cp atlas_*.deb gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
         if ls atlas-*.rpm 1> /dev/null 2>&1; then
-          gsutil -m cp atlas-*.rpm gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}packages/
+          gsutil -m cp atlas-*.rpm gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
 
         echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to production GCS bucket"
@@ -78,12 +78,48 @@ runs:
           # Extract channel prefix for file matching (e.g., "edge" or "nightly")
           CHANNEL=$(echo "${{ inputs.bucket-prefix }}" | sed 's/\///g')
 
-          # Cleanup artifacts: Keep last 7 versions (28 files = 4 platforms × 7 versions)
-          gsutil ls gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}atlas_${CHANNEL}-*.tar.gz | \
-            sort -r | \
-            tail -n +29 | \
-            head -20 | \
-            xargs -r gsutil -m rm || echo "No old ${CHANNEL} artifacts to clean"
+          # Cleanup artifacts: Remove artifacts older than 7 days
+          echo "Removing ${CHANNEL} artifacts older than 7 days..."
+
+          # Calculate the date 7 days ago
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS date command
+            CUTOFF_DATE=$(date -u -v-7d +%Y-%m-%d)
+          else
+            # Linux date command
+            CUTOFF_DATE=$(date -u -d '7 days ago' +%Y-%m-%d)
+          fi
+
+          # Function to check if a file is older than cutoff date
+          # GCS URLs contain timestamp in format: atlas_edge-YYYYMMDD-HHMMSS-hash_platform.ext
+          cleanup_old_files() {
+            local pattern="$1"
+            local bucket_path="gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}"
+
+            gsutil ls -l "${bucket_path}${pattern}" 2>/dev/null | \
+            while read -r size date time url; do
+              # Skip the TOTAL line
+              if [[ "$size" == "TOTAL:" ]]; then
+                continue
+              fi
+
+              # Extract date from filename (format: atlas_edge-YYYYMMDD-HHMMSS-hash_platform.ext)
+              if [[ "$url" =~ atlas_${CHANNEL}-([0-9]{8})-[0-9]{6}- ]]; then
+                file_date="${BASH_REMATCH[1]}"
+                # Convert YYYYMMDD to YYYY-MM-DD for comparison
+                file_date_formatted="${file_date:0:4}-${file_date:4:2}-${file_date:6:2}"
+
+                # Compare dates
+                if [[ "$file_date_formatted" < "$CUTOFF_DATE" ]]; then
+                  echo "Removing old artifact: $url (from $file_date_formatted)"
+                  gsutil rm "$url" || echo "Failed to remove $url"
+                fi
+              fi
+            done
+          }
+
+          # Cleanup all old artifacts
+          cleanup_old_files "atlas_${CHANNEL}-*"
 
 
           echo "Production ${{ inputs.bucket-prefix }} cleanup completed"
