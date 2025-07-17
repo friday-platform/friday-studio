@@ -28,7 +28,7 @@
   },
   "license": "PROPRIETARY",
   "devDependencies": {
-    "electron": "^37.2.2",
+    "electron": "^37.2.3",
     "electron-builder": "^26.0.12"
   },
   "build": {
