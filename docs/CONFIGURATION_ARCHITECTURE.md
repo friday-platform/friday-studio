@@ -413,17 +413,17 @@ jobs:
 agents:
   mishearing-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     purpose: "Specializes in phonetic errors and mishearing transformations"
 
   embellishment-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     purpose: "Adds creative details and context to messages"
 
   reinterpretation-agent:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     purpose: "Dramatically transforms and reinterprets messages"
 ```
 
@@ -478,12 +478,12 @@ jobs:
 agents:
   performance-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     purpose: "Deep performance analysis and optimization recommendations"
 
   dx-analyzer:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     purpose: "Developer experience analysis and improvement recommendations"
 ```
 

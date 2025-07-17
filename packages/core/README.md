@@ -24,7 +24,7 @@ import { type LLMOptions, LLMProvider } from "@atlas/core";
 // Simple text generation
 const response = await LLMProvider.generateText("Hello, world!", {
   provider: "anthropic",
-  model: "claude-3-sonnet-20240229",
+  model: "claude-3-5-sonnet-latest",
   temperature: 0.7,
   max_tokens: 1000,
   systemPrompt: "You are a helpful assistant.",
@@ -38,7 +38,7 @@ console.log(response.steps); // [] for non-tool calls
 // Text generation with tools
 const toolResponse = await LLMProvider.generateText("What's the weather?", {
   provider: "anthropic",
-  model: "claude-3-sonnet-20240229",
+  model: "claude-3-5-sonnet-latest",
   tools: {
     getWeather: {
       description: "Get current weather",
@@ -108,13 +108,13 @@ const toolResult = await LLMProvider.generateTextWithTools(prompt, {
 
 // New API (after)
 const response = await LLMProvider.generateText(prompt, {
-  model: "claude-3-sonnet-20240229", // Now required
+  model: "claude-3-5-sonnet-latest", // Now required
   systemPrompt: "...",
   memoryContext: "...", // Explicit context instead of boolean flag
 });
 
 const toolResponse = await LLMProvider.generateText(prompt, {
-  model: "claude-3-sonnet-20240229",
+  model: "claude-3-5-sonnet-latest",
   systemPrompt: "...",
   mcpServers: ["server1"],
   tools: {/* ... */},

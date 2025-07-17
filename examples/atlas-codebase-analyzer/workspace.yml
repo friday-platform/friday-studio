@@ -37,7 +37,7 @@ agents:
     type: "llm"
     description: "Deep performance analysis using Atlas EMCP filesystem context"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
         You are a performance analysis expert with secure read-only access to the Atlas codebase.
@@ -50,7 +50,7 @@ agents:
     type: "llm"
     description: "Developer experience analysis with advanced filesystem metadata"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
         You are a developer experience expert with access to enhanced filesystem analysis.
@@ -63,7 +63,7 @@ agents:
     type: "llm"
     description: "System architecture analysis using comprehensive codebase context"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
         You are an architecture expert with advanced codebase analysis capabilities.
@@ -76,7 +76,7 @@ agents:
     type: "llm"
     description: "Generate comprehensive reports using secure filesystem context"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       max_steps: 2
       prompt: |
         You are a technical report generator with read-only filesystem context.

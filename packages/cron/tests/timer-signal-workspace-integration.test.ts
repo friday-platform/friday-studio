@@ -56,7 +56,7 @@ const mockWorkspaceConfig = {
   agents: {
     "test-agent": {
       type: "llm",
-      model: "gemini-2.5-flash",
+      model: "claude-3-7-sonnet-latest",
       purpose: "Test agent for timer integration",
     },
   },

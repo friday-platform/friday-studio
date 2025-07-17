@@ -251,7 +251,7 @@ Deno.test("Edge Cases - should handle circular references gracefully", async () 
         description: "Agent A",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Agent A",
         },
       },
@@ -366,7 +366,7 @@ Deno.test("Edge Cases - getAgent helper should handle missing agents", () => {
         description: "Exists",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Test",
         },
       },
@@ -546,7 +546,7 @@ Deno.test("Edge Cases - should handle large configurations efficiently", () => {
       description: `Agent ${i}`,
       config: {
         provider: "anthropic",
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-3-5-haiku-latest",
         prompt: `Prompt for agent ${i}`,
       },
     };
@@ -595,7 +595,7 @@ Deno.test("Edge Cases - should handle unknown fields gracefully", () => {
         description: "Test",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Test",
           futureOption: true, // Unknown field in config
         },
@@ -617,7 +617,7 @@ Deno.test("Edge Cases - should handle unknown fields gracefully", () => {
         description: "Test",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Test",
         },
       },

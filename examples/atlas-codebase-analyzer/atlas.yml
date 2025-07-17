@@ -14,7 +14,7 @@ agents: {}
 # Supervisor configuration for advanced analysis
 supervisors:
   workspace:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "workspace"
     supervision:
       level: "standard"
@@ -32,7 +32,7 @@ supervisors:
         Use job trigger evaluation to route signals to appropriate analysis workflows.
 
   session:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "session"
     supervision:
       level: "standard"
@@ -50,7 +50,7 @@ supervisors:
         Focus on performance, developer experience, and architecture improvements.
 
   agent:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "agent"
     supervision:
       level: "minimal"

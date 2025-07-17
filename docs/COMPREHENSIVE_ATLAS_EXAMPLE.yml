@@ -117,7 +117,7 @@ agents:
 
     config:
       provider: "anthropic"
-      model: "claude-3-5-haiku-20241022" # Efficient model for memory ops
+      model: "claude-3-5-haiku-latest" # Efficient model for memory ops
 
       prompt: |
         You are a memory management agent for Atlas workspaces.
@@ -378,7 +378,7 @@ memory:
 supervisors:
   # Workspace Supervisor
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     memory: "workspace" # Uses workspace-level memory
 
     supervision:
@@ -419,7 +419,7 @@ supervisors:
 
   # Session Supervisor
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     memory: "session" # Uses session-level memory
 
     supervision:
@@ -461,7 +461,7 @@ supervisors:
 
   # Agent Supervisor
   agent:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     memory: "agent" # Uses agent-level memory
 
     supervision:
@@ -600,7 +600,6 @@ federation:
   scope_sets:
     platform_user: ["use_platform_agents", "read_platform_status"]
     platform_admin: ["platform_user", "manage_workspaces", "configure_platform"]
-
 # ==============================================================================
 # Notes
 # ==============================================================================

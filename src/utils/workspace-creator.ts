@@ -39,7 +39,7 @@ jobs:
 agents:
   example-agent:
     type: "llm"
-    model: "gemini-2.5-flash"
+    model: "claude-3-5-haiku-latest"
     purpose: "Example agent"
 `;
 

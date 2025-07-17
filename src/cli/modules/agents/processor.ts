@@ -9,7 +9,7 @@ export function processAgentsFromConfig(config: WorkspaceConfig): Agent[] {
         return {
           name: id,
           type: agent.type,
-          model: agent.config.model || "claude-3-5-sonnet-20241022",
+          model: agent.config.model || "claude-3-7-sonnet-latest",
           status: "ready",
         };
       default:

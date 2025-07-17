@@ -34,7 +34,7 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   config: z.strictObject({
     // Provider and model
     provider: z.enum(["anthropic", "openai", "google"]).default("anthropic"),
-    model: z.string().describe("Model identifier (e.g., 'claude-3-5-sonnet-20241022')"),
+    model: z.string().describe("Model identifier (e.g., 'claude-3-7-sonnet-latest')"),
 
     // Single prompt string
     prompt: z.string().describe("System prompt for the agent"),

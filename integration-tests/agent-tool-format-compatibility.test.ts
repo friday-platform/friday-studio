@@ -16,7 +16,7 @@ Deno.test("Agent tool checking handles simple array tool format", () => {
   // Create test agent with new simple array format
   const agent = {
     type: "llm",
-    model: "gemini-2.5-flash",
+    model: "claude-3-5-haiku-latest",
     purpose: "Test agent with new tool format",
     default_tools: ["workspace.memory.recall"],
     tools: ["computer_use", "filesystem-context", "workspace.sessions.describe"],

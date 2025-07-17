@@ -333,7 +333,7 @@ workspace:
 
 supervisors:
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -344,7 +344,7 @@ supervisors:
     prompts:
       system: "You are a WorkspaceSupervisor"
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -355,7 +355,7 @@ supervisors:
     prompts:
       system: "You are a SessionSupervisor"
   agent:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true

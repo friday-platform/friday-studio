@@ -20,8 +20,8 @@ export async function generateThinking<T>(
   const result = await LLMProvider.generateText(prompt, {
     systemPrompt:
       "You are an AI reasoning engine that follows a structured Think→Act→Observe loop.",
-    model: "gemini-2.5-flash",
-    provider: "google",
+    model: "claude-3-7-sonnet-latest",
+    provider: "anthropic",
     temperature: 0.1,
     max_tokens: 4000, // Reasonable default for reasoning steps
     operationContext: {

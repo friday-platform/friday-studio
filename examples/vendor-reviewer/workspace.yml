@@ -54,8 +54,8 @@ agents:
     type: "llm"
     description: "Read and analyze vendor documentation from specified directory"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       max_steps: 5
       tools: ["filesystem", "commands"]
       prompt: |
@@ -102,8 +102,8 @@ agents:
     type: "llm"
     description: "Analyze all vendor documentation and security evidence for comprehensive evaluation"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       max_steps: 5
       tools: ["filesystem", "commands"]
       prompt: |
@@ -150,8 +150,8 @@ agents:
     type: "llm"
     description: "Evaluate evidence from document and questionnaire analysis to create vendor recommendation"
     config:
-      model: "gemini-2.5-pro"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       max_steps: 1
       prompt: |
         You are a SOC 2 vendor evaluation specialist responsible for making final vendor recommendations.

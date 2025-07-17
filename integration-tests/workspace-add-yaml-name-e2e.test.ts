@@ -50,7 +50,7 @@ agents:
     type: llm
     description: Test agent for integration tests
     config:
-      model: claude-3-5-sonnet-20241022
+      model: claude-3-7-sonnet-latest
       prompt: |
         You are a test agent for integration tests. 
         Please respond to requests in a helpful and concise manner.

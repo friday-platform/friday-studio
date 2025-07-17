@@ -107,7 +107,7 @@ deno task atlas --version
 export ANTHROPIC_API_KEY="your-api-key-here"
 
 # Optional: Configure custom model defaults
-export ATLAS_DEFAULT_MODEL="claude-3-5-sonnet-20241022"
+export ATLAS_DEFAULT_MODEL="claude-3-7-sonnet-latest"
 ```
 
 2. **Start the Atlas daemon**
@@ -223,7 +223,7 @@ workspace:
 agents:
   my-agent:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     purpose: "Agent purpose description"
     prompts:
       system: "You are an AI agent that..."

@@ -153,7 +153,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
    * Get default model for this agent
    */
   protected getDefaultModel(): string {
-    return "gemini-2.5-flash";
+    return "claude-3-5-haiku-latest";
   }
 
   /**

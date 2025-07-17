@@ -93,8 +93,8 @@ agents:
     type: "llm"
     description: "Specializes in phonetic errors and mishearing transformations"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools: ["filesystem-context"] # References tools.mcp.servers.filesystem-context
       prompt: |
         You are a specialized agent in the telephone game focusing on phonetic errors and mishearing.
@@ -106,8 +106,8 @@ agents:
     type: "llm"
     description: "Adds creative details and context to messages"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools: ["filesystem-context", "atlas-platform"]
       prompt: |
         You are a creative embellishment agent in the telephone game.
@@ -119,8 +119,8 @@ agents:
     type: "llm"
     description: "Dramatically transforms and reinterprets messages"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools: ["filesystem-context", "atlas-platform"]
       prompt: |
         You are a reinterpretation agent in the telephone game.

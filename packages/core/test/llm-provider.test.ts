@@ -217,8 +217,8 @@ Deno.test({
   sanitizeResources: false, // Telemetry may have async cleanup
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 50,
       temperature: 0,
     };
@@ -283,7 +283,7 @@ Deno.test({
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
       // No provider specified - should default to anthropic
-      model: "gemini-2.5-flash",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 50,
       temperature: 0,
     };
@@ -301,8 +301,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       systemPrompt: "You are a pirate. Always respond in pirate speak.",
       max_tokens: 100,
       temperature: 0.5,
@@ -322,8 +322,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       memoryContext:
         "Previous user asked about the capital of France. You answered: The capital of France is Paris.",
       max_tokens: 100,
@@ -348,8 +348,8 @@ Deno.test({
   fn: withMockLLMProvider(async () => {
     const chunks: string[] = [];
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 50,
       temperature: 0,
     };
@@ -376,8 +376,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       tools: {
         calculator: mockCalculatorTool,
       },
@@ -421,8 +421,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       tools: {
         calculator: mockCalculatorTool,
       },
@@ -446,8 +446,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       tools: {
         calculator: mockCalculatorTool,
       },
@@ -499,8 +499,8 @@ Deno.test({
     try {
       await expect(
         LLMProvider.generateText(TEST_PROMPT, {
-          provider: "google",
-          model: "gemini-2.5-flash",
+          provider: "anthropic",
+          model: "claude-3-5-haiku-latest",
           // No apiKey provided and env var deleted
         }),
       ).rejects.toThrow("API key not found");
@@ -522,8 +522,8 @@ Deno.test({
   async fn() {
     await expect(
       LLMProvider.generateText(COMPLEX_PROMPT, {
-        provider: "google",
-        model: "gemini-2.5-flash",
+        provider: "anthropic",
+        model: "claude-3-5-haiku-latest",
         max_tokens: 4000,
         timeout: 1, // 1ms timeout - will definitely timeout
       }),
@@ -538,8 +538,8 @@ Deno.test({
   fn: withMockLLMProvider(async () => {
     // Low temperature (deterministic)
     const lowTempOptions: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       temperature: 0,
       max_tokens: 50,
     };
@@ -547,8 +547,8 @@ Deno.test({
 
     // High temperature (creative) - Anthropic only supports 0-1 range
     const highTempOptions: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       temperature: 1,
       max_tokens: 100,
     };
@@ -566,8 +566,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 10, // Very low limit
       temperature: 0.5,
     };
@@ -588,8 +588,8 @@ Deno.test({
   sanitizeResources: false,
   fn: withMockLLMProvider(async () => {
     const options: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 50,
       operationContext: {
         operation: "test_calculation",
@@ -612,8 +612,8 @@ Deno.test({
   fn: withMockLLMProvider(async () => {
     // Test without tools
     const simpleOptions: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 50,
     };
     const simpleResult = await LLMProvider.generateText("Hello", simpleOptions);
@@ -626,8 +626,8 @@ Deno.test({
 
     // Test with tools
     const toolOptions: LLMOptions = {
-      provider: "google",
-      model: "gemini-2.5-flash",
+      provider: "anthropic",
+      model: "claude-3-5-haiku-latest",
       max_tokens: 100,
       tools: {
         calculator: mockCalculatorTool,

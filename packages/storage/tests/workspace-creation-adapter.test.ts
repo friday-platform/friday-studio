@@ -232,7 +232,7 @@ agents:
   agent1:
     type: llm
     purpose: First agent
-    model: gemini-2.5-flash
+    model: claude-3-5-haiku-latest
     config:
       temperature: 0.7
       max_tokens: 1000

@@ -47,7 +47,7 @@ system_workspaces:
     enabled: true
     workspace_path: "@atlas/system/conversation"
     config:
-      default_model: "claude-3-5-sonnet-20241022"
+      default_model: "claude-3-7-sonnet-latest"
 ```
 
 ### 2. Conversation Scoping
@@ -890,7 +890,7 @@ jobs:
 agents:
   conversation-agent:
     type: "llm"
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     purpose: "Handle conversations with scope awareness"
     system_prompt: |
       You are Atlas Assistant. You help users with their Atlas workspaces.
@@ -906,7 +906,7 @@ agents:
 
   conversation-query:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     purpose: "Query conversation history based on scope"
     system_prompt: |
       Query the conversation storage to list conversations.
@@ -915,7 +915,7 @@ agents:
 
   conversation-loader:
     type: "llm"
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     purpose: "Load conversation history for resumption"
     system_prompt: |
       Load conversation metadata and message history.

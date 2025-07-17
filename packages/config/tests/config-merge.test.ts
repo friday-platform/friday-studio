@@ -56,7 +56,7 @@ const baseAtlasConfig = {
       description: "Platform agent",
       config: {
         provider: "anthropic",
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-3-5-haiku-latest",
         prompt: "Platform agent prompt",
       },
     },
@@ -125,7 +125,7 @@ const baseAtlasConfig = {
   },
   supervisors: {
     workspace: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-7-sonnet-latest",
       memory: "workspace",
       supervision: {
         level: "detailed",
@@ -138,7 +138,7 @@ const baseAtlasConfig = {
       prompts: {},
     },
     session: {
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-7-sonnet-latest",
       supervision: {
         level: "standard",
         cache_enabled: true,
@@ -150,7 +150,7 @@ const baseAtlasConfig = {
       prompts: {},
     },
     agent: {
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-haiku-latest",
       supervision: {
         level: "minimal",
         cache_enabled: true,
@@ -217,7 +217,7 @@ const baseWorkspaceConfig = {
       description: "Workspace agent",
       config: {
         provider: "anthropic",
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-3-7-sonnet-latest",
         prompt: "Workspace agent prompt",
       },
     },
@@ -264,7 +264,7 @@ Deno.test("Config V2 - should keep workspace and atlas configs separate", async 
   assertEquals(merged.atlas?.server?.mcp?.enabled, true);
 
   // Atlas-specific fields only in atlas config
-  assertEquals(merged.atlas?.supervisors?.workspace?.model, "claude-3-5-sonnet-20241022");
+  assertEquals(merged.atlas?.supervisors?.workspace?.model, "claude-3-7-sonnet-latest");
   assertEquals(merged.atlas?.planning?.execution?.precomputation, "moderate");
 });
 
@@ -387,7 +387,7 @@ Deno.test("Config V2 - should validate cross-references between separate configs
         description: "Shared agent",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Shared prompt",
         },
       },
@@ -433,7 +433,7 @@ Deno.test("Config V2 - should allow same agent names in different configs", asyn
         description: "Atlas version",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Atlas prompt",
           temperature: 0.5,
         },
@@ -450,7 +450,7 @@ Deno.test("Config V2 - should allow same agent names in different configs", asyn
         description: "Workspace override",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-sonnet-20241022", // Different model
+          model: "claude-3-7-sonnet-latest", // Different model
           prompt: "Workspace prompt",
           temperature: 0.7,
         },
@@ -469,7 +469,7 @@ Deno.test("Config V2 - should allow same agent names in different configs", asyn
   const atlasAgent = merged.atlas?.agents?.["common-agent"];
   if (atlasAgent?.type === "llm") {
     assertEquals(atlasAgent.description, "Atlas version");
-    assertEquals(atlasAgent.config.model, "claude-3-5-haiku-20241022");
+    assertEquals(atlasAgent.config.model, "claude-3-5-haiku-latest");
     assertEquals(atlasAgent.config.prompt, "Atlas prompt");
     assertEquals(atlasAgent.config.temperature, 0.5);
   }
@@ -477,7 +477,7 @@ Deno.test("Config V2 - should allow same agent names in different configs", asyn
   const workspaceAgent = merged.workspace.agents?.["common-agent"];
   if (workspaceAgent?.type === "llm") {
     assertEquals(workspaceAgent.description, "Workspace override");
-    assertEquals(workspaceAgent.config.model, "claude-3-5-sonnet-20241022");
+    assertEquals(workspaceAgent.config.model, "claude-3-7-sonnet-latest");
     assertEquals(workspaceAgent.config.prompt, "Workspace prompt");
     assertEquals(workspaceAgent.config.temperature, 0.7);
   }

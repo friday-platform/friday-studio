@@ -128,8 +128,8 @@ agents:
     type: "llm"
     description: "GitHub repository discovery specialist for AI agent projects"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools: ["github-api"]
       max_steps: 15
       tool_choice: "auto"
@@ -227,8 +227,8 @@ agents:
     type: "llm"
     description: "AI project analysis and trend summarization specialist"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools: ["atlas-platform"]
       max_steps: 8
       tool_choice: "auto"

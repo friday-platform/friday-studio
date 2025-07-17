@@ -106,7 +106,7 @@ export class ConversationAgent extends BaseAgent {
     });
 
     this.agentConfig = {
-      model: "gemini-2.5-flash",
+      model: "claude-3-7-sonnet-latest",
       prompt: "You are a helpful AI assistant for Atlas workspace conversations.",
       tools: [],
       temperature: 0.7,
@@ -365,7 +365,7 @@ export class ConversationAgent extends BaseAgent {
         this.logger.info("About to call generateTextWithTools", {
           message: message.substring(0, 100),
           toolCount: Object.keys(daemonTools).length,
-          model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
+          model: this.agentConfig.model || "claude-3-7-sonnet-latest",
           temperature: this.agentConfig.temperature || 0.7,
         });
 
@@ -383,8 +383,8 @@ export class ConversationAgent extends BaseAgent {
           // Use LLMProvider with unified API for tool-enabled completion
           const result = await LLMProvider.generateText(message, {
             systemPrompt: enhancedSystemPrompt,
-            model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
-            provider: "google",
+            model: this.agentConfig.model || "claude-3-7-sonnet-latest",
+            provider: "anthropic",
             temperature: this.agentConfig.temperature || 0.7,
             max_tokens: this.agentConfig.max_tokens || 4000,
             tools: daemonTools,
@@ -446,8 +446,8 @@ export class ConversationAgent extends BaseAgent {
         }
         const response = await LLMProvider.generateText(message, {
           systemPrompt: enhancedSystemPrompt,
-          model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
-          provider: "google",
+          model: this.agentConfig.model || "claude-3-7-sonnet-latest",
+          provider: "anthropic",
           temperature: this.agentConfig.temperature || 0.7,
           max_tokens: this.agentConfig.max_tokens || 4000,
           operationContext: {
@@ -810,8 +810,8 @@ For workspace_draft_create parameters, include:
                 `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.\n\nAvailable tools: ${
                   Object.keys(context.userContext.tools).join(", ")
                 }`,
-              model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
-              provider: "google",
+              model: this.agentConfig.model || "claude-3-7-sonnet-latest",
+              provider: "anthropic",
               temperature: 0.3,
               max_tokens: 8000, // Near Claude 3.5 Sonnet's limit of 8192
               tools: allToolsForReasoning,
@@ -1267,7 +1267,7 @@ For workspace_draft_create parameters, include:
         "context-aware",
       ],
       configSchema: {
-        model: { type: "string", default: "claude-3-5-sonnet-20241022" },
+        model: { type: "string", default: "claude-3-7-sonnet-latest" },
         prompt: { type: "string", default: "You are a helpful AI assistant." },
         tools: { type: "array", default: [] },
         temperature: { type: "number", default: 0.7, min: 0, max: 2 },
@@ -1433,8 +1433,8 @@ DO NOT ask for clarification if the context is clear from the conversation histo
     const result = await LLMProvider.generateText(message, {
       systemPrompt,
       // Note: messages parameter not supported in new API - context is passed via systemPrompt
-      model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
-      provider: "google",
+      model: this.agentConfig.model || "claude-3-7-sonnet-latest",
+      provider: "anthropic",
       temperature: this.agentConfig.temperature || 0.7,
       max_tokens: 2000, // Increased for workspace operations
       tools: tools,

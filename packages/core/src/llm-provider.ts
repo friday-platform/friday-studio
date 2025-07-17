@@ -10,7 +10,7 @@ import { logger } from "../../../src/utils/logger.ts";
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
 
 const LLMOptionsSchema = z.object({
-  provider: LLMProviderSchema.optional().default("google"),
+  provider: LLMProviderSchema.optional().default("anthropic"),
   model: z.string(),
   temperature: z.number().min(0).max(1).optional(),
   max_tokens: z.number().positive().optional(),
@@ -208,7 +208,7 @@ export class LLMProvider {
     options: LLMOptions,
   ): Promise<LLMResponse> {
     logger.info("LLM generation started", {
-      provider: options.provider || "google",
+      provider: options.provider || "anthropic",
       model: options.model,
       mock: true,
     });
@@ -335,7 +335,7 @@ export class LLMProvider {
     };
   } {
     const providerConfig = {
-      provider: options.provider || "google",
+      provider: options.provider || "anthropic",
       model: options.model,
       temperature: options.temperature,
       max_tokens: options.max_tokens,

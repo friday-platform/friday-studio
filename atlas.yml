@@ -14,7 +14,7 @@ agents:
   # Memory management agent
   memory-agent:
     type: "llm"
-    model: "gemini-2.5-flash"
+    model: "claude-3-5-haiku-latest"
     purpose: "Manages memory operations at session start and end"
     tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
     prompts:
@@ -200,7 +200,7 @@ memory:
 # Supervisor configuration
 supervisors:
   workspace:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "workspace" # Uses workspace-level memory configuration
     prompts:
       system: |
@@ -215,7 +215,7 @@ supervisors:
         - Manage signal-to-agent mappings dynamically
 
   session:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "session" # Uses session-level memory configuration
     prompts:
       system: |
@@ -230,7 +230,7 @@ supervisors:
         - Support iterative refinement loops
 
   agent:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     memory: "agent" # Uses agent-level memory configuration
     supervision:
       level: "minimal" # minimal | standard | paranoid

@@ -61,7 +61,7 @@ agents:
     description: "Analyzes data"
     config:
       provider: "anthropic"
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       prompt: "You are a data analyst"
 signals:
   data-webhook:
@@ -91,7 +91,7 @@ workspace:
   description: "Atlas test workspace"
 supervisors:
   workspace:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "detailed"
       cache_enabled: true
@@ -100,7 +100,7 @@ supervisors:
         validation: "10s"
     prompts: {}
   session:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -109,7 +109,7 @@ supervisors:
         validation: "10s"
     prompts: {}
   agent:
-    model: "claude-3-5-haiku-20241022"
+    model: "claude-3-5-haiku-latest"
     supervision:
       level: "minimal"
       cache_enabled: true
@@ -220,7 +220,7 @@ Deno.test("Config V2 Parsing - should properly type discriminate agents", () => 
     // Verify LLM agent config
     if (llmAgent?.type === "llm") {
       assertEquals(llmAgent.config.provider, "anthropic");
-      assertEquals(llmAgent.config.model, "claude-3-5-sonnet-20241022");
+      assertEquals(llmAgent.config.model, "claude-3-7-sonnet-latest");
       assertEquals(llmAgent.config.prompt, "You are a data analyst");
     }
   }
@@ -243,7 +243,7 @@ Deno.test("Config V2 Parsing - should parse the comprehensive atlas example", ()
     assertEquals(config.memory, undefined);
 
     // Verify supervisors
-    assertEquals(config.supervisors?.workspace?.model, "claude-3-5-sonnet-20241022");
+    assertEquals(config.supervisors?.workspace?.model, "claude-3-7-sonnet-latest");
 
     // Verify planning config
     assertEquals(config.planning?.execution?.precomputation, "moderate");
@@ -282,7 +282,7 @@ Deno.test("Config V2 Parsing - ConfigLoader should keep workspace and atlas conf
   assertEquals(Object.keys(merged.workspace.agents || {}).includes("analyzer"), true);
 
   // Atlas-specific fields only in atlas config
-  assertEquals(merged.atlas?.supervisors?.workspace?.model, "claude-3-5-sonnet-20241022");
+  assertEquals(merged.atlas?.supervisors?.workspace?.model, "claude-3-7-sonnet-latest");
   assertEquals(merged.atlas?.planning?.execution?.precomputation, "moderate");
 });
 
@@ -390,7 +390,7 @@ Deno.test("Config V2 Parsing - ConfigLoader should validate signal references in
         description: "Test agent",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-haiku-20241022",
+          model: "claude-3-5-haiku-latest",
           prompt: "Test",
         },
       },
@@ -499,7 +499,7 @@ Deno.test("Config V2 Parsing - should handle temperature validation for LLM agen
     description: "Test agent",
     config: {
       provider: "anthropic",
-      model: "claude-3-5-sonnet-20241022",
+      model: "claude-3-7-sonnet-latest",
       prompt: "Test",
       temperature: 1.5, // Invalid - should be 0-1
     },

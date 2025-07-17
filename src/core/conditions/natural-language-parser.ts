@@ -58,7 +58,7 @@ export class NaturalLanguageConditionParser {
 
   constructor(config?: Partial<typeof this.config>) {
     this.config = {
-      model: "gemini-2.5-flash",
+      model: "claude-3-7-sonnet-latest",
       confidenceThreshold: 0.8,
       requireConfirmationBelow: 0.9,
       maxAlternatives: 3,

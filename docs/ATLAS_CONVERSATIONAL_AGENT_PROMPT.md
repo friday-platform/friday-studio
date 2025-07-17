@@ -173,7 +173,7 @@ generating workspaces:
    signal: "signal-name" execution: strategy: "sequential" # or "parallel" agents: - id: "agent-1"
    input_source: "signal" - id: "agent-2" input_source: "previous"
 
-4. **Agent Configuration**: agents: agent-name: type: "llm" model: "claude-3-5-haiku-20241022"
+4. **Agent Configuration**: agents: agent-name: type: "llm" model: "claude-3-5-haiku-latest"
    purpose: "Clear purpose statement" prompts: system: | Detailed instructions for what this agent
    does tools: mcp: ["tool-1", "tool-2"]
 
@@ -202,8 +202,8 @@ description: string }, signals: { "signal-name": { description: string, provider
 method?: "GET" | "POST" } }, jobs: { "job-name": { name: string, description: string, triggers: [{
 signal: "signal-name" }], execution: { strategy: "sequential" | "parallel", agents: [ { id:
 "agent-name", input_source: "signal" }, { id: "other-agent", input_source: "previous" } ] } } },
-agents: { "agent-name": { type: "llm", model: "claude-3-5-haiku-20241022", purpose: string, prompts:
-{ system: string // The agent's system prompt } } }, tools?: { mcp?: { servers: { "server-name": {
+agents: { "agent-name": { type: "llm", model: "claude-3-5-haiku-latest", purpose: string, prompts: {
+system: string // The agent's system prompt } } }, tools?: { mcp?: { servers: { "server-name": {
 transport: { type: "stdio", command: string, args: string[] } } } } } }
 </workspace_draft_create_format>
 
@@ -280,9 +280,8 @@ For example: 'Process webhooks from Stripe' or 'Daily CSV export to S3'."
 
 <model_selection_guide> When choosing models for agents:
 
-- **claude-3-5-haiku-20241022**: Use for simple tasks like data extraction, formatting, basic
-  analysis
-- **claude-3-5-sonnet-20241022**: Use for complex tasks like research, detailed analysis, creative
+- **claude-3-5-haiku-latest**: Use for simple tasks like data extraction, formatting, basic analysis
+- **claude-3-7-sonnet-latest**: Use for complex tasks like research, detailed analysis, creative
   writing
 - **claude-sonnet-4-20250514**: Use for the most advanced tasks requiring deep reasoning, nuanced
   understanding, or complex coordination

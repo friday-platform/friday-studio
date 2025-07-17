@@ -335,7 +335,7 @@ agents:
            agents:
              agent-name:
                type: "llm"
-               model: "claude-3-5-haiku-20241022"
+               model: "claude-3-5-haiku-latest"
                purpose: "Clear purpose statement"
                prompts:
                  system: |
@@ -405,7 +405,7 @@ agents:
           agents: {
             "agent-name": {
               type: "llm",
-              model: "claude-3-5-haiku-20241022",
+              model: "claude-3-5-haiku-latest",
               purpose: string,
               prompts: {
                 system: string  // The agent's system prompt
@@ -545,8 +545,8 @@ agents:
 
         <model_selection_guide>
         When choosing models for agents:
-        - **claude-3-5-haiku-20241022**: Use for simple tasks like data extraction, formatting, basic analysis
-        - **claude-3-5-sonnet-20241022**: Use for complex tasks like research, detailed analysis, creative writing
+        - **claude-3-5-haiku-latest**: Use for simple tasks like data extraction, formatting, basic analysis
+        - **claude-3-7-sonnet-latest**: Use for complex tasks like research, detailed analysis, creative writing
         - **claude-sonnet-4-20250514**: Use for the most advanced tasks requiring deep reasoning, nuanced understanding, or complex coordination
         Always include a brief rationale in your explanation.
         </model_selection_guide>
@@ -618,7 +618,7 @@ agents:
         agents:
           web-scraper:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "Fetch and extract data from websites"
             prompts:
               system: |
@@ -629,7 +629,7 @@ agents:
 
           change-detector:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "Compare data and detect changes"
             prompts:
               system: |
@@ -638,7 +638,7 @@ agents:
 
           notifier:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "Send notifications"
             prompts:
               system: |
@@ -690,21 +690,21 @@ agents:
         agents:
           parser:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             prompts:
               system: |
                 Extract and validate data from the webhook payload.
 
           analyzer:
             type: "llm"
-            model: "claude-3-5-sonnet-20241022"
+            model: "claude-3-7-sonnet-latest"
             prompts:
               system: |
                 Analyze the data and generate insights.
 
           router:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             prompts:
               system: |
                 Route the results to appropriate destinations.
@@ -731,7 +731,7 @@ agents:
         agents:
           stage-1:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "First transformation"
             prompts:
               system: |
@@ -762,7 +762,7 @@ agents:
         agents:
           weather-fetcher:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "Fetch weather data from National Weather Service API"
             prompts:
               system: |
@@ -776,7 +776,7 @@ agents:
 
           activity-suggester:
             type: "llm"
-            model: "claude-3-5-sonnet-20241022"
+            model: "claude-3-7-sonnet-latest"
             purpose: "Suggest activities based on weather"
             prompts:
               system: |
@@ -786,7 +786,7 @@ agents:
 
           sheet-writer:
             type: "llm"
-            model: "claude-3-5-haiku-20241022"
+            model: "claude-3-5-haiku-latest"
             purpose: "Write data to Google Sheets"
             prompts:
               system: |
@@ -868,7 +868,7 @@ agents:
 
         2. **Wrong Agent Type**:
            ❌ type: "tempest", agent: "web-scraper"
-           ✅ type: "llm", model: "claude-3-5-haiku-20241022"
+           ✅ type: "llm", model: "claude-3-5-haiku-latest"
 
         3. **Missing Execution Structure**:
            ❌ jobs: { job-name: { agent: "agent-name" } }
@@ -1081,7 +1081,7 @@ agents:
             agents: {
               "mishearing-agent": {
                 type: "llm",
-                model: "claude-3-5-haiku-20241022",
+                model: "claude-3-5-haiku-latest",
                 purpose: "Slightly mishear the message with phonetic errors",
                 prompts: {
                   system: "You mishear messages slightly. When given a message, introduce small phonetic errors by changing a few words to similar-sounding words. Keep the general meaning somewhat intact but add subtle mistakes like 'cat' to 'bat' or 'meeting' to 'eating'. Respond only with the misheard version."
@@ -1089,7 +1089,7 @@ agents:
               },
               "embellisher": {
                 type: "llm",
-                model: "claude-3-5-sonnet-20241022",
+                model: "claude-3-7-sonnet-latest",
                 purpose: "Dramatically embellish the message",
                 prompts: {
                   system: "You are an enthusiastic storyteller who loves to embellish messages. Add dramatic flair, colorful adjectives, hyperbole, and theatrical flourishes. Transform simple statements into grand narratives. Respond only with your embellished version."
@@ -1097,7 +1097,7 @@ agents:
               },
               "haiku-poet": {
                 type: "llm",
-                model: "claude-3-5-haiku-20241022",
+                model: "claude-3-5-haiku-latest",
                 purpose: "Convert the message into a haiku",
                 prompts: {
                   system: "You are a haiku artist. Take any message and transform its essence into a traditional haiku with 5-7-5 syllable structure. Capture the key feeling or imagery from the (now transformed) message. Respond only with the haiku."
@@ -1190,7 +1190,7 @@ agents:
             agents: {
               "error-handler": {
                 type: "llm",
-                model: "claude-3-5-haiku-20241022",
+                model: "claude-3-5-haiku-latest",
                 purpose: "Handle and log errors gracefully",
                 prompts: {
                   system: "When you receive an error, log it clearly and provide helpful context."
@@ -1241,7 +1241,7 @@ agents:
         - Explain your reasoning and what you're building
         - Mention which model you're using for each agent and why
         - Agent system prompts use "prompts.system" not "system_prompt"
-        - Use full model identifiers (e.g., "claude-3-5-haiku-20241022")
+        - Use full model identifiers (e.g., "claude-3-5-haiku-latest")
         - Default to prose explanations; show YAML only when requested
         - CRITICAL: Use the correct initialConfig format for workspace_draft_create
         - agents must be an object/record, NOT an array

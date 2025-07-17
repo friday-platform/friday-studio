@@ -49,7 +49,7 @@ jobs:
 agents:
   test-agent:
     type: "llm"
-    model: "gemini-2.5-flash"
+    model: "claude-3-5-haiku-latest"
     purpose: "Test agent"
 `;
 
@@ -59,9 +59,9 @@ agents:
       // Create minimal atlas.yml
       const atlasConfig = `supervisors:
   workspace:
-    model: claude-3-5-sonnet-20241022
+    model: claude-3-7-sonnet-latest
   session:
-    model: claude-3-5-sonnet-20241022
+    model: claude-3-7-sonnet-latest
 `;
 
       await Deno.writeTextFile(join(workspace1, "atlas.yml"), atlasConfig);

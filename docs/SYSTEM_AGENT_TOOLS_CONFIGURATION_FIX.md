@@ -18,7 +18,7 @@ conversation-agent:
   type: "system"
   agent: "conversation"
   config:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     temperature: 0.7
     # ... other config
   tools: # <- Tools are HERE (outside config)
@@ -84,7 +84,7 @@ conversation-agent:
   type: "system"
   agent: "conversation"
   config:
-    model: "claude-3-5-sonnet-20241022"
+    model: "claude-3-7-sonnet-latest"
     temperature: 0.7
     tools: # <- Tools moved inside config
       - "conversation_storage"
@@ -179,7 +179,7 @@ agents:
     type: "system"
     agent: "conversation"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.7
       max_tokens: 8000
       use_reasoning: true
@@ -198,7 +198,7 @@ agents:
     type: "system"
     agent: "conversation"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.7
       max_tokens: 8000
       use_reasoning: true

@@ -377,7 +377,7 @@ export function createTestAgentWithMockLLM(
   agent.invoke = async (message: string): Promise<string> => {
     const mockResponse = await AtlasMockLLMProvider.generateText(message, {
       provider: "anthropic",
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-haiku-latest",
     });
     return mockResponse.text;
   };
@@ -616,7 +616,7 @@ Deno.test("AI SDK MockLLMProvider performance", async () => {
     for (let i = 0; i < 100; i++) {
       await AtlasMockLLMProvider.generateText("test prompt", {
         provider: "anthropic",
-        model: "claude-3-5-haiku-20241022",
+        model: "claude-3-5-haiku-latest",
       });
     }
 
@@ -640,7 +640,7 @@ Deno.test("AI SDK streaming mock performance", async () => {
     // Test streaming performance
     const stream = AtlasMockLLMProvider.generateTextStream("test prompt", {
       provider: "anthropic",
-      model: "claude-3-5-haiku-20241022",
+      model: "claude-3-5-haiku-latest",
     });
 
     let chunks = 0;

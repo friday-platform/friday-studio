@@ -187,8 +187,8 @@ agents:
     type: "llm"
     description: "Complete Linear integration agent that manages DevOps workflow coordination and ticket lifecycle"
     config:
-      model: "gemini-2.5-flash"
-      provider: "google"
+      model: "claude-3-7-sonnet-latest"
+      provider: "anthropic"
       tools:
         [
           "linear_create_issue",

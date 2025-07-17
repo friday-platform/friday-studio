@@ -117,7 +117,7 @@ const result = await Promise.race([
   LLMProvider.generateText(thinkingPrompt, {
     systemPrompt:
       `${this.prompts.system}\n\nYou are now in reasoning mode. Plan your response step by step.`,
-    model: this.agentConfig.model || "claude-3-5-sonnet-20241022",
+    model: this.agentConfig.model || "claude-3-7-sonnet-latest",
     provider: "google",
     temperature: 0.3,
     max_tokens: 8000,

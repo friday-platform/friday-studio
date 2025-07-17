@@ -112,7 +112,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
       workspace: workspaceName,
       workspaceId: workspaceId,
       ...agentConfig,
-      model: agentConfig.model || "claude-3-5-sonnet-20241022",
+      model: agentConfig.model || "claude-3-7-sonnet-latest",
     };
 
     if (argv.json) {
