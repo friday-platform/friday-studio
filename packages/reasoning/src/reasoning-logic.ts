@@ -3,18 +3,21 @@
  * These are pure functions that can be used with the state machine
  */
 
-import type { ReasoningAction, ReasoningContext } from "./types.ts";
+import type {
+  BaseReasoningContext,
+  ReasoningAction,
+  ReasoningCompletion,
+  ReasoningContext,
+} from "./types.ts";
+import { LLMProvider } from "@atlas/core";
 
 /**
  * Generate thinking based on current context using LLMProvider
  */
-export async function generateThinking<T>(
-  context: ReasoningContext<T>,
+export async function generateThinking<TUserContext extends BaseReasoningContext>(
+  context: ReasoningContext<TUserContext>,
   customPrompt?: string,
-): Promise<{ thinking: string; confidence: number }> {
-  // Dynamically import LLMProvider to avoid circular dependencies
-  const { LLMProvider } = await import("@atlas/core");
-
+): Promise<ReasoningCompletion> {
   const prompt = customPrompt || createDefaultPrompt(context);
 
   const result = await LLMProvider.generateText(prompt, {
@@ -23,20 +26,28 @@ export async function generateThinking<T>(
     model: "claude-3-7-sonnet-latest",
     provider: "anthropic",
     temperature: 0.1,
-    max_tokens: 4000, // Reasonable default for reasoning steps
+    max_tokens: 4000,
+    tools: context.userContext.tools,
     operationContext: {
       operation: "reasoning_think_step",
       iteration: context.currentIteration + 1,
-      workspaceId: (context.userContext as any)?.workspaceId,
-      sessionId: (context.userContext as any)?.sessionId,
+      workspaceId: context.userContext.workspaceId,
+      sessionId: context.userContext.sessionId,
     },
   });
 
-  const confidence = calculateConfidence(result.text, context.currentIteration);
+  const confidence = calculateConfidence(
+    result.text,
+    context.currentIteration,
+  );
+  const isComplete = result.text.includes("ACTION: complete") ||
+    result.text.toLowerCase().includes("task complete") ||
+    result.text.toLowerCase().includes("finished");
 
   return {
-    thinking: result.text,
+    thinking: { text: result.text, toolCalls: result.toolCalls || [] },
     confidence,
+    isComplete,
   };
 }
 
@@ -59,66 +70,17 @@ export function parseAction(thinking: string): ReasoningAction | null {
       return null;
     }
 
-    // Extract parameters with better JSON handling
+    // Extract parameters with a more robust JSON parsing
     let parameters: Record<string, unknown> = {};
-    const parametersStartMatch = thinking.match(/PARAMETERS:\s*/i);
-    if (parametersStartMatch) {
-      const startIndex = parametersStartMatch.index! + parametersStartMatch[0].length;
-      const remainingText = thinking.substring(startIndex);
-
-      // Try to extract JSON by counting braces
-      if (remainingText.trimStart().startsWith("{")) {
-        let braceCount = 0;
-        let inString = false;
-        let escapeNext = false;
-        let jsonEnd = -1;
-
-        for (let i = 0; i < remainingText.length; i++) {
-          const char = remainingText[i];
-
-          if (escapeNext) {
-            escapeNext = false;
-            continue;
-          }
-
-          if (char === "\\") {
-            escapeNext = true;
-            continue;
-          }
-
-          if (char === '"' && !escapeNext) {
-            inString = !inString;
-            continue;
-          }
-
-          if (!inString) {
-            if (char === "{") {
-              braceCount++;
-            } else if (char === "}") {
-              braceCount--;
-              if (braceCount === 0) {
-                jsonEnd = i + 1;
-                break;
-              }
-            }
-          }
-        }
-
-        if (jsonEnd > 0) {
-          try {
-            const jsonString = remainingText.substring(0, jsonEnd);
-            parameters = JSON.parse(jsonString);
-          } catch (e) {
-            // If JSON parsing fails, try to clean it up
-            try {
-              // Remove any trailing content after the JSON
-              const cleanJson = remainingText.substring(0, jsonEnd).trim();
-              parameters = JSON.parse(cleanJson);
-            } catch {
-              parameters = {};
-            }
-          }
-        }
+    const parametersMatch = thinking.match(/PARAMETERS:\s*({[\s\S]*})/i);
+    if (parametersMatch && parametersMatch[1]) {
+      try {
+        parameters = JSON.parse(parametersMatch[1]);
+      } catch (e) {
+        // Handle cases where the JSON might be slightly malformed
+        // For example, by trying to fix common issues or just failing gracefully
+        console.error("Failed to parse parameters JSON:", e);
+        parameters = {};
       }
     }
 
@@ -137,53 +99,51 @@ export function parseAction(thinking: string): ReasoningAction | null {
 /**
  * Create default reasoning prompt
  */
-function createDefaultPrompt<T>(context: ReasoningContext<T>): string {
+function createDefaultPrompt<TUserContext extends BaseReasoningContext>(
+  context: ReasoningContext<TUserContext>,
+): string {
   const { userContext, steps, workingMemory, currentIteration } = context;
 
-  // Extract recent observations
-  const recentObservations = steps.slice(-3).map((s) => s.observation).join(" | ");
-
-  // Extract recent results from working memory
+  const recentObservations = steps.slice(-2).map((s) => s.observation).join(
+    " | ",
+  );
   const recentResults = Array.from(workingMemory.entries())
     .filter(([key]) => key.startsWith("result_"))
-    .slice(-2)
-    .map(([_, value]) => JSON.stringify(value).substring(0, 100))
+    .slice(-1)
+    .map(([_, value]) => JSON.stringify(value).substring(0, 150))
     .join(" | ");
 
-  return `You are an AI reasoning engine. Analyze the current situation and determine the next action.
+  return `You are an AI reasoning engine. Your goal is to solve the user's request by thinking step-by-step and executing actions.
 
-CONTEXT:
+**CONTEXT:**
 ${JSON.stringify(userContext, null, 2)}
 
-WORKING MEMORY:
-- Recent Observations: ${recentObservations || "None yet"}
-- Recent Results: ${recentResults || "None yet"}
+**MEMORY:**
+- Observations: ${recentObservations || "None"}
+- Results: ${recentResults || "None"}
 - Iteration: ${currentIteration + 1}
 
-PREVIOUS STEPS:
+**PREVIOUS STEPS:**
 ${
-    steps.slice(-2).map((s) => `Iteration ${s.iteration}: ${s.thinking.substring(0, 200)}...`).join(
-      "\n",
-    ) || "No previous steps"
+    steps.length > 0
+      ? steps.slice(-2).map((s) => `Step ${s.iteration}: ${JSON.stringify(s.thinking, null, 2)}`)
+        .join("\n")
+      : "No previous steps."
   }
 
-Think step by step about what needs to be done. Then, determine the next action.
+**INSTRUCTIONS:**
+1.  **Analyze**: Review the context, memory, and previous steps.
+2.  **Think**: Formulate a plan in the 'THINKING' block.
+3.  **Act**: Specify ONE action ('agent_call', 'tool_call', 'complete').
+4.  **Complete**: If the goal is met, use 'ACTION: complete'.
 
-ACTION TYPES:
-1. agent_call: Call an agent with specific input
-2. tool_call: Use a tool with parameters  
-3. complete: Finish reasoning with final solution
-
-Provide your response in this format:
-THINKING: [Your detailed reasoning about the current state and what needs to be done next]
-
-ACTION: [One of the action types above]
-AGENT_ID: [If agent_call, specify which agent]
-TOOL_NAME: [If tool_call, specify which tool]
-PARAMETERS: [JSON object with parameters]
-REASONING: [Why this action is needed]
-
-If you believe the task is complete or no further action is needed, use ACTION: complete.`;
+**FORMAT:**
+THINKING: [Your reasoning and plan]
+ACTION: [agent_call|tool_call|complete]
+AGENT_ID: [agent_id]
+TOOL_NAME: [tool_name]
+PARAMETERS: { "key": "value" }
+REASONING: [Justification for the action]`;
 }
 
 /**

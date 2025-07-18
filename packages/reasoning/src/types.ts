@@ -2,10 +2,24 @@
  * Core types for the reasoning machine
  */
 
-// User context for session-based reasoning
-export interface SessionReasoningContext {
+import { Tool, ToolCall } from "ai";
+
+/**
+ * Base reasoning context that all reasoning contexts must extend.
+ * Ensures all reasoning contexts have common identity fields.
+ */
+export interface BaseReasoningContext {
+  // Identity fields - every reasoning context needs these
   sessionId: string;
   workspaceId: string;
+  tools: Record<string, Tool>;
+
+  // Allow additional fields for flexibility
+  [key: string]: unknown;
+}
+
+// User context for session-based reasoning
+export interface SessionReasoningContext extends BaseReasoningContext {
   signal: {
     id: string;
     [key: string]: unknown;
@@ -28,58 +42,94 @@ export interface ReasoningAction {
   toolName?: string;
   parameters: Record<string, unknown>;
   reasoning: string;
+  toolCallId?: string;
+}
+
+export interface LLMUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  cost: number;
 }
 
 export interface ReasoningStep {
   iteration: number;
-  thinking: string;
+  thinking: ReasoningThinking;
   action: ReasoningAction | null;
   observation: string;
-  result?: any;
+  result?: unknown;
   confidence: number;
   timestamp: number;
+  llmUsage?: LLMUsage;
+  isComplete: boolean;
 }
 
-export interface ReasoningContext<TUserContext = SessionReasoningContext> {
+export interface ReasoningThinking {
+  text: string;
+  toolCalls: ToolCall<string, unknown>[];
+}
+
+export interface ReasoningCompletion {
+  isComplete: boolean;
+  thinking: ReasoningThinking;
+  confidence: number;
+  usage?: LLMUsage;
+}
+
+export interface ReasoningContext<TUserContext extends BaseReasoningContext> {
   // User-provided context
   userContext: TUserContext;
 
   // Standard reasoning state
   currentStep: ReasoningStep | null;
   steps: ReasoningStep[];
-  workingMemory: Map<string, any>;
+  workingMemory: Map<string, unknown>;
   maxIterations: number;
   currentIteration: number;
 }
 
-export interface ReasoningCallbacks<TUserContext = SessionReasoningContext> {
+export interface ReasoningCallbacks<
+  TUserContext extends BaseReasoningContext,
+> {
   // Required: Generate thinking based on current state
-  think: (context: ReasoningContext<TUserContext>) => Promise<{
-    thinking: string;
-    confidence: number;
-  }>;
+  think: (
+    context: ReasoningContext<TUserContext>,
+  ) => Promise<ReasoningCompletion>;
 
   // Required: Parse action from thinking
-  parseAction: (thinking: string) => ReasoningAction | null;
+  parseAction: (thinking: ReasoningThinking) => ReasoningAction | null;
 
   // Required: Execute the parsed action
-  executeAction: (action: ReasoningAction, context: ReasoningContext<TUserContext>) => Promise<{
-    result: any;
-    observation: string;
-  }>;
+  executeAction: (
+    action: ReasoningAction,
+    context: ReasoningContext<TUserContext>,
+  ) => Promise<ReasoningExecutionResult>;
+
+  // Optional: Evaluate if the goal is achieved
+  evaluate?: (
+    context: ReasoningContext<TUserContext>,
+  ) => Promise<{ isComplete: boolean; usage?: LLMUsage }>;
 
   // Optional: Check if goal is achieved
   isComplete?: (context: ReasoningContext<TUserContext>) => boolean;
 
   // Optional: Format observations
-  formatObservation?: (result: any) => string;
+  formatObservation?: (result: unknown) => string;
 
   // Optional: Stream reasoning updates
   onThinkingStart?: (context: TUserContext) => void;
-  onThinkingUpdate?: (partialThinking: string) => void;
+  onThinkingUpdate?: (partialThinking: ReasoningThinking) => void;
   onActionDetermined?: (action: ReasoningAction) => void;
   onExecutionStart?: (action: ReasoningAction) => void;
   onObservation?: (observation: string) => void;
+}
+
+export interface ExecutionDetails {
+  agentId?: string;
+  toolName?: string;
+  parameters: unknown;
+  result: unknown;
+  duration: number;
 }
 
 export interface ReasoningResult {
@@ -91,29 +141,18 @@ export interface ReasoningResult {
     confidence: number;
   };
   execution: {
-    agentsExecuted: Array<{
-      agentId: string;
-      task: string;
-      result: any;
-      duration: number;
-    }>;
-    toolsExecuted: Array<{
-      toolName: string;
-      parameters: any;
-      result: any;
-      duration: number;
-    }>;
+    agentsExecuted: ExecutionDetails[];
+    toolsExecuted: ExecutionDetails[];
     totalDuration: number;
   };
   jobResults: {
     goal: string;
     achieved: boolean;
-    output: any;
-    artifacts: Record<string, any>;
+    output: unknown;
+    artifacts: Record<string, unknown>;
   };
   metrics: {
-    llmTokens: number;
-    llmCost: number;
+    llmUsage: LLMUsage;
     agentCalls: number;
     toolCalls: number;
   };
@@ -122,4 +161,5 @@ export interface ReasoningResult {
 export interface ReasoningExecutionResult {
   result: unknown;
   observation: string;
+  usage?: LLMUsage;
 }

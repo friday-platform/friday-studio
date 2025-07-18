@@ -18,6 +18,7 @@ Deno.test({
     const userContext = {
       sessionId: "test-session",
       workspaceId: "test-workspace",
+      tools: {}, // Required by BaseReasoningContext
       task:
         "Calculate 25 + 17 and then complete the task. You have no tools available, just provide the answer.",
     };
@@ -40,13 +41,16 @@ Deno.test({
         },
         parseAction: (thinking) => {
           parseCount++;
-          const action = parseAction(thinking);
+          const action = parseAction(thinking.text);
 
           // Only process the first parse to avoid duplicate output
           if (parseCount === 1) {
             // If it's a complete action, extract the answer here since executeAction won't be called
             if (action?.type === "complete" && action.parameters.answer) {
-              finalAnswer = action.parameters.answer;
+              const answer = action.parameters.answer;
+              if (typeof answer === "string" || typeof answer === "number") {
+                finalAnswer = answer;
+              }
             }
           }
 
@@ -55,13 +59,16 @@ Deno.test({
         executeAction: (action) => {
           if (action.type === "complete") {
             // Extract answer from parameters - it's a string "42"
-            finalAnswer = action.parameters.answer;
-            return {
+            const answer = action.parameters.answer;
+            if (typeof answer === "string" || typeof answer === "number") {
+              finalAnswer = answer;
+            }
+            return Promise.resolve({
               result: { answer: finalAnswer },
               observation: "Task completed with answer: " + finalAnswer,
-            };
+            });
           }
-          return { result: null, observation: "Action executed" };
+          return Promise.resolve({ result: null, observation: "Action executed" });
         },
       },
       {
@@ -91,7 +98,8 @@ Deno.test({
     assertEquals(result.reasoning.steps.length > 0, true);
 
     // The LLM should have completed with the calculation
-    const lastAction = result.reasoning.steps[result.reasoning.steps.length - 1].action;
+    const lastAction = result.reasoning.steps[result.reasoning.steps.length - 1]?.action;
     assertEquals(lastAction?.type, "complete");
+    console.log(result);
   },
 });

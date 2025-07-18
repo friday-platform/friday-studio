@@ -1,34 +1,280 @@
 /**
- * XState reasoning machine for Think→Act→Observe loops
+ * XState reasoning machine using the setup API for Think→Act→Observe loops
  */
 
-import { assign, createMachine, emit, fromPromise } from "xstate";
-import type { ReasoningCallbacks, ReasoningContext, ReasoningResult } from "./types.ts";
+import { type ActorRefFrom, assign, emit, fromPromise, setup } from "xstate";
+import type {
+  BaseReasoningContext,
+  ReasoningAction,
+  ReasoningCallbacks,
+  ReasoningContext,
+  ReasoningResult,
+  ReasoningThinking,
+} from "./types.ts";
+
+// Define the output types for actors
+type ThinkOutput = {
+  thinking: ReasoningThinking;
+  confidence: number;
+};
+
+type ExecuteActionOutput = {
+  result: unknown;
+  observation: string;
+  duration?: number;
+};
+
+// Define event types for the machine, including done/error events from invoked actors
+type ReasoningEvents =
+  | { type: "PAUSE" }
+  | { type: "RESUME" }
+  | { type: "ABORT" }
+  | { type: "INSPECT" }
+  | { type: "PROVIDE_HINT"; hint: string }
+  | { type: "xstate.done.actor.thinkActor"; output: ThinkOutput }
+  | { type: "xstate.done.actor.executeActionActor"; output: ExecuteActionOutput }
+  | { type: "xstate.error.actor.thinkActor"; error: unknown }
+  | { type: "xstate.error.actor.executeActionActor"; error: unknown };
 
 export interface ReasoningMachineOptions {
   maxIterations?: number;
   supervisorId?: string;
   jobGoal?: string;
+  tools?: Record<string, unknown>;
 }
 
-export function createReasoningMachine<TUserContext = any>(
+export function createReasoningMachine<TUserContext extends BaseReasoningContext>(
   callbacks: ReasoningCallbacks<TUserContext>,
   options: ReasoningMachineOptions = {},
 ) {
-  return createMachine({
-    id: "reasoning",
-
-    types: {} as {
-      context: ReasoningContext<TUserContext>;
-      input: TUserContext;
-      output: ReasoningResult;
-      events:
-        | { type: "PAUSE" }
-        | { type: "RESUME" }
-        | { type: "ABORT" }
-        | { type: "INSPECT" }
-        | { type: "PROVIDE_HINT"; hint: string };
+  const reasoningMachineSetup = setup({
+    types: {
+      context: {} as ReasoningContext<TUserContext>,
+      input: {} as TUserContext,
+      output: {} as ReasoningResult,
+      events: {} as ReasoningEvents,
     },
+
+    // Define actors
+    actors: {
+      think: fromPromise<
+        ThinkOutput,
+        { context: ReasoningContext<TUserContext> }
+      >(async ({ input }) => {
+        return await callbacks.think(input.context);
+      }),
+
+      executeAction: fromPromise<
+        ExecuteActionOutput,
+        { action: ReasoningAction; context: ReasoningContext<TUserContext> }
+      >(async ({ input }) => {
+        const startTime = Date.now();
+        const result = await callbacks.executeAction(
+          input.action,
+          input.context,
+        );
+        const duration = Date.now() - startTime;
+        return { ...result, duration };
+      }),
+    },
+
+    // Define actions
+    actions: {
+      assignThinkingResult: assign({
+        currentStep: ({ event, context }) => {
+          // Type guard to ensure we have the right event type
+          if (event.type !== "xstate.done.actor.thinkActor") {
+            return context.currentStep;
+          }
+          return {
+            thinking: event.output.thinking,
+            confidence: event.output.confidence,
+            action: null,
+            observation: "",
+            timestamp: Date.now(),
+            iteration: context.currentIteration + 1,
+            result: undefined,
+            isComplete: false,
+            completion: event.output, // Store full completion object
+          };
+        },
+        currentIteration: ({ context }) => context.currentIteration + 1,
+      }),
+
+      assignActionToStep: assign({
+        currentStep: ({ context }) => {
+          if (!context.currentStep) {
+            return context.currentStep;
+          }
+          return {
+            ...context.currentStep,
+            action: callbacks.parseAction(context.currentStep.thinking),
+          };
+        },
+      }),
+
+      assignActionResult: assign({
+        currentStep: ({ context, event }) => {
+          if (event.type !== "xstate.done.actor.executeActionActor") {
+            return context.currentStep;
+          }
+          return {
+            ...context.currentStep,
+            result: event.output.result,
+            observation: event.output.observation,
+          };
+        },
+      }),
+
+      assignObservationToStep: assign({
+        currentStep: ({ context }) => {
+          if (!context.currentStep) {
+            return {
+              thinking: { text: "Reasoning complete.", toolCalls: [] },
+              confidence: 1,
+              action: null,
+              observation: "Reasoning complete.",
+              timestamp: Date.now(),
+              iteration: context.currentIteration,
+              result: { completed: true },
+              isComplete: true,
+            };
+          }
+          return {
+            ...context.currentStep,
+            observation: "Reasoning complete.",
+            result: { completed: true },
+          };
+        },
+      }),
+
+      addStepToHistory: assign({
+        steps: ({ context }) => [...context.steps, context.currentStep!],
+        workingMemory: ({ context }) => {
+          const memory = new Map(context.workingMemory);
+          memory.set(`step_${context.steps.length}`, context.currentStep);
+          // Store result in working memory
+          if (context.currentStep?.result) {
+            memory.set(`result_${context.steps.length}`, context.currentStep.result);
+          }
+          return memory;
+        },
+      }),
+
+      assignThinkingError: assign({
+        currentStep: ({ context }) => ({
+          thinking: { text: "Error during thinking", toolCalls: [] },
+          confidence: 0,
+          action: null,
+          observation: "Thinking failed",
+          timestamp: Date.now(),
+          iteration: context.currentIteration + 1,
+          result: undefined,
+          isComplete: true,
+        }),
+      }),
+
+      assignExecutionError: assign({
+        currentStep: ({ context, event }) => {
+          if (event.type !== "xstate.error.actor.executeActionActor") {
+            return context.currentStep;
+          }
+          return {
+            ...context.currentStep!,
+            observation: `Action execution failed: ${event.error}`,
+            result: null,
+          };
+        },
+      }),
+
+      assignExternalHint: assign({
+        workingMemory: ({ context, event }) => {
+          if (event.type !== "PROVIDE_HINT") {
+            return context.workingMemory;
+          }
+          const memory = new Map(context.workingMemory);
+          memory.set("external_hint", event.hint);
+          return memory;
+        },
+      }),
+
+      onThinkingStart: ({ context }) => {
+        callbacks.onThinkingStart?.(context.userContext);
+      },
+
+      onThinkingUpdate: ({ event }) => {
+        if (event.type === "xstate.done.actor.thinkActor") {
+          callbacks.onThinkingUpdate?.(event.output.thinking);
+        }
+      },
+
+      onActionDetermined: ({ context }) => {
+        if (!context.currentStep) {
+          return;
+        }
+        const action = callbacks.parseAction(context.currentStep.thinking);
+        if (action) {
+          callbacks.onActionDetermined?.(action);
+        }
+      },
+
+      onExecutionStart: ({ context }) => {
+        if (context.currentStep?.action) {
+          callbacks.onExecutionStart?.(context.currentStep.action);
+        }
+      },
+
+      onObservation: ({ event }) => {
+        if (event.type === "xstate.done.actor.executeActionActor") {
+          callbacks.onObservation?.(event.output.observation);
+        }
+      },
+
+      notifySupervisor: ({ context, system }) => {
+        if (options.supervisorId) {
+          const supervisor = system.get(options.supervisorId);
+          if (supervisor) {
+            supervisor.send({
+              type: "REASONING_STEP_COMPLETED",
+              step: context.currentStep,
+              totalSteps: context.steps.length,
+            });
+          }
+        }
+      },
+    },
+
+    // Define guards
+    guards: {
+      isComplete: ({ context }) => {
+        return context.currentStep?.action?.type === "complete";
+      },
+
+      shouldTerminate: ({ context }) => {
+        // Check custom completion
+        if (callbacks.isComplete?.(context)) return true;
+        // Check max iterations
+        if (context.currentIteration >= context.maxIterations) return true;
+        return false;
+      },
+
+      hasValidAction: ({ context }) => {
+        return context.currentStep !== null && context.currentStep.action !== null;
+      },
+
+      hasCompletedStep: ({ context }) => {
+        // Make sure we've added the current step to steps array
+        const hasCurrentStepInArray = context.steps.some(
+          (step) => step.timestamp === context.currentStep?.timestamp,
+        );
+        return hasCurrentStepInArray && context.currentStep?.action?.type === "complete";
+      },
+    },
+  });
+
+  // Create the machine using the setup configuration
+  return reasoningMachineSetup.createMachine({
+    id: "reasoning",
 
     context: ({ input }) => ({
       userContext: input,
@@ -37,15 +283,19 @@ export function createReasoningMachine<TUserContext = any>(
       workingMemory: new Map(),
       maxIterations: options.maxIterations || 10,
       currentIteration: 0,
+      tools: options.tools,
     }),
 
-    output: ({ context }) => {
+    output: ({ context, event }) => {
       // Determine status based on final state and context
       const lastStep = context.steps[context.steps.length - 1];
-      const isCompleted = lastStep?.action?.type === "complete" ||
-        (context.currentIteration > 0 && context.steps.length > 0);
+      const isCompleted = context.currentStep?.isComplete === true ||
+        lastStep?.action?.type === "complete" ||
+        (event.type === "xstate.done.state.reasoning.evaluating" &&
+          context.currentStep?.isComplete);
+
       const status = isCompleted ? "completed" : "failed";
-      return createReasoningResult(context, status, options.jobGoal);
+      return createReasoningResult<TUserContext>(context, status, options.jobGoal);
     },
 
     initial: "thinking",
@@ -54,98 +304,70 @@ export function createReasoningMachine<TUserContext = any>(
       thinking: {
         entry: [
           emit({ type: "reasoning.thinking.started" }),
-          ({ context }) => {
-            callbacks.onThinkingStart?.(context.userContext);
-          },
+          "onThinkingStart",
         ],
 
         invoke: {
-          src: fromPromise(async ({ input }) => {
-            return await callbacks.think(input.context);
-          }),
+          id: "thinkActor",
+          src: "think",
           input: ({ context }) => ({ context }),
           onDone: {
             target: "evaluating",
             actions: [
-              assign({
-                currentStep: ({ event, context }) => ({
-                  thinking: event.output.thinking,
-                  confidence: event.output.confidence,
-                  action: null,
-                  observation: "",
-                  timestamp: Date.now(),
-                  iteration: context.currentIteration + 1,
-                  result: undefined,
-                }),
-                currentIteration: ({ context }) => context.currentIteration + 1,
-              }),
-              ({ event }) => {
-                callbacks.onThinkingUpdate?.(event.output.thinking);
-              },
+              "assignThinkingResult",
+              "onThinkingUpdate",
             ],
           },
           onError: {
             target: "error",
-            actions: assign({
-              currentStep: ({ context }) => ({
-                thinking: "Error during thinking",
-                confidence: 0,
-                action: null,
-                observation: "Thinking failed",
-                timestamp: Date.now(),
-                iteration: context.currentIteration + 1,
-                result: undefined,
-              }),
-            }),
+            actions: "assignThinkingError",
           },
         },
       },
 
       evaluating: {
         entry: [
-          assign({
-            currentStep: ({ context }) => ({
-              ...context.currentStep!,
-              action: callbacks.parseAction(context.currentStep!.thinking),
-            }),
-          }),
-          ({ context }) => {
-            const action = callbacks.parseAction(context.currentStep!.thinking);
-            if (action) {
-              callbacks.onActionDetermined?.(action);
-            }
-          },
+          "assignActionToStep",
+          "onActionDetermined",
           emit(({ context }) => {
             const action = context.currentStep?.action;
-            return action ? { type: "reasoning.action.determined", action } : undefined;
+            return action
+              ? { type: "reasoning.action.determined", action }
+              : { type: "reasoning.action.none" };
           }),
         ],
 
         always: [
+          // If action is to complete, go to observing to record the step, then complete.
           {
             target: "observing",
-            guard: ({ context }) => context.currentStep?.action?.type === "complete",
-            actions: assign({
-              currentStep: ({ context }) => ({
-                ...context.currentStep!,
-                observation: "Reasoning complete.",
-                result: { completed: true },
-              }),
-            }),
+            guard: "isComplete",
+            actions: "assignObservationToStep",
           },
-          {
-            target: "completed",
-            guard: ({ context }) => {
-              // Check custom completion
-              if (callbacks.isComplete?.(context)) return true;
-              // Check max iterations
-              if (context.currentIteration >= context.maxIterations) return true;
-              return false;
-            },
-          },
+          // If there's an action, execute it.
           {
             target: "executing",
             guard: ({ context }) => context.currentStep?.action !== null,
+            actions: [
+              emit(({ context }) => ({
+                type: "reasoning.action.determined",
+                action: context.currentStep!.action!,
+              })),
+            ],
+          },
+          // If there is NO action, check if the thinking step decided we are done.
+          {
+            target: "completed",
+            guard: ({ context }) => context.currentStep?.isComplete === true,
+          },
+          // Check max iterations
+          {
+            target: "completed",
+            guard: "shouldTerminate",
+          },
+          {
+            target: "executing",
+            guard: "hasValidAction",
           },
           {
             target: "stuck",
@@ -158,111 +380,75 @@ export function createReasoningMachine<TUserContext = any>(
           emit(({ context }) =>
             context.currentStep?.action
               ? { type: "reasoning.execution.started", action: context.currentStep.action }
-              : undefined
+              : { type: "reasoning.execution.no_action" }
           ),
-          ({ context }) => {
-            if (context.currentStep?.action) {
-              callbacks.onExecutionStart?.(context.currentStep.action);
-            }
-          },
+          "onExecutionStart",
         ],
 
         invoke: {
-          src: fromPromise(async ({ input }) => {
-            const startTime = Date.now();
-            const result = await callbacks.executeAction(
-              input.context.currentStep!.action!,
-              input.context,
-            );
-            const duration = Date.now() - startTime;
-
-            return { ...result, duration };
+          id: "executeActionActor",
+          src: "executeAction",
+          input: ({ context }) => ({
+            action: context.currentStep!.action!,
+            context,
           }),
-          input: ({ context }) => ({ context }),
           onDone: {
             target: "observing",
             actions: [
-              assign({
-                currentStep: ({ context, event }) => ({
-                  ...context.currentStep!,
-                  result: event.output.result,
-                  observation: callbacks.formatObservation?.(event.output.result) ||
-                    event.output.observation,
-                }),
-              }),
-              ({ event }) => {
-                callbacks.onObservation?.(event.output.observation);
-              },
+              "assignActionResult",
+              "onObservation",
             ],
           },
           onError: {
             target: "observing",
-            actions: assign({
-              currentStep: ({ context, event }) => ({
-                ...context.currentStep!,
-                observation: `Action execution failed: ${event.error}`,
-                result: null,
-              }),
-            }),
+            actions: "assignExecutionError",
           },
         },
       },
 
       observing: {
         entry: [
-          assign({
-            steps: ({ context }) => {
-              const newSteps = [...context.steps, context.currentStep!];
-              return newSteps;
-            },
-            workingMemory: ({ context }) => {
-              const memory = new Map(context.workingMemory);
-              memory.set(`step_${context.steps.length}`, context.currentStep);
-              // Store result in working memory
-              if (context.currentStep?.result) {
-                memory.set(`result_${context.steps.length}`, context.currentStep.result);
-              }
-              return memory;
-            },
-          }),
+          "addStepToHistory",
           emit(({ context }) => ({
             type: "reasoning.step.completed",
             step: context.currentStep!,
           })),
-          // Notify supervisor if configured
-          ({ context, system }) => {
-            if (options.supervisorId) {
-              const supervisor = system.get(options.supervisorId);
-              if (supervisor) {
-                supervisor.send({
-                  type: "REASONING_STEP_COMPLETED",
-                  step: context.currentStep,
-                  totalSteps: context.steps.length,
-                });
-              }
-            }
-          },
+          "notifySupervisor",
         ],
         // Transition after processing the observation
         always: [
           {
             target: "completed",
-            guard: ({ context }) => {
-              // Make sure we've added the current step to steps array
-              const hasCurrentStepInArray = context.steps.some(
-                (step) => step.timestamp === context.currentStep?.timestamp,
-              );
-              return hasCurrentStepInArray && context.currentStep?.action?.type === "complete";
-            },
+            guard: "hasCompletedStep",
+          },
+          {
+            target: "evaluatingGoal",
+            guard: () => typeof callbacks.evaluate === "function",
+          },
+          {
+            target: "thinking",
           },
         ],
-        // Add a small delay to make observing state visible and ensure entry actions complete
-        after: {
-          50: [
+      },
+
+      evaluatingGoal: {
+        invoke: {
+          src: fromPromise(async ({ input }) => {
+            return await input.callbacks.evaluate!(input.context);
+          }),
+          input: ({ context }) => ({ context, callbacks }),
+          onDone: [
+            {
+              target: "completed",
+              guard: ({ event }) => event.output.isComplete,
+            },
             {
               target: "thinking",
             },
           ],
+          onError: {
+            target: "thinking", // Fallback to thinking on evaluation error
+          },
         },
       },
 
@@ -290,13 +476,7 @@ export function createReasoningMachine<TUserContext = any>(
         on: {
           PROVIDE_HINT: {
             target: "thinking",
-            actions: assign({
-              workingMemory: ({ context, event }) => {
-                const memory = new Map(context.workingMemory);
-                memory.set("external_hint", event.hint);
-                return memory;
-              },
-            }),
+            actions: "assignExternalHint",
           },
         },
       },
@@ -318,59 +498,99 @@ export function createReasoningMachine<TUserContext = any>(
   });
 }
 
-function createReasoningResult<T>(
-  context: ReasoningContext<T>,
+// Export type helpers for consumers
+export type ReasoningMachine<TUserContext extends BaseReasoningContext> = ReturnType<
+  typeof createReasoningMachine<TUserContext>
+>;
+
+export type ReasoningMachineActor<TUserContext extends BaseReasoningContext> = ActorRefFrom<
+  ReasoningMachine<TUserContext>
+>;
+
+// Helper function to create the reasoning result
+function createReasoningResult<TUserContext extends BaseReasoningContext>(
+  context: ReasoningContext<TUserContext>,
   status: "completed" | "failed" | "partial",
   jobGoal?: string,
 ): ReasoningResult {
-  const agentsExecuted = context.steps
-    .filter((step) => step.action?.type === "agent_call" && step.result)
-    .map((step) => ({
-      agentId: step.action!.agentId!,
-      task: step.action!.parameters.task as string || "unknown",
-      result: step.result,
-      duration: 0, // Would need to track this
-    }));
+  const { steps, workingMemory } = context;
+  const lastStep = steps[steps.length - 1];
 
-  const toolsExecuted = context.steps
-    .filter((step) => step.action?.type === "tool_call" && step.result)
-    .map((step) => ({
-      toolName: step.action!.toolName!,
-      parameters: step.action!.parameters,
-      result: step.result,
-      duration: 0,
-    }));
+  // Aggregate execution details and metrics from all steps
+  const initialMetrics = {
+    llmUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0 },
+    agentCalls: 0,
+    toolCalls: 0,
+    totalDuration: 0,
+  };
 
-  const lastStep = context.steps[context.steps.length - 1];
-  const finalResult = lastStep?.result || lastStep?.observation || null;
+  const { agentsExecuted, toolsExecuted, metrics } = steps.reduce(
+    (acc, step) => {
+      if (step.action?.type === "agent_call" && step.result) {
+        acc.agentsExecuted.push({
+          agentId: step.action.agentId!,
+          parameters: step.action.parameters,
+          result: step.result,
+          duration: 0, // Placeholder
+        });
+        acc.metrics.agentCalls++;
+      } else if (step.action?.type === "tool_call" && step.result) {
+        acc.toolsExecuted.push({
+          toolName: step.action.toolName!,
+          parameters: step.action.parameters,
+          result: step.result,
+          duration: 0, // Placeholder
+        });
+        acc.metrics.toolCalls++;
+      }
+      if (step.llmUsage) {
+        acc.metrics.llmUsage.promptTokens += step.llmUsage.promptTokens;
+        acc.metrics.llmUsage.completionTokens += step.llmUsage.completionTokens;
+        acc.metrics.llmUsage.totalTokens += step.llmUsage.totalTokens;
+        acc.metrics.llmUsage.cost += step.llmUsage.cost;
+      }
+      return acc;
+    },
+    {
+      agentsExecuted: [] as any[],
+      toolsExecuted: [] as any[],
+      metrics: initialMetrics,
+    },
+  );
+
+  const finalThinking = lastStep?.thinking;
+  const finalConfidence = lastStep?.confidence ?? 0;
 
   return {
-    status,
+    status: status,
     reasoning: {
-      steps: context.steps,
+      steps: steps,
       totalIterations: context.currentIteration,
-      finalThinking: lastStep?.thinking || "",
-      confidence: lastStep?.confidence || 0,
+      finalThinking: typeof finalThinking === "string"
+        ? finalThinking
+        : finalThinking
+        ? JSON.stringify(finalThinking)
+        : "No final thinking.",
+      confidence: finalConfidence,
     },
     execution: {
       agentsExecuted,
       toolsExecuted,
-      totalDuration: 0, // Would need to track start time
+      totalDuration: metrics.totalDuration,
     },
     jobResults: {
       goal: jobGoal || "Process signal",
       achieved: status === "completed",
-      output: finalResult,
+      output: lastStep?.result || lastStep?.observation || null,
       artifacts: Object.fromEntries(
-        Array.from(context.workingMemory.entries())
+        Array.from(workingMemory.entries())
           .filter(([key]) => key.startsWith("result_")),
       ),
     },
     metrics: {
-      llmTokens: 0, // Would need to track
-      llmCost: 0,
-      agentCalls: agentsExecuted.length,
-      toolCalls: toolsExecuted.length,
+      llmUsage: metrics.llmUsage,
+      agentCalls: metrics.agentCalls,
+      toolCalls: metrics.toolCalls,
     },
   };
 }

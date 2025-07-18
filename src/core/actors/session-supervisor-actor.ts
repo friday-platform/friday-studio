@@ -16,6 +16,7 @@ import type {
   ActorInitParams,
   AgentExecutePayload,
   AgentExecutionConfig,
+  AgentExecutionResult,
   AgentTask,
   BaseActor,
   CombinedAgentInput,
@@ -208,7 +209,7 @@ export class SessionSupervisorActor implements BaseActor {
     const reasoningContext: SessionReasoningContext = {
       sessionId: this.sessionContext.sessionId,
       workspaceId: this.sessionContext.workspaceId || "global",
-      signal: this.sessionContext.signal,
+      signal: this.sessionContext.signal as IWorkspaceSignal & { [key: string]: unknown },
       payload: this.sessionContext.payload,
       availableAgents: this.sessionContext.availableAgents.map((id) => ({
         id,
@@ -221,90 +222,33 @@ export class SessionSupervisorActor implements BaseActor {
       timeLimit: 60000, // 1 minute
     };
 
-    const agentExecutor = async (agentId: string, input: Record<string, unknown>) => {
-      // Get actual agent configuration
-      const agentExecutionConfig = this.getAgentExecutionConfig(agentId);
-
-      const agentActor = new AgentExecutionActor(
-        crypto.randomUUID(),
-        agentExecutionConfig,
-      );
-
-      const payload: AgentExecutePayload = {
-        agentId,
-        input,
-        sessionContext: {
-          sessionId: this.sessionContext?.sessionId || "unknown",
-          workspaceId: this.sessionContext?.workspaceId || "global",
+    const machine = createReasoningMachine(
+      {
+        think: (context) => generateThinking(context, "execution_planning"),
+        parseAction: (thinking) => parseAction(thinking as string),
+        executeAction: async (action, context) => {
+          if (action.type === "agent_call" && action.agentId) {
+            const result = await this.agentExecutor(action.agentId, action.parameters);
+            return { result, observation: `Agent ${action.agentId} executed.` };
+          }
+          // Placeholder for other actions
+          return { result: null, observation: "Action not implemented" };
         },
-      };
-
-      return await agentActor.executeTask(payload);
-    };
-
-    const toolExecutor = (
-      toolName: string,
-      parameters: Record<string, unknown>,
-    ): Promise<ToolExecutorResult> => {
-      return Promise.resolve({
-        success: true,
-        result: `Tool ${toolName} executed with parameters: ${JSON.stringify(parameters)}`,
-        duration: 100,
-      });
-    };
-
-    const machine = createReasoningMachine({
-      think: generateThinking,
-      parseAction,
-      executeAction: async (action): Promise<ReasoningExecutionResult> => {
-        if (action.type === "agent_call" && action.agentId) {
-          const result = await agentExecutor(action.agentId, action.parameters);
-          return {
-            result,
-            observation: `Agent ${action.agentId} executed successfully`,
-          };
-        } else if (action.type === "tool_call" && action.toolName) {
-          const toolResult = await toolExecutor(action.toolName, action.parameters);
-          return {
-            result: toolResult.result,
-            observation: toolResult.success
-              ? `Tool ${action.toolName} executed successfully`
-              : `Tool ${action.toolName} failed`,
-          };
-        } else if (action.type === "complete") {
-          return {
-            result: action.parameters,
-            observation: "Reasoning completed",
-          };
-        }
-        return { result: null, observation: "Unknown action type" };
       },
-    }, {
-      maxIterations: reasoningContext.maxIterations,
-      supervisorId: this.id,
-      jobGoal: reasoningContext.signal.id,
-    });
+      { supervisorId: this.id },
+    );
 
     const actor = createActor(machine, { input: reasoningContext });
-    actor.start();
-    const reasoningResult = await toPromise(actor);
-
-    const executionPlan = this.convertReasoningToExecutionPlan(reasoningResult);
-
-    if (this.shouldCachePlan()) {
-      this.cachePlan(executionPlan);
-    }
+    const result = await toPromise(actor);
+    const plan = this.convertReasoningToExecutionPlan(result);
 
     const duration = Date.now() - startTime;
     this.logger.info("Execution plan created", {
-      planId: executionPlan.id,
-      phases: executionPlan.phases.length,
-      strategy: executionPlan.strategy,
-      confidence: executionPlan.confidence,
+      planId: plan.id,
       duration,
+      phases: plan.phases.length,
     });
-
-    return executionPlan;
+    return plan;
   }
 
   async executeSession(): Promise<SessionSummary> {
@@ -683,12 +627,53 @@ export class SessionSupervisorActor implements BaseActor {
       throw new Error(`Agent configuration not found: ${agentId}`);
     }
 
+    let tools: string[] = [];
+    if (agentConfig.type === "llm") {
+      tools = agentConfig.config.tools || [];
+    } else if (agentConfig.type === "system") {
+      tools = agentConfig.config.tools || [];
+    }
+
     return {
       agentId,
       agent: agentConfig,
-      tools: this.config?.tools?.mcp?.servers,
+      tools: tools,
       memory: this.config?.memory,
     };
+  }
+
+  private async agentExecutor(
+    agentId: string,
+    input: Record<string, unknown>,
+  ): Promise<AgentExecutionResult> {
+    const agentExecutionConfig = this.getAgentExecutionConfig(agentId);
+
+    const agentActor = new AgentExecutionActor(
+      crypto.randomUUID(),
+      agentExecutionConfig,
+    );
+
+    const payload: AgentExecutePayload = {
+      agentId,
+      input,
+      sessionContext: {
+        sessionId: this.sessionContext?.sessionId || "unknown",
+        workspaceId: this.sessionContext?.workspaceId || "global",
+      },
+    };
+
+    return agentActor.executeTask(payload);
+  }
+
+  private toolExecutor(
+    toolName: string,
+    parameters: Record<string, unknown>,
+  ): Promise<ToolExecutorResult> {
+    return Promise.resolve({
+      success: true,
+      result: `Tool ${toolName} executed with parameters: ${JSON.stringify(parameters)}`,
+      duration: 100,
+    });
   }
 
   async execute(): Promise<SessionResult> {

@@ -6,6 +6,8 @@
 import { assertEquals } from "@std/assert";
 import { createReasoningMachine, generateThinking, parseAction } from "@atlas/reasoning";
 import { createActor, toPromise } from "xstate";
+import { tool } from "ai";
+import { z } from "zod";
 
 // Skip test if no API key
 const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
@@ -25,6 +27,39 @@ const mockTools = {
       throw new Error(`File not found: ${path}`);
     },
   },
+};
+
+// LLM-compatible tool definitions using AI SDK format
+const llmTools = {
+  file_reader: tool({
+    description: "Read content from a file",
+    parameters: z.object({
+      path: z.string().describe("Path to the file to read"),
+    }),
+    execute: async ({ path }: { path: string }) => {
+      return { content: mockTools.file_reader.read(path) };
+    },
+  }),
+  calculator: tool({
+    description: "Perform mathematical calculations",
+    parameters: z.object({
+      operation: z.enum(["add", "multiply", "divide"]).describe("The operation to perform"),
+      a: z.number().describe("First number"),
+      b: z.number().describe("Second number"),
+    }),
+    execute: async ({ operation, a, b }: { operation: string; a: number; b: number }) => {
+      switch (operation) {
+        case "add":
+          return { result: mockTools.calculator.add(a, b) };
+        case "multiply":
+          return { result: mockTools.calculator.multiply(a, b) };
+        case "divide":
+          return { result: mockTools.calculator.divide(a, b) };
+        default:
+          throw new Error(`Unknown operation: ${operation}`);
+      }
+    },
+  }),
 };
 
 Deno.test({
@@ -51,20 +86,35 @@ Deno.test({
           return result;
         },
 
-        parseAction: (thinking) => {
+        parseAction: (thinking, completion) => {
+          // First check if there are tool calls from the LLM
+          if (completion?.toolCalls && completion.toolCalls.length > 0) {
+            const toolCall = completion.toolCalls[0]; // Process first tool call
+            return {
+              type: "tool_call" as const,
+              toolName: toolCall.toolName,
+              parameters: toolCall.args,
+              reasoning: `Using tool ${toolCall.toolName}`,
+            };
+          }
+
+          // Fall back to text-based parsing
           const action = parseAction(thinking);
 
           // Extract answer from complete action since it won't go through executeAction
           if (action?.type === "complete") {
-            finalAnswer = action.parameters.answer ||
+            const answer = action.parameters.answer ||
               action.parameters.result ||
               action.parameters.value;
+            if (typeof answer === "string" || typeof answer === "number") {
+              finalAnswer = answer;
+            }
           }
 
           return action;
         },
 
-        executeAction: async (action, context) => {
+        executeAction: (action) => {
           executionLog.push(`${action.type}: ${action.toolName || "N/A"}`);
 
           if (action.type === "tool_call") {
@@ -78,10 +128,10 @@ Deno.test({
                   action.parameters.file ||
                   action.parameters.filename;
                 const content = mockTools.file_reader.read(path as string);
-                return {
+                return Promise.resolve({
                   result: { content },
                   observation: `Successfully read file: ${content}`,
-                };
+                });
               }
 
               // Handle calculator tool (detect operation from parameters)
@@ -110,10 +160,10 @@ Deno.test({
                     Number(a),
                     Number(b),
                   );
-                  return {
+                  return Promise.resolve({
                     result: { value: result },
                     observation: `Multiplied ${a} × ${b} = ${result}`,
-                  };
+                  });
                 }
 
                 if (operation === "add") {
@@ -127,10 +177,10 @@ Deno.test({
                     action.parameters.number2 ||
                     action.parameters.addend;
                   const result = mockTools.calculator.add(Number(a), Number(b));
-                  return {
+                  return Promise.resolve({
                     result: { value: result },
                     observation: `Added ${a} + ${b} = ${result}`,
-                  };
+                  });
                 }
               }
 
@@ -149,10 +199,10 @@ Deno.test({
                   Number(a),
                   Number(b),
                 );
-                return {
+                return Promise.resolve({
                   result: { value: result },
                   observation: `Multiplied ${a} × ${b} = ${result}`,
-                };
+                });
               }
 
               if (action.toolName === "add") {
@@ -166,42 +216,46 @@ Deno.test({
                   action.parameters.number2 ||
                   action.parameters.addend;
                 const result = mockTools.calculator.add(Number(a), Number(b));
-                return {
+                return Promise.resolve({
                   result: { value: result },
                   observation: `Added ${a} + ${b} = ${result}`,
-                };
+                });
               }
 
-              return {
+              return Promise.resolve({
                 result: null,
                 observation: `Unknown tool: ${action.toolName}`,
-              };
+              });
             } catch (error) {
-              return {
+              return Promise.resolve({
                 result: null,
                 observation: `Tool execution failed: ${error.message}`,
-              };
+              });
             }
           }
 
           if (action.type === "complete") {
-            finalAnswer = action.parameters.answer ||
+            const answer = action.parameters.answer ||
               action.parameters.result ||
               action.parameters.value;
-            return {
+            if (typeof answer === "string" || typeof answer === "number") {
+              finalAnswer = answer;
+            }
+            return Promise.resolve({
               result: { answer: finalAnswer },
               observation: "Task completed successfully",
-            };
+            });
           }
 
-          return {
+          return Promise.resolve({
             result: null,
             observation: "Action not recognized",
-          };
+          });
         },
       },
       {
         maxIterations: 5, // Allow more steps for multi-tool usage
+        tools: llmTools,
       },
     );
 
@@ -231,11 +285,23 @@ Deno.test({
       true,
       "Should have at least 3 steps (read, multiply, add)",
     );
-    assertEquals(finalAnswer, 42, "Should calculate (10 × 4) + 2 = 42");
+    // Handle both numeric and string responses
+    const expectedAnswer = 42;
+    if (typeof finalAnswer === "string") {
+      // Extract number from string like "The final answer is 42."
+      const match = finalAnswer.match(/\d+/);
+      const numericAnswer = match ? parseInt(match[0], 10) : null;
+      assertEquals(numericAnswer, expectedAnswer, "Should calculate (10 × 4) + 2 = 42");
+    } else {
+      assertEquals(finalAnswer, expectedAnswer, "Should calculate (10 × 4) + 2 = 42");
+    }
 
     // Verify the LLM used the tools in sequence
     const hasFileRead = executionLog.some((log) => log.includes("file_reader"));
     const hasCalculator = executionLog.some((log) => log.includes("calculator"));
+
+    console.log(executionLog);
+    console.log(result);
 
     assertEquals(hasFileRead, true, "Should have used file_reader");
     assertEquals(hasCalculator, true, "Should have used calculator");
