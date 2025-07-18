@@ -1,0 +1,166 @@
+# Example workspace configuration with notifications
+version: "1.0"
+
+workspace:
+  name: "Atlas Notification Demo"
+  description: "Example workspace demonstrating notification capabilities"
+  id: "atlas-notification-demo"
+
+# Notification configuration
+notifications:
+  providers:
+    # SendGrid email provider
+    sendgrid:
+      provider: "sendgrid"
+      enabled: true
+      description: "Email notifications via SendGrid"
+      config:
+        api_key_env: "SENDGRID_API_KEY"
+        from_email: "notifications@yourcompany.com"
+        from_name: "Atlas Notifications"
+        template_id: "d-123456789" # Optional default template
+        timeout: "30s"
+        sandbox_mode: false # Set to true for testing
+
+    # Slack notifications
+    slack:
+      provider: "slack"
+      enabled: true
+      description: "Slack channel notifications"
+      config:
+        webhook_url_env: "SLACK_WEBHOOK_URL"
+        channel: "#atlas-alerts"
+        username: "Atlas Bot"
+        timeout: "15s"
+
+    # Microsoft Teams notifications
+    teams:
+      provider: "teams"
+      enabled: false # Disabled by default
+      description: "Microsoft Teams notifications"
+      config:
+        webhook_url_env: "TEAMS_WEBHOOK_URL"
+        timeout: "15s"
+
+  defaults:
+    enabled: true
+    provider: "sendgrid" # Default provider
+    retry_attempts: 3
+    retry_delay: "5s"
+    retry_backoff: 2
+    timeout: "30s"
+
+# Signals for triggering notifications
+signals:
+  # System error signal
+  system-error:
+    provider: "http"
+    description: "System error events"
+    config:
+      port: 8080
+      path: "/webhook/system-error"
+      method: "POST"
+    schema:
+      type: "object"
+      properties:
+        error_type:
+          type: "string"
+          enum: ["critical", "warning", "info"]
+        message:
+          type: "string"
+        timestamp:
+          type: "string"
+          format: "date-time"
+        component:
+          type: "string"
+      required: ["error_type", "message", "timestamp"]
+
+  # Scheduled health check
+  health-check:
+    provider: "schedule"
+    description: "Daily health check"
+    config:
+      schedule: "0 9 * * *" # Every day at 9 AM
+
+# Jobs for handling notifications
+jobs:
+  # Send error notifications
+  notify-error:
+    name: "notify-error"
+    description: "Send notification when system errors occur"
+    triggers:
+      - signal: "system-error"
+        filter:
+          error_type: ["critical", "warning"]
+    execution:
+      strategy: "sequential"
+      agents:
+        - "notification-agent"
+
+  # Send daily health report
+  daily-health-report:
+    name: "daily-health-report"
+    description: "Send daily health report"
+    triggers:
+      - signal: "health-check"
+    execution:
+      strategy: "sequential"
+      agents:
+        - "health-report-agent"
+
+# Agents for notification tasks
+agents:
+  # Agent for sending error notifications
+  notification-agent:
+    type: "llm"
+    description: "Agent that sends error notifications"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      temperature: 0.1
+      max_tokens: 1000
+      system_prompt: |
+        You are a notification agent for Atlas. Your job is to send appropriate notifications
+        based on system events. When you receive an error event, analyze it and send a
+        notification with the following information:
+
+        1. Severity level (Critical, Warning, Info)
+        2. Error message
+        3. Timestamp
+        4. Affected component
+        5. Recommended actions (if any)
+
+        Use the atlas_notify_email tool to send email notifications for critical errors,
+        and atlas_notify_send tool for Slack notifications for warnings.
+
+        Always include context and make the notification actionable.
+
+  # Agent for health reports
+  health-report-agent:
+    type: "llm"
+    description: "Agent that generates and sends health reports"
+    config:
+      model: "claude-3-5-sonnet-20241022"
+      temperature: 0.1
+      max_tokens: 2000
+      system_prompt: |
+        You are a health reporting agent for Atlas. Your job is to generate and send
+        daily health reports.
+
+        Generate a comprehensive health report including:
+        1. System uptime and availability
+        2. Recent error summary
+        3. Performance metrics
+        4. Recommendations for improvement
+
+        Use the atlas_notify_email tool to send the report to the operations team.
+        Format the report professionally with clear sections and actionable insights.
+
+# Memory configuration for notification history
+memory:
+  providers:
+    filesystem:
+      enabled: true
+      config:
+        base_path: "./.atlas/memory"
+        max_size: "100MB"
+        retention_days: 30

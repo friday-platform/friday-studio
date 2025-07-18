@@ -1,0 +1,15 @@
+{
+  "name": "@atlas/notifications",
+  "version": "1.0.0",
+  "exports": "./mod.ts",
+  "imports": {
+    "@atlas/config": "../config/mod.ts",
+    "@sendgrid/mail": "npm:@sendgrid/mail@^8.1.5",
+    "@std/duration": "jsr:@std/duration@^1.0.0"
+  },
+  "tasks": {
+    "check": "deno check mod.ts",
+    "test": "deno test --allow-env --allow-net",
+    "lint": "deno lint"
+  }
+}

@@ -23,6 +23,9 @@ export * from "./src/jobs.ts";
 // Memory configuration schemas
 export * from "./src/memory.ts";
 
+// Notification configuration schemas
+export * from "./src/notifications.ts";
+
 // Atlas-specific schemas
 export * from "./src/atlas.ts";
 

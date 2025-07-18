@@ -7,6 +7,8 @@
     "@worker-tools/html-rewriter": "npm:@worker-tools/html-rewriter@^0.1.0-pre.19",
     "turndown": "npm:turndown@^7.2.0",
     "@std/fs": "jsr:@std/fs@^1.0.0",
-    "@std/path": "jsr:@std/path@^1.0.0"
+    "@std/path": "jsr:@std/path@^1.0.0",
+    "@atlas/config": "../config/mod.ts",
+    "@atlas/notifications": "../notifications/mod.ts"
   }
 }

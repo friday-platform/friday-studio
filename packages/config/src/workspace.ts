@@ -16,6 +16,7 @@ import { WorkspaceSignalConfigSchema } from "./signals.ts";
 import { WorkspaceAgentConfigSchema } from "./agents.ts";
 import { JobSpecificationSchema } from "./jobs.ts";
 import { AtlasMemoryConfigSchema, WorkspaceMemoryConfigSchema } from "./memory.ts";
+import { NotificationConfigSchema } from "./notifications.ts";
 
 // ==============================================================================
 // WORKSPACE CONFIGURATION (workspace.yml)
@@ -41,6 +42,9 @@ export const WorkspaceConfigSchema = z.strictObject({
 
   // Memory configuration
   memory: WorkspaceMemoryConfigSchema.optional(),
+
+  // Notifications configuration
+  notifications: NotificationConfigSchema.optional(),
 
   // Federation
   federation: FederationConfigSchema.optional(),

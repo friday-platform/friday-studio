@@ -474,3 +474,47 @@ export async function checkJobDiscoverable(
     return false; // Fail closed
   }
 }
+
+/**
+ * Create a successful MCP tool response
+ */
+export function createSuccessResponse(data: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+  isError?: false;
+} {
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(data, null, 2),
+      },
+    ],
+    isError: false,
+  };
+}
+
+/**
+ * Create an error MCP tool response
+ */
+export function createErrorResponse(
+  message: string,
+  details?: unknown,
+): {
+  content: Array<{ type: "text"; text: string }>;
+  isError: true;
+} {
+  const errorData = {
+    error: message,
+    ...(details && { details }),
+  };
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(errorData, null, 2),
+      },
+    ],
+    isError: true,
+  };
+}
