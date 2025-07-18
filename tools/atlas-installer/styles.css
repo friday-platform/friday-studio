@@ -691,7 +691,7 @@ body {
 }
 
 .progress-container {
-  margin: var(--size-4) 0;
+  margin: 0 0 var(--size-4);
 }
 
 .progress-bar {
@@ -728,6 +728,7 @@ body {
   font-size: var(--font-size-2);
   margin: var(--size-4) 0;
   white-space: pre-wrap;
+  text-align: left;
 }
 
 .footer {
