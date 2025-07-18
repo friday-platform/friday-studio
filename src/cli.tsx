@@ -15,7 +15,7 @@ if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
 import { checkAndDownloadBrowsers } from "./utils/browser-manager.ts";
 
 // Check and download browsers if needed
-await checkAndDownloadBrowsers();
+checkAndDownloadBrowsers();
 
 // Build the CLI
 const cli = yargs(Deno.args)
