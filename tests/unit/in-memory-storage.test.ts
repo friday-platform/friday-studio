@@ -2,14 +2,14 @@
 Deno.env.set("DENO_TESTING", "true");
 
 import { assertEquals, assertExists } from "@std/assert";
-import { InMemoryStorageAdapter } from "../../src/storage/in-memory.ts";
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import {
   createTestScope,
   createTestSession,
   MockAgent,
   MockSignal,
 } from "../../src/testing/helpers.ts";
-import { CoALAMemoryType } from "../../src/core/memory/coala-memory.ts";
+import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () => {
   const adapter = new InMemoryStorageAdapter();

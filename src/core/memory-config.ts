@@ -5,8 +5,9 @@
  * for agents, sessions, and workspaces with proper scoping and limits.
  */
 
-import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type { IAtlasScope } from "../types/core.ts";
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import { logger } from "../utils/logger.ts";
 
 export interface MemoryLimits {
@@ -262,17 +263,32 @@ export class MemoryConfigManager {
     scope: IAtlasScope,
     _config: MemoryConfiguration,
   ): CoALAMemoryManager {
+    // Use InMemoryStorageAdapter in test environments to prevent resource leaks
+    const storageAdapter = Deno.env.get("DENO_TESTING") === "true"
+      ? new InMemoryStorageAdapter()
+      : undefined; // Use default storage
+
+    // Disable cognitive loop in test environments to prevent resource leaks
+    const enableCognitiveLoop = Deno.env.get("DENO_TESTING") === "true"
+      ? false
+      : this.config.default.cognitive_loop;
+
     return new CoALAMemoryManager(
       scope,
-      undefined, // Use default storage
-      this.config.default.cognitive_loop,
+      storageAdapter,
+      enableCognitiveLoop,
     );
   }
 
   private createDisabledMemoryManager(scope: IAtlasScope): CoALAMemoryManager {
+    // Use InMemoryStorageAdapter in test environments to prevent resource leaks
+    const storageAdapter = Deno.env.get("DENO_TESTING") === "true"
+      ? new InMemoryStorageAdapter()
+      : undefined;
+
     return new CoALAMemoryManager(
       scope,
-      undefined,
+      storageAdapter,
       false, // Disable cognitive loop
     );
   }

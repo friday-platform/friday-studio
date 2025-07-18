@@ -3,15 +3,14 @@
  * Stores knowledge graph data in JSON files with indexing
  */
 
-import {
+import { ensureDir } from "@std/fs";
+import type {
   IKnowledgeGraphStorageAdapter,
   KnowledgeEntity,
-  KnowledgeEntityType,
   KnowledgeFact,
   KnowledgeGraphQuery,
   KnowledgeRelationship,
-  KnowledgeRelationType,
-} from "../core/memory/knowledge-graph.ts";
+} from "../types/core.ts";
 
 export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorageAdapter {
   private basePath: string;
@@ -29,13 +28,7 @@ export class KnowledgeGraphLocalStorageAdapter implements IKnowledgeGraphStorage
   }
 
   private async ensureDirectory(): Promise<void> {
-    try {
-      await Deno.mkdir(this.basePath, { recursive: true });
-    } catch (error) {
-      if (!(error instanceof Deno.errors.AlreadyExists)) {
-        throw error;
-      }
-    }
+    await ensureDir(this.basePath);
   }
 
   private async readJsonFile<T>(filePath: string): Promise<Record<string, T>> {

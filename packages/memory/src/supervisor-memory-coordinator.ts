@@ -5,9 +5,9 @@
  * Provides memory coordination between WorkspaceSupervisor and SessionSupervisor
  */
 
-import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../types/core.ts";
+import type { IAtlasScope, IWorkspaceSession, IWorkspaceSignal } from "../../../src/types/core.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "./coala-memory.ts";
-import { extractSearchTerms } from "../../utils/prompt-tokenizer.ts";
+import { extractSearchTerms } from "../../../src/utils/prompt-tokenizer.ts";
 import { WorkspaceMemoryConsolidator } from "./coala-consolidation.ts";
 
 export interface SupervisorMemoryContext {

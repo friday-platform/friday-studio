@@ -146,7 +146,7 @@ file_categories:
   performance_critical:
     - "src/core/supervisor.ts"
     - "src/core/workers/*.ts"
-    - "src/core/memory/*.ts"
+    - "packages/memory/src/*.ts"
 
   api_files:
     - "src/cli/commands/*.tsx"

@@ -6,16 +6,49 @@
  * This package provides:
  * - Storage interfaces and abstractions
  * - Various storage adapter implementations
- * - KV storage implementations
  * - Memory persistence utilities
+ * - Vector search storage adapters
+ * - Knowledge graph storage adapters
  */
-
-// TODO: Move from src/storage/
-// TODO: Move from src/core/storage/
 
 export const STORAGE_VERSION = "1.0.0";
 
-// Placeholder interfaces - will be replaced as we migrate code
+// Core storage interfaces
+export type {
+  ICoALAMemoryStorageAdapter,
+  IKnowledgeGraphStorageAdapter,
+  ITempestMemoryStorageAdapter,
+  KnowledgeEntity,
+  KnowledgeEntityType,
+  KnowledgeFact,
+  KnowledgeGraphQuery,
+  KnowledgeRelationship,
+  KnowledgeRelationType,
+} from "./src/types/core.ts";
+
+// Vector search interfaces
+export type {
+  IEmbeddingProvider,
+  IVectorSearchStorageAdapter,
+  VectorEmbedding,
+  VectorIndexStats,
+  VectorSearchConfig,
+  VectorSearchQuery,
+  VectorSearchResult,
+} from "./src/types/vector-search.ts";
+
+// Memory storage adapters
+export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
+export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
+export { LocalFileStorageAdapter } from "./src/memory/local.ts";
+
+// Vector search storage adapters
+export { VectorSearchLocalStorageAdapter } from "./src/vector/vector-search-local.ts";
+
+// Knowledge graph storage adapters
+export { KnowledgeGraphLocalStorageAdapter } from "./src/knowledge-graph/knowledge-graph-local.ts";
+
+// General storage interface
 export interface StorageAdapter {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown): Promise<void>;
@@ -23,12 +56,7 @@ export interface StorageAdapter {
   has(key: string): Promise<boolean>;
 }
 
-// deno-lint-ignore no-empty-interface
-export interface KVStorage {
-  // TODO: Add KV storage interface
-}
-
-// Placeholder implementations
+// Simple in-memory storage implementation
 export class MemoryStorage implements StorageAdapter {
   private store = new Map<string, unknown>();
 
@@ -66,10 +94,3 @@ export { FilesystemTemplateAdapter } from "./src/adapters/filesystem-template-ad
 // Export workspace creation adapters
 export type { WorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
 export { FilesystemWorkspaceCreationAdapter } from "./src/adapters/workspace-creation-adapter.ts";
-
-// TODO: Export actual implementations as we migrate:
-// - LocalStorage
-// - DenoKVStorage
-// - LibraryStorageAdapter
-// - RegistryStorageAdapter
-// - etc.

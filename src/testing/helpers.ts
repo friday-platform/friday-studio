@@ -10,7 +10,7 @@ import type {
   IWorkspaceSource,
   IWorkspaceWorkflow,
 } from "../types/core.ts";
-import { InMemoryStorageAdapter } from "../storage/in-memory.ts";
+import { InMemoryStorageAdapter } from "@atlas/storage";
 import { AtlasScope, type AtlasScopeOptions } from "../core/scope.ts";
 
 /**

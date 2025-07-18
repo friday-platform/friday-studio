@@ -1,4 +1,4 @@
-import { logger } from "../../../utils/logger.ts";
+import { logger } from "../../../../src/utils/logger.ts";
 import type { CoALAMemoryManager } from "../coala-memory.ts";
 import type {
   AgentResultStream,

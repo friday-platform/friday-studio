@@ -9,7 +9,7 @@ import type {
   IWorkspaceSupervisor,
 } from "../types/core.ts";
 import { ContextManager } from "./context.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { MessageManager } from "./messages.ts";
 
 export interface AtlasScopeOptions {

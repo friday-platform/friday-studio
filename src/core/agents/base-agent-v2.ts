@@ -17,7 +17,7 @@ import type {
   ITempestMessageManager,
 } from "../../types/core.ts";
 import { ContextManager as Context } from "../context.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "../memory/coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { MessageManager as Messages } from "../messages.ts";
 import { LLMProvider } from "@atlas/core";
 import { type ChildLogger, logger } from "../../utils/logger.ts";

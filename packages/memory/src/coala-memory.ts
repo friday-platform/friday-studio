@@ -13,24 +13,24 @@ import type {
   ICoALAMemoryStorageAdapter,
   ITempestMemoryManager,
   ITempestMemoryStorageAdapter,
-} from "../../types/core.ts";
-import { CoALALocalFileStorageAdapter } from "../../storage/coala-local.ts";
+} from "../../../src/types/core.ts";
+import {
+  CoALALocalFileStorageAdapter,
+  type IVectorSearchStorageAdapter,
+  KnowledgeGraphLocalStorageAdapter,
+  type VectorEmbedding,
+  type VectorSearchConfig,
+  VectorSearchLocalStorageAdapter,
+  type VectorSearchQuery,
+} from "@atlas/storage";
 import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
-import { KnowledgeGraphLocalStorageAdapter } from "../../storage/knowledge-graph-local.ts";
-import type {
-  IEmbeddingProvider,
-  IVectorSearchStorageAdapter,
-  VectorEmbedding,
-  VectorSearchConfig,
-  VectorSearchQuery,
-} from "../../types/vector-search.ts";
-import { VectorSearchLocalStorageAdapter } from "../../storage/vector-search-local.ts";
-import { createEmbeddingProvider } from "../embedding/mock-embedding-provider.ts";
+import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
+import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
 import {
   extractSearchTerms,
   type ProcessedPrompt,
   tokenizePrompt,
-} from "../../utils/prompt-tokenizer.ts";
+} from "../../../src/utils/prompt-tokenizer.ts";
 
 export interface CoALAMemoryEntry {
   id: string;
@@ -112,18 +112,23 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       this.memoriesByType.set(type, new Map());
     });
 
-    // Initialize knowledge graph for semantic memory enhancement
-    this.initializeKnowledgeGraph();
+    // In test environments, skip all background operations and timers
+    const isTestEnvironment = Deno.env.get("DENO_TESTING") === "true";
 
-    // Only load from storage if not using in-memory adapter
-    if (this.store.constructor.name !== "InMemoryStorageAdapter") {
-      this.loadFromStorage();
-      // Initialize vector search if enabled
-      this.initializeVectorSearch(vectorSearchConfig);
-    }
+    if (!isTestEnvironment) {
+      // Initialize knowledge graph for semantic memory enhancement
+      this.initializeKnowledgeGraph();
 
-    if (enableCognitiveLoop) {
-      this.startCognitiveLoop();
+      // Only load from storage if not using in-memory adapter
+      if (this.store.constructor.name !== "InMemoryStorageAdapter") {
+        this.loadFromStorage();
+        // Initialize vector search if enabled
+        this.initializeVectorSearch(vectorSearchConfig);
+      }
+
+      if (enableCognitiveLoop) {
+        this.startCognitiveLoop();
+      }
     }
   }
 

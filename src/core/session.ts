@@ -8,7 +8,7 @@ import type {
   IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "./memory/coala-memory.ts";
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type ChildLogger, logger } from "../utils/logger.ts";
 import { globalFSMMonitor } from "./fsm/fsm-monitoring.ts";

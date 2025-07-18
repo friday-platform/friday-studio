@@ -9,9 +9,9 @@ import {
   KnowledgeGraphManager,
   KnowledgeRelationType,
 } from "./knowledge-graph.ts";
-import { BaseAgent } from "../agents/base-agent-v2.ts";
-import type { AtlasMemoryConfig } from "../memory-config.ts";
-import type { IWorkspaceSignal } from "../../types/core.ts";
+import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
+import type { AtlasMemoryConfig } from "../../../src/core/memory-config.ts";
+import type { IWorkspaceSignal } from "../../../src/types/core.ts";
 
 export interface SignalFactExtractionResult {
   extractedFacts: ExtractedFact[];

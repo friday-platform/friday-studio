@@ -1,5 +1,5 @@
 import type { ITempestMemoryManager, ITempestMemoryStorageAdapter } from "../types/core.ts";
-import { LocalFileStorageAdapter } from "../storage/local.ts";
+import { LocalFileStorageAdapter } from "@atlas/storage";
 
 export class MemoryManager implements ITempestMemoryManager {
   private store: ITempestMemoryStorageAdapter;

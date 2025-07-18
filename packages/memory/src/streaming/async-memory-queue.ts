@@ -1,4 +1,4 @@
-import { logger } from "../../../utils/logger.ts";
+import { logger } from "../../../../src/utils/logger.ts";
 import type {
   MemoryStream,
   MemoryStreamProcessor,

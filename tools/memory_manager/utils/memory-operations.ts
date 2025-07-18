@@ -11,7 +11,7 @@ import {
   MemoryType,
   type VectorSearchResult,
 } from "../types/memory-types.ts";
-import { CoALAMemoryManager } from "../../../src/core/memory/coala-memory.ts";
+import { CoALAMemoryManager } from "@atlas/memory";
 
 export class AtlasMemoryOperations implements MemoryOperations {
   private storage: MemoryStorage;

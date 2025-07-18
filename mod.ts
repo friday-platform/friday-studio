@@ -12,4 +12,3 @@ export * from "./src/core/manager.ts";
 export * from "./src/core/context.ts";
 export * from "./src/core/memory.ts";
 export * from "./src/core/messages.ts";
-export * from "./src/storage/local.ts";

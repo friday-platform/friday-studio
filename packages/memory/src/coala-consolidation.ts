@@ -5,7 +5,7 @@
  * for WorkspaceSupervisor and SessionSupervisor integration
  */
 
-import type { IAtlasScope } from "../../types/core.ts";
+import type { IAtlasScope } from "../../../src/types/core.ts";
 import {
   CoALAMemoryEntry,
   CoALAMemoryManager,
