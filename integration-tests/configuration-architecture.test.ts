@@ -23,7 +23,7 @@ agents:
     type: "llm"
     description: "Manages memory operations at session start and end"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       prompt: |
         You are a memory management agent for Atlas workspaces.
       tools: ["memory-storage", "pattern-analysis", "context-retrieval"]
@@ -65,12 +65,12 @@ agents:
     description: "Synthesizes multiple inputs into coherent summaries and analyses"
     agent: "content-synthesizer"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.3
 
 supervisors:
   workspace:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -79,7 +79,7 @@ supervisors:
       system: |
         You are a WorkspaceSupervisor responsible for orchestrating AI agent execution.
   session:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -88,7 +88,7 @@ supervisors:
       system: |
         You are a SessionSupervisor responsible for coordinating agent execution within a session.
   agent:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -190,7 +190,7 @@ agents:
     type: "llm"
     description: "Test LLM agent for configuration testing"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       prompt: |
         You are a test agent for configuration validation.
       tools: ["text-analysis", "processing"]
@@ -200,7 +200,7 @@ agents:
     description: "Test system agent"
     agent: "test-agent"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.8
 
   test-remote-agent:
@@ -281,13 +281,13 @@ Deno.test("Atlas configuration loads platform settings", async () => {
 
     // Test supervisor configurations
     expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe(
-      "gemini-2.5-flash",
+      "claude-3-7-sonnet-latest",
     );
     expect(mergedConfig.atlas?.supervisors?.session?.model).toBe(
-      "gemini-2.5-flash",
+      "claude-3-7-sonnet-latest",
     );
     expect(mergedConfig.atlas?.supervisors?.agent?.model).toBe(
-      "gemini-2.5-flash",
+      "claude-3-7-sonnet-latest",
     );
 
     // Test supervisor prompts exist
@@ -355,7 +355,7 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     expect(workspaceConfig.agents!["test-llm-agent"].type).toBe("llm");
     const llmAgent = workspaceConfig.agents!["test-llm-agent"];
     if (llmAgent.type === "llm") {
-      expect(llmAgent.config.model).toBe("gemini-2.5-flash");
+      expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
       expect(llmAgent.description).toBe("Test LLM agent for configuration testing");
     }
 
@@ -411,7 +411,7 @@ Deno.test(
       // Verify atlas config is loaded
       expect(mergedConfig.atlas?.workspace.name).toBe("Atlas Platform");
       expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe(
-        "gemini-2.5-flash",
+        "claude-3-7-sonnet-latest",
       );
 
       // Verify workspace config is loaded
@@ -469,7 +469,7 @@ Deno.test("Agent type configurations validate correctly", async () => {
     const llmAgent = workspaceAgents["test-llm-agent"];
     expect(llmAgent.type).toBe("llm");
     if (llmAgent.type === "llm") {
-      expect(llmAgent.config.model).toBe("gemini-2.5-flash");
+      expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
       expect(llmAgent.description).toBeDefined();
       expect(llmAgent.config.tools).toBeDefined();
     }

@@ -94,7 +94,7 @@ agents:
     agent: "conversation"
     description: "Handle conversations with scope awareness and workspace creation"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.7
       max_tokens: 8000
       use_reasoning: true
@@ -1261,7 +1261,7 @@ agents:
     agent: "conversation-query"
     description: "Query conversation history based on scope"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.3
       max_tokens: 2000
       prompt: |
@@ -1273,7 +1273,7 @@ agents:
     agent: "conversation-loader"
     description: "Load conversation history for resumption"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.3
       max_tokens: 2000
       prompt: |

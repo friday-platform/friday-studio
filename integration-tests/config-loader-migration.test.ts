@@ -31,7 +31,7 @@ server:
 
 supervisors:
   workspace:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -42,7 +42,7 @@ supervisors:
     prompts:
       system: "You are a workspace supervisor"
   session:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -53,7 +53,7 @@ supervisors:
     prompts:
       system: "You are a session supervisor"
   agent:
-    model: "gemini-2.5-flash"
+    model: "claude-3-7-sonnet-latest"
     supervision:
       level: "standard"
       cache_enabled: true
@@ -131,7 +131,7 @@ agents:
     type: "llm"
     description: "Test LLM agent"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       provider: "google"
       prompt: "You are a test LLM agent that helps with workspace tasks"
       tools: ["workspace.memory.recall", "workspace.jobs.trigger"]
@@ -141,7 +141,7 @@ agents:
     description: "Test system agent"
     agent: "test-system-agent"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.7
       
   test-remote-agent:
@@ -227,7 +227,7 @@ Deno.test("Integration: ConfigLoader with FilesystemAdapter - complete workflow"
     // Test atlas configuration
     expect(config.atlas).toBeDefined();
     expect(config.atlas!.workspace.name).toBe("Atlas Platform");
-    expect(config.atlas!.supervisors!.workspace.model).toBe("gemini-2.5-flash");
+    expect(config.atlas!.supervisors!.workspace.model).toBe("claude-3-7-sonnet-latest");
     expect(config.atlas!.memory).toBeDefined();
     expect(config.atlas!.server?.mcp?.enabled).toBe(true);
 
@@ -243,7 +243,7 @@ Deno.test("Integration: ConfigLoader with FilesystemAdapter - complete workflow"
     // Type-safe access to LLM agent config
     const llmAgent = config.workspace.agents!["test-llm-agent"];
     if (llmAgent.type === "llm") {
-      expect(llmAgent.config.model).toBe("gemini-2.5-flash");
+      expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
     }
 
     expect(config.workspace.agents!["test-system-agent"].type).toBe("system");
@@ -543,7 +543,7 @@ agents:
     type: "llm"
     description: "Validate deployment configurations"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       provider: "google"
       prompt: "You are a deployment validator agent"
   deployer:
@@ -551,13 +551,13 @@ agents:
     description: "Execute Kubernetes deployments"
     agent: "k8s-deployer"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.5
   monitor:
     type: "llm"
     description: "Monitor deployment health"
     config:
-      model: "gemini-2.5-flash"
+      model: "claude-3-7-sonnet-latest"
       provider: "google"
       prompt: "You are a deployment monitoring agent"
 
