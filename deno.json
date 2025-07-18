@@ -11,8 +11,11 @@
       "dom.iterable"
     ],
     "types": [],
-    "noImplicitAny": false,
-    "strict": false,
+    "noImplicitAny": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
