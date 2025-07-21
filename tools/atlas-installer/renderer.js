@@ -256,7 +256,6 @@ class AtlasInstaller {
     this.updateNextButton();
 
     // Show progress UI
-    document.getElementById("install-title").textContent = "Installing Atlas...";
     document.getElementById("install-description").textContent =
       "Please wait while Atlas is being installed.";
     document.getElementById("install-summary").classList.add("hidden");
@@ -305,7 +304,12 @@ class AtlasInstaller {
         const result = await step.action();
         if (result.success) {
           if (result.warning) {
-            log += `⚠ ${step.message.replace("...", " completed with warning")}\n`;
+            log += `⚠ ${
+              step.message.replace(
+                "...",
+                " completed with warning",
+              )
+            }\n`;
             log += `  ${result.warning}\n`;
           } else {
             log += `✓ ${step.message.replace("...", " completed")}\n`;
@@ -443,7 +447,8 @@ class AtlasInstaller {
         }
       } else if (
         installLog.includes("✗ Error:") &&
-        installLog.lastIndexOf("✗ Error:") > installLog.lastIndexOf("Starting Atlas daemon...")
+        installLog.lastIndexOf("✗ Error:") >
+          installLog.lastIndexOf("Starting Atlas daemon...")
       ) {
         // Daemon step failed
         daemonStatus.textContent = "❌ Atlas daemon - start manually with 'atlas daemon start'";
