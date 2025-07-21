@@ -45,7 +45,7 @@ export async function generateThinking<TUserContext extends BaseReasoningContext
     result.text.toLowerCase().includes("finished");
 
   return {
-    thinking: { text: result.text, toolCalls: result.toolCalls || [] },
+    thinking: { text: result.text, toolCalls: result.toolCalls },
     confidence,
     isComplete,
   };
@@ -65,7 +65,10 @@ export function parseAction(thinking: string): ReasoningAction | null {
       return null;
     }
 
-    const actionType = actionMatch[1].toLowerCase();
+    const actionType = actionMatch[1]?.toLowerCase();
+    if (!actionType) {
+      return null;
+    }
     if (!["agent_call", "tool_call", "complete"].includes(actionType)) {
       return null;
     }
@@ -91,7 +94,7 @@ export function parseAction(thinking: string): ReasoningAction | null {
       parameters,
       reasoning: reasoningMatch?.[1]?.trim() || "No reasoning provided",
     };
-  } catch (error) {
+  } catch (_error) {
     return null;
   }
 }

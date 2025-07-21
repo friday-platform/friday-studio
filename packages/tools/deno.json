@@ -1,0 +1,44 @@
+{
+  "name": "@atlas/tools",
+  "version": "1.0.0",
+  "exports": {
+    ".": "./mod.ts",
+    "./filesystem": "./src/filesystem.ts",
+    "./workspace": "./src/workspace.ts",
+    "./session": "./src/session.ts",
+    "./job": "./src/job.ts",
+    "./signal": "./src/signal.ts",
+    "./agent": "./src/agent.ts",
+    "./library": "./src/library.ts",
+    "./draft": "./src/draft.ts",
+    "./system": "./src/system.ts",
+    "./conversation": "./src/conversation.ts",
+    "./registry": "./src/registry.ts",
+    "./utils": "./src/utils.ts"
+  },
+  "imports": {
+    "zod": "npm:zod@^3.25.74",
+    "ai": "npm:ai@^4.0.7"
+  },
+  "tasks": {
+    "test": "deno test --allow-all tests/",
+    "test:unit": "deno test --allow-all tests/unit/",
+    "test:watch": "deno test --allow-all --watch tests/",
+    "check": "deno check mod.ts",
+    "lint": "deno lint",
+    "fmt": "deno fmt"
+  },
+  "lint": {
+    "rules": {
+      "tags": ["recommended"]
+    }
+  },
+  "fmt": {
+    "useTabs": false,
+    "lineWidth": 100,
+    "indentWidth": 2,
+    "semiColons": true,
+    "singleQuote": false,
+    "proseWrap": "preserve"
+  }
+}

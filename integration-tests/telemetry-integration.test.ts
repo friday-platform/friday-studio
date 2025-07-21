@@ -5,7 +5,7 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { AtlasTelemetry } from "../src/utils/telemetry.ts";
-import { delay } from "../tests/utils/test-utils.ts";
+import { delay } from "../tests/utils/mod.ts";
 
 // Helper to simulate worker message passing
 interface WorkerMessage {

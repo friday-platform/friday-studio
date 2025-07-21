@@ -28,6 +28,8 @@ import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces.ts";
+import { conversationStorageRoutes } from "../routes/conversation-storage.ts";
+import { workspaceDraftRoutes } from "../routes/workspace-drafts.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/core";
 import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
@@ -260,6 +262,12 @@ export class AtlasDaemon implements AppContext {
 
     // Mount workspace routes
     this.app.route("/api/workspaces", workspacesRoutes);
+
+    // Mount conversation storage routes
+    this.app.route("", conversationStorageRoutes);
+
+    // Mount workspace draft routes
+    this.app.route("", workspaceDraftRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {
@@ -1949,7 +1957,13 @@ export class AtlasDaemon implements AppContext {
    */
   public emitSSEEvent(sessionId: string, event: unknown): void {
     const clients = this.sseClients.get(sessionId);
+
     if (!clients || clients.length === 0) {
+      AtlasLogger.getInstance().warn(`No SSE clients connected for session ${sessionId}`, {
+        requestedSessionId: sessionId,
+        availableSessions: Array.from(this.sseClients.keys()),
+        totalClients: this.sseClients.size,
+      });
       return;
     }
 

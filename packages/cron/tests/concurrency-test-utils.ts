@@ -5,7 +5,7 @@
  * and timing-sensitive scenarios in the Atlas cron system.
  */
 
-import {} from "@std/assert";
+import { delay } from "../../../tests/utils/mod.ts";
 
 /**
  * Simulates concurrent execution of multiple async operations
@@ -44,13 +44,6 @@ export async function stressTest<T>(
 
   const results = await Promise.all(batches);
   return results.flat();
-}
-
-/**
- * Utility to create deterministic delays for testing
- */
-export function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**

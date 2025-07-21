@@ -152,7 +152,6 @@ export interface ReasoningResult {
     artifacts: Record<string, unknown>;
   };
   metrics: {
-    llmUsage: LLMUsage;
     agentCalls: number;
     toolCalls: number;
   };

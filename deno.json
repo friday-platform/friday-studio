@@ -72,7 +72,7 @@
     "@types/react": "npm:@types/react@^19.1.8",
     "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@^4.0.7",
-    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.0.2",
+    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.2.12",
     "@ai-sdk/openai": "npm:@ai-sdk/openai@^1.0.8",
     "@ai-sdk/google": "npm:@ai-sdk/google@^1.2.22",
     "xstate": "npm:xstate@^5.20.1",

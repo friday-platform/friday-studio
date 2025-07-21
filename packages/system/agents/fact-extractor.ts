@@ -8,7 +8,7 @@ import {
   KnowledgeEntityType,
   KnowledgeGraphManager,
   KnowledgeRelationType,
-} from "./knowledge-graph.ts";
+} from "@atlas/memory";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { AtlasMemoryConfig } from "../../../src/core/memory-config.ts";
 import type { IWorkspaceSignal } from "../../../src/types/core.ts";
@@ -77,6 +77,19 @@ export class FactExtractor extends BaseAgent {
       supportedEntityTypes: Object.values(KnowledgeEntityType),
       supportedRelationTypes: Object.values(KnowledgeRelationType),
     };
+  }
+
+  protected async execute(
+    input?: unknown,
+    _streaming?: (data: string) => void,
+  ): Promise<unknown> {
+    // Default to signal extraction with a generic signal format
+    const signal = input as IWorkspaceSignal || {
+      id: crypto.randomUUID(),
+      provider: { name: "direct-execution" },
+    };
+
+    return await this.extractFactsFromSignal(signal, input);
   }
 
   // Extract facts from complete session execution (runs once at session end)

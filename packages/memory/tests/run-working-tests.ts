@@ -200,7 +200,7 @@ await runTest("Package Exports", async () => {
   expect(memoryModule.KnowledgeRelationType).toBeDefined();
   expect(memoryModule.StreamingMemoryManager).toBeDefined();
   expect(memoryModule.AsyncMemoryQueue).toBeDefined();
-  expect(memoryModule.FactExtractor).toBeDefined();
+  // FactExtractor moved to packages/system/agents/fact-extractor.ts to avoid circular dependency
   expect(memoryModule.WorkspaceMemoryConsolidator).toBeDefined();
   expect(memoryModule.SupervisorMemoryCoordinator).toBeDefined();
 });

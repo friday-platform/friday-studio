@@ -1,124 +1,116 @@
 /**
  * ConversationAgent - System agent for interactive conversations
- * Extends BaseAgent with conversation-specific capabilities
+ *
+ * This agent manages chat interactions within Atlas workspaces, providing:
+ * - Persistent conversation history with context retrieval
+ * - Tool execution with streaming capabilities
+ * - AI-powered responses using Claude models
+ * - Real-time streaming of thoughts, responses, and tool calls
+ *
+ * Key features:
+ * - Automatically loads and maintains conversation context across sessions
+ * - Supports configurable tools for extended functionality
+ * - Implements streaming for responsive user experience
+ * - Handles error recovery and graceful degradation
  */
 
-import { type SystemAgentConfigObject, SystemAgentConfigObjectSchema } from "@atlas/config";
-import { LLMProvider } from "@atlas/core";
-import {
-  createReasoningMachine,
-  type ReasoningAction,
-  type ReasoningCallbacks,
-  type ReasoningCompletion,
-  type ReasoningContext,
-  type ReasoningExecutionResult,
-  type ReasoningResult,
-} from "@atlas/reasoning";
-import type { Tool } from "ai";
-import { createActor } from "xstate";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { type SystemAgentConfigObject } from "@atlas/config";
+import { AtlasToolRegistry, getAtlasToolRegistry } from "@atlas/tools";
+import type { TextStreamPart, Tool } from "ai";
+import { streamText, tool } from "ai";
 import { z } from "zod";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
-import {
-  createStreamsImplementation,
-  DaemonCapabilityRegistry,
-} from "../../../src/core/daemon-capabilities.ts";
 import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
-import { WorkspaceCapabilityRegistry } from "../../../src/core/workspace-capabilities.ts";
-import { ValidationError } from "../../../src/utils/errors.ts";
-import { ReasoningThinking } from "../../reasoning/src/types.ts";
 
-// Schema for execute method input validation
 const ConversationInputSchema = z.object({
   message: z.string(),
   streamId: z.string().optional(),
   userId: z.string().optional(),
-  conversationId: z.string().optional(),
+  conversationId: z.string().optional(), // Legacy field for backward compatibility
 });
 
-// Interface for controls() method return type
 interface ConversationAgentControls {
-  model?: string;
-  temperature?: number;
-  max_tokens?: number;
   tools?: string[];
 }
 
-// Interface for tool execution options
-interface ConversationToolExecutionOptions {
-  toolCallId: string;
-  messages: Array<{ role: "user" | "assistant"; content: string }>;
-  agentId: string;
-  streamId?: string;
-  conversationId?: string;
-}
-
-// Interface for conversation storage output
 interface ConversationStorageOutput {
   success: boolean;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
-  historyContext?: string;
+  historyContext?: string; // Pre-formatted for LLM prompt injection
   error?: string;
 }
 
-// Interface for reasoning user context
-type ConversationReasoningContext = {
-  message: string;
-  streamId?: string;
-  conversationId: string;
-  tools: Record<string, Tool>;
-  historyContext?: string;
-  goal: string;
-  workspaceId: string;
-  sessionId: string;
+interface StreamEvent {
+  type: "thinking" | "text" | "tool_call" | "tool_result" | "error";
+  content: string;
+  metadata?: Record<string, unknown>;
+  timestamp: number;
+}
+
+type ExecutionStep = {
+  type: string;
+  tool?: string;
+  args?: unknown;
+  timestamp: number;
 };
 
-// Using SystemAgentMetadata from system-agent-registry.ts
+type ExecutionFlow = {
+  steps: ExecutionStep[];
+  reasoning: string;
+  responseBuffer: string;
+  thinkingBuffer: string;
+};
 
+/**
+ * ConversationAgent implementation for Atlas workspace conversations
+ *
+ * Lifecycle:
+ * 1. Constructor validates configuration and available tools
+ * 2. Execute method processes user messages with conversation history
+ * 3. Streams responses with tool calls and reasoning
+ * 4. Persists conversation state for future interactions
+ */
 export class ConversationAgent extends BaseAgent {
-  private agentConfig: SystemAgentConfigObject;
+  private config: SystemAgentConfigObject;
+  private llmProvider = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
+  private toolRegistry: AtlasToolRegistry;
 
-  constructor(config: SystemAgentConfigObject, id?: string) {
+  constructor(config: SystemAgentConfigObject, id?: string, toolRegistry?: AtlasToolRegistry) {
     super(undefined, id);
 
-    // Parse and validate the configuration
-    let parsedConfig: SystemAgentConfigObject;
-    try {
-      parsedConfig = SystemAgentConfigObjectSchema.parse(config);
-    } catch (e) {
-      if (e instanceof z.ZodError) {
-        throw new ValidationError("Invalid configuration for ConversationAgent", e);
-      }
-      throw e;
-    }
+    this.config = config;
+    this.toolRegistry = toolRegistry || getAtlasToolRegistry();
 
     this.logger.info("ConversationAgent constructor called", {
-      configKeys: Object.keys(parsedConfig),
-      config: JSON.stringify(parsedConfig),
-      hasTools: !!parsedConfig.tools,
-      toolsLength: parsedConfig.tools?.length,
-      tools: parsedConfig.tools,
+      configKeys: Object.keys(this.config),
+      config: JSON.stringify(this.config),
+      hasTools: !!this.config.tools,
+      toolsLength: this.config.tools?.length,
+      tools: this.config.tools,
+      toolRegistry: !!this.toolRegistry,
+      usingDefaultRegistry: !toolRegistry,
     });
 
-    this.agentConfig = {
-      model: "claude-3-7-sonnet-latest",
-      prompt: "You are a helpful AI assistant for Atlas workspace conversations.",
-      tools: [],
-      temperature: 0.7,
-      max_tokens: 2000,
-      use_reasoning: false,
-      max_reasoning_steps: 5,
-      ...parsedConfig,
-    };
+    // Validate configured tools exist before execution starts
+    if (this.config.tools && this.config.tools.length > 0) {
+      const missingTools = this.config.tools.filter(
+        (tool) => !this.toolRegistry.hasTools(tool),
+      );
+      if (missingTools.length > 0) {
+        throw new Error(
+          `Required tools not available in registry: ${
+            missingTools.join(", ")
+          }. Ensure tools are properly registered.`,
+        );
+      }
+    }
 
-    // Use prompt from config or default
-    const systemPrompt = this.agentConfig.prompt ||
-      "You are a helpful AI assistant.";
-
-    // Set agent prompts based on configuration
+    const systemPrompt = this.config.prompt ||
+      "You are a helpful AI assistant for Atlas workspace conversations.";
     this.setPrompts(systemPrompt, "");
   }
 
-  // IAtlasAgent interface implementation
   name(): string {
     return "ConversationAgent";
   }
@@ -141,132 +133,43 @@ export class ConversationAgent extends BaseAgent {
 
   controls(): ConversationAgentControls {
     return {
-      model: this.agentConfig.model,
-      temperature: this.agentConfig.temperature,
-      max_tokens: this.agentConfig.max_tokens,
-      tools: this.agentConfig.tools,
+      tools: this.config.tools,
     };
   }
 
-  private getAvailableCapabilities(streamId?: string): {
-    availableAgents: any[];
-    availableTools: Record<string, Tool>;
-  } {
-    WorkspaceCapabilityRegistry.initialize();
-    const availableAgents = WorkspaceCapabilityRegistry.getAllCapabilities();
-    const availableTools = this.getDaemonCapabilityTools(streamId);
-    return { availableAgents, availableTools };
-  }
-
-  /**
-   * Get default model for this agent
-   */
   protected override getDefaultModel(): string {
-    return this.agentConfig.model || super.getDefaultModel();
+    return "claude-3-7-sonnet-20250219";
   }
 
   /**
-   * Initializes the conversation by loading history and saving the user's message.
-   */
-  private async _initializeConversation(
-    streamId: string,
-    message: string,
-    userId?: string,
-  ): Promise<{
-    historyContext: string;
-    messagesInHistory: number;
-    isNewConversation: boolean;
-  }> {
-    let historyContext = "";
-    let messagesInHistory = 0;
-    let isNewConversation = true;
-
-    try {
-      const historyResult = await this.loadConversationHistory(streamId);
-      if (
-        historyResult.success && "messages" in historyResult && historyResult.messages.length > 0
-      ) {
-        historyContext = historyResult.historyContext || "";
-        messagesInHistory = historyResult.messages.length;
-        isNewConversation = false;
-        this.logger.info("Loaded conversation history", {
-          streamId,
-          messageCount: messagesInHistory,
-          contextLength: historyContext.length,
-        });
-      }
-    } catch (error) {
-      this.logger.warn("Failed to load conversation history", {
-        streamId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
-      await this.saveMessage(
-        streamId,
-        {
-          role: "user",
-          content: message,
-        },
-        {
-          userId,
-          timestamp: new Date().toISOString(),
-          workspaceContext: "atlas-conversation",
-        },
-      );
-    } catch (error) {
-      this.logger.warn("Failed to save user message", {
-        streamId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    return { historyContext, messagesInHistory, isNewConversation };
-  }
-
-  /**
-   * Finalizes the conversation by saving the assistant's response.
-   */
-  private async _finalizeConversation(
-    streamId: string,
-    response: unknown,
-  ): Promise<void> {
-    if (response && typeof response === "object" && "response" in response && response.response) {
-      await this.saveMessage(
-        streamId,
-        {
-          role: "assistant",
-          content: String(response.response),
-        },
-        {
-          timestamp: new Date().toISOString(),
-          reasoning: true,
-        },
-      );
-    }
-  }
-
-  /**
-   * Execute conversation logic
+   * Processes user messages and generates AI responses
+   *
+   * @param input - User input containing message, streamId, userId
+   * @param streaming - Optional callback for streaming response chunks
+   * @returns Response object with text, reasoning, execution flow, and metadata
+   *
+   * Flow:
+   * 1. Validates input and loads conversation history
+   * 2. Prepares available tools from registry
+   * 3. Executes AI streaming with configured model
+   * 4. Processes stream events (thinking, text, tool calls)
+   * 5. Persists conversation state
    */
   protected async execute(
     input?: unknown,
     streaming?: (data: string) => void,
   ): Promise<unknown> {
     this.logger.info("ConversationAgent execute called", {
-      inputType: typeof input,
+      input: JSON.stringify(input),
       hasStreaming: !!streaming,
-      input: JSON.stringify(input).substring(0, 200),
     });
 
-    const validatedInput = ConversationInputSchema.parse(input);
-    const { message, streamId, userId } = validatedInput;
+    const { message, streamId, userId } = ConversationInputSchema.parse(input);
 
     this.logger.info("Processing message", {
       message: message.substring(0, 100),
-      model: this.agentConfig.model,
       streamId,
+      userId,
     });
 
     let historyContext = "";
@@ -274,492 +177,313 @@ export class ConversationAgent extends BaseAgent {
     let isNewConversation = true;
 
     if (streamId) {
-      const conversationState = await this._initializeConversation(
-        streamId,
-        message,
-        userId,
-      );
-      historyContext = conversationState.historyContext;
-      messagesInHistory = conversationState.messagesInHistory;
-      isNewConversation = conversationState.isNewConversation;
-    }
+      try {
+        const historyResult = await this.loadConversationHistory(streamId);
+        if (historyResult.success && historyResult.messages?.length) {
+          historyContext = historyResult.historyContext || "";
+          messagesInHistory = historyResult.messages.length;
+          isNewConversation = false;
+        }
 
-    try {
-      this.logger.info("Using reasoning-based conversation", {
-        maxSteps: this.agentConfig.max_reasoning_steps,
-        message: message.substring(0, 100),
-      });
-
-      const result = await this.executeWithReasoning(
-        message,
-        streamId,
-        historyContext,
-      );
-
-      if (streamId) {
-        await this._finalizeConversation(streamId, result);
+        await this.saveMessage(streamId, {
+          role: "user",
+          content: message,
+        }, { userId, timestamp: new Date().toISOString() });
+      } catch (error) {
+        this.logger.warn("Failed to handle conversation history", { error });
       }
-
-      return {
-        ...(typeof result === "object" && result !== null ? result : {}),
-        conversationMetadata: {
-          streamId,
-          messagesInHistory: messagesInHistory + (result ? 2 : 1), // user + assistant
-          isNewConversation,
-        },
-      };
-    } catch (error) {
-      this.logger.error("ConversationAgent execution failed", {
-        error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-      throw error;
     }
-  }
 
-  /**
-   * Convert daemon and workspace capabilities to tool format for LLM
-   */
-  private getDaemonCapabilityTools(streamId?: string): Record<string, Tool> {
     const tools: Record<string, Tool> = {};
-    WorkspaceCapabilityRegistry.initialize();
-
-    const capabilityRegistries = [
-      DaemonCapabilityRegistry,
-      WorkspaceCapabilityRegistry,
-    ];
-
-    for (const toolName of this.agentConfig.tools || []) {
-      for (const registry of capabilityRegistries) {
-        const capability = registry.getCapability(toolName);
-        if (capability) {
-          const context = registry === DaemonCapabilityRegistry
-            ? {
-              sessionId: streamId || this.id,
-              agentId: this.id,
-              workspaceId: "atlas-conversation",
-              daemon: DaemonCapabilityRegistry.getDaemonInstance(),
-              conversationId: streamId || this.id,
-              streams: createStreamsImplementation(),
-            }
-            : {
-              workspaceId: "atlas-conversation",
-              sessionId: streamId || this.id,
-              agentId: this.id,
-              conversationId: streamId || this.id,
-            };
-
-          const tool = capability.toTool(context as any);
-          tools[capability.id] = tool;
-          this.logger.info(`Created ${registry.constructor.name} tool`, {
-            toolId: capability.id,
-          });
-          break; // Move to the next toolName once found
-        }
-      }
-    }
-
-    this.logger.info("Converted capabilities to tools", {
-      toolCount: Object.keys(tools).length,
-      toolNames: Object.keys(tools),
-    });
-
-    return tools;
-  }
-
-  /**
-   * Builds the prompt for the 'think' step of the reasoning process.
-   * @param context - The current reasoning context.
-   * @returns The prompt string for the LLM.
-   */
-  private _buildThinkingPrompt(
-    context: ReasoningContext<ConversationReasoningContext>,
-  ): string {
-    const { userContext, steps, workingMemory } = context;
-    const previousSteps = steps.map((s) => ({
-      thinking: s.thinking,
-      action: s.action,
-      observation: s.observation,
-    }));
-    const draftId = workingMemory.get("draftId");
-
-    const promptParts = [
-      `You are a conversational AI with a goal: ${userContext.goal}`,
-      "Your task is to use the available tools to achieve this goal step-by-step.",
-      "Analyze the user's request and the conversation history, then select the single best tool to make progress.",
-    ];
-
-    if (userContext.historyContext) {
-      promptParts.push(`Conversation history:\n${userContext.historyContext}`);
-    }
-
-    promptParts.push(`User message: ${userContext.message}`);
-
-    if (previousSteps.length > 0) {
-      promptParts.push(
-        `Previous reasoning steps:\n${JSON.stringify(previousSteps, null, 2)}`,
-      );
-    }
-
-    promptParts.push(
-      `You have these tools available: ${Object.keys(userContext.tools).join(", ")}`,
-    );
-    promptParts.push(
-      `CRITICAL: You must use the provided tools to respond or act. To send a message to the user, you must use the 'stream_reply' tool.`,
-    );
-    promptParts.push(
-      `The 'stream_id' for the current conversation is "${userContext.streamId}". You must provide this 'stream_id' when calling 'stream_reply'.`,
-    );
-
-    if (draftId) {
-      promptParts.push(
-        `\nCurrent draft ID: ${draftId} (use this for workspace operations)\n`,
-      );
-    }
-
-    promptParts.push(
-      `Now, think about the next step and call the appropriate tool. If you have gathered information (e.g. using 'library_list'), your next step is to report it to the user with 'stream_reply'.`,
-    );
-
-    return promptParts.join("\n\n");
-  }
-
-  /**
-   * The 'think' implementation for the reasoning machine.
-   * @param context - The current reasoning context.
-   * @returns A promise that resolves to the thinking and confidence.
-   */
-  private async _think(
-    context: ReasoningContext<ConversationReasoningContext>,
-  ): Promise<ReasoningCompletion> {
-    const prompt = this._buildThinkingPrompt(context);
-    const tools = this.getDaemonCapabilityTools(
-      context.userContext.streamId,
-    );
-
-    const response = await LLMProvider.generateText(prompt, {
-      model: this.agentConfig.model,
-      provider: "anthropic",
-      temperature: 0.1,
-      max_tokens: 4000,
-      systemPrompt: "You are a conversational reasoning engine.",
-      tools: tools,
-      operationContext: {
-        operation: "conversation_agent_think",
-        conversationId: context.userContext.conversationId,
-      },
-    });
-
-    const thinking: ReasoningThinking = {
-      text: response.text,
-      toolCalls: response.toolCalls,
-    };
-
-    const confidence = 0.8;
-
-    return { thinking, confidence, isComplete: false };
-  }
-
-  /**
-   * The 'parseAction' implementation for the reasoning machine.
-   * @param thinking - The thinking string from the 'think' step.
-   * @returns The parsed reasoning action or null.
-   */
-  private _parseAction(thinking: ReasoningThinking): ReasoningAction | null {
-    this.logger.info("Parsing action from thinking", {
-      thinkingTextLength: thinking.text.length,
-      toolCallCount: thinking.toolCalls.length,
-    });
-
-    if (thinking.toolCalls && thinking.toolCalls.length > 0) {
-      const toolCall = thinking.toolCalls[0];
-      const action: ReasoningAction = {
-        type: "tool_call",
-        toolName: toolCall.toolName,
-        parameters: toolCall.args || {},
-        reasoning: thinking.text || "Tool call from thinking",
-        toolCallId: toolCall.toolCallId,
-      };
-      this.logger.info("Parsed tool_call action", { action: JSON.stringify(action) });
-      return action;
-    }
-    this.logger.info("No action parsed from thinking.");
-    return null;
-  }
-
-  /**
-   * The 'executeAction' implementation for the reasoning machine.
-   * @param action - The action to execute.
-   * @param context - The current reasoning context.
-   * @returns A promise that resolves to the result and observation.
-   */
-  private async _executeAction(
-    action: ReasoningAction,
-    context: ReasoningContext<ConversationReasoningContext>,
-  ): Promise<ReasoningExecutionResult> {
-    this.logger.info("Executing action", { action: JSON.stringify(action) });
-    if (action.type === "tool_call") {
-      const { toolName, parameters, toolCallId } = action;
-      const tools = this.getDaemonCapabilityTools(context.userContext.streamId);
-
-      if (tools[toolName]) {
-        this.logger.info(`Tool '${toolName}' found, preparing to execute.`, {
-          parameters: JSON.stringify(parameters),
-        });
-        try {
-          const executionOptions: ConversationToolExecutionOptions = {
-            toolCallId: toolCallId || crypto.randomUUID(),
-            messages: [], // Not available in this context
-            agentId: this.id,
-            streamId: context.userContext.streamId,
-            conversationId: context.userContext.conversationId,
-          };
-          this.logger.info("Executing tool with options", {
-            executionOptions: JSON.stringify(executionOptions),
-          });
-          const result = await tools[toolName].execute!(parameters, executionOptions);
-          this.logger.info(`Tool '${toolName}' executed successfully`, {
-            result: JSON.stringify(result),
-          });
-          context.workingMemory.set("last_tool_result", result);
-
-          const resultString = JSON.stringify(result);
-          let observation: string;
-
-          if (toolName === "stream_reply") {
-            observation =
-              "Successfully sent a message to the user. I should now evaluate if the conversation is complete.";
-          } else {
-            observation = `Tool '${toolName}' executed successfully with result: ${
-              resultString.substring(0, 1000)
-            }. I must now use 'stream_reply' to send this result to the user.`;
-          }
-
-          return {
-            result,
-            observation,
-          };
-        } catch (error) {
-          this.logger.error(`Error executing tool ${toolName}`, {
-            error: error.message,
-            stack: error.stack,
-            parameters: JSON.stringify(parameters),
-          });
-          return {
-            result: null,
-            observation: `Error executing tool ${toolName}: ${error.message}`,
-          };
-        }
+    for (const toolName of this.config.tools || []) {
+      const tool = this.toolRegistry.getToolByName(toolName);
+      if (tool) {
+        tools[toolName] = tool;
       } else {
-        this.logger.warn(`Tool '${toolName}' not found.`, {
-          availableTools: Object.keys(tools),
-        });
-        return {
-          result: null,
-          observation: `Tool ${toolName} not found.`,
-        };
+        this.logger.warn(`Tool not found in registry: ${toolName}`);
       }
     }
-    this.logger.info("No tool_call action to execute.");
-    return {
-      result: null,
-      observation: "No action was executed.",
-    };
-  }
 
-  private async _evaluate(
-    context: ReasoningContext<ConversationReasoningContext>,
-  ): Promise<{ isComplete: boolean }> {
-    const { userContext, steps } = context;
-    const conversationSummary = steps.map((s) => {
-      const actionText = s.action ? `${s.action.type} tool: ${s.action.toolName || "N/A"}` : "None";
-      return `Thinking: ${s.thinking}\nAction: ${actionText}\nObservation: ${s.observation}`;
-    }).join("\n---\n");
+    // atlas_stream_reply is mandatory for sending responses to users
+    if (!tools.atlas_stream_reply) {
+      throw new Error(
+        "atlas_stream_reply tool is required for conversation responses but not found in registry",
+      );
+    }
 
-    const prompt = `
-The user's goal is: "${userContext.goal}"
+    // Wrap tools to inject context (especially streamId for atlas_stream_reply)
+    const wrappedTools = this.wrapToolsWithContext(tools, streamId);
 
-Here is a summary of the reasoning steps taken so far:
----
-${conversationSummary}
----
+    const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
+    if (!apiKey) {
+      throw new Error(
+        "ANTHROPIC_API_KEY environment variable not set. " +
+          "Please configure your Anthropic API key to enable conversations.",
+      );
+    }
 
-Based on this history, has the goal been fully achieved?
-The conversation is complete only when the user's request has been fully addressed.
-Respond with only 'true' or 'false'.
-    `;
+    // Debug: Log the actual tool objects
+    this.logger.info("Tool configuration debug", {
+      toolNames: Object.keys(wrappedTools),
+      atlasStreamReplyTool: wrappedTools.atlas_stream_reply
+        ? {
+          hasExecute: !!wrappedTools.atlas_stream_reply.execute,
+          hasDescription: !!wrappedTools.atlas_stream_reply.description,
+          hasParameters: !!wrappedTools.atlas_stream_reply.parameters,
+        }
+        : null,
+    });
 
-    const response = await LLMProvider.generateText(prompt, {
-      model: this.agentConfig.model,
-      provider: "anthropic",
-      temperature: 0,
-      operationContext: {
-        operation: "conversation_agent_evaluate",
-        conversationId: userContext.conversationId,
+    this.logger.info("Calling streamText with configuration", {
+      model: "claude-3-7-sonnet-20250219",
+      systemPromptLength: this.buildSystemPrompt(historyContext).length,
+      systemPromptSnippet: this.buildSystemPrompt(historyContext).substring(0, 500),
+      messageLength: message.length,
+      toolCount: Object.keys(wrappedTools).length,
+      tools: Object.keys(wrappedTools),
+    });
+
+    const { fullStream, text, reasoning } = streamText({
+      model: this.llmProvider("claude-3-7-sonnet-20250219"),
+      system: this.buildSystemPrompt(historyContext),
+      messages: [{ role: "user", content: message }],
+      tools: wrappedTools,
+      toolChoice: "auto",
+      maxSteps: 20, // Prevents infinite tool loops
+      temperature: 0.7,
+      maxTokens: 2000,
+      experimental_toolCallStreaming: true,
+      providerOptions: {
+        anthropic: {
+          thinking: { type: "enabled", budgetTokens: 25000 },
+        },
       },
     });
 
-    const isComplete = response.text.toLowerCase().includes("true");
-
-    return { isComplete };
-  }
-
-  /**
-   * Creates the user-facing context for the reasoning process.
-   */
-  private _createReasoningUserContext(
-    message: string,
-    streamId?: string,
-    historyContext?: string,
-  ): ConversationReasoningContext {
-    const tools = this.getDaemonCapabilityTools(streamId);
-    this.logger.info("Reasoning context tools prepared", {
-      toolCount: Object.keys(tools).length,
-      toolNames: Object.keys(tools),
-    });
-
-    return {
-      message,
-      streamId,
-      conversationId: streamId || this.id,
-      tools,
-      historyContext,
-      goal: `Address the user's message: "${message}"`,
-      workspaceId: "atlas-conversation",
-      sessionId: streamId || this.id,
+    const executionFlow: ExecutionFlow = {
+      steps: [],
+      reasoning: "",
+      responseBuffer: "",
+      thinkingBuffer: "",
     };
-  }
-
-  /**
-   * Creates the callbacks for the reasoning machine.
-   */
-  private _createReasoningCallbacks(): ReasoningCallbacks<ConversationReasoningContext> {
-    return {
-      think: (context) => this._think(context),
-      parseAction: (thinking) => this._parseAction(thinking),
-      executeAction: (action, context) => this._executeAction(action, context),
-      evaluate: (context) => this._evaluate(context),
-    };
-  }
-
-  /**
-   * Runs the reasoning machine and returns the result.
-   */
-  private async _runReasoningMachine(
-    machine: ReturnType<
-      typeof createReasoningMachine
-    >,
-    userContext: ConversationReasoningContext,
-  ): Promise<ReasoningResult> {
-    const actor = createActor(machine, { input: userContext });
-
-    const resultPromise = new Promise<ReasoningResult>(
-      (resolve, reject) => {
-        actor.subscribe({
-          complete: () => {
-            const snapshot = actor.getSnapshot();
-            resolve(snapshot.output);
-          },
-          error: (err) => reject(err),
-        });
-        actor.start();
-      },
-    );
-
-    const result = await resultPromise;
-
-    this.logger.info("Reasoning completed", {
-      status: result.status,
-      steps: result.reasoning.totalIterations,
-    });
-
-    return result;
-  }
-
-  /**
-   * Execute conversation with reasoning capabilities
-   * Simplified version that ensures stream_reply is called
-   */
-  private async executeWithReasoning(
-    message: string,
-    streamId?: string,
-    historyContext?: string,
-  ): Promise<unknown> {
-    this.logger.info("Starting reasoning-based conversation", {
-      message: message.substring(0, 100),
-      streamId,
-      hasStreamId: !!streamId,
-    });
 
     try {
-      // Create reasoning context, callbacks, and machine
-      const userContext = this._createReasoningUserContext(message, streamId, historyContext);
-      const callbacks = this._createReasoningCallbacks();
-      const machine = createReasoningMachine(callbacks, {
-        maxIterations: this.agentConfig.max_reasoning_steps || 10,
-      });
+      for await (const chunk of fullStream) {
+        const event = this.processStreamEvent(chunk);
+        if (!event) continue;
 
-      // Run the machine
-      const result = await this._runReasoningMachine(machine, userContext);
+        switch (event.type) {
+          case "thinking":
+            executionFlow.thinkingBuffer += event.content;
+            if (streaming) streaming(`💭 ${event.content}`);
+            break;
 
-      return {
-        reasoning: result,
-        response: result.jobResults.output,
-      };
+          case "text":
+            executionFlow.responseBuffer += event.content;
+            if (streaming) streaming(event.content);
+            break;
+
+          case "tool_call":
+            executionFlow.steps.push({
+              type: "tool_call",
+              tool: event.metadata?.toolName as string,
+              args: event.metadata?.args,
+              timestamp: event.timestamp,
+            });
+
+            this.logger.info("Tool call initiated", {
+              tool: event.metadata?.toolName,
+              streamId,
+              args: JSON.stringify(event.metadata?.args).substring(0, 200),
+            });
+            break;
+
+          case "error":
+            this.logger.error("Stream processing error", { error: event.content });
+            if (streaming) streaming(`❌ Error: ${event.content}`);
+            break;
+        }
+      }
     } catch (error) {
-      this.logger.error("executeWithReasoning failed", {
+      this.logger.error("Error processing stream", {
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
+        streamId,
       });
       throw error;
     }
+
+    const finalText = await text;
+    const finalReasoning = await reasoning;
+
+    if (streamId && finalText) {
+      try {
+        await this.saveMessage(streamId, {
+          role: "assistant",
+          content: finalText,
+        }, { timestamp: new Date().toISOString(), reasoning: true });
+      } catch (error) {
+        this.logger.warn("Failed to save assistant message", { error });
+      }
+    }
+
+    return {
+      text: finalText || executionFlow.responseBuffer,
+      reasoning: finalReasoning || executionFlow.thinkingBuffer || "",
+      executionFlow: executionFlow.steps,
+      response: finalText || executionFlow.responseBuffer, // Backward compatibility
+      toolCalls: executionFlow.steps.filter((step) => step.type === "tool_call"),
+      conversationMetadata: {
+        streamId,
+        messagesInHistory: messagesInHistory + 2,
+        isNewConversation,
+      },
+    };
   }
 
   /**
-   * Invokes the 'conversation_storage' daemon capability.
-   * @param streamId - The ID of the conversation stream.
-   * @param action - The action to perform (e.g., 'load_history', 'save_message').
-   * @param params - The parameters for the action.
-   * @returns The result from the capability execution.
+   * Wrap tools with context injection
    */
-  private async _invokeConversationStorage<T>(
-    streamId: string,
-    action: string,
-    params: Record<string, unknown>,
-  ): Promise<T | null> {
-    try {
-      const tools = this.getDaemonCapabilityTools(streamId);
-      if (tools.conversation_storage?.execute) {
-        const executionOptions: ConversationToolExecutionOptions = {
-          toolCallId: crypto.randomUUID(),
-          messages: [],
-          agentId: this.id,
-          streamId,
+  private wrapToolsWithContext(
+    tools: Record<string, Tool>,
+    streamId?: string,
+  ): Record<string, Tool> {
+    const wrappedTools: Record<string, Tool> = {};
+
+    for (const [name, origTool] of Object.entries(tools)) {
+      if (name === "atlas_stream_reply") {
+        // Create a custom tool that doesn't require streamId as a parameter
+        // The AI only needs to provide content and optional metadata
+        wrappedTools[name] = tool({
+          description:
+            "Send a streaming reply to the user. This tool automatically includes the stream ID.",
+          parameters: z.object({
+            content: z.string().describe("The content to send as a streaming reply"),
+            metadata: z.record(z.unknown()).optional().describe(
+              "Optional metadata for the message",
+            ),
+          }),
+          execute: async ({ content, metadata }) => {
+            if (!streamId) {
+              throw new Error(
+                "streamId is required for atlas_stream_reply but was not provided in the conversation context",
+              );
+            }
+
+            this.logger.info(`Executing atlas_stream_reply with injected streamId`, {
+              content: content.substring(0, 100),
+              streamId,
+              hasMetadata: !!metadata,
+            });
+
+            // Call the original tool with all required parameters
+            return await origTool.execute!({
+              streamId,
+              content,
+              metadata,
+            }, {
+              toolCallId: crypto.randomUUID(),
+              messages: [],
+            });
+          },
+        });
+      } else {
+        // Pass through other tools unchanged
+        wrappedTools[name] = origTool;
+      }
+    }
+
+    return wrappedTools;
+  }
+
+  /**
+   * Constructs system prompt that enforces tool usage patterns
+   */
+  private buildSystemPrompt(historyContext?: string): string {
+    const basePrompt = this.config.prompt || "You are a helpful AI assistant.";
+
+    return `${basePrompt}
+
+${historyContext ? `\nConversation History:\n${historyContext}\n` : ""}
+
+CRITICAL INSTRUCTIONS FOR TOOL USAGE:
+1. You MUST ALWAYS use the 'atlas_stream_reply' tool to send ANY message to the user
+2. NEVER respond with plain text - ALWAYS use atlas_stream_reply tool
+3. For EVERY user message, you MUST call atlas_stream_reply to respond
+4. The atlas_stream_reply tool only requires these parameters:
+   - content: Your message text (REQUIRED)
+   - metadata: Additional data (OPTIONAL)
+   
+DO NOT include streamId - it is automatically handled for you.
+
+MANDATORY RESPONSE PATTERN:
+When you receive any user message, respond using:
+atlas_stream_reply({ content: "Your response here" })
+
+EXAMPLE - CORRECT:
+User: "Hello"
+Your tool call: atlas_stream_reply({ content: "Hi there! How can I help you today?" })
+
+EXAMPLE - INCORRECT:
+- Responding without using the tool
+- Including streamId in the parameters (it's automatic)`;
+  }
+
+  /**
+   * Converts AI SDK stream chunks into structured events for processing
+   *
+   * @param chunk - Stream chunk from AI SDK
+   * @returns Structured event or null if chunk type is not handled
+   *
+   * Known issue: tool-result chunks are not currently processed by the AI SDK
+   */
+  private processStreamEvent(chunk: TextStreamPart<Record<string, Tool>>): StreamEvent | null {
+    const timestamp = Date.now();
+
+    switch (chunk.type) {
+      case "reasoning":
+        return {
+          type: "thinking",
+          content: chunk.textDelta,
+          timestamp,
         };
 
-        return await tools.conversation_storage.execute(
-          { action, stream_id: streamId, ...params },
-          executionOptions,
-        );
-      }
-    } catch (error) {
-      this.logger.error("Failed to invoke conversation_storage", {
-        streamId,
-        action,
-        error: error instanceof Error ? error.message : String(error),
-      });
+      case "text-delta":
+        return {
+          type: "text",
+          content: chunk.textDelta,
+          timestamp,
+        };
+
+      case "tool-call":
+        return {
+          type: "tool_call",
+          content: `Calling ${chunk.toolName}`,
+          metadata: {
+            toolName: chunk.toolName,
+            args: chunk.args,
+            toolCallId: chunk.toolCallId,
+          },
+          timestamp,
+        };
+
+      case "error":
+        return {
+          type: "error",
+          content: String(chunk.error),
+          metadata: { error: chunk.error },
+          timestamp,
+        };
+
+      default:
+        return null;
     }
-    return null;
   }
 
-  /**
-   * Static method to get agent metadata for registry
-   */
   static getMetadata(): SystemAgentMetadata {
     return {
       id: "conversation",
       name: "ConversationAgent",
-      type: "system" as const,
+      type: "system",
       version: "1.0.0",
       provider: "atlas-system",
       description: "Interactive conversation agent for workspace collaboration",
@@ -770,32 +494,48 @@ Respond with only 'true' or 'false'.
         "context-aware",
       ],
       configSchema: {
-        model: { type: "string", default: "claude-3-7-sonnet-latest" },
         prompt: { type: "string", default: "You are a helpful AI assistant." },
         tools: { type: "array", default: [] },
-        temperature: { type: "number", default: 0.7, min: 0, max: 2 },
-        max_tokens: { type: "number", default: 2000, min: 1 },
-        use_reasoning: { type: "boolean", default: false },
-        max_reasoning_steps: { type: "number", default: 5, min: 1, max: 20 },
       },
     };
   }
 
-  /**
-   * Load conversation history using daemon capability
-   */
   private async loadConversationHistory(streamId: string): Promise<ConversationStorageOutput> {
-    const result = await this._invokeConversationStorage<ConversationStorageOutput>(
-      streamId,
-      "load_history",
-      {},
-    );
-    return result || { success: false, error: "Failed to load conversation history" };
+    try {
+      const storageTool = this.toolRegistry.getToolByName("atlas_conversation_storage");
+      if (!storageTool?.execute) {
+        return { success: false, error: "Conversation storage tool not available" };
+      }
+
+      const result = await storageTool.execute({
+        operation: "retrieve",
+        streamId,
+      }, {
+        toolCallId: crypto.randomUUID(),
+        messages: [],
+      });
+
+      if (result?.result) {
+        const data = result.result;
+        const messages = Array.isArray(data) ? data : data.messages;
+        if (messages?.length) {
+          return {
+            success: true,
+            messages,
+            historyContext: messages.map((m: { role: string; content: string }) =>
+              `${m.role}: ${m.content}`
+            ).join("\n"),
+          };
+        }
+      }
+
+      return { success: false, error: "No conversation history found" };
+    } catch (error) {
+      this.logger.warn("Failed to load conversation history", { streamId, error });
+      return { success: false, error: "Failed to load conversation history" };
+    }
   }
 
-  /**
-   * Save message to conversation history using daemon capability
-   */
   private async saveMessage(
     streamId: string,
     message: {
@@ -804,11 +544,27 @@ Respond with only 'true' or 'false'.
     },
     metadata?: Record<string, unknown>,
   ): Promise<void> {
-    const params = {
-      streamId,
-      ...message,
-      metadata,
-    };
-    await this._invokeConversationStorage(streamId, "saveMessage", params);
+    try {
+      const storageTool = this.toolRegistry.getToolByName("atlas_conversation_storage");
+      if (!storageTool?.execute) {
+        this.logger.warn("Conversation storage tool not available for saving message");
+        return;
+      }
+
+      await storageTool.execute({
+        operation: "store",
+        streamId,
+        data: {
+          message,
+          metadata,
+          timestamp: new Date().toISOString(),
+        },
+      }, {
+        toolCallId: crypto.randomUUID(),
+        messages: [],
+      });
+    } catch (error) {
+      this.logger.warn("Failed to save message to conversation storage", { streamId, error });
+    }
   }
 }

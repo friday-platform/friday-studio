@@ -32,8 +32,8 @@ export type {
   MemoryConsolidationStrategy,
 } from "./src/coala-consolidation.ts";
 
-// Fact extraction capabilities
-export { FactExtractor } from "./src/fact-extractor.ts";
+// Fact extraction capabilities moved to packages/system/agents/fact-extractor.ts
+// to avoid circular dependency with BaseAgent
 
 // Memory coordination for supervisors
 export { SupervisorMemoryCoordinator } from "./src/supervisor-memory-coordinator.ts";

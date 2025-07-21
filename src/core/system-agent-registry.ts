@@ -7,17 +7,28 @@ import { join } from "@std/path";
 import { exists } from "@std/fs";
 import { BaseAgent } from "./agents/base-agent-v2.ts";
 import { AtlasLogger } from "../utils/logger.ts";
+import { z } from "zod/v4";
 
-export interface SystemAgentMetadata {
-  id: string;
-  name: string;
-  type: "system";
-  version: string;
-  provider: string;
-  description: string;
-  capabilities: string[];
-  configSchema?: Record<string, unknown>;
-}
+// Zod schema for agent ID validation
+const AgentIdSchema = z.string().regex(
+  /^[a-zA-Z0-9_-]+$/,
+  "Agent ID must contain only letters, numbers, underscores, and hyphens",
+);
+
+// Zod schema for SystemAgentMetadata
+export const SystemAgentMetadataSchema = z.object({
+  id: AgentIdSchema,
+  name: z.string(),
+  type: z.literal("system"),
+  version: z.string(),
+  provider: z.string(),
+  description: z.string(),
+  capabilities: z.array(z.string()),
+  configSchema: z.record(z.string(), z.unknown()).optional(),
+});
+
+// Export the inferred type
+export type SystemAgentMetadata = z.infer<typeof SystemAgentMetadataSchema>;
 
 export interface SystemAgentConstructor {
   new (config?: Record<string, unknown>, id?: string): BaseAgent;
@@ -76,7 +87,10 @@ export class SystemAgentRegistry {
         }
       }
     } catch (error) {
-      this.logger.error("Failed to discover system agents", { error: error.message, agentsDir });
+      this.logger.error("Failed to discover system agents", {
+        error: error instanceof Error ? error.message : String(error),
+        agentsDir,
+      });
     }
   }
 
@@ -112,7 +126,10 @@ export class SystemAgentRegistry {
         }
       }
     } catch (error) {
-      this.logger.error("Failed to load agent", { filename, error: error.message });
+      this.logger.error("Failed to load agent", {
+        filename,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -135,7 +152,9 @@ export class SystemAgentRegistry {
 
       this.logger.info("Stored system agent metadata in KV", { agentCount: agentIds.length });
     } catch (error) {
-      this.logger.error("Failed to store agent metadata", { error: error.message });
+      this.logger.error("Failed to store agent metadata", {
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -211,9 +230,17 @@ export class SystemAgentRegistry {
     try {
       const key = ["system-agents", agentId];
       const result = await this.kvStorage.get(key);
-      return (result.value as SystemAgentMetadata) || null;
+
+      if (!result.value) return null;
+
+      // Validate the metadata with Zod
+      const parseResult = SystemAgentMetadataSchema.safeParse(result.value);
+      return parseResult.success ? parseResult.data : null;
     } catch (error) {
-      this.logger.error("Failed to get agent metadata from KV", { agentId, error: error.message });
+      this.logger.error("Failed to get agent metadata from KV", {
+        agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
       return null;
     }
   }
@@ -227,9 +254,17 @@ export class SystemAgentRegistry {
     try {
       const key = ["system-agents", "_index"];
       const result = await this.kvStorage.get(key);
-      return (result.value as string[]) || [];
+
+      if (!result.value) return [];
+
+      // Validate the agent IDs array with Zod
+      const AgentIdsSchema = z.array(AgentIdSchema);
+      const parseResult = AgentIdsSchema.safeParse(result.value);
+      return parseResult.success ? parseResult.data : [];
     } catch (error) {
-      this.logger.error("Failed to get agent IDs from KV", { error: error.message });
+      this.logger.error("Failed to get agent IDs from KV", {
+        error: error instanceof Error ? error.message : String(error),
+      });
       return [];
     }
   }

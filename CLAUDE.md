@@ -43,7 +43,11 @@ When writing tests:
    SFW/work-appropriate language. 0.5. **PACKAGE DOCUMENTATION**: When working with packages in the
    `packages/` directory, always check for and read package-specific README.md files (e.g.,
    `packages/cron/README.md`). These contain critical architectural context, API documentation, and
-   usage guidelines specific to each package that supplement this main CLAUDE.md file.
+   usage guidelines specific to each package that supplement this main CLAUDE.md file. 0.6.
+   **FEATURE SPECIFICATIONS**: When working on features or components, check the `specs/` directory
+   for feature-specific documents (e.g., `specs/conversation-agent.md`). These contain guiding
+   principles, design intent, and implementation requirements that define how features should
+   behave.
 1. Use `deno check` to statically verify code validity before running (see Known Issues for React
    components)
 2. Run with required Deno flags:

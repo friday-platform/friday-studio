@@ -19,7 +19,7 @@ const ConversationMessageSchema = z.object({
 
 export type ConversationMessage = z.infer<typeof ConversationMessageSchema>;
 
-class InMemoryConversationStorage {
+export class InMemoryConversationStorage {
   private static instance: InMemoryConversationStorage;
   private conversations = new Map<string, ConversationMessage[]>();
 
@@ -45,6 +45,24 @@ class InMemoryConversationStorage {
     return messages
       .map((msg) => `${msg.role === "user" ? "User" : "Assistant"}: ${msg.content}`)
       .join("\n");
+  }
+
+  deleteConversation(streamId: string): boolean {
+    return this.conversations.delete(streamId);
+  }
+
+  listConversations(): Array<
+    { streamId: string; messageCount: number; lastMessage?: ConversationMessage }
+  > {
+    const conversations = [];
+    for (const [streamId, messages] of this.conversations.entries()) {
+      conversations.push({
+        streamId,
+        messageCount: messages.length,
+        lastMessage: messages.length > 0 ? messages[messages.length - 1] : undefined,
+      });
+    }
+    return conversations;
   }
 }
 

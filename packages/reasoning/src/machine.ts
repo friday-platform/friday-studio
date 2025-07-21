@@ -24,6 +24,10 @@ type ExecuteActionOutput = {
   duration?: number;
 };
 
+type EvaluateOutput = {
+  isComplete: boolean;
+};
+
 // Define event types for the machine, including done/error events from invoked actors
 type ReasoningEvents =
   | { type: "PAUSE" }
@@ -33,14 +37,15 @@ type ReasoningEvents =
   | { type: "PROVIDE_HINT"; hint: string }
   | { type: "xstate.done.actor.thinkActor"; output: ThinkOutput }
   | { type: "xstate.done.actor.executeActionActor"; output: ExecuteActionOutput }
+  | { type: "xstate.done.actor.evaluateActor"; output: EvaluateOutput }
   | { type: "xstate.error.actor.thinkActor"; error: unknown }
-  | { type: "xstate.error.actor.executeActionActor"; error: unknown };
+  | { type: "xstate.error.actor.executeActionActor"; error: unknown }
+  | { type: "xstate.error.actor.evaluateActor"; error: unknown };
 
 export interface ReasoningMachineOptions {
   maxIterations?: number;
   supervisorId?: string;
   jobGoal?: string;
-  tools?: Record<string, unknown>;
 }
 
 export function createReasoningMachine<TUserContext extends BaseReasoningContext>(
@@ -75,6 +80,16 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
         );
         const duration = Date.now() - startTime;
         return { ...result, duration };
+      }),
+
+      evaluate: fromPromise<
+        EvaluateOutput,
+        { context: ReasoningContext<TUserContext> }
+      >(async ({ input }) => {
+        if (!callbacks.evaluate) {
+          throw new Error("Evaluate callback not provided");
+        }
+        return await callbacks.evaluate(input.context);
       }),
     },
 
@@ -116,6 +131,9 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
       assignActionResult: assign({
         currentStep: ({ context, event }) => {
           if (event.type !== "xstate.done.actor.executeActionActor") {
+            return context.currentStep;
+          }
+          if (!context.currentStep) {
             return context.currentStep;
           }
           return {
@@ -283,7 +301,7 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
       workingMemory: new Map(),
       maxIterations: options.maxIterations || 10,
       currentIteration: 0,
-      tools: options.tools,
+      tools: input.tools,
     }),
 
     output: ({ context, event }) => {
@@ -433,14 +451,18 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
 
       evaluatingGoal: {
         invoke: {
-          src: fromPromise(async ({ input }) => {
-            return await input.callbacks.evaluate!(input.context);
-          }),
-          input: ({ context }) => ({ context, callbacks }),
+          id: "evaluateActor",
+          src: "evaluate",
+          input: ({ context }) => ({ context }),
           onDone: [
             {
               target: "completed",
-              guard: ({ event }) => event.output.isComplete,
+              guard: ({ event }) => {
+                if (event.type !== "xstate.done.actor.evaluateActor") {
+                  return false;
+                }
+                return event.output.isComplete;
+              },
             },
             {
               target: "thinking",
@@ -518,7 +540,6 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
 
   // Aggregate execution details and metrics from all steps
   const initialMetrics = {
-    llmUsage: { promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0 },
     agentCalls: 0,
     toolCalls: 0,
     totalDuration: 0,
@@ -542,12 +563,6 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
           duration: 0, // Placeholder
         });
         acc.metrics.toolCalls++;
-      }
-      if (step.llmUsage) {
-        acc.metrics.llmUsage.promptTokens += step.llmUsage.promptTokens;
-        acc.metrics.llmUsage.completionTokens += step.llmUsage.completionTokens;
-        acc.metrics.llmUsage.totalTokens += step.llmUsage.totalTokens;
-        acc.metrics.llmUsage.cost += step.llmUsage.cost;
       }
       return acc;
     },
@@ -588,7 +603,6 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
       ),
     },
     metrics: {
-      llmUsage: metrics.llmUsage,
       agentCalls: metrics.agentCalls,
       toolCalls: metrics.toolCalls,
     },

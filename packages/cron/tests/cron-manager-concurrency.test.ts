@@ -14,12 +14,12 @@ import {
 import { MemoryKVStorage } from "../../../src/core/storage/memory-kv-storage.ts";
 import {
   assertTimeBounds,
-  delay,
   MockStorageWithContention,
   RaceConditionDetector,
   runConcurrent,
   stressTest,
 } from "./concurrency-test-utils.ts";
+import { delay } from "../../../tests/utils/mod.ts";
 
 // Mock logger for testing
 const mockLogger = {

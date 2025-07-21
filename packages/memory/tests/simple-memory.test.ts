@@ -176,5 +176,5 @@ Deno.test("Package exports structure", async () => {
   expect(memoryModule.KnowledgeRelationType).toBeDefined();
   expect(memoryModule.StreamingMemoryManager).toBeDefined();
   expect(memoryModule.AsyncMemoryQueue).toBeDefined();
-  expect(memoryModule.FactExtractor).toBeDefined();
+  // FactExtractor moved to packages/system/agents/fact-extractor.ts to avoid circular dependency
 });
