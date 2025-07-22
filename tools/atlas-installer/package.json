@@ -45,6 +45,7 @@
       "preload.js",
       "logo.png",
       "entitlements.mac.plist",
+      "atlas-binary/**/*",
       "!**/*.map",
       "!**/node_modules/**/*",
       "!**/.git/**/*",
@@ -54,10 +55,6 @@
       "!**/*.spec.js"
     ],
     "extraResources": [
-      {
-        "from": "atlas-binary",
-        "to": "atlas-binary"
-      },
       {
         "from": "../../EULA.txt",
         "to": "EULA.txt"
