@@ -53,18 +53,17 @@
           </div>
         </div>
 
-        <!-- API Key Step -->
+        <!-- Atlas Key Step -->
         <div class="step-content" id="content-2">
           <label class="form-label-container">
-            <span class="form-label"
-            >Enter your Anthropic API key to enable AI agent functionality.</span>
+            <span class="form-label">Enter your Atlas Key to fetch AI agent credentials.</span>
 
             <div class="api-key-container">
               <input
                 type="password"
                 class="api-key-input"
                 id="api-key"
-                placeholder="sk-ant-..."
+                placeholder="eyJhbGciOiJSUzI1NiI..."
                 spellcheck="false"
                 autocapitalize="off"
                 autocorrect="off"
@@ -97,9 +96,9 @@
             </div>
 
             <p class="form-description">
-              Your API key starts with "sk-ant-" and can be found
-              <a href="https://atlas.tempestdx.com" target="_blank">here</a>.
-              <br />You can also configure your API key later by editing ~/.atlas/.env
+              Your Atlas Key is a JWT token available in your
+              <a href="https://atlas.tempestdx.com" target="_blank">Atlas dashboard</a>.
+              <br />This key will be used to fetch your AI agent credentials automatically.
             </p>
 
             <div
@@ -122,7 +121,7 @@
             <ul>
               <li>Create ~/.atlas directory</li>
               <li>Install Atlas CLI binary</li>
-              <li id="api-key-item" class="hidden">Configure API key</li>
+              <li id="api-key-item" class="hidden">Fetch and configure credentials</li>
               <li>Set up system PATH</li>
             </ul>
           </div>
@@ -152,7 +151,7 @@
             <ul>
               <li>Atlas CLI binary installed to system PATH</li>
               <li>Configuration directory created at <code>~/.atlas</code></li>
-              <li id="api-key-status" class="hidden">API key configured</li>
+              <li id="api-key-status" class="hidden">Credentials configured</li>
               <li id="daemon-status">Atlas daemon started and running</li>
             </ul>
           </div>
@@ -182,7 +181,7 @@
           <span>License</span>
         </div>
         <div class="step" id="step-2">
-          <span>API Key</span>
+          <span>Atlas Key</span>
         </div>
         <div class="step" id="step-3">
           <span>Review</span>

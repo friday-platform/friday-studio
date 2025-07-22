@@ -59,12 +59,21 @@ mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH
 cp "build/atlas" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
 chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/bin/atlas"
 
+# Copy credential fetching script
+mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts"
+cp "tools/atlas-installer/scripts/fetch-credentials.sh" "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
+chmod 755 "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/share/atlas/scripts/fetch-credentials.sh"
+
 # Create systemd service file
 mkdir -p "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/lib/systemd/system"
 cat > "${BUILD_ROOT}/BUILDROOT/atlas-${RPM_VERSION}-${RPM_RELEASE}.${RPM_ARCH}/usr/lib/systemd/system/atlas.service" << 'EOF'
 [Unit]
 Description=Atlas AI Agent Orchestration Daemon
 After=network.target
+# Ensure environment file exists before starting
+ConditionPathExists=/etc/atlas/env
+# Additional check that ANTHROPIC_API_KEY is configured
+ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 
 [Service]
 Type=exec
@@ -78,6 +87,7 @@ WorkingDirectory=/var/lib/atlas
 Environment="HOME=/var/lib/atlas"
 Environment="ATLAS_HOME=/var/lib/atlas"
 Environment="ATLAS_SYSTEM_MODE=true"
+EnvironmentFile=-/etc/atlas/env
 
 # Security settings
 NoNewPrivileges=true
@@ -113,6 +123,7 @@ BuildArch:      ${RPM_ARCH}
 
 Requires:       glibc
 Requires:       systemd
+Requires:       wget
 Requires(pre):  /usr/sbin/useradd, /usr/bin/getent
 Requires(post): systemd
 Requires(preun): systemd
@@ -159,36 +170,57 @@ ${EULA_CONTENT}
 EULA_TEXT
     echo ""
     read -r -p "Do you accept the license agreement? (yes/no): " ACCEPT_EULA
-    
+
     if [ "\\${ACCEPT_EULA}" != "yes" ]; then
         echo "You must accept the End User License Agreement to install Atlas."
         exit 1
     fi
-    
-    # Check if API key already exists
+
+    # Check if credentials already exist
     if [ ! -f /etc/atlas/env ] || ! grep -q "^ANTHROPIC_API_KEY=" /etc/atlas/env 2>/dev/null; then
         echo ""
-        echo "=== Atlas API Key Configuration ==="
+        echo "=== Atlas Key Configuration ==="
         echo ""
-        echo "To use Atlas, you need an Anthropic API key."
-        echo "Get your API key from: https://atlas.tempestdx.com/"
+        echo "To use Atlas, you need an Atlas Key (JWT token)."
+        echo "Get your Atlas Key from: https://atlas.tempestdx.com/"
         echo ""
-        
-        # Read API key
+
+        # Read Atlas Key
         while true; do
-            read -r -p "Enter your Anthropic API key (sk-ant-...): " API_KEY
-            
-            # Validate API key format
-            if [[ "\${API_KEY}" =~ ^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$ ]]; then
-                # Save API key to system configuration
-                echo "ANTHROPIC_API_KEY=\${API_KEY}" > /etc/atlas/env
+            read -r -p "Enter your Atlas Key (JWT token): " ATLAS_KEY
+
+            if [ -z "\${ATLAS_KEY}" ]; then
+                echo "No Atlas Key provided. You can configure credentials manually in /etc/atlas/env"
+                break
+            fi
+
+            # Basic JWT format validation (three parts separated by dots)
+            if echo "\${ATLAS_KEY}" | grep -q '^[A-Za-z0-9_-]\+\.[A-Za-z0-9_-]\+\.[A-Za-z0-9_-]\+$'; then
+                # Save the Atlas Key to environment file
+                echo "Saving Atlas Key..."
+
+                # Create or update the environment file
+                if [ -f /etc/atlas/env ]; then
+                    # Remove any existing ATLAS_KEY line
+                    grep -v "^ATLAS_KEY=" /etc/atlas/env > /etc/atlas/env.tmp || true
+                    mv /etc/atlas/env.tmp /etc/atlas/env
+                fi
+
+                # Add the new ATLAS_KEY
+                echo "ATLAS_KEY=\${ATLAS_KEY}" >> /etc/atlas/env
                 chmod 644 /etc/atlas/env
                 chown root:root /etc/atlas/env
-                echo "API key saved successfully."
+
+                echo "Atlas Key saved successfully."
+                echo "Credentials will be fetched when the daemon starts."
                 break
             else
-                echo "Invalid API key format. Please enter a valid Anthropic API key."
-                echo "It should start with 'sk-ant-'"
+                echo "Invalid Atlas Key format. Atlas Keys are JWT tokens with three parts separated by dots."
+                read -r -p "Try again? (y/n): " TRY_AGAIN
+                if [ "\${TRY_AGAIN}" != "y" ]; then
+                    echo "Skipping Atlas Key configuration. Configure manually in /etc/atlas/env"
+                    break
+                fi
             fi
         done
     fi
@@ -197,14 +229,27 @@ fi
 # Reload systemd
 systemctl daemon-reload
 
-# Enable and start the service
+# Enable the service but DO NOT start it yet
 systemctl enable atlas.service
-systemctl start atlas.service
+
+# Only start the service if we have valid credentials
+if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
+    echo "Starting Atlas daemon with configured credentials..."
+    systemctl start atlas.service
+else
+    echo "Atlas daemon enabled but not started - no credentials configured."
+    echo "Configure credentials in /etc/atlas/env and run: systemctl start atlas.service"
+fi
 
 echo ""
 echo "=== Atlas Installation Complete ==="
 echo ""
-echo "Atlas daemon has been installed and started as a systemd service."
+if systemctl is-active --quiet atlas.service 2>/dev/null; then
+    echo "Atlas daemon has been installed and started as a systemd service."
+else
+    echo "Atlas daemon has been installed and enabled as a systemd service."
+    echo "Service will start automatically when credentials are properly configured."
+fi
 echo "Service status: systemctl status atlas.service"
 echo "View logs: journalctl -u atlas.service -f"
 echo ""
@@ -229,12 +274,12 @@ if [ \$1 -eq 0 ]; then
     rm -rf /etc/atlas
     rm -rf /var/lib/atlas
     rm -rf /var/log/atlas
-    
+
     # Remove atlas user
     if getent passwd atlas >/dev/null; then
         userdel atlas || true
     fi
-    
+
     # Reload systemd
     systemctl daemon-reload || true
 fi
@@ -243,6 +288,7 @@ fi
 %defattr(-,root,root,-)
 /usr/bin/atlas
 /usr/lib/systemd/system/atlas.service
+/usr/share/atlas/scripts/fetch-credentials.sh
 %doc /usr/share/doc/atlas-${RPM_VERSION}/LICENSE
 
 %changelog

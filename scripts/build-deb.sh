@@ -50,6 +50,11 @@ mkdir -p "${PKG_DIR}/usr/share/doc/atlas"
 cp "build/atlas" "${PKG_DIR}/usr/bin/atlas"
 chmod 755 "${PKG_DIR}/usr/bin/atlas"
 
+# Copy credential fetching script
+mkdir -p "${PKG_DIR}/usr/share/atlas/scripts"
+cp "tools/atlas-installer/scripts/fetch-credentials.sh" "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
+chmod 755 "${PKG_DIR}/usr/share/atlas/scripts/fetch-credentials.sh"
+
 
 # Create control file
 cat > "${PKG_DIR}/DEBIAN/control" << EOF
@@ -57,7 +62,7 @@ Package: atlas
 Version: ${DEB_VERSION}
 Architecture: ${DEB_ARCH}
 Maintainer: Tempest Labs, Inc. <support@tempestdx.com>
-Depends: libc6, debconf (>= 1.5.19)
+Depends: libc6, debconf (>= 1.5.19), wget
 Section: utils
 Priority: optional
 Homepage: https://atlas.tempestdx.com
@@ -78,14 +83,14 @@ Default: false
 Description: Do you accept the Atlas End User License Agreement?
 ${FORMATTED_EULA}
 
-Template: atlas/apikey
+Template: atlas/atlaskey
 Type: string
-Default: 
-Description: Enter your Anthropic API key:
- To use Atlas, you need an Anthropic API key.
- Get your API key from: https://atlas.tempestdx.com/
+Default:
+Description: Enter your Atlas Key:
+ To use Atlas, you need an Atlas Key (JWT token).
+ Get your Atlas Key from: https://atlas.tempestdx.com/
  .
- The API key should start with 'sk-ant-'
+ The Atlas Key will be used to automatically fetch your AI agent credentials.
 EOF
 
 # Create config script
@@ -101,17 +106,17 @@ if [ "$1" = "configure" ] && [ -z "$2" ]; then
     # Ask for EULA acceptance
     db_input high atlas/eula || true
     db_go || true
-    
+
     # Check if EULA was accepted
     db_get atlas/eula
     if [ "$RET" != "true" ]; then
         echo "You must accept the End User License Agreement to install Atlas."
         exit 1
     fi
-    
-    # Ask for API key if not already configured
+
+    # Ask for Atlas Key if not already configured
     if [ ! -f /etc/atlas/env ] || ! grep -q "^ANTHROPIC_API_KEY=" /etc/atlas/env 2>/dev/null; then
-        db_input high atlas/apikey || true
+        db_input high atlas/atlaskey || true
         db_go || true
     fi
 fi
@@ -161,15 +166,30 @@ chown atlas:atlas /var/lib/atlas
 chown atlas:atlas /var/log/atlas
 chmod 755 /usr/bin/atlas
 
-# Handle API key from debconf
+# Handle Atlas Key from debconf
 if [ "$1" = "configure" ]; then
-    # Get API key from debconf
-    db_get atlas/apikey
-    if [ -n "$RET" ] && [[ "$RET" =~ ^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$ ]]; then
-        # Save API key to system configuration
-        echo "ANTHROPIC_API_KEY=$RET" > /etc/atlas/env
+    # Get Atlas Key from debconf
+    db_get atlas/atlaskey
+    if [ -n "$RET" ]; then
+        # Save the Atlas Key to environment file
+        echo "Atlas Key provided. Saving to configuration..."
+
+        # Create or update the environment file with ATLAS_KEY
+        if [ -f /etc/atlas/env ]; then
+            # Remove any existing ATLAS_KEY line
+            grep -v "^ATLAS_KEY=" /etc/atlas/env > /etc/atlas/env.tmp || true
+            mv /etc/atlas/env.tmp /etc/atlas/env
+        fi
+
+        # Add the new ATLAS_KEY
+        echo "ATLAS_KEY=$RET" >> /etc/atlas/env
         chmod 644 /etc/atlas/env
         chown root:root /etc/atlas/env
+
+        echo "Atlas Key saved successfully."
+        echo "Credentials will be fetched when the daemon starts."
+    else
+        echo "No Atlas Key provided. You can configure credentials manually in /etc/atlas/env"
     fi
 fi
 
@@ -178,6 +198,10 @@ cat > /etc/systemd/system/atlas.service << 'EOSF'
 [Unit]
 Description=Atlas AI Agent Orchestration Daemon
 After=network.target
+# Ensure environment file exists before starting
+ConditionPathExists=/etc/atlas/env
+# Additional check that ANTHROPIC_API_KEY is configured
+ExecCondition=/bin/bash -c 'grep -q "^ATLAS_KEY=" /etc/atlas/env'
 
 [Service]
 Type=exec
@@ -191,6 +215,7 @@ WorkingDirectory=/var/lib/atlas
 Environment="HOME=/var/lib/atlas"
 Environment="ATLAS_HOME=/var/lib/atlas"
 Environment="ATLAS_SYSTEM_MODE=true"
+EnvironmentFile=-/etc/atlas/env
 
 # Security settings
 NoNewPrivileges=true
@@ -212,9 +237,17 @@ EOSF
 # Reload systemd
 systemctl daemon-reload
 
-# Enable and start the service
+# Enable the service but DO NOT start it yet
 systemctl enable atlas.service
-systemctl start atlas.service
+
+# Only start the service if we have valid credentials
+if [ -f /etc/atlas/env ] && grep -q "^ATLAS_KEY=" /etc/atlas/env 2>/dev/null; then
+    echo "Starting Atlas daemon with configured credentials..."
+    systemctl start atlas.service
+else
+    echo "Atlas daemon enabled but not started - no credentials configured."
+    echo "Configure credentials in /etc/atlas/env and run: systemctl start atlas.service"
+fi
 
 # Clean up debconf
 db_stop
@@ -222,7 +255,12 @@ db_stop
 echo ""
 echo "=== Atlas Installation Complete ==="
 echo ""
-echo "Atlas daemon has been installed and started as a systemd service."
+if systemctl is-active --quiet atlas.service 2>/dev/null; then
+    echo "Atlas daemon has been installed and started as a systemd service."
+else
+    echo "Atlas daemon has been installed and enabled as a systemd service."
+    echo "Service will start automatically when credentials are properly configured."
+fi
 echo "Service status: systemctl status atlas.service"
 echo "View logs: journalctl -u atlas.service -f"
 echo ""
@@ -262,12 +300,12 @@ if [ "$1" = "purge" ]; then
     rm -rf /etc/atlas
     rm -rf /var/lib/atlas
     rm -rf /var/log/atlas
-    
+
     # Remove atlas user
     if id -u atlas >/dev/null 2>&1; then
         userdel atlas || true
     fi
-    
+
     # Remove systemd service file
     rm -f /etc/systemd/system/atlas.service
     systemctl daemon-reload || true

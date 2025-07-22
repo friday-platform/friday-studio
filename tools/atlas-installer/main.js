@@ -137,6 +137,55 @@ ipcMain.handle("save-api-key", async (event, apiKey) => {
   }
 });
 
+// New IPC handler for saving Atlas key to .env file
+ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
+  try {
+    const atlasDir = path.join(os.homedir(), ".atlas");
+    const envFile = path.join(atlasDir, ".env");
+
+    // Ensure .atlas directory exists
+    if (!fs.existsSync(atlasDir)) {
+      fs.mkdirSync(atlasDir, { recursive: true });
+    }
+
+    let envContent = "";
+    let existingLines = [];
+
+    // Read existing .env file if it exists
+    if (fs.existsSync(envFile)) {
+      const existingContent = fs.readFileSync(envFile, "utf8");
+      existingLines = existingContent.split("\n");
+    }
+
+    // Filter out any existing ATLAS_KEY line
+    const filteredLines = existingLines.filter(
+      (line) => !line.trim().startsWith("ATLAS_KEY="),
+    );
+
+    // Add the new ATLAS_KEY
+    filteredLines.push(`ATLAS_KEY=${atlasKey}`);
+
+    // Join lines and ensure file ends with newline
+    envContent = filteredLines.filter((line) => line.trim()).join("\n") + "\n";
+
+    // Write the updated .env file
+    fs.writeFileSync(envFile, envContent, "utf8");
+
+    // Set file permissions (Unix-like systems)
+    if (process.platform !== "win32") {
+      fs.chmodSync(envFile, 0o600);
+    }
+
+    return {
+      success: true,
+      path: envFile,
+      message: "Atlas key saved successfully",
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.handle("install-atlas-binary", async () => {
   try {
     // In Electron, resource locations vary by platform and packaging

@@ -35,7 +35,7 @@ class AtlasInstaller {
       });
 
     document.getElementById("api-key").addEventListener("input", (e) => {
-      this.handleApiKeyInput(e.target.value);
+      this.handleAtlasKeyInput(e.target.value);
     });
 
     document.getElementById("show-hide-btn").addEventListener("click", () => {
@@ -55,27 +55,66 @@ class AtlasInstaller {
     }
   }
 
-  validateApiKey(apiKey) {
+  validateAtlasKey(atlasKey) {
     // Empty is valid (skip case)
-    if (!apiKey || apiKey.trim() === "") return true;
+    if (!atlasKey || atlasKey.trim() === "") return true;
 
-    // Non-empty must match pattern
-    const pattern = /^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$/;
-    return pattern.test(apiKey.trim());
+    try {
+      // Check if it's a valid JWT format (3 parts separated by dots)
+      const parts = atlasKey.trim().split(".");
+      if (parts.length !== 3) return false;
+
+      // Check if parts are non-empty and valid base64url
+      if (!parts[0] || !parts[1] || !parts[2]) return false;
+
+      // Decode the payload to check claims
+      // Add padding if needed for base64 decoding
+      let payload64 = parts[1];
+      while (payload64.length % 4) {
+        payload64 += "=";
+      }
+
+      const payload = JSON.parse(atob(payload64));
+
+      // Check for required claims
+      if (!payload.email || !payload.iss || !payload.sub || !payload.exp || !payload.iat) {
+        return false;
+      }
+
+      // Check if issuer is correct
+      if (payload.iss !== "tempest-atlas") {
+        return false;
+      }
+
+      // Check if token is expired (with 30 second buffer for clock skew)
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp <= (now + 30)) {
+        return false;
+      }
+
+      // Check if token is not valid yet (nbf claim if present)
+      if (payload.nbf && payload.nbf > now) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      return false;
+    }
   }
 
-  isApiKeyValid() {
-    const apiKey = document.getElementById("api-key").value;
-    return this.validateApiKey(apiKey);
+  isAtlasKeyValid() {
+    const atlasKey = document.getElementById("api-key").value;
+    return this.validateAtlasKey(atlasKey);
   }
 
-  hasValidApiKey() {
-    const apiKey = document.getElementById("api-key").value;
-    return apiKey && apiKey.trim() && this.validateApiKey(apiKey);
+  hasValidAtlasKey() {
+    const atlasKey = document.getElementById("api-key").value;
+    return atlasKey && atlasKey.trim() && this.validateAtlasKey(atlasKey);
   }
 
-  async hasExistingApiKey() {
-    // Check if API key already exists in ~/.atlas/.env
+  async hasExistingCredentials() {
+    // Check if credentials already exist in ~/.atlas/.env
     try {
       const result = await globalThis.electronAPI.checkExistingApiKey();
       return result.exists;
@@ -99,19 +138,18 @@ class AtlasInstaller {
     }
   }
 
-  handleApiKeyInput(value) {
+  handleAtlasKeyInput(value) {
     const validationEl = document.getElementById("api-key-validation");
 
     if (!value || value.trim() === "") {
       // Empty is valid (skip case)
       validationEl.classList.add("hidden");
-    } else if (this.validateApiKey(value)) {
-      // Valid API key format
+    } else if (this.validateAtlasKey(value)) {
+      // Valid Atlas key format
       validationEl.classList.add("hidden");
     } else {
-      // Invalid API key format - show error and prevent continue
-      validationEl.textContent =
-        'Invalid API key format. Must start with "sk-ant-" followed by valid characters.';
+      // Invalid Atlas key format - show error and prevent continue
+      validationEl.textContent = "Invalid Atlas key. Please check your key and try again.";
       validationEl.classList.remove("hidden");
     }
 
@@ -179,10 +217,10 @@ class AtlasInstaller {
         nextBtn.className = "btn btn-primary";
         break;
 
-      case 2: // API Key
-        const isApiKeyValid = this.isApiKeyValid();
+      case 2: // Atlas Key
+        const isAtlasKeyValid = this.isAtlasKeyValid();
         nextBtn.textContent = "Continue";
-        nextBtn.disabled = !isApiKeyValid;
+        nextBtn.disabled = !isAtlasKeyValid;
         nextBtn.className = "btn btn-primary";
         break;
 
@@ -241,10 +279,10 @@ class AtlasInstaller {
   }
 
   prepareInstallation() {
-    const apiKey = document.getElementById("api-key").value;
+    const atlasKey = document.getElementById("api-key").value;
     const apiKeyItem = document.getElementById("api-key-item");
 
-    if (apiKey.trim()) {
+    if (atlasKey.trim()) {
       apiKeyItem.classList.remove("hidden");
     } else {
       apiKeyItem.classList.add("hidden");
@@ -274,8 +312,8 @@ class AtlasInstaller {
       },
       {
         progress: 48,
-        message: "Configuring API key...",
-        action: () => this.configureApiKey(),
+        message: "Saving Atlas key configuration...",
+        action: () => this.configureCredentials(),
       },
       {
         progress: 64,
@@ -336,40 +374,49 @@ class AtlasInstaller {
     }, 1000);
   }
 
-  async configureApiKey() {
-    const apiKey = document.getElementById("api-key").value;
+  async configureCredentials() {
+    const atlasKey = document.getElementById("api-key").value;
 
-    if (apiKey && apiKey.trim()) {
-      // User provided an API key - validate and save (will override existing)
-      if (this.validateApiKey(apiKey)) {
-        return await globalThis.electronAPI.saveApiKey(apiKey.trim());
+    if (atlasKey && atlasKey.trim()) {
+      // User provided an Atlas key - validate and save it
+      if (this.validateAtlasKey(atlasKey)) {
+        try {
+          // Save the Atlas key to .env file
+          const saveResult = await globalThis.electronAPI.saveAtlasKey(atlasKey.trim());
+          return saveResult;
+        } catch (error) {
+          return {
+            success: false,
+            error: `Failed to save Atlas key: ${error.message}`,
+          };
+        }
       } else {
         return {
           success: false,
-          error: "Invalid API key format. Cannot proceed with installation.",
+          error: "Invalid Atlas key format. Cannot proceed with installation.",
         };
       }
     } else {
-      // No API key provided - skip configuration step
+      // No Atlas key provided - skip configuration step
       return {
         success: true,
-        message: "API key configuration skipped - no changes made",
+        message: "Atlas key configuration skipped - no changes made",
       };
     }
   }
 
   async manageDaemon() {
     try {
-      // Check if API key exists (either just entered or already in file)
-      const hasInputApiKey = this.hasValidApiKey();
-      const hasExistingApiKey = await this.hasExistingApiKey();
+      // Check if credentials exist (either just fetched or already in file)
+      const hasInputAtlasKey = this.hasValidAtlasKey();
+      const hasExistingCredentials = await this.hasExistingCredentials();
 
-      if (!hasInputApiKey && !hasExistingApiKey) {
-        // No API key available - Atlas daemon will return error about it when started
+      if (!hasInputAtlasKey && !hasExistingCredentials) {
+        // No credentials available - Atlas daemon will return error about it when started
         return {
           success: true,
           message:
-            "Daemon start skipped - no API key configured. Configure API key in ~/.atlas/.env and run 'atlas service start'.",
+            "Daemon start skipped - no credentials configured. Configure credentials in ~/.atlas/.env and run 'atlas service start'.",
         };
       }
 
@@ -421,11 +468,11 @@ class AtlasInstaller {
   }
 
   updateCompletionStatus() {
-    // Show API key status if one was configured
-    const apiKey = document.getElementById("api-key").value;
+    // Show credential status if they were configured
+    const atlasKey = document.getElementById("api-key").value;
     const apiKeyStatus = document.getElementById("api-key-status");
 
-    if (apiKey && apiKey.trim() && this.validateApiKey(apiKey)) {
+    if (atlasKey && atlasKey.trim() && this.validateAtlasKey(atlasKey)) {
       apiKeyStatus.classList.remove("hidden");
     }
 
