@@ -194,8 +194,11 @@ ipcMain.handle("install-atlas-binary", async () => {
 
     // Windows/macOS: Try standard locations
     // First try the unpacked location (production)
+    // When packaged with asar, __dirname is inside the asar file, so we need to
+    // get the actual Resources directory path
+    const resourcesPath = process.resourcesPath || path.dirname(path.dirname(__dirname));
     binarySource = path.join(
-      path.dirname(__dirname),
+      resourcesPath,
       "app.asar.unpacked",
       "atlas-binary",
       binaryName,
