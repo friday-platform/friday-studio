@@ -25,40 +25,57 @@ Deno.test({
   name: "ConditionEvaluator - JSONLogic conditions",
   sanitizeResources: false,
   async fn() {
-    const registry = new ConditionEvaluatorRegistry(testConfig);
+    // Set testing environment to prevent logger file operations
+    const originalTesting = Deno.env.get("DENO_TESTING");
+    Deno.env.set("DENO_TESTING", "true");
 
-    // Test basic equality
-    const result1 = await registry.evaluate(
-      { "==": [{ "var": "type" }, "performance"] },
-      { type: "performance" },
-    );
-    expect(result1.matches).toBe(true);
-    expect(result1.evaluator).toBe("jsonlogic");
-    expect(result1.confidence).toBe(1.0);
+    try {
+      const registry = new ConditionEvaluatorRegistry(testConfig);
 
-    // Test logical AND
-    const result2 = await registry.evaluate(
-      {
-        "and": [
-          { "==": [{ "var": "action" }, "opened"] },
-          { "==": [{ "var": "type" }, "performance"] },
-        ],
-      },
-      { action: "opened", type: "performance" },
-    );
-    expect(result2.matches).toBe(true);
+      // Test basic equality
+      const result1 = await registry.evaluate(
+        { "==": [{ "var": "type" }, "performance"] },
+        { type: "performance" },
+      );
+      expect(result1.matches).toBe(true);
+      expect(result1.evaluator).toBe("jsonlogic");
+      expect(result1.confidence).toBe(1.0);
 
-    // Test logical OR
-    const result3 = await registry.evaluate(
-      {
-        "or": [
-          { "==": [{ "var": "type" }, "performance"] },
-          { "==": [{ "var": "type" }, "comprehensive"] },
-        ],
-      },
-      { type: "dx" },
-    );
-    expect(result3.matches).toBe(false);
+      // Test logical AND
+      const result2 = await registry.evaluate(
+        {
+          "and": [
+            { "==": [{ "var": "action" }, "opened"] },
+            { "==": [{ "var": "type" }, "performance"] },
+          ],
+        },
+        { action: "opened", type: "performance" },
+      );
+      expect(result2.matches).toBe(true);
+
+      // Test logical OR
+      const result3 = await registry.evaluate(
+        {
+          "or": [
+            { "==": [{ "var": "type" }, "performance"] },
+            { "==": [{ "var": "type" }, "comprehensive"] },
+          ],
+        },
+        { type: "dx" },
+      );
+      expect(result3.matches).toBe(false);
+    } finally {
+      // Clean up logger instance to prevent resource leaks
+      const { AtlasLogger } = await import("../../src/utils/logger.ts");
+      await AtlasLogger.resetInstance();
+
+      // Restore original testing environment
+      if (originalTesting === undefined) {
+        Deno.env.delete("DENO_TESTING");
+      } else {
+        Deno.env.set("DENO_TESTING", originalTesting);
+      }
+    }
   },
 });
 
