@@ -96,7 +96,7 @@ runs:
             local bucket_path="gs://tempest-sandbox-atlas-binaries/${{ inputs.bucket-prefix }}"
 
             gsutil ls -l "${bucket_path}${pattern}" 2>/dev/null | \
-            while read -r size date time url; do
+            while read -r size timestamp url; do
               # Skip the TOTAL line
               if [[ "$size" == "TOTAL:" ]]; then
                 continue
