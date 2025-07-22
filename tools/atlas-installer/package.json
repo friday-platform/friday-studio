@@ -24,7 +24,9 @@
     "dist": "electron-builder --publish=never",
     "prune-electron": "echo 'Preparing for Electron framework optimization'",
     "cleanup-build": "echo 'Cleaning up build artifacts'",
-    "optimize-size": "node optimize-electron.js"
+    "optimize-size": "node optimize-electron.js",
+    "test": "deno test --allow-read test-installer.ts",
+    "validate": "deno test --allow-read test-installer.ts"
   },
   "license": "PROPRIETARY",
   "devDependencies": {
