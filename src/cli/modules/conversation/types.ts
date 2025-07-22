@@ -4,6 +4,7 @@ import React from "react";
 export interface OutputEntry {
   id: string;
   component: React.ReactElement;
+  content?: string;
 }
 
 // Command context for handlers

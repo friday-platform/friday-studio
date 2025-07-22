@@ -9,6 +9,7 @@ Deno.test("Conversation Tools", async (t) => {
   await t.step("should have all expected tools", () => {
     const expectedTools = [
       "atlas_stream_reply",
+      "atlas_stream_event",
       "atlas_conversation_storage",
     ];
 
@@ -71,13 +72,117 @@ Deno.test("atlas_stream_reply tool", async (t) => {
 
   await t.step("should fail when daemon is not available", async () => {
     await assertRejects(
-      () =>
-        tool.execute({
+      async () => {
+        await tool.execute!({
           streamId: "stream-123",
           content: "Hello world",
-        }, { toolCallId: "test", messages: [] }),
+        });
+      },
       Error,
       "Failed to send streaming reply",
+    );
+  });
+});
+
+Deno.test("atlas_stream_event tool", async (t) => {
+  const tool = conversationTools.atlas_stream_event;
+
+  await t.step("should have correct description", () => {
+    assertEquals(typeof tool.description, "string");
+    assertEquals(tool.description!.includes("rich events"), true);
+  });
+
+  await t.step("should validate parameters schema", () => {
+    const params = tool.parameters;
+
+    // Valid with all event types
+    const eventTypes = ["thinking", "message", "tool_call", "tool_result", "error"];
+    for (const eventType of eventTypes) {
+      const validParams = {
+        streamId: "stream-123",
+        eventType,
+        content: `Test ${eventType} content`,
+      };
+      const result = params.safeParse(validParams);
+      assertEquals(result.success, true, `Should accept ${eventType} event type`);
+    }
+
+    // Valid with metadata
+    const validWithMetadata = {
+      streamId: "stream-123",
+      eventType: "tool_call",
+      content: "Calling tool",
+      metadata: {
+        toolName: "atlas_read",
+        toolCallId: "call-123",
+        args: { path: "/test.txt" },
+      },
+    };
+    const resultMetadata = params.safeParse(validWithMetadata);
+    assertEquals(resultMetadata.success, true);
+
+    // Valid tool_result with result metadata
+    const validToolResult = {
+      streamId: "stream-123",
+      eventType: "tool_result",
+      content: "Tool completed",
+      metadata: {
+        toolName: "atlas_read",
+        toolCallId: "call-123",
+        result: { content: "file contents" },
+      },
+    };
+    const resultToolResult = params.safeParse(validToolResult);
+    assertEquals(resultToolResult.success, true);
+
+    // Valid error with error metadata
+    const validError = {
+      streamId: "stream-123",
+      eventType: "error",
+      content: "An error occurred",
+      metadata: {
+        error: "File not found",
+      },
+    };
+    const resultError = params.safeParse(validError);
+    assertEquals(resultError.success, true);
+  });
+
+  await t.step("should reject invalid parameters", () => {
+    const params = tool.parameters;
+
+    // Missing required streamId
+    const invalid1 = { eventType: "message", content: "Hello" };
+    assertEquals(params.safeParse(invalid1).success, false);
+
+    // Missing required eventType
+    const invalid2 = { streamId: "stream-123", content: "Hello" };
+    assertEquals(params.safeParse(invalid2).success, false);
+
+    // Missing required content
+    const invalid3 = { streamId: "stream-123", eventType: "message" };
+    assertEquals(params.safeParse(invalid3).success, false);
+
+    // Invalid eventType
+    const invalid4 = {
+      streamId: "stream-123",
+      eventType: "invalid_type",
+      content: "Hello",
+    };
+    assertEquals(params.safeParse(invalid4).success, false);
+  });
+
+  await t.step("should fail when daemon is not available", async () => {
+    await assertRejects(
+      async () => {
+        await tool.execute!({
+          streamId: "stream-123",
+          eventType: "message",
+          content: "Hello world",
+        });
+      },
+      Error,
+      "Failed to stream event",
     );
   });
 });
@@ -144,12 +249,13 @@ Deno.test("atlas_conversation_storage tool", async (t) => {
 
   await t.step("should fail when daemon is not available", async () => {
     await assertRejects(
-      () =>
-        tool.execute({
+      async () => {
+        await tool.execute!({
           operation: "store",
           streamId: "stream-123",
           data: { message: "Hello world" },
-        }, { toolCallId: "test", messages: [] }),
+        });
+      },
       Error,
       "Failed to manage conversation storage",
     );

@@ -534,7 +534,7 @@ export class DaemonClient {
         throw error;
       }
 
-      if (error.name === "AbortError") {
+      if (error instanceof Error && error.name === "AbortError") {
         throw new DaemonApiError(
           `Request to daemon timed out after ${this.timeout}ms. Is the daemon running?`,
           408,
@@ -543,7 +543,9 @@ export class DaemonClient {
 
       // Network errors
       throw new DaemonApiError(
-        `Failed to connect to daemon at ${this.daemonUrl}. Is the daemon running? Error: ${error.message}`,
+        `Failed to connect to daemon at ${this.daemonUrl}. Is the daemon running? Error: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
         503,
       );
     }
@@ -617,7 +619,9 @@ export class DaemonClient {
       // Reset the flag so user can try manually
       this.attemptedStart = false;
       throw new DaemonApiError(
-        `Failed to auto-start daemon: ${error.message}. Please start it manually with 'atlas daemon start'`,
+        `Failed to auto-start daemon: ${
+          error instanceof Error ? error.message : String(error)
+        }. Please start it manually with 'atlas daemon start'`,
         503,
       );
     } finally {

@@ -41,40 +41,65 @@ conversational behavior from specialized technical knowledge. This enables the a
 expert-level competence across all Atlas capabilities while keeping the core conversational prompt
 focused and performant.
 
-### 2.2 Core Architecture Pattern
+### 2.2 Unified Architecture Pattern
+
+The Conversation Agent employs a **dual-layer architecture** combining resource-driven knowledge
+access with structured event streaming. This design enables expert-level capability while
+maintaining transparent, debuggable interactions.
 
 ```
-┌─────────────────────────────────────────┐
-│         Conversation Agent              │
-│  ┌───────────────────────────────────┐  │
-│  │   Minimal Core Prompt (~300 lines)│  │
-│  │  - Identity & personality         │  │
-│  │  - Communication principles       │  │
-│  │  - Basic Atlas understanding      │  │
-│  │  - Resource awareness             │  │
-│  └───────────────────────────────────┘  │
-│                  │                       │
-│                  ▼                       │
-│  ┌───────────────────────────────────┐  │
-│  │    Intent Recognition             │  │
-│  │  - Detect workspace creation need │  │
-│  │  - Identify debugging questions   │  │
-│  │  - Recognize pattern requests     │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│         MCP Resources                   │
-├─────────────────────────────────────────┤
-│ atlas://workspace-creation-guide        │
-│ atlas://debugging-guide                 │
-│ atlas://pattern-library                 │
-│ atlas://mcp-tool-list                   │
-└─────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Conversation Agent                          │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Minimal Core Prompt (~300 lines)             │  │
+│  │  - Identity & personality                                 │  │
+│  │  - Communication principles                               │  │
+│  │  - Basic Atlas understanding                              │  │
+│  │  - Resource & streaming awareness                         │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                              │                                   │
+│                              ▼                                   │
+│  ┌─────────────────┐    ┌──────────────────────────────────────┐ │
+│  │ Intent          │    │     LLM Reasoning & Tool Usage      │ │
+│  │ Recognition     │◄──►│  - Structured thinking events       │ │
+│  │ - Workspace     │    │  - Rich tool call metadata          │ │
+│  │   creation      │    │  - Detailed result context          │ │
+│  │ - Debugging     │    │  - Resource access calls            │ │
+│  │ - Patterns      │    └──────────────────────────────────────┘ │
+│  └─────────────────┘                      │                     │
+│          │                                ▼                     │
+│          ▼                    ┌──────────────────────────────────┐ │
+│  ┌─────────────────┐          │    atlas_stream_event Tool      │ │
+│  │ MCP Resources   │          │  - Event type preservation      │ │
+│  │ atlas://...     │          │  - Metadata attachment          │ │
+│  │ - guides        │          │  - Direct UI delivery           │ │
+│  │ - patterns      │          └──────────────────────────────────┘ │
+│  │ - tool lists    │                             │                │
+│  └─────────────────┘                             │                │
+└─────────────────────────────────────────────────────────────────┘
+                                                   │
+                                                   ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      UI Event Display                           │
+├─────────────────────────────────────────────────────────────────┤
+│ thinking: Dimmed reasoning text                                 │
+│ tool_call: Tool name + arguments (including resource access)    │
+│ tool_result: Formatted return data                              │
+│ message_chunk: Primary conversation                             │
+│ error: Exception details + context                              │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 2.3 Resource Design Principles
+**Architecture Benefits**:
+
+- **Expert Knowledge**: MCP resources provide specialized domain expertise
+- **Lightweight Core**: 75% prompt reduction while maintaining capability
+- **Transparent Operation**: Users see all tool calls, reasoning, and results
+- **Enhanced Debugging**: Complete technical context for failure diagnosis
+- **Educational Discovery**: Users learn Atlas concepts by observing interactions
+- **Scalable Expertise**: New capabilities added without core prompt changes
+
+### 2.4 Resource Design Principles
 
 **Invisible Tool Usage**: The agent accesses resources transparently using the `read_atlas_resource`
 tool without exposing this mechanism to users. Responses should never mention "querying the guide"
@@ -89,7 +114,7 @@ principles, enabling direct incorporation into responses without style mismatche
 **Comprehensive Coverage**: Resources contain complete technical knowledge for their domain,
 including patterns, examples, error solutions, and configuration references.
 
-### 2.4 Resource Naming Convention
+### 2.5 Resource Naming Convention
 
 Resources use the `atlas://` URI scheme with descriptive names:
 
@@ -98,7 +123,7 @@ Resources use the `atlas://` URI scheme with descriptive names:
 - `atlas://pattern-library` - Categorized automation patterns
 - `atlas://mcp-tool-list` - Available tools and capabilities
 
-### 2.5 Performance Benefits
+### 2.6 Performance Benefits
 
 This architecture delivers:
 
@@ -182,6 +207,37 @@ issues effectively.
 - Include actionable technical details: "Try adding User-Agent header to workspace.yml"
 - Balance task impact with debugging information
 
+### 3.6 Transparent Tool Interaction
+
+**Principle**: Make tool usage visible to users while maintaining conversational flow.
+
+**Rationale**: Rich event streaming enables users to see exactly what tools are being called, with
+what arguments, and what results they return. This builds trust, enables debugging, and educates
+users about Atlas capabilities.
+
+**Application**:
+
+- Show tool calls as they happen: "Calling atlas_workspace_draft_create with..."
+- Display tool results in context: "Found 3 workspaces matching 'Nike'"
+- Use structured display for complex data while keeping conversation natural
+- Surface errors with full technical context: "Tool failed: HTTP 403 from nike.com"
+- Maintain task focus while showing technical operations
+
+### 3.7 Progressive Technical Disclosure
+
+**Principle**: Rich events should reveal Atlas concepts organically through observable interactions.
+
+**Rationale**: Users learn best by seeing the agent work. Tool calls, reasoning steps, and results
+provide natural teaching moments about Atlas architecture without forcing explanations.
+
+**Application**:
+
+- Let users discover workspace creation through seeing atlas_workspace_draft_create
+- Show MCP tool usage naturally: "Calling web_fetch to check Nike's API"
+- Reveal configuration patterns through visible tool arguments
+- Use thinking events to model problem-solving approaches
+- Balance transparency with conversational flow
+
 ## 4. Success Criteria
 
 ### 4.1 Natural Language Coverage
@@ -225,6 +281,24 @@ issues effectively.
 - **Criterion**: Specialized knowledge appears seamlessly integrated in responses
 - **Measurement**: Users cannot detect when resources are accessed vs. core knowledge
 - **Target**: No mentions of "querying guides" or resource retrieval in conversations
+
+### 4.8 Rich Event Streaming Quality
+
+- **Criterion**: All agent operations stream structured events without data loss
+- **Measurement**: Tool calls, reasoning, results, and errors display with full context
+- **Target**: 100% event preservation from agent to UI, zero plain text flattening
+
+### 4.9 Transparent Operation Visibility
+
+- **Criterion**: Users can observe and understand all agent tool interactions
+- **Measurement**: Tool calls show name, arguments, and results in readable format
+- **Evidence**: Users can debug failures using visible tool interaction history
+
+### 4.10 Educational Tool Discovery
+
+- **Criterion**: Users learn Atlas capabilities through observing agent tool usage
+- **Measurement**: Users understand workspace creation, MCP tools, and configuration patterns
+- **Target**: Natural concept acquisition without explicit explanations
 
 ## 5. Precedents and Examples
 
@@ -291,6 +365,43 @@ with AI, and send formatted Discord notifications. Let me create this for you...
 **Precedent**: Users receive expert guidance without awareness of resource access. Knowledge appears
 naturally integrated, maintaining conversational flow while providing comprehensive technical
 capability.
+
+### 5.6 The Rich Event Streaming Case
+
+**Request**: "Create a workspace to monitor Nike's website"
+
+**Rich Event Stream**:
+
+```
+💭 I need to create a workspace that monitors Nike's website. Let me start by creating a draft workspace configuration.
+
+🔧 Calling: atlas_workspace_draft_create
+   name: "nike-monitor"
+   description: "Monitor Nike website for new shoe releases"
+
+✅ atlas_workspace_draft_create returned:
+   draftId: "draft-abc123"
+   status: "created"
+
+💭 Now I'll add the monitoring job configuration...
+
+🔧 Calling: atlas_workspace_draft_update
+   draftId: "draft-abc123"
+   config: { jobs: { monitor: { ... } } }
+
+✅ atlas_workspace_draft_update returned:
+   status: "updated"
+   validationErrors: []
+```
+
+**Conversation Response**: "I've created a Nike monitoring workspace that will check their upcoming
+drops page every 30 minutes. The workspace is configured with web scraping and Discord
+notifications. Ready to publish it?"
+
+**Precedent**: Rich events show the complete technical process while maintaining natural
+conversation flow. Users see exactly what tools are called, with what parameters, and what results
+they return. This builds trust and enables debugging while keeping the conversation focused on the
+user's goal.
 
 ## 6. Hierarchy and Dependencies
 
@@ -394,6 +505,13 @@ When principles conflict:
 - **75% prompt reduction achieved**: Core prompt reduced from 1260 to ~300 lines
 - **Invisible tool integration working**: Users unaware of resource access during conversations
 - **Performance improvements delivered**: 2-3x faster responses for simple queries
+- **Rich event streaming implemented**: Structured events (thinking, tool calls, results) preserved
+  through data pipeline
+- **Transparent tool interaction active**: Users see all tool calls with arguments and results
+- **Enhanced debugging capability**: Tool failures show complete technical context
+- **Educational tool discovery working**: Users learn Atlas concepts by observing agent interactions
+- **Single event path achieved**: Eliminated duplicate streaming mechanisms and plain text
+  flattening
 - Task-focused conversation design active
 - Progressive disclosure of technical concepts working
 - Natural language intent recognition strong
@@ -442,15 +560,102 @@ requests without proper User-Agent headers"\
 - **Technical Precision**: Maintain developer-friendly detail level
 - **Regular Updates**: Keep patterns current with Atlas capabilities
 
+## Rich Messaging Standards for Atlas Development
+
+The conversation agent's rich event streaming implementation establishes architectural patterns that
+should guide all Atlas agent development:
+
+### Event-Driven Agent Architecture
+
+**Standard**: All Atlas agents should use structured event streaming instead of plain text output.
+
+**Implementation Requirements**:
+
+- Use `atlas_stream_event` tool for all agent-to-UI communication
+- Preserve event types (`thinking`, `tool_call`, `tool_result`, `message_chunk`, `error`)
+- Include complete metadata for tool calls (name, arguments, call ID)
+- Provide full context for tool results (return data, execution status)
+- Stream thinking/reasoning events to show agent decision-making process
+
+**Benefits**: Consistent user experience, enhanced debugging, educational value, trust building
+
+### Transparent Tool Usage Pattern
+
+**Standard**: All tool interactions should be visible to users with appropriate context.
+
+**Implementation Requirements**:
+
+- Stream tool calls before execution with tool name and arguments
+- Stream tool results after execution with return data and status
+- Include error context when tool calls fail
+- Use structured display formats for complex data (JSON, objects)
+- Maintain conversational flow while showing technical operations
+
+**Benefits**: User trust, debugging capability, educational discovery, technical transparency
+
+### Single Event Path Principle
+
+**Standard**: Avoid duplicate or redundant streaming mechanisms within agents.
+
+**Implementation Requirements**:
+
+- Use only `atlas_stream_event` for UI communication
+- Eliminate plain text formatting/flattening of structured data
+- Remove legacy streaming callbacks or plain text converters
+- Ensure event metadata flows through entire data pipeline
+- Validate event schemas at tool boundaries
+
+**Benefits**: Cleaner architecture, reduced maintenance, better performance, consistent behavior
+
+### UI-First Event Design
+
+**Standard**: Design event schemas with UI display requirements in mind.
+
+**Implementation Requirements**:
+
+- Include human-readable content alongside structured metadata
+- Provide context needed for appropriate UI styling (error vs. success)
+- Design for incremental display (streaming) and final state representation
+- Include timing information for performance monitoring
+- Support both technical and user-friendly content representations
+
+**Benefits**: Better user experience, simplified UI development, consistent display patterns
+
+### Educational Interaction Standard
+
+**Standard**: Tool usage should naturally teach users about Atlas capabilities.
+
+**Implementation Requirements**:
+
+- Use descriptive tool names that reveal functionality
+- Show meaningful argument values that demonstrate configuration patterns
+- Display tool results that showcase Atlas capabilities
+- Balance technical detail with task focus
+- Progressive complexity based on user engagement
+
+**Benefits**: Self-documenting system, reduced support needs, user empowerment, capability discovery
+
+These standards ensure that future Atlas agents provide the same level of transparency, educational
+value, and debugging capability established by the conversation agent's rich messaging
+implementation.
+
 ---
 
 This specification captures the enduring intent of the Atlas Conversation Agent: **provide a
 developer-friendly natural language interface to all of Atlas's capabilities, balancing task focus
-with technical transparency through a scalable resource-driven architecture**. Success means
-technical users can accomplish everything they need through conversation, with comprehensive
-knowledge accessed transparently and appropriate technical details included naturally - not hidden,
-not overwhelming, just right for developers who value both efficiency and understanding.
+with technical transparency through a scalable resource-driven architecture and rich event
+streaming**. Success means technical users can accomplish everything they need through conversation,
+with comprehensive knowledge accessed transparently, appropriate technical details included
+naturally, and complete visibility into agent operations through structured event streaming - not
+hidden, not overwhelming, just right for developers who value both efficiency and understanding.
 
 The resource-driven knowledge architecture ensures this vision scales: new capabilities can be added
 through MCP resources without compromising the conversational experience, enabling Atlas to grow in
 expertise while maintaining the focused, task-oriented interaction that developers expect.
+
+The rich event streaming architecture establishes the foundation for all Atlas agents to provide
+transparent, educational, and debuggable interactions. By preserving structured events throughout
+the data pipeline, users gain unprecedented visibility into agent reasoning, tool usage, and system
+behavior while maintaining natural conversational flow. This architectural pattern ensures that as
+Atlas grows in complexity, users maintain full understanding and control over their AI-powered
+workflows.

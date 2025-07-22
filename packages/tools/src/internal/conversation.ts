@@ -15,7 +15,7 @@ import {
 /**
  * Stream reply tool - Send a streaming reply to a stream via SSE
  * Note: This is the base implementation that requires streamId parameter.
- * Use createStreamReplyTool() to create context-aware versions.
+ * @deprecated Use atlas_stream_event instead.
  */
 export const atlas_stream_reply = tool({
   description:
@@ -60,6 +60,64 @@ export const atlas_stream_reply = tool({
       };
     } catch (error) {
       throw new Error(`Failed to send streaming reply: ${getErrorMessage(error)}`);
+    }
+  },
+});
+
+/**
+ * Stream event tool - Stream rich events (thinking, tool calls, messages) to the conversation UI
+ */
+export const atlas_stream_event = tool({
+  description: "Stream rich events (thinking, tool calls, messages) to the conversation UI",
+  parameters: z.object({
+    streamId: z.string().describe("Stream identifier"),
+    eventType: z
+      .enum(["thinking", "message", "tool_call", "tool_result", "error"])
+      .describe("Type of event being streamed"),
+    content: z.string().describe("Primary content of the event"),
+    metadata: z
+      .object({
+        toolName: z.string().optional(),
+        toolCallId: z.string().optional(),
+        args: z.record(z.unknown()).optional(),
+        result: z.unknown().optional(),
+        error: z.string().optional(),
+      })
+      .optional()
+      .describe("Event-specific metadata"),
+  }),
+  execute: async ({ streamId, eventType, content, metadata }) => {
+    try {
+      // Direct event type usage (no mapping)
+      const event = {
+        type: eventType,
+        data: {
+          content,
+          ...metadata,
+        },
+        timestamp: new Date().toISOString(),
+        sessionId: streamId,
+      };
+
+      const url = `${defaultContext.daemonUrl}/api/stream/${streamId}/emit`;
+      const response = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(event),
+      });
+
+      const result = await handleDaemonResponse(response);
+
+      return {
+        success: true,
+        streamId,
+        eventType,
+        result,
+      };
+    } catch (error) {
+      throw new Error(`Failed to stream event: ${getErrorMessage(error)}`);
     }
   },
 });
@@ -152,5 +210,6 @@ export const atlas_conversation_storage = tool({
  */
 export const conversationTools = {
   atlas_stream_reply,
+  atlas_stream_event,
   atlas_conversation_storage,
 };

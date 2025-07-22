@@ -41,7 +41,7 @@ interface ConversationStorageOutput {
 }
 
 interface StreamEvent {
-  type: "thinking" | "text" | "tool_call" | "tool_result" | "error";
+  type: "thinking" | "text" | "tool_call" | "tool_result" | "error" | "finish";
   content: string;
   metadata?: Record<string, unknown>;
   timestamp: number;
@@ -72,10 +72,16 @@ type ExecutionFlow = {
  */
 export class ConversationAgent extends BaseAgent {
   private config: SystemAgentConfigObject;
-  private llmProvider = createAnthropic({ apiKey: Deno.env.get("ANTHROPIC_API_KEY") });
+  private llmProvider = createAnthropic({
+    apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
+  });
   private toolRegistry: AtlasToolRegistry;
 
-  constructor(config: SystemAgentConfigObject, id?: string, toolRegistry?: AtlasToolRegistry) {
+  constructor(
+    config: SystemAgentConfigObject,
+    id?: string,
+    toolRegistry?: AtlasToolRegistry,
+  ) {
     super(undefined, id);
 
     this.config = config;
@@ -99,7 +105,9 @@ export class ConversationAgent extends BaseAgent {
       if (missingTools.length > 0) {
         throw new Error(
           `Required tools not available in registry: ${
-            missingTools.join(", ")
+            missingTools.join(
+              ", ",
+            )
           }. Ensure tools are properly registered.`,
         );
       }
@@ -144,7 +152,6 @@ export class ConversationAgent extends BaseAgent {
    * Processes user messages and generates AI responses
    *
    * @param input - User input containing message, streamId, userId
-   * @param streaming - Optional callback for streaming response chunks
    * @returns Response object with text, reasoning, execution flow, and metadata
    *
    * Flow:
@@ -158,13 +165,9 @@ export class ConversationAgent extends BaseAgent {
    * 5. Processes stream events (thinking, text, tool calls)
    * 6. Persists conversation state
    */
-  protected async execute(
-    input?: unknown,
-    streaming?: (data: string) => void,
-  ): Promise<unknown> {
+  protected async execute(input?: unknown): Promise<unknown> {
     this.logger.info("ConversationAgent execute called", {
       input: JSON.stringify(input),
-      hasStreaming: !!streaming,
     });
 
     const { message, streamId, userId } = ConversationInputSchema.parse(input);
@@ -188,10 +191,14 @@ export class ConversationAgent extends BaseAgent {
           isNewConversation = false;
         }
 
-        await this.saveMessage(streamId, {
-          role: "user",
-          content: message,
-        }, { userId, timestamp: new Date().toISOString() });
+        await this.saveMessage(
+          streamId,
+          {
+            role: "user",
+            content: message,
+          },
+          { userId, timestamp: new Date().toISOString() },
+        );
       } catch (error) {
         this.logger.warn("Failed to handle conversation history", { error });
       }
@@ -240,10 +247,10 @@ export class ConversationAgent extends BaseAgent {
       ...conversationTools, // Last to ensure context injection is preserved
     };
 
-    // atlas_stream_reply is mandatory for sending responses to users
-    if (!finalTools.atlas_stream_reply) {
+    // atlas_stream_event is mandatory for sending responses to users
+    if (!finalTools.atlas_stream_event) {
       throw new Error(
-        "atlas_stream_reply tool is required for conversation responses but not found in registry",
+        "atlas_stream_event tool is required for rich messaging but not found in registry",
       );
     }
 
@@ -267,11 +274,11 @@ export class ConversationAgent extends BaseAgent {
         additional: Object.keys(additionalTools),
         configured: Object.keys(configuredTools),
       },
-      atlasStreamReplyTool: finalTools.atlas_stream_reply
+      atlasStreamEventTool: finalTools.atlas_stream_event
         ? {
-          hasExecute: !!finalTools.atlas_stream_reply.execute,
-          hasDescription: !!finalTools.atlas_stream_reply.description,
-          hasParameters: !!finalTools.atlas_stream_reply.parameters,
+          hasExecute: !!finalTools.atlas_stream_event.execute,
+          hasDescription: !!finalTools.atlas_stream_event.description,
+          hasParameters: !!finalTools.atlas_stream_event.parameters,
           hasContextInjection: true, // Since it comes from conversation tools
         }
         : null,
@@ -315,17 +322,32 @@ export class ConversationAgent extends BaseAgent {
     try {
       for await (const chunk of fullStream) {
         const event = this.processStreamEvent(chunk);
-        if (!event) continue;
+        if (!event || !streamId) continue;
+
+        // Stream rich events directly
+        if (finalTools.atlas_stream_event?.execute) {
+          await finalTools.atlas_stream_event.execute(
+            {
+              streamId,
+              eventType: event.type,
+              content: event.content,
+              metadata: this.extractMetadata(event),
+            },
+            { toolCallId: crypto.randomUUID(), messages: [] },
+          );
+        }
 
         switch (event.type) {
           case "thinking":
             executionFlow.thinkingBuffer += event.content;
-            if (streaming) streaming(`💭 ${event.content}`);
             break;
 
           case "text":
             executionFlow.responseBuffer += event.content;
-            if (streaming) streaming(event.content);
+            break;
+
+          case "finish":
+            executionFlow.responseBuffer += event.content;
             break;
 
           case "tool_call":
@@ -344,8 +366,9 @@ export class ConversationAgent extends BaseAgent {
             break;
 
           case "error":
-            this.logger.error("Stream processing error", { error: event.content });
-            if (streaming) streaming(`❌ Error: ${event.content}`);
+            this.logger.error("Stream processing error", {
+              error: event.content,
+            });
             break;
         }
       }
@@ -362,10 +385,14 @@ export class ConversationAgent extends BaseAgent {
 
     if (streamId && finalText) {
       try {
-        await this.saveMessage(streamId, {
-          role: "assistant",
-          content: finalText,
-        }, { timestamp: new Date().toISOString(), reasoning: true });
+        await this.saveMessage(
+          streamId,
+          {
+            role: "assistant",
+            content: finalText,
+          },
+          { timestamp: new Date().toISOString(), reasoning: true },
+        );
       } catch (error) {
         this.logger.warn("Failed to save assistant message", { error });
       }
@@ -375,7 +402,10 @@ export class ConversationAgent extends BaseAgent {
       text: finalText || executionFlow.responseBuffer,
       reasoning: finalReasoning || executionFlow.thinkingBuffer || "",
       executionFlow: executionFlow.steps,
-      toolCalls: executionFlow.steps.filter((step) => step.type === "tool_call"),
+      response: finalText || executionFlow.responseBuffer, // Backward compatibility
+      toolCalls: executionFlow.steps.filter(
+        (step) => step.type === "tool_call",
+      ),
       conversationMetadata: {
         streamId,
         messagesInHistory: messagesInHistory + 2,
@@ -385,7 +415,30 @@ export class ConversationAgent extends BaseAgent {
   }
 
   /**
-   * Constructs system prompt with conversation history and available tools injected
+   * Extract metadata based on event type
+   */
+  private extractMetadata(
+    event: StreamEvent,
+  ): Record<string, unknown> | undefined {
+    if (event.type === "tool_call") {
+      return {
+        toolName: event.metadata?.toolName,
+        toolCallId: event.metadata?.toolCallId,
+        args: event.metadata?.args,
+      };
+    }
+    if (event.type === "tool_result") {
+      return {
+        toolName: event.metadata?.toolName,
+        toolCallId: event.metadata?.toolCallId,
+        result: event.metadata?.result,
+      };
+    }
+    return event.metadata;
+  }
+
+  /**
+   * Wrap tools with context injection
    */
   private buildSystemPrompt(historyContext?: string, availableTools?: string[]): string {
     if (!this.config.prompt) {
@@ -427,7 +480,9 @@ export class ConversationAgent extends BaseAgent {
    *
    * Known issue: tool-result chunks are not currently processed by the AI SDK
    */
-  private processStreamEvent(chunk: TextStreamPart<Record<string, Tool>>): StreamEvent | null {
+  private processStreamEvent(
+    chunk: TextStreamPart<Record<string, Tool>>,
+  ): StreamEvent | null {
     const timestamp = Date.now();
 
     switch (chunk.type) {
@@ -454,6 +509,12 @@ export class ConversationAgent extends BaseAgent {
             args: chunk.args,
             toolCallId: chunk.toolCallId,
           },
+          timestamp,
+        };
+      case "finish":
+        return {
+          type: "finish",
+          content: chunk.finishReason,
           timestamp,
         };
 
@@ -491,20 +552,30 @@ export class ConversationAgent extends BaseAgent {
     };
   }
 
-  private async loadConversationHistory(streamId: string): Promise<ConversationStorageOutput> {
+  private async loadConversationHistory(
+    streamId: string,
+  ): Promise<ConversationStorageOutput> {
     try {
-      const storageTool = this.toolRegistry.getToolByName("atlas_conversation_storage");
+      const storageTool = this.toolRegistry.getToolByName(
+        "atlas_conversation_storage",
+      );
       if (!storageTool?.execute) {
-        return { success: false, error: "Conversation storage tool not available" };
+        return {
+          success: false,
+          error: "Conversation storage tool not available",
+        };
       }
 
-      const result = await storageTool.execute({
-        operation: "retrieve",
-        streamId,
-      }, {
-        toolCallId: crypto.randomUUID(),
-        messages: [],
-      });
+      const result = await storageTool.execute(
+        {
+          operation: "retrieve",
+          streamId,
+        },
+        {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+        },
+      );
 
       if (result?.result) {
         const data = result.result;
@@ -513,16 +584,21 @@ export class ConversationAgent extends BaseAgent {
           return {
             success: true,
             messages,
-            historyContext: messages.map((m: { role: string; content: string }) =>
-              `${m.role}: ${m.content}`
-            ).join("\n"),
+            historyContext: messages
+              .map(
+                (m: { role: string; content: string }) => `${m.role}: ${m.content}`,
+              )
+              .join("\n"),
           };
         }
       }
 
       return { success: false, error: "No conversation history found" };
     } catch (error) {
-      this.logger.warn("Failed to load conversation history", { streamId, error });
+      this.logger.warn("Failed to load conversation history", {
+        streamId,
+        error,
+      });
       return { success: false, error: "Failed to load conversation history" };
     }
   }
@@ -536,26 +612,36 @@ export class ConversationAgent extends BaseAgent {
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     try {
-      const storageTool = this.toolRegistry.getToolByName("atlas_conversation_storage");
+      const storageTool = this.toolRegistry.getToolByName(
+        "atlas_conversation_storage",
+      );
       if (!storageTool?.execute) {
-        this.logger.warn("Conversation storage tool not available for saving message");
+        this.logger.warn(
+          "Conversation storage tool not available for saving message",
+        );
         return;
       }
 
-      await storageTool.execute({
-        operation: "store",
-        streamId,
-        data: {
-          message,
-          metadata,
-          timestamp: new Date().toISOString(),
+      await storageTool.execute(
+        {
+          operation: "store",
+          streamId,
+          data: {
+            message,
+            metadata,
+            timestamp: new Date().toISOString(),
+          },
         },
-      }, {
-        toolCallId: crypto.randomUUID(),
-        messages: [],
-      });
+        {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+        },
+      );
     } catch (error) {
-      this.logger.warn("Failed to save message to conversation storage", { streamId, error });
+      this.logger.warn("Failed to save message to conversation storage", {
+        streamId,
+        error,
+      });
     }
   }
 }

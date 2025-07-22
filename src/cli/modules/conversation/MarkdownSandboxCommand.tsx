@@ -94,7 +94,7 @@ export function MarkdownSandboxCommand({
     id: `markdown-sandbox-${Date.now()}`,
     component: (
       <Box flexDirection="column" marginY={1}>
-        <MarkdownDisplay content={MARKDOWN_EXAMPLES} showCollapsible={true} />
+        <MarkdownDisplay content={MARKDOWN_EXAMPLES} showCollapsible />
       </Box>
     ),
   };

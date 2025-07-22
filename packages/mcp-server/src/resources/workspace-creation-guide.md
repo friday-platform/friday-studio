@@ -10,6 +10,87 @@ When creating workspaces, focus on understanding what the user wants to accompli
 forcing their needs into predefined patterns. Every automation task is unique, and Atlas is flexible
 enough to handle creative combinations of triggers, processing, and outputs.
 
+## CRITICAL: Atlas vs Other Automation Platforms
+
+Atlas uses **AGENT-BASED architecture**, NOT step-based workflows. Avoid patterns from GitHub
+Actions, Zapier, or n8n.
+
+### ❌ NEVER USE These Patterns:
+
+```yaml
+# DON'T: Step-based workflow syntax (GitHub Actions style)
+agents:
+  earnings-monitor:
+    steps:
+      - id: "check-earnings-releases"
+        uses: "web/searcher"
+        with:
+          query: "{{company}} earnings call transcript"
+        foreach: "{{inputs.companies}}"
+        as: "company"
+      - id: "filter-new-transcripts"
+        uses: "storage/query"
+
+# DON'T: Complex nested execution logic
+agents:
+  monitor:
+    execution:
+      strategy: "complex"
+      steps:
+        - condition: "{{transcript.isNew}}"
+          then:
+            - uses: "ai/completion"
+            - uses: "slack/post-message"
+
+# DON'T: Tool invocation as pipeline steps
+steps:
+  - uses: "web/fetch"
+  - uses: "ai/analyze"
+  - uses: "slack/notify"
+```
+
+### ✅ USE Atlas Agent Architecture:
+
+```yaml
+# DO: Simple agent definitions with tools
+agents:
+  earnings-monitor:
+    type: "llm"
+    config:
+      prompt: |
+        Check for earnings call transcripts from AAPL, MSFT, GOOG, META.
+        Search recent financial news and SEC filings.
+        Extract key information and identify new transcripts.
+      tools: ["web-browser"]
+
+# DO: Agent chains in jobs
+jobs:
+  earnings-analysis:
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "earnings-monitor"
+        - id: "ai-analyzer"
+        - id: "slack-notifier"
+
+# DO: Tools as MCP servers
+tools:
+  mcp:
+    servers:
+      slack:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-slack"]
+```
+
+**Key Differences:**
+
+- **Agents are defined once** in `agents:` section, referenced by ID in jobs
+- **No `steps[]`, `uses:`, or `foreach:` syntax** - use agent prompts instead
+- **Tools are MCP servers**, not workflow steps
+- **Simple agent chains**, not complex nested execution logic
+
 ## Understanding User Intent
 
 Before diving into configurations, analyze what the user wants to accomplish:
@@ -19,6 +100,82 @@ Before diving into configurations, analyze what the user wants to accomplish:
 3. **What processing is needed?** (AI analysis, data transformation, filtering)
 4. **Where should results go?** (notifications, databases, other APIs)
 5. **What credentials are required?** (API keys, webhooks, OAuth tokens)
+
+## MANDATORY: Start With This Template
+
+**ALWAYS** start workspace creation with this exact structure. Fill in the placeholders - never
+invent new syntax:
+
+```yaml
+version: "1.0"
+
+workspace:
+  name: "[descriptive-workspace-name]"
+  description: "[what this workspace accomplishes for the user]"
+
+signals:
+  [trigger-name]:
+    provider: "[schedule|http]"
+    description: "[when this triggers]"
+    config:
+# For schedule: schedule: "*/30 * * * *"
+# For http: path: "/webhooks/[service]"
+
+jobs:
+  [job-name]:
+    description: "[what this job does]"
+    triggers:
+      - signal: "[trigger-name]"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "[agent-id-1]"
+        - id: "[agent-id-2]"
+          context:
+            steps: "previous" # Gets previous agent's output
+
+agents:
+  [agent-id-1]:
+    type: "llm"
+    description: "[what this agent does]"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        [Specific instructions for this agent]
+      tools: ["[tool-name]"]
+
+  [agent-id-2]:
+    type: "llm"
+    description: "[what this agent does]"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        [Specific instructions for this agent]
+      tools: ["[tool-name]"]
+
+tools:
+  mcp:
+    servers:
+      [tool-name]:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-[tool]"]
+        # Add auth if required:
+        # auth:
+        #   type: "bearer"
+        #   token_env: "[ENV_VAR_NAME]"
+```
+
+**Template Rules:**
+
+- Replace ALL `[placeholder]` values with actual content
+- NEVER add `steps[]`, `uses:`, `foreach:`, or other non-Atlas syntax
+- Keep the flat YAML structure - don't nest execution logic in agents
+- Define each agent once in `agents:`, reference by ID in jobs
+- Tools are MCP servers in `tools.mcp.servers`, not workflow steps
 
 ## Choosing the Right Signal Type
 
@@ -66,195 +223,431 @@ Most integrations require credentials. When detecting authentication needs:
              token_env: DISCORD_WEBHOOK_URL
    ```
 
-## Example Patterns
+## Complete Working Examples
 
-Let's explore how different user intents map to Atlas components:
+Use these concrete examples as starting points for common automation patterns:
 
-### Web Monitoring Pattern
+### Tech Earnings Analysis Workspace
 
-**User intent**: "Monitor Nike for new shoe drops and rate their hype level"
+**User intent**: "Monitor for earnings call transcripts from major tech companies (AAPL, MSFT, GOOG,
+META), analyze them with AI, and send summaries to Slack"
 
-**Key components**:
-
-- **Signal**: Schedule-based (`*/30 * * * *` for every 30 minutes)
-- **Agents**:
-  - Web scraper (extracts product data)
-  - Change detector (compares with previous data)
-  - Notifier (sends Discord alerts)
-- **Tools**: web-browser, discord
-- **Context flow**: Each agent passes results to the next
-
-**Critical configuration elements**:
+**Complete working configuration**:
 
 ```yaml
+version: "1.0"
+
+workspace:
+  name: "tech-earnings-monitor"
+  description: "Monitor tech earnings calls and send AI-generated summaries to Slack"
+
+signals:
+  check-earnings:
+    provider: "schedule"
+    description: "Check for new earnings transcripts every 8 hours"
+    config:
+      schedule: "0 */8 * * *"
+
+jobs:
+  earnings-analysis:
+    description: "Find, analyze, and report on new earnings transcripts"
+    triggers:
+      - signal: "check-earnings"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "earnings-fetcher"
+        - id: "ai-analyzer"
+          context:
+            steps: "previous"
+        - id: "slack-notifier"
+          context:
+            steps: "previous"
+
+agents:
+  earnings-fetcher:
+    type: "llm"
+    description: "Search for and extract new earnings call transcripts"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Search for recent earnings call transcripts from these companies: AAPL, MSFT, GOOG, META.
+
+        For each company:
+        1. Check SEC filings and financial news sites
+        2. Look for Q1/Q2/Q3/Q4 earnings call transcripts
+        3. Extract the full transcript text
+        4. Include company symbol, date, and source URL
+
+        Return results as JSON with company, date, transcript_text, and source_url fields.
+      tools: ["web-browser"]
+
+  ai-analyzer:
+    type: "llm"
+    description: "Analyze earnings transcripts with AI for key insights"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Analyze the earnings call transcript provided. Generate a comprehensive summary including:
+
+        1. Key financial metrics vs expectations
+        2. Notable strategic announcements
+        3. Forward guidance and outlook
+        4. Management sentiment and tone
+        5. Potential market impact
+
+        Format as a well-structured markdown report with clear sections and bullet points.
+        Keep it professional but accessible.
+
+  slack-notifier:
+    type: "llm"
+    description: "Send formatted analysis to Slack"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Send the earnings analysis to Slack with formatting:
+
+        - Use markdown formatting for headers and emphasis
+        - Include company ticker in the title
+        - Add the analysis date and source
+        - Keep the message concise but informative
+
+        Format for Slack's markdown syntax.
+      tools: ["slack"]
+
+tools:
+  mcp:
+    servers:
+      web-browser:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-puppeteer"]
+
+      slack:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-slack"]
+        auth:
+          type: "bearer"
+          token_env: "SLACK_TOKEN"
+
+memory:
+  enabled: true
+  retention:
+    max_age_days: 30 # Keep a month of transcript history
+```
+
+**Key Points:**
+
+- **Sequential agent chain**: Fetcher → Analyzer → Notifier
+- **Context flow**: Each agent builds on the previous one's output
+- **Specific prompts**: Each agent has detailed, actionable instructions
+- **Memory enabled**: Tracks what transcripts have been processed
+
+### Stripe to HubSpot Customer Sync
+
+**User intent**: "When Stripe sends a webhook for new customers, sync them to HubSpot with AI
+enrichment"
+
+**Complete working configuration**:
+
+```yaml
+version: "1.0"
+
+workspace:
+  name: "stripe-hubspot-sync"
+  description: "Sync new Stripe customers to HubSpot with AI-enhanced profiles"
+
+signals:
+  stripe-webhook:
+    provider: "http"
+    description: "Receive webhooks from Stripe"
+    config:
+      path: "/webhooks/stripe"
+    schema:
+      type: "object"
+      properties:
+        type:
+          type: "string"
+        data:
+          type: "object"
+      required: ["type", "data"]
+
+jobs:
+  customer-sync:
+    description: "Sync new Stripe customers to HubSpot with enrichment"
+    triggers:
+      - signal: "stripe-webhook"
+        condition:
+          prompt: "Only process customer.created and customer.updated events"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "stripe-validator"
+        - id: "ai-enricher"
+          context:
+            steps: "previous"
+        - id: "hubspot-syncer"
+          context:
+            steps: "previous"
+
+agents:
+  stripe-validator:
+    type: "llm"
+    description: "Validate and extract customer data from Stripe webhook"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Extract customer information from the Stripe webhook payload:
+
+        Required fields:
+        - Customer ID
+        - Email address
+        - Name (if available)
+        - Created date
+        - Subscription info (if any)
+
+        Validate that all required fields are present.
+        Return structured JSON with customer data.
+
+        Skip processing if this is a test webhook or missing required fields.
+
+  ai-enricher:
+    type: "llm"
+    description: "Enrich customer profile with AI-generated insights"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Enhance the customer profile with intelligent insights:
+
+        Based on the customer's email domain and available data:
+        1. Identify likely company size (startup, SMB, enterprise)
+        2. Suggest industry category
+        3. Estimate customer lifetime value tier
+        4. Generate personalized onboarding recommendations
+
+        Add these insights to the customer data structure.
+
+  hubspot-syncer:
+    type: "llm"
+    description: "Create or update contact in HubSpot"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Sync the enriched customer data to HubSpot:
+
+        1. Check if contact already exists (by email)
+        2. Create new contact or update existing one
+        3. Set appropriate properties:
+           - Source: "Stripe Integration"
+           - Lead score based on AI insights
+           - Industry and company size
+           - Custom fields for Stripe data
+
+        Handle errors gracefully and log sync status.
+      tools: ["hubspot"]
+
+tools:
+  mcp:
+    servers:
+      hubspot:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-hubspot"]
+        auth:
+          type: "bearer"
+          token_env: "HUBSPOT_ACCESS_TOKEN"
+```
+
+**Key Points:**
+
+- **HTTP webhook trigger**: Responds to real-time Stripe events
+- **Conditional processing**: Only handles specific event types
+- **AI enrichment**: Adds intelligent insights to customer data
+- **Error handling**: Validates data at each step
+
+### Nike Shoe Drop Monitor
+
+**User intent**: "Monitor Nike for new shoe drops and send Discord notifications with hype analysis"
+
+**Complete working configuration**:
+
+```yaml
+version: "1.0"
+
+workspace:
+  name: "nike-drop-monitor"
+  description: "Monitor Nike releases and analyze hype level for Discord alerts"
+
 signals:
   check-drops:
-    provider: schedule
+    provider: "schedule"
+    description: "Check Nike every 30 minutes for new releases"
     config:
       schedule: "*/30 * * * *"
 
 jobs:
-  monitor-drops:
-    execution:
-      agents:
-        - id: web-scraper
-        - id: change-detector
-          context:
-            steps: previous # Gets scraper's output
-        - id: notifier
-          context:
-            steps: previous # Gets detector's findings
-```
-
-**Agent prompt focus**: Be specific about data extraction, comparison logic, and output format.
-
-### Multi-Aspect Analysis Pattern
-
-**User intent**: "When I push code, analyze it for elegance, documentation, complexity, and product
-alignment"
-
-**Key components**:
-
-- **Signal**: HTTP webhook from GitHub
-- **Execution strategy**: Parallel (analyze multiple aspects simultaneously)
-- **Agents**: Specialized reviewers for each aspect, plus a synthesizer
-- **Context flow**: All reviewers → synthesizer
-
-**Critical configuration elements**:
-
-```yaml
-jobs:
-  analyze-code:
-    execution:
-      strategy: parallel # Run reviewers concurrently
-      agents:
-        - id: elegance-reviewer
-        - id: documentation-reviewer
-        - id: complexity-analyzer
-        - id: vision-alignment-checker
-        - id: report-synthesizer
-          dependencies:
-            [
-              elegance-reviewer,
-              documentation-reviewer,
-              complexity-analyzer,
-              vision-alignment-checker,
-            ]
-          context:
-            steps: all # Receives all analyses
-```
-
-**Agent specialization**: Each agent focuses on one aspect with specific evaluation criteria in
-their prompts.
-
-### API Integration Pattern
-
-**User intent**: "Sync Stripe customers to HubSpot with AI enrichment"
-
-**Key components**:
-
-- **Signal**: HTTP webhook with validation
-- **Trigger condition**: Filter for specific event types
-- **Agent pipeline**: Validator → Mapper → Syncer
-- **Tools**: hubspot integration
-
-**Critical configuration elements**:
-
-```yaml
-signals:
-  stripe-webhook:
-    provider: http
-    config:
-      path: /webhooks/stripe
-    schema: # Validate webhook structure
-      type: object
-      required: ["type", "data"]
-
-jobs:
-  sync-customer:
+  monitor-releases:
+    description: "Find new Nike drops and analyze hype level"
     triggers:
-      - signal: stripe-webhook
-        condition:
-          prompt: "Only trigger when the webhook type is customer.created or customer.updated"
+      - signal: "check-drops"
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "nike-scraper"
+        - id: "hype-analyzer"
+          context:
+            steps: "previous"
+        - id: "discord-notifier"
+          context:
+            steps: "previous"
+
+agents:
+  nike-scraper:
+    type: "llm"
+    description: "Scrape Nike website for new product releases"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Monitor Nike's upcoming releases page and SNKRS app for new drops:
+
+        1. Visit nike.com/launch and upcoming releases
+        2. Extract product details: name, SKU, price, release date
+        3. Get product images (main photo)
+        4. Check if this is a new release (not seen before)
+
+        Use proper headers to avoid blocking:
+        - User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+        - Accept-Language: en-US,en;q=0.9
+
+        Return only NEW releases as JSON array.
+      tools: ["web-browser"]
+
+  hype-analyzer:
+    type: "llm"
+    description: "Analyze potential hype level of new releases"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Analyze the hype potential for each Nike release:
+
+        Consider these factors:
+        1. Brand collaboration (Off-White, Travis Scott = HIGH hype)
+        2. Limited edition or rare colorways
+        3. Retro Jordan releases (especially OG colorways)
+        4. Price point (under $200 = more accessible)
+        5. Social media buzz and influencer mentions
+
+        Rate each shoe 1-10 for hype level and explain reasoning.
+        Include resale value prediction.
+
+  discord-notifier:
+    type: "llm"
+    description: "Send formatted alerts to Discord"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      prompt: |
+        Send Discord webhook with new Nike drops:
+
+        Format:
+        - 🔥 for high hype (8-10), ⚡ for medium (5-7), 📦 for low (1-4)
+        - Include product name, price, release date
+        - Add hype analysis summary
+        - Include product image if available
+        - Use Discord embed format for clean display
+      tools: ["discord"]
+
+tools:
+  mcp:
+    servers:
+      web-browser:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-puppeteer"]
+
+      discord:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@modelcontextprotocol/server-discord"]
+        auth:
+          type: "bearer"
+          token_env: "DISCORD_WEBHOOK_URL"
+
+memory:
+  enabled: true
+  retention:
+    max_age_days: 14 # Track releases for 2 weeks
 ```
 
-**Conditional triggering**: Use natural language conditions to filter which events trigger the job.
+**Key Points:**
 
-## Data Flow Patterns
+- **Scheduled monitoring**: Checks every 30 minutes automatically
+- **Change detection**: Only processes new releases
+- **AI-powered analysis**: Intelligent hype level assessment
+- **Rich notifications**: Formatted Discord messages with context
 
-Atlas supports several execution patterns for complex workflows:
+## Context Flow Between Agents
 
-### Sequential Processing (Chaining)
+Control how data flows between agents in your job execution:
 
-Agents execute one after another, each building on previous results:
+### Sequential Processing (Default)
+
+Most jobs use sequential processing where each agent builds on the previous one:
 
 ```yaml
 jobs:
   process-data:
     execution:
-      strategy: sequential
+      strategy: "sequential"
       agents:
-        - id: fetcher
-          # Gets raw data
-        - id: transformer
+        - id: "data-fetcher"
+        - id: "data-transformer"
           context:
-            steps: previous # Receives fetcher's output
-        - id: analyzer
+            steps: "previous" # Gets fetcher's output
+        - id: "final-reporter"
           context:
-            steps: previous # Receives transformer's output
-        - id: reporter
-          context:
-            steps: all # Receives all previous outputs
+            steps: "all" # Gets all previous outputs
 ```
 
-### Parallel Processing (Fan-out)
+### Context Options
 
-Multiple agents work simultaneously on the same input:
+- `steps: "previous"` - Only previous agent's output (most common)
+- `steps: "all"` - All previous agents' outputs
+- `signal: true` - Include original trigger data
+- `agents: ["agent1", "agent2"]` - Specific agents' outputs
+
+### Conditional Job Triggering
+
+Use different jobs for different webhook types:
 
 ```yaml
 jobs:
-  analyze-content:
-    execution:
-      strategy: parallel
-      agents:
-        - id: sentiment-analyzer
-        - id: keyword-extractor
-        - id: summary-generator
-        - id: report-compiler
-          dependencies:
-            [sentiment-analyzer, keyword-extractor, summary-generator]
-          context:
-            steps: all # Waits for and receives all outputs
-```
-
-### Conditional Execution
-
-Route to different agents based on conditions:
-
-```yaml
-jobs:
-  route-webhook:
+  handle-alerts:
     triggers:
-      - signal: incoming-webhook
+      - signal: "incoming-webhook"
         condition:
           prompt: "Only run when the webhook type is 'alert'"
 
-  process-lead:
+  handle-leads:
     triggers:
-      - signal: incoming-webhook
+      - signal: "incoming-webhook"
         condition:
           prompt: "Only run when the webhook type is 'lead'"
 ```
-
-### Context Preservation
-
-Control what data flows between agents:
-
-- `signal: true` - Include original trigger data
-- `steps: "previous"` - Only previous agent's output
-- `steps: "all"` - All previous agents' outputs
-- `steps: "none"` - No context from other agents
-- `agents: ["agent1", "agent2"]` - Specific agents' outputs
 
 ## Understanding Prompts: Supervisor vs Agent
 

@@ -96,13 +96,10 @@ agents:
     agent: "conversation"
     description: "Handle conversations with scope awareness and workspace creation"
     config:
-      model: "claude-3-7-sonnet-latest"
-      temperature: 0.7
-      max_tokens: 8000
-      use_reasoning: true
-      max_reasoning_steps: 5
+      model: "claude-sonnet-4-20250514"
       tools:
         - "atlas_conversation_storage"
+        - "atlas_stream_event"
         - "atlas_workspace_draft_create"
         - "atlas_workspace_draft_update"
         - "atlas_workspace_draft_validate"

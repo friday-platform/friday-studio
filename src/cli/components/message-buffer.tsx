@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Text } from "ink";
-import { Spinner } from "@inkjs/ui";
+import { Box, Text, useStdout } from "ink";
+// import { Spinner } from "@inkjs/ui";
 import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
@@ -10,28 +10,31 @@ import { MarkdownDisplay } from "./markdown-display.tsx";
 import { DirectoryTree } from "./directory-tree.tsx";
 
 // Define SSE event schemas
-const MessageChunkEventSchema = z.object({
-  type: z.literal("message_chunk"),
+// const MessageChunkEventSchema = z.object({
+//   type: z.literal("message_chunk"),
+//   data: z.object({
+//     content: z.string(),
+//     partial: z.boolean().optional(),
+//   }),
+// });
+
+const MessageEventSchema = z.object({
+  type: z.literal("text"),
   data: z.object({
     content: z.string(),
-    partial: z.boolean().optional(),
   }),
 });
 
-const MessageCompleteEventSchema = z.object({
-  type: z.literal("message_complete"),
+const FinishEventSchema = z.object({
+  type: z.literal("finish"),
+  data: z.object({
+    content: z.string(),
+  }),
 });
 
 const ErrorEventSchema = z.object({
   type: z.literal("error"),
   data: z.string().optional(),
-});
-
-const LlmThinkingEventSchema = z.object({
-  type: z.literal("llm_thinking"),
-  data: z.object({
-    content: z.string(),
-  }),
 });
 
 const SelectionListEventSchema = z.object({
@@ -57,18 +60,15 @@ const FileDiffEventSchema = z.object({
   }),
 });
 
-// Define the recursive directory node schema
-const DirectoryNodeSchema: z.ZodType<{
+type DirectoryNode = {
   name: string;
   type: "file" | "directory";
   active?: boolean;
-  children?: Array<{
-    name: string;
-    type: "file" | "directory";
-    active?: boolean;
-    children?: any;
-  }>;
-}> = z.object({
+  children?: Array<DirectoryNode>;
+};
+
+// Define the recursive directory node schema
+const DirectoryNodeSchema: z.ZodType<DirectoryNode> = z.object({
   name: z.string(),
   type: z.enum(["file", "directory"]),
   active: z.boolean().optional(),
@@ -93,16 +93,45 @@ const RespondingStopEventSchema = z.object({
   type: z.literal("responding_stop"),
 });
 
+const ToolCallEventSchema = z.object({
+  type: z.literal("tool_call"),
+  data: z.object({
+    content: z.string(),
+    toolName: z.string(),
+    args: z.record(z.string(), z.unknown()).optional(),
+    toolCallId: z.string().optional(),
+  }),
+});
+
+const ToolResultEventSchema = z.object({
+  type: z.literal("tool_result"),
+  data: z.object({
+    content: z.string(),
+    toolName: z.string(),
+    result: z.unknown(),
+    toolCallId: z.string().optional(),
+  }),
+});
+
+const ThinkingEventSchema = z.object({
+  type: z.literal("thinking"),
+  data: z.object({
+    content: z.string(),
+  }),
+});
+
 const SSEEventSchema = z.union([
-  MessageChunkEventSchema,
-  MessageCompleteEventSchema,
+  FinishEventSchema,
+  MessageEventSchema,
   ErrorEventSchema,
-  LlmThinkingEventSchema,
   SelectionListEventSchema,
   FileDiffEventSchema,
   DirectoryListingEventSchema,
   RespondingEventSchema,
   RespondingStopEventSchema,
+  ToolCallEventSchema,
+  ToolResultEventSchema,
+  ThinkingEventSchema,
 ]);
 
 function generateTimestamp() {
@@ -182,50 +211,36 @@ export const MessageBuffer = () => {
           const sseEvent = parseResult.data;
 
           switch (sseEvent.type) {
-            case "message_chunk": {
-              const { content: responseMessage, partial: isPartial } = sseEvent.data;
-
-              // If streaming is enabled, show all chunks
-              // If streaming is disabled, only show when partial is false (complete message)
-              if (responseMessage && (config.streamMessages || !isPartial)) {
-                setTypingState((prev) => ({ ...prev, isTyping: true }));
-
-                const timestamp = generateTimestamp();
-                const streamingMessageId = `llm-response-current`;
-
-                setOutputBuffer((prev) => {
-                  const filtered = prev.filter(
-                    (entry) => entry.id !== streamingMessageId,
-                  );
-                  return [
-                    ...filtered,
-                    {
-                      id: streamingMessageId,
-                      component: (
-                        <ChatMessage
-                          author="Atlas"
-                          date={timestamp}
-                          message={responseMessage}
-                        />
-                      ),
-                    },
-                  ];
-                });
-              }
-              break;
-            }
-
-            case "message_complete": {
-              setTypingState((prev) => ({ ...prev, isTyping: false }));
-              // Finalize the current streaming message
-              const streamingMessageId = `llm-response-current`;
-              const finalMessageId = `message-received-${Date.now()}`;
+            case "text": {
+              setTypingState((prev) => ({ ...prev, isTyping: true }));
+              const { content } = sseEvent.data;
+              const streamingId = "message-response";
 
               setOutputBuffer((prev) => {
-                return prev.map((entry) =>
-                  entry.id === streamingMessageId ? { ...entry, id: finalMessageId } : entry
-                );
+                const [filtered, previousOutput] = [
+                  prev.filter((entry) => entry.id !== streamingId),
+                  prev.find((entry) => entry.id === streamingId),
+                ];
+                return [
+                  ...filtered,
+                  {
+                    id: streamingId,
+                    content: (previousOutput?.content ?? "") + content,
+                    component: (
+                      <ChatMessage
+                        author="Atlas"
+                        authorColor="blue"
+                        date={generateTimestamp()}
+                      >
+                        <MarkdownDisplay
+                          content={(previousOutput?.content ?? "") + content}
+                        />
+                      </ChatMessage>
+                    ),
+                  },
+                ];
               });
+
               break;
             }
 
@@ -258,19 +273,6 @@ export const MessageBuffer = () => {
                       </Text>
                     </Box>
                   ),
-                },
-              ]);
-              break;
-            }
-
-            case "llm_thinking": {
-              const { content } = sseEvent.data;
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `llm-thinking-${Date.now()}`,
-                  component: <MarkdownDisplay content={content} dimColor />,
                 },
               ]);
               break;
@@ -355,6 +357,91 @@ export const MessageBuffer = () => {
               }));
               break;
             }
+
+            case "tool_call": {
+              const { toolName, args, toolCallId } = sseEvent.data;
+
+              // Simple JSON display for now
+              const argsDisplay = args ? JSON.stringify(args, null, 2) : "No arguments";
+              const fullContent = `Calling: ${toolName}\n${argsDisplay}`;
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `tool-call-${toolCallId || Date.now()}`,
+                  component: <MarkdownDisplay content={fullContent} dimColor />,
+                },
+              ]);
+              break;
+            }
+
+            case "tool_result": {
+              const { toolName, result, toolCallId } = sseEvent.data;
+
+              // Simple JSON display for now
+              const resultDisplay = JSON.stringify(result, null, 2);
+              const fullContent = `${toolName} returned:\n${resultDisplay}`;
+
+              setOutputBuffer((prev) => [
+                ...prev,
+                {
+                  id: `tool-result-${toolCallId || Date.now()}`,
+                  component: <MarkdownDisplay content={fullContent} dimColor />,
+                },
+              ]);
+              break;
+            }
+
+            case "thinking": {
+              setTypingState((prev) => ({ ...prev, isTyping: true }));
+              const { content } = sseEvent.data;
+              const streamingMessageId = `thinking-response`;
+
+              setOutputBuffer((prev) => {
+                const [filtered, previousOutput] = [
+                  prev.filter((entry) => entry.id !== streamingMessageId),
+                  prev.find((entry) => entry.id === streamingMessageId),
+                ];
+                return [
+                  ...filtered,
+                  {
+                    id: streamingMessageId,
+                    content: (previousOutput?.content ?? "") + content,
+                    component: (
+                      <MarkdownDisplay
+                        content={(previousOutput?.content ?? "") + content}
+                        dimColor
+                      />
+                    ),
+                  },
+                ];
+              });
+
+              break;
+            }
+
+            case "finish": {
+              setTypingState((prev) => ({ ...prev, isTyping: false }));
+              // Finalize the current streaming message
+              const thinkingId = `thinking-response`;
+              const finalThinkingId = `response-complete-${Date.now()}`;
+
+              const messageId = `message-response`;
+              const finalMessageId = `message-received-${Date.now()}`;
+
+              setOutputBuffer((prev) => {
+                return prev.map((entry) => {
+                  if (entry.id === thinkingId) {
+                    return { ...entry, id: finalThinkingId };
+                  }
+                  if (entry.id === messageId) {
+                    return { ...entry, id: finalMessageId };
+                  }
+                  return entry;
+                });
+              });
+              break;
+            }
           }
         }
       } catch (error) {
@@ -395,13 +482,16 @@ export const MessageBuffer = () => {
         {/* Typing indicator */}
         {typingState.isTyping && (
           <Box>
-            {config.streamMessages
+            <Text>Thinking...</Text>
+            {
+              /* {config.streamMessages
               ? <Spinner label={typingState.message || "Typing..."} />
               : (
                 <Spinner
                   label={`${typingState.message || "Typing..."} (${typingState.elapsedSeconds}s)`}
                 />
-              )}
+              )} */
+            }
           </Box>
         )}
       </Box>

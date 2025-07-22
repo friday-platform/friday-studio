@@ -46,7 +46,7 @@ class AtlasInstaller {
   async loadLicenseText() {
     try {
       // Request the EULA text from the main process
-      const licenseText = await window.electronAPI.getEulaText();
+      const licenseText = await globalThis.electronAPI.getEulaText();
       document.getElementById("license-text").textContent = licenseText;
     } catch (error) {
       console.error("Failed to load EULA:", error);
