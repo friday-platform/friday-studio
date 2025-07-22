@@ -4,7 +4,6 @@ import { walk } from "@std/fs";
 import { WorkspaceManager } from "../packages/core/src/workspace-manager.ts";
 import { createRegistryStorage, StorageConfigs } from "../src/core/storage/index.ts";
 import { WorkspaceConfigSchema } from "../packages/config/src/workspace.ts";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 import { parse } from "@std/yaml";
 
 Deno.test("validate-examples - workspace discovery logic", async () => {

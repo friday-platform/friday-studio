@@ -5,12 +5,10 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ResourceContext } from "./types.ts";
-import { registerWorkspaceReferenceResource } from "./workspace-reference.ts";
 
 /**
  * Register all resources with the MCP server
  */
-export function registerResources(server: McpServer, context: ResourceContext): void {
-  registerWorkspaceReferenceResource(server, context);
+export function registerResources(_: McpServer, context: ResourceContext): void {
   context.logger.info("Registered all resources with MCP server");
 }

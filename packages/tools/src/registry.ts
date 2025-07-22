@@ -9,6 +9,7 @@ import {
   filesystemTools,
   jobTools,
   libraryTools,
+  resourceTools,
   sessionTools,
   signalTools,
   systemTools,
@@ -37,6 +38,7 @@ export type ToolCategory =
   | "draft"
   | "system"
   | "conversation"
+  | "resource"
   | "all";
 
 /**
@@ -368,6 +370,7 @@ const defaultRegistry = new AtlasToolRegistry({
   draft: draftTools,
   system: systemTools,
   conversation: conversationTools,
+  resource: resourceTools,
 });
 
 /**
@@ -392,6 +395,7 @@ export {
   filesystemTools,
   jobTools,
   libraryTools,
+  resourceTools,
   sessionTools,
   signalTools,
   systemTools,

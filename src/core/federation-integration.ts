@@ -6,7 +6,6 @@
 import type { WorkspaceRuntime } from "./workspace-runtime.ts";
 import type { AtlasConfig, WorkspaceConfig } from "@atlas/config";
 import { FederationManager } from "./federation-manager.ts";
-import { WorkspaceCapabilityRegistry } from "./workspace-capabilities.ts";
 import { PlatformMCPServer, WorkspaceMCPServer } from "@atlas/mcp-server";
 import { MCPProxy } from "@atlas/mcp";
 import { logger } from "../utils/logger.ts";
@@ -52,9 +51,10 @@ export class FederationIntegration {
     this.federationManager = new FederationManager(atlasConfig);
 
     // Initialize built-in capabilities registry
-    if (options.enableBuiltinCapabilities !== false) {
-      WorkspaceCapabilityRegistry.initialize();
-    }
+    // TODO: Put back.
+    // if (options.enableBuiltinCapabilities !== false) {
+    //   WorkspaceCapabilityRegistry.initialize();
+    // }
 
     // Initialize MCP proxy
     this.mcpProxy = new MCPProxy({
@@ -139,49 +139,50 @@ export class FederationIntegration {
 
   /**
    * Create agent execution context with built-in capabilities
+   * @TODO: put back.
    */
-  createAgentExecutionContext(
-    runtime: WorkspaceRuntime,
-    sessionId: string,
-    agentId: string,
-    agentConfig: any,
-    grantedTools: string[] = [],
-  ): any {
-    const { context, capabilities } = WorkspaceCapabilityRegistry.createAgentContext(
-      this.workspaceConfig.workspace.id,
-      sessionId,
-      agentId,
-      agentConfig,
-      grantedTools,
-      {
-        workspaceRuntime: runtime,
-        // Add other runtime services as needed
-      },
-    );
+  // createAgentExecutionContext(
+  //   runtime: WorkspaceRuntime,
+  //   sessionId: string,
+  //   agentId: string,
+  //   agentConfig: any,
+  //   grantedTools: string[] = [],
+  // ): any {
+  //   const { context, capabilities } = WorkspaceCapabilityRegistry.createAgentContext(
+  //     this.workspaceConfig.workspace.id,
+  //     sessionId,
+  //     agentId,
+  //     agentConfig,
+  //     grantedTools,
+  //     {
+  //       workspaceRuntime: runtime,
+  //       // Add other runtime services as needed
+  //     },
+  //   );
 
-    // Convert capabilities to callable functions
-    const capabilityFunctions: Record<string, Function> = {};
-    for (const capability of capabilities) {
-      capabilityFunctions[capability.id] = async (...args: any[]) => {
-        return await WorkspaceCapabilityRegistry.executeCapability(
-          capability.id,
-          context,
-          ...args,
-        );
-      };
-    }
+  //   // Convert capabilities to callable functions
+  //   const capabilityFunctions: Record<string, Function> = {};
+  //   for (const capability of capabilities) {
+  //     capabilityFunctions[capability.id] = async (...args: any[]) => {
+  //       return await WorkspaceCapabilityRegistry.executeCapability(
+  //         capability.id,
+  //         context,
+  //         ...args,
+  //       );
+  //     };
+  //   }
 
-    return {
-      context,
-      capabilities: capabilityFunctions,
-      availableCapabilities: capabilities.map((c) => ({
-        id: c.id,
-        name: c.name,
-        description: c.description,
-        category: c.category,
-      })),
-    };
-  }
+  //   return {
+  //     context,
+  //     capabilities: capabilityFunctions,
+  //     availableCapabilities: capabilities.map((c) => ({
+  //       id: c.id,
+  //       name: c.name,
+  //       description: c.description,
+  //       category: c.category,
+  //     })),
+  //   };
+  // }
 
   /**
    * Get federation statistics

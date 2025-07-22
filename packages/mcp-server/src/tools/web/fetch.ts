@@ -6,7 +6,6 @@ import TurndownService from "turndown";
 import { HTMLRewriter } from "@worker-tools/html-rewriter";
 import { chromium } from "playwright";
 import { join } from "@std/path";
-import { exists } from "@std/fs";
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024; // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000; // 30 seconds

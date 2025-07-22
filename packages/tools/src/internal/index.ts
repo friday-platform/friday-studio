@@ -9,6 +9,7 @@ export { draftTools } from "./draft.ts";
 export { filesystemTools } from "./filesystem.ts";
 export { jobTools } from "./job.ts";
 export { libraryTools } from "./library.ts";
+export { resourceTools } from "./resources.ts";
 export { sessionTools } from "./session.ts";
 export { signalTools } from "./signal.ts";
 export { systemTools } from "./system.ts";

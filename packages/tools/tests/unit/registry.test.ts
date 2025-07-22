@@ -29,6 +29,7 @@ Deno.test("AtlasToolRegistry", async (t) => {
       "draft",
       "system",
       "conversation",
+      "resource",
     ];
 
     assertEquals(categories.sort(), expectedCategories.sort());
@@ -212,6 +213,7 @@ Deno.test("getAtlasToolRegistry function", async (t) => {
       draft: defaultRegistry.getToolsByCategory("draft"),
       system: defaultRegistry.getToolsByCategory("system"),
       conversation: defaultRegistry.getToolsByCategory("conversation"),
+      resource: defaultRegistry.getToolsByCategory("resource"),
     });
 
     assertEquals(

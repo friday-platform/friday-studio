@@ -210,6 +210,7 @@ export class ConversationAgent extends BaseAgent {
       "library",
       "draft",
       "session",
+      "resource",
     ];
     const additionalTools: Record<string, Tool> = {};
 
@@ -282,8 +283,6 @@ export class ConversationAgent extends BaseAgent {
 
     this.logger.info("Calling streamText with configuration", {
       model: "claude-3-7-sonnet-20250219",
-      systemPromptLength: this.buildSystemPrompt(historyContext).length,
-      systemPromptSnippet: this.buildSystemPrompt(historyContext).substring(0, 500),
       messageLength: message.length,
       toolCount: Object.keys(finalTools).length,
       tools: Object.keys(finalTools),
@@ -291,13 +290,13 @@ export class ConversationAgent extends BaseAgent {
 
     const { fullStream, text, reasoning } = streamText({
       model: this.llmProvider("claude-3-7-sonnet-20250219"),
-      system: this.buildSystemPrompt(historyContext),
+      system: this.buildSystemPrompt(historyContext, Object.keys(finalTools)),
       messages: [{ role: "user", content: message }],
       tools: finalTools,
       toolChoice: "auto",
       maxSteps: 20, // Prevents infinite tool loops
       temperature: 0.7,
-      maxTokens: 2000,
+      maxTokens: 8000,
       experimental_toolCallStreaming: true,
       providerOptions: {
         anthropic: {
@@ -386,36 +385,38 @@ export class ConversationAgent extends BaseAgent {
   }
 
   /**
-   * Constructs system prompt that enforces tool usage patterns
+   * Constructs system prompt with conversation history and available tools injected
    */
-  private buildSystemPrompt(historyContext?: string): string {
-    const basePrompt = this.config.prompt || "You are a helpful AI assistant.";
+  private buildSystemPrompt(historyContext?: string, availableTools?: string[]): string {
+    if (!this.config.prompt) {
+      throw new Error("ConversationAgent config.prompt is required");
+    }
+    let prompt = this.config.prompt;
 
-    return `${basePrompt}
+    // Replace the conversation history placeholder if present
+    if (historyContext) {
+      prompt = prompt.replace(
+        "{{CONVERSATION_HISTORY}}",
+        `\nConversation History:\n${historyContext}\n`,
+      );
+    } else {
+      // Remove the placeholder if no history
+      prompt = prompt.replace("{{CONVERSATION_HISTORY}}", "");
+    }
 
-${historyContext ? `\nConversation History:\n${historyContext}\n` : ""}
+    // Replace the available tools placeholder
+    if (availableTools && availableTools.length > 0) {
+      const toolsList = availableTools.join(", ");
+      prompt = prompt.replace(
+        "{{AVAILABLE_TOOLS}}",
+        toolsList,
+      );
+    } else {
+      // Remove the placeholder if no tools
+      prompt = prompt.replace("{{AVAILABLE_TOOLS}}", "");
+    }
 
-CRITICAL INSTRUCTIONS FOR TOOL USAGE:
-1. You MUST ALWAYS use the 'atlas_stream_reply' tool to send ANY message to the user
-2. NEVER respond with plain text - ALWAYS use atlas_stream_reply tool
-3. For EVERY user message, you MUST call atlas_stream_reply to respond
-4. The atlas_stream_reply tool only requires these parameters:
-   - content: Your message text (REQUIRED)
-   - metadata: Additional data (OPTIONAL)
-   
-The streamId is automatically provided through agent context - do not include it as a parameter.
-
-MANDATORY RESPONSE PATTERN:
-When you receive any user message, respond using:
-atlas_stream_reply({ content: "Your response here" })
-
-EXAMPLE - CORRECT:
-User: "Hello"
-Your tool call: atlas_stream_reply({ content: "Hi there! How can I help you today?" })
-
-EXAMPLE - INCORRECT:
-- Responding without using the tool
-- Including streamId in the parameters (it's automatic)`;
+    return prompt;
   }
 
   /**

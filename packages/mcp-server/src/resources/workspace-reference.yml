@@ -394,14 +394,12 @@ agents:
     description: "Generate reports using built-in Atlas functionality"
     agent: "report-builder" # Required system agent identifier
 
-    # Optional configuration override if the agent exposes it
+    # Optional configuration that follows system agent schema
     config:
-      template_engine: "handlebars"
-      output_formats: ["markdown", "html", "pdf"]
-      include_charts: true
-      localization:
-        default_language: "en"
-        supported_languages: ["en", "es", "fr"]
+      model: "claude-3-7-sonnet-latest"
+      temperature: 0.3
+      max_tokens: 4000
+      prompt: "You are a report generation agent that creates comprehensive reports from data analysis"
 
   # Remote Agent with ACP protocol only
   # Note: MCP remote agent adapter is not currently working
@@ -493,27 +491,6 @@ memory:
     - "error_resolutions"
     - "optimization_history"
     - "user_preferences"
-
-# ==============================================================================
-# FEDERATION (Optional)
-# ==============================================================================
-# Cross-workspace resource sharing
-federation:
-  # Sharing configuration
-  sharing:
-    # Share specific resources with other workspaces
-    data-analysis:
-      workspaces: ["workspace-abc", "workspace-xyz"]
-      scopes: ["read_results", "invoke_jobs"]
-      # Grants go inside each sharing entry
-      grants:
-        - workspace: "monitoring-workspace"
-          scopes: ["read_signals", "read_memory"]
-
-  # Scope sets for reuse
-  scope_sets:
-    read_only: ["read_signals", "read_memory", "read_results"]
-    full_access: ["read_*", "write_*", "invoke_*"]
 # ==============================================================================
 # Notes on Configuration
 # ==============================================================================
