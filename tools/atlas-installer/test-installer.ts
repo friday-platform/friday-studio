@@ -12,9 +12,9 @@
 
 import { assertEquals, assertStringIncludes } from "@std/assert";
 import { existsSync } from "@std/fs";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 
-const INSTALLER_DIR = "/Users/lcf/code/github.com/tempestteam/atlas/tools/atlas-installer";
+const INSTALLER_DIR = dirname(new URL(import.meta.url).pathname);
 
 /**
  * List of JavaScript files that should be validated for consistent module usage
