@@ -281,33 +281,17 @@ ipcMain.handle("install-atlas-binary", async () => {
           const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
           fs.copyFileSync(binarySource, tempInstallPath);
 
-          // Create a custom helper script with proper naming for macOS authorization dialog
-          const helperScript = path.join(os.tmpdir(), "Atlas Installer Helper");
-          const helperContent = `#!/bin/bash
-# Atlas Installer Helper
-# This script installs the Atlas CLI binary to /usr/local/bin/
-mv "${tempInstallPath}" "${installPath}" && chmod 755 "${installPath}"
-`;
-          fs.writeFileSync(helperScript, helperContent);
-          fs.chmodSync(helperScript, 0o755);
-
-          // Use the custom helper script so the dialog shows "Atlas Installer Helper wants to make changes"
+          // Use a simpler approach - directly execute the commands with proper escaping
+          // Note: macOS will always show "osascript" in the dialog when using osascript
           execSync(
-            `osascript -e 'do shell script "${helperScript}" with administrator privileges'`,
+            `osascript -e 'do shell script "mv \\"${tempInstallPath}\\" \\"${installPath}\\" && chmod 755 \\"${installPath}\\"" with administrator privileges with prompt "Atlas Installer needs administrator access to install the CLI binary to /usr/local/bin/"'`,
           );
-
-          // Clean up the helper script
-          fs.unlinkSync(helperScript);
         } catch (execError) {
-          // Clean up temp files if they exist
+          // Clean up temp file if it exists
           const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
-          const helperScript = path.join(os.tmpdir(), "Atlas Installer Helper");
           try {
             if (fs.existsSync(tempInstallPath)) {
               fs.unlinkSync(tempInstallPath);
-            }
-            if (fs.existsSync(helperScript)) {
-              fs.unlinkSync(helperScript);
             }
           } catch (cleanupError) {
             // Ignore cleanup errors
