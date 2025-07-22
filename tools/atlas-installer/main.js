@@ -277,11 +277,25 @@ ipcMain.handle("install-atlas-binary", async () => {
         const { execSync } = require("child_process");
 
         try {
-          // Combine copy and chmod operations into a single privileged command to avoid dual password prompts
+          // Copy binary as current user first to avoid corrupting it with osascript
+          const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
+          fs.copyFileSync(binarySource, tempInstallPath);
+
+          // Then move it to the final location with admin privileges
           execSync(
-            `osascript -e 'do shell script "cp '"'"'${binarySource}'"'"' '"'"'${installPath}'"'"' && chmod 755 '"'"'${installPath}'"'"'" with administrator privileges'`,
+            `osascript -e 'do shell script "mv '${tempInstallPath}' '${installPath}' && chmod 755 '${installPath}'" with administrator privileges'`,
           );
         } catch (execError) {
+          // Clean up temp file if it exists
+          const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
+          try {
+            if (fs.existsSync(tempInstallPath)) {
+              fs.unlinkSync(tempInstallPath);
+            }
+          } catch (cleanupError) {
+            // Ignore cleanup errors
+          }
+
           // Provide more detailed error information
           return {
             success: false,
