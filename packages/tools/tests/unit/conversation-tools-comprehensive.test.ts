@@ -4,29 +4,23 @@
  */
 
 import { assertEquals, assertRejects } from "@std/assert";
-import { conversationTools as mainConversationTools } from "../../src/conversation.ts";
 import { conversationTools as internalConversationTools } from "../../src/internal/conversation.ts";
 import { defaultContext } from "../../src/utils.ts";
 
 Deno.test("Conversation Tools - API Endpoint Compatibility", async (t) => {
-  await t.step("should have consistent tools between main and internal", () => {
-    const mainToolNames = Object.keys(mainConversationTools);
+  await t.step("should have internal conversation tools available", () => {
     const internalToolNames = Object.keys(internalConversationTools);
 
+    // Verify we have the expected tools
     assertEquals(
-      mainToolNames.sort(),
-      internalToolNames.sort(),
-      "Main and internal conversation tools should have the same tool names",
+      internalToolNames.length > 0,
+      true,
+      "Internal conversation tools should be available",
     );
   });
 
   await t.step("should have required properties for all tools", () => {
-    const allTools = {
-      ...mainConversationTools,
-      ...Object.fromEntries(
-        Object.entries(internalConversationTools).map(([key, value]) => [`internal_${key}`, value]),
-      ),
-    };
+    const allTools = internalConversationTools;
 
     for (const [toolName, tool] of Object.entries(allTools)) {
       assertEquals("description" in tool, true, `${toolName} should have description`);
@@ -37,8 +31,8 @@ Deno.test("Conversation Tools - API Endpoint Compatibility", async (t) => {
   });
 });
 
-Deno.test("atlas_stream_reply - Main Tool", async (t) => {
-  const tool = mainConversationTools.atlas_stream_reply;
+Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
+  const tool = internalConversationTools.atlas_stream_reply;
 
   await t.step("should have correct API endpoint format", () => {
     // The tool should target /api/stream/:streamId/emit endpoint
@@ -183,7 +177,7 @@ Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
 });
 
 Deno.test("atlas_conversation_storage - API Endpoint Mapping", async (t) => {
-  const tool = mainConversationTools.atlas_conversation_storage;
+  const tool = internalConversationTools.atlas_conversation_storage;
 
   await t.step("should map operations to correct endpoints", async () => {
     const originalFetch = globalThis.fetch;
@@ -300,7 +294,7 @@ Deno.test("Tool Error Handling", async (t) => {
     try {
       await assertRejects(
         () =>
-          mainConversationTools.atlas_stream_reply.execute({
+          internalConversationTools.atlas_stream_reply.execute({
             streamId: "test-stream",
             content: "Hello",
           }, { toolCallId: "test", messages: [] }),
@@ -310,7 +304,7 @@ Deno.test("Tool Error Handling", async (t) => {
 
       await assertRejects(
         () =>
-          mainConversationTools.atlas_conversation_storage.execute({
+          internalConversationTools.atlas_conversation_storage.execute({
             operation: "store",
             streamId: "test-stream",
             data: { message: "Hello" },
@@ -335,7 +329,7 @@ Deno.test("Tool Error Handling", async (t) => {
     try {
       await assertRejects(
         () =>
-          mainConversationTools.atlas_stream_reply.execute({
+          internalConversationTools.atlas_stream_reply.execute({
             streamId: "test-stream",
             content: "Hello",
           }, { toolCallId: "test", messages: [] }),
@@ -367,7 +361,7 @@ Deno.test("API Response Format Validation", async (t) => {
     };
 
     try {
-      const result = await mainConversationTools.atlas_stream_reply.execute({
+      const result = await internalConversationTools.atlas_stream_reply.execute({
         streamId: "test-stream",
         content: "Hello",
       }, { toolCallId: "test", messages: [] });
@@ -405,7 +399,7 @@ Deno.test("API Response Format Validation", async (t) => {
     };
 
     try {
-      const result = await mainConversationTools.atlas_conversation_storage.execute({
+      const result = await internalConversationTools.atlas_conversation_storage.execute({
         operation: "list",
       }, { toolCallId: "test", messages: [] });
 

@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertRejects } from "@std/assert";
-import { workspaceTools } from "../../src/workspace.ts";
+import { workspaceTools } from "../../src/internal/workspace.ts";
 
 Deno.test("Workspace Tools", async (t) => {
   await t.step("should have all expected tools", () => {

@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertRejects } from "@std/assert";
-import { conversationTools } from "../../src/conversation.ts";
+import { conversationTools } from "../../src/internal/conversation.ts";
 
 Deno.test("Conversation Tools", async (t) => {
   await t.step("should have all expected tools", () => {

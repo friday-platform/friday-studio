@@ -3,7 +3,7 @@
  */
 
 import { assertEquals, assertRejects } from "@std/assert";
-import { filesystemTools } from "../../src/filesystem.ts";
+import { filesystemTools } from "../../src/internal/filesystem.ts";
 
 Deno.test("Filesystem Tools", async (t) => {
   await t.step("should have all expected tools", () => {
