@@ -91,7 +91,6 @@ runs:
           fi
 
           # Function to check if a file is older than cutoff date
-          # GCS URLs contain timestamp in format: atlas_edge-YYYYMMDD-HHMMSS-hash_platform.ext
           cleanup_old_files() {
             local pattern="$1"
             local bucket_path="gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}"
@@ -103,9 +102,21 @@ runs:
                 continue
               fi
 
-              # Extract date from filename (format: atlas_edge-YYYYMMDD-HHMMSS-hash_platform.ext)
-              if [[ "$url" =~ atlas_${CHANNEL}-([0-9]{8})-[0-9]{6}- ]]; then
+              file_date=""
+
+              # Pattern 1: Current format - atlas_edge-YYYYMMDD-HHMMSS-hash_platform.ext or atlas_nightly-YYYYMMDD-hash_platform.ext
+              if [[ "$url" =~ [Aa]tlas_?${CHANNEL}-([0-9]{8})(-[0-9]{6})?-[^_]+_ ]] || [[ "$url" =~ Atlas.*${CHANNEL}-([0-9]{8})(-[0-9]{6})?- ]]; then
                 file_date="${BASH_REMATCH[1]}"
+              # Pattern 2: Old Linux packages - atlas-0.0.0-0.nightly20250716.hash.x86_64.rpm
+              elif [[ "$url" =~ atlas-[^-]+-[^-]+\.${CHANNEL}([0-9]{8})\.[^.]+\. ]]; then
+                file_date="${BASH_REMATCH[1]}"
+              # Pattern 3: Old DEB packages - atlas_0.0.0~nightly20250716.hash_amd64.deb
+              elif [[ "$url" =~ atlas_[^~]+~${CHANNEL}([0-9]{8})\.[^_]+_ ]]; then
+                file_date="${BASH_REMATCH[1]}"
+              fi
+
+              # If we extracted a date, check if it's old enough to remove
+              if [[ -n "$file_date" ]]; then
                 # Convert YYYYMMDD to YYYY-MM-DD for comparison
                 file_date_formatted="${file_date:0:4}-${file_date:4:2}-${file_date:6:2}"
 
@@ -118,8 +129,10 @@ runs:
             done
           }
 
-          # Cleanup all old artifacts
+          # Cleanup all old artifacts (current and legacy naming patterns)
           cleanup_old_files "atlas_${CHANNEL}-*"
+          cleanup_old_files "atlas-*${CHANNEL}*" # Old RPM packages: atlas-0.0.0-0.nightly20250716.hash.x86_64.rpm
+          cleanup_old_files "atlas_*~${CHANNEL}*" # Old DEB packages: atlas_0.0.0~nightly20250716.hash_amd64.deb
 
 
           echo "Production ${{ inputs.bucket-prefix }} cleanup completed"
