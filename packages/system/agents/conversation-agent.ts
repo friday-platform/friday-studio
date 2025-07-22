@@ -16,9 +16,9 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { type SystemAgentConfigObject } from "@atlas/config";
-import { AtlasToolRegistry, getAtlasToolRegistry } from "@atlas/tools";
+import { AtlasToolRegistry, getAtlasToolRegistry, type ToolCategory } from "@atlas/tools";
 import type { TextStreamPart, Tool } from "ai";
-import { streamText, tool } from "ai";
+import { streamText } from "ai";
 import { z } from "zod";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
@@ -27,7 +27,6 @@ const ConversationInputSchema = z.object({
   message: z.string(),
   streamId: z.string().optional(),
   userId: z.string().optional(),
-  conversationId: z.string().optional(), // Legacy field for backward compatibility
 });
 
 interface ConversationAgentControls {
@@ -150,10 +149,14 @@ export class ConversationAgent extends BaseAgent {
    *
    * Flow:
    * 1. Validates input and loads conversation history
-   * 2. Prepares available tools from registry
-   * 3. Executes AI streaming with configured model
-   * 4. Processes stream events (thinking, text, tool calls)
-   * 5. Persists conversation state
+   * 2. Loads tools from multiple sources:
+   *    - Conversation tools (with context injection for streamId/userId)
+   *    - Additional category tools (workspace, signal, library, draft, session)
+   *    - User-configured tools (specified in config.tools)
+   * 3. Merges tools with conversation tools taking precedence for context injection
+   * 4. Executes AI streaming with configured model
+   * 5. Processes stream events (thinking, text, tool calls)
+   * 6. Persists conversation state
    */
   protected async execute(
     input?: unknown,
@@ -194,25 +197,54 @@ export class ConversationAgent extends BaseAgent {
       }
     }
 
-    const tools: Record<string, Tool> = {};
-    for (const toolName of this.config.tools || []) {
-      const tool = this.toolRegistry.getToolByName(toolName);
-      if (tool) {
-        tools[toolName] = tool;
-      } else {
-        this.logger.warn(`Tool not found in registry: ${toolName}`);
+    // Get conversation tools with context injection (streamId, userId automatically handled)
+    const conversationTools = this.toolRegistry.getToolsWithContext("conversation", {
+      streamId,
+      userId,
+    });
+
+    // Get additional tools from multiple categories (without context injection)
+    const additionalToolCategories: ToolCategory[] = [
+      "workspace",
+      "signal",
+      "library",
+      "draft",
+      "session",
+    ];
+    const additionalTools: Record<string, Tool> = {};
+
+    for (const category of additionalToolCategories) {
+      const categoryTools = this.toolRegistry.getToolsByCategory(category);
+      Object.assign(additionalTools, categoryTools);
+    }
+
+    // Get user-configured tools by name if specified
+    const configuredTools: Record<string, Tool> = {};
+    if (this.config.tools && this.config.tools.length > 0) {
+      for (const toolName of this.config.tools) {
+        const tool = this.toolRegistry.getToolByName(toolName);
+        if (tool) {
+          configuredTools[toolName] = tool;
+        } else {
+          this.logger.warn(`Configured tool not found in registry: ${toolName}`);
+        }
       }
     }
 
+    // Merge all tools: conversation (with context) + additional categories + configured tools
+    // Conversation tools take precedence to ensure context injection is preserved
+    const finalTools = {
+      ...additionalTools,
+      ...configuredTools,
+      ...conversationTools, // Last to ensure context injection is preserved
+    };
+
     // atlas_stream_reply is mandatory for sending responses to users
-    if (!tools.atlas_stream_reply) {
+    if (!finalTools.atlas_stream_reply) {
       throw new Error(
         "atlas_stream_reply tool is required for conversation responses but not found in registry",
       );
     }
-
-    // Wrap tools to inject context (especially streamId for atlas_stream_reply)
-    const wrappedTools = this.wrapToolsWithContext(tools, streamId);
 
     const apiKey = Deno.env.get("ANTHROPIC_API_KEY");
     if (!apiKey) {
@@ -222,16 +254,30 @@ export class ConversationAgent extends BaseAgent {
       );
     }
 
-    // Debug: Log the actual tool objects
+    // Debug: Log the comprehensive tool configuration
     this.logger.info("Tool configuration debug", {
-      toolNames: Object.keys(wrappedTools),
-      atlasStreamReplyTool: wrappedTools.atlas_stream_reply
+      totalTools: Object.keys(finalTools).length,
+      conversationToolsCount: Object.keys(conversationTools).length,
+      additionalToolsCount: Object.keys(additionalTools).length,
+      configuredToolsCount: Object.keys(configuredTools).length,
+      toolNames: Object.keys(finalTools),
+      categoryBreakdown: {
+        conversation: Object.keys(conversationTools),
+        additional: Object.keys(additionalTools),
+        configured: Object.keys(configuredTools),
+      },
+      atlasStreamReplyTool: finalTools.atlas_stream_reply
         ? {
-          hasExecute: !!wrappedTools.atlas_stream_reply.execute,
-          hasDescription: !!wrappedTools.atlas_stream_reply.description,
-          hasParameters: !!wrappedTools.atlas_stream_reply.parameters,
+          hasExecute: !!finalTools.atlas_stream_reply.execute,
+          hasDescription: !!finalTools.atlas_stream_reply.description,
+          hasParameters: !!finalTools.atlas_stream_reply.parameters,
+          hasContextInjection: true, // Since it comes from conversation tools
         }
         : null,
+      contextInjected: {
+        streamId: streamId ? "injected" : "not_provided",
+        userId: userId ? "injected" : "not_provided",
+      },
     });
 
     this.logger.info("Calling streamText with configuration", {
@@ -239,15 +285,15 @@ export class ConversationAgent extends BaseAgent {
       systemPromptLength: this.buildSystemPrompt(historyContext).length,
       systemPromptSnippet: this.buildSystemPrompt(historyContext).substring(0, 500),
       messageLength: message.length,
-      toolCount: Object.keys(wrappedTools).length,
-      tools: Object.keys(wrappedTools),
+      toolCount: Object.keys(finalTools).length,
+      tools: Object.keys(finalTools),
     });
 
     const { fullStream, text, reasoning } = streamText({
       model: this.llmProvider("claude-3-7-sonnet-20250219"),
       system: this.buildSystemPrompt(historyContext),
       messages: [{ role: "user", content: message }],
-      tools: wrappedTools,
+      tools: finalTools,
       toolChoice: "auto",
       maxSteps: 20, // Prevents infinite tool loops
       temperature: 0.7,
@@ -330,7 +376,6 @@ export class ConversationAgent extends BaseAgent {
       text: finalText || executionFlow.responseBuffer,
       reasoning: finalReasoning || executionFlow.thinkingBuffer || "",
       executionFlow: executionFlow.steps,
-      response: finalText || executionFlow.responseBuffer, // Backward compatibility
       toolCalls: executionFlow.steps.filter((step) => step.type === "tool_call"),
       conversationMetadata: {
         streamId,
@@ -338,61 +383,6 @@ export class ConversationAgent extends BaseAgent {
         isNewConversation,
       },
     };
-  }
-
-  /**
-   * Wrap tools with context injection
-   */
-  private wrapToolsWithContext(
-    tools: Record<string, Tool>,
-    streamId?: string,
-  ): Record<string, Tool> {
-    const wrappedTools: Record<string, Tool> = {};
-
-    for (const [name, origTool] of Object.entries(tools)) {
-      if (name === "atlas_stream_reply") {
-        // Create a custom tool that doesn't require streamId as a parameter
-        // The AI only needs to provide content and optional metadata
-        wrappedTools[name] = tool({
-          description:
-            "Send a streaming reply to the user. This tool automatically includes the stream ID.",
-          parameters: z.object({
-            content: z.string().describe("The content to send as a streaming reply"),
-            metadata: z.record(z.unknown()).optional().describe(
-              "Optional metadata for the message",
-            ),
-          }),
-          execute: async ({ content, metadata }) => {
-            if (!streamId) {
-              throw new Error(
-                "streamId is required for atlas_stream_reply but was not provided in the conversation context",
-              );
-            }
-
-            this.logger.info(`Executing atlas_stream_reply with injected streamId`, {
-              content: content.substring(0, 100),
-              streamId,
-              hasMetadata: !!metadata,
-            });
-
-            // Call the original tool with all required parameters
-            return await origTool.execute!({
-              streamId,
-              content,
-              metadata,
-            }, {
-              toolCallId: crypto.randomUUID(),
-              messages: [],
-            });
-          },
-        });
-      } else {
-        // Pass through other tools unchanged
-        wrappedTools[name] = origTool;
-      }
-    }
-
-    return wrappedTools;
   }
 
   /**
@@ -413,7 +403,7 @@ CRITICAL INSTRUCTIONS FOR TOOL USAGE:
    - content: Your message text (REQUIRED)
    - metadata: Additional data (OPTIONAL)
    
-DO NOT include streamId - it is automatically handled for you.
+The streamId is automatically provided through agent context - do not include it as a parameter.
 
 MANDATORY RESPONSE PATTERN:
 When you receive any user message, respond using:

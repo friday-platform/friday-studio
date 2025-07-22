@@ -199,5 +199,24 @@ Deno.test("getAtlasToolRegistry function", async (t) => {
 
     // Should be different instances
     assertEquals(defaultRegistry === newRegistry, false);
+
+    // But should have same functionality when newRegistry has tools
+    const fullyConfiguredRegistry = new AtlasToolRegistry({
+      filesystem: defaultRegistry.getToolsByCategory("filesystem"),
+      workspace: defaultRegistry.getToolsByCategory("workspace"),
+      session: defaultRegistry.getToolsByCategory("session"),
+      job: defaultRegistry.getToolsByCategory("job"),
+      signal: defaultRegistry.getToolsByCategory("signal"),
+      agent: defaultRegistry.getToolsByCategory("agent"),
+      library: defaultRegistry.getToolsByCategory("library"),
+      draft: defaultRegistry.getToolsByCategory("draft"),
+      system: defaultRegistry.getToolsByCategory("system"),
+      conversation: defaultRegistry.getToolsByCategory("conversation"),
+    });
+
+    assertEquals(
+      Object.keys(defaultRegistry.getAllTools()).sort(),
+      Object.keys(fullyConfiguredRegistry.getAllTools()).sort(),
+    );
   });
 });

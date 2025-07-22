@@ -165,6 +165,37 @@ Deno.test("handleDaemonResponse", async (t) => {
     );
   });
 
+  await t.step("should validate Content-Type for successful response", async () => {
+    const mockResponse = new Response('{"data": "test"}', {
+      status: 200,
+      headers: { "Content-Type": "text/plain" },
+    });
+
+    await assertRejects(
+      () => handleDaemonResponse(mockResponse),
+      Error,
+      "Unexpected response format from daemon. Expected JSON, got: text/plain",
+    );
+  });
+
+  await t.step("should handle missing Content-Type header", async () => {
+    // Create response without headers to test null case
+    const mockResponse = new Response('{"data": "test"}', {
+      status: 200,
+    });
+
+    // Override the headers to simulate missing Content-Type
+    Object.defineProperty(mockResponse, "headers", {
+      value: { get: () => null },
+    });
+
+    await assertRejects(
+      () => handleDaemonResponse(mockResponse),
+      Error,
+      "Unexpected response format from daemon. Expected JSON, got: unknown",
+    );
+  });
+
   await t.step("should handle empty successful response", async () => {
     const mockResponse = new Response("", {
       status: 200,
@@ -173,7 +204,7 @@ Deno.test("handleDaemonResponse", async (t) => {
     await assertRejects(
       () => handleDaemonResponse(mockResponse),
       Error,
-      "Failed to parse daemon API response",
+      "Unexpected response format from daemon. Expected JSON, got:",
     );
   });
 
@@ -185,7 +216,26 @@ Deno.test("handleDaemonResponse", async (t) => {
     await assertRejects(
       () => handleDaemonResponse(mockResponse),
       Error,
-      "Failed to parse daemon API response",
+      "Unexpected response format from daemon. Expected JSON, got: unknown",
     );
+  });
+
+  await t.step("should work with generic type parameter", async () => {
+    interface TestResponse {
+      id: string;
+      name: string;
+    }
+
+    const mockResponse = new Response(
+      JSON.stringify({ id: "test-id", name: "Test Name" }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
+
+    const result = await handleDaemonResponse<TestResponse>(mockResponse);
+    assertEquals(result.id, "test-id");
+    assertEquals(result.name, "Test Name");
   });
 });

@@ -27,8 +27,12 @@ export {
   AtlasToolRegistry,
   atlasTools,
   getAtlasToolRegistry,
+  type MCPToolsAdapterConfig,
   type ToolCategory,
 } from "./src/registry.ts";
+
+// Export MCP adapter
+export { MCPToolsAdapter } from "./src/external-adapters/index.ts";
 
 // Export individual tool categories
 export {
@@ -42,10 +46,13 @@ export {
   signalTools,
   systemTools,
   workspaceTools,
-} from "./src/registry.ts";
+} from "./src/internal/index.ts";
 
 // Export utilities
 export { defaultContext, fetchWithTimeout, handleDaemonResponse } from "./src/utils.ts";
 
+// Export organized tool categories
+export * as internal from "./src/internal/index.ts";
+export * as externalAdapters from "./src/external-adapters/index.ts";
 // Default export for convenience
 export { atlasTools as default } from "./src/registry.ts";

@@ -24,6 +24,25 @@ These tests verify complete workflows and system interactions:
 - **`config-flow.integration.test.ts`** - Configuration flow validation through actor hierarchy
   (WorkspaceRuntime → WorkspaceSupervisor → SessionSupervisor → AgentExecutionActor)
 
+### MCP Tools Integration Tests
+
+Essential testing of Model Context Protocol (MCP) tools integration:
+
+- **`mcp-tools-integration.test.ts`** - Core MCP tools functionality:
+  - Automatic tools/list requests from MCP servers
+  - Tool conversion to AI SDK Tool[] format
+  - Atlas tools registry integration
+  - LLM provider usage with MCP tools
+  - Combined Atlas + MCP tools functionality
+  - Basic filtering and caching
+
+- **`mcp-tools-edge-cases.test.ts`** - Edge cases and error handling:
+  - Invalid MCP server handling
+  - Empty configuration handling
+  - Registry fallback behavior
+  - Cache invalidation and TTL expiry
+  - Resource cleanup
+
 ### 2. Remote Agents Integration Tests (`/integration-tests/remote-agents/`)
 
 - **`README.md`** - Documentation for remote agents integration tests

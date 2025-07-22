@@ -9,6 +9,8 @@ Atlas Tool Registry for AI SDK compatibility. This package provides all Atlas MC
 - **Registry Management**: Centralized tool registry with flexible access patterns
 - **Type Safe**: Full TypeScript support with proper type inference
 - **Modular**: Import specific categories or individual tools as needed
+- **Extensible**: Support for external tool adapters (MCP, OpenAPI, etc.)
+- **Organized Structure**: Clear separation between internal tools and external adapters
 
 ## Installation
 
@@ -35,7 +37,7 @@ const allTools = registry.getAllTools();
 import { AtlasToolRegistry } from "@atlas/tools";
 
 // Create a new registry instance (useful for testing)
-const customRegistry = new AtlasToolRegistry();
+const customRegistry = new AtlasToolRegistry({});
 const tools = customRegistry.getAllTools();
 ```
 
@@ -53,13 +55,35 @@ const streamReply = conversationTools.atlas_stream_reply;
 ### Import Individual Tools
 
 ```typescript
-import { filesystemTools } from "@atlas/tools/filesystem";
-import { workspaceTools } from "@atlas/tools/workspace";
-import { conversationTools } from "@atlas/tools/conversation";
+import { conversationTools, filesystemTools, workspaceTools } from "@atlas/tools";
+// Or use organized imports
+import { externalAdapters, internal } from "@atlas/tools";
 
 const readTool = filesystemTools.atlas_read;
 const createWorkspace = workspaceTools.atlas_workspace_create;
 const streamReply = conversationTools.atlas_stream_reply;
+
+// Using organized imports
+const fsTools = internal.filesystemTools;
+const mcpAdapter = externalAdapters.MCPToolsAdapter;
+```
+
+### Directory Structure
+
+The tools package is organized into logical directories:
+
+```
+src/
+├── internal/           # Built-in Atlas tools
+│   ├── filesystem.ts   # File system operations
+│   ├── workspace.ts    # Workspace management
+│   ├── session.ts      # Session control
+│   ├── conversation.ts # Chat and streaming
+│   └── ...            # Other tool categories
+├── external-adapters/  # External tool integrations
+│   └── mcp-tools-adapter.ts  # MCP protocol adapter
+├── registry.ts        # Main tool registry
+└── utils.ts          # Shared utilities
 ```
 
 ### Using the Registry
@@ -183,6 +207,113 @@ import { defaultContext } from "@atlas/tools/utils";
 
 // Configure daemon URL (default: http://localhost:3000)
 defaultContext.daemonUrl = "http://your-daemon:3000";
+```
+
+## MCP Tools Integration
+
+The `@atlas/tools` package now supports automatic MCP (Model Context Protocol) tools integration. MCP servers expose tools via the `tools/list` request, and this package automatically converts them to AI SDK compatible Tools.
+
+### Basic MCP Tools Usage
+
+```typescript
+import { MCPToolsAdapter } from "@atlas/tools";
+
+// Get tools from MCP servers as AI SDK Tools array
+const adapter = new MCPToolsAdapter();
+const result = await adapter.getTools({ mcpServers: ["my-mcp-server"] });
+
+if (!result.success) {
+  throw new Error(`Failed to fetch MCP tools: ${result.error.message}`);
+}
+
+const mcpTools = [...result.data];
+
+// Use with LLM Provider
+const response = await LLMProvider.generateText(
+  "Help me analyze this data",
+  {
+    model: "claude-3-sonnet-20240229",
+    tools: mcpTools, // Pass as Tools array
+  },
+);
+```
+
+### Advanced MCP Tools with Filtering
+
+```typescript
+import { MCPToolsAdapter, type MCPToolsAdapterConfig } from "@atlas/tools";
+
+const config: MCPToolsAdapterConfig = {
+  mcpServers: ["server1", "server2"],
+  filters: {
+    // Only include tools matching these patterns
+    include: [/^data_/, /^analysis_/],
+    // Exclude dangerous tools
+    exclude: [/delete/, /destroy/],
+  },
+  cache: {
+    enabled: true,
+    ttl: 10 * 60 * 1000, // 10 minutes
+    maxSize: 100,
+  },
+};
+
+const adapter = new MCPToolsAdapter();
+const result = await adapter.getTools(config);
+
+if (!result.success) {
+  throw new Error(`Failed to fetch MCP tools: ${result.error.message}`);
+}
+
+const mcpTools = [...result.data];
+```
+
+### Combined Atlas and MCP Tools
+
+```typescript
+import { getAtlasToolRegistry } from "@atlas/tools";
+
+const registry = getAtlasToolRegistry();
+
+// Get both Atlas tools and MCP tools
+const result = await registry.getAllToolsWithMCP({
+  mcpServers: ["my-mcp-server"],
+  filters: {
+    include: [/^custom_/], // Only custom MCP tools
+  },
+});
+
+// result.atlasTools - Static Atlas tools (Record<string, Tool>)
+// result.mcpTools - Dynamic MCP tools (Tool[])
+// result.combined - Merged tools object (Record<string, Tool>)
+
+// Use with LLM Provider
+const response = await LLMProvider.generateText("Process workflow", {
+  model: "claude-3-sonnet-20240229",
+  tools: result.combined, // Combined Atlas + MCP tools
+});
+```
+
+### MCP Tools Registry Methods
+
+```typescript
+const registry = getAtlasToolRegistry();
+
+// Get MCP tools only
+const mcpTools = await registry.getMCPTools({
+  mcpServers: ["server1", "server2"],
+  filters: { include: [/^api_/] },
+});
+
+// Get combined tools with automatic fallback
+try {
+  const tools = await registry.getAllToolsWithMCP({
+    mcpServers: ["primary-server"],
+  });
+} catch (error) {
+  // Falls back to Atlas tools only if MCP fails
+  const tools = registry.getAllTools();
+}
 ```
 
 ## Error Handling
