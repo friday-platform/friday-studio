@@ -17,6 +17,9 @@ inputs:
   binary-path:
     description: "Path to the binary to package"
     required: true
+  binary-name:
+    description: "Name of the binary file"
+    required: true
   macos-installer-p12:
     description: "Base64 encoded P12 certificate for installer signing"
     required: false
@@ -69,13 +72,13 @@ runs:
         # Create a staging directory for the installer
         mkdir -p tools/atlas-installer/atlas-binary
 
-        # Copy the binary to the installer directory
-        cp "${{ inputs.binary-path }}" "tools/atlas-installer/atlas-binary/atlas"
+        # Copy the binary to the installer directory with correct name
+        cp "${{ inputs.binary-path }}" "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
 
         # Make sure it's executable
-        chmod +x "tools/atlas-installer/atlas-binary/atlas"
+        chmod +x "tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
 
-        echo "Binary prepared for installer at: tools/atlas-installer/atlas-binary/atlas"
+        echo "Binary prepared for installer at: tools/atlas-installer/atlas-binary/${{ inputs.binary-name }}"
 
     - name: Verify installer has real binary integration
       shell: bash
@@ -88,11 +91,11 @@ runs:
         echo "Installer main.js already has install-atlas-binary handler"
 
         # Verify the binary exists
-        if [ -f "atlas-binary/atlas" ]; then
+        if [ -f "atlas-binary/${{ inputs.binary-name }}" ]; then
           echo "Atlas binary found and ready for installation"
-          ls -la atlas-binary/atlas
+          ls -la "atlas-binary/${{ inputs.binary-name }}"
         else
-          echo "Atlas binary not found"
+          echo "Atlas binary not found: atlas-binary/${{ inputs.binary-name }}"
           exit 1
         fi
 

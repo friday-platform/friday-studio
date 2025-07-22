@@ -130,6 +130,7 @@ jobs:
           arch: ${{ matrix.arch }}
           channel: release
           binary-path: ${{ steps.build.outputs.binary-path }}
+          binary-name: ${{ steps.build.outputs.binary-name }}
           macos-installer-p12: ${{ secrets.MACOS_INSTALLER_P12 }}
           macos-installer-password: ${{ secrets.MACOS_INSTALLER_PASSWORD }}
           macos-notary-issuer-id: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
