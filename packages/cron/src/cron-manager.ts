@@ -255,11 +255,11 @@ export class CronManager {
         throw error;
       }
 
-      // Store in memory first, then persist
-      this.timers.set(timerKey, timerInfo);
-
-      // Persist to storage
+      // Persist to storage first, then store in memory
       await this.persistTimer(timerKey, timerInfo);
+
+      // Store in memory only after successful persistence
+      this.timers.set(timerKey, timerInfo);
 
       // Schedule if cron manager is running
       if (this.isRunning && !this.isShuttingDown) {
