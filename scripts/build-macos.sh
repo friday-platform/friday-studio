@@ -54,6 +54,7 @@ deno compile \
   --unstable-otel \
   --include=src \
   --include=examples \
+  --include=packages \
   --output "${DIST_DIR}/${BINARY_NAME}" \
   ./src/cli.tsx
 

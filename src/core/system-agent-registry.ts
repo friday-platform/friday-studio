@@ -3,11 +3,13 @@
  * Discovers and manages system agents from packages/system/agents/
  */
 
-import { join } from "@std/path";
-import { exists } from "@std/fs";
 import { BaseAgent } from "./agents/base-agent-v2.ts";
 import { AtlasLogger } from "../utils/logger.ts";
 import { z } from "zod/v4";
+
+// Static imports for system agents - embedded at compile time
+import { ConversationAgent } from "../../packages/system/agents/conversation-agent.ts";
+import { FactExtractor } from "../../packages/system/agents/fact-extractor.ts";
 
 // Zod schema for agent ID validation
 const AgentIdSchema = z.string().regex(
@@ -56,8 +58,8 @@ export class SystemAgentRegistry {
     this.kvStorage = kvStorage;
     this.logger.info("Initializing system agent registry...");
 
-    // Discover agents from packages/system/agents/
-    await this.discoverAgents();
+    // Register system agents - embedded at compile time
+    this.discoverAgents();
 
     // Store agent metadata in KV
     await this.storeAgentMetadata();
@@ -69,44 +71,18 @@ export class SystemAgentRegistry {
   }
 
   /**
-   * Discover agents from packages/system/agents/ directory
+   * Register system agents statically - works in compiled binaries
    */
-  private static async discoverAgents(): Promise<void> {
-    const agentsDir = join(Deno.cwd(), "packages", "system", "agents");
-
+  private static discoverAgents(): void {
     try {
-      if (!(await exists(agentsDir))) {
-        this.logger.warn("System agents directory not found", { agentsDir });
-        return;
-      }
+      // Register all system agents - these are embedded at compile time
+      const systemAgents: SystemAgentConstructor[] = [
+        ConversationAgent,
+        FactExtractor,
+      ];
 
-      // Read directory contents
-      for await (const entry of Deno.readDir(agentsDir)) {
-        if (entry.isFile && entry.name.endsWith(".ts")) {
-          await this.loadAgent(agentsDir, entry.name);
-        }
-      }
-    } catch (error) {
-      this.logger.error("Failed to discover system agents", {
-        error: error instanceof Error ? error.message : String(error),
-        agentsDir,
-      });
-    }
-  }
-
-  /**
-   * Load a single agent file
-   */
-  private static async loadAgent(agentsDir: string, filename: string): Promise<void> {
-    try {
-      const agentPath = join(agentsDir, filename);
-      const agentModule = await import(`file://${agentPath}`);
-
-      // Look for agent classes in the module
-      for (const exportName of Object.keys(agentModule)) {
-        const agentClass = agentModule[exportName];
-
-        // Check if it's a valid agent class
+      for (const agentClass of systemAgents) {
+        // Validate it's a proper agent class
         if (
           typeof agentClass === "function" &&
           agentClass.prototype instanceof BaseAgent &&
@@ -116,18 +92,16 @@ export class SystemAgentRegistry {
 
           if (metadata.type === "system") {
             this.agents.set(metadata.id, agentClass);
-            this.logger.info("Discovered system agent", {
+            this.logger.info("Registered system agent", {
               id: metadata.id,
               name: metadata.name,
               version: metadata.version,
-              file: filename,
             });
           }
         }
       }
     } catch (error) {
-      this.logger.error("Failed to load agent", {
-        filename,
+      this.logger.error("Failed to register system agents", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
