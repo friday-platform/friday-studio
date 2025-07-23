@@ -63,8 +63,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     streamMessages: true,
     conversationDisplay: {
       showReasoningSteps: true,
-      showToolCalls: false,
-      showToolResults: false,
+      showToolCalls: true,
+      showToolResults: true,
     },
   });
   const [mcpClient, setMcpClient] = useState<Client | null>(null);

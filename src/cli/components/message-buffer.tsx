@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Box, Text, useStdout } from "ink";
-// import { Spinner } from "@inkjs/ui";
+import { Box, Text } from "ink";
 import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
@@ -8,15 +7,6 @@ import { GitDiff } from "./git-diff.tsx";
 import { MultiSelect } from "./multi-select.tsx";
 import { MarkdownDisplay } from "./markdown-display.tsx";
 import { DirectoryTree } from "./directory-tree.tsx";
-
-// Define SSE event schemas
-// const MessageChunkEventSchema = z.object({
-//   type: z.literal("message_chunk"),
-//   data: z.object({
-//     content: z.string(),
-//     partial: z.boolean().optional(),
-//   }),
-// });
 
 const MessageEventSchema = z.object({
   type: z.literal("text"),
@@ -145,27 +135,6 @@ function generateTimestamp() {
     .replace(/\s/g, "");
 }
 
-function combineTextChunks(previousContent: string, newContent: string): string {
-  if (!previousContent) return newContent;
-
-  // Check if we need a space after punctuation
-  const endsWithPunctuation = /[.!?:;,]$/.test(previousContent.trim());
-  const startsWithLetter = /^[a-zA-Z]/.test(newContent.trim());
-
-  if (endsWithPunctuation && startsWithLetter) {
-    return previousContent + " " + newContent;
-  }
-
-  // General case: add space if no whitespace at boundary
-  const needsSpace = !previousContent.match(/\s$/) &&
-    !newContent.match(/^\s/) &&
-    previousContent.length > 0;
-
-  return previousContent + (needsSpace ? " " : "") + newContent;
-}
-
-// type SSEEvent = z.infer<typeof SSEEventSchema>;
-
 export const MessageBuffer = () => {
   const {
     config,
@@ -181,6 +150,34 @@ export const MessageBuffer = () => {
   const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
     null,
   );
+
+  // Ends currently streaming messages and sets a newline
+  function carriageReturnBuffer() {
+    setTypingState((prev) => ({ ...prev, isTyping: false }));
+
+    // Finalize the current streaming message
+    const thinkingId = `thinking-response`;
+    const finalThinkingId = `response-complete-${Date.now()}`;
+
+    const messageId = `message-response`;
+    const finalMessageId = `message-received-${Date.now()}`;
+
+    setOutputBuffer((prev) => {
+      return prev.map((entry) => {
+        // Only finalize thinking if it was actually displayed
+        if (
+          entry.id === thinkingId &&
+          config.conversationDisplay.showReasoningSteps
+        ) {
+          return { ...entry, id: finalThinkingId };
+        }
+        if (entry.id === messageId) {
+          return { ...entry, id: finalMessageId };
+        }
+        return entry;
+      });
+    });
+  }
 
   // Create SSE stream when conversation session is ready
   useEffect(() => {
@@ -241,7 +238,7 @@ export const MessageBuffer = () => {
                   prev.find((entry) => entry.id === streamingId),
                 ];
                 const previousContent = previousOutput?.content ?? "";
-                const newContent = combineTextChunks(previousContent, content);
+                const newContent = previousContent + content; //combineTextChunks(previousContent, content);
                 return [
                   ...filtered,
                   {
@@ -253,9 +250,7 @@ export const MessageBuffer = () => {
                         authorColor="blue"
                         date={generateTimestamp()}
                       >
-                        <MarkdownDisplay
-                          content={newContent}
-                        />
+                        <MarkdownDisplay content={newContent} />
                       </ChatMessage>
                     ),
                   },
@@ -380,6 +375,8 @@ export const MessageBuffer = () => {
             }
 
             case "tool_call": {
+              carriageReturnBuffer();
+
               const { toolName, args, toolCallId } = sseEvent.data;
 
               // Skip if tool calls are disabled in user preferences
@@ -395,13 +392,21 @@ export const MessageBuffer = () => {
                 ...prev,
                 {
                   id: `tool-call-${toolCallId || Date.now()}`,
-                  component: <MarkdownDisplay content={fullContent} dimColor />,
+                  component: (
+                    <MarkdownDisplay
+                      content={fullContent}
+                      dimColor
+                      showCollapsible
+                    />
+                  ),
                 },
               ]);
               break;
             }
 
             case "tool_result": {
+              carriageReturnBuffer();
+
               const { toolName, result, toolCallId } = sseEvent.data;
 
               // Skip if tool results are disabled in user preferences
@@ -417,7 +422,13 @@ export const MessageBuffer = () => {
                 ...prev,
                 {
                   id: `tool-result-${toolCallId || Date.now()}`,
-                  component: <MarkdownDisplay content={fullContent} dimColor />,
+                  component: (
+                    <MarkdownDisplay
+                      content={fullContent}
+                      dimColor
+                      showCollapsible
+                    />
+                  ),
                 },
               ]);
               break;
@@ -440,7 +451,7 @@ export const MessageBuffer = () => {
                   prev.find((entry) => entry.id === streamingMessageId),
                 ];
                 const previousContent = previousOutput?.content ?? "";
-                const newContent = combineTextChunks(previousContent, content);
+                const newContent = previousContent + content; // combineTextChunks(previousContent, content);
                 return [
                   ...filtered,
                   {
@@ -448,6 +459,7 @@ export const MessageBuffer = () => {
                     content: newContent,
                     component: (
                       <MarkdownDisplay
+                        showCollapsible
                         content={newContent}
                         dimColor
                       />
@@ -460,26 +472,8 @@ export const MessageBuffer = () => {
             }
 
             case "finish": {
-              setTypingState((prev) => ({ ...prev, isTyping: false }));
-              // Finalize the current streaming message
-              const thinkingId = `thinking-response`;
-              const finalThinkingId = `response-complete-${Date.now()}`;
+              carriageReturnBuffer();
 
-              const messageId = `message-response`;
-              const finalMessageId = `message-received-${Date.now()}`;
-
-              setOutputBuffer((prev) => {
-                return prev.map((entry) => {
-                  // Only finalize thinking if it was actually displayed
-                  if (entry.id === thinkingId && config.conversationDisplay.showReasoningSteps) {
-                    return { ...entry, id: finalThinkingId };
-                  }
-                  if (entry.id === messageId) {
-                    return { ...entry, id: finalMessageId };
-                  }
-                  return entry;
-                });
-              });
               break;
             }
           }
@@ -512,6 +506,16 @@ export const MessageBuffer = () => {
     config.streamMessages,
   ]);
 
+  {
+    /* {config.streamMessages
+              ? <Spinner label={typingState.message || "Typing..."} />
+              : (
+                <Spinner
+                  label={`${typingState.message || "Typing..."} (${typingState.elapsedSeconds}s)`}
+                />
+              )} */
+  }
+
   return outputBuffer.length > 0
     ? (
       <Box flexDirection="column" gap={1}>
@@ -523,15 +527,6 @@ export const MessageBuffer = () => {
         {typingState.isTyping && (
           <Box>
             <Text>Thinking...</Text>
-            {
-              /* {config.streamMessages
-              ? <Spinner label={typingState.message || "Typing..."} />
-              : (
-                <Spinner
-                  label={`${typingState.message || "Typing..."} (${typingState.elapsedSeconds}s)`}
-                />
-              )} */
-            }
           </Box>
         )}
       </Box>
