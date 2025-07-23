@@ -9,6 +9,17 @@ import type { MemoryStream, StreamingConfig } from "../src/streaming/memory-stre
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
 
+// Helper to create memory manager with immediate commits for tests
+function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+  return new CoALAMemoryManager(
+    scope,
+    adapter,
+    enableCognitiveLoop,
+    undefined,
+    { commitDebounceDelay: 0 }, // Immediate commits for tests
+  );
+}
+
 // Mock scope for testing
 class MockScope {
   public id = "test-scope-id";
@@ -241,7 +252,7 @@ Deno.test("AsyncMemoryQueue - capacity management", async () => {
 Deno.test("StreamingMemoryManager - basic streaming operations", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -271,12 +282,16 @@ Deno.test("StreamingMemoryManager - basic streaming operations", async () => {
   // Check queue is empty after flushing
   const status = manager.getStatus();
   expect(status.queueSize).toBe(0);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - batch streaming", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 3,
@@ -316,12 +331,16 @@ Deno.test("StreamingMemoryManager - batch streaming", async () => {
   // Check queue is empty after flushing
   const status = manager.getStatus();
   expect(status.queueSize).toBe(0);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - episodic event streaming", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -351,12 +370,16 @@ Deno.test("StreamingMemoryManager - episodic event streaming", async () => {
   // Check queue is empty after flushing
   const status = manager.getStatus();
   expect(status.queueSize).toBe(0);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - performance tracking", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -396,12 +419,16 @@ Deno.test("StreamingMemoryManager - performance tracking", async () => {
 
   expect(status.metrics).toBeDefined();
   expect(status.queueSize).toBe(0);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - dual write mode", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -437,12 +464,16 @@ Deno.test("StreamingMemoryManager - dual write mode", async () => {
   // Enable dual write
   manager.enableDualWrite();
   expect(manager.getStatus().config.dual_write_enabled).toBe(true);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - error recovery", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -473,12 +504,16 @@ Deno.test("StreamingMemoryManager - error recovery", async () => {
   const status = manager.getStatus();
   expect(status.queueSize).toBe(0);
   expect(status.isProcessing).toBe(true);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });
 
 Deno.test("StreamingMemoryManager - cleanup", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -508,12 +543,15 @@ Deno.test("StreamingMemoryManager - cleanup", async () => {
   // After shutdown, manager should be inactive
   const status = manager.getStatus();
   expect(status.isProcessing).toBe(false);
+
+  // Cleanup
+  await memory.dispose();
 });
 
 Deno.test("StreamingMemoryManager - session completion", async () => {
   const scope = new MockScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope as any, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope as any, memoryAdapter);
   const manager = new StreamingMemoryManager(memory, {
     queue_max_size: 100,
     batch_size: 10,
@@ -544,4 +582,8 @@ Deno.test("StreamingMemoryManager - session completion", async () => {
   // Check queue is empty after flushing
   const status = manager.getStatus();
   expect(status.queueSize).toBe(0);
+
+  // Cleanup
+  await memory.dispose();
+  await manager.shutdown();
 });

@@ -72,7 +72,11 @@ export class AtlasScope implements IAtlasScope {
     this.parentScopeId = actualParentScopeId;
     this.supervisor = actualSupervisor;
     this.context = new ContextManager();
-    this.memory = new CoALAMemoryManager(this, actualStorageAdapter, actualEnableCognitiveLoop);
+    this.memory = new CoALAMemoryManager(
+      this,
+      actualStorageAdapter,
+      actualEnableCognitiveLoop,
+    );
     this.messages = new MessageManager();
     this.prompts = {
       system: "",

@@ -46,8 +46,9 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
 
     // Initialize memory manager with defaults
     this.memory = new CoALAMemoryManager(
-      this.id,
-      false, // Default to non-streaming
+      this, // Pass the agent as scope
+      undefined, // Use default storage adapter
+      false, // Disable cognitive loop
     );
 
     // Initialize logger

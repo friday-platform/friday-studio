@@ -6,9 +6,19 @@ import { InMemoryStorageAdapter } from "@atlas/storage";
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
 
+// Helper to create memory manager with immediate commits for tests
+function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+  return new CoALAMemoryManager(
+    scope,
+    adapter,
+    enableCognitiveLoop,
+    { commitDebounceDelay: 0 }, // Immediate commits for tests
+  );
+}
+
 Deno.test("CoALAMemoryManager - basic memory operations", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Test storing and retrieving memory
   memory.remember("test-key", "test-value");
@@ -17,12 +27,12 @@ Deno.test("CoALAMemoryManager - basic memory operations", async () => {
   expect(retrieved).toBe("test-value");
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory with metadata", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Test storing memory with metadata
   memory.rememberWithMetadata("test-key", "test-value", {
@@ -37,12 +47,12 @@ Deno.test("CoALAMemoryManager - memory with metadata", async () => {
   expect(retrieved).toBe("test-value");
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory queries", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store multiple memories
   memory.rememberWithMetadata("key1", "value1", {
@@ -71,12 +81,12 @@ Deno.test("CoALAMemoryManager - memory queries", async () => {
   expect(memories).toHaveLength(2);
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory by type", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store memories of different types
   memory.rememberWithMetadata("episodic1", "episodic value", {
@@ -105,12 +115,12 @@ Deno.test("CoALAMemoryManager - memory by type", async () => {
   expect(semanticMemories[0].content).toBe("semantic value");
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - forgetting memories", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store a memory
   memory.remember("forget-me", "temporary value");
@@ -127,12 +137,12 @@ Deno.test("CoALAMemoryManager - forgetting memories", async () => {
   expect(retrieved).toBeUndefined();
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - cognitive loop reflection", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store some memories and access them multiple times to trigger reflection criteria
   memory.rememberWithMetadata("reflect1", "reflection value 1", {
@@ -176,12 +186,12 @@ Deno.test("CoALAMemoryManager - cognitive loop reflection", async () => {
   expect(reflections.every((r) => r.tags.includes("reflection"))).toBe(true);
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory consolidation", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store similar memories
   for (let i = 0; i < 5; i++) {
@@ -198,12 +208,12 @@ Deno.test("CoALAMemoryManager - memory consolidation", async () => {
   expect(() => memory.consolidate()).not.toThrow();
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory pruning", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store memories with different decay rates
   memory.rememberWithMetadata("fast-decay", "fast decaying memory", {
@@ -226,12 +236,12 @@ Deno.test("CoALAMemoryManager - memory pruning", async () => {
   expect(() => memory.prune()).not.toThrow();
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory adaptation", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store a memory
   memory.rememberWithMetadata("adapt-me", "adaptable memory", {
@@ -247,23 +257,23 @@ Deno.test("CoALAMemoryManager - memory adaptation", async () => {
   expect(() => memory.adapt(feedback)).not.toThrow();
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });
 
 Deno.test("CoALAMemoryManager - memory disposal", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store a memory
   memory.remember("dispose-test", "test value");
 
   // Dispose should not throw
-  expect(() => memory.dispose()).not.toThrow();
+  await expect(memory.dispose()).resolves.not.toThrow();
 });
 
 Deno.test("CoALAMemoryManager - memory serialization", async () => {
   const scope = new AtlasScope();
-  const memory = new CoALAMemoryManager(scope, new InMemoryStorageAdapter(), false);
+  const memory = createTestMemoryManager(scope, new InMemoryStorageAdapter());
 
   // Store complex data
   const complexData = {
@@ -278,5 +288,5 @@ Deno.test("CoALAMemoryManager - memory serialization", async () => {
   expect(retrieved).toEqual(complexData);
 
   // Cleanup
-  memory.dispose();
+  await memory.dispose();
 });

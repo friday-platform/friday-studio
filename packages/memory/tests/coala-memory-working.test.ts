@@ -93,12 +93,22 @@ globalThis.clearInterval = (() => {}) as any;
 const originalConsoleWarn = console.warn;
 console.warn = () => {};
 
+// Helper to create memory manager with immediate commits for tests
+function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+  return new CoALAMemoryManager(
+    scope,
+    adapter,
+    enableCognitiveLoop,
+    { commitDebounceDelay: 0 }, // Immediate commits for tests
+  );
+}
+
 Deno.test("CoALAMemoryManager - basic instantiation", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
   // Should be able to create without throwing
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
   expect(memory).toBeDefined();
 });
 
@@ -106,7 +116,7 @@ Deno.test("CoALAMemoryManager - remember and recall", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Test basic remember/recall
   memory.remember("test-key", "test-value");
@@ -119,7 +129,7 @@ Deno.test("CoALAMemoryManager - remember with metadata", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Test remember with metadata
   memory.rememberWithMetadata("metadata-key", "metadata-value", {
@@ -138,7 +148,7 @@ Deno.test("CoALAMemoryManager - query memories", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add some memories
   memory.rememberWithMetadata("semantic-1", "semantic content 1", {
@@ -174,7 +184,7 @@ Deno.test("CoALAMemoryManager - get memories by type", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add memories of different types
   memory.rememberWithMetadata("episodic-1", "episodic content", {
@@ -202,7 +212,7 @@ Deno.test("CoALAMemoryManager - forget memories", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add a memory
   memory.remember("forget-me", "temporary content");
@@ -223,7 +233,7 @@ Deno.test("CoALAMemoryManager - cognitive loop methods", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add some memories for reflection
   memory.rememberWithMetadata("reflect-1", "reflection content 1", {
@@ -253,7 +263,7 @@ Deno.test("CoALAMemoryManager - memory access patterns", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add a memory
   memory.remember("access-test", "access content");
@@ -273,14 +283,14 @@ Deno.test("CoALAMemoryManager - disposal", async () => {
   const scope = new MockAtlasScope();
   const adapter = new InMemoryStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope as any, adapter as any, false);
+  const memory = createTestMemoryManager(scope as any, adapter as any);
 
   // Add some memories
   memory.remember("dispose-test-1", "content 1");
   memory.remember("dispose-test-2", "content 2");
 
   // Dispose should not throw
-  expect(() => memory.dispose()).not.toThrow();
+  await expect(memory.dispose()).resolves.not.toThrow();
 });
 
 // Cleanup after tests

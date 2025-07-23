@@ -90,14 +90,25 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     CoALAMemoryType.SEMANTIC,
     CoALAMemoryType.PROCEDURAL,
   ]);
+  private commitDebounceTimer?: number;
+  private commitDebounceDelay = 500; // 500ms debounce
+  private pendingCommit = false;
 
   constructor(
     scope: IAtlasScope,
     storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
-    vectorSearchConfig?: Partial<VectorSearchConfig>,
+    options?: {
+      vectorSearchConfig?: Partial<VectorSearchConfig>;
+      commitDebounceDelay?: number;
+    },
   ) {
     this.scope = scope;
+
+    // Allow override of debounce delay (e.g., set to 0 for tests)
+    if (options?.commitDebounceDelay !== undefined) {
+      this.commitDebounceDelay = options.commitDebounceDelay;
+    }
 
     // Use CoALA storage adapter if provided, otherwise create new one
     if (storageAdapter && "commitByType" in storageAdapter) {
@@ -125,7 +136,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       if (this.store.constructor.name !== "InMemoryStorageAdapter") {
         this.loadFromStorage();
         // Initialize vector search if enabled
-        this.initializeVectorSearch(vectorSearchConfig);
+        this.initializeVectorSearch(options?.vectorSearchConfig);
       }
 
       if (enableCognitiveLoop) {
@@ -199,7 +210,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       });
     }
 
-    this.commitToStorage();
+    this.debouncedCommitToStorage();
   }
 
   queryMemories(query: CoALAMemoryQuery): CoALAMemoryEntry[] {
@@ -280,7 +291,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       }
     }
 
-    this.commitToStorage();
+    this.debouncedCommitToStorage();
   }
 
   prune(): void {
@@ -311,7 +322,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       }
     }
 
-    this.commitToStorage();
+    this.debouncedCommitToStorage();
   }
 
   adapt(feedback: { memoryId: string; relevanceAdjustment: number }): void {
@@ -374,7 +385,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         });
       }
     }
-    this.commitToStorage();
+    this.debouncedCommitToStorage();
   }
 
   // Private helper methods
@@ -453,7 +464,36 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     }, this.cognitiveLoopInterval);
   }
 
+  private debouncedCommitToStorage(): void {
+    // If delay is 0, commit immediately (useful for tests)
+    if (this.commitDebounceDelay === 0) {
+      this.commitToStorage().catch((error) => {
+        console.error("Failed to commit memory to storage:", error);
+      });
+      return;
+    }
+
+    // Mark that we have a pending commit
+    this.pendingCommit = true;
+
+    // Clear any existing timer
+    if (this.commitDebounceTimer) {
+      clearTimeout(this.commitDebounceTimer);
+    }
+
+    // Set a new timer to commit after the delay
+    this.commitDebounceTimer = setTimeout(() => {
+      if (this.pendingCommit) {
+        this.commitToStorage().catch((error) => {
+          console.error("Failed to commit memory to storage:", error);
+        });
+      }
+    }, this.commitDebounceDelay);
+  }
+
   private async commitToStorage(): Promise<void> {
+    // Clear the pending flag
+    this.pendingCommit = false;
     // Organize memories by type for multi-file storage
     const dataByType: Record<string, any> = {};
 
@@ -1650,9 +1690,22 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   // Cleanup
-  dispose(): void {
+  async dispose(): Promise<void> {
+    // Stop cognitive loop
     if (this.loopTimer) {
       clearInterval(this.loopTimer);
+      this.loopTimer = undefined;
+    }
+
+    // Clear debounce timer
+    if (this.commitDebounceTimer) {
+      clearTimeout(this.commitDebounceTimer);
+      this.commitDebounceTimer = undefined;
+    }
+
+    // Flush any pending commits
+    if (this.pendingCommit) {
+      await this.commitToStorage();
     }
   }
 }

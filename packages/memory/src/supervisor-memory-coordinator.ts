@@ -37,7 +37,7 @@ export class SupervisorMemoryCoordinator {
     workspace: IAtlasScope,
     filteringPolicy?: MemoryFilteringPolicy,
   ) {
-    this.workspaceMemory = new CoALAMemoryManager(workspace);
+    this.workspaceMemory = new CoALAMemoryManager(workspace, undefined, true);
     this.consolidator = new WorkspaceMemoryConsolidator(this.workspaceMemory);
     this.filteringPolicy = filteringPolicy || new DefaultMemoryFilteringPolicy();
   }

@@ -245,9 +245,11 @@ export class AtlasMemoryOperations implements MemoryOperations {
         undefined, // Use default storage
         false, // Disable cognitive loop
         {
-          autoIndexOnWrite: true,
-          batchSize: 10,
-          similarityThreshold: 0.3,
+          vectorSearchConfig: {
+            autoIndexOnWrite: true,
+            batchSize: 10,
+            similarityThreshold: 0.3,
+          },
         },
       );
     }

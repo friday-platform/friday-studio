@@ -11,12 +11,23 @@ import { MockAtlasScope, MockKnowledgeGraphStorageAdapter } from "./mocks/storag
 // Set testing environment to prevent logger file operations
 Deno.env.set("DENO_TESTING", "true");
 
+// Helper to create memory manager with immediate commits for tests
+function createTestMemoryManager(scope: any, adapter: any, enableCognitiveLoop = false) {
+  return new CoALAMemoryManager(
+    scope,
+    adapter,
+    enableCognitiveLoop,
+    undefined,
+    { commitDebounceDelay: 0 }, // Immediate commits for tests
+  );
+}
+
 Deno.test("Integration - CoALA memory with knowledge graph", async () => {
   const scope = new MockAtlasScope();
   const memoryAdapter = new InMemoryStorageAdapter();
   const kgAdapter = new MockKnowledgeGraphStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const kg = new KnowledgeGraphManager(kgAdapter, scope.id);
 
   // Store a memory that should create knowledge graph entries
@@ -76,12 +87,15 @@ Deno.test("Integration - CoALA memory with knowledge graph", async () => {
 
   const relationships = await kgAdapter.queryRelationships({ workspaceId: scope.id });
   expect(relationships).toHaveLength(1);
+
+  // Cleanup
+  await memory.dispose();
 });
 
 Deno.test("Integration - memory operations with different types", async () => {
   const scope = new MockAtlasScope();
   const memoryAdapter = new InMemoryStorageAdapter();
-  const memory = new CoALAMemoryManager(scope, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
 
   // Store different types of memories
   const complexMemories = [
@@ -142,6 +156,9 @@ Deno.test("Integration - memory operations with different types", async () => {
 
   expect(taggedMemories).toHaveLength(1);
   expect(taggedMemories[0].tags).toContain("debugging");
+
+  // Cleanup
+  await memory.dispose();
 });
 
 Deno.test("Integration - knowledge graph operations", async () => {
@@ -222,7 +239,7 @@ Deno.test("Integration - memory and knowledge graph together", async () => {
   const memoryAdapter = new InMemoryStorageAdapter();
   const kgAdapter = new MockKnowledgeGraphStorageAdapter();
 
-  const memory = new CoALAMemoryManager(scope, memoryAdapter, false);
+  const memory = createTestMemoryManager(scope, memoryAdapter);
   const kg = new KnowledgeGraphManager(kgAdapter, scope.id);
 
   // Store related information in both systems
@@ -292,6 +309,9 @@ Deno.test("Integration - memory and knowledge graph together", async () => {
   const relationships = await kgAdapter.queryRelationships({ workspaceId: scope.id });
   expect(relationships).toHaveLength(1);
   expect(relationships[0].type).toBe(KnowledgeRelationType.USES);
+
+  // Cleanup
+  await memory.dispose();
 });
 
 Deno.test("Integration - storage adapter functionality", async () => {

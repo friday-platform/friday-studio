@@ -103,14 +103,12 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
   async commitAll(dataByType: Record<string, any>): Promise<void> {
     await ensureDir(this.storagePath);
 
-    // Write each memory type to its own file
-    const writePromises = Object.entries(dataByType).map(async ([memoryType, data]) => {
+    // Write each memory type to its own file sequentially to avoid file descriptor exhaustion
+    for (const [memoryType, data] of Object.entries(dataByType)) {
       if (data && Object.keys(data).length > 0) {
         await this.commitByType(memoryType, data);
       }
-    });
-
-    await Promise.all(writePromises);
+    }
 
     // Create an index file for quick overview
     await this.createIndexFile(dataByType);
@@ -299,7 +297,9 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
 
   async compactAllMemoryTypes(): Promise<void> {
     const memoryTypes = await this.listMemoryTypes();
-    const compactionPromises = memoryTypes.map((type) => this.compactMemoryType(type));
-    await Promise.all(compactionPromises);
+    // Compact memory types sequentially to avoid file descriptor exhaustion
+    for (const type of memoryTypes) {
+      await this.compactMemoryType(type);
+    }
   }
 }
