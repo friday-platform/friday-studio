@@ -28,7 +28,6 @@
     "npm:@ai-sdk/google@2.0.0-beta.13": "2.0.0-beta.13_zod@3.25.76",
     "npm:@ai-sdk/openai@2.0.0-beta.11": "2.0.0-beta.11_zod@3.25.76",
     "npm:@hono/mcp@0.1": "0.1.0_@modelcontextprotocol+sdk@1.16.0__express@5.1.0__zod@3.25.76_hono@4.8.5",
-    "npm:@hono/swagger-ui@~0.5.2": "0.5.2_hono@4.8.5",
     "npm:@hono/zod-validator@~0.4.3": "0.4.3_hono@4.8.5_zod@3.25.76",
     "npm:@inkjs/ui@2": "2.0.0_ink@6.0.1__@types+react@19.1.8__react@19.1.0_@types+react@19.1.8_react@19.1.0",
     "npm:@modelcontextprotocol/sdk@^1.12.1": "1.16.0_express@5.1.0_zod@3.25.76",
@@ -52,7 +51,6 @@
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.1.1",
     "npm:marked@16": "16.1.1",
-    "npm:meow@^13.2.0": "13.2.0",
     "npm:openapi-fetch@0.14": "0.14.0",
     "npm:openapi-fetch@~0.12.4": "0.12.5",
     "npm:openapi-typescript@^7.4.4": "7.8.0_typescript@5.8.3",
@@ -205,12 +203,6 @@
       "integrity": "sha512-IELNnKF5tjbUm+wthfToZrNxZIjs1RWLiwCx8N+m8xfJcL6hfcpj/21Gsw8HL88lbnCh191mbFwYvXnx856QZg==",
       "dependencies": [
         "@modelcontextprotocol/sdk",
-        "hono"
-      ]
-    },
-    "@hono/swagger-ui@0.5.2_hono@4.8.5": {
-      "integrity": "sha512-7wxLKdb8h7JTdZ+K8DJNE3KXQMIpJejkBTQjrYlUWF28Z1PGOKw6kUykARe5NTfueIN37jbyG/sBYsbzXzG53A==",
-      "dependencies": [
         "hono"
       ]
     },
@@ -1096,9 +1088,6 @@
     "media-typer@1.1.0": {
       "integrity": "sha512-aisnrDP4GNe06UcKFnV5bfMNPBUw4jsLGaWwWfnH3v02GnBuXX2MCVn5RbrWo0j3pczUilYblq7fQ7Nw2t5XKw=="
     },
-    "meow@13.2.0": {
-      "integrity": "sha512-pxQJQzB6djGPXh08dacEloMFopsOqGVRKFPYvPOt9XDZ1HasbgDZA74CJGreSU4G3Ak7EFJGoiH2auq+yXISgA=="
-    },
     "merge-descriptors@2.0.0": {
       "integrity": "sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g=="
     },
@@ -1862,7 +1851,6 @@
       "npm:@ai-sdk/anthropic@2.0.0-beta.8",
       "npm:@ai-sdk/google@2.0.0-beta.13",
       "npm:@ai-sdk/openai@2.0.0-beta.11",
-      "npm:@hono/swagger-ui@~0.5.2",
       "npm:@hono/zod-validator@~0.4.3",
       "npm:@inkjs/ui@2",
       "npm:@modelcontextprotocol/sdk@^1.15.0",
@@ -1881,7 +1869,6 @@
       "npm:lint-staged@^16.1.2",
       "npm:marked-terminal@^7.3.0",
       "npm:marked@16",
-      "npm:meow@^13.2.0",
       "npm:openapi-fetch@0.14",
       "npm:playwright@^1.54.1",
       "npm:react@^19.1.0",

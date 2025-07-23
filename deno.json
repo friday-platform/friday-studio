@@ -49,7 +49,6 @@
     "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts"
   },
   "imports": {
-    "@hono/swagger-ui": "npm:@hono/swagger-ui@^0.5.2",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.15.0",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",
     "@scalar/hono-api-reference": "npm:@scalar/hono-api-reference@^0.9.9",
@@ -72,7 +71,6 @@
     "playwright": "npm:playwright@^1.54.1",
     "react": "npm:react@^19.1.0",
     "@types/react": "npm:@types/react@^19.1.8",
-    "meow": "npm:meow@^13.2.0",
     "ai": "npm:ai@5.0.0-beta.25",
     "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@2.0.0-beta.8",
     "@ai-sdk/openai": "npm:@ai-sdk/openai@2.0.0-beta.11",
