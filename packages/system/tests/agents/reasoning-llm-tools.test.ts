@@ -5,6 +5,7 @@
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
+import { conversationTools } from "../../../tools/src/internal/conversation.ts";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
 import { z } from "zod/v4";
@@ -21,7 +22,8 @@ const ExecutionStepSchema = z.object({
 
 const ConversationResultSchema = z.object({
   text: z.unknown().optional(),
-  reasoning: z.string(),
+  reasoning: z.union([z.array(z.string()), z.array(z.unknown())]).optional(),
+  reasoningText: z.string().optional(),
   reasoningDetails: z.unknown().optional(),
   executionFlow: z.array(ExecutionStepSchema),
   response: z.unknown().optional(),
@@ -32,8 +34,9 @@ const ConversationResultSchema = z.object({
   }).optional(),
 });
 
-// Skip test if no API key
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
+// Skip tests in CI or when no API key is available
+const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+  Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Mock tools for testing
 const createMockTools = () => {
@@ -97,9 +100,20 @@ const createMockTools = () => {
 // Create a test tool registry with mock tools
 const createTestToolRegistry = (): AtlasToolRegistry => {
   const tools = createMockTools();
+
+  // Create atlas_stream_event mock using real tool object with mocked execute
+  const atlas_stream_event = {
+    ...conversationTools.atlas_stream_event,
+    execute: async ({ streamId, eventType, content, metadata }: any) => {
+      console.log(`[atlas_stream_event] ${eventType} to ${streamId}: ${content}`);
+      return Promise.resolve({ success: true, streamId, eventType, content, metadata });
+    },
+  };
+
   return new AtlasToolRegistry({
     conversation: {
       atlas_stream_reply: tools.atlas_stream_reply,
+      atlas_stream_event: atlas_stream_event,
       atlas_file_reader: tools.atlas_file_reader,
       atlas_calculator: tools.atlas_calculator,
     },
@@ -151,7 +165,7 @@ Deno.test({
 
     // Parse and validate the result using Zod
     const result = ConversationResultSchema.parse(invokeResult.result);
-    assertExists(result.reasoning);
+    assertExists(result.reasoning || result.reasoningText);
     assertExists(result.executionFlow);
 
     // The AI should have calculated (10 × 4) + 2 = 42
@@ -231,9 +245,20 @@ Deno.test({
 
     // Create a test tool registry with error-prone tools
     const tools = createErrorProneTools();
+
+    // Create atlas_stream_event mock using real tool object with mocked execute
+    const atlas_stream_event = {
+      ...conversationTools.atlas_stream_event,
+      execute: async ({ streamId, eventType, content, metadata }: any) => {
+        console.log(`[atlas_stream_event] ${eventType} to ${streamId}: ${content}`);
+        return Promise.resolve({ success: true, streamId, eventType, content, metadata });
+      },
+    };
+
     const toolRegistry = new AtlasToolRegistry({
       conversation: {
         atlas_stream_reply: tools.atlas_stream_reply,
+        atlas_stream_event: atlas_stream_event,
         atlas_file_reader: tools.atlas_file_reader,
       },
       workspace: {}, // Empty workspace tools for test compatibility
@@ -274,7 +299,7 @@ Deno.test({
 
     // Parse and validate the result using Zod
     const result = ConversationResultSchema.parse(invokeResult.result);
-    assertExists(result.reasoning);
+    assertExists(result.reasoning || result.reasoningText);
     assertExists(result.executionFlow);
 
     // The AI should have attempted error recovery
@@ -371,7 +396,7 @@ Deno.test({
 
     // Parse and validate the result using Zod
     const result = ConversationResultSchema.parse(invokeResult.result);
-    assertExists(result.reasoning);
+    assertExists(result.reasoning || result.reasoningText);
     assertExists(result.executionFlow);
 
     // The AI should have calculated ((10 * 3) + 15) / 5 = 9

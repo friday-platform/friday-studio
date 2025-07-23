@@ -23,7 +23,7 @@ Deno.test("Conversation Tools", async (t) => {
   await t.step("all tools should have required properties", () => {
     for (const [toolName, tool] of Object.entries(conversationTools)) {
       assertEquals("description" in tool, true, `${toolName} should have description`);
-      assertEquals("parameters" in tool, true, `${toolName} should have parameters`);
+      assertEquals("inputSchema" in tool, true, `${toolName} should have inputSchema`);
       assertEquals("execute" in tool, true, `${toolName} should have execute function`);
       assertEquals(typeof tool.execute, "function", `${toolName}.execute should be a function`);
     }

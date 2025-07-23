@@ -100,7 +100,7 @@ Deno.test("AtlasToolRegistry", async (t) => {
     assertEquals(readTool !== null, true);
     if (readTool) {
       assertEquals("execute" in readTool, true);
-      assertEquals("parameters" in readTool, true);
+      assertEquals("inputSchema" in readTool, true);
       assertEquals("description" in readTool, true);
     }
   });

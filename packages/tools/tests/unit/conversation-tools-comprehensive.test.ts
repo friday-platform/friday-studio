@@ -25,7 +25,7 @@ Deno.test("Conversation Tools - API Endpoint Compatibility", async (t) => {
 
     for (const [toolName, tool] of Object.entries(allTools)) {
       assertEquals("description" in tool, true, `${toolName} should have description`);
-      assertEquals("parameters" in tool, true, `${toolName} should have parameters`);
+      assertEquals("inputSchema" in tool, true, `${toolName} should have inputSchema`);
       assertEquals("execute" in tool, true, `${toolName} should have execute function`);
       assertEquals(typeof tool.execute, "function", `${toolName}.execute should be a function`);
     }
@@ -54,7 +54,8 @@ Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
       content: "Hello world",
     };
     const result = params.parse(validParams);
-    assertEquals(result.success, true);
+    assertEquals(result.streamId, "test-stream-123");
+    assertEquals(result.content, "Hello world");
 
     // With optional metadata
     const validWithMetadata = {

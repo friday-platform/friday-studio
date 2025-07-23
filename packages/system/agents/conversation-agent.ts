@@ -56,7 +56,7 @@ type ExecutionStep = {
 
 type ExecutionFlow = {
   steps: ExecutionStep[];
-  reasoning: string;
+  reasoning: string[];
   responseBuffer: string;
   thinkingBuffer: string;
 };
@@ -294,7 +294,7 @@ export class ConversationAgent extends BaseAgent {
 
     const executionFlow: ExecutionFlow = {
       steps: [],
-      reasoning: "",
+      reasoning: [],
       responseBuffer: "",
       thinkingBuffer: "",
     };
@@ -320,6 +320,7 @@ export class ConversationAgent extends BaseAgent {
         switch (event.type) {
           case "thinking":
             executionFlow.thinkingBuffer += event.content;
+            executionFlow.reasoning.push(event.content);
             break;
 
           case "text":
@@ -378,9 +379,20 @@ export class ConversationAgent extends BaseAgent {
       }
     }
 
+    // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
+    const hasAISDKReasoning = Array.isArray(finalReasoning) && finalReasoning.length > 0;
+    const processedReasoning = hasAISDKReasoning ? finalReasoning : executionFlow.reasoning;
+
+    const reasoningText = hasAISDKReasoning
+      ? finalReasoning.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(
+        "\n",
+      )
+      : executionFlow.reasoning.join("\n") || executionFlow.thinkingBuffer || "";
+
     return {
       text: finalText || executionFlow.responseBuffer,
-      reasoning: finalReasoning || executionFlow.thinkingBuffer || "",
+      reasoning: processedReasoning,
+      reasoningText,
       executionFlow: executionFlow.steps,
       response: finalText || executionFlow.responseBuffer, // Backward compatibility
       toolCalls: executionFlow.steps.filter(
@@ -474,7 +486,7 @@ export class ConversationAgent extends BaseAgent {
           content: `Calling ${chunk.toolName}`,
           metadata: {
             toolName: chunk.toolName,
-            input: chunk.input,
+            args: chunk.input,
             toolCallId: chunk.toolCallId,
           },
           timestamp,

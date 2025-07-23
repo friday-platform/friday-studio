@@ -12,6 +12,33 @@ import {
 } from "../utils.ts";
 
 /**
+ * Union schema for handling AI SDK v5 bug where models send JSON strings instead of objects
+ * Accepts both record objects (expected) and JSON strings (AI bug workaround)
+ * Note: Cannot use transforms as they don't serialize to JSON Schema for AI SDK
+ */
+const ConfigRecordSchema = z.union([
+  z.record(z.string(), z.unknown()), // Expected object format
+  z.string(), // AI SDK v5 bug: JSON strings (parsed in execute functions)
+]);
+
+/**
+ * Parse configuration that may be an object or JSON string
+ */
+function parseConfigRecord(input: unknown): Record<string, unknown> {
+  if (typeof input === "string") {
+    try {
+      return JSON.parse(input);
+    } catch {
+      throw new Error("Invalid JSON string in configuration parameter");
+    }
+  }
+  if (typeof input === "object" && input !== null) {
+    return input as Record<string, unknown>;
+  }
+  throw new Error("Configuration must be an object or JSON string");
+}
+
+/**
  * Draft Management Tools
  *
  * Tools for managing Atlas workspace drafts
@@ -22,18 +49,25 @@ export const draftTools = {
     inputSchema: z.object({
       name: z.string().describe("Name of the draft"),
       description: z.string().describe("Description of the draft"),
-      initialConfig: z.record(z.string(), z.unknown()).optional().describe(
-        "Initial configuration for the draft",
+      initialConfig: ConfigRecordSchema.optional().describe(
+        "Initial configuration for the draft (object or JSON string)",
       ),
       sessionId: z.string().optional().describe("Associated session ID"),
       conversationId: z.string().optional().describe("Associated conversation ID"),
     }),
     execute: async ({ name, description, initialConfig, sessionId, conversationId }) => {
       try {
+        const parsedConfig = initialConfig ? parseConfigRecord(initialConfig) : undefined;
         const response = await fetchWithTimeout(`${defaultContext.daemonUrl}/api/drafts`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, description, initialConfig, sessionId, conversationId }),
+          body: JSON.stringify({
+            name,
+            description,
+            initialConfig: parsedConfig,
+            sessionId,
+            conversationId,
+          }),
         });
         const draft = await handleDaemonResponse(response);
         return { draft };
@@ -92,17 +126,18 @@ export const draftTools = {
     description: "Updates existing drafts with configuration changes and validation.",
     inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to update"),
-      updates: z.record(z.string(), z.unknown()).describe("Configuration updates to apply"),
+      updates: ConfigRecordSchema.describe("Configuration updates (object or JSON string)"),
       updateDescription: z.string().optional().describe("Description of the changes being made"),
     }),
     execute: async ({ draftId, updates, updateDescription }) => {
       try {
+        const parsedUpdates = parseConfigRecord(updates);
         const response = await fetchWithTimeout(
           `${defaultContext.daemonUrl}/api/drafts/${draftId}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ updates, updateDescription }),
+            body: JSON.stringify({ updates: parsedUpdates, updateDescription }),
           },
         );
         const draft = await handleDaemonResponse(response);

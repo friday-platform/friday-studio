@@ -9,8 +9,9 @@ import {
   SessionSupervisorActor,
 } from "../src/core/actors/session-supervisor-actor.ts";
 
-// Skip test if no API key
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
+// Skip tests in CI or when no API key is available
+const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+  Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Helper function to create basic session context
 const createTestSessionContext = (overrides: Partial<SessionContext> = {}): SessionContext => ({

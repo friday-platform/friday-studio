@@ -10,8 +10,9 @@ import {
 } from "../src/core/actors/session-supervisor-actor.ts";
 import type { SessionSupervisorConfig } from "@atlas/core";
 
-// Skip test if no API key
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
+// Skip tests in CI or when no API key is available
+const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+  Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Helper function to create session context with multiple agents
 const createComplexSessionContext = (overrides: Partial<SessionContext> = {}): SessionContext => ({

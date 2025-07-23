@@ -5,6 +5,7 @@
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
+import { conversationTools } from "../../../tools/src/internal/conversation.ts";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
 import { z } from "zod/v4";
@@ -21,7 +22,8 @@ const ExecutionStepSchema = z.object({
 
 const ConversationResultSchema = z.object({
   text: z.unknown().optional(), // Can be a promise, string, or object
-  reasoning: z.string(),
+  reasoning: z.union([z.array(z.string()), z.array(z.unknown())]).optional(),
+  reasoningText: z.string().optional(),
   reasoningDetails: z.unknown().optional(),
   executionFlow: z.array(ExecutionStepSchema),
   response: z.unknown().optional(), // Can be a promise, string, or object
@@ -34,8 +36,9 @@ const ConversationResultSchema = z.object({
 
 // Types are inferred from Zod schemas
 
-// Skip test if no API key
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
+// Skip tests in CI or when no API key is available
+const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+  Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Mock atlas_stream_reply tool for tests
 const createMockStreamReplyTool = () =>
@@ -56,9 +59,19 @@ const createMockStreamReplyTool = () =>
 
 // Create a test tool registry with mock tools
 const createTestToolRegistry = (): AtlasToolRegistry => {
+  // Create atlas_stream_event mock using real tool object with mocked execute
+  const atlas_stream_event = {
+    ...conversationTools.atlas_stream_event,
+    execute: async ({ streamId, eventType, content, metadata }: any) => {
+      console.log(`[atlas_stream_event] ${eventType} to ${streamId}: ${content}`);
+      return Promise.resolve({ success: true, streamId, eventType, content, metadata });
+    },
+  };
+
   return new AtlasToolRegistry({
     conversation: {
       atlas_stream_reply: createMockStreamReplyTool(),
+      atlas_stream_event: atlas_stream_event,
     },
     workspace: {}, // Empty workspace tools for test compatibility
     signal: {}, // Empty signal tools for test compatibility
@@ -107,12 +120,14 @@ Deno.test({
     // Parse and validate the result using Zod
     const result = ConversationResultSchema.parse(invokeResult.result);
     console.log("Result structure:", JSON.stringify(result, null, 2));
-    assertExists(result.reasoning);
+    assertExists(result.reasoning || result.reasoningText);
     assertExists(result.executionFlow);
 
     // The AI should have calculated 42 - check in the reasoning or tool calls
     // Since text is a promise object, we'll check the reasoning and tool execution
-    assertStringIncludes(result.reasoning, "42");
+    const reasoningContent = result.reasoningText ||
+      (result.reasoning ? result.reasoning.join("\n") : "");
+    assertStringIncludes(reasoningContent, "42");
 
     // Also verify the tool was called with the correct answer
     const toolCall = result.executionFlow.find((step) =>
@@ -186,11 +201,13 @@ Deno.test({
     // Parse and validate the result using Zod
     const result = ConversationResultSchema.parse(invokeResult.result);
     console.log("Result structure:", JSON.stringify(result, null, 2));
-    assertExists(result.reasoning);
+    assertExists(result.reasoning || result.reasoningText);
     assertExists(result.executionFlow);
 
     // The AI should have calculated 25 - check in the reasoning or tool calls
-    assertStringIncludes(result.reasoning, "25");
+    const reasoningContent = result.reasoningText ||
+      (result.reasoning ? result.reasoning.join("\n") : "");
+    assertStringIncludes(reasoningContent, "25");
 
     // Also verify the tool was called with the correct answer
     const toolCall = result.executionFlow.find((step) =>

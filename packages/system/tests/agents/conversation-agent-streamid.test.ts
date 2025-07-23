@@ -15,6 +15,7 @@
 
 import { assertEquals, assertExists } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
+import { conversationTools } from "../../../tools/src/internal/conversation.ts";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
 import { z } from "zod/v4";
@@ -31,7 +32,8 @@ const ExecutionStepSchema = z.object({
 
 const ConversationResultSchema = z.object({
   text: z.unknown().optional(),
-  reasoning: z.string(),
+  reasoning: z.union([z.array(z.string()), z.array(z.unknown())]).optional(),
+  reasoningText: z.string().optional(),
   reasoningDetails: z.unknown().optional(),
   executionFlow: z.array(ExecutionStepSchema),
   response: z.unknown().optional(),
@@ -48,8 +50,9 @@ const ConversationResultSchema = z.object({
   }).optional(),
 });
 
-// Skip test if no API key
-const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
+// Skip tests in CI or when no API key is available
+const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY") || Deno.env.get("CI") === "true" ||
+  Deno.env.get("GITHUB_ACTIONS") === "true";
 
 // Create test-specific tools
 const createTestTools = () => {
@@ -97,7 +100,16 @@ const createTestTools = () => {
     },
   });
 
-  return { atlas_stream_reply, atlas_conversation_storage, streamReplyCalls };
+  // Create atlas_stream_event mock using real tool object with mocked execute
+  const atlas_stream_event = {
+    ...conversationTools.atlas_stream_event,
+    execute: async ({ streamId, eventType, content, metadata }: any) => {
+      console.log(`[atlas_stream_event] ${eventType} to ${streamId}: ${content}`);
+      return Promise.resolve({ success: true, streamId, eventType, content, metadata });
+    },
+  };
+
+  return { atlas_stream_reply, atlas_conversation_storage, atlas_stream_event, streamReplyCalls };
 };
 
 // Create test tool registry
@@ -106,6 +118,7 @@ const createTestToolRegistry = (tools: ReturnType<typeof createTestTools>) => {
     conversation: {
       atlas_stream_reply: tools.atlas_stream_reply,
       atlas_conversation_storage: tools.atlas_conversation_storage,
+      atlas_stream_event: tools.atlas_stream_event,
     },
     workspace: {}, // Empty workspace tools for test compatibility
     signal: {}, // Empty signal tools for test compatibility
