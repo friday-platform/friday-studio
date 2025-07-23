@@ -799,9 +799,7 @@ cd /d "${userProfile}"
               cwd: os.homedir(),
             });
           } catch (fallbackError) {
-            const errorDetails = fallbackError.stderr
-              ? new TextDecoder().decode(fallbackError.stderr)
-              : fallbackError.message;
+            const errorDetails = fallbackError.stderr || fallbackError.message;
             return {
               success: false,
               action,

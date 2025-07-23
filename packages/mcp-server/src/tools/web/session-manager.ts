@@ -14,12 +14,22 @@ export class WebSessionManager {
   private sessions = new Map<string, WebSession>();
   private cleanupInterval: number | null = null;
   private readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  private isStarted = false;
 
   constructor() {
-    // Clean up expired sessions every 5 minutes
-    this.cleanupInterval = setInterval(() => {
-      this.cleanupExpiredSessions();
-    }, 5 * 60 * 1000);
+    // Don't start the cleanup interval in constructor
+    // This prevents the timer from being created on import
+  }
+
+  // Start the cleanup interval only when needed
+  private ensureStarted() {
+    if (!this.isStarted) {
+      this.isStarted = true;
+      // Clean up expired sessions every 5 minutes
+      this.cleanupInterval = setInterval(() => {
+        this.cleanupExpiredSessions();
+      }, 5 * 60 * 1000);
+    }
   }
 
   async createSession(sessionId: string, options: {
@@ -27,6 +37,9 @@ export class WebSessionManager {
     viewport?: { width: number; height: number };
     locale?: string;
   } = {}): Promise<WebSession> {
+    // Ensure the cleanup timer is started
+    this.ensureStarted();
+
     // Clean up existing session if it exists
     await this.closeSession(sessionId);
 

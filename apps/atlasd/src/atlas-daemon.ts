@@ -1538,15 +1538,30 @@ export class AtlasDaemon implements AppContext {
   private setupSignalHandlers() {
     const daemonId = crypto.randomUUID().slice(0, 8);
 
-    const handleShutdown = async (signal: string) => {
+    const handleShutdown = (signal: string) => {
       if (this.isShuttingDown) return;
       this.isShuttingDown = true;
 
       AtlasLogger.getInstance().info(
         `Daemon [${daemonId}] received ${signal}, shutting down gracefully`,
       );
-      await this.shutdown();
-      Deno.exit(0);
+
+      // Handle async shutdown in a promise to ensure proper cleanup
+      // Add a timeout to prevent hanging indefinitely
+      const shutdownTimeout = setTimeout(() => {
+        AtlasLogger.getInstance().error(`Shutdown timeout after 30 seconds, forcing exit`);
+        Deno.exit(1);
+      }, 30000);
+
+      this.shutdown().then(() => {
+        clearTimeout(shutdownTimeout);
+        AtlasLogger.getInstance().info(`Daemon [${daemonId}] shutdown complete`);
+        Deno.exit(0);
+      }).catch((error) => {
+        clearTimeout(shutdownTimeout);
+        AtlasLogger.getInstance().error(`Error during shutdown: ${error.message}`);
+        Deno.exit(1);
+      });
     };
 
     const sigintHandler = () => handleShutdown("SIGINT");
@@ -1684,8 +1699,13 @@ export class AtlasDaemon implements AppContext {
     }
 
     // Shutdown HTTP server
-    if (this.server && this.server.shutdown) {
-      await this.server.shutdown();
+    if (this.server) {
+      try {
+        // Deno.serve() returns a server with a shutdown() method
+        await this.server.shutdown();
+      } catch (error) {
+        AtlasLogger.getInstance().error(`Error shutting down HTTP server: ${error.message}`);
+      }
     }
 
     AtlasLogger.getInstance().info("Atlas daemon shutdown complete");
