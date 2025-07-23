@@ -44,6 +44,7 @@
       "renderer.js",
       "index.html",
       "styles.css",
+      "reset.css",
       "preload.js",
       "logo.png",
       "entitlements.mac.plist",
