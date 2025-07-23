@@ -7,6 +7,7 @@
 
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
+import { getAtlasHome } from "../../../../src/utils/paths.ts";
 import type {
   IVectorSearchStorageAdapter,
   VectorEmbedding,
@@ -27,7 +28,12 @@ export class VectorSearchLocalStorageAdapter implements IVectorSearchStorageAdap
   private statsFile: string;
 
   constructor(storagePath?: string) {
-    this.storagePath = storagePath || join(Deno.cwd(), ".atlas", "memory", "vectors");
+    if (storagePath) {
+      this.storagePath = storagePath;
+    } else {
+      // Use the centralized getAtlasHome function
+      this.storagePath = join(getAtlasHome(), "memory", "vectors");
+    }
     this.indexFile = join(this.storagePath, "embeddings.json");
     this.statsFile = join(this.storagePath, "stats.json");
     this.loadFromStorage();

@@ -1,12 +1,18 @@
 import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
+import { getAtlasHome } from "../../../../src/utils/paths.ts";
 import type { ITempestMemoryStorageAdapter } from "../types/core.ts";
 
 export class LocalFileStorageAdapter implements ITempestMemoryStorageAdapter {
   private storagePath: string;
 
   constructor(storagePath?: string) {
-    this.storagePath = storagePath || join(Deno.cwd(), ".atlas", "memory");
+    if (storagePath) {
+      this.storagePath = storagePath;
+    } else {
+      // Use the centralized getAtlasHome function
+      this.storagePath = join(getAtlasHome(), "memory");
+    }
   }
 
   async commit(data: any): Promise<void> {

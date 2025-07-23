@@ -23,8 +23,9 @@ function isSystemService(): boolean {
 
   // Check if running as 'atlas' user
   try {
-    const userInfo = Deno.userInfo();
-    if (userInfo.username === "atlas") {
+    // @ts-ignore - userInfo is available in some Deno versions
+    const userInfo = Deno.userInfo?.();
+    if (userInfo?.username === "atlas") {
       return true;
     }
   } catch {
@@ -48,6 +49,19 @@ export function getAtlasHome(): string {
   // Check if running as system service
   if (isSystemService() && Deno.build.os !== "windows") {
     return "/var/lib/atlas";
+  }
+
+  // Check if we're already running from within .atlas directory
+  // This handles the case where the compiled atlas binary runs from ~/.atlas/
+  const cwd = Deno.cwd();
+  const sep = Deno.build.os === "windows" ? "\\" : "/";
+  if (cwd.endsWith(".atlas") || cwd.includes(`.atlas${sep}`)) {
+    // We're in .atlas directory, return the parent .atlas directory
+    const parts = cwd.split(sep);
+    const atlasIndex = parts.lastIndexOf(".atlas");
+    if (atlasIndex > 0) {
+      return parts.slice(0, atlasIndex + 1).join(sep);
+    }
   }
 
   // User mode: use home directory

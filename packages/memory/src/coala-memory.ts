@@ -23,6 +23,8 @@ import {
   VectorSearchLocalStorageAdapter,
   type VectorSearchQuery,
 } from "@atlas/storage";
+import { getAtlasHome } from "../../../src/utils/paths.ts";
+import { join } from "@std/path";
 import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
 import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
 import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
@@ -649,11 +651,15 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   private getKnowledgeGraphBasePath(): string {
     // Try to extract base path from existing storage adapter
     if (this.store instanceof CoALALocalFileStorageAdapter) {
-      // Access the basePath if available
-      return `${(this.store as any).basePath || "./.atlas/memory"}/knowledge-graph`;
+      // Access the storagePath if available
+      const storagePath = (this.store as any).storagePath;
+      if (storagePath) {
+        const memoryDir = storagePath.endsWith("/memory") ? storagePath.slice(0, -7) : storagePath;
+        return `${memoryDir}/knowledge-graph`;
+      }
     }
-    // Fallback path
-    return `./.atlas/memory/knowledge-graph`;
+    // Fallback to centralized getAtlasHome
+    return join(getAtlasHome(), "memory", "knowledge-graph");
   }
 
   // Store facts in knowledge graph (called from semantic memory operations)
@@ -992,9 +998,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
   private getVectorSearchBasePath(): string {
     if (this.store instanceof CoALALocalFileStorageAdapter) {
-      return `${(this.store as any).basePath || "./.atlas/memory"}/vectors`;
+      // Access the storagePath if available
+      const storagePath = (this.store as any).storagePath;
+      if (storagePath) {
+        return join(storagePath, "vectors");
+      }
     }
-    return "./.atlas/memory/vectors";
+    // Fallback to centralized getAtlasHome
+    return join(getAtlasHome(), "memory", "vectors");
   }
 
   /**
