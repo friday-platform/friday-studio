@@ -40,9 +40,9 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     prompt: z.string().describe("System prompt for the agent"),
 
     // LLM parameters
-    temperature: z.number().min(0).max(1).optional().describe("Temperature (0-1 range)"),
-    max_tokens: z.number().int().positive().optional(),
-    max_steps: z.number().int().positive().optional().describe(
+    temperature: z.coerce.number().min(0).max(1).optional().describe("Temperature (0-1 range)"),
+    max_tokens: z.coerce.number().int().positive().optional(),
+    max_steps: z.coerce.number().int().positive().optional().describe(
       "Max steps for multi-step tool calling",
     ),
 
@@ -55,7 +55,7 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     error: ErrorConfigSchema.optional(),
 
     // Error handling
-    max_retries: z.number().int().min(0).optional(),
+    max_retries: z.coerce.number().int().min(0).optional(),
     timeout: DurationSchema.optional(),
   }),
 });
@@ -68,15 +68,17 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
 const SystemAgentConfigObjectSchema = z.strictObject({
   // LLM Configuration
   model: z.string().optional().describe("LLM model to use"),
-  temperature: z.number().min(0).max(2).optional().describe("LLM temperature"),
-  max_tokens: z.number().min(1).optional().describe("Maximum tokens for LLM response"),
+  temperature: z.coerce.number().min(0).max(2).optional().describe("LLM temperature"),
+  max_tokens: z.coerce.number().min(1).optional().describe("Maximum tokens for LLM response"),
 
   // Tools Configuration
   tools: z.array(z.string()).optional().describe("Array of tool names available to the agent"),
 
   // Reasoning Configuration
   use_reasoning: z.boolean().optional().describe("Enable reasoning capabilities"),
-  max_reasoning_steps: z.number().min(1).max(20).optional().describe("Maximum reasoning steps"),
+  max_reasoning_steps: z.coerce.number().min(1).max(20).optional().describe(
+    "Maximum reasoning steps",
+  ),
 
   // Prompt Configuration
   prompt: z.string().describe("System prompt for the agent").optional(),
@@ -109,7 +111,7 @@ const RemoteAgentConfigSchema = BaseAgentConfigSchema.extend({
     // Common remote config
     auth: MCPAuthConfigSchema.optional(),
     timeout: DurationSchema.optional(),
-    max_retries: z.number().int().min(0).default(2),
+    max_retries: z.coerce.number().int().min(0).default(2),
 
     // Prompt configuration
     prompt: z.string().describe("System prompt for the agent").optional(),
