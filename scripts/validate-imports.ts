@@ -43,6 +43,7 @@ async function findTypeScriptFiles(rootDir: string): Promise<string[]> {
         /coverage/,
         /\.deno/,
         /deno\.lock/,
+        /tools\/atlas-installer/,
       ],
     })
   ) {

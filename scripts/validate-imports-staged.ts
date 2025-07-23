@@ -43,7 +43,8 @@ async function getStagedFiles(): Promise<string[]> {
   const files = new TextDecoder().decode(stdout)
     .split("\n")
     .filter((file) => file.trim().length > 0)
-    .filter((file) => EXTENSIONS.includes(extname(file)));
+    .filter((file) => EXTENSIONS.includes(extname(file)))
+    .filter((file) => !file.includes("tools/atlas-installer/"));
 
   return files;
 }

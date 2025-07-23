@@ -78,66 +78,18 @@ ipcMain.handle("check-existing-api-key", async () => {
     }
 
     const envContent = fs.readFileSync(envFile, "utf8");
-    const hasApiKey = envContent.includes("ANTHROPIC_API_KEY=") &&
-      envContent.match(/ANTHROPIC_API_KEY=sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+/);
+    const hasAtlasKey = envContent.includes("ATLAS_KEY=") &&
+      envContent.match(
+        /ATLAS_KEY=eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/,
+      );
 
-    return { exists: !!hasApiKey };
+    return { exists: !!hasAtlasKey };
   } catch (error) {
     return { exists: false, error: error.message };
   }
 });
 
-ipcMain.handle("save-api-key", async (event, apiKey) => {
-  try {
-    // Validate API key format on backend too
-    const apiKeyPattern = /^sk-ant-[a-z0-9]+-[A-Za-z0-9_-]+$/;
-    if (!apiKey || !apiKeyPattern.test(apiKey)) {
-      return { success: false, error: "Invalid API key format" };
-    }
-
-    const atlasDir = path.join(os.homedir(), ".atlas");
-    const envFile = path.join(atlasDir, ".env");
-
-    // Ensure .atlas directory exists
-    if (!fs.existsSync(atlasDir)) {
-      fs.mkdirSync(atlasDir, { recursive: true });
-    }
-
-    // If user provided API key, override existing configuration
-    let envContent = `ANTHROPIC_API_KEY=${apiKey}\n`;
-
-    // Preserve other environment variables if .env file exists
-    if (fs.existsSync(envFile)) {
-      const existingContent = fs.readFileSync(envFile, "utf8");
-      const otherLines = existingContent
-        .split("\n")
-        .filter((line) => !line.trim().startsWith("ANTHROPIC_API_KEY="))
-        .filter((line) => line.trim() !== "")
-        .join("\n");
-
-      if (otherLines) {
-        envContent = `${otherLines}\nANTHROPIC_API_KEY=${apiKey}\n`;
-      }
-    }
-
-    fs.writeFileSync(envFile, envContent, "utf8");
-
-    // Set file permissions (Unix-like systems)
-    if (process.platform !== "win32") {
-      fs.chmodSync(envFile, 0o600);
-    }
-
-    return {
-      success: true,
-      path: envFile,
-      message: "API key saved successfully",
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-});
-
-// New IPC handler for saving Atlas key to .env file
+// IPC handler for saving Atlas key to .env file
 ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
   try {
     const atlasDir = path.join(os.homedir(), ".atlas");
@@ -812,6 +764,21 @@ cd /d "${userProfile}"
     } else if (process.platform === "darwin") {
       // macOS: use the service command approach
       if (action === "start") {
+        // Add a delay to ensure binary is fully accessible after installation
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        try {
+          // Verify binary exists and is executable before attempting service install
+          fs.accessSync(binaryPath, fs.constants.F_OK | fs.constants.X_OK);
+        } catch (accessError) {
+          return {
+            success: false,
+            action,
+            error:
+              `Atlas binary not accessible at ${binaryPath}. Please verify installation completed successfully.`,
+          };
+        }
+
         try {
           // Always try to install/reinstall service to handle updates
           const installCommand = `"${binaryPath}" service install --force`;
@@ -832,12 +799,30 @@ cd /d "${userProfile}"
               cwd: os.homedir(),
             });
           } catch (fallbackError) {
+            const errorDetails = fallbackError.stderr
+              ? new TextDecoder().decode(fallbackError.stderr)
+              : fallbackError.message;
             return {
               success: false,
               action,
-              error: `Service install failed: ${fallbackError.message}`,
+              error:
+                `Service install failed: ${errorDetails}. The LaunchAgent may not have been created at ~/Library/LaunchAgents/com.tempestdx.atlas.plist`,
             };
           }
+        }
+
+        // Verify the plist was actually created
+        const plistPath = path.join(
+          os.homedir(),
+          "Library/LaunchAgents/com.tempestdx.atlas.plist",
+        );
+        if (!fs.existsSync(plistPath)) {
+          return {
+            success: false,
+            action,
+            error:
+              `Service install command succeeded but LaunchAgent plist was not created at ${plistPath}. Please run 'atlas service install' manually after installation.`,
+          };
         }
       }
 

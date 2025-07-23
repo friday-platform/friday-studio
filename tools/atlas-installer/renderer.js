@@ -77,7 +77,13 @@ class AtlasInstaller {
       const payload = JSON.parse(atob(payload64));
 
       // Check for required claims
-      if (!payload.email || !payload.iss || !payload.sub || !payload.exp || !payload.iat) {
+      if (
+        !payload.email ||
+        !payload.iss ||
+        !payload.sub ||
+        !payload.exp ||
+        !payload.iat
+      ) {
         return false;
       }
 
@@ -88,7 +94,7 @@ class AtlasInstaller {
 
       // Check if token is expired (with 30 second buffer for clock skew)
       const now = Math.floor(Date.now() / 1000);
-      if (payload.exp <= (now + 30)) {
+      if (payload.exp <= now + 30) {
         return false;
       }
 
@@ -382,7 +388,9 @@ class AtlasInstaller {
       if (this.validateAtlasKey(atlasKey)) {
         try {
           // Save the Atlas key to .env file
-          const saveResult = await globalThis.electronAPI.saveAtlasKey(atlasKey.trim());
+          const saveResult = await globalThis.electronAPI.saveAtlasKey(
+            atlasKey.trim(),
+          );
           return saveResult;
         } catch (error) {
           return {
@@ -457,9 +465,7 @@ class AtlasInstaller {
 
   updateInstallationUI(progress, log) {
     document.getElementById("progress-fill").style.width = `${progress}%`;
-    document.getElementById(
-      "progress-text",
-    ).textContent = `${progress}% Complete`;
+    document.getElementById("progress-text").textContent = `${progress}% Complete`;
     document.getElementById("install-log").textContent = log;
 
     // Auto-scroll to bottom

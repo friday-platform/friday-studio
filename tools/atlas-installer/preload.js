@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getPlatform: () => ipcRenderer.invoke("get-platform"),
   createAtlasDir: () => ipcRenderer.invoke("create-atlas-dir"),
   checkExistingApiKey: () => ipcRenderer.invoke("check-existing-api-key"),
-  saveApiKey: (apiKey) => ipcRenderer.invoke("save-api-key", apiKey),
   saveAtlasKey: (atlasKey) => ipcRenderer.invoke("save-atlas-key", atlasKey),
   installAtlasBinary: () => ipcRenderer.invoke("install-atlas-binary"),
   setupPath: () => ipcRenderer.invoke("setup-path"),
