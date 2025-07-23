@@ -151,11 +151,11 @@ class AtlasInstaller {
       // Empty is valid (skip case)
       validationEl.classList.add("hidden");
     } else if (this.validateAtlasKey(value)) {
-      // Valid Atlas key format
+      // Valid Atlas Access Key format
       validationEl.classList.add("hidden");
     } else {
-      // Invalid Atlas key format - show error and prevent continue
-      validationEl.textContent = "Invalid Atlas key. Please check your key and try again.";
+      // Invalid Atlas Access Key format - show error and prevent continue
+      validationEl.textContent = "Invalid Atlas Access Key. Please check your key and try again.";
       validationEl.classList.remove("hidden");
     }
 
@@ -223,7 +223,7 @@ class AtlasInstaller {
         nextBtn.className = "btn btn-primary";
         break;
 
-      case 2: // Atlas Key
+      case 2: // Atlas Access Key
         const isAtlasKeyValid = this.isAtlasKeyValid();
         nextBtn.textContent = "Continue";
         nextBtn.disabled = !isAtlasKeyValid;
@@ -318,7 +318,7 @@ class AtlasInstaller {
       },
       {
         progress: 48,
-        message: "Saving Atlas key configuration...",
+        message: "Saving Atlas Access Key configuration...",
         action: () => this.configureCredentials(),
       },
       {
@@ -384,10 +384,10 @@ class AtlasInstaller {
     const atlasKey = document.getElementById("api-key").value;
 
     if (atlasKey && atlasKey.trim()) {
-      // User provided an Atlas key - validate and save it
+      // User provided an Atlas Access Key - validate and save it
       if (this.validateAtlasKey(atlasKey)) {
         try {
-          // Save the Atlas key to .env file
+          // Save the Atlas Access Key to .env file
           const saveResult = await globalThis.electronAPI.saveAtlasKey(
             atlasKey.trim(),
           );
@@ -395,20 +395,20 @@ class AtlasInstaller {
         } catch (error) {
           return {
             success: false,
-            error: `Failed to save Atlas key: ${error.message}`,
+            error: `Failed to save Atlas Access Key: ${error.message}`,
           };
         }
       } else {
         return {
           success: false,
-          error: "Invalid Atlas key format. Cannot proceed with installation.",
+          error: "Invalid Atlas Access Key format. Cannot proceed with installation.",
         };
       }
     } else {
-      // No Atlas key provided - skip configuration step
+      // No Atlas Access Key provided - skip configuration step
       return {
         success: true,
-        message: "Atlas key configuration skipped - no changes made",
+        message: "Atlas Access Key configuration skipped - no changes made",
       };
     }
   }

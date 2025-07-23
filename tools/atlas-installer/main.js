@@ -89,7 +89,7 @@ ipcMain.handle("check-existing-api-key", async () => {
   }
 });
 
-// IPC handler for saving Atlas key to .env file
+// IPC handler for saving Atlas Access Key to .env file
 ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
   try {
     const atlasDir = path.join(os.homedir(), ".atlas");
@@ -131,7 +131,7 @@ ipcMain.handle("save-atlas-key", async (event, atlasKey) => {
     return {
       success: true,
       path: envFile,
-      message: "Atlas key saved successfully",
+      message: "Atlas Access Key saved successfully",
     };
   } catch (error) {
     return { success: false, error: error.message };

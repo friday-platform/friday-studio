@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Atlas Installer - Credential Fetching Script
-# This script fetches credentials using an Atlas Key (JWT token)
+# This script fetches credentials using an Atlas Access Key (JWT token)
 # and updates the .env file with the received credentials.
 # Uses only standard Linux tools (no curl, jq, or other non-standard dependencies)
 
@@ -215,14 +215,14 @@ main() {
     local atlas_key="$1"
 
     if [[ -z "$atlas_key" ]]; then
-        print_error "Atlas key is required"
-        echo "Usage: $0 <atlas_key>"
+        print_error "Atlas Access Key is required"
+        echo "Usage: $0 <atlas_access_key>"
         exit 1
     fi
 
-    print_info "Validating Atlas key..."
+    print_info "Validating Atlas Access Key..."
     if ! validate_jwt "$atlas_key"; then
-        print_error "Invalid Atlas key format or expired token"
+        print_error "Invalid Atlas Access Key format or expired token"
         exit 1
     fi
 
