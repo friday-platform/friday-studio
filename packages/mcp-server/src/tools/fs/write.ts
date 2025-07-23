@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import * as path from "@std/path";
 import { dirname } from "@std/path";
 import { ensureDir } from "@std/fs";

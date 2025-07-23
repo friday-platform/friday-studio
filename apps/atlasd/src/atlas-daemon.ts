@@ -897,7 +897,7 @@ export class AtlasDaemon implements AppContext {
 
       try {
         const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-        const signals = await runtime.listSignals();
+        const signals = runtime.listSignals();
         return c.json(signals);
       } catch (error) {
         return c.json({

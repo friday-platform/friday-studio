@@ -3,7 +3,7 @@
  * Replaces worker-based orchestration with direct actor management
  */
 
-import { MergedConfig } from "@atlas/config";
+import { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
 import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import { logger } from "../utils/logger.ts";
@@ -462,17 +462,8 @@ export class WorkspaceRuntime {
   /**
    * List all signals in the workspace
    */
-  listSignals(): Array<{ name: string; description?: string }> {
-    const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
-      string,
-      unknown
-    >) || {};
-    return Object.entries(signals).map(([name, config]) => ({
-      name,
-      description: (config as Record<string, unknown>)?.description as
-        | string
-        | undefined,
-    }));
+  listSignals(): Record<string, WorkspaceSignalConfig> {
+    return this.config?.workspace?.signals || {};
   }
 
   /**

@@ -1,4 +1,4 @@
-import { z } from "zod/v4";
+import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";

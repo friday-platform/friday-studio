@@ -48,6 +48,13 @@ signals:
   telephone-message:
     description: "Trigger a telephone game with a message"
     provider: "http"
+    schema:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+        required:
+          - "message"
     config:
       path: "/telephone"
       timeout: 30s

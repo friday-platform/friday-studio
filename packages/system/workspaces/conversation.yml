@@ -114,6 +114,9 @@ agents:
         - "atlas_library_list"
         - "atlas_library_get"
         - "atlas_library_stats"
+        # signal tools
+        - "atlas_workspace_signals_list"
+        - "atlas_workspace_signals_trigger"
 
         - "read_atlas_resource"
       prompt: |
