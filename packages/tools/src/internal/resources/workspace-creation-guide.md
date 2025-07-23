@@ -81,7 +81,7 @@ Let's explore how different user intents map to Atlas components:
   - Web scraper (extracts product data)
   - Change detector (compares with previous data)
   - Notifier (sends Discord alerts)
-- **Tools**: web-browser, discord
+- **Tools**: atlas_fetch, atlas_library_store, atlas_notify_email
 - **Context flow**: Each agent passes results to the next
 
 **Critical configuration elements**:
@@ -156,7 +156,7 @@ their prompts.
 - **Signal**: HTTP webhook with validation
 - **Trigger condition**: Filter for specific event types
 - **Agent pipeline**: Validator → Mapper → Syncer
-- **Tools**: hubspot integration
+- **Tools**: atlas_fetch (for API calls), atlas_library_store (cache data), atlas_notify_email (error alerts)
 
 **Critical configuration elements**:
 
@@ -490,61 +490,115 @@ Memory is automatically available to agents through the Atlas runtime - no speci
 
 {{AVAILABLE_TOOLS}}
 
-### Choosing Between Web Scraping and APIs
+### Tool Selection Priority: Internal First
+
+**ALWAYS prefer Atlas internal tools** before external MCP servers or web scraping:
+
+#### 1. Use Internal Tools First
+
+Atlas provides powerful built-in tools that handle most automation needs:
+
+```yaml
+agents:
+  data-processor:
+    config:
+      prompt: |
+        Process the CSV files in the data directory and generate a summary report.
+      tools: ["atlas_glob", "atlas_read", "atlas_write"]
+```
+
+**Common internal tool patterns**:
+
+- **File operations**: `atlas_read`, `atlas_write`, `atlas_list`, `atlas_glob`, `atlas_grep`
+- **Web requests**: `atlas_fetch` (handles both APIs and web scraping)
+- **System commands**: `atlas_bash` (for git, builds, system operations)
+- **Notifications**: `atlas_notify_email`
+- **Workspace management**: `atlas_workspace_create`, `atlas_workspace_list`
+- **Session control**: `atlas_session_describe`, `atlas_session_cancel`
+
+#### 2. External MCP Tools (When Internal Tools Insufficient)
+
+Only use external MCP tools when Atlas internal tools can't handle the specific integration:
+
+```yaml
+tools:
+  mcp:
+    servers:
+      discord:
+        transport:
+          type: stdio
+          command: npx
+          args: ["-y", "@modelcontextprotocol/server-discord"]
+```
+
+#### 3. Web Scraping vs APIs (Last Resort)
+
+**Use `atlas_fetch` for both APIs and web scraping**:
+
+```yaml
+agents:
+  api-caller:
+    config:
+      prompt: |
+        Use atlas_fetch to call the GitHub API:
+        GET https://api.github.com/repos/user/repo/issues
+        Headers: Authorization: Bearer ${GITHUB_TOKEN}
+      tools: ["atlas_fetch"]
+```
 
 **Use Web Scraping when**:
 
 - No official API exists
-- API is limited or requires paid access
-- You need data exactly as displayed to users
-- Real-time updates aren't critical
+- API requires paid access
+- Need data as displayed to users
 
 **Use APIs when**:
 
-- Official API is available
-- You need real-time data
-- Structured data is important
-- Rate limits are generous
+- Official API available
+- Need real-time data
+- Structured data important
 
-### Handling Missing Tools
+### Handling Missing Functionality
 
-When a required tool doesn't exist:
+When you need functionality not directly available:
 
-1. **Check if web scraping works**:
+1. **Try Atlas internal tools first**:
 
    ```yaml
    agents:
      data-fetcher:
        config:
          prompt: |
-           Visit example.com/data and extract the information.
-           Look for data in <div class="results"> elements.
-         tools: ["web-browser"]
+           Use atlas_fetch to get data from example.com/data
+           Extract information from <div class="results"> elements
+           Return structured JSON data
+         tools: ["atlas_fetch"]
    ```
 
-2. **Use HTTP requests directly**:
+2. **Combine internal tools for complex workflows**:
 
    ```yaml
    agents:
-     api-caller:
+     file-processor:
        config:
          prompt: |
-           Make a GET request to https://api.example.com/v1/data
-           Headers: Authorization: Bearer ${API_TOKEN}
-           Parse the JSON response and extract relevant fields.
-         tools: ["web-browser"] # Can make HTTP requests
+           1. Find all CSV files using atlas_glob
+           2. Read each file with atlas_read
+           3. Process data and write results with atlas_write
+           4. Send completion notification with atlas_notify_email
+         tools: ["atlas_glob", "atlas_read", "atlas_write", "atlas_notify_email"]
    ```
 
-3. **Combine multiple tools**:
+3. **Use system commands when needed**:
    ```yaml
    agents:
-     complex-integration:
+     git-automation:
        config:
          prompt: |
-           1. Fetch data from the website
-           2. Process and transform the data
-           3. Send summary via email
-         tools: ["web-browser", "email"]
+           1. Check git status and commit changes
+           2. Push to remote repository
+           3. Create deployment tag
+         tools: ["atlas_bash"]
    ```
 
 ## Common Error Patterns & Solutions
