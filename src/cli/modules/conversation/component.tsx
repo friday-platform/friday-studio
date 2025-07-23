@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Box, Static, Text, useInput, useStdout } from "ink";
+import { useEffect, useState } from "react";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
@@ -24,6 +24,7 @@ import { LibraryCommand } from "./LibraryCommand.tsx";
 import { handleComponentsCommand } from "./components-command.tsx";
 
 export function Component() {
+  const { exit } = useApp();
   const {
     setOutputBuffer,
     conversationClient,
@@ -32,6 +33,7 @@ export function Component() {
     setTypingState,
     isInitializing,
     exitApp,
+    setInkExitFunction,
   } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -46,6 +48,11 @@ export function Component() {
   const { stdout: _stdout } = useStdout();
 
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
+
+  // Pass Ink's exit function to the context on mount
+  useEffect(() => {
+    setInkExitFunction(exit);
+  }, [exit, setInkExitFunction]);
 
   // Handle Ctrl+C for graceful shutdown
   useInput((input, key) => {
