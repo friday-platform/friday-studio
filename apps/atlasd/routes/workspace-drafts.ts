@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute } from "hono-openapi";
-import { resolver, validator } from "hono-openapi/zod";
+import { describeRoute, resolver, validator } from "hono-openapi";
 import { createDraftStore, DraftValidator, WorkspaceDraftStore } from "@atlas/workspace";
 import type { WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";

@@ -1,14 +1,13 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute } from "hono-openapi";
-import { resolver } from "hono-openapi/zod";
+import { describeRoute, resolver } from "hono-openapi";
 
 export const healthResponseSchema = z
   .object({
-    activeWorkspaces: z.int().min(0).meta({
+    activeWorkspaces: z.number().int().min(0).meta({
       description: "Number of currently active workspaces",
     }),
-    uptime: z.int().min(0).meta({
+    uptime: z.number().int().min(0).meta({
       description: "Daemon uptime in milliseconds",
     }),
     timestamp: z.iso.datetime().meta({
@@ -31,6 +30,7 @@ export const healthResponseSchema = z
       }),
   })
   .meta({
+    id: "HealthResponse",
     description: "Health check response containing daemon status and metrics",
   });
 
@@ -49,7 +49,7 @@ healthRoutes.get(
       200: {
         description: "Daemon is healthy and operational",
         content: {
-          "application/json": { schema: resolver(healthResponseSchema) as any },
+          "application/json": { schema: resolver(healthResponseSchema) },
         },
       },
     },

@@ -68,3 +68,23 @@ export type WorkspaceSignalConfig = z.infer<typeof WorkspaceSignalConfigSchema>;
 export type HTTPSignalConfig = z.infer<typeof HTTPSignalConfigSchema>;
 export type ScheduleSignalConfig = z.infer<typeof ScheduleSignalConfigSchema>;
 export type SystemSignalConfig = z.infer<typeof SystemSignalConfigSchema>;
+
+// ==============================================================================
+// SIGNAL TRIGGER SCHEMAS
+// ==============================================================================
+
+/**
+ * Schema for signal trigger requests from tools/API
+ */
+export const SignalTriggerRequestSchema = z.strictObject({
+  payload: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe("Optional payload data for the signal"),
+  streamId: z
+    .string()
+    .optional()
+    .describe("Optional stream ID for UI progress feedback"),
+});
+
+export type SignalTriggerRequest = z.infer<typeof SignalTriggerRequestSchema>;

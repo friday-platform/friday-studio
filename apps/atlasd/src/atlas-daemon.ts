@@ -11,6 +11,7 @@ import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@at
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
+import { logger } from "hono/logger";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
@@ -24,12 +25,12 @@ import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage.ts";
 import { workspaceDraftRoutes } from "../routes/workspace-drafts.ts";
+import { signalRoutes } from "../routes/signals.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
 import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
@@ -246,6 +247,7 @@ export class AtlasDaemon implements AppContext {
   }
 
   private setupRoutes() {
+    this.app.use(logger());
     // Setup CORS if configured
     if (this.options.cors) {
       this.app.use(
@@ -262,6 +264,9 @@ export class AtlasDaemon implements AppContext {
 
     // Mount workspace routes
     this.app.route("/api/workspaces", workspacesRoutes);
+
+    // Mount signal routes
+    this.app.route("/api/workspaces", signalRoutes);
 
     // Mount conversation storage routes
     this.app.route("", conversationStorageRoutes);
@@ -686,71 +691,6 @@ export class AtlasDaemon implements AppContext {
           }`,
         }, 500);
       }
-    });
-
-    // Trigger signal on specific workspace
-    this.app.post("/api/workspaces/:workspaceId/signals/:signalId", async (c) => {
-      const workspaceId = c.req.param("workspaceId");
-      const signalId = c.req.param("signalId");
-      const payload = await c.req.json();
-
-      return await AtlasTelemetry.withServerSpan(
-        "POST /api/workspaces/:workspaceId/signals/:signalId",
-        async (span) => {
-          AtlasTelemetry.addComponentAttributes(span, "signal", {
-            id: signalId,
-            workspaceId,
-            type: "daemon",
-          });
-
-          try {
-            // Get or create workspace runtime
-            const runtime = await this.getOrCreateWorkspaceRuntime(workspaceId);
-
-            // Trigger signal asynchronously - triggerSignal handles signal lookup
-            runtime.triggerSignal(signalId, payload).catch((error) => {
-              if (error.message.includes("not found")) {
-                AtlasLogger.getInstance().warn(`Signal not found: ${signalId}`);
-              } else {
-                AtlasLogger.getInstance().error(`Error processing signal ${signalId}:`, {
-                  error: error instanceof Error
-                    ? {
-                      message: error.message,
-                      stack: error.stack,
-                      name: error.name,
-                    }
-                    : error,
-                  workspaceId,
-                  signalId,
-                });
-              }
-            });
-
-            // Reset idle timeout for this workspace
-            this.resetIdleTimeout(workspaceId);
-
-            return c.json({
-              message: "Signal accepted for processing",
-              status: "processing",
-              workspaceId,
-              signalId,
-            });
-          } catch (error) {
-            return c.json({
-              error: `Failed to process signal: ${
-                error instanceof Error ? error.message : String(error)
-              }`,
-            }, 500);
-          }
-        },
-        {
-          "http.method": "POST",
-          "http.url": `/api/workspaces/${workspaceId}/signals/${signalId}`,
-          "signal.id": signalId,
-          "workspace.id": workspaceId,
-          "payload.size": JSON.stringify(payload).length,
-        },
-      );
     });
 
     // List sessions across all workspaces
@@ -1348,7 +1288,7 @@ export class AtlasDaemon implements AppContext {
   /**
    * Get or create a workspace runtime on-demand
    */
-  private async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
+  async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
     const logger = AtlasLogger.getInstance();
 
     try {
@@ -1525,7 +1465,7 @@ export class AtlasDaemon implements AppContext {
   /**
    * Reset idle timeout for a workspace
    */
-  private resetIdleTimeout(workspaceId: string) {
+  resetIdleTimeout(workspaceId: string) {
     // Clear existing timeout
     const existingTimeout = this.idleTimeouts.get(workspaceId);
     if (existingTimeout) {

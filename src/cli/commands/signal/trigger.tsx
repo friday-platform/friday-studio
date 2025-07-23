@@ -157,7 +157,7 @@ export const handler = async (argv: TriggerArgs): Promise<void> => {
         console.log(`\n❌ Failed (${failed.length}):`);
         for (const result of failed) {
           console.log(`   • ${result.workspaceName} (${result.workspaceId})`);
-          console.log(`     Error: ${result.error}`);
+          console.log(`     Error: ${JSON.stringify(result, null, 2)}`);
         }
       }
 

@@ -1,4 +1,4 @@
-import { openAPISpecs } from "hono-openapi";
+import { openAPIRouteHandler } from "hono-openapi";
 import { Scalar } from "@scalar/hono-api-reference";
 import type { Hono } from "hono";
 import type { AppVariables } from "../src/factory.ts";
@@ -13,7 +13,7 @@ export const createOpenAPIHandlers = (
   const port = options.port || 8080;
 
   // OpenAPI spec handler
-  const openAPIHandler = openAPISpecs(mainApp, {
+  const openAPIHandler = openAPIRouteHandler(mainApp, {
     documentation: {
       ...OPENAPI_DOCUMENTATION,
       servers: [

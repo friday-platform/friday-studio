@@ -1,7 +1,6 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute } from "hono-openapi";
-import { resolver, validator } from "hono-openapi/zod";
+import { describeRoute, resolver, validator } from "hono-openapi";
 
 // Create app instance using factory
 const conversationStorageRoutes = daemonFactory.createApp();
@@ -116,9 +115,6 @@ conversationStorageRoutes.post(
     try {
       const { streamId } = c.req.valid("param");
       const data = c.req.valid("json");
-
-      // Get the app context (daemon context would need to be added to AppContext)
-      const _ctx = c.get("app");
 
       // Access the conversation storage directly
       const { InMemoryConversationStorage } = await import(

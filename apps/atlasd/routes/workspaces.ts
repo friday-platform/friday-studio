@@ -1,8 +1,6 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
-import { describeRoute } from "hono-openapi";
-import { resolver, validator } from "hono-openapi/zod";
-import { WorkspaceManager } from "@atlas/workspace";
+import { describeRoute, resolver, validator } from "hono-openapi";
 
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();
@@ -19,7 +17,9 @@ const workspaceStatusSchema = z.enum([
   "stopping",
   "crashed",
   "unknown",
-]).meta({ description: "Current status of the workspace" });
+]).meta({
+  description: "Current status of the workspace",
+});
 
 // Response schemas
 export const workspaceResponseSchema = z.object({
@@ -72,6 +72,7 @@ export const errorResponseSchema = z.object({
   code: z.string().optional().meta({ description: "Error code" }),
   details: z.unknown().optional().meta({ description: "Additional error details" }),
 }).meta({
+  id: "ErrorResponse",
   description: "Standard error response",
 });
 

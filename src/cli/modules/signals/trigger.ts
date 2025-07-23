@@ -51,7 +51,7 @@ export interface BatchTriggerResult {
  */
 export function validateSignalPayload(data: string): Record<string, unknown> {
   try {
-    return JSON.parse(data);
+    return { payload: JSON.parse(data) };
   } catch (err) {
     throw new Error(`Invalid JSON data: ${err instanceof Error ? err.message : String(err)}`);
   }

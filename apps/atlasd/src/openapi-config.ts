@@ -7,6 +7,7 @@ export const OPENAPI_DOCUMENTATION = {
   tags: [
     { name: "System", description: "System health and status endpoints" },
     { name: "Workspaces", description: "Workspace management operations" },
+    { name: "Signals", description: "Workspace signal triggering and management operations" },
     { name: "Sessions", description: "Session management operations" },
     { name: "Library", description: "Library storage operations" },
     { name: "Daemon", description: "Daemon control operations" },

@@ -28,3 +28,5 @@ const ast = await openapiTS(spec);
 await Deno.writeTextFile("./src/atlasd-types.gen.d.ts", astToString(ast));
 
 console.log("✅ Generated OpenAPI types successfully");
+
+Deno.exit(0);

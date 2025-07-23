@@ -473,6 +473,17 @@ export class WorkspaceRuntime {
     signalName: string,
     payload?: Record<string, unknown>,
   ): Promise<void> {
+    await this.triggerSignalWithSession(signalName, payload);
+    // Original method returns void, discarding session
+  }
+
+  /**
+   * Trigger a signal in the workspace and return the session
+   */
+  async triggerSignalWithSession(
+    signalName: string,
+    payload?: Record<string, unknown>,
+  ): Promise<IWorkspaceSession> {
     const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
       string,
       unknown
@@ -486,7 +497,7 @@ export class WorkspaceRuntime {
       name: signalName,
       ...(signalConfig as object),
     } as IWorkspaceSignal;
-    await this.processSignal(signal, payload || {});
+    return await this.processSignal(signal, payload || {});
   }
 
   /**
