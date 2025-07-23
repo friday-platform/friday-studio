@@ -25,13 +25,10 @@ import type {
   SessionSupervisorConfig,
   ToolExecutorResult,
 } from "@atlas/core";
-import type {
-  ReasoningExecutionResult,
-  ReasoningResult,
-  SessionReasoningContext,
-} from "@atlas/reasoning";
-import { createReasoningMachine, generateThinking, parseAction } from "@atlas/reasoning";
-import { createActor, toPromise } from "xstate";
+import type { Tool } from "ai";
+import { generateText } from "ai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
@@ -100,6 +97,9 @@ export class SessionSupervisorActor implements BaseActor {
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private status: "idle" | "planning" | "executing" | "completed" | "failed" = "idle";
   private config?: SessionSupervisorConfig;
+  private llmProvider = createAnthropic({
+    apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
+  });
 
   constructor(
     sessionId: string,
@@ -180,7 +180,7 @@ export class SessionSupervisorActor implements BaseActor {
 
     const startTime = Date.now();
 
-    // Check for pre-computed job specs
+    // Check for pre-computed job specs (keep existing logic)
     const cachedPlan = this.getCachedJobSpec();
     if (cachedPlan) {
       this.logger.info("Using cached execution plan", {
@@ -190,7 +190,7 @@ export class SessionSupervisorActor implements BaseActor {
       return cachedPlan;
     }
 
-    // Check if planning should be skipped
+    // Check if planning should be skipped (keep existing logic)
     const skipPlanning = this.sessionContext.jobSpec?.config?.supervision?.skip_planning;
     if (skipPlanning) {
       this.logger.info("Skipping planning phase due to job configuration");
@@ -203,44 +203,40 @@ export class SessionSupervisorActor implements BaseActor {
       };
     }
 
-    // Compute execution plan using reasoning engine
-    this.logger.info("Computing execution plan using multi-step reasoning");
+    // New implementation using generateText
+    this.logger.info("Computing execution plan using AI SDK");
 
-    const reasoningContext: SessionReasoningContext = {
-      sessionId: this.sessionContext.sessionId,
-      workspaceId: this.sessionContext.workspaceId || "global",
-      signal: this.sessionContext.signal as IWorkspaceSignal & { [key: string]: unknown },
-      payload: this.sessionContext.payload,
-      availableAgents: this.sessionContext.availableAgents.map((id) => ({
-        id,
-        name: id,
-        purpose: "System agent",
-        type: "system" as const,
-        config: {},
-      })),
-      maxIterations: 5,
-      timeLimit: 60000, // 1 minute
-    };
+    // Create tools for agent execution
+    const planningTools = this.createPlanningTools();
 
-    const machine = createReasoningMachine(
-      {
-        think: (context) => generateThinking(context, "execution_planning"),
-        parseAction: (thinking) => parseAction(thinking as string),
-        executeAction: async (action, context) => {
-          if (action.type === "agent_call" && action.agentId) {
-            const result = await this.agentExecutor(action.agentId, action.parameters);
-            return { result, observation: `Agent ${action.agentId} executed.` };
-          }
-          // Placeholder for other actions
-          return { result: null, observation: "Action not implemented" };
+    const result = await generateText({
+      model: this.llmProvider("claude-3-7-sonnet-20250219"),
+      system: this.buildExecutionPlanningPrompt(this.sessionContext),
+      messages: [{
+        role: "user",
+        content: `Analyze this signal and create an execution plan: ${
+          JSON.stringify(this.sessionContext.signal)
+        }`,
+      }],
+      tools: planningTools,
+      toolChoice: "auto",
+      maxSteps: 10,
+      temperature: 0.3, // Lower temperature for more consistent planning
+      maxTokens: 4000,
+      providerOptions: {
+        anthropic: {
+          thinking: { type: "enabled", budgetTokens: 15000 },
         },
       },
-      { supervisorId: this.id },
-    );
+    });
 
-    const actor = createActor(machine, { input: reasoningContext });
-    const result = await toPromise(actor);
-    const plan = this.convertReasoningToExecutionPlan(result);
+    // Parse the plan from the response including tool calls
+    const plan = this.parsePlanFromResponse(
+      result.text,
+      result.reasoning,
+      result.toolCalls,
+      result.toolResults,
+    );
 
     const duration = Date.now() - startTime;
     this.logger.info("Execution plan created", {
@@ -248,6 +244,7 @@ export class SessionSupervisorActor implements BaseActor {
       duration,
       phases: plan.phases.length,
     });
+
     return plan;
   }
 
@@ -500,6 +497,239 @@ export class SessionSupervisorActor implements BaseActor {
     }
   }
 
+  private buildExecutionPlanningPrompt(context: SessionContext): string {
+    return `You are an execution planning supervisor for Atlas workspace sessions.
+
+Your role is to analyze the incoming signal and create an execution plan using available agents.
+
+Signal Information:
+- Signal ID: ${context.signal.id}
+- Signal Type: ${context.signal.type}
+- Payload: ${JSON.stringify(context.payload)}
+
+Available Agents:
+${context.availableAgents.join(", ")}
+
+${context.additionalPrompts?.planning || ""}
+
+IMPORTANT: You MUST use the plan_agent_execution tool for each agent you want to include in the execution plan. Do not just describe the plan in text - use the tool calls to create the structured plan.
+
+Create a comprehensive execution plan that:
+1. Identifies which agents need to be called
+2. Determines the order of execution (sequential or parallel)  
+3. Specifies what task each agent should perform
+4. Considers dependencies between agents
+
+For each agent, call the plan_agent_execution tool with:
+- agentId: the agent identifier
+- task: specific task description
+- inputSource: "signal", "previous", or "combined"
+- dependencies: array of agent IDs this depends on
+- phase: meaningful phase name  
+- executionStrategy: "sequential" or "parallel"
+
+Think step by step about the best approach to handle this signal, then use the tools to create the structured plan.`;
+  }
+
+  private createPlanningTools(): Record<string, Tool> {
+    return {
+      plan_agent_execution: {
+        description: "Plan the execution of an agent with a specific task",
+        parameters: z.object({
+          agentId: z.string().describe("The ID of the agent to execute"),
+          task: z.string().describe("The task for the agent to perform"),
+          inputSource: z.enum(["signal", "previous", "combined"]).describe("Source of input data"),
+          dependencies: z.array(z.string()).optional().describe(
+            "Agent IDs this execution depends on",
+          ),
+          phase: z.string().describe("Execution phase name"),
+          executionStrategy: z.enum(["sequential", "parallel"]).describe(
+            "How to execute agents in this phase",
+          ),
+        }),
+        execute: (params) => {
+          // This tool is for planning only, not actual execution
+          return { planned: true, ...params };
+        },
+      },
+    };
+  }
+
+  private parsePlanFromResponse(
+    text: string,
+    reasoning: string,
+    toolCalls?: Array<any>,
+    toolResults?: Array<any>,
+  ): ExecutionPlan {
+    // Log the AI response for debugging
+    this.logger.debug("AI Planning Response", {
+      text: text?.substring(0, 500),
+      reasoning: reasoning?.substring(0, 500),
+      toolCallCount: toolCalls?.length || 0,
+      toolResultCount: toolResults?.length || 0,
+    });
+
+    const planId = crypto.randomUUID();
+
+    // Parse tool calls to extract planned agent executions
+    if (toolCalls && toolCalls.length > 0) {
+      this.logger.info("Processing AI tool calls for execution planning", {
+        toolCallCount: toolCalls.length,
+      });
+
+      // Group tool calls by phase
+      const phaseMap = new Map<string, Array<any>>();
+
+      for (const toolCall of toolCalls) {
+        if (toolCall.toolName === "plan_agent_execution") {
+          const phase = toolCall.args?.phase || "Default Phase";
+          if (!phaseMap.has(phase)) {
+            phaseMap.set(phase, []);
+          }
+          phaseMap.get(phase)!.push(toolCall.args);
+        }
+      }
+
+      // Convert phases to ExecutionPhase format
+      const phases: ExecutionPhase[] = Array.from(phaseMap.entries()).map((
+        [phaseName, agentPlans],
+      ) => ({
+        id: crypto.randomUUID(),
+        name: phaseName,
+        executionStrategy: agentPlans[0]?.executionStrategy || "sequential",
+        agents: agentPlans.map((plan) => ({
+          agentId: plan.agentId,
+          task: plan.task,
+          inputSource: plan.inputSource || "signal",
+          dependencies: plan.dependencies,
+          reasoning: `AI planned: ${plan.task}`,
+        })),
+      }));
+
+      if (phases.length > 0) {
+        this.logger.info("Successfully parsed AI-planned execution", {
+          phases: phases.length,
+          totalAgents: phases.reduce((sum, phase) => sum + phase.agents.length, 0),
+        });
+
+        return {
+          id: planId,
+          phases,
+          reasoning: reasoning || "AI-generated execution plan with tool calls",
+          strategy: "ai-planned",
+          confidence: 0.9, // Higher confidence when AI used tools
+          reasoningSteps: [],
+        };
+      }
+    }
+
+    // Fallback: parse the text response for planning information
+    this.logger.warn("No tool calls found - parsing text response for planning", {
+      hasText: !!text,
+      hasReasoning: !!reasoning,
+      availableAgents: this.sessionContext?.availableAgents.length || 0,
+    });
+
+    // Try to parse agent order from the AI's text response
+    const intelligentOrder = this.parseAgentOrderFromText(text);
+
+    if (intelligentOrder && intelligentOrder.length > 0) {
+      this.logger.info("Extracted intelligent agent ordering from text", {
+        originalOrder: this.sessionContext?.availableAgents.join(" → "),
+        intelligentOrder: intelligentOrder.join(" → "),
+      });
+
+      const phases: ExecutionPhase[] = [{
+        id: crypto.randomUUID(),
+        name: "AI-Parsed Execution",
+        executionStrategy: "sequential",
+        agents: intelligentOrder.map((agentId) => ({
+          agentId,
+          task: `Execute ${agentId} based on AI analysis`,
+          inputSource: "signal" as const,
+          reasoning: "Extracted from AI text response",
+        })),
+      }];
+
+      return {
+        id: planId,
+        phases,
+        reasoning: text || reasoning || "AI-generated execution plan from text parsing",
+        strategy: "ai-planned",
+        confidence: 0.7, // Lower confidence when parsing text vs using tools
+        reasoningSteps: [],
+      };
+    }
+
+    // Last resort: use input order
+    this.logger.warn("Could not parse intelligent order - using input order as fallback");
+
+    const phases: ExecutionPhase[] = [{
+      id: crypto.randomUUID(),
+      name: "AI-Generated Execution",
+      executionStrategy: "sequential",
+      agents: this.sessionContext?.availableAgents.map((agentId) => ({
+        agentId,
+        task: "Process signal based on AI planning",
+        inputSource: "signal" as const,
+        reasoning: "Generated from AI planning",
+      })) || [],
+    }];
+
+    return {
+      id: planId,
+      phases,
+      reasoning: reasoning || "AI-generated execution plan",
+      strategy: "ai-planned",
+      confidence: 0.5, // Low confidence when using input order
+      reasoningSteps: [],
+    };
+  }
+
+  private parseAgentOrderFromText(text: string): string[] {
+    if (!text || !this.sessionContext?.availableAgents) {
+      return [];
+    }
+
+    // Look for patterns like "1. **Phase: Data Extraction** - Agent: data-extractor"
+    const phasePattern = /(?:Phase:|Agent:)\s*([a-zA-Z-]+)/gi;
+    const matches = Array.from(text.matchAll(phasePattern));
+
+    const extractedAgents = matches
+      .map((match) => match[1])
+      .filter((agent) => this.sessionContext?.availableAgents.includes(agent));
+
+    if (extractedAgents.length > 0) {
+      this.logger.debug("Parsed agents from text phases", {
+        extracted: extractedAgents,
+        textSnippet: text.substring(0, 300),
+      });
+      return extractedAgents;
+    }
+
+    // Alternative: Look for agent names mentioned in order
+    const availableAgents = this.sessionContext.availableAgents;
+    const agentPositions = availableAgents.map((agent) => ({
+      agent,
+      position: text.toLowerCase().indexOf(agent.toLowerCase()),
+    })).filter((item) => item.position !== -1);
+
+    // Sort by position in text to get the order the AI mentioned them
+    agentPositions.sort((a, b) => a.position - b.position);
+
+    const orderedAgents = agentPositions.map((item) => item.agent);
+
+    if (orderedAgents.length > 0) {
+      this.logger.debug("Parsed agents from text mentions", {
+        ordered: orderedAgents,
+        positions: agentPositions,
+      });
+      return orderedAgents;
+    }
+
+    return [];
+  }
+
   private getCachedJobSpec(): ExecutionPlan | null {
     if (!this.sessionContext?.jobSpec) {
       return null;
@@ -543,64 +773,6 @@ export class SessionSupervisorActor implements BaseActor {
 
   private cachePlan(plan: ExecutionPlan): void {
     this.logger.debug("Caching execution plan", { planId: plan.id });
-  }
-
-  private convertReasoningToExecutionPlan(reasoningResult: ReasoningResult): ExecutionPlan {
-    const planId = crypto.randomUUID();
-
-    const agentInteractions: AgentTask[] = reasoningResult.reasoning.steps
-      .filter((step) => step.action.type === "agent_call" && step.action.agentId)
-      .map((step) => ({
-        agentId: step.action.agentId!,
-        task: typeof step.action.parameters.task === "string"
-          ? step.action.parameters.task
-          : "Process input",
-        inputSource: "previous",
-        reasoning: step.thinking,
-      }));
-
-    const phases: ExecutionPhase[] = [{
-      id: crypto.randomUUID(),
-      name: "Multi-Step Reasoning Execution",
-      executionStrategy: "sequential",
-      agents: agentInteractions.length > 0
-        ? agentInteractions
-        : this.sessionContext?.availableAgents.map((agentId) => ({
-          agentId,
-          task: "Process signal based on reasoning",
-          inputSource: "signal",
-          reasoning: "Generated from multi-step reasoning",
-        })) || [],
-    }];
-
-    const reasoningSteps: ExecutionPlanReasoningStep[] = reasoningResult.reasoning.steps.map((
-      step,
-    ) => ({
-      iteration: step.iteration,
-      thinking: step.thinking,
-      action: step.action
-        ? `${step.action.type}: ${step.action.agentId || step.action.parameters.task || "unknown"}`
-        : "none",
-      observation: step.observation,
-    }));
-
-    const avgConfidence = reasoningResult.reasoning.steps.length > 0
-      ? reasoningResult.reasoning.steps.reduce(
-        (sum, step) => sum + (step.confidence || 0.7),
-        0,
-      ) /
-        reasoningResult.reasoning.steps.length
-      : 0.5;
-
-    return {
-      id: planId,
-      phases,
-      reasoning:
-        `Reasoning completed with ${reasoningResult.reasoning.steps.length} steps. Status: ${reasoningResult.status}`,
-      strategy: "reasoning-machine",
-      confidence: avgConfidence,
-      reasoningSteps,
-    };
   }
 
   private extractAndStoreSemanticFacts(_summary: SessionSummary): void {
@@ -662,7 +834,7 @@ export class SessionSupervisorActor implements BaseActor {
       },
     };
 
-    return agentActor.executeTask(payload);
+    return await agentActor.executeTask(payload);
   }
 
   private toolExecutor(
