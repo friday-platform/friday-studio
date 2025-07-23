@@ -145,6 +145,25 @@ function generateTimestamp() {
     .replace(/\s/g, "");
 }
 
+function combineTextChunks(previousContent: string, newContent: string): string {
+  if (!previousContent) return newContent;
+
+  // Check if we need a space after punctuation
+  const endsWithPunctuation = /[.!?:;,]$/.test(previousContent.trim());
+  const startsWithLetter = /^[a-zA-Z]/.test(newContent.trim());
+
+  if (endsWithPunctuation && startsWithLetter) {
+    return previousContent + " " + newContent;
+  }
+
+  // General case: add space if no whitespace at boundary
+  const needsSpace = !previousContent.match(/\s$/) &&
+    !newContent.match(/^\s/) &&
+    previousContent.length > 0;
+
+  return previousContent + (needsSpace ? " " : "") + newContent;
+}
+
 // type SSEEvent = z.infer<typeof SSEEventSchema>;
 
 export const MessageBuffer = () => {
@@ -221,11 +240,13 @@ export const MessageBuffer = () => {
                   prev.filter((entry) => entry.id !== streamingId),
                   prev.find((entry) => entry.id === streamingId),
                 ];
+                const previousContent = previousOutput?.content ?? "";
+                const newContent = combineTextChunks(previousContent, content);
                 return [
                   ...filtered,
                   {
                     id: streamingId,
-                    content: (previousOutput?.content ?? "") + content,
+                    content: newContent,
                     component: (
                       <ChatMessage
                         author="Atlas"
@@ -233,7 +254,7 @@ export const MessageBuffer = () => {
                         date={generateTimestamp()}
                       >
                         <MarkdownDisplay
-                          content={(previousOutput?.content ?? "") + content}
+                          content={newContent}
                         />
                       </ChatMessage>
                     ),
@@ -418,14 +439,16 @@ export const MessageBuffer = () => {
                   prev.filter((entry) => entry.id !== streamingMessageId),
                   prev.find((entry) => entry.id === streamingMessageId),
                 ];
+                const previousContent = previousOutput?.content ?? "";
+                const newContent = combineTextChunks(previousContent, content);
                 return [
                   ...filtered,
                   {
                     id: streamingMessageId,
-                    content: (previousOutput?.content ?? "") + content,
+                    content: newContent,
                     component: (
                       <MarkdownDisplay
-                        content={(previousOutput?.content ?? "") + content}
+                        content={newContent}
                         dimColor
                       />
                     ),
