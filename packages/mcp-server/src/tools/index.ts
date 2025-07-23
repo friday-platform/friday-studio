@@ -52,7 +52,7 @@ import { registerReadTool } from "./fs/read.ts";
 import { registerWriteTool } from "./fs/write.ts";
 
 // Import web tools
-import { registerFetchTool } from "./web/fetch.ts";
+import { registerWebTools } from "./web/index.ts";
 
 // Import system tools
 import { registerBashTool } from "./system/bash.ts";
@@ -110,7 +110,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerWriteTool(server, context);
 
   // Web tools
-  registerFetchTool(server, context);
+  registerWebTools(server, context);
 
   // System tools
   registerBashTool(server, context);

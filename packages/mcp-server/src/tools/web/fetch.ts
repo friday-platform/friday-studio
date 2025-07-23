@@ -126,178 +126,255 @@ Usage notes:
       },
     },
     async (params) => {
-      // Validate URL
-      if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
-        throw new Error("URL must start with http:// or https://");
-      }
-
-      const timeout = Math.min((params.timeout ?? DEFAULT_TIMEOUT / 1000) * 1000, MAX_TIMEOUT);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-
-      let response: Response;
-      let content: string;
-      let contentType: string;
-
       try {
-        // Try to use Playwright with bundled Chromium
-        const bundledBrowserPath = getBundledBrowserPath();
-        let executablePath: string | undefined;
+        ctx.logger.info("atlas_fetch tool called", {
+          url: params.url,
+          format: params.format,
+          timeout: params.timeout,
+          operation: "atlas_fetch_start",
+        });
 
-        if (bundledBrowserPath) {
-          executablePath = getChromiumExecutablePath(bundledBrowserPath);
-          ctx.logger.debug("Found bundled browsers", {
-            browsersPath: bundledBrowserPath,
-            executablePath,
+        // Validate URL
+        if (!params.url.startsWith("http://") && !params.url.startsWith("https://")) {
+          const error = "URL must start with http:// or https://";
+          ctx.logger.error("atlas_fetch validation failed", {
+            url: params.url,
+            error,
+            operation: "atlas_fetch_validation_error",
           });
+          throw new Error(error);
         }
 
-        const browser = await chromium.launch({
-          headless: true,
-          executablePath,
-          timeout: timeout / 2, // Use half the timeout for browser launch
+        const timeout = Math.min((params.timeout ?? DEFAULT_TIMEOUT / 1000) * 1000, MAX_TIMEOUT);
+
+        ctx.logger.info("atlas_fetch starting request", {
+          url: params.url,
+          timeout,
+          operation: "atlas_fetch_request_start",
         });
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+        let response: Response;
+        let content: string;
+        let contentType: string;
 
         try {
-          const context = await browser.newContext({
-            userAgent:
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            acceptDownloads: false,
-            bypassCSP: true,
+          // Try to use Playwright with bundled Chromium
+          const bundledBrowserPath = getBundledBrowserPath();
+          let executablePath: string | undefined;
+
+          ctx.logger.info("atlas_fetch attempting Playwright", {
+            url: params.url,
+            bundledBrowserPath,
+            operation: "atlas_fetch_playwright_attempt",
           });
 
-          const page = await context.newPage();
-
-          // Set timeout for the page navigation
-          page.setDefaultTimeout(timeout / 2);
-
-          const playwrightResponse = await page.goto(params.url, {
-            waitUntil: "networkidle",
-            timeout: timeout / 2,
-          });
-
-          if (!playwrightResponse || !playwrightResponse.ok()) {
-            throw new Error(
-              `Playwright request failed with status: ${playwrightResponse?.status()}`,
-            );
+          if (bundledBrowserPath) {
+            executablePath = getChromiumExecutablePath(bundledBrowserPath);
+            ctx.logger.info("Found bundled browsers", {
+              browsersPath: bundledBrowserPath,
+              executablePath,
+              operation: "atlas_fetch_browser_path",
+            });
           }
 
-          content = await page.content();
-          contentType = playwrightResponse.headers()["content-type"] || "text/html";
-
-          // Create a mock response object for compatibility
-          response = new Response(content, {
-            status: playwrightResponse.status(),
-            headers: new Headers({
-              "content-type": contentType,
-              "content-length": content.length.toString(),
-            }),
+          const browser = await chromium.launch({
+            headless: true,
+            executablePath,
+            timeout: timeout / 2, // Use half the timeout for browser launch
           });
 
-          await browser.close();
-          ctx.logger.debug("Successfully fetched content using Playwright", {
-            url: params.url,
-            usedBundledBrowser: !!executablePath,
-          });
+          try {
+            const context = await browser.newContext({
+              userAgent:
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              acceptDownloads: false,
+              bypassCSP: true,
+            });
+
+            const page = await context.newPage();
+
+            // Set timeout for the page navigation
+            page.setDefaultTimeout(timeout / 2);
+
+            const playwrightResponse = await page.goto(params.url, {
+              waitUntil: "networkidle",
+              timeout: timeout / 2,
+            });
+
+            if (!playwrightResponse || !playwrightResponse.ok()) {
+              throw new Error(
+                `Playwright request failed with status: ${playwrightResponse?.status()}`,
+              );
+            }
+
+            content = await page.content();
+            contentType = playwrightResponse.headers()["content-type"] || "text/html";
+
+            // Create a mock response object for compatibility
+            response = new Response(content, {
+              status: playwrightResponse.status(),
+              headers: new Headers({
+                "content-type": contentType,
+                "content-length": content.length.toString(),
+              }),
+            });
+
+            await browser.close();
+            ctx.logger.info("Successfully fetched content using Playwright", {
+              url: params.url,
+              usedBundledBrowser: !!executablePath,
+              contentLength: content.length,
+              statusCode: playwrightResponse.status(),
+              operation: "atlas_fetch_playwright_success",
+            });
+          } catch (playwrightError) {
+            await browser.close();
+            const error = playwrightError as Error;
+            ctx.logger.error("Playwright error in try block", {
+              url: params.url,
+              error: error.message,
+              stack: error.stack,
+              operation: "atlas_fetch_playwright_inner_error",
+            });
+            throw playwrightError;
+          }
         } catch (playwrightError) {
-          await browser.close();
-          throw playwrightError;
+          // Fallback to regular fetch if Playwright fails
+          const error = playwrightError as Error;
+          ctx.logger.info("Playwright failed, falling back to fetch", {
+            url: params.url,
+            error: error.message,
+            stack: error.stack,
+            operation: "atlas_fetch_playwright_fallback",
+          });
+          response = await fetch(params.url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              Accept:
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+              "Accept-Language": "en-US,en;q=0.9",
+            },
+          });
+
+          if (!response.ok) {
+            const error = `Request failed with status code: ${response.status}`;
+            ctx.logger.error("Fetch request failed", {
+              url: params.url,
+              statusCode: response.status,
+              statusText: response.statusText,
+              error,
+              operation: "atlas_fetch_http_error",
+            });
+            throw new Error(error);
+          }
+
+          // Check content length
+          const contentLength = response.headers.get("content-length");
+          if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+            throw new Error("Response too large (exceeds 5MB limit)");
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
+            throw new Error("Response too large (exceeds 5MB limit)");
+          }
+
+          content = new TextDecoder().decode(arrayBuffer);
+          contentType = response.headers.get("content-type") || "";
+          ctx.logger.info("Successfully fetched content using fetch", {
+            url: params.url,
+            contentLength: content.length,
+            statusCode: response.status,
+            operation: "atlas_fetch_http_success",
+          });
         }
-      } catch (playwrightError) {
-        // Fallback to regular fetch if Playwright fails
-        ctx.logger.debug("Playwright failed, falling back to fetch", {
-          url: params.url,
-          error: playwrightError.message,
-        });
-        response = await fetch(params.url, {
-          signal: controller.signal,
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            Accept:
-              "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-          },
-        });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
-          throw new Error(`Request failed with status code: ${response.status}`);
+          const error = `Request failed with status code: ${response.status}`;
+          ctx.logger.error("Final response check failed", {
+            url: params.url,
+            statusCode: response.status,
+            error,
+            operation: "atlas_fetch_final_check_error",
+          });
+          throw new Error(error);
         }
 
-        // Check content length
-        const contentLength = response.headers.get("content-length");
-        if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+        // Check content length if using fetch (Playwright already has content)
+        if (!content) {
+          const contentLength = response.headers.get("content-length");
+          if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
+            throw new Error("Response too large (exceeds 5MB limit)");
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
+            throw new Error("Response too large (exceeds 5MB limit)");
+          }
+
+          content = new TextDecoder().decode(arrayBuffer);
+          contentType = response.headers.get("content-type") || "";
+        }
+
+        // Check content size for Playwright responses
+        if (content.length > MAX_RESPONSE_SIZE) {
           throw new Error("Response too large (exceeds 5MB limit)");
         }
 
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-          throw new Error("Response too large (exceeds 5MB limit)");
-        }
+        const title = `${params.url} (${contentType})`;
+        let output: string;
 
-        content = new TextDecoder().decode(arrayBuffer);
-        contentType = response.headers.get("content-type") || "";
-        ctx.logger.debug("Successfully fetched content using fetch", { url: params.url });
-      }
+        switch (params.format) {
+          case "text":
+            if (contentType.includes("text/html")) {
+              output = await extractTextFromHTML(content);
+            } else {
+              output = content;
+            }
+            break;
 
-      clearTimeout(timeoutId);
+          case "markdown":
+            if (contentType.includes("text/html")) {
+              output = convertHTMLToMarkdown(content);
+            } else {
+              output = "```\n" + content + "\n```";
+            }
+            break;
 
-      if (!response.ok) {
-        throw new Error(`Request failed with status code: ${response.status}`);
-      }
-
-      // Check content length if using fetch (Playwright already has content)
-      if (!content) {
-        const contentLength = response.headers.get("content-length");
-        if (contentLength && parseInt(contentLength) > MAX_RESPONSE_SIZE) {
-          throw new Error("Response too large (exceeds 5MB limit)");
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        if (arrayBuffer.byteLength > MAX_RESPONSE_SIZE) {
-          throw new Error("Response too large (exceeds 5MB limit)");
-        }
-
-        content = new TextDecoder().decode(arrayBuffer);
-        contentType = response.headers.get("content-type") || "";
-      }
-
-      // Check content size for Playwright responses
-      if (content.length > MAX_RESPONSE_SIZE) {
-        throw new Error("Response too large (exceeds 5MB limit)");
-      }
-
-      const title = `${params.url} (${contentType})`;
-      let output: string;
-
-      switch (params.format) {
-        case "text":
-          if (contentType.includes("text/html")) {
-            output = await extractTextFromHTML(content);
-          } else {
+          default:
             output = content;
-          }
-          break;
+            break;
+        }
 
-        case "markdown":
-          if (contentType.includes("text/html")) {
-            output = convertHTMLToMarkdown(content);
-          } else {
-            output = "```\n" + content + "\n```";
-          }
-          break;
+        ctx.logger.info("atlas_fetch completed successfully", {
+          url: params.url,
+          format: params.format,
+          outputLength: output.length,
+          title,
+          operation: "atlas_fetch_success",
+        });
 
-        default:
-          output = content;
-          break;
+        return createSuccessResponse({
+          output,
+          title,
+          metadata: {},
+        });
+      } catch (error) {
+        ctx.logger.error("atlas_fetch failed with unhandled error", {
+          url: params.url,
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          operation: "atlas_fetch_unhandled_error",
+        });
+        throw error;
       }
-
-      return createSuccessResponse({
-        output,
-        title,
-        metadata: {},
-      });
     },
   );
 }
@@ -316,7 +393,7 @@ async function extractTextFromHTML(html: string) {
       },
     })
     .on("*", {
-      element(element) {
+      element(element: { tagName: string }) {
         // Reset skip flag when entering other elements
         if (
           !["script", "style", "noscript", "iframe", "object", "embed"].includes(element.tagName)
@@ -324,7 +401,7 @@ async function extractTextFromHTML(html: string) {
           skipContent = false;
         }
       },
-      text(input) {
+      text(input: { text: string }) {
         if (!skipContent) {
           text += input.text;
         }

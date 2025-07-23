@@ -1898,7 +1898,7 @@
         "dependencies": [
           "jsr:@std/fs@1",
           "jsr:@std/path@1",
-          "npm:@modelcontextprotocol/sdk@^1.12.1",
+          "npm:@modelcontextprotocol/sdk@^1.15.0",
           "npm:@worker-tools/html-rewriter@~0.1.0-pre.19",
           "npm:turndown@^7.2.0"
         ]

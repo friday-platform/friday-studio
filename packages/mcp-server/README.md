@@ -65,7 +65,7 @@ Each tool in the platform server follows a consistent pattern that aligns with
 
 ```typescript
 // Example from src/tools/fs/ls.ts
-import { z } from "zod";
+import { z } from "zod/v4";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";

@@ -1,0 +1,114 @@
+version: "1.0"
+workspace:
+  name: top-stocks-emailer
+  description: Fetches top 5 performing stocks from Barchart, summarizes them, and sends via email
+
+signals:
+  fetch-stocks:
+    description: "Manually trigger stock fetching and email process"
+    provider: "http"
+    config:
+      path: "/trigger/fetch-stocks"
+
+jobs:
+  process-stocks:
+    name: process-stocks
+    description: Fetch stocks, analyze performance, and send email
+    triggers:
+      - signal: fetch-stocks
+    execution:
+      strategy: sequential
+      agents:
+        - id: "stock-fetcher"
+          context:
+            signal: true
+        - id: "stock-analyzer"
+          context:
+            steps: "previous"
+        - id: "email-sender"
+          context:
+            steps: "previous"
+
+agents:
+  stock-fetcher:
+    type: llm
+    description: Fetch top 5 performing stocks from finance.yahoo.com using session-based automation.
+    config:
+      model: claude-3-5-haiku-latest
+      prompt: |
+        You fetch the top 5 performing stocks from finance.yahoo.com using session-based web automation.
+
+        Follow this workflow:
+        1. Create a web session using web_session_create with sessionId "stocks-session"
+        2. Navigate to https://finance.yahoo.com/markets/stocks/gainers/ using web_session_navigate
+        3. Handle any cookie consent banners using web_session_handle_consent with action "accept"
+        4. Extract the page content using web_session_extract with format "markdown"
+        5. Close the session using web_session_close when done
+
+        From the extracted data, identify the top 5 stocks and extract:
+        - Symbol
+        - Name
+        - Price
+        - Price change
+        - Percent change
+        - Volume
+        - Weighted Alpha (performance metric)
+
+        Output the result as a well formatted JSON document.
+      tools: ["atlas-platform"]
+
+  stock-analyzer:
+    type: llm
+    description: Analyze and summarize stock performance
+    config:
+      model: claude-3-5-sonnet-latest
+      prompt: |
+        You analyze the top 5 performing stocks data provided to you.
+
+        For each stock, create a concise performance summary that includes:
+        1. What the company does (based on company name)
+        2. Recent price performance
+        3. Notable metrics (volume, momentum, etc.)
+        4. Brief assessment of why it might be performing well
+
+        Combine all summaries into a well-formatted report suitable for an email.
+        Include a brief market overview at the beginning.
+
+        Format the output in HTML to make it look good in an email.
+
+  email-sender:
+    type: llm
+    description: Send email with stock performance report
+    config:
+      model: claude-3-5-haiku-latest
+      prompt: |
+        You send an email with the stock performance report.
+
+        The email should be sent to: michal@tempest.team
+        Subject: Top 5 Performing Stocks Report - [Current Date]
+
+        Use the provided HTML-formatted stock report as the email body.
+        Add a brief introduction and conclusion to the email.
+
+        Use the atlas_notify_email from the atlas-platform tool to send the email.
+      tools: ["atlas-platform"]
+
+tools:
+  mcp:
+    servers:
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            - "atlas_fetch"
+            - "atlas_notify_email"
+            - "web_session_create"
+            - "web_session_navigate"
+            - "web_session_handle_consent"
+            - "web_session_extract"
+            - "web_session_close"
+            - "web_session_click"
+            - "web_session_wait_for_element"
+            - "web_session_list"
