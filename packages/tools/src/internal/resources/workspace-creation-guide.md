@@ -297,47 +297,6 @@ These prompts provide **detailed technical instructions** for individual tasks.
 **Key distinction**: Use job prompts for "what we're trying to achieve" and agent prompts for "how
 to do this specific step."
 
-## CRITICAL: YAML Formatting Rules
-
-When generating workspace configurations, strict YAML formatting is essential for schema validation:
-
-### Numeric Values Must Be Unquoted
-
-```yaml
-# CORRECT - Use unquoted numbers
-agents:
-  my-agent:
-    config:
-      temperature: 0.1 # Number type
-      max_tokens: 2000 # Integer type
-      max_steps: 5 # Integer type
-
-# WRONG - Quoted numbers will cause validation errors
-agents:
-  my-agent:
-    config:
-      temperature: "0.1" # String type - FAILS validation
-      max_tokens: "2000" # String type - FAILS validation
-      max_steps: "5" # String type - FAILS validation
-```
-
-### Other Type-Sensitive Fields
-
-```yaml
-# CORRECT formats
-memory:
-  enabled: true # Boolean, not "true"
-  retention:
-    max_age_days: 30 # Number, not "30"
-    max_entries: 1000 # Number, not "1000"
-
-server:
-  mcp:
-    enabled: false # Boolean, not "false"
-```
-
-**Remember**: YAML parsers treat quoted values as strings, unquoted values as their native types. The Atlas schema validates types strictly, so incorrect quoting will cause `ConfigValidationError`.
-
 ## Writing Effective Agent Prompts
 
 Prompt quality directly impacts workspace effectiveness. Follow these guidelines:
@@ -528,14 +487,6 @@ Memory is automatically available to agents through the Atlas runtime - no speci
 ## Tool Selection Guide
 
 ### Currently Available Tools
-
-Atlas provides these built-in MCP tools:
-
-**Core Tools**:
-
-- `web-browser` - Web scraping and browsing
-- `email` - Send email notifications
-- `filesystem` - Read/write files (with restrictions)
 
 {{AVAILABLE_TOOLS}}
 
@@ -802,4 +753,10 @@ a solution that elegantly addresses their requirements using Atlas's flexible ar
 
 ## Full workspace.yml reference
 
-{{WORKSPACE_REFERENCE}}
+For complete configuration examples and all available options, use:
+
+```
+read_atlas_resource({ uri: "atlas://reference/workspace" })
+```
+
+This provides the comprehensive workspace.yml reference with all signal types, job definitions, agent configurations, tool configurations, memory settings, success/error conditions, schemas, and best practices.
