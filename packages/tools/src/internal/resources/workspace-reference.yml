@@ -46,6 +46,16 @@ server:
 # TOOLS CONFIGURATION (Protocol MCP)
 # ==============================================================================
 # External MCP servers that agents in this workspace can call
+#
+# IMPORTANT: Always prefer Atlas internal tools first:
+# - File operations: atlas_read, atlas_write, atlas_list, atlas_glob, atlas_grep
+# - Web requests: atlas_fetch
+# - System commands: atlas_bash
+# - Notifications: atlas_notify_email
+# - Workspace operations: atlas_workspace_*, atlas_session_*
+# - Library/memory: atlas_library_*, atlas_conversation_storage
+#
+# Only configure external MCP servers when internal tools are insufficient
 tools:
   mcp:
     # Client configuration for calling MCP servers
@@ -105,7 +115,9 @@ tools:
         tools:
           allow: ["send_message", "receive_stream"]
 
-      # Filesystem MCP server for file operations
+      # Note: For file operations, prefer Atlas internal tools:
+      # atlas_read, atlas_write, atlas_list, atlas_glob, atlas_grep
+      # Only use external filesystem MCP if you need specific functionality
       filesystem:
         transport:
           type: "stdio"
@@ -252,7 +264,7 @@ jobs:
 
           # Tools granted specifically for this job
           tools:
-            allow: ["github", "workspace_memory_recall"]
+            allow: ["github", "atlas_library_get"]
 
         # Agent with multiple context sources
         - id: "report-writer"
@@ -358,7 +370,7 @@ agents:
       #   toolName: "github"
 
       # Tools available to this agent (simple array format)
-      tools: ["github", "filesystem", "workspace_memory_recall"]
+      tools: ["github", "atlas_read", "atlas_write", "atlas_library_get"]
 
       # Success/error handlers (like job level)
       success:
@@ -455,7 +467,7 @@ agents:
         Focus on practical, business-relevant insights.
       temperature: 0.5
       max_tokens: 3000
-      tools: ["workspace_memory_recall"]
+      tools: ["atlas_library_get", "atlas_library_store"]
 
   # Report writer agent
   report-writer:
