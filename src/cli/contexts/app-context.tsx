@@ -8,10 +8,17 @@ import { getDaemonClient } from "../utils/daemon-client.ts";
 import { OutputEntry } from "../modules/conversation/index.ts";
 import { ChatMessage } from "../components/chat-message.tsx";
 
+interface ConversationDisplayPrefs {
+  showReasoningSteps: boolean;
+  showToolCalls: boolean;
+  showToolResults: boolean;
+}
+
 interface AtlasConfig {
   apiKey: string;
   daemonPort: string;
   streamMessages: boolean;
+  conversationDisplay: ConversationDisplayPrefs;
 }
 
 interface TypingState {
@@ -54,6 +61,11 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     apiKey: "",
     daemonPort: "8080",
     streamMessages: true,
+    conversationDisplay: {
+      showReasoningSteps: true,
+      showToolCalls: false,
+      showToolResults: false,
+    },
   });
   const [mcpClient, setMcpClient] = useState<Client | null>(null);
 

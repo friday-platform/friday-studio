@@ -4,22 +4,7 @@
  * This package provides the core workspace management functionality for Atlas.
  */
 
-// Workspace Manager
-export {
-  getWorkspaceManager,
-  WorkspaceManager,
-  type WorkspaceManagerOptions,
-} from "./src/workspace-manager.ts";
-
-// Workspace Types
-export {
-  type WorkspaceEntry,
-  WorkspaceEntrySchema,
-  type WorkspaceMetadata,
-  WorkspaceMetadataSchema,
-  WorkspaceStatus,
-  WorkspaceStatusSchema,
-} from "./src/types/workspace.ts";
+// Workspace functionality moved to @atlas/workspace package
 
 // Export all LLM provider types and interfaces
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";

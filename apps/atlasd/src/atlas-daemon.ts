@@ -31,7 +31,7 @@ import { workspacesRoutes } from "../routes/workspaces.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage.ts";
 import { workspaceDraftRoutes } from "../routes/workspace-drafts.ts";
 import { type AppContext, createApp } from "./factory.ts";
-import { WorkspaceManager } from "@atlas/core";
+import { WorkspaceManager } from "@atlas/workspace";
 import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
 import { parse } from "@std/yaml";
 

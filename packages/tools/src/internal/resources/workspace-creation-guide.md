@@ -297,6 +297,47 @@ These prompts provide **detailed technical instructions** for individual tasks.
 **Key distinction**: Use job prompts for "what we're trying to achieve" and agent prompts for "how
 to do this specific step."
 
+## CRITICAL: YAML Formatting Rules
+
+When generating workspace configurations, strict YAML formatting is essential for schema validation:
+
+### Numeric Values Must Be Unquoted
+
+```yaml
+# CORRECT - Use unquoted numbers
+agents:
+  my-agent:
+    config:
+      temperature: 0.1 # Number type
+      max_tokens: 2000 # Integer type
+      max_steps: 5 # Integer type
+
+# WRONG - Quoted numbers will cause validation errors
+agents:
+  my-agent:
+    config:
+      temperature: "0.1" # String type - FAILS validation
+      max_tokens: "2000" # String type - FAILS validation
+      max_steps: "5" # String type - FAILS validation
+```
+
+### Other Type-Sensitive Fields
+
+```yaml
+# CORRECT formats
+memory:
+  enabled: true # Boolean, not "true"
+  retention:
+    max_age_days: 30 # Number, not "30"
+    max_entries: 1000 # Number, not "1000"
+
+server:
+  mcp:
+    enabled: false # Boolean, not "false"
+```
+
+**Remember**: YAML parsers treat quoted values as strings, unquoted values as their native types. The Atlas schema validates types strictly, so incorrect quoting will cause `ConfigValidationError`.
+
 ## Writing Effective Agent Prompts
 
 Prompt quality directly impacts workspace effectiveness. Follow these guidelines:
@@ -726,6 +767,7 @@ tools:
 - **Define schemas**: Signal schemas validate input at runtime - always use them
 - **Clear naming**: Use descriptive names that reflect business purpose, not technical details
 - **Document intent**: Descriptions should explain the "why" behind each component
+- **CRITICAL - Numeric Values**: Always use unquoted numbers in YAML for numeric fields like `temperature: 0.1` and `max_tokens: 2000`. NEVER use quoted strings like `temperature: "0.1"` as this will cause validation errors. The schema requires actual numbers, not string representations.
 
 ### Security & Credentials
 

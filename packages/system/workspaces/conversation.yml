@@ -98,17 +98,23 @@ agents:
     config:
       model: "claude-sonnet-4-20250514"
       tools:
-        - "atlas_conversation_storage"
-        - "atlas_stream_event"
+        # workspace draft
         - "atlas_workspace_draft_create"
+        - "atlas_list_session_drafts"
+        - "atlas_show_draft_config"
         - "atlas_workspace_draft_update"
         - "atlas_workspace_draft_validate"
         - "atlas_publish_draft_to_workspace"
-        - "atlas_show_draft_config"
-        - "atlas_list_session_drafts"
+        - "atlas_delete_draft_config"
+        # workspace
+        - "atlas_workspace_list"
+        - "atlas_workspace_describe"
+        - "atlas_workspace_delete"
+        # library
         - "atlas_library_list"
         - "atlas_library_get"
         - "atlas_library_stats"
+
         - "read_atlas_resource"
       prompt: |
         You are Addy, the Atlas AI assistant. I help technical users accomplish their goals through natural conversation - whether that's creating automated workflows, exploring past work, or debugging systems.

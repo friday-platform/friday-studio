@@ -1,4 +1,4 @@
-import { getWorkspaceManager } from "@atlas/core";
+import { getWorkspaceManager } from "@atlas/workspace";
 // import { WorkspaceProcessManager } from "../../../core/workspace-process-manager.ts";
 import { errorOutput } from "../../utils/output.ts";
 

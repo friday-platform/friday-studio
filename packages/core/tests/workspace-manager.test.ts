@@ -1,9 +1,9 @@
 import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
-import { WorkspaceManager } from "../src/workspace-manager.ts";
+import { WorkspaceManager, WorkspaceStatusEnum } from "@atlas/workspace";
+import type { WorkspaceStatus } from "@atlas/workspace";
 import { createKVStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
 import { RegistryStorageAdapter } from "../../../src/core/storage/registry-storage-adapter.ts";
-import { WorkspaceStatus } from "../src/types/workspace.ts";
 
 // Set DENO_TESTING to disable logging during tests
 Deno.env.set("DENO_TESTING", "true");
@@ -286,13 +286,13 @@ workspace:
       assertEquals(allWorkspaces.filter((w) => !w.metadata?.system).length, 2);
 
       // Update status and filter by it
-      await registry.updateWorkspaceStatus(workspace1.id, WorkspaceStatus.RUNNING);
+      await registry.updateWorkspaceStatus(workspace1.id, WorkspaceStatusEnum.RUNNING);
 
-      const runningWorkspaces = await manager.list({ status: WorkspaceStatus.RUNNING });
+      const runningWorkspaces = await manager.list({ status: WorkspaceStatusEnum.RUNNING });
       assertEquals(runningWorkspaces.length, 1);
       assertEquals(runningWorkspaces[0].id, workspace1.id);
 
-      const stoppedWorkspaces = await manager.list({ status: WorkspaceStatus.STOPPED });
+      const stoppedWorkspaces = await manager.list({ status: WorkspaceStatusEnum.STOPPED });
       assertEquals(stoppedWorkspaces.length, 1);
       assertEquals(stoppedWorkspaces[0].id, workspace2.id);
     } finally {

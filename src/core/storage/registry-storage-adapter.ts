@@ -7,7 +7,8 @@
  */
 
 import { type KVStorage } from "./kv-storage.ts";
-import { WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatus } from "@atlas/core";
+import { WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "@atlas/workspace";
+import type { WorkspaceStatus } from "@atlas/workspace";
 
 /**
  * Registry-specific storage operations
@@ -188,9 +189,9 @@ export class RegistryStorageAdapter {
     }
 
     // Update timestamps based on status
-    if (status === WorkspaceStatus.RUNNING) {
+    if (status === WorkspaceStatusEnum.RUNNING) {
       updatedWorkspace.startedAt = new Date().toISOString();
-    } else if (status === WorkspaceStatus.STOPPED || status === WorkspaceStatus.CRASHED) {
+    } else if (status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.CRASHED) {
       updatedWorkspace.stoppedAt = new Date().toISOString();
       updatedWorkspace.pid = undefined;
       updatedWorkspace.port = undefined;
@@ -222,8 +223,10 @@ export class RegistryStorageAdapter {
     version: string | null;
   }> {
     const workspaces = await this.listWorkspaces();
-    const runningWorkspaces = workspaces.filter((w) => w.status === WorkspaceStatus.RUNNING).length;
-    const stoppedWorkspaces = workspaces.filter((w) => w.status === WorkspaceStatus.STOPPED).length;
+    const runningWorkspaces =
+      workspaces.filter((w) => w.status === WorkspaceStatusEnum.RUNNING).length;
+    const stoppedWorkspaces =
+      workspaces.filter((w) => w.status === WorkspaceStatusEnum.STOPPED).length;
 
     const lastUpdated = await this.storage.get<string>(["registry", "lastUpdated"]);
     const version = await this.storage.get<string>(["registry", "version"]);

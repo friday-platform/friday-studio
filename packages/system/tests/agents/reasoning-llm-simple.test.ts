@@ -60,6 +60,11 @@ const createTestToolRegistry = (): AtlasToolRegistry => {
     conversation: {
       atlas_stream_reply: createMockStreamReplyTool(),
     },
+    workspace: {}, // Empty workspace tools for test compatibility
+    signal: {}, // Empty signal tools for test compatibility
+    library: {}, // Empty library tools for test compatibility
+    draft: {}, // Empty draft tools for test compatibility
+    session: {}, // Empty session tools for test compatibility
   });
 };
 

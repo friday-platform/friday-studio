@@ -361,6 +361,11 @@ export const MessageBuffer = () => {
             case "tool_call": {
               const { toolName, args, toolCallId } = sseEvent.data;
 
+              // Skip if tool calls are disabled in user preferences
+              if (!config.conversationDisplay.showToolCalls) {
+                break;
+              }
+
               // Simple JSON display for now
               const argsDisplay = args ? JSON.stringify(args, null, 2) : "No arguments";
               const fullContent = `Calling: ${toolName}\n${argsDisplay}`;
@@ -377,6 +382,11 @@ export const MessageBuffer = () => {
 
             case "tool_result": {
               const { toolName, result, toolCallId } = sseEvent.data;
+
+              // Skip if tool results are disabled in user preferences
+              if (!config.conversationDisplay.showToolResults) {
+                break;
+              }
 
               // Simple JSON display for now
               const resultDisplay = JSON.stringify(result, null, 2);
@@ -395,6 +405,12 @@ export const MessageBuffer = () => {
             case "thinking": {
               setTypingState((prev) => ({ ...prev, isTyping: true }));
               const { content } = sseEvent.data;
+
+              // Skip if reasoning steps are disabled in user preferences
+              if (!config.conversationDisplay.showReasoningSteps) {
+                break;
+              }
+
               const streamingMessageId = `thinking-response`;
 
               setOutputBuffer((prev) => {
@@ -431,7 +447,8 @@ export const MessageBuffer = () => {
 
               setOutputBuffer((prev) => {
                 return prev.map((entry) => {
-                  if (entry.id === thinkingId) {
+                  // Only finalize thinking if it was actually displayed
+                  if (entry.id === thinkingId && config.conversationDisplay.showReasoningSteps) {
                     return { ...entry, id: finalThinkingId };
                   }
                   if (entry.id === messageId) {

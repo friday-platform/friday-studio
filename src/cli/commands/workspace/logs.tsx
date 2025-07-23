@@ -1,6 +1,6 @@
 import { Box, render, Text } from "ink";
 import { useEffect, useState } from "react";
-import { getWorkspaceManager } from "@atlas/core";
+import { getWorkspaceManager } from "@atlas/workspace";
 import { YargsInstance } from "../../utils/yargs.ts";
 import {
   formatLog,

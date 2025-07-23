@@ -2,7 +2,7 @@ import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
-import { WorkspaceManager } from "@atlas/core";
+import { WorkspaceManager } from "@atlas/workspace";
 
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();

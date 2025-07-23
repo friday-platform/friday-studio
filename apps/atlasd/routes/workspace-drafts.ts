@@ -2,10 +2,10 @@ import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute } from "hono-openapi";
 import { resolver, validator } from "hono-openapi/zod";
-import { WorkspaceDraftStore } from "../../../src/core/services/workspace-draft-store.ts";
-import { createKVStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
+import { createDraftStore, DraftValidator, WorkspaceDraftStore } from "@atlas/workspace";
 import type { WorkspaceConfig } from "@atlas/config";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import { FilesystemWorkspaceCreationAdapter } from "../../../src/core/services/workspace-creation-adapter.ts";
 
 // Create app instance using factory
 const workspaceDraftRoutes = daemonFactory.createApp();
@@ -108,6 +108,7 @@ const validateDraftResponseSchema = z.object({
 const publishDraftResponseSchema = z.object({
   success: z.boolean(),
   workspacePath: z.string().optional(),
+  filesCreated: z.array(z.string()).optional(),
   error: z.string().optional(),
 }).meta({ description: "Publish draft response" });
 
@@ -124,24 +125,156 @@ const errorResponseSchema = z.object({
 // ============================================================================
 
 async function getDraftStore(): Promise<WorkspaceDraftStore> {
-  const kvStorageConfig = StorageConfigs.defaultKV();
-  const kvStorage = await createKVStorage(kvStorageConfig);
-  await kvStorage.initialize();
-  return new WorkspaceDraftStore(kvStorage.kv);
+  return await createDraftStore();
 }
 
 function validateWorkspaceConfiguration(
   config: unknown,
-): { valid: boolean; errors: string[]; warnings: string[] } {
+): {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  enhancedErrors?: Array<{ code: string; message: string; path?: string; suggestion?: string }>;
+} {
   try {
     WorkspaceConfigSchema.parse(config);
     return { valid: true, errors: [], warnings: [] };
   } catch (error) {
+    if (error instanceof z.ZodError) {
+      // Create enhanced error messages
+      const enhancedErrors = error.issues.map((issue) => {
+        const path = issue.path.join(".");
+        let message = issue.message;
+        let suggestion = "Check the schema documentation";
+
+        // Specific error handling
+        if (issue.code === "unrecognized_keys" && "keys" in issue) {
+          const unknownKeys = issue.keys as string[];
+          message = `Unknown ${unknownKeys.length > 1 ? "properties" : "property"} '${
+            unknownKeys.join("', '")
+          }'${path ? ` at ${path}` : ""}`;
+
+          // Suggest available keys based on path
+          const availableKeys = getAvailableKeysForPath(path);
+          if (availableKeys.length > 0) {
+            suggestion = `Available keys: [${availableKeys.join(", ")}]`;
+
+            // Try to find close matches
+            const closestMatches = unknownKeys.map((key) => {
+              const closest = findClosestKey(key, availableKeys);
+              return closest ? `Did you mean '${closest}' instead of '${key}'?` : null;
+            }).filter(Boolean);
+
+            if (closestMatches.length > 0) {
+              suggestion += `. ${closestMatches.join(" ")}`;
+            }
+          }
+        } else if (issue.code === "invalid_type") {
+          const expected = "expected" in issue ? String(issue.expected) : "unknown";
+          const received = "received" in issue ? String(issue.received) : "unknown";
+          message = `Expected ${expected}, got ${received}${path ? ` at ${path}` : ""}`;
+          suggestion = `Convert the value to ${expected}`;
+        } else if (issue.code === "invalid_literal") {
+          const expected = "expected" in issue ? String(issue.expected) : "unknown";
+          suggestion = `Change to '${expected}'`;
+        }
+
+        return {
+          code: issue.code.toUpperCase(),
+          message,
+          path: path || undefined,
+          suggestion,
+        };
+      });
+
+      const basicErrors = error.issues.map((issue) => {
+        const path = issue.path.length > 0 ? issue.path.join(".") + ": " : "";
+        return `${path}${issue.message}`;
+      });
+
+      return {
+        valid: false,
+        errors: basicErrors,
+        warnings: [],
+        enhancedErrors,
+      };
+    }
+
     if (error instanceof Error) {
       return { valid: false, errors: [error.message], warnings: [] };
     }
     return { valid: false, errors: ["Unknown validation error"], warnings: [] };
   }
+}
+
+// Helper functions for enhanced validation
+function getAvailableKeysForPath(path: string): string[] {
+  if (!path || path === "") {
+    return [
+      "version",
+      "workspace",
+      "server",
+      "tools",
+      "signals",
+      "jobs",
+      "agents",
+      "memory",
+      "notifications",
+      "federation",
+    ];
+  }
+
+  if (path === "workspace") {
+    return ["name", "description"];
+  }
+
+  if (path.startsWith("agents.") && path.split(".").length === 2) {
+    return ["type", "model", "purpose", "prompts", "tools", "temperature", "max_tokens"];
+  }
+
+  if (path.startsWith("jobs.") && path.split(".").length === 2) {
+    return ["name", "description", "triggers", "execution", "config"];
+  }
+
+  if (path.startsWith("signals.") && path.split(".").length === 2) {
+    return ["description", "provider", "schedule", "path", "method", "schema"];
+  }
+
+  if (path.endsWith(".execution")) {
+    return ["strategy", "agents", "timeout", "retry"];
+  }
+
+  if (path.endsWith(".prompts")) {
+    return ["system", "user", "assistant"];
+  }
+
+  return [];
+}
+
+function findClosestKey(target: string, options: string[]): string | null {
+  if (options.length === 0) return null;
+
+  // Simple similarity check - look for keys that start with the same letter or contain similar substrings
+  const targetLower = target.toLowerCase();
+
+  // Exact prefix match
+  for (const option of options) {
+    if (option.toLowerCase().startsWith(targetLower.slice(0, 2))) {
+      return option;
+    }
+  }
+
+  // Contains match
+  for (const option of options) {
+    if (
+      option.toLowerCase().includes(targetLower.slice(0, 3)) ||
+      targetLower.includes(option.toLowerCase().slice(0, 3))
+    ) {
+      return option;
+    }
+  }
+
+  return null;
 }
 
 function formatConfigForDisplay(config: unknown, format: string): string {
@@ -472,7 +605,7 @@ workspaceDraftRoutes.post(
         return c.json({ error: "Draft not found" }, 404);
       }
 
-      const validation = validateWorkspaceConfiguration(draft.config);
+      const validation = DraftValidator.validateWorkspaceConfiguration(draft.config);
 
       return c.json(validation);
     } catch (error) {
@@ -542,15 +675,29 @@ workspaceDraftRoutes.post(
         });
       }
 
-      // Mark draft as published
-      await draftStore.publishDraft(draftId);
+      // Create workspace files using the adapter
+      const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
+      const creationResult = await workspaceAdapter.createWorkspace({
+        name: draft.name,
+        config: draft.config,
+        targetPath: path,
+        overwrite: _overwrite,
+      });
 
-      // TODO: Implement actual workspace file creation using WorkspaceCreationAdapter
-      const workspacePath = path || `/workspaces/${draft.name}`;
+      if (!creationResult.success) {
+        return c.json({
+          success: false,
+          error: `Failed to create workspace: ${creationResult.error}`,
+        }, 500);
+      }
+
+      // Mark draft as published only after successful file creation
+      await draftStore.publishDraft(draftId);
 
       return c.json({
         success: true,
-        workspacePath,
+        workspacePath: creationResult.workspacePath,
+        filesCreated: creationResult.filesCreated,
       });
     } catch (error) {
       return c.json(
@@ -603,14 +750,8 @@ workspaceDraftRoutes.delete(
 
       const draftStore = await getDraftStore();
 
-      // Check if draft exists first
-      const draft = await draftStore.getDraft(draftId);
-      if (!draft) {
-        return c.json({ error: "Draft not found" }, 404);
-      }
-
-      // TODO: Implement actual delete method in WorkspaceDraftStore
-      // For now, just return success as the draft store doesn't have delete method
+      // Delete the draft using the store's delete method
+      await draftStore.deleteDraft(draftId);
 
       return c.json({
         success: true,

@@ -103,6 +103,11 @@ const createTestToolRegistry = (): AtlasToolRegistry => {
       atlas_file_reader: tools.atlas_file_reader,
       atlas_calculator: tools.atlas_calculator,
     },
+    workspace: {}, // Empty workspace tools for test compatibility
+    signal: {}, // Empty signal tools for test compatibility
+    library: {}, // Empty library tools for test compatibility
+    draft: {}, // Empty draft tools for test compatibility
+    session: {}, // Empty session tools for test compatibility
   });
 };
 
@@ -231,6 +236,11 @@ Deno.test({
         atlas_stream_reply: tools.atlas_stream_reply,
         atlas_file_reader: tools.atlas_file_reader,
       },
+      workspace: {}, // Empty workspace tools for test compatibility
+      signal: {}, // Empty signal tools for test compatibility
+      library: {}, // Empty library tools for test compatibility
+      draft: {}, // Empty draft tools for test compatibility
+      session: {}, // Empty session tools for test compatibility
     });
 
     // Create agent with error recovery prompt

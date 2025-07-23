@@ -1,7 +1,7 @@
 import { exists } from "@std/fs";
 import { ConfigLoader, WorkspaceConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
-import { getWorkspaceManager } from "@atlas/core"; // TODO: Use @atlas/client instead
+import { getWorkspaceManager } from "@atlas/workspace"; // TODO: Use @atlas/client instead
 
 // Helper function to resolve workspace and load config
 export async function resolveWorkspaceAndConfig(workspaceId?: string): Promise<{

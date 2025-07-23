@@ -1,4 +1,4 @@
-import { getWorkspaceManager } from "@atlas/core";
+import { getWorkspaceManager } from "@atlas/workspace";
 import { errorOutput, successOutput } from "../../utils/output.ts";
 
 interface StopArgs {
