@@ -153,8 +153,6 @@ export const MessageBuffer = () => {
 
   // Ends currently streaming messages and sets a newline
   function carriageReturnBuffer() {
-    setTypingState((prev) => ({ ...prev, isTyping: false }));
-
     // Finalize the current streaming message
     const thinkingId = `thinking-response`;
     const finalThinkingId = `response-complete-${Date.now()}`;
@@ -355,27 +353,9 @@ export const MessageBuffer = () => {
               break;
             }
 
-            case "responding": {
-              const { message } = sseEvent.data;
-              setTypingState((prev) => ({
-                ...prev,
-                isTyping: true,
-                message,
-              }));
-              break;
-            }
-
-            case "responding_stop": {
-              setTypingState((prev) => ({
-                ...prev,
-                isTyping: false,
-                message: undefined,
-              }));
-              break;
-            }
-
             case "tool_call": {
               carriageReturnBuffer();
+              setTypingState((prev) => ({ ...prev, isTyping: true }));
 
               const { toolName, args, toolCallId } = sseEvent.data;
 
@@ -406,6 +386,7 @@ export const MessageBuffer = () => {
 
             case "tool_result": {
               carriageReturnBuffer();
+              setTypingState((prev) => ({ ...prev, isTyping: true }));
 
               const { toolName, result, toolCallId } = sseEvent.data;
 
@@ -473,6 +454,7 @@ export const MessageBuffer = () => {
 
             case "finish": {
               carriageReturnBuffer();
+              setTypingState((prev) => ({ ...prev, isTyping: false }));
 
               break;
             }
