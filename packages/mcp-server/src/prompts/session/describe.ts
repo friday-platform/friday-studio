@@ -3,7 +3,7 @@
  * Describes a specific session within a workspace through the daemon API
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import type { PromptContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";

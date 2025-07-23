@@ -13,11 +13,11 @@
  * - Broken: 4a344cd42082cff4db79619ef3c61f3c511743bf (refactor removed wrapper)
  */
 
-import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
+import { assertEquals, assertExists } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -59,10 +59,10 @@ const createTestTools = () => {
   // Mock atlas_stream_reply that captures parameters
   const atlas_stream_reply = tool({
     description: "Send a streaming reply to a stream via Server-Sent Events (SSE)",
-    parameters: z.object({
+    inputSchema: z.object({
       streamId: z.string().describe("The unique identifier of the stream to send the reply to"),
       content: z.string().describe("The content to send as a streaming reply"),
-      metadata: z.record(z.unknown()).optional().describe(
+      metadata: z.record(z.string(), z.unknown()).optional().describe(
         "Optional metadata to include with the reply",
       ),
     }),
@@ -76,10 +76,10 @@ const createTestTools = () => {
   // Mock conversation storage tool
   const atlas_conversation_storage = tool({
     description: "Manage conversation history using stream_id as key",
-    parameters: z.object({
+    inputSchema: z.object({
       operation: z.enum(["store", "retrieve", "list", "delete"]),
       streamId: z.string().optional(),
-      data: z.record(z.unknown()).optional(),
+      data: z.record(z.string(), z.unknown()).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     }),

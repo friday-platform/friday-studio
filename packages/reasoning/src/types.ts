@@ -2,7 +2,7 @@
  * Core types for the reasoning machine
  */
 
-import { Tool, ToolCall } from "ai";
+import { Tool, ToolCallUnion } from "ai";
 
 /**
  * Base reasoning context that all reasoning contexts must extend.
@@ -66,7 +66,7 @@ export interface ReasoningStep {
 
 export interface ReasoningThinking {
   text: string;
-  toolCalls: ToolCall<string, unknown>[];
+  toolCalls: ToolCallUnion<Record<string, Tool>>[];
 }
 
 export interface ReasoningCompletion {

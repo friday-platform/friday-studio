@@ -2,7 +2,7 @@
  * Atlas Agent Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const agentTools = {
   atlas_workspace_agents_list: tool({
     description: "Lists all agents available in a workspace.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
     }),
     execute: async ({ workspaceId }) => {
@@ -37,7 +37,7 @@ export const agentTools = {
 
   atlas_workspace_agents_describe: tool({
     description: "Gets detailed agent information and configuration.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
       agentId: z.string().describe("The ID of the agent to describe"),
     }),

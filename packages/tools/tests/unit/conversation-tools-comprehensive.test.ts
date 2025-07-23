@@ -6,6 +6,7 @@
 import { assertEquals, assertRejects } from "@std/assert";
 import { conversationTools as internalConversationTools } from "../../src/internal/conversation.ts";
 import { defaultContext } from "../../src/utils.ts";
+import z from "zod/v4";
 
 Deno.test("Conversation Tools - API Endpoint Compatibility", async (t) => {
   await t.step("should have internal conversation tools available", () => {
@@ -42,14 +43,17 @@ Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
   });
 
   await t.step("should validate main tool parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid parameters for main tool (includes streamId)
     const validParams = {
       streamId: "test-stream-123",
       content: "Hello world",
     };
-    const result = params.safeParse(validParams);
+    const result = params.parse(validParams);
     assertEquals(result.success, true);
 
     // With optional metadata
@@ -63,7 +67,10 @@ Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing streamId
     const missingStreamId = { content: "Hello world" };
@@ -125,7 +132,10 @@ Deno.test("atlas_stream_reply - Internal Tool", async (t) => {
   const tool = internalConversationTools.atlas_stream_reply;
 
   await t.step("should have same parameters as main tool", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Internal tool now has same interface as main tool
     const validParams = {
@@ -246,7 +256,10 @@ Deno.test("atlas_conversation_storage - API Endpoint Mapping", async (t) => {
   });
 
   await t.step("should validate operation-specific requirements", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Store requires streamId and data
     const validStore = {

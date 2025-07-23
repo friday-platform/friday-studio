@@ -3,7 +3,7 @@
  * Handles streaming replies and conversation history management
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -20,10 +20,10 @@ import {
 export const atlas_stream_reply = tool({
   description:
     "Send a streaming reply to a stream via Server-Sent Events (SSE). Emits messages to connected SSE clients for real-time communication in conversations.",
-  parameters: z.object({
+  inputSchema: z.object({
     streamId: z.string().describe("The unique identifier of the stream to send the reply to"),
     content: z.string().describe("The content to send as a streaming reply"),
-    metadata: z.record(z.unknown()).optional().describe(
+    metadata: z.record(z.string(), z.unknown()).optional().describe(
       "Optional metadata to include with the reply",
     ),
   }),
@@ -69,7 +69,7 @@ export const atlas_stream_reply = tool({
  */
 export const atlas_stream_event = tool({
   description: "Stream rich events (thinking, tool calls, messages) to the conversation UI",
-  parameters: z.object({
+  inputSchema: z.object({
     streamId: z.string().describe("Stream identifier"),
     eventType: z
       .enum(["thinking", "message", "tool_call", "tool_result", "error"])
@@ -79,7 +79,7 @@ export const atlas_stream_event = tool({
       .object({
         toolName: z.string().optional(),
         toolCallId: z.string().optional(),
-        args: z.record(z.unknown()).optional(),
+        args: z.record(z.string(), z.unknown()).optional(),
         result: z.unknown().optional(),
         error: z.string().optional(),
       })
@@ -128,14 +128,14 @@ export const atlas_stream_event = tool({
 export const atlas_conversation_storage = tool({
   description:
     "Manage conversation history using stream_id as key. Supports storing, retrieving, listing, and deleting conversation data.",
-  parameters: z.object({
+  inputSchema: z.object({
     operation: z.enum(["store", "retrieve", "list", "delete"]).describe(
       "The operation to perform on conversation storage",
     ),
     streamId: z.string().optional().describe(
       "The stream ID to operate on (required for store, retrieve, delete operations)",
     ),
-    data: z.record(z.unknown()).optional().describe(
+    data: z.record(z.string(), z.unknown()).optional().describe(
       "The data to store (required for store operation)",
     ),
     limit: z.number().optional().describe("Maximum number of items to return (for list operation)"),

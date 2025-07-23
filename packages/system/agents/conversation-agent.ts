@@ -18,8 +18,8 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { type SystemAgentConfigObject } from "@atlas/config";
 import { AtlasToolRegistry, getAtlasToolRegistry } from "@atlas/tools";
 import type { TextStreamPart, Tool } from "ai";
-import { streamText } from "ai";
-import { z } from "zod";
+import { stepCountIs, streamText } from "ai";
+import { z } from "zod/v4";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
 
@@ -259,7 +259,7 @@ export class ConversationAgent extends BaseAgent {
         ? {
           hasExecute: !!finalTools.atlas_stream_event.execute,
           hasDescription: !!finalTools.atlas_stream_event.description,
-          hasParameters: !!finalTools.atlas_stream_event.parameters,
+          hasParameters: !!finalTools.atlas_stream_event.inputSchema,
           hasContextInjection: true, // Since it comes from conversation tools
         }
         : null,
@@ -282,10 +282,9 @@ export class ConversationAgent extends BaseAgent {
       messages: [{ role: "user", content: message }],
       tools: finalTools,
       toolChoice: "auto",
-      maxSteps: 20, // Prevents infinite tool loops
-      temperature: 0.3,
-      maxTokens: 8000,
-      experimental_toolCallStreaming: true,
+      stopWhen: stepCountIs(20),
+      temperature: 0.7,
+      maxOutputTokens: 8000,
       providerOptions: {
         anthropic: {
           thinking: { type: "enabled", budgetTokens: 25000 },
@@ -342,7 +341,7 @@ export class ConversationAgent extends BaseAgent {
             this.logger.info("Tool call initiated", {
               tool: event.metadata?.toolName,
               streamId,
-              args: JSON.stringify(event.metadata?.args).substring(0, 200),
+              args: JSON.stringify(event.metadata?.args),
             });
             break;
 
@@ -458,14 +457,14 @@ export class ConversationAgent extends BaseAgent {
       case "reasoning":
         return {
           type: "thinking",
-          content: chunk.textDelta,
+          content: chunk.text,
           timestamp,
         };
 
-      case "text-delta":
+      case "text":
         return {
           type: "text",
-          content: chunk.textDelta,
+          content: chunk.text,
           timestamp,
         };
 
@@ -475,7 +474,7 @@ export class ConversationAgent extends BaseAgent {
           content: `Calling ${chunk.toolName}`,
           metadata: {
             toolName: chunk.toolName,
-            args: chunk.args,
+            input: chunk.input,
             toolCallId: chunk.toolCallId,
           },
           timestamp,

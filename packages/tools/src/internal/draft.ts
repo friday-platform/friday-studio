@@ -2,7 +2,7 @@
  * Atlas Draft Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const draftTools = {
   atlas_workspace_draft_create: tool({
     description: "Creates new workspace drafts for iterative development.",
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe("Name of the draft"),
       description: z.string().describe("Description of the draft"),
       initialConfig: z.record(z.string(), z.unknown()).optional().describe(
@@ -45,7 +45,7 @@ export const draftTools = {
 
   atlas_list_session_drafts: tool({
     description: "Lists workspace drafts for current session or conversation.",
-    parameters: z.object({
+    inputSchema: z.object({
       sessionId: z.string().optional().describe("Session ID to filter drafts"),
       conversationId: z.string().optional().describe("Conversation ID to filter drafts"),
       includeDetails: z.boolean().optional().describe("Whether to include full draft details"),
@@ -68,7 +68,7 @@ export const draftTools = {
 
   atlas_show_draft_config: tool({
     description: "Displays current draft configuration with formatting options.",
-    parameters: z.object({
+    inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to show"),
       format: z.enum(["yaml", "json", "summary"]).optional().describe(
         "Format for displaying the configuration",
@@ -90,7 +90,7 @@ export const draftTools = {
 
   atlas_workspace_draft_update: tool({
     description: "Updates existing drafts with configuration changes and validation.",
-    parameters: z.object({
+    inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to update"),
       updates: z.record(z.string(), z.unknown()).describe("Configuration updates to apply"),
       updateDescription: z.string().optional().describe("Description of the changes being made"),
@@ -115,7 +115,7 @@ export const draftTools = {
 
   atlas_workspace_draft_validate: tool({
     description: "Validates draft configuration for correctness and completeness.",
-    parameters: z.object({
+    inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to validate"),
     }),
     execute: async ({ draftId }) => {
@@ -136,7 +136,7 @@ export const draftTools = {
 
   atlas_publish_draft_to_workspace: tool({
     description: "Publishes validated drafts to filesystem for production use.",
-    parameters: z.object({
+    inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to publish"),
       path: z.string().optional().describe("Path where to publish the workspace"),
       overwrite: z.boolean().optional().describe("Whether to overwrite existing workspace"),
@@ -161,7 +161,7 @@ export const draftTools = {
 
   atlas_delete_draft_config: tool({
     description: "Deletes drafts that are no longer needed.",
-    parameters: z.object({
+    inputSchema: z.object({
       draftId: z.string().describe("The ID of the draft to delete"),
     }),
     execute: async ({ draftId }) => {

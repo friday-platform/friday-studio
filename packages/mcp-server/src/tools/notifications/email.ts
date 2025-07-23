@@ -2,7 +2,7 @@
  * Email notification tool for Atlas MCP server
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { NotificationManager } from "@atlas/notifications";
 import type { ToolContext } from "../types.ts";

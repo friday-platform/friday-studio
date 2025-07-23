@@ -16,10 +16,6 @@
     "./registry": "./src/registry.ts",
     "./utils": "./src/utils.ts"
   },
-  "imports": {
-    "zod": "npm:zod@^3.25.74",
-    "ai": "npm:ai@^4.0.7"
-  },
   "tasks": {
     "test": "deno test --allow-all tests/",
     "test:unit": "deno test --allow-all tests/unit/",

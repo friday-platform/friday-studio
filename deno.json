@@ -26,6 +26,7 @@
     "kv",
     "raw-imports"
   ],
+  "nodeModulesDir": "auto",
   "tasks": {
     "prepare": "deno run -A  npm:husky@^9",
     "lint-staged": "deno run -A npm:lint-staged@^16",
@@ -72,10 +73,10 @@
     "react": "npm:react@^19.1.0",
     "@types/react": "npm:@types/react@^19.1.8",
     "meow": "npm:meow@^13.2.0",
-    "ai": "npm:ai@^4.0.7",
-    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@^1.2.12",
-    "@ai-sdk/openai": "npm:@ai-sdk/openai@^1.0.8",
-    "@ai-sdk/google": "npm:@ai-sdk/google@^1.2.22",
+    "ai": "npm:ai@5.0.0-beta.25",
+    "@ai-sdk/anthropic": "npm:@ai-sdk/anthropic@2.0.0-beta.8",
+    "@ai-sdk/openai": "npm:@ai-sdk/openai@2.0.0-beta.11",
+    "@ai-sdk/google": "npm:@ai-sdk/google@2.0.0-beta.13",
     "xstate": "npm:xstate@^5.20.1",
     "zod": "npm:zod@^3.25.74",
     "@inkjs/ui": "npm:@inkjs/ui@^2.0.0",

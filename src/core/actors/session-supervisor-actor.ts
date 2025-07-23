@@ -16,7 +16,6 @@ import type {
   ActorInitParams,
   AgentExecutePayload,
   AgentExecutionConfig,
-  AgentExecutionResult,
   AgentTask,
   BaseActor,
   CombinedAgentInput,
@@ -26,9 +25,9 @@ import type {
   ToolExecutorResult,
 } from "@atlas/core";
 import type { Tool } from "ai";
-import { generateText } from "ai";
+import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
+import { z } from "zod/v4";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import { type ChildLogger, logger } from "../../utils/logger.ts";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
@@ -220,9 +219,9 @@ export class SessionSupervisorActor implements BaseActor {
       }],
       tools: planningTools,
       toolChoice: "auto",
-      maxSteps: 10,
+      stopWhen: stepCountIs(10),
       temperature: 0.3, // Lower temperature for more consistent planning
-      maxTokens: 4000,
+      maxOutputTokens: 4000,
       providerOptions: {
         anthropic: {
           thinking: { type: "enabled", budgetTokens: 15000 },
@@ -233,7 +232,7 @@ export class SessionSupervisorActor implements BaseActor {
     // Parse the plan from the response including tool calls
     const plan = this.parsePlanFromResponse(
       result.text,
-      result.reasoning,
+      result.reasoningText,
       result.toolCalls,
       result.toolResults,
     );
@@ -535,7 +534,7 @@ Think step by step about the best approach to handle this signal, then use the t
     return {
       plan_agent_execution: {
         description: "Plan the execution of an agent with a specific task",
-        parameters: z.object({
+        inputSchema: z.object({
           agentId: z.string().describe("The ID of the agent to execute"),
           task: z.string().describe("The task for the agent to perform"),
           inputSource: z.enum(["signal", "previous", "combined"]).describe("Source of input data"),
@@ -557,9 +556,9 @@ Think step by step about the best approach to handle this signal, then use the t
 
   private parsePlanFromResponse(
     text: string,
-    reasoning: string,
-    toolCalls?: Array<any>,
-    toolResults?: Array<any>,
+    reasoning: string | undefined,
+    toolCalls?: Array<ToolCallUnion<Record<string, Tool>>>,
+    toolResults?: Array<ToolResultUnion<Record<string, Tool>>>,
   ): ExecutionPlan {
     // Log the AI response for debugging
     this.logger.debug("AI Planning Response", {
@@ -582,11 +581,11 @@ Think step by step about the best approach to handle this signal, then use the t
 
       for (const toolCall of toolCalls) {
         if (toolCall.toolName === "plan_agent_execution") {
-          const phase = toolCall.args?.phase || "Default Phase";
+          const phase = toolCall.input?.phase || "Default Phase";
           if (!phaseMap.has(phase)) {
             phaseMap.set(phase, []);
           }
-          phaseMap.get(phase)!.push(toolCall.args);
+          phaseMap.get(phase)!.push(toolCall.input);
         }
       }
 
@@ -766,15 +765,6 @@ Think step by step about the best approach to handle this signal, then use the t
     };
   }
 
-  private shouldCachePlan(): boolean {
-    const supervisionConfig = getSupervisionConfig(this.supervisionLevel);
-    return supervisionConfig.cacheEnabled;
-  }
-
-  private cachePlan(plan: ExecutionPlan): void {
-    this.logger.debug("Caching execution plan", { planId: plan.id });
-  }
-
   private extractAndStoreSemanticFacts(_summary: SessionSummary): void {
     this.logger.debug("Extracting semantic facts", { sessionId: this.sessionId });
   }
@@ -812,29 +802,6 @@ Think step by step about the best approach to handle this signal, then use the t
       tools: tools,
       memory: this.config?.memory,
     };
-  }
-
-  private async agentExecutor(
-    agentId: string,
-    input: Record<string, unknown>,
-  ): Promise<AgentExecutionResult> {
-    const agentExecutionConfig = this.getAgentExecutionConfig(agentId);
-
-    const agentActor = new AgentExecutionActor(
-      crypto.randomUUID(),
-      agentExecutionConfig,
-    );
-
-    const payload: AgentExecutePayload = {
-      agentId,
-      input,
-      sessionContext: {
-        sessionId: this.sessionContext?.sessionId || "unknown",
-        workspaceId: this.sessionContext?.workspaceId || "global",
-      },
-    };
-
-    return await agentActor.executeTask(payload);
   }
 
   private toolExecutor(

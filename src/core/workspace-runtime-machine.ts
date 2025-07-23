@@ -18,6 +18,8 @@ import {
 } from "./actors/workspace-supervisor-actor.ts";
 import { type ISignalProvider, ProviderRegistry, ProviderType } from "@atlas/signals";
 import { Session } from "./session.ts";
+import { LLMProvider } from "@atlas/core";
+import { MCPServerRegistry } from "@atlas/mcp";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
 
 interface StreamSignalData {
@@ -148,6 +150,9 @@ export const workspaceRuntimeMachineSetup = setup({
         tools: mergedConfig.workspace.tools,
         supervisorDefaults: mergedConfig.atlas?.supervisors,
       };
+
+      // Register MCP servers from workspace configuration
+      await registerMCPServers(mergedConfig, context.workspace.id);
 
       // Create WorkspaceSupervisorActor with config
       const supervisor = new WorkspaceSupervisorActor(
@@ -757,4 +762,79 @@ export function createWorkspaceRuntimeMachine(
       },
     },
   });
+}
+
+/**
+ * Registers MCP servers from workspace configuration with the LLMProvider
+ */
+async function registerMCPServers(config: MergedConfig, workspaceId: string): Promise<void> {
+  try {
+    // Check if workspace has MCP server configuration
+    if (!config.workspace.tools?.mcp?.servers) {
+      logger.debug("No MCP servers configured for workspace", {
+        operation: "mcp_server_registration",
+        workspaceId,
+      });
+      return;
+    }
+
+    logger.info("Registering MCP servers for workspace", {
+      operation: "mcp_server_registration",
+      workspaceId,
+      serverCount: Object.keys(config.workspace.tools.mcp.servers).length,
+      serverIds: Object.keys(config.workspace.tools.mcp.servers),
+    });
+
+    // Initialize MCPServerRegistry to handle merging platform and workspace configs
+    MCPServerRegistry.initialize(
+      config.atlas, // Platform config
+      config.workspace, // Workspace config
+    );
+
+    // Get server IDs from workspace configuration
+    const serverIds = Object.keys(config.workspace.tools.mcp.servers);
+
+    // Get server configurations from registry
+    const serverConfigs = MCPServerRegistry.getServerConfigs(serverIds);
+
+    // Get MCPManager instance from LLMProvider
+    const mcpManager = LLMProvider.getMCPManager();
+
+    // Register each server
+    const registrationPromises = serverConfigs.map(async (serverConfig) => {
+      try {
+        await mcpManager.registerServer(serverConfig);
+        logger.info(`Successfully registered MCP server: ${serverConfig.id}`, {
+          operation: "mcp_server_registration",
+          workspaceId,
+          serverId: serverConfig.id,
+          transport: serverConfig.transport.type,
+        });
+      } catch (error) {
+        logger.error(`Failed to register MCP server: ${serverConfig.id}`, {
+          operation: "mcp_server_registration",
+          workspaceId,
+          serverId: serverConfig.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Don't throw - continue with other servers
+      }
+    });
+
+    // Wait for all registrations to complete
+    await Promise.allSettled(registrationPromises);
+
+    logger.info("MCP server registration completed for workspace", {
+      operation: "mcp_server_registration",
+      workspaceId,
+      totalServers: serverConfigs.length,
+    });
+  } catch (error) {
+    logger.error("Failed to register MCP servers for workspace", {
+      operation: "mcp_server_registration",
+      workspaceId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // Don't throw - workspace should continue to initialize even if MCP registration fails
+  }
 }

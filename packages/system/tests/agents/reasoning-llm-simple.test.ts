@@ -7,7 +7,7 @@ import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -41,10 +41,10 @@ const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
 const createMockStreamReplyTool = () =>
   tool({
     description: "Send a streaming reply to a stream via Server-Sent Events (SSE)",
-    parameters: z.object({
+    inputSchema: z.object({
       streamId: z.string().describe("The unique identifier of the stream to send the reply to"),
       content: z.string().describe("The content to send as a streaming reply"),
-      metadata: z.record(z.unknown()).optional().describe(
+      metadata: z.record(z.string(), z.unknown()).optional().describe(
         "Optional metadata to include with the reply",
       ),
     }),

@@ -1,9 +1,18 @@
-import { type AnthropicProvider, createAnthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI, type GoogleGenerativeAIProvider } from "@ai-sdk/google";
-import { createOpenAI, type OpenAIProvider } from "@ai-sdk/openai";
+import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { createOpenAI } from "@ai-sdk/openai";
 import { MCPManager } from "@atlas/mcp";
-import { type CoreMessage, generateText, streamText, Tool, ToolCall, ToolResult } from "ai";
-import { z } from "zod";
+import {
+  createProviderRegistry,
+  generateText,
+  type ModelMessage,
+  stepCountIs,
+  streamText,
+  Tool,
+  ToolCallUnion,
+  ToolResultUnion,
+} from "ai";
+import { z } from "zod/v4";
 import { logger } from "../../../src/utils/logger.ts";
 
 // Runtime validation schemas
@@ -59,12 +68,10 @@ export interface LLMOptions {
  */
 export interface LLMResponse {
   text: string;
-  toolCalls: ToolCall<string, unknown>[];
-  toolResults: ToolResult<string, unknown, unknown>[];
+  toolCalls: ToolCallUnion<Record<string, Tool>>[];
+  toolResults: ToolResultUnion<Record<string, Tool>>[];
   steps: unknown[];
 }
-
-type ProviderClient = AnthropicProvider | OpenAIProvider | GoogleGenerativeAIProvider;
 
 const PROVIDER_ENV_VARS = {
   anthropic: "ANTHROPIC_API_KEY",
@@ -72,13 +79,35 @@ const PROVIDER_ENV_VARS = {
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
 } as const;
 
+// Create provider registry for centralized provider management
+function createLLMRegistry() {
+  return createProviderRegistry({
+    anthropic: createAnthropic({
+      apiKey: Deno.env.get(PROVIDER_ENV_VARS.anthropic),
+    }),
+    openai: createOpenAI({
+      apiKey: Deno.env.get(PROVIDER_ENV_VARS.openai),
+    }),
+    google: createGoogleGenerativeAI({
+      apiKey: Deno.env.get(PROVIDER_ENV_VARS.google),
+    }),
+  });
+}
+
 /**
  * Unified LLM provider that automatically detects when tools are needed.
  * Design principle: One method, consistent returns, automatic tool wrapping.
  */
 export class LLMProvider {
-  private static clients: Map<string, ProviderClient> = new Map();
+  private static registry = createLLMRegistry();
   private static mcpManager = new MCPManager();
+
+  /**
+   * Gets the MCPManager instance for server registration
+   */
+  static getMCPManager(): MCPManager {
+    return this.mcpManager;
+  }
 
   /**
    * Single entry point for all LLM operations - tools are detected automatically
@@ -120,47 +149,13 @@ export class LLMProvider {
         ? await this.prepareTools(runtimeContext)
         : undefined;
 
-      if (tools) {
-        logger.debug("Tools structure before AI SDK call", {
-          toolCount: Object.keys(tools).length,
-          toolNames: Object.keys(tools),
-          firstToolStructure: tools[Object.keys(tools)[0]]
-            ? {
-              type: typeof tools[Object.keys(tools)[0]],
-              keys: Object.keys(tools[Object.keys(tools)[0]]),
-              hasDescription: !!tools[Object.keys(tools)[0]].description,
-              hasParameters: !!tools[Object.keys(tools)[0]].parameters,
-              hasExecute: !!tools[Object.keys(tools)[0]].execute,
-            }
-            : null,
-        });
-      }
-
-      // Enhanced logging before AI SDK call
-      if (tools?.stream_reply) {
-        logger.info("stream_reply tool details before AI SDK call", {
-          hasParameters: !!tools.stream_reply.parameters,
-          parametersType: tools.stream_reply.parameters?.constructor.name,
-          parameterSchema: tools.stream_reply.parameters?._def
-            ? {
-              typeName: tools.stream_reply.parameters._def.typeName,
-              shape: tools.stream_reply.parameters._def.shape
-                ? (typeof tools.stream_reply.parameters._def.shape === "function"
-                  ? Object.keys(tools.stream_reply.parameters._def.shape() || {})
-                  : Object.keys(tools.stream_reply.parameters._def.shape || {}))
-                : "no shape",
-            }
-            : "no _def",
-        });
-      }
-
       const result = await generateText({
         model,
         messages,
         tools: tools && Object.keys(tools).length > 0 ? tools : undefined,
         toolChoice: providerConfig.tool_choice,
-        maxSteps: providerConfig.max_steps,
-        maxTokens: providerConfig.max_tokens,
+        stopWhen: stepCountIs(providerConfig.max_steps || 10),
+        maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
         abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
       });
@@ -172,9 +167,9 @@ export class LLMProvider {
         toolCallsCount: result.toolCalls?.length || 0,
         toolCalls: result.toolCalls?.map((tc) => ({
           toolName: tc.toolName,
-          hasArgs: !!tc.args,
-          argsType: typeof tc.args,
-          args: tc.args,
+          hasInput: !!tc.input,
+          inputType: typeof tc.input,
+          input: tc.input,
         })),
         steps: result.steps?.length || 0,
       });
@@ -291,10 +286,10 @@ export class LLMProvider {
       const model = this.getModel(providerConfig);
       const messages = this.buildMessages(validatedPrompt, runtimeContext);
 
-      const stream = await streamText({
+      const stream = streamText({
         model,
         messages,
-        maxTokens: providerConfig.max_tokens,
+        maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
         abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
       });
@@ -366,8 +361,8 @@ export class LLMProvider {
       memoryContext?: string;
       operationContext?: Record<string, unknown>;
     },
-  ): CoreMessage[] {
-    const messages: CoreMessage[] = [];
+  ): ModelMessage[] {
+    const messages: ModelMessage[] = [];
 
     if (context.systemPrompt) {
       messages.push({
@@ -436,13 +431,9 @@ export class LLMProvider {
       // Detailed logging for stream_reply tool
       streamReplyDetails: allTools.stream_reply
         ? {
-          hasParameters: !!allTools.stream_reply.parameters,
-          parametersType: allTools.stream_reply.parameters?.constructor.name,
-          parameterKeys: allTools.stream_reply.parameters?._def?.shape
-            ? (typeof allTools.stream_reply.parameters._def.shape === "function"
-              ? Object.keys(allTools.stream_reply.parameters._def.shape() || {})
-              : Object.keys(allTools.stream_reply.parameters._def.shape || {}))
-            : "no shape available",
+          hasParameters: !!allTools.stream_reply.inputSchema,
+          parametersType: allTools.stream_reply.inputSchema?.constructor.name,
+          parameterKeys: allTools.stream_reply.inputSchema,
         }
         : "stream_reply not found",
     });
@@ -451,8 +442,7 @@ export class LLMProvider {
   }
 
   /**
-   * Provider clients are cached by API key to avoid recreation
-   * Returns a model instance ready for generation
+   * Returns a model instance ready for generation using the provider registry
    */
   private static getModel(
     config: {
@@ -461,48 +451,44 @@ export class LLMProvider {
       apiKey?: string;
     },
   ) {
-    const cacheKey = `${config.provider}:${config.apiKey || "env"}`;
-
-    let client: ProviderClient;
-    if (this.clients.has(cacheKey)) {
-      client = this.clients.get(cacheKey)!;
-    } else {
-      const apiKey = config.apiKey || Deno.env.get(PROVIDER_ENV_VARS[config.provider]);
-      if (!apiKey) {
-        throw new Error(
-          `API key not found for ${config.provider}. ` +
-            `Set ${
-              PROVIDER_ENV_VARS[config.provider]
-            } environment variable or provide apiKey in config.`,
-        );
-      }
-
-      switch (config.provider) {
-        case "anthropic":
-          client = createAnthropic({ apiKey });
-          break;
-        case "openai":
-          client = createOpenAI({ apiKey });
-          break;
-        case "google":
-          client = createGoogleGenerativeAI({ apiKey });
-          break;
-        default:
-          throw new Error(`Unsupported provider: ${config.provider}`);
-      }
-
-      this.clients.set(cacheKey, client);
+    // If a custom API key is provided, create a new registry instance
+    if (config.apiKey) {
+      const customRegistry = createProviderRegistry({
+        [config.provider]: (() => {
+          switch (config.provider) {
+            case "anthropic":
+              return createAnthropic({ apiKey: config.apiKey });
+            case "openai":
+              return createOpenAI({ apiKey: config.apiKey });
+            case "google":
+              return createGoogleGenerativeAI({ apiKey: config.apiKey });
+            default:
+              throw new Error(`Unsupported provider: ${config.provider}`);
+          }
+        })(),
+      });
+      return customRegistry.languageModel(`${config.provider}:${config.model}`);
     }
 
-    // Provider clients are callable functions: client(modelName) => LanguageModelV1
-    return client(config.model);
+    // Use the default registry for environment-based API keys
+    const apiKey = Deno.env.get(PROVIDER_ENV_VARS[config.provider]);
+    if (!apiKey) {
+      throw new Error(
+        `API key not found for ${config.provider}. ` +
+          `Set ${
+            PROVIDER_ENV_VARS[config.provider]
+          } environment variable or provide apiKey in config.`,
+      );
+    }
+
+    return this.registry.languageModel(`${config.provider}:${config.model}`);
   }
 
   /**
-   * Clears provider cache - useful for testing or API key rotation
+   * Recreates the provider registry - useful for testing or API key rotation
    */
   static clearClients(): void {
-    this.clients.clear();
-    logger.debug("Provider client cache cleared");
+    this.registry = createLLMRegistry();
+    logger.debug("Provider registry recreated");
   }
 }

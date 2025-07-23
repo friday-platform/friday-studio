@@ -2,7 +2,7 @@
  * Atlas System Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const systemTools = {
   atlas_fetch: tool({
     description: "Fetches web content with Playwright support and format conversion.",
-    parameters: z.object({
+    inputSchema: z.object({
       url: z.string().url().describe("The URL to fetch content from"),
       format: z.enum(["text", "markdown", "html"]).describe("Format for the returned content"),
       timeout: z.number().optional().describe("Request timeout in milliseconds"),
@@ -58,7 +58,7 @@ export const systemTools = {
   atlas_bash: tool({
     description:
       "Executes bash commands with timeout and output handling. Use proper path quoting for spaces. Prefer Atlas tools (grep, glob) over system commands. Avoid interactive commands.",
-    parameters: z.object({
+    inputSchema: z.object({
       command: z.string().describe("The bash command to execute"),
       timeout: z.number().optional().describe("Command timeout in milliseconds (max 600000)"),
       description: z.string().describe("Clear description of what this command does"),
@@ -113,7 +113,7 @@ export const systemTools = {
   atlas_notify_email: tool({
     description:
       "Send email notifications via SendGrid with template support, attachments, and automatic retry with exponential backoff.",
-    parameters: z.object({
+    inputSchema: z.object({
       to: z.string().email().describe("Recipient email address"),
       subject: z.string().describe("Email subject line"),
       content: z.string().describe("Email content/body"),

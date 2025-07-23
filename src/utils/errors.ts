@@ -2,7 +2,7 @@
  * Custom error classes for improved error handling
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 
 /**
  * Custom error class for validation failures using Zod

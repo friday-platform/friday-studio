@@ -19,9 +19,8 @@ import {
   createMCPToolsAdapter,
   type MCPToolsAdapterConfig,
 } from "./external-adapters/mcp-tools-adapter.ts";
-import { Tool } from "ai";
-import { tool } from "ai";
-import { z } from "zod";
+import { Tool, tool } from "ai";
+import { z } from "zod/v4";
 import { AgentContext, ContextInjectionResult, ToolContextRequirements, Tools } from "./types.ts";
 
 /**
@@ -305,9 +304,9 @@ export class AtlasToolRegistry {
     return tool({
       description:
         "Send a streaming reply to the user. The stream ID is automatically provided via context.",
-      parameters: z.object({
+      inputSchema: z.object({
         content: z.string().describe("The content to send as a streaming reply"),
-        metadata: z.record(z.unknown()).optional().describe(
+        metadata: z.record(z.string(), z.unknown()).optional().describe(
           "Optional metadata to include with the reply",
         ),
       }),

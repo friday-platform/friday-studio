@@ -4,6 +4,7 @@
 
 import { assertEquals, assertRejects } from "@std/assert";
 import { filesystemTools } from "../../src/internal/filesystem.ts";
+import z from "zod/v4";
 
 Deno.test("Filesystem Tools", async (t) => {
   await t.step("should have all expected tools", () => {
@@ -40,8 +41,10 @@ Deno.test("atlas_read tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
-    assertEquals(typeof params, "object");
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Test valid parameters
     const validParams = { filePath: "/test/path.txt" };
@@ -59,7 +62,10 @@ Deno.test("atlas_read tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required filePath
     const invalid1 = {};
@@ -89,7 +95,10 @@ Deno.test("atlas_write tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     const validParams = {
       filePath: "/test/output.txt",
@@ -100,7 +109,10 @@ Deno.test("atlas_write tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required parameters
     const invalid1 = { filePath: "/test" };
@@ -120,7 +132,10 @@ Deno.test("atlas_list tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with no parameters (uses defaults)
     const valid1 = {};
@@ -156,7 +171,10 @@ Deno.test("atlas_glob tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required pattern
     const valid1 = { pattern: "**/*.ts" };
@@ -171,7 +189,10 @@ Deno.test("atlas_glob tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required pattern
     const invalid = {};
@@ -188,7 +209,10 @@ Deno.test("atlas_grep tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required pattern
     const valid1 = { pattern: "test" };
@@ -204,7 +228,10 @@ Deno.test("atlas_grep tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required pattern
     const invalid = {};

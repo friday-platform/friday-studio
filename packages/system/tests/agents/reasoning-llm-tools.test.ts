@@ -7,7 +7,7 @@ import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { AtlasToolRegistry } from "@atlas/tools";
 import { ConversationAgent } from "../../agents/conversation-agent.ts";
 import { tool } from "ai";
-import { z } from "zod";
+import { z } from "zod/v4";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -39,7 +39,7 @@ const skipIfNoKey = !Deno.env.get("ANTHROPIC_API_KEY");
 const createMockTools = () => {
   const atlas_calculator = tool({
     description: "Perform arithmetic operations (add, multiply, divide)",
-    parameters: z.object({
+    inputSchema: z.object({
       operation: z.enum(["add", "multiply", "divide"]).describe(
         "The arithmetic operation to perform",
       ),
@@ -64,7 +64,7 @@ const createMockTools = () => {
 
   const atlas_file_reader = tool({
     description: "Read the contents of a file",
-    parameters: z.object({
+    inputSchema: z.object({
       path: z.string().describe("The path to the file to read"),
     }),
     execute: ({ path }) => {
@@ -78,10 +78,10 @@ const createMockTools = () => {
 
   const atlas_stream_reply = tool({
     description: "Send a streaming reply to a stream via Server-Sent Events (SSE)",
-    parameters: z.object({
+    inputSchema: z.object({
       streamId: z.string().describe("The unique identifier of the stream to send the reply to"),
       content: z.string().describe("The content to send as a streaming reply"),
-      metadata: z.record(z.unknown()).optional().describe(
+      metadata: z.record(z.string(), z.unknown()).optional().describe(
         "Optional metadata to include with the reply",
       ),
     }),
@@ -211,7 +211,7 @@ Deno.test({
       // Override file_reader to fail on missing.txt
       tools.atlas_file_reader = tool({
         description: "Read the contents of a file",
-        parameters: z.object({
+        inputSchema: z.object({
           path: z.string().describe("The path to the file to read"),
         }),
         execute: async ({ path }) => {

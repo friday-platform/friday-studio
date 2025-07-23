@@ -2,7 +2,7 @@
  * Atlas Filesystem Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import { expandGlob } from "@std/fs/expand-glob";
 import { getErrorMessage } from "../utils.ts";
@@ -16,7 +16,7 @@ export const filesystemTools = {
   atlas_read: tool({
     description:
       "Reads files with support for images, screenshots, pagination and line limits. Handles temporary file paths. Provides line numbering and truncation for large files. Use for batch reading multiple files efficiently.",
-    parameters: z.object({
+    inputSchema: z.object({
       filePath: z.string().describe("The absolute path to the file to read"),
       offset: z.number().optional().describe("The line number to start reading from (0-based)"),
       limit: z.number().optional().describe("The number of lines to read (defaults to 2000)"),
@@ -58,7 +58,7 @@ export const filesystemTools = {
   atlas_write: tool({
     description:
       "Writes content to files with automatic directory creation. Will overwrite existing files. Prefer editing existing files over creating new ones. Avoid creating documentation files unless explicitly requested.",
-    parameters: z.object({
+    inputSchema: z.object({
       filePath: z.string().describe("The absolute path to the file to write"),
       content: z.string().describe("The content to write to the file"),
     }),
@@ -83,7 +83,7 @@ export const filesystemTools = {
   atlas_list: tool({
     description:
       "Lists directory contents with optional glob pattern filtering and ignore patterns.",
-    parameters: z.object({
+    inputSchema: z.object({
       path: z.string().optional().describe(
         "Directory path to list (defaults to current directory)",
       ),
@@ -130,7 +130,7 @@ export const filesystemTools = {
   atlas_glob: tool({
     description:
       "Fast file pattern matching with glob syntax support, sorted by modification time.",
-    parameters: z.object({
+    inputSchema: z.object({
       pattern: z.string().describe(
         'The glob pattern to match files against (e.g., "**/*.ts", "src/**/*.js")',
       ),
@@ -166,7 +166,7 @@ export const filesystemTools = {
   atlas_grep: tool({
     description:
       "Powerful content search with full regex syntax. Uses ripgrep for performance. Supports file filtering with glob patterns. Use for open-ended searches requiring multiple rounds.",
-    parameters: z.object({
+    inputSchema: z.object({
       pattern: z.string().describe("The regex pattern to search for"),
       path: z.string().optional().describe(
         "File or directory to search in (defaults to current directory)",

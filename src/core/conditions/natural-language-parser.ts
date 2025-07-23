@@ -7,7 +7,7 @@
 
 import { generateObject } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { logger } from "../../utils/logger.ts";
 
 // Schema for parsed condition structure

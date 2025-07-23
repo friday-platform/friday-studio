@@ -2,7 +2,7 @@
  * Atlas Session Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const sessionTools = {
   atlas_session_cancel: tool({
     description: "Terminates active execution sessions gracefully across all workspaces.",
-    parameters: z.object({
+    inputSchema: z.object({
       sessionId: z.string().describe("The ID of the session to cancel"),
     }),
     execute: async ({ sessionId }) => {
@@ -40,7 +40,7 @@ export const sessionTools = {
 
   atlas_session_describe: tool({
     description: "Examines session state, progress, logs, and results.",
-    parameters: z.object({
+    inputSchema: z.object({
       sessionId: z.string().describe("The ID of the session to describe"),
     }),
     execute: async ({ sessionId }) => {

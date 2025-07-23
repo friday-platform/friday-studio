@@ -4,6 +4,7 @@
 
 import { assertEquals, assertRejects } from "@std/assert";
 import { conversationTools } from "../../src/internal/conversation.ts";
+import z from "zod/v4";
 
 Deno.test("Conversation Tools", async (t) => {
   await t.step("should have all expected tools", () => {
@@ -38,7 +39,10 @@ Deno.test("atlas_stream_reply tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required parameters
     const validParams = {
@@ -59,7 +63,10 @@ Deno.test("atlas_stream_reply tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required streamId
     const invalid1 = { content: "Hello world" };
@@ -93,7 +100,10 @@ Deno.test("atlas_stream_event tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with all event types
     const eventTypes = ["thinking", "message", "tool_call", "tool_result", "error"];
@@ -149,7 +159,10 @@ Deno.test("atlas_stream_event tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required streamId
     const invalid1 = { eventType: "message", content: "Hello" };
@@ -196,7 +209,10 @@ Deno.test("atlas_conversation_storage tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid store operation
     const validStore = {
@@ -228,7 +244,10 @@ Deno.test("atlas_conversation_storage tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required operation
     const invalid1 = { streamId: "stream-123" };

@@ -3,7 +3,7 @@
  * These are orthogonal to workspaces and handle daemon-level operations
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { ValidationError } from "../utils/errors.ts";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
 import { Tool } from "ai";

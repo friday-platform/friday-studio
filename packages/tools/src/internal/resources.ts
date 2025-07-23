@@ -2,7 +2,7 @@
  * Atlas Resource Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import workspaceCreationGuideContent from "./resources/workspace-creation-guide.md" with {
   type: "text",
@@ -45,7 +45,7 @@ Available resources:
 - atlas://reference/workspace - Workspace YAML reference documentation
 
 Use this tool to access detailed technical documentation when helping users with workspace creation, configuration, or troubleshooting.`,
-    parameters: z.object({
+    inputSchema: z.object({
       uri: z.string().describe(
         "The resource URI to read (e.g., atlas://guides/workspace-creation)",
       ),

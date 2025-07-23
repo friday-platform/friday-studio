@@ -2,7 +2,7 @@
  * Atlas Workspace Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -14,7 +14,7 @@ import {
 export const workspaceTools = {
   atlas_workspace_list: tool({
     description: "Lists all available Atlas workspaces with their basic information.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         const response = await fetchWithTimeout(`${defaultContext.daemonUrl}/api/workspaces`);
@@ -28,7 +28,7 @@ export const workspaceTools = {
 
   atlas_workspace_create: tool({
     description: "Creates a new workspace with optional template and custom configuration.",
-    parameters: z.object({
+    inputSchema: z.object({
       name: z.string().describe("The name of the workspace"),
       description: z.string().optional().describe("Description of the workspace"),
       template: z.string().optional().describe("Template to use for workspace creation"),
@@ -51,7 +51,7 @@ export const workspaceTools = {
 
   atlas_workspace_delete: tool({
     description: "Removes a workspace with safety checks and optional force deletion.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace to delete"),
       force: z.boolean().optional().describe("Force deletion without confirmation"),
     }),
@@ -72,7 +72,7 @@ export const workspaceTools = {
   atlas_workspace_describe: tool({
     description:
       "Gets comprehensive workspace details including configuration, status, active sessions, agents, jobs, and resource usage. Essential for understanding workspace state.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace to describe"),
     }),
     execute: async ({ workspaceId }) => {

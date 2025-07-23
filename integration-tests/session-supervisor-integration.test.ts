@@ -4,7 +4,10 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { type SessionContext, SessionSupervisorActor } from "../session-supervisor-actor.ts";
+import {
+  type SessionContext,
+  SessionSupervisorActor,
+} from "../src/core/actors/session-supervisor-actor.ts";
 import type { SessionSupervisorConfig } from "@atlas/core";
 
 // Skip test if no API key

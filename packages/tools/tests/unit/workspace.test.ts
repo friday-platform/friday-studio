@@ -4,6 +4,7 @@
 
 import { assertEquals, assertRejects } from "@std/assert";
 import { workspaceTools } from "../../src/internal/workspace.ts";
+import z from "zod/v4";
 
 Deno.test("Workspace Tools", async (t) => {
   await t.step("should have all expected tools", () => {
@@ -39,7 +40,10 @@ Deno.test("atlas_workspace_list tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Should accept empty object (no parameters required)
     const validParams = {};
@@ -65,7 +69,10 @@ Deno.test("atlas_workspace_create tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required name
     const valid1 = { name: "test-workspace" };
@@ -82,7 +89,10 @@ Deno.test("atlas_workspace_create tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required name
     const invalid = {};
@@ -107,7 +117,10 @@ Deno.test("atlas_workspace_delete tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required workspaceId
     const valid1 = { workspaceId: "workspace-123" };
@@ -122,7 +135,10 @@ Deno.test("atlas_workspace_delete tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required workspaceId
     const invalid = {};
@@ -147,7 +163,10 @@ Deno.test("atlas_workspace_describe tool", async (t) => {
   });
 
   await t.step("should validate parameters schema", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Valid with required workspaceId
     const valid = { workspaceId: "workspace-123" };
@@ -155,7 +174,10 @@ Deno.test("atlas_workspace_describe tool", async (t) => {
   });
 
   await t.step("should reject invalid parameters", () => {
-    const params = tool.parameters;
+    const params = tool.inputSchema;
+    if (!(params instanceof z.ZodObject)) {
+      throw new Error("params is not a z.ZodObject");
+    }
 
     // Missing required workspaceId
     const invalid = {};

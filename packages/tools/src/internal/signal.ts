@@ -2,7 +2,7 @@
  * Atlas Signal Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const signalTools = {
   atlas_workspace_signals_list: tool({
     description: "Views signal configurations that trigger automated job executions.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
     }),
     execute: async ({ workspaceId }) => {
@@ -37,7 +37,7 @@ export const signalTools = {
 
   atlas_workspace_signals_trigger: tool({
     description: "Triggers workspace signals to start automated job execution.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
       signalName: z.string().describe("The name of the signal to trigger"),
       payload: z.record(z.string(), z.unknown()).optional().describe(

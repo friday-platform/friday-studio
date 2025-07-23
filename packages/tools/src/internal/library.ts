@@ -2,7 +2,7 @@
  * Atlas Library Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const libraryTools = {
   atlas_library_list: tool({
     description: "Browses and searches library items with flexible filtering options.",
-    parameters: z.object({
+    inputSchema: z.object({
       query: z.string().optional().describe("Search query for library items"),
       type: z.array(z.string()).optional().describe("Filter by content types"),
       tags: z.array(z.string()).optional().describe("Filter by tags"),
@@ -53,7 +53,7 @@ export const libraryTools = {
   atlas_library_get: tool({
     description:
       "Retrieves specific library items including reports, archives, templates, and analysis data. Use includeContent for full content vs metadata only.",
-    parameters: z.object({
+    inputSchema: z.object({
       itemId: z.string().describe("The ID of the library item to retrieve"),
       includeContent: z.boolean().optional().describe(
         "Whether to include full content in the response",
@@ -75,7 +75,7 @@ export const libraryTools = {
 
   atlas_library_store: tool({
     description: "Stores new items in library for future reference and reuse.",
-    parameters: z.object({
+    inputSchema: z.object({
       type: z.enum(["document", "code", "data", "template", "analysis", "report"]).describe(
         "Type of content being stored",
       ),
@@ -137,7 +137,7 @@ export const libraryTools = {
 
   atlas_library_stats: tool({
     description: "Gets library usage statistics and analytics.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         const response = await fetchWithTimeout(`${defaultContext.daemonUrl}/api/library/stats`);
@@ -151,7 +151,7 @@ export const libraryTools = {
 
   atlas_library_templates: tool({
     description: "Lists available content generation templates.",
-    parameters: z.object({}),
+    inputSchema: z.object({}),
     execute: async () => {
       try {
         const response = await fetchWithTimeout(

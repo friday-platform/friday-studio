@@ -2,7 +2,7 @@
  * Atlas Job Tools - AI SDK Compatible
  */
 
-import { z } from "zod";
+import { z } from "zod/v4";
 import { tool } from "ai";
 import {
   defaultContext,
@@ -19,7 +19,7 @@ import {
 export const jobTools = {
   atlas_workspace_jobs_list: tool({
     description: "Lists discoverable automated tasks within a workspace.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
     }),
     execute: async ({ workspaceId }) => {
@@ -37,7 +37,7 @@ export const jobTools = {
 
   atlas_workspace_jobs_describe: tool({
     description: "Examines job workflow configuration including execution strategy and agents.",
-    parameters: z.object({
+    inputSchema: z.object({
       workspaceId: z.string().describe("The ID of the workspace"),
       jobName: z.string().describe("The name of the job to describe"),
     }),
