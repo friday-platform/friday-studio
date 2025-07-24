@@ -157,6 +157,7 @@ export class AgentExecutionActor implements IAgentExecutionActor {
       mcpServers: mcpServers,
       max_steps: llmConfig.max_steps,
       tool_choice: llmConfig.tool_choice,
+      timeout: llmConfig.timeout ? parseDuration(llmConfig.timeout) : undefined,
       operationContext: {
         operation: "llm_agent_execution",
         agentId: request.agentId,

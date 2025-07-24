@@ -32,7 +32,7 @@ tools:
               "search_code",
             ]
         client_config:
-          timeout: "30s"
+          timeout: "90s"
 
       # Atlas Platform Integration - Library and Workspace Management
       atlas-platform:
@@ -135,6 +135,7 @@ agents:
       tool_choice: "auto"
       temperature: 0.3
       max_tokens: 4000
+      timeout: "3m"
 
       prompt: |
         You are a GitHub research specialist focused on discovering and analyzing AI Agent repositories.
@@ -234,76 +235,68 @@ agents:
       tool_choice: "auto"
       temperature: 0.4
       max_tokens: 4000
+      timeout: "2m"
 
       prompt: |
-        You are an AI project analysis specialist who creates comprehensive summaries and trend analysis.
+        You are an AI project analysis specialist who creates comprehensive summaries and reports based on research data from previous agents.
 
-        **Your Analysis Process**:
-        1. **Project Classification**:
-           - Categorize each repository by AI agent type
-           - Identify primary use cases and target domains
-           - Assess technical sophistication and approach
+        **Your Primary Objective**:
+        Analyze the research findings from the previous agent, generate a detailed human-readable report, store it in the library, and verify successful storage.
 
-        2. **Innovation Analysis**:
-           - Compare with existing tools and frameworks
-           - Identify novel approaches or unique features
-           - Evaluate potential impact on the AI agent ecosystem
+        **Analysis Process**:
+        1. **Data Processing**: Extract and organize all repository information, metadata, and insights from the previous agent's findings
 
-        3. **Trend Identification**:
-           - Spot emerging patterns across projects
-           - Identify popular technologies and frameworks
-           - Note shifts in architectural approaches
+        2. **Project Classification**: Categorize repositories by type, use cases, and technical approach based on the provided data
 
-        4. **Summary Generation**:
-           - Create detailed project summaries
-           - Generate comparative analysis
-           - Produce trend reports and insights
+        3. **Comprehensive Analysis**:
+           - Evaluate technical sophistication and innovation level
+           - Identify unique features and architectural approaches
+           - Assess project maturity and documentation quality
+           - Compare projects and identify patterns
 
-        **Summary Structure**:
-        Generate markdown reports with:
+        4. **Report Generation**: Create a structured markdown report following this format:
 
-        ## AI Agent Discovery Report - [Date]
+        ## AI Agent Discovery Report - [Current Date]
 
         ### Executive Summary
-        - Key findings and notable projects
-        - Emerging trends and patterns
-        - Innovation highlights
+        - Total repositories analyzed: [number]
+        - Key technological trends observed
+        - Most innovative projects identified
+        - Overall market direction insights
 
         ### Featured Projects
-        For each significant project:
+        For each significant repository discovered:
         - **[Project Name]** ([GitHub Link])
-          - **Category**: Type of AI agent
-          - **Key Innovation**: What makes it unique
-          - **Technical Stack**: Languages, frameworks, APIs
-          - **Use Cases**: Primary applications
-          - **Maturity**: Assessment of readiness and documentation
-          - **Impact Potential**: Likely influence on the field
+          - **Category**: [Agent type/classification]
+          - **Key Innovation**: [What makes it unique]
+          - **Technical Stack**: [Languages, frameworks used]
+          - **Use Cases**: [Primary applications]
+          - **Maturity Level**: [Development stage assessment]
+          - **Impact Potential**: [Likely influence on ecosystem]
 
-        ### Trend Analysis
-        - **Popular Technologies**: Most used frameworks/tools
-        - **Emerging Patterns**: New architectural approaches
-        - **Domain Focus**: Application areas getting attention
-        - **Development Velocity**: Activity and update patterns
+        ### Technology Trends
+        - **Popular Frameworks**: Most frequently used tools and libraries
+        - **Emerging Patterns**: New architectural approaches observed
+        - **Domain Applications**: Primary use case areas
+        - **Development Activity**: Update frequency and community engagement
 
-        ### Recommendations
-        - Projects worth monitoring
-        - Emerging technologies to track
-        - Market opportunities identified
+        ### Innovation Highlights
+        - Novel approaches to AI agent development
+        - Breakthrough features or capabilities
+        - Promising early-stage projects
 
-        **Library Storage**:
-        After generating your analysis report, store it in the Atlas library using the atlas_library_store tool:
+        ### Market Insights
+        - Growth areas in AI agent development
+        - Gaps and opportunities identified
+        - Recommended areas for further monitoring
 
-        atlas_library_store({
-          type: "report",
-          name: "AI Agent Discovery Report - [Current Date]",
-          description: "Analysis of recently discovered AI agent repositories with trend insights",
-          content: "[Your complete markdown report content]",
-          format: "markdown",
-          tags: ["ai-discovery", "trend-analysis", "automated", "github-research"],
-          source: "agent"
-        });
+        **Required Actions**:
+        1. Generate the complete report using the structure above
+        2. Store the report in the library with appropriate metadata (type: "report", relevant tags, current date)
+        3. Verify successful storage by searching the library for the newly created report
+        4. Provide a brief confirmation of successful report creation and storage
 
-        This ensures your analysis is preserved in the library for historical tracking and future reference.
+        **Important**: You operate autonomously without user interaction. Complete the full analysis, storage, and verification process based solely on the data provided by the previous agent.
 
 # =============================================================================
 # SIGNAL CONFIGURATION - AUTOMATED AND MANUAL TRIGGERS
