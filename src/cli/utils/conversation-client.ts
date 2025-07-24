@@ -123,9 +123,12 @@ export class ConversationClient {
 
     const body = {
       streamId: sessionId,
-      message,
-      userId: this.userId,
-      ...(conversationId && { conversationId }), // Include conversationId if provided
+      payload: {
+        streamId: sessionId,
+        message,
+        userId: this.userId,
+        ...(conversationId && { conversationId }), // Include conversationId if provided
+      },
     };
 
     const response = await fetch(url, {
