@@ -124,6 +124,11 @@ export class AgentExecutionActor implements IAgentExecutionActor {
     return await systemAgent.invoke(request.input);
   }
 
+  private buildAgentSystemPrompt(basePrompt: string): string {
+    const currentDate = new Date().toISOString().split("T")[0];
+    return `Current date and time: ${currentDate}\n\n${basePrompt}`;
+  }
+
   private async executeLLMAgent(
     agentConfig: LLMAgentConfig,
     request: AgentExecutePayload,
@@ -135,7 +140,7 @@ export class AgentExecutionActor implements IAgentExecutionActor {
       model: llmConfig.model,
     });
 
-    const systemPrompt = llmConfig.prompt;
+    const systemPrompt = this.buildAgentSystemPrompt(llmConfig.prompt);
     const userPrompt = request.input;
 
     // Use generateTextWithTools if MCP servers or tools are configured
