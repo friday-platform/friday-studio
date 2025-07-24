@@ -7,6 +7,7 @@ import { z } from "zod/v4";
 import { ValidationError } from "../utils/errors.ts";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
 import { Tool } from "ai";
+import { AtlasLogger } from "../utils/logger.ts";
 
 const ConversationMessageSchema = z.object({
   messageId: z.string().uuid(),
@@ -199,16 +200,22 @@ export class DaemonCapabilityRegistry {
   private static daemonInstance: AtlasDaemon | null = null;
 
   static setDaemonInstance(daemon: AtlasDaemon): void {
-    console.log(`[DaemonCapabilityRegistry] Setting daemon instance:`, !!daemon);
+    AtlasLogger.getInstance().debug("Setting daemon instance", {
+      component: "DaemonCapabilityRegistry",
+      hasDaemon: !!daemon,
+    });
     this.daemonInstance = daemon;
-    console.log(
-      `[DaemonCapabilityRegistry] Daemon instance set successfully:`,
-      !!this.daemonInstance,
-    );
+    AtlasLogger.getInstance().debug("Daemon instance set successfully", {
+      component: "DaemonCapabilityRegistry",
+      hasDaemonInstance: !!this.daemonInstance,
+    });
   }
 
   static getDaemonInstance(): AtlasDaemon | null {
-    console.log(`[DaemonCapabilityRegistry] Getting daemon instance:`, !!this.daemonInstance);
+    AtlasLogger.getInstance().debug("Getting daemon instance", {
+      component: "DaemonCapabilityRegistry",
+      hasDaemonInstance: !!this.daemonInstance,
+    });
     return this.daemonInstance;
   }
 
@@ -270,7 +277,9 @@ export class DaemonCapabilityRegistry {
             const { action, stream_id, message } = args;
 
             try {
-              console.log(`[conversation_storage] ${action} for stream ${stream_id}`);
+              AtlasLogger.getInstance().debug(
+                `[conversation_storage] ${action} for stream ${stream_id}`,
+              );
 
               const conversationStorage = InMemoryConversationStorage.getInstance();
 
@@ -278,7 +287,7 @@ export class DaemonCapabilityRegistry {
                 const history = conversationStorage.getConversationHistory(stream_id);
                 const messages = history?.messages || [];
 
-                console.log(
+                AtlasLogger.getInstance().debug(
                   `[conversation_storage] Loaded ${messages.length} messages for stream ${stream_id}`,
                 );
 
@@ -317,7 +326,7 @@ export class DaemonCapabilityRegistry {
 
                 conversationStorage.saveMessage(stream_id, messageObj);
 
-                console.log(
+                AtlasLogger.getInstance().debug(
                   `[conversation_storage] Saved ${message.role} message to stream ${stream_id}`,
                 );
 
@@ -333,7 +342,7 @@ export class DaemonCapabilityRegistry {
                 error: "Invalid action or missing message data",
               };
             } catch (error) {
-              console.error(`[conversation_storage] Error:`, error);
+              AtlasLogger.getInstance().error(`[conversation_storage] Error:`, { error });
               return {
                 success: false,
                 error: error instanceof Error ? error.message : String(error),

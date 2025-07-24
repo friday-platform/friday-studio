@@ -12,10 +12,7 @@ if (Deno.args.includes("--version") || Deno.args.includes("-v")) {
   Deno.exit(0);
 }
 
-import { checkAndDownloadBrowsers } from "./utils/browser-manager.ts";
-
-// Check and download browsers if needed
-checkAndDownloadBrowsers();
+// Browser download moved to daemon initialization to avoid blocking CLI commands
 
 // Build the CLI
 const cli = yargs(Deno.args)

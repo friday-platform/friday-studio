@@ -8,6 +8,7 @@ import { getAtlasHome } from "../../../utils/paths.ts";
 import { join } from "@std/path";
 import { exists } from "@std/fs";
 import { CredentialFetcher } from "@atlas/core";
+import { AtlasLogger } from "../../../utils/logger.ts";
 
 interface StartArgs {
   port?: number;
@@ -122,8 +123,10 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     const atlasKey = Deno.env.get("ATLAS_KEY");
     const localOnlyMode = isLocalOnlyMode(Deno.env.get("ATLAS_LOCAL_ONLY"));
 
+    const logger = AtlasLogger.getInstance();
+
     if (atlasKey && !localOnlyMode) {
-      console.log("Atlas key detected, fetching credentials...");
+      logger.info("Atlas key detected, fetching credentials...");
 
       try {
         const credentials = await CredentialFetcher.fetchCredentials({
@@ -146,25 +149,25 @@ export const handler = async (argv: StartArgs): Promise<void> => {
           }
         }
 
-        console.log(
+        logger.info(
           `Credentials fetched successfully: ${setCount} set, ${skippedCount} skipped (already configured)`,
         );
       } catch (error) {
-        console.error(`Failed to fetch credentials: ${error.message}`);
-        console.error("Continuing with existing environment variables...");
+        logger.error(`Failed to fetch credentials: ${error.message}`);
+        logger.error("Continuing with existing environment variables...");
 
-        console.error("\nFailed to fetch credentials with ATLAS_KEY.");
-        console.error("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
+        errorOutput("\nFailed to fetch credentials with ATLAS_KEY.");
+        errorOutput("Please check your ATLAS_KEY in ~/.atlas/.env and restart the daemon.");
         Deno.exit(1);
       }
     } else if (atlasKey && localOnlyMode) {
-      console.log("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
-      console.log("Using only locally configured environment variables");
-      console.log(
+      logger.info("ATLAS_LOCAL_ONLY mode enabled - skipping Atlas API credential fetch");
+      logger.info("Using only locally configured environment variables");
+      logger.info(
         "Ensure all required API keys (ANTHROPIC_API_KEY, etc.) are set in your environment",
       );
     } else if (localOnlyMode) {
-      console.log("ATLAS_LOCAL_ONLY mode enabled - using only local environment variables");
+      logger.info("ATLAS_LOCAL_ONLY mode enabled - using only local environment variables");
     }
 
     // Set atlas config path if provided
@@ -297,6 +300,15 @@ async function startForeground(argv: StartArgs): Promise<void> {
     hostname: argv.hostname,
     maxConcurrentWorkspaces: argv.maxWorkspaces,
     idleTimeoutMs: (argv.idleTimeout || 300) * 1000,
+  });
+
+  // Start browser download in background (non-blocking)
+  import("../../../utils/browser-manager.ts").then(({ checkAndDownloadBrowsers }) => {
+    checkAndDownloadBrowsers().catch((error) => {
+      // Browser manager will log errors internally
+    });
+  }).catch((error) => {
+    // Module loading errors are rare but non-fatal
   });
 
   // Handle graceful shutdown

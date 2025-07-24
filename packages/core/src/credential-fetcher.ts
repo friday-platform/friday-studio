@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { AtlasLogger } from "../../../src/utils/logger.ts";
 
 // JWT payload schema
 const JWTPayloadSchema = z.object({
@@ -106,7 +107,7 @@ export class CredentialFetcher {
 
         // Log expiration if provided
         if (validated.expires_at) {
-          console.log(`Credentials expire at: ${validated.expires_at}`);
+          AtlasLogger.getInstance().info(`Credentials expire at: ${validated.expires_at}`);
         }
 
         return validated.credentials;
@@ -124,7 +125,7 @@ export class CredentialFetcher {
 
         // Retry on network or server errors
         if (attempt < retries) {
-          console.log(
+          AtlasLogger.getInstance().warn(
             `Credential fetch attempt ${attempt + 1} failed, retrying in ${retryDelay}ms...`,
           );
           await new Promise((resolve) => setTimeout(resolve, retryDelay * (attempt + 1)));

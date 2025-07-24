@@ -172,7 +172,7 @@ export class WebSessionManager {
     let chromiumDir: string | undefined;
     try {
       for (const entry of Deno.readDirSync(browsersPath)) {
-        if (entry.isDirectory && entry.name.startsWith("chromium_headless_shell-")) {
+        if (entry.isDirectory && entry.name.startsWith("chromium-")) {
           chromiumDir = join(browsersPath, entry.name);
           break;
         }
