@@ -1,8 +1,10 @@
 import { Box, Text, useInput } from "ink";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { TextInput } from "./text-input/text-input.tsx";
+import { TextInput } from "../modules/input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
+import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
+import { useAppContext } from "../contexts/app-context.tsx";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
@@ -15,11 +17,15 @@ export const CommandInput = ({
   selectedWorkspace,
   isDisabled = false,
 }: CommandInputProps) => {
+  const { exitApp } = useAppContext();
+
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedSuggestionIndex, setSelectedSuggestionIndex] = useState(-1);
   const [inputKey, setInputKey] = useState(0);
-  const [lastEscapeTime, setLastEscapeTime] = useState(0);
+  const [attachments, setAttachments] = useState<Map<number, AttachmentData>>(
+    new Map(),
+  );
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Get all available suggestions with descriptions
@@ -32,32 +38,17 @@ export const CommandInput = ({
   const getFilteredSuggestions = () => {
     if (!currentInput.startsWith("/")) return [];
 
-    return getAllSuggestionsWithDescriptions().filter((item) =>
-      item.command.toLowerCase().includes(currentInput.toLowerCase())
-    );
-  };
+    // Remove the leading "/" for searching within command names
+    const searchTerm = currentInput.slice(1).toLowerCase();
 
-  // Clear input function
-  const clearInput = () => {
-    setCurrentInput("");
-    setShowSuggestions(false);
-    setSelectedSuggestionIndex(-1);
-    setInputKey((prev) => prev + 1);
+    return getAllSuggestionsWithDescriptions().filter((item) =>
+      // Search within the command name (without the leading "/")
+      item.command.slice(1).toLowerCase().includes(searchTerm)
+    );
   };
 
   // Handle keyboard navigation like SplashScreen
   useInput((input, key) => {
-    // Handle double escape to clear input
-    if (key.escape) {
-      const currentTime = Date.now();
-      if (currentTime - lastEscapeTime < 500) {
-        // 500ms window for double escape
-        clearInput();
-        return;
-      }
-      setLastEscapeTime(currentTime);
-    }
-
     // When we're in suggestion navigation mode
     if (showSuggestions) {
       if (key.upArrow) {
@@ -70,19 +61,16 @@ export const CommandInput = ({
         setSelectedSuggestionIndex((prev) => prev >= filteredSuggestions.length - 1 ? 0 : prev + 1);
         return;
       }
+
       if (key.escape || key.tab) {
         // Go back to input mode
         setSelectedSuggestionIndex(-1);
         return;
       }
+
       // Any character input goes back to input mode
       if (input && input.length === 1 && !key.ctrl && !key.meta) {
-        // Don't reset selection if there's only one suggestion and we're already at index 0
-        const filteredSuggestions = getFilteredSuggestions();
-        if (filteredSuggestions.length === 1 && selectedSuggestionIndex === 0) {
-          // Let the input be handled by TextInput without resetting selection
-          return;
-        }
+        // Reset selection to let TextInput handle the input
         setSelectedSuggestionIndex(-1);
         // Let the input be handled by TextInput
         return;
@@ -91,13 +79,24 @@ export const CommandInput = ({
   });
 
   // Handle input changes from TextInput
-  const handleInputChange = (value: string) => {
+  const handleInputChange = (
+    value: string,
+    textInputAttachments?: Map<number, AttachmentData>,
+  ) => {
+    // If attachments are provided from TextInput, use them
+    if (textInputAttachments) {
+      setAttachments(textInputAttachments);
+    }
+
+    // Normal input handling
     const isSlashCommand = value.startsWith("/");
 
     if (isSlashCommand) {
       // Calculate filtered suggestions based on the new value
+      // Remove the leading "/" for searching within command names
+      const searchTerm = value.slice(1).toLowerCase();
       const filteredSuggestions = getAllSuggestionsWithDescriptions().filter(
-        (item) => item.command.toLowerCase().includes(value.toLowerCase()),
+        (item) => item.command.slice(1).toLowerCase().includes(searchTerm),
       );
 
       // If there's only one item and we're already at index 0, only update input but skip other state changes
@@ -115,14 +114,17 @@ export const CommandInput = ({
         setSelectedSuggestionIndex(0);
       }
     } else {
-      // Not a slash command, update normally
+      // Normal update
       setCurrentInput(value);
       setShowSuggestions(false);
     }
   };
 
   // Enhanced submission handler
-  const handleSubmit = (command: string) => {
+  const handleSubmit = (
+    command: string,
+    submittedAttachments?: Map<number, AttachmentData>,
+  ) => {
     let commandToSubmit = command.trim();
 
     // If we have a selected suggestion, use that instead
@@ -134,11 +136,30 @@ export const CommandInput = ({
       }
     }
 
+    // Expand attachments in the command
+    const finalAttachments = submittedAttachments || attachments;
+
+    // Find all placeholders and their corresponding attachments
+    let expandedCommand = commandToSubmit;
+    finalAttachments.forEach((attachmentData, id) => {
+      const placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+      if (expandedCommand.includes(placeholder)) {
+        expandedCommand = expandedCommand.replace(
+          placeholder,
+          attachmentData.content,
+        );
+      }
+    });
+    commandToSubmit = expandedCommand;
+
     // Always reset input state
     setCurrentInput("");
     setShowSuggestions(false);
     setSelectedSuggestionIndex(-1);
     setInputKey((prev) => prev + 1);
+
+    // Clear attachments after submission
+    setAttachments(new Map());
 
     // Submit the command
     onSubmit(commandToSubmit);
@@ -155,10 +176,13 @@ export const CommandInput = ({
         <TextInput
           key={inputKey}
           suggestions={getAllSuggestions()}
-          placeholder="Enter a message or type / for commands..."
+          placeholder=" Enter a message or type / for commands..."
           onChange={handleInputChange}
           onSubmit={handleSubmit}
           isDisabled={isDisabled}
+          defaultValue={currentInput}
+          enableAttachments
+          exitApp={exitApp}
         />
       </Box>
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { useState } from "react";
+import { Box, Static, Text } from "ink";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
@@ -22,18 +22,17 @@ import { SessionCommand } from "./SessionCommand.tsx";
 import { WorkspacesCommand } from "./WorkspacesCommand.tsx";
 import { LibraryCommand } from "./LibraryCommand.tsx";
 import { handleComponentsCommand } from "./components-command.tsx";
+import { useBracketedPaste } from "../input/use-bracketed-paste.ts";
 
 export function Component() {
-  const { exit } = useApp();
+  useBracketedPaste();
   const {
     setOutputBuffer,
     conversationClient,
     conversationSessionId,
-
     setTypingState,
     isInitializing,
     exitApp,
-    setInkExitFunction,
   } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -44,22 +43,8 @@ export function Component() {
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
     null,
   );
-  const [disableCommandInput, setDisableCommandInput] = useState(false);
-  const { stdout: _stdout } = useStdout();
 
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
-
-  // Pass Ink's exit function to the context on mount
-  useEffect(() => {
-    setInkExitFunction(exit);
-  }, [exit, setInkExitFunction]);
-
-  // Handle Ctrl+C for graceful shutdown
-  useInput((input, key) => {
-    if (key.ctrl && input === "c") {
-      exitApp();
-    }
-  });
 
   // Add entry to output buffer
   const addOutputEntry = (entry: OutputEntry) => {
@@ -357,7 +342,6 @@ export function Component() {
             <CommandInput
               onSubmit={handleCommand}
               selectedWorkspace={selectedWorkspace}
-              isDisabled={disableCommandInput}
             />
           )}
         </>

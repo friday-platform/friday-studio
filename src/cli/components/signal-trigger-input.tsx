@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from "ink";
 import { useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
-import { TextInput } from "./text-input/text-input.tsx";
+import { TextInput } from "../modules/input/text-input.tsx";
 
 interface SignalTriggerInputProps {
   signalId: string;
@@ -14,7 +14,7 @@ export const SignalTriggerInput = ({
   onEscape,
   onSubmit,
 }: SignalTriggerInputProps) => {
-  const [inputKey, setInputKey] = useState(0);
+  const [inputKey] = useState(0);
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
   // Handle escape key
@@ -32,7 +32,9 @@ export const SignalTriggerInput = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box marginBottom={1}>
-        <Text bold color="cyan">Trigger Signal: {signalId}</Text>
+        <Text bold color="cyan">
+          Trigger Signal: {signalId}
+        </Text>
       </Box>
       <Box marginBottom={1}>
         <Text dimColor>Enter signal payload (JSON format recommended):</Text>
@@ -45,6 +47,7 @@ export const SignalTriggerInput = ({
           placeholder="Enter signal payload..."
           onChange={() => {}} // Not needed for this use case
           onSubmit={handleSubmit}
+          enableAttachments={false}
         />
       </Box>
       <Box marginTop={1}>

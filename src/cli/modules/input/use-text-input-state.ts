@@ -11,7 +11,7 @@ const getCursorPosition = (
   const lines = beforeCursor.split(/[\n\r]/);
   return {
     cursorLine: lines.length - 1,
-    cursorColumn: lines[lines.length - 1].length,
+    cursorColumn: lines.length > 0 ? lines[lines.length - 1]?.length ?? 0 : 0,
   };
 };
 
@@ -43,7 +43,8 @@ const getOffsetFromPosition = (
   // Adjust for the target column within the target line
   if (currentLine === cursorLine) {
     const lineStart = findLineStart(text, offset);
-    offset = lineStart + Math.min(cursorColumn, findLineEnd(text, lineStart) - lineStart);
+    offset = lineStart +
+      Math.min(cursorColumn, findLineEnd(text, lineStart) - lineStart);
   }
 
   return offset;
@@ -55,12 +56,12 @@ const findNextWordBoundary = (text: string, offset: number): number => {
   let i = offset;
 
   // Skip current word characters
-  while (i < chars.length && /\w/.test(chars[i])) {
+  while (i < chars.length && chars[i] && /\w/.test(chars[i]!)) {
     i++;
   }
 
   // Skip whitespace
-  while (i < chars.length && /\s/.test(chars[i])) {
+  while (i < chars.length && chars[i] && /\s/.test(chars[i]!)) {
     i++;
   }
 
@@ -72,12 +73,12 @@ const findPrevWordBoundary = (text: string, offset: number): number => {
   let i = Math.max(0, offset - 1);
 
   // Skip whitespace
-  while (i >= 0 && /\s/.test(chars[i])) {
+  while (i >= 0 && chars[i] && /\s/.test(chars[i]!)) {
     i--;
   }
 
   // Skip current word characters
-  while (i >= 0 && /\w/.test(chars[i])) {
+  while (i >= 0 && chars[i] && /\w/.test(chars[i]!)) {
     i--;
   }
 
@@ -86,7 +87,10 @@ const findPrevWordBoundary = (text: string, offset: number): number => {
 
 const findLineStart = (text: string, offset: number): number => {
   const beforeCursor = text.slice(0, offset);
-  const lastNewline = Math.max(beforeCursor.lastIndexOf("\n"), beforeCursor.lastIndexOf("\r"));
+  const lastNewline = Math.max(
+    beforeCursor.lastIndexOf("\n"),
+    beforeCursor.lastIndexOf("\r"),
+  );
   return lastNewline === -1 ? 0 : lastNewline + 1;
 };
 
@@ -110,6 +114,8 @@ const findLineEnd = (text: string, offset: number): number => {
 };
 
 type State = {
+  attachments: Map<number, AttachmentData>;
+  attachmentCounter: number;
   previousValue: string;
   value: string;
   cursorOffset: number;
@@ -127,9 +133,12 @@ type Action =
   | MoveCursorLineStartAction
   | MoveCursorLineEndAction
   | InsertAction
+  | InsertAttachmentAction
+  | SetAttachmentsAction
   | DeleteAction
   | DeleteWordAction
-  | DeleteToLineStartAction;
+  | DeleteToLineStartAction
+  | ClearAction;
 
 type MoveCursorLeftAction = {
   type: "move-cursor-left";
@@ -142,6 +151,17 @@ type MoveCursorRightAction = {
 type InsertAction = {
   type: "insert";
   text: string;
+};
+
+type InsertAttachmentAction = {
+  type: "insert-attachment";
+  text: string;
+  lineCount: number;
+};
+
+type SetAttachmentsAction = {
+  type: "set-attachments";
+  attachments: Map<number, AttachmentData>;
 };
 
 type MoveCursorUpAction = {
@@ -180,6 +200,10 @@ type DeleteToLineStartAction = {
   type: "delete-to-line-start";
 };
 
+type ClearAction = {
+  type: "clear";
+};
+
 const reducer: Reducer<State, Action> = (state, action) => {
   const updateCursorPosition = (newValue: string, newOffset: number) => {
     const { cursorLine, cursorColumn } = getCursorPosition(newValue, newOffset);
@@ -211,7 +235,7 @@ const reducer: Reducer<State, Action> = (state, action) => {
         const targetLine = state.cursorLine - 1;
         const targetColumn = Math.min(
           state.cursorColumn,
-          lines[targetLine].length,
+          lines[targetLine]?.length || 0,
         );
         const newOffset = getOffsetFromPosition(
           state.value,
@@ -234,7 +258,7 @@ const reducer: Reducer<State, Action> = (state, action) => {
         const targetLine = state.cursorLine + 1;
         const targetColumn = Math.min(
           state.cursorColumn,
-          lines[targetLine].length,
+          lines[targetLine]?.length || 0,
         );
         const newOffset = getOffsetFromPosition(
           state.value,
@@ -302,6 +326,24 @@ const reducer: Reducer<State, Action> = (state, action) => {
       };
     }
 
+    case "insert-attachment": {
+      return {
+        ...state,
+        attachments: new Map(state.attachments).set(state.attachmentCounter, {
+          content: action.text,
+          lineCount: action.lineCount,
+        }),
+        attachmentCounter: state.attachmentCounter + 1,
+      };
+    }
+
+    case "set-attachments": {
+      return {
+        ...state,
+        attachments: action.attachments,
+      };
+    }
+
     case "delete": {
       const newCursorOffset = Math.max(0, state.cursorOffset - 1);
       const newValue = state.value.slice(0, newCursorOffset) +
@@ -341,14 +383,33 @@ const reducer: Reducer<State, Action> = (state, action) => {
         ...updateCursorPosition(newValue, lineStart),
       };
     }
+
+    case "clear": {
+      return {
+        attachments: new Map<number, AttachmentData>(),
+        attachmentCounter: 1,
+        previousValue: state.value,
+        value: "",
+        cursorOffset: 0,
+        cursorLine: 0,
+        cursorColumn: 0,
+      };
+    }
   }
+};
+
+export type AttachmentData = {
+  content: string;
+  lineCount: number;
 };
 
 export type UseTextInputStateProps = {
   defaultValue?: string;
   suggestions?: string[];
-  onChange?: (value: string) => void;
-  onSubmit?: (value: string) => void;
+  enableAttachments?: boolean;
+  onChange?: (value: string, attachments?: Map<number, AttachmentData>) => void;
+  onSubmit?: (value: string, attachments?: Map<number, AttachmentData>) => void;
+  exitApp?: () => Promise<void>;
 };
 
 export type TextInputState = State & {
@@ -363,21 +424,28 @@ export type TextInputState = State & {
   moveCursorLineStart: () => void;
   moveCursorLineEnd: () => void;
   insert: (text: string) => void;
+  insertAttachment: (text: string) => void;
   delete: () => void;
   deleteWord: () => void;
   deleteToLineStart: () => void;
   submit: () => void;
   acceptSuggestion: () => void;
   clearSuggestionFlag: () => void;
+  clear: () => void;
+  exit: () => void;
 };
 
 export const useTextInputState = ({
   defaultValue = "",
   suggestions,
+  enableAttachments = false,
   onChange,
   onSubmit,
+  exitApp,
 }: UseTextInputStateProps): TextInputState => {
   const [state, dispatch] = useReducer(reducer, {
+    attachments: new Map<number, AttachmentData>(),
+    attachmentCounter: 1,
     previousValue: defaultValue,
     value: defaultValue,
     cursorOffset: defaultValue.length,
@@ -444,22 +512,103 @@ export const useTextInputState = ({
     });
   }, []);
 
+  const clear = useCallback(() => {
+    dispatch({
+      type: "clear",
+    });
+  }, []);
+
+  const exit = useCallback(() => {
+    if (exitApp) {
+      state.attachments.clear();
+      exitApp();
+    }
+  }, [exitApp]);
+
+  const insertAttachment = useCallback(
+    (text: string) => {
+      // Count lines in the text
+      const newlineCount = (text.match(/[\n\r]/g) || []).length;
+
+      if (!enableAttachments || newlineCount < 10) {
+        dispatch({
+          type: "insert",
+          text,
+        });
+
+        return;
+      }
+
+      // Always create a new attachment for each paste
+      const attachmentId = state.attachmentCounter;
+      const placeholder = `[#${attachmentId} ${newlineCount} lines of text]`;
+
+      dispatch({
+        type: "insert-attachment",
+        text,
+        lineCount: newlineCount,
+      });
+
+      // Insert placeholder with ID and line count
+      dispatch({
+        type: "insert",
+        text: placeholder,
+      });
+    },
+    [enableAttachments, state.attachmentCounter],
+  );
+
   const insert = useCallback((text: string) => {
     dispatch({
       type: "insert",
       text,
     });
+
     // Clear the suggestion flag when new text is inserted
     setJustAcceptedSuggestion(false);
   }, []);
 
   const deleteCharacter = useCallback(() => {
+    const newCursorOffset = Math.max(0, state.cursorOffset - 1);
+    const newValue = state.value.slice(0, newCursorOffset) +
+      state.value.slice(state.cursorOffset);
+
+    // Check if any attachments were deleted
+    if (enableAttachments && state.attachments.size > 0) {
+      // Create a map to track which attachment IDs are still present
+      const remainingAttachmentIds = new Set<number>();
+
+      // Check each attachment to see if its placeholder still exists
+      state.attachments.forEach((attachmentData, id) => {
+        const placeholder = `[#${id} ${attachmentData.lineCount} lines of text]`;
+        if (newValue.includes(placeholder)) {
+          remainingAttachmentIds.add(id);
+        }
+      });
+
+      // Remove attachments that are no longer in the text
+      if (remainingAttachmentIds.size < state.attachments.size) {
+        const updatedAttachments = new Map<number, AttachmentData>();
+        remainingAttachmentIds.forEach((id) => {
+          const attachmentData = state.attachments.get(id);
+          if (attachmentData) {
+            updatedAttachments.set(id, attachmentData);
+          }
+        });
+
+        dispatch({
+          type: "set-attachments",
+          attachments: updatedAttachments,
+        });
+      }
+    }
+
     dispatch({
       type: "delete",
     });
     // Clear the suggestion flag when text is deleted
     setJustAcceptedSuggestion(false);
-  }, []);
+  }, [state.value, state.cursorOffset, enableAttachments, state.attachments]);
 
   const deleteWord = useCallback(() => {
     dispatch({
@@ -491,18 +640,19 @@ export const useTextInputState = ({
   const submit = useCallback(() => {
     if (suggestion) {
       insert(suggestion);
-      onSubmit?.(state.value + suggestion);
+      onSubmit?.(state.value + suggestion, state.attachments);
       return;
     }
 
-    onSubmit?.(state.value);
-  }, [state.value, suggestion, insert, onSubmit]);
+    onSubmit?.(state.value, state.attachments);
+  }, [state.value, suggestion, insert, onSubmit, state.attachments]);
 
   useEffect(() => {
+    // Call onChange when internal state changes
     if (state.value !== state.previousValue) {
-      onChange?.(state.value);
+      onChange?.(state.value, state.attachments);
     }
-  }, [state.previousValue, state.value, onChange]);
+  }, [state.previousValue, state.value, onChange, state.attachments]);
 
   return {
     ...state,
@@ -517,11 +667,14 @@ export const useTextInputState = ({
     moveCursorLineStart,
     moveCursorLineEnd,
     insert,
+    insertAttachment,
     delete: deleteCharacter,
     deleteWord,
     deleteToLineStart,
     submit,
     acceptSuggestion,
     clearSuggestionFlag,
+    clear,
+    exit,
   };
 };

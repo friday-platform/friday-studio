@@ -47,7 +47,6 @@ interface AppContextType {
   setTypingState: React.Dispatch<React.SetStateAction<TypingState>>;
   isInitializing: boolean;
   exitApp: () => Promise<void>;
-  setInkExitFunction: (exitFn: () => void) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -91,9 +90,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   // Store config in a ref so SSE handler always has latest value
   const configRef = useRef(config);
 
-  // Store Ink's exit function
-  const inkExitRef = useRef<(() => void) | null>(null);
-
   async function cleanup() {
     if (mcpTransportRef.current) {
       await mcpTransportRef.current.close();
@@ -112,17 +108,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     // Show cursor before exiting
     console.log("\x1b[?25h");
 
-    // Use Ink's exit if available, otherwise fallback to Deno.exit
-    if (inkExitRef.current) {
-      inkExitRef.current();
-    } else {
-      Deno.exit(0);
-    }
+    Deno.exit(0);
   }
-
-  const setInkExitFunction = (exitFn: () => void) => {
-    inkExitRef.current = exitFn;
-  };
 
   useEffect(() => {
     configRef.current = config;
@@ -311,7 +298,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setTypingState,
         isInitializing,
         exitApp,
-        setInkExitFunction,
       }}
     >
       {children}

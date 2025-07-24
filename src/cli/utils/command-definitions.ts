@@ -13,10 +13,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "View available workspaces",
   },
   {
-    command: "/init",
-    description: "Initialize a new workspace",
-  },
-  {
     command: "/credits",
     description: "Show Atlas credits and acknowledgments",
   },
