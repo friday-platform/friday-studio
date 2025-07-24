@@ -41,6 +41,7 @@ export type {
 export { CoALALocalFileStorageAdapter } from "./src/memory/coala-local.ts";
 export { InMemoryStorageAdapter } from "./src/memory/in-memory.ts";
 export { LocalFileStorageAdapter } from "./src/memory/local.ts";
+export { FileWriteCoordinator } from "./src/memory/file-write-coordinator.ts";
 
 // Vector search storage adapters
 export { VectorSearchLocalStorageAdapter } from "./src/vector/vector-search-local.ts";

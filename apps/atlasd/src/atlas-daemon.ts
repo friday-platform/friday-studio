@@ -42,6 +42,8 @@ export interface AtlasDaemonOptions {
   cors?: string | string[];
   maxConcurrentWorkspaces?: number;
   idleTimeoutMs?: number;
+  sseHeartbeatIntervalMs?: number;
+  sseConnectionTimeoutMs?: number;
 }
 
 /**
@@ -56,7 +58,11 @@ export class AtlasDaemon implements AppContext {
   public startTime = Date.now();
   public sseClients: Map<
     string,
-    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+    Array<{
+      controller: ReadableStreamDefaultController<Uint8Array>;
+      connectedAt: number;
+      lastActivity: number;
+    }>
   > = new Map();
   // Private properties
   private idleTimeouts: Map<string, number> = new Map();
@@ -70,11 +76,14 @@ export class AtlasDaemon implements AppContext {
   private cronManager: CronManager | null = null;
   private mcpServer: PlatformMCPServer | null = null;
   private workspaceManager: WorkspaceManager | null = null;
+  private sseHealthCheckInterval: number | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
       maxConcurrentWorkspaces: 10,
       idleTimeoutMs: 5 * 60 * 1000, // 5 minutes
+      sseHeartbeatIntervalMs: 30 * 1000, // 30 seconds
+      sseConnectionTimeoutMs: 5 * 60 * 1000, // 5 minutes
       ...options,
     };
     this.app = createApp(this);
@@ -174,6 +183,9 @@ export class AtlasDaemon implements AppContext {
     // Initialize system agent registry
     logger.info("Initializing system agent registry...");
     await SystemAgentRegistry.initialize(kvStorage);
+
+    // Start SSE health check interval
+    this.startSSEHealthCheck();
 
     this.isInitialized = true;
     logger.info("Atlas daemon initialized successfully");
@@ -1671,6 +1683,12 @@ export class AtlasDaemon implements AppContext {
     }
     this.idleTimeouts.clear();
 
+    // Stop SSE health check
+    if (this.sseHealthCheckInterval) {
+      clearInterval(this.sseHealthCheckInterval);
+      this.sseHealthCheckInterval = null;
+    }
+
     // Close all SSE connections
     for (const [sessionId, clients] of this.sseClients.entries()) {
       for (const client of clients) {
@@ -1896,6 +1914,7 @@ export class AtlasDaemon implements AppContext {
 
   getStatus() {
     const cronStats = this.cronManager?.getStats();
+
     return {
       activeWorkspaces: this.runtimes.size,
       uptime: Date.now() - this.startTime,
@@ -1928,15 +1947,126 @@ export class AtlasDaemon implements AppContext {
     }
 
     const sseData = `data: ${JSON.stringify(event)}\n\n`;
+    const now = Date.now();
+    const disconnectedClients: typeof clients = [];
 
     // Send to all connected clients for this session
     for (const client of clients) {
       try {
         client.controller.enqueue(new TextEncoder().encode(sseData));
+        // Update last activity on successful send
+        client.lastActivity = now;
       } catch (error) {
-        // Client disconnected, remove from list
+        // Client disconnected, mark for removal
         AtlasLogger.getInstance().debug(`SSE client disconnected for session ${sessionId}:`, error);
+        disconnectedClients.push(client);
       }
+    }
+
+    // Remove disconnected clients
+    if (disconnectedClients.length > 0) {
+      const remainingClients = clients.filter((c) => !disconnectedClients.includes(c));
+      if (remainingClients.length === 0) {
+        this.sseClients.delete(sessionId);
+      } else {
+        this.sseClients.set(sessionId, remainingClients);
+      }
+      AtlasLogger.getInstance().debug(
+        `Removed ${disconnectedClients.length} disconnected SSE clients for session ${sessionId}`,
+      );
+    }
+  }
+
+  /**
+   * Start SSE health check interval
+   */
+  private startSSEHealthCheck(): void {
+    if (this.sseHealthCheckInterval) {
+      clearInterval(this.sseHealthCheckInterval);
+    }
+
+    this.sseHealthCheckInterval = setInterval(() => {
+      this.performSSEHealthCheck();
+    }, this.options.sseHeartbeatIntervalMs!);
+
+    AtlasLogger.getInstance().info("SSE health check started", {
+      intervalMs: this.options.sseHeartbeatIntervalMs,
+    });
+  }
+
+  /**
+   * Perform SSE health check - send heartbeat and prune stale connections
+   */
+  private performSSEHealthCheck(): void {
+    const now = Date.now();
+    const timeoutMs = this.options.sseConnectionTimeoutMs!;
+    let totalClients = 0;
+    let prunedClients = 0;
+    let heartbeatsSent = 0;
+
+    for (const [sessionId, clients] of this.sseClients.entries()) {
+      const activeClients: typeof clients = [];
+
+      for (const client of clients) {
+        totalClients++;
+
+        // Check if connection is stale
+        if (now - client.lastActivity > timeoutMs) {
+          try {
+            client.controller.close();
+          } catch (error) {
+            // Ignore close errors
+          }
+          prunedClients++;
+          AtlasLogger.getInstance().debug(`Pruned stale SSE client for session ${sessionId}`, {
+            sessionId,
+            connectionDuration: now - client.connectedAt,
+            lastActivity: now - client.lastActivity,
+          });
+        } else {
+          // Send heartbeat to active clients
+          try {
+            const heartbeat = {
+              type: "heartbeat",
+              data: { timestamp: new Date().toISOString() },
+            };
+            client.controller.enqueue(
+              new TextEncoder().encode(`data: ${JSON.stringify(heartbeat)}\n\n`),
+            );
+            client.lastActivity = now;
+            activeClients.push(client);
+            heartbeatsSent++;
+          } catch (error) {
+            // Client disconnected
+            try {
+              client.controller.close();
+            } catch {
+              // Ignore close errors
+            }
+            prunedClients++;
+            AtlasLogger.getInstance().debug(`Pruned disconnected SSE client during heartbeat`, {
+              sessionId,
+              error: error.message,
+            });
+          }
+        }
+      }
+
+      // Update client list or remove empty sessions
+      if (activeClients.length === 0) {
+        this.sseClients.delete(sessionId);
+      } else {
+        this.sseClients.set(sessionId, activeClients);
+      }
+    }
+
+    if (prunedClients > 0 || totalClients > 10) {
+      AtlasLogger.getInstance().info("SSE health check completed", {
+        totalClients,
+        prunedClients,
+        heartbeatsSent,
+        activeSessions: this.sseClients.size,
+      });
     }
   }
 
@@ -1945,16 +2075,24 @@ export class AtlasDaemon implements AppContext {
    */
   private handleGenericSSERequest(_c: unknown, sessionId: string): Response {
     let streamController: ReadableStreamDefaultController<Uint8Array> | null = null;
+    const now = Date.now();
 
     const stream = new ReadableStream<Uint8Array>({
       start: (controller) => {
         streamController = controller;
 
-        // Add client to SSE clients map
+        // Add client to SSE clients map with metadata
         if (!this.sseClients.has(sessionId)) {
           this.sseClients.set(sessionId, []);
         }
-        this.sseClients.get(sessionId)!.push({ controller });
+
+        const clientInfo = {
+          controller,
+          connectedAt: now,
+          lastActivity: now,
+        };
+
+        this.sseClients.get(sessionId)!.push(clientInfo);
 
         // Send initial connection event
         const initialEvent = {
@@ -1967,7 +2105,10 @@ export class AtlasDaemon implements AppContext {
           AtlasLogger.getInstance().error(`Failed to send initial SSE event:`, error);
         }
 
-        // No buffered events needed - direct streaming via daemon capabilities
+        AtlasLogger.getInstance().debug(`SSE client connected for session ${sessionId}`, {
+          sessionId,
+          totalClients: this.sseClients.get(sessionId)!.length,
+        });
       },
       cancel: () => {
         // Remove client from SSE clients map
@@ -1981,6 +2122,11 @@ export class AtlasDaemon implements AppContext {
           } else {
             this.sseClients.set(sessionId, filteredClients);
           }
+
+          AtlasLogger.getInstance().debug(`SSE client disconnected for session ${sessionId}`, {
+            sessionId,
+            remainingClients: filteredClients.length,
+          });
         }
       },
     });

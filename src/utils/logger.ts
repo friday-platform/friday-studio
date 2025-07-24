@@ -36,6 +36,10 @@ export class AtlasLogger {
   private detachedFileHandle?: Deno.FsFile;
   private pendingOperations: Set<Promise<void>> = new Set();
   private isClosing = false;
+  private resourceTracker: Map<string, { openedAt: number; path: string }> = new Map();
+  private lastCleanup = Date.now();
+  private readonly CLEANUP_INTERVAL = 60000; // 1 minute
+  private readonly MAX_WORKSPACE_AGE = 300000; // 5 minutes
 
   private constructor() {
     // Paths will be set during initialization
@@ -56,7 +60,9 @@ export class AtlasLogger {
   static async resetInstance(): Promise<void> {
     if (AtlasLogger.instance) {
       await AtlasLogger.instance.close();
-      AtlasLogger.instance = undefined as any;
+      // Reset the instance to undefined to force a new instance creation
+      // @ts-ignore: Intentionally setting to undefined for test cleanup
+      AtlasLogger.instance = undefined;
     }
   }
 
@@ -74,30 +80,53 @@ export class AtlasLogger {
 
     // Start initialization
     this.initPromise = (async () => {
-      // Set up paths using centralized path utility
-      this.logDir = getAtlasLogsDir();
-      this.globalLogPath = join(this.logDir, "global.log");
+      try {
+        // Set up paths using centralized path utility
+        this.logDir = getAtlasLogsDir();
+        this.globalLogPath = join(this.logDir, "global.log");
 
-      // Ensure log directories exist
-      await ensureDir(this.logDir);
-      await ensureDir(join(this.logDir, "workspaces"));
+        // Ensure log directories exist
+        await ensureDir(this.logDir);
+        await ensureDir(join(this.logDir, "workspaces"));
 
-      // Open global log file
-      this.fileWriter = await Deno.open(this.globalLogPath, {
-        create: true,
-        write: true,
-        append: true,
-      });
+        // Open global log file with proper error handling
+        let fileHandle: Deno.FsFile | undefined;
+        try {
+          fileHandle = await Deno.open(this.globalLogPath, {
+            create: true,
+            write: true,
+            append: true,
+          });
+          this.fileWriter = fileHandle;
+          this.trackResource("global", fileHandle, this.globalLogPath);
 
-      // Write initialization message
-      await this.writeLog("global", {
-        level: "info",
-        message: "Atlas logging initialized",
-        timestamp: new Date().toISOString(),
-        pid: Deno.pid,
-      });
+          // Write initialization message
+          await this.writeLog("global", {
+            level: "info",
+            message: "Atlas logging initialized",
+            timestamp: new Date().toISOString(),
+            pid: Deno.pid,
+          });
 
-      this.isInitialized = true;
+          this.isInitialized = true;
+        } catch (error) {
+          // If we opened the file but failed to write, close it
+          if (fileHandle) {
+            try {
+              fileHandle.close();
+            } catch {
+              // Ignore close errors
+            }
+            this.fileWriter = undefined;
+          }
+          throw error;
+        }
+      } catch (error) {
+        // Reset state on initialization failure
+        this.isInitialized = false;
+        this.initPromise = undefined;
+        throw error;
+      }
     })();
 
     await this.initPromise;
@@ -110,33 +139,50 @@ export class AtlasLogger {
   async initializeDetached(logFile: string): Promise<void> {
     this.isDetached = true;
 
-    // Ensure directory exists
-    await ensureDir(join(logFile, ".."));
+    let fileHandle: Deno.FsFile | undefined;
+    try {
+      // Ensure directory exists
+      await ensureDir(join(logFile, ".."));
 
-    // Open the specific log file
-    this.detachedFileHandle = await Deno.open(logFile, {
-      create: true,
-      write: true,
-      append: true,
-    });
+      // Open the specific log file
+      fileHandle = await Deno.open(logFile, {
+        create: true,
+        write: true,
+        append: true,
+      });
+      this.detachedFileHandle = fileHandle;
+      this.trackResource("detached", fileHandle, logFile);
 
-    // Write startup message
-    const entry: LogEntry = {
-      level: "info",
-      message: "Workspace starting in detached mode",
-      timestamp: new Date().toISOString(),
-      pid: Deno.pid,
-      context: {
-        workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
-        workspaceName: Deno.env.get("ATLAS_WORKSPACE_NAME"),
-        mode: "detached",
-      },
-    };
+      // Write startup message
+      const entry: LogEntry = {
+        level: "info",
+        message: "Workspace starting in detached mode",
+        timestamp: new Date().toISOString(),
+        pid: Deno.pid,
+        context: {
+          workspaceId: Deno.env.get("ATLAS_WORKSPACE_ID"),
+          workspaceName: Deno.env.get("ATLAS_WORKSPACE_NAME"),
+          mode: "detached",
+        },
+      };
 
-    const line = JSON.stringify(entry) + "\n";
-    await this.detachedFileHandle.write(new TextEncoder().encode(line));
+      const line = JSON.stringify(entry) + "\n";
+      await this.detachedFileHandle.write(new TextEncoder().encode(line));
 
-    this.isInitialized = true;
+      this.isInitialized = true;
+    } catch (error) {
+      // Clean up file handle if initialization fails
+      if (fileHandle) {
+        try {
+          fileHandle.close();
+        } catch {
+          // Ignore close errors
+        }
+        this.detachedFileHandle = undefined;
+      }
+      this.isDetached = false;
+      throw error;
+    }
   }
 
   private async writeLog(target: string, entry: LogEntry): Promise<void> {
@@ -150,39 +196,68 @@ export class AtlasLogger {
       return;
     }
 
+    // Perform periodic cleanup of old workspace writers
+    if (Date.now() - this.lastCleanup > this.CLEANUP_INTERVAL) {
+      this.cleanupOldWorkspaceWriters();
+    }
+
     const line = JSON.stringify(entry) + "\n";
     const encoder = new TextEncoder();
     const data = encoder.encode(line);
 
-    // In detached mode, write to the detached file handle
-    if (this.isDetached && this.detachedFileHandle) {
-      await this.detachedFileHandle.write(data);
-      return;
-    }
-
-    if (target === "global" && this.fileWriter) {
-      await this.fileWriter.write(data);
-    } else if (target.startsWith("workspace:")) {
-      const workspaceId = target.split(":")[1];
-      // Use registry ID if we have a mapping, otherwise use the workspace ID
-      const logId = this.workspaceIdToRegistryId.get(workspaceId) || workspaceId;
-      let writer = this.workspaceWriters.get(logId);
-
-      if (!writer) {
-        const workspacePath = join(
-          this.logDir,
-          "workspaces",
-          `${logId}.log`,
-        );
-        writer = await Deno.open(workspacePath, {
-          create: true,
-          write: true,
-          append: true,
-        });
-        this.workspaceWriters.set(logId, writer);
+    try {
+      // In detached mode, write to the detached file handle
+      if (this.isDetached && this.detachedFileHandle) {
+        await this.detachedFileHandle.write(data);
+        return;
       }
 
-      await writer.write(data);
+      if (target === "global" && this.fileWriter) {
+        await this.fileWriter.write(data);
+      } else if (target.startsWith("workspace:")) {
+        const workspaceId = target.split(":")[1];
+        if (!workspaceId) {
+          throw new Error(`Invalid workspace target: ${target}`);
+        }
+        // Use registry ID if we have a mapping, otherwise use the workspace ID
+        const logId = this.workspaceIdToRegistryId.get(workspaceId) || workspaceId;
+        let writer = this.workspaceWriters.get(logId);
+
+        if (!writer) {
+          const workspacePath = join(
+            this.logDir,
+            "workspaces",
+            `${logId}.log`,
+          );
+
+          let fileHandle: Deno.FsFile | undefined;
+          try {
+            fileHandle = await Deno.open(workspacePath, {
+              create: true,
+              write: true,
+              append: true,
+            });
+            writer = fileHandle;
+            this.workspaceWriters.set(logId, writer);
+            this.trackResource(`workspace:${logId}`, writer, workspacePath);
+          } catch (error) {
+            // If opening fails, close the handle if it was created
+            if (fileHandle) {
+              try {
+                fileHandle.close();
+              } catch {
+                // Ignore close errors
+              }
+            }
+            throw error;
+          }
+        }
+
+        await writer.write(data);
+      }
+    } catch (error) {
+      // Log to console as fallback when file operations fail
+      console.error(`Failed to write log to ${target}:`, error);
     }
   }
 
@@ -328,6 +403,7 @@ export class AtlasLogger {
       : join(this.logDir, "workspaces", `${target}.log`);
 
     try {
+      // Use readTextFile which handles file operations internally
       const content = await Deno.readTextFile(logPath);
       const allLines = content.trim().split("\n");
       return allLines.slice(-lines);
@@ -353,6 +429,7 @@ export class AtlasLogger {
         // Ignore errors if file is already closed
       }
       this.fileWriter = undefined;
+      this.untrackResource("global");
     }
 
     if (this.detachedFileHandle) {
@@ -362,14 +439,16 @@ export class AtlasLogger {
         // Ignore errors if file is already closed
       }
       this.detachedFileHandle = undefined;
+      this.untrackResource("detached");
     }
 
-    for (const writer of this.workspaceWriters.values()) {
+    for (const [id, writer] of this.workspaceWriters.entries()) {
       try {
         writer.close();
       } catch {
         // Ignore errors if file is already closed
       }
+      this.untrackResource(`workspace:${id}`);
     }
     this.workspaceWriters.clear();
 
@@ -379,6 +458,66 @@ export class AtlasLogger {
     this.isDetached = false;
     this.isClosing = false;
     this.pendingOperations.clear();
+    this.resourceTracker.clear();
+  }
+
+  /**
+   * Track a file resource for debugging and cleanup
+   */
+  private trackResource(id: string, _handle: Deno.FsFile, path: string): void {
+    this.resourceTracker.set(id, {
+      openedAt: Date.now(),
+      path,
+    });
+  }
+
+  /**
+   * Untrack a file resource
+   */
+  private untrackResource(id: string): void {
+    this.resourceTracker.delete(id);
+  }
+
+  /**
+   * Clean up old workspace writers that haven't been used recently
+   */
+  private cleanupOldWorkspaceWriters(): void {
+    this.lastCleanup = Date.now();
+    const now = Date.now();
+    const toRemove: string[] = [];
+
+    // Find workspace writers that are older than MAX_WORKSPACE_AGE
+    for (const [id, info] of this.resourceTracker.entries()) {
+      if (id.startsWith("workspace:") && (now - info.openedAt) > this.MAX_WORKSPACE_AGE) {
+        toRemove.push(id.replace("workspace:", ""));
+      }
+    }
+
+    // Close and remove old workspace writers
+    for (const logId of toRemove) {
+      const writer = this.workspaceWriters.get(logId);
+      if (writer) {
+        try {
+          writer.close();
+        } catch {
+          // Ignore close errors
+        }
+        this.workspaceWriters.delete(logId);
+        this.untrackResource(`workspace:${logId}`);
+      }
+    }
+  }
+
+  /**
+   * Get current resource usage for debugging
+   */
+  getResourceUsage(): { id: string; path: string; ageMs: number }[] {
+    const now = Date.now();
+    return Array.from(this.resourceTracker.entries()).map(([id, info]) => ({
+      id,
+      path: info.path,
+      ageMs: now - info.openedAt,
+    }));
   }
 }
 

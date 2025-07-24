@@ -13,6 +13,7 @@ import { ensureDir } from "@std/fs";
 import { join } from "@std/path";
 import { getAtlasHome } from "../../../../src/utils/paths.ts";
 import type { ICoALAMemoryStorageAdapter } from "../types/core.ts";
+import { FileWriteCoordinator } from "./file-write-coordinator.ts";
 
 export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter {
   private storagePath: string;
@@ -67,7 +68,11 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     const fileName = this.memoryTypeFiles[memoryType] || `${memoryType}.json`;
     const filePath = join(this.storagePath, fileName);
 
-    await Deno.writeTextFile(filePath, JSON.stringify(data, null, 2));
+    // Use the file write coordinator to prevent concurrent writes
+    const coordinator = FileWriteCoordinator.getInstance();
+    await coordinator.executeWrite(filePath, async () => {
+      await Deno.writeTextFile(filePath, JSON.stringify(data, null, 2));
+    });
   }
 
   async loadByType(memoryType: string): Promise<any> {
@@ -191,7 +196,12 @@ export class CoALALocalFileStorageAdapter implements ICoALAMemoryStorageAdapter 
     }
 
     const indexPath = join(this.storagePath, "index.json");
-    await Deno.writeTextFile(indexPath, JSON.stringify(index, null, 2));
+
+    // Use the file write coordinator to prevent concurrent writes to index.json
+    const coordinator = FileWriteCoordinator.getInstance();
+    await coordinator.executeWrite(indexPath, async () => {
+      await Deno.writeTextFile(indexPath, JSON.stringify(index, null, 2));
+    });
   }
 
   private async loadAdditionalMemoryTypes(): Promise<string[]> {
