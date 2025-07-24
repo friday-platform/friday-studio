@@ -322,7 +322,9 @@ export class SessionSupervisorActor implements BaseActor {
 
     if (phase.executionStrategy === "sequential") {
       for (const agentTask of phase.agents) {
-        const result = await this.executeAgent(agentTask, previousResults, phaseResults);
+        // Combine results from previous phases + current phase agents
+        const allPreviousResults = [...previousResults, ...phaseResults];
+        const result = await this.executeAgent(agentTask, allPreviousResults, phaseResults);
         phaseResults.push(result);
       }
     } else {
@@ -346,7 +348,7 @@ export class SessionSupervisorActor implements BaseActor {
     let input: unknown = this.sessionContext?.payload;
 
     if (agentTask.inputSource === "previous" && previousResults.length > 0) {
-      input = previousResults[previousResults.length - 1].output;
+      input = previousResults[previousResults.length - 1]?.output;
     } else if (agentTask.inputSource === "combined") {
       const combinedInput: CombinedAgentInput = {
         original: this.sessionContext?.payload || {},
@@ -394,7 +396,7 @@ export class SessionSupervisorActor implements BaseActor {
       inputSizeBytes: JSON.stringify(input).length,
       previousResultsCount: previousResults.length,
       lastPreviousAgentId: previousResults.length > 0
-        ? previousResults[previousResults.length - 1].agentId
+        ? previousResults[previousResults.length - 1]?.agentId
         : null,
     });
 
@@ -510,7 +512,9 @@ export class SessionSupervisorActor implements BaseActor {
         this.extractAndStoreSemanticFacts(summary);
         this.logger.info("Semantic facts extracted and stored");
       } catch (error) {
-        this.logger.warn("Failed to extract semantic facts", { error: error.message });
+        this.logger.warn("Failed to extract semantic facts", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
 
@@ -519,7 +523,9 @@ export class SessionSupervisorActor implements BaseActor {
         this.generateWorkingMemorySummary(summary);
         this.logger.info("Working memory summary generated");
       } catch (error) {
-        this.logger.warn("Failed to generate working memory summary", { error: error.message });
+        this.logger.warn("Failed to generate working memory summary", {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
@@ -558,7 +564,7 @@ IMPORTANT: You MUST use the plan_agent_execution tool for each agent you want to
 
 Create a comprehensive execution plan that:
 1. Identifies which agents need to be called
-2. Determines the order of execution (sequential or parallel)  
+2. Determines the order of execution (sequential or parallel)
 3. Specifies what task each agent should perform
 4. Considers dependencies between agents
 
@@ -567,7 +573,7 @@ For each agent, call the plan_agent_execution tool with:
 - task: specific task description
 - inputSource: "signal", "previous", or "combined"
 - dependencies: array of agent IDs this depends on
-- phase: meaningful phase name  
+- phase: meaningful phase name
 - executionStrategy: "sequential" or "parallel"
 
 Think step by step about the best approach to handle this signal, then use the tools to create the structured plan.`;
