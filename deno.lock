@@ -5,25 +5,23 @@
     "jsr:@std/assert@^1.0.13": "1.0.13",
     "jsr:@std/async@1": "1.0.13",
     "jsr:@std/async@^1.0.13": "1.0.13",
-    "jsr:@std/cli@^1.0.20": "1.0.20",
-    "jsr:@std/data-structures@^1.0.8": "1.0.8",
+    "jsr:@std/cli@^1.0.20": "1.0.21",
+    "jsr:@std/data-structures@^1.0.9": "1.0.9",
     "jsr:@std/dotenv@0.225": "0.225.5",
     "jsr:@std/expect@^1.0.16": "1.0.16",
     "jsr:@std/fs@1": "1.0.19",
-    "jsr:@std/fs@^1.0.18": "1.0.19",
     "jsr:@std/fs@^1.0.19": "1.0.19",
     "jsr:@std/fs@^1.0.5": "1.0.19",
-    "jsr:@std/internal@^1.0.6": "1.0.9",
-    "jsr:@std/internal@^1.0.7": "1.0.9",
-    "jsr:@std/internal@^1.0.8": "1.0.9",
-    "jsr:@std/internal@^1.0.9": "1.0.9",
+    "jsr:@std/internal@^1.0.10": "1.0.10",
+    "jsr:@std/internal@^1.0.6": "1.0.10",
+    "jsr:@std/internal@^1.0.7": "1.0.10",
+    "jsr:@std/internal@^1.0.9": "1.0.10",
     "jsr:@std/path@1": "1.1.1",
     "jsr:@std/path@^1.0.8": "1.1.1",
-    "jsr:@std/path@^1.1.0": "1.1.1",
     "jsr:@std/path@^1.1.1": "1.1.1",
-    "jsr:@std/testing@^1.0.12": "1.0.14",
-    "jsr:@std/yaml@^1.0.5": "1.0.8",
-    "jsr:@std/yaml@^1.0.7": "1.0.8",
+    "jsr:@std/testing@^1.0.12": "1.0.15",
+    "jsr:@std/yaml@^1.0.5": "1.0.9",
+    "jsr:@std/yaml@^1.0.7": "1.0.9",
     "npm:@ai-sdk/anthropic@2.0.0-beta.8": "2.0.0-beta.8_zod@3.25.76",
     "npm:@ai-sdk/google@2.0.0-beta.13": "2.0.0-beta.13_zod@3.25.76",
     "npm:@ai-sdk/openai@2.0.0-beta.11": "2.0.0-beta.11_zod@3.25.76",
@@ -43,11 +41,10 @@
     "npm:cron-parser@^5.3.0": "5.3.0",
     "npm:eventsource-parser@^3.0.3": "3.0.3",
     "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@19.1.8_react@19.1.0",
-    "npm:hono-openapi@~0.5.0-rc.2": "0.5.0-rc.2_@standard-community+standard-json@0.3.0-rc.1__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.1___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.2.0___zod@3.25.76_hono@4.8.5_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.2.0__zod@3.25.76_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.5",
+    "npm:hono-openapi@~0.5.0-rc.2": "0.5.0-rc.2_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.5_@standard-community+standard-json@0.3.0-rc.1__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.1___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.2.0___zod@3.25.76_hono@4.8.5_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.2.0__zod@3.25.76",
     "npm:hono@^4.8.5": "4.8.5",
     "npm:ink@^6.0.1": "6.0.1_@types+react@19.1.8_react@19.1.0",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
-    "npm:lint-staged@16": "16.1.2",
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.1.1",
     "npm:marked@16": "16.1.1",
@@ -55,7 +52,6 @@
     "npm:openapi-fetch@~0.12.4": "0.12.5",
     "npm:openapi-typescript@^7.4.4": "7.8.0_typescript@5.8.3",
     "npm:playwright@^1.54.1": "1.54.1",
-    "npm:playwright@latest": "1.54.1",
     "npm:react@^19.1.0": "19.1.0",
     "npm:turndown@^7.2.0": "7.2.0",
     "npm:xstate@^5.20.1": "5.20.1",
@@ -77,8 +73,11 @@
     "@std/cli@1.0.20": {
       "integrity": "a8c384a2c98cec6ec6a2055c273a916e2772485eb784af0db004c5ab8ba52333"
     },
-    "@std/data-structures@1.0.8": {
-      "integrity": "2fb7219247e044c8fcd51341788547575653c82ae2c759ff209e0263ba7d9b66"
+    "@std/cli@1.0.21": {
+      "integrity": "cd25b050bdf6282e321854e3822bee624f07aca7636a3a76d95f77a3a919ca2a"
+    },
+    "@std/data-structures@1.0.9": {
+      "integrity": "033d6e17e64bf1f84a614e647c1b015fa2576ae3312305821e1a4cb20674bb4d"
     },
     "@std/dotenv@0.225.5": {
       "integrity": "9ce6f9d0ec3311f74a32535aa1b8c62ed88b1ab91b7f0815797d77a6f60c922f"
@@ -97,8 +96,8 @@
         "jsr:@std/path@^1.1.1"
       ]
     },
-    "@std/internal@1.0.9": {
-      "integrity": "bdfb97f83e4db7a13e8faab26fb1958d1b80cc64366501af78a0aee151696eb8"
+    "@std/internal@1.0.10": {
+      "integrity": "e3be62ce42cab0e177c27698e5d9800122f67b766a0bea6ca4867886cbde8cf7"
     },
     "@std/path@1.1.1": {
       "integrity": "fe00026bd3a7e6a27f73709b83c607798be40e20c81dde655ce34052fd82ec76",
@@ -106,19 +105,19 @@
         "jsr:@std/internal@^1.0.9"
       ]
     },
-    "@std/testing@1.0.14": {
-      "integrity": "144b3737105b9071cb50c957681f58a1b8ec0f3e5b19ad830f401c5fa931e8f0",
+    "@std/testing@1.0.15": {
+      "integrity": "a490169f5ccb0f3ae9c94fbc69d2cd43603f2cffb41713a85f99bbb0e3087cbc",
       "dependencies": [
         "jsr:@std/assert@^1.0.13",
         "jsr:@std/async@^1.0.13",
         "jsr:@std/data-structures",
-        "jsr:@std/fs@^1.0.18",
-        "jsr:@std/internal@^1.0.8",
-        "jsr:@std/path@^1.1.0"
+        "jsr:@std/fs@^1.0.19",
+        "jsr:@std/internal@^1.0.10",
+        "jsr:@std/path@^1.1.1"
       ]
     },
-    "@std/yaml@1.0.8": {
-      "integrity": "90b8aab62995e929fa0ea5f4151c287275b63e321ac375c35ff7406ca60c169d"
+    "@std/yaml@1.0.9": {
+      "integrity": "6bad3dc766dd85b4b37eabcba81b6aa4eac7a392792ae29abcfb0f90602d55bb"
     }
   },
   "npm": {
@@ -442,8 +441,8 @@
     "auto-bind@5.0.1": {
       "integrity": "sha512-ooviqdwwgfIfNmDwo94wlshcdzfO64XV0Cg6oDsDYBJfITDz1EngD2z7DkbvCWn+XIMsIqW27sEVF6qcpJrRcg=="
     },
-    "axios@1.10.0": {
-      "integrity": "sha512-/1xYAC4MP/HEG+3duIhFr4ZQXR4sQXOIe+o6sdqzeykGLx6Upp/1p8MHqhINOvGeP7xyNHe7tsiJByc4SSVUxw==",
+    "axios@1.11.0": {
+      "integrity": "sha512-1Lx3WLFQWm3ooKDYZD1eXmoGO9fxYQjrycfHFC8P0sCfQVXyROp0p9PFWBehewBOdCwHc+f/b8I0fMto5eSfwA==",
       "dependencies": [
         "follow-redirects",
         "form-data",
@@ -880,21 +879,7 @@
     "highlight.js@10.7.3": {
       "integrity": "sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A=="
     },
-    "hono-openapi@0.5.0-rc.2_@standard-community+standard-json@0.3.0-rc.1__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.1___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.2.0___zod@3.25.76_hono@4.8.5_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.2.0__zod@3.25.76": {
-      "integrity": "sha512-XfIUymsO6RKxhLlbYYe9+zTf0goU0SGFdVNcehBNl2Mel4nrvV0UKGWCUV29fNXE4ZPbYEtWEO4rmnXaCbQtiQ==",
-      "dependencies": [
-        "@standard-community/standard-json",
-        "@standard-community/standard-openapi",
-        "hono",
-        "openapi-types",
-        "zod@3.25.76"
-      ],
-      "optionalPeers": [
-        "hono",
-        "zod@3.25.76"
-      ]
-    },
-    "hono-openapi@0.5.0-rc.2_@standard-community+standard-json@0.3.0-rc.1__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.1___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.2.0___zod@3.25.76_hono@4.8.5_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.2.0__zod@3.25.76_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.5": {
+    "hono-openapi@0.5.0-rc.2_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.5_@standard-community+standard-json@0.3.0-rc.1__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.1___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.2.0___zod@3.25.76_hono@4.8.5_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.2.0__zod@3.25.76": {
       "integrity": "sha512-XfIUymsO6RKxhLlbYYe9+zTf0goU0SGFdVNcehBNl2Mel4nrvV0UKGWCUV29fNXE4ZPbYEtWEO4rmnXaCbQtiQ==",
       "dependencies": [
         "@hono/standard-validator",
