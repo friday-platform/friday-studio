@@ -96,6 +96,7 @@ export class SessionSupervisorActor implements BaseActor {
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
   private status: "idle" | "planning" | "executing" | "completed" | "failed" = "idle";
   private config?: SessionSupervisorConfig;
+  private cachedPlan?: ExecutionPlan;
   private llmProvider = createAnthropic({
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
@@ -163,6 +164,8 @@ export class SessionSupervisorActor implements BaseActor {
 
   initializeSession(context: SessionContext): void {
     this.sessionContext = context;
+    // Clear cached plan when context changes
+    this.cachedPlan = undefined;
 
     this.logger.info("Session initialized", {
       sessionId: context.sessionId,
@@ -177,16 +180,27 @@ export class SessionSupervisorActor implements BaseActor {
       throw new Error("Session not initialized");
     }
 
+    // Return cached plan if available
+    if (this.cachedPlan) {
+      this.logger.info("Using cached execution plan", {
+        planId: this.cachedPlan.id,
+        phases: this.cachedPlan.phases.length,
+      });
+      return this.cachedPlan;
+    }
+
     const startTime = Date.now();
 
     // Check for pre-computed job specs (keep existing logic)
-    const cachedPlan = this.getCachedJobSpec();
-    if (cachedPlan) {
-      this.logger.info("Using cached execution plan", {
-        planId: cachedPlan.id,
-        phases: cachedPlan.phases.length,
+    const jobSpecPlan = this.getCachedJobSpec();
+    if (jobSpecPlan) {
+      this.logger.info("Using cached execution plan from job spec", {
+        planId: jobSpecPlan.id,
+        phases: jobSpecPlan.phases.length,
       });
-      return cachedPlan;
+      // Cache the job spec plan too
+      this.cachedPlan = jobSpecPlan;
+      return jobSpecPlan;
     }
 
     // Check if planning should be skipped (keep existing logic)
@@ -243,6 +257,9 @@ export class SessionSupervisorActor implements BaseActor {
       duration,
       phases: plan.phases.length,
     });
+
+    // Cache the plan for subsequent calls
+    this.cachedPlan = plan;
 
     return plan;
   }

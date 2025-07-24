@@ -24,15 +24,21 @@ const createIntegrationConfig = (): SessionSupervisorConfig => ({
   },
   agents: {
     "test-agent-1": {
-      type: "system",
+      type: "llm",
       config: {
-        tools: ["mock-tool"],
+        model: "claude-3-haiku-20240307",
+        prompt: "You are a test agent that processes data.",
+        temperature: 0.5,
+        max_tokens: 100,
       },
     },
     "test-agent-2": {
-      type: "system",
+      type: "llm",
       config: {
-        tools: ["mock-tool-2"],
+        model: "claude-3-haiku-20240307",
+        prompt: "You are a test agent that validates results.",
+        temperature: 0.5,
+        max_tokens: 100,
       },
     },
   },
@@ -121,8 +127,10 @@ Deno.test({
 
     // Test AI planning
     const aiSupervisor = new SessionSupervisorActor("ai-planning", "workspace-ai");
+    const aiConfig = createIntegrationConfig();
     const aiContext = createIntegrationContext();
 
+    aiSupervisor.setConfig(aiConfig);
     aiSupervisor.initializeSession(aiContext);
     const aiPlan = await aiSupervisor.createExecutionPlan();
 
@@ -132,6 +140,7 @@ Deno.test({
 
     // Test Job Spec planning
     const jobSupervisor = new SessionSupervisorActor("job-planning", "workspace-job");
+    const jobConfig = createIntegrationConfig();
     const jobContext = createIntegrationContext({
       jobSpec: {
         name: "predefined-job",
@@ -142,6 +151,7 @@ Deno.test({
       },
     });
 
+    jobSupervisor.setConfig(jobConfig);
     jobSupervisor.initializeSession(jobContext);
     const jobPlan = await jobSupervisor.createExecutionPlan();
 
@@ -167,6 +177,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     const supervisor = new SessionSupervisorActor("status-test", "workspace-status");
+    const config = createIntegrationConfig();
     const context = createIntegrationContext();
 
     console.log("Testing session status tracking...");
@@ -175,6 +186,7 @@ Deno.test({
     assertEquals(supervisor.getStatus(), "idle");
     console.log("✓ Initial status: idle");
 
+    supervisor.setConfig(config);
     supervisor.initializeSession(context);
 
     // Status should still be idle after initialization
