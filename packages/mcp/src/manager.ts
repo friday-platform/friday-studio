@@ -303,7 +303,7 @@ export class MCPManager {
         // Debug log the first tool structure
         const toolNames = Object.keys(tools);
         if (toolNames.length > 0) {
-          const firstToolName = toolNames[0];
+          const firstToolName = toolNames[0]!;
           const firstTool = tools[firstToolName];
           logger.debug(`MCP tool structure for ${serverId}`, {
             operation: "mcp_tool_structure_debug",
@@ -609,7 +609,7 @@ export class MCPManager {
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
           try {
             // Try to get tools as a connection test
-            const _tools = await Promise.race([
+            await Promise.race([
               client.tools(),
               new Promise((_, reject) =>
                 setTimeout(() => reject(new Error("Connection verification timeout")), 2000)

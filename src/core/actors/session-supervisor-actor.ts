@@ -385,6 +385,19 @@ export class SessionSupervisorActor implements BaseActor {
 
     await agentActor.initialize();
 
+    // Debug log: Pretty print agent input
+    this.logger.debug("Agent Input Debug", {
+      agentId: agentTask.agentId,
+      inputSource: agentTask.inputSource,
+      input: JSON.stringify(input, null, 2),
+      inputType: typeof input,
+      inputSizeBytes: JSON.stringify(input).length,
+      previousResultsCount: previousResults.length,
+      lastPreviousAgentId: previousResults.length > 0
+        ? previousResults[previousResults.length - 1].agentId
+        : null,
+    });
+
     this.logger.info("Executing agent", {
       agentId: agentTask.agentId,
       task: agentTask.task,
@@ -416,6 +429,19 @@ export class SessionSupervisorActor implements BaseActor {
       toolCalls: result.toolCalls,
       toolResults: result.toolResults,
     };
+
+    // Debug log: Pretty print agent output
+    this.logger.debug("Agent Output Debug", {
+      agentId: agentTask.agentId,
+      output: JSON.stringify(result.output, null, 2),
+      outputType: typeof result.output,
+      outputSizeBytes: JSON.stringify(result.output).length,
+      hasToolCalls: !!result.toolCalls?.length,
+      toolCallsCount: result.toolCalls?.length || 0,
+      toolCalls: result.toolCalls ? JSON.stringify(result.toolCalls, null, 2) : null,
+      toolResults: result.toolResults ? JSON.stringify(result.toolResults, null, 2) : null,
+      duration,
+    });
 
     this.logger.info("Agent execution completed", {
       agentId: agentTask.agentId,
@@ -755,18 +781,19 @@ Think step by step about the best approach to handle this signal, then use the t
     const planId = crypto.randomUUID();
     const agents = jobSpec.execution?.agents || [];
 
+    const executionStrategy = jobSpec.execution?.strategy || "sequential";
     const phases: ExecutionPhase[] = [{
       id: crypto.randomUUID(),
       name: jobSpec.name || "Job Execution",
-      executionStrategy: jobSpec.execution?.strategy || "sequential",
-      agents: agents.map((agent) => {
+      executionStrategy,
+      agents: agents.map((agent, index) => {
         const agentId = typeof agent === "string" ? agent : agent.id;
         const agentObj = typeof agent === "string" ? null : agent;
 
         return {
           agentId,
           task: agentObj?.context?.task || "Execute job task",
-          inputSource: "signal",
+          inputSource: executionStrategy === "sequential" && index > 0 ? "previous" : "signal",
           dependencies: agentObj?.dependencies,
           reasoning: "Defined by job configuration",
         };
