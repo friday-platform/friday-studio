@@ -4,7 +4,7 @@ import { AtlasLogger } from "./logger.ts";
 
 // Playwright browser download URLs and metadata
 const BROWSER_NAME = "chromium";
-const BROWSER_REVISION = "1181"; // Revision used by Playwright 1.54.1
+const BROWSER_REVISION = "1178"; // Revision used by Playwright 1.54.1
 
 function getBrowserDownloadUrl(): string {
   const platform = Deno.build.os;

@@ -188,13 +188,20 @@ export class WebSessionManager {
     let executablePath: string;
     switch (platform) {
       case "darwin":
-        executablePath = join(chromiumDir, "chrome-mac", "headless_shell");
+        executablePath = join(
+          chromiumDir,
+          "chrome-mac",
+          "Chromium.app",
+          "Contents",
+          "MacOS",
+          "Chromium",
+        );
         break;
       case "linux":
-        executablePath = join(chromiumDir, "chrome-linux", "headless_shell");
+        executablePath = join(chromiumDir, "chrome-linux", "chrome");
         break;
       case "windows":
-        executablePath = join(chromiumDir, "chrome-win", "headless_shell.exe");
+        executablePath = join(chromiumDir, "chrome-win", "chrome.exe");
         break;
       default:
         return undefined;

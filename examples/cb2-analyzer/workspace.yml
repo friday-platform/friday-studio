@@ -1,0 +1,173 @@
+version: "1.0"
+workspace:
+  name: web-discount-analyzer
+  description: Analyzes web content for product discounts using Tavily search and stores summaries in library
+
+signals:
+  analyze-url:
+    description: "Analyze any URL for product discounts and promotions"
+    provider: "http"
+    config:
+      path: "/analyze-url"
+    schema:
+      type: "object"
+      properties:
+        url:
+          type: "string"
+          format: "uri"
+          description: "URL to analyze for discounts and promotions"
+        focus:
+          type: "string"
+          description: "Specific focus area (e.g., 'furniture', 'electronics', 'clothing')"
+          default: "products"
+      required: ["url"]
+
+  analyze-cb2-discounts:
+    description: "Analyze CB2.com specifically for current discounts and sales"
+    provider: "http"
+    config:
+      path: "/analyze-cb2"
+
+jobs:
+  url-discount-analysis:
+    name: url-discount-analysis
+    description: Analyze any URL for discount products and store results
+    triggers:
+      - signal: analyze-url
+    execution:
+      strategy: sequential
+      agents:
+        - id: "web-fetcher"
+          context:
+            signal: true
+        - id: "discount-analyzer"
+          context:
+            steps: "previous"
+
+  cb2-discount-analysis:
+    name: cb2-discount-analysis
+    description: Analyze CB2.com for current discounts and sales
+    triggers:
+      - signal: analyze-cb2-discounts
+    execution:
+      strategy: sequential
+      agents:
+        - id: "web-fetcher"
+          context:
+            signal: true
+        - id: "discount-analyzer"
+          context:
+            steps: "previous"
+
+agents:
+  web-fetcher:
+    type: llm
+    description: Fetch and extract web content using Tavily search for discount analysis
+    config:
+      model: claude-3-5-haiku-latest
+      timeout: "2m"
+      prompt: |
+        You are a web research specialist focused on finding deals, discounts, and promotions. Your mission is to discover current sales and discount information.
+
+        **YOUR GOAL:**
+        Find comprehensive information about current discounts, sales, promotions, and deals. Look for:
+        - Product discounts with specific prices and percentages
+        - Active sales events and promotional codes
+        - Clearance items and special offers
+        - Limited-time deals and seasonal promotions
+
+        **TARGET ANALYSIS:**
+        - If signal data contains a URL: Research that specific website/domain for deals
+        - If no URL provided: Focus on CB2.com furniture and home decor discounts
+
+        **YOUR APPROACH:**
+        Use your web search capabilities to thoroughly research the target. You have access to powerful search tools - use them strategically to find the most current and comprehensive deal information. Search broadly first, then drill down into specific areas that show promising results.
+
+        **EXPECTED OUTPUT:**
+        Provide a comprehensive JSON summary of your findings:
+        ```json
+        {
+          "analysis_target": "domain or URL analyzed",
+          "search_strategy": "brief description of your approach",
+          "key_findings": [
+            {
+              "source": "URL where information was found",
+              "title": "Page or section title",
+              "deals_found": "description of deals/discounts discovered",
+              "specific_products": ["product names with discounts if available"],
+              "pricing_info": {"product": {"was": "$X", "now": "$Y", "savings": "Z%"}}
+            }
+          ],
+          "summary": {
+            "total_deals_found": 0,
+            "best_discounts": ["top deals by percentage or value"],
+            "active_promotions": ["current sales, codes, special offers"],
+            "research_quality": "assessment of information completeness"
+          },
+          "timestamp": "current timestamp"
+        }
+        ```
+
+        You are autonomous - research thoroughly and provide actionable deal information immediately.
+      tools: ["tavily"]
+
+  discount-analyzer:
+    type: llm
+    description: Analyze discount data and create comprehensive reports for library storage
+    config:
+      model: claude-3-5-sonnet-latest
+      timeout: "45s"
+      prompt: |
+        You are an autonomous discount report analyzer. You MUST immediately process the data and store reports without asking questions.
+
+        **IMMEDIATE ACTIONS:**
+        1. Parse the JSON data from the web-fetcher
+        2. Create ONE comprehensive discount report
+        3. Store the report in the library using atlas_library_store
+        4. Provide completion confirmation
+
+        **SINGLE COMPREHENSIVE REPORT TO CREATE:**
+
+        **CB2 Complete Discount Analysis**
+        - Title: "CB2 Complete Discount Analysis - 2025-07-25"
+        - Content: Include ALL sections in one report:
+          * Executive Summary (total products, average discount %)
+          * Discounted Products Table (with prices and percentages)
+          * Active Promotions & Codes
+          * Best Deals Recommendations
+          * Shopping Insights
+        - Store with: tags=["discounts", "cb2", "complete-analysis"], type="discount_report"
+
+        **EXECUTION REQUIREMENTS:**
+        - IMMEDIATELY call atlas_library_store ONCE with the comprehensive report
+        - Include markdown formatting with tables for products
+        - Make it a complete all-in-one analysis document
+        - Provide brief confirmation when stored
+
+        **CRITICAL: You MUST call atlas_library_store exactly ONE time immediately. Do not create multiple reports - ONE comprehensive report only.**
+      tools: ["atlas-platform"]
+
+tools:
+  mcp:
+    servers:
+      tavily:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "tavily-mcp"]
+        env:
+          TAVILY_API_KEY: "auto"
+        tools:
+          allow:
+            - "tavily-search"
+
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            - "atlas_library_store"
+            - "atlas_library_search"
+            - "atlas_library_get"
+            - "atlas_library_list"
