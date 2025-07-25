@@ -211,7 +211,6 @@ const sessionMachine = createMachine({
               signalId: input.signal.id,
               provider: input.signal.provider?.name,
             });
-            await input.signal.trigger();
 
             const artifact: IWorkspaceArtifact = {
               id: crypto.randomUUID(),
