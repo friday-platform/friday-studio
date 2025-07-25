@@ -22,6 +22,7 @@ import { stepCountIs, streamText } from "ai";
 import { z } from "zod/v4";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
+import { isOverloadError, withExponentialBackoff } from "../../../src/utils/exponential-backoff.ts";
 
 const ConversationInputSchema = z.object({
   message: z.string(),
@@ -276,134 +277,218 @@ export class ConversationAgent extends BaseAgent {
       tools: Object.keys(finalTools),
     });
 
-    const { fullStream, text, reasoning } = streamText({
-      model: this.llmProvider("claude-sonnet-4-20250514"),
-      system: this.buildSystemPrompt(historyContext),
-      messages: [{ role: "user", content: message }],
-      tools: finalTools,
-      toolChoice: "auto",
-      stopWhen: stepCountIs(20),
-      temperature: 0.7,
-      maxOutputTokens: 8000,
-      providerOptions: {
-        anthropic: {
-          thinking: { type: "enabled", budgetTokens: 25000 },
-        },
-      },
-    });
-
-    const executionFlow: ExecutionFlow = {
-      steps: [],
-      reasoning: [],
-      responseBuffer: "",
-      thinkingBuffer: "",
-    };
-
     try {
-      for await (const chunk of fullStream) {
-        const event = this.processStreamEvent(chunk);
-        if (!event || !streamId) continue;
+      // Use exponential backoff utility for retry logic
+      const result = await withExponentialBackoff(
+        async () => {
+          const { fullStream, text, reasoning } = streamText({
+            model: this.llmProvider("claude-sonnet-4-20250514"),
+            system: this.buildSystemPrompt(historyContext),
+            messages: [{ role: "user", content: message }],
+            tools: finalTools,
+            toolChoice: "auto",
+            stopWhen: stepCountIs(20),
+            temperature: 0.7,
+            maxOutputTokens: 8000,
+            providerOptions: {
+              anthropic: {
+                thinking: { type: "enabled", budgetTokens: 25000 },
+              },
+            },
+          });
 
-        // Stream rich events directly
-        if (finalTools.atlas_stream_event?.execute) {
+          const executionFlow: ExecutionFlow = {
+            steps: [],
+            reasoning: [],
+            responseBuffer: "",
+            thinkingBuffer: "",
+          };
+
+          for await (const chunk of fullStream) {
+            const event = this.processStreamEvent(chunk);
+            if (!event || !streamId) continue;
+
+            // Stream rich events directly
+            if (finalTools.atlas_stream_event?.execute) {
+              await finalTools.atlas_stream_event.execute(
+                {
+                  streamId,
+                  eventType: event.type,
+                  content: event.content,
+                  metadata: this.extractMetadata(event),
+                },
+                { toolCallId: crypto.randomUUID(), messages: [] },
+              );
+            }
+
+            switch (event.type) {
+              case "thinking":
+                executionFlow.thinkingBuffer += event.content;
+                executionFlow.reasoning.push(event.content);
+                break;
+
+              case "text":
+                executionFlow.responseBuffer += event.content;
+                break;
+
+              case "finish":
+                executionFlow.responseBuffer += event.content;
+                break;
+
+              case "tool_call":
+                executionFlow.steps.push({
+                  type: "tool_call",
+                  tool: event.metadata?.toolName as string,
+                  args: event.metadata?.args,
+                  timestamp: event.timestamp,
+                });
+
+                this.logger.info("Tool call initiated", {
+                  tool: event.metadata?.toolName,
+                  streamId,
+                  args: JSON.stringify(event.metadata?.args),
+                });
+                break;
+
+              case "error":
+                this.logger.error("Stream processing error", {
+                  error: String(event.content),
+                  metadata: event.metadata,
+                });
+                break;
+            }
+          }
+
+          // If we get here, the stream completed successfully
+          const finalText = await text;
+          const finalReasoning = await reasoning;
+
+          if (streamId && finalText) {
+            try {
+              await this.saveMessage(
+                streamId,
+                {
+                  role: "assistant",
+                  content: finalText,
+                },
+                { timestamp: new Date().toISOString(), reasoning: true },
+              );
+            } catch (error) {
+              this.logger.warn("Failed to save assistant message", { error });
+            }
+          }
+
+          // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
+          const hasAISDKReasoning = Array.isArray(finalReasoning) && finalReasoning.length > 0;
+          const processedReasoning = hasAISDKReasoning ? finalReasoning : executionFlow.reasoning;
+
+          const reasoningText = hasAISDKReasoning
+            ? finalReasoning.map((item) => typeof item === "string" ? item : JSON.stringify(item))
+              .join("\n")
+            : executionFlow.reasoning.join("\n") || executionFlow.thinkingBuffer || "";
+
+          return {
+            text: finalText || executionFlow.responseBuffer,
+            reasoning: processedReasoning,
+            reasoningText,
+            executionFlow: executionFlow.steps,
+            response: finalText || executionFlow.responseBuffer, // Backward compatibility
+            toolCalls: executionFlow.steps.filter(
+              (step) => step.type === "tool_call",
+            ),
+            conversationMetadata: {
+              streamId,
+              messagesInHistory: messagesInHistory + 2,
+              isNewConversation,
+            },
+          };
+        },
+        {
+          maxRetries: 10,
+          onRetry: async (attempt, delay, error) => {
+            this.logger.info("Retrying after delay", {
+              attempt,
+              delayMs: delay,
+              streamId,
+              error: error instanceof Error ? error.message : String(error),
+            });
+
+            // Stream retry status to user
+            if (streamId && finalTools.atlas_stream_event?.execute) {
+              await finalTools.atlas_stream_event.execute(
+                {
+                  streamId,
+                  eventType: "thinking",
+                  content: `Retrying (attempt ${attempt}/10)... waiting ${delay / 1000}s`,
+                  metadata: { retryCount: attempt, delay, maxRetries: 10 },
+                },
+                { toolCallId: crypto.randomUUID(), messages: [] },
+              );
+            }
+          },
+          isRetryable: isOverloadError,
+        },
+      );
+
+      return result;
+    } catch (error) {
+      // Handle errors that exhausted all retries
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorObj = error as { type?: string; message?: string };
+      const isOverload = isOverloadError(error);
+
+      this.logger.error("Stream processing error after all retries", {
+        error: errorMessage,
+        errorType: errorObj?.type || "unknown",
+        errorDetails: error instanceof Error
+          ? {
+            name: error.name,
+            stack: error.stack?.split("\n").slice(0, 3).join("\n"),
+          }
+          : error,
+        streamId,
+        isOverloadError: isOverload,
+      });
+
+      if (isOverload) {
+        // Stream a user-friendly error message
+        if (streamId && finalTools.atlas_stream_event?.execute) {
           await finalTools.atlas_stream_event.execute(
             {
               streamId,
-              eventType: event.type,
-              content: event.content,
-              metadata: this.extractMetadata(event),
+              eventType: "error",
+              content:
+                "I'm experiencing high demand. I tried 10 times but couldn't process your request. Please try again later.",
+              metadata: { errorType: "overload", retriesExhausted: true, attempts: 10 },
             },
             { toolCallId: crypto.randomUUID(), messages: [] },
           );
         }
 
-        switch (event.type) {
-          case "thinking":
-            executionFlow.thinkingBuffer += event.content;
-            executionFlow.reasoning.push(event.content);
-            break;
-
-          case "text":
-            executionFlow.responseBuffer += event.content;
-            break;
-
-          case "finish":
-            executionFlow.responseBuffer += event.content;
-            break;
-
-          case "tool_call":
-            executionFlow.steps.push({
-              type: "tool_call",
-              tool: event.metadata?.toolName as string,
-              args: event.metadata?.args,
-              timestamp: event.timestamp,
-            });
-
-            this.logger.info("Tool call initiated", {
-              tool: event.metadata?.toolName,
-              streamId,
-              args: JSON.stringify(event.metadata?.args),
-            });
-            break;
-
-          case "error":
-            this.logger.error("Stream processing error", {
-              error: String(event.content),
-            });
-            break;
-        }
+        // Return a graceful error response instead of throwing
+        return {
+          text:
+            "I apologize, but I'm currently experiencing high demand. I tried 10 times but couldn't process your request. Please try again later.",
+          reasoning: ["Service temporarily overloaded after 10 retry attempts"],
+          reasoningText: "Service temporarily overloaded after 10 retry attempts",
+          executionFlow: [],
+          response:
+            "I apologize, but I'm currently experiencing high demand. I tried 10 times but couldn't process your request. Please try again later.",
+          toolCalls: [],
+          conversationMetadata: {
+            streamId,
+            messagesInHistory: messagesInHistory + 1, // Only count user message
+            isNewConversation,
+            error: "overload",
+            retriesExhausted: true,
+            attempts: 10,
+          },
+        };
       }
-    } catch (error) {
-      this.logger.error("Error processing stream", {
-        error: error instanceof Error ? error.message : String(error),
-        streamId,
-      });
+
+      // For other errors, rethrow
       throw error;
     }
-
-    const finalText = await text;
-    const finalReasoning = await reasoning;
-
-    if (streamId && finalText) {
-      try {
-        await this.saveMessage(
-          streamId,
-          {
-            role: "assistant",
-            content: finalText,
-          },
-          { timestamp: new Date().toISOString(), reasoning: true },
-        );
-      } catch (error) {
-        this.logger.warn("Failed to save assistant message", { error });
-      }
-    }
-
-    // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
-    const hasAISDKReasoning = Array.isArray(finalReasoning) && finalReasoning.length > 0;
-    const processedReasoning = hasAISDKReasoning ? finalReasoning : executionFlow.reasoning;
-
-    const reasoningText = hasAISDKReasoning
-      ? finalReasoning.map((item) => typeof item === "string" ? item : JSON.stringify(item)).join(
-        "\n",
-      )
-      : executionFlow.reasoning.join("\n") || executionFlow.thinkingBuffer || "";
-
-    return {
-      text: finalText || executionFlow.responseBuffer,
-      reasoning: processedReasoning,
-      reasoningText,
-      executionFlow: executionFlow.steps,
-      response: finalText || executionFlow.responseBuffer, // Backward compatibility
-      toolCalls: executionFlow.steps.filter(
-        (step) => step.type === "tool_call",
-      ),
-      conversationMetadata: {
-        streamId,
-        messagesInHistory: messagesInHistory + 2,
-        isNewConversation,
-      },
-    };
   }
 
   /**

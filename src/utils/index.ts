@@ -59,3 +59,6 @@ export type ObjectEntry<T> = {
 export const objectEntries = Object.entries as <T>(
   o: T,
 ) => Array<ObjectEntry<T>>;
+
+// Export exponential backoff utilities
+export * from "./exponential-backoff.ts";

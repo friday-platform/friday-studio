@@ -23,6 +23,8 @@ These tests verify complete workflows and system interactions:
 - **`reasoning-llm-tools.test.ts`** - ReasoningMachine integration with tool usage
 - **`config-flow.integration.test.ts`** - Configuration flow validation through actor hierarchy
   (WorkspaceRuntime → WorkspaceSupervisor → SessionSupervisor → AgentExecutionActor)
+- **`exponential-backoff.integration.test.ts`** - Exponential backoff utility integration with
+  ConversationAgent use cases, including overload retry scenarios
 
 ### MCP Tools Integration Tests
 
