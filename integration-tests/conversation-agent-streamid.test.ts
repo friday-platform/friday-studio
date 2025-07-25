@@ -14,11 +14,10 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { AtlasToolRegistry } from "@atlas/tools";
-import { conversationTools } from "../../../tools/src/internal/conversation.ts";
-import { ConversationAgent } from "../../agents/conversation-agent.ts";
+import { AtlasToolRegistry, conversationTools } from "@atlas/tools";
 import { tool } from "ai";
 import { z } from "zod/v4";
+import { ConversationAgent } from "../packages/system/agents/conversation-agent.ts";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -123,7 +122,6 @@ const createTestToolRegistry = (tools: ReturnType<typeof createTestTools>) => {
     workspace: {}, // Empty workspace tools for test compatibility
     signal: {}, // Empty signal tools for test compatibility
     library: {}, // Empty library tools for test compatibility
-    draft: {}, // Empty draft tools for test compatibility
     session: {}, // Empty session tools for test compatibility
   });
 };
@@ -141,6 +139,7 @@ Deno.test({
     // Create ConversationAgent with the tools
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_stream_reply", "atlas_conversation_storage"],
         prompt:
           "You are a helpful assistant. Always respond to the user using the atlas_stream_reply tool.",
@@ -220,6 +219,7 @@ Deno.test({
 
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_stream_reply", "atlas_conversation_storage"],
         prompt: "You are a helpful assistant. Always respond using atlas_stream_reply.",
       },
@@ -282,6 +282,7 @@ Deno.test({
 
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_stream_reply", "atlas_conversation_storage"],
         prompt: "You are a helpful assistant. Always respond using atlas_stream_reply.",
       },

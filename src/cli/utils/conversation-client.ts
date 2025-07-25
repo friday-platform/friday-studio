@@ -1,4 +1,5 @@
 import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
+import { createAtlasClient, type paths } from "@atlas/oapi-client";
 import { DaemonClient } from "./daemon-client.ts";
 
 export interface ConversationSession {
@@ -115,41 +116,32 @@ export class ConversationClient {
     conversationId?: string,
   ): Promise<ConversationMessage> {
     // Get the conversation workspace ID
-    const conversationWorkspaceId = await this.getConversationWorkspaceId();
+    const workspaceId = await this.getConversationWorkspaceId();
+    const client = createAtlasClient();
 
-    // Use workspace signal instead of direct stream endpoint
-    const url =
-      `${this.daemonUrl}/api/workspaces/${conversationWorkspaceId}/signals/conversation-stream`;
-
-    const body = {
-      streamId: sessionId,
-      payload: {
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: {
         streamId: sessionId,
-        message,
-        userId: this.userId,
-        ...(conversationId && { conversationId }), // Include conversationId if provided
+        payload: {
+          streamId: sessionId,
+          message,
+          userId: this.userId,
+          ...(conversationId && { conversationId }), // Include conversationId if provided
+        },
       },
-    };
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => response.statusText);
+    if (response.error) {
       throw new Error(
-        `Failed to send message (${response.status}): ${errorText}`,
+        `Failed to send message (${response.response.status}): ${response.error.error}`,
       );
     }
 
-    const result = await response.json();
-
     return {
-      messageId: result.messageId || crypto.randomUUID(),
+      messageId: response.data.message || crypto.randomUUID(),
       status: "processing",
-    } as ConversationMessage;
+    };
   }
 
   /**

@@ -38,7 +38,6 @@ export { MCPToolsAdapter } from "./src/external-adapters/index.ts";
 export {
   agentTools,
   conversationTools,
-  draftTools,
   filesystemTools,
   jobTools,
   libraryTools,

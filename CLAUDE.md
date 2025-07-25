@@ -312,10 +312,10 @@ organizations like Google Research, not merely functional code.
 
 ## Import Pattern Guidelines
 
-**STRONGLY PREFER static imports** (at the top of modules). Dynamic imports should be **AVOIDED** in
-this codebase.
+**CRITICAL: ALWAYS USE STATIC IMPORTS** at the top of modules. Dynamic imports are **FORBIDDEN** in
+this codebase except for the most exceptional circumstances.
 
-### Always use static imports:
+### MANDATORY: Use static imports at file top:
 
 ```typescript
 import { ConfigLoader } from "@atlas/config";
@@ -332,29 +332,39 @@ import { join } from "@std/path";
 - Easier dependency tracking
 - Better tree-shaking and bundle optimization
 
-### When dynamic imports are absolutely necessary:
+### FORBIDDEN: Dynamic imports in route handlers
 
-Dynamic imports (`await import()`) should **ONLY** be used in these rare cases:
+**NEVER** use dynamic imports inside function bodies, especially route handlers:
+
+```typescript
+// ❌ STRICTLY FORBIDDEN - Dynamic import in route handler
+(async (c) => {
+  const { SomeModule } = await import("@atlas/package"); // NO!
+  // ...
+});
+
+// ✅ REQUIRED - Static import at top of file
+import { SomeModule } from "@atlas/package";
+
+(async (c) => {
+  // Use SomeModule directly
+  // ...
+});
+```
+
+### Extremely rare exceptions (requires explicit justification):
+
+Dynamic imports (`await import()`) should **ONLY** be used in these exceptional cases:
 
 1. **Breaking circular dependencies** (but prefer restructuring code instead)
 2. **Loading optional plugins** that may not be installed
 3. **True conditional loading** based on runtime configuration
 
-**IMPORTANT**: If you find yourself using dynamic imports, first consider whether the code can be
-restructured to avoid them. In 99% of cases, static imports are the correct choice.
-
-Example of converting dynamic to static:
-
-```typescript
-// ❌ AVOID - Dynamic import
-const { ConfigLoader } = await import("@atlas/config");
-
-// ✅ PREFERRED - Static import at top of file
-import { ConfigLoader } from "@atlas/config";
-```
+**CRITICAL**: If you find yourself using dynamic imports, STOP and restructure the code to use
+static imports instead. In 99.9% of cases, static imports are the correct choice.
 
 **Default to static imports** for cleaner code, better performance, and improved developer
-experience. Dynamic imports should be considered a code smell in this codebase.
+experience. Dynamic imports are a serious code smell in this codebase and should be treated as bugs.
 
 ### Avoid Barrel Imports
 

@@ -4,11 +4,10 @@
  */
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
-import { AtlasToolRegistry } from "@atlas/tools";
-import { conversationTools } from "../../../tools/src/internal/conversation.ts";
-import { ConversationAgent } from "../../agents/conversation-agent.ts";
+import { AtlasToolRegistry, conversationTools } from "@atlas/tools";
 import { tool } from "ai";
 import { z } from "zod/v4";
+import { ConversationAgent } from "../packages/system/agents/conversation-agent.ts";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -120,7 +119,6 @@ const createTestToolRegistry = (): AtlasToolRegistry => {
     workspace: {}, // Empty workspace tools for test compatibility
     signal: {}, // Empty signal tools for test compatibility
     library: {}, // Empty library tools for test compatibility
-    draft: {}, // Empty draft tools for test compatibility
     session: {}, // Empty session tools for test compatibility
   });
 };
@@ -137,6 +135,7 @@ Deno.test({
     // Create a real ConversationAgent instance with tools
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_file_reader", "atlas_calculator", "atlas_stream_reply"],
         prompt:
           "You are a helpful assistant that can read files and perform calculations. Always use the available tools to complete tasks.",
@@ -264,13 +263,13 @@ Deno.test({
       workspace: {}, // Empty workspace tools for test compatibility
       signal: {}, // Empty signal tools for test compatibility
       library: {}, // Empty library tools for test compatibility
-      draft: {}, // Empty draft tools for test compatibility
       session: {}, // Empty session tools for test compatibility
     });
 
     // Create agent with error recovery prompt
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_file_reader", "atlas_stream_reply"],
         prompt:
           "You are a helpful assistant. If a file is not found, try alternative approaches. Be resilient to errors.",
@@ -359,6 +358,7 @@ Deno.test({
     // Create agent with complex calculation instructions
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_file_reader", "atlas_calculator", "atlas_stream_reply"],
         prompt:
           "You are a precise calculator assistant. Perform all calculations step by step using the calculator tool.",

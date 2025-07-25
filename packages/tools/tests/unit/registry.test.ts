@@ -26,7 +26,6 @@ Deno.test("AtlasToolRegistry", async (t) => {
       "signal",
       "agent",
       "library",
-      "draft",
       "system",
       "conversation",
       "resource",
@@ -148,8 +147,8 @@ Deno.test("AtlasToolRegistry", async (t) => {
     // Filesystem should have 5 tools
     assertEquals(registry.getToolsCountByCategory("filesystem"), 5);
 
-    // Workspace should have 4 tools
-    assertEquals(registry.getToolsCountByCategory("workspace"), 4);
+    // Workspace should have 5 tools
+    assertEquals(registry.getToolsCountByCategory("workspace"), 5);
 
     // Session should have 2 tools
     assertEquals(registry.getToolsCountByCategory("session"), 2);
@@ -174,7 +173,6 @@ Deno.test("AtlasToolRegistry", async (t) => {
       "signal",
       "agent",
       "library",
-      "draft",
       "system",
     ];
     for (const category of expectedCategories) {
@@ -210,7 +208,6 @@ Deno.test("getAtlasToolRegistry function", async (t) => {
       signal: defaultRegistry.getToolsByCategory("signal"),
       agent: defaultRegistry.getToolsByCategory("agent"),
       library: defaultRegistry.getToolsByCategory("library"),
-      draft: defaultRegistry.getToolsByCategory("draft"),
       system: defaultRegistry.getToolsByCategory("system"),
       conversation: defaultRegistry.getToolsByCategory("conversation"),
       resource: defaultRegistry.getToolsByCategory("resource"),

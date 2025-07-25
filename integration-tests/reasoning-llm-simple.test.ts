@@ -4,11 +4,10 @@
  */
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
-import { AtlasToolRegistry } from "@atlas/tools";
-import { conversationTools } from "../../../tools/src/internal/conversation.ts";
-import { ConversationAgent } from "../../agents/conversation-agent.ts";
+import { AtlasToolRegistry, conversationTools } from "@atlas/tools";
 import { tool } from "ai";
 import { z } from "zod/v4";
+import { ConversationAgent } from "../packages/system/agents/conversation-agent.ts";
 
 // Type definitions for test using Zod
 const ExecutionStepSchema = z.object({
@@ -76,7 +75,6 @@ const createTestToolRegistry = (): AtlasToolRegistry => {
     workspace: {}, // Empty workspace tools for test compatibility
     signal: {}, // Empty signal tools for test compatibility
     library: {}, // Empty library tools for test compatibility
-    draft: {}, // Empty draft tools for test compatibility
     session: {}, // Empty session tools for test compatibility
   });
 };
@@ -93,6 +91,7 @@ Deno.test({
     // Create a real ConversationAgent instance with dependency injection
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_stream_reply"],
         prompt: "You are a helpful math assistant. Be concise in your responses.",
       },
@@ -165,6 +164,7 @@ Deno.test({
     // Create a real ConversationAgent instance with dependency injection
     const agent = new ConversationAgent(
       {
+        temperature: 0.3,
         tools: ["atlas_stream_reply"],
         prompt: "You are a helpful math assistant. Show your work step by step.",
       },

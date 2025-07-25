@@ -35,15 +35,6 @@ import { registerLibraryStatsTool } from "./library/stats.ts";
 import { registerLibraryStoreTool } from "./library/store.ts";
 import { registerLibraryTemplatesTool } from "./library/templates.ts";
 
-// Import draft tools
-import { registerDraftCreateTool } from "./drafts/create.ts";
-import { registerDraftDeleteTool } from "./drafts/delete.ts";
-import { registerDraftListTool } from "./drafts/list.ts";
-import { registerDraftPublishTool } from "./drafts/publish.ts";
-import { registerDraftShowTool } from "./drafts/show.ts";
-import { registerDraftUpdateTool } from "./drafts/update.ts";
-import { registerDraftValidateTool } from "./drafts/validate.ts";
-
 // Import filesystem tools
 import { registerGlobTool } from "./fs/glob.ts";
 import { registerGrepTool } from "./fs/grep.ts";
@@ -92,15 +83,6 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   registerLibraryStoreTool(server, context);
   registerLibraryStatsTool(server, context);
   registerLibraryTemplatesTool(server, context);
-
-  // Draft tools
-  registerDraftCreateTool(server, context);
-  registerDraftUpdateTool(server, context);
-  registerDraftValidateTool(server, context);
-  registerDraftPublishTool(server, context);
-  registerDraftShowTool(server, context);
-  registerDraftListTool(server, context);
-  registerDraftDeleteTool(server, context);
 
   // Filesystem tools
   registerGlobTool(server, context);

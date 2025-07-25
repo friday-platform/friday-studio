@@ -6,7 +6,6 @@ import { z } from "zod/v4";
 import { tool } from "ai";
 import { agentTools } from "./agent.ts";
 import { conversationTools } from "./conversation.ts";
-import { draftTools } from "./draft.ts";
 import { filesystemTools } from "./filesystem.ts";
 import { jobTools } from "./job.ts";
 import { libraryTools } from "./library.ts";
@@ -28,7 +27,6 @@ function generateToolsContentFromRegistry(): string {
     signal: signalTools,
     agent: agentTools,
     library: libraryTools,
-    draft: draftTools,
     system: systemTools,
     conversation: conversationTools,
   };
@@ -46,7 +44,6 @@ function generateToolsContentFromRegistry(): string {
       signal: "Signal Management Tools",
       agent: "Agent Management Tools",
       library: "Library Tools",
-      draft: "Draft Management Tools",
       system: "System Integration Tools",
       conversation: "Conversation Tools",
     };
@@ -63,7 +60,6 @@ function generateToolsContentFromRegistry(): string {
       signal: "Signal configuration and triggering for workspace automation",
       agent: "Agent configuration and monitoring within workspaces",
       library: "Knowledge and template management for reusable components",
-      draft: "Configuration drafting and testing before workspace deployment",
       system: "External system integrations and command execution",
       conversation: "Real-time communication and conversation management",
     };
@@ -119,10 +115,10 @@ function generateToolsContentFromRegistry(): string {
       "atlas_stream_reply - Provide real-time updates",
     ],
     "Development & Testing": [
-      "atlas_workspace_draft_create - Create test configurations",
-      "atlas_workspace_draft_validate - Verify configurations",
+      "atlas_create_workspace - Generate complete workspace configurations",
+      "atlas_workspace_describe - Examine workspace configurations",
       "atlas_bash - Run tests and builds",
-      "atlas_publish_draft_to_workspace - Deploy when ready",
+      "atlas_workspace_delete - Clean up test workspaces",
     ],
     "Content Management": [
       "atlas_library_list - Browse available content",

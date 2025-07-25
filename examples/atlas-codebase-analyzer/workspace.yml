@@ -37,6 +37,7 @@ agents:
     type: "llm"
     description: "Deep performance analysis using Atlas EMCP filesystem context"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
@@ -50,6 +51,7 @@ agents:
     type: "llm"
     description: "Developer experience analysis with advanced filesystem metadata"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
@@ -63,6 +65,7 @@ agents:
     type: "llm"
     description: "System architecture analysis using comprehensive codebase context"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       max_steps: 3
       prompt: |
@@ -76,6 +79,7 @@ agents:
     type: "llm"
     description: "Generate comprehensive reports using secure filesystem context"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       max_steps: 2
       prompt: |

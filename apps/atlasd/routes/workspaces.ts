@@ -1,6 +1,9 @@
 import { z } from "zod/v4";
 import { daemonFactory } from "../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
+import { FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
+import { stringify } from "@std/yaml";
+import { WorkspaceConfigSchema } from "@atlas/config";
 
 // Create app instance using factory
 const workspacesRoutes = daemonFactory.createApp();
@@ -190,6 +193,123 @@ workspacesRoutes.get(
 
       return c.json({
         error: `Failed to get workspace: ${errorMessage}`,
+      }, 500);
+    }
+  },
+);
+
+// Create workspace from generated configuration
+const createWorkspaceFromConfigSchema = z.object({
+  config: z.record(z.string(), z.unknown()).describe("Generated workspace configuration"),
+  workspaceName: z.string().optional().describe(
+    "Custom workspace directory name (auto-resolves conflicts with -2, -3, etc.)",
+  ),
+}).meta({ description: "Create workspace from configuration" });
+
+const createWorkspaceFromConfigResponseSchema = z.object({
+  success: z.boolean(),
+  workspace: workspaceResponseSchema.optional(),
+  workspacePath: z.string().optional(),
+  filesCreated: z.array(z.string()).optional(),
+  error: z.string().optional(),
+}).meta({ description: "Create workspace from configuration response" });
+
+workspacesRoutes.post(
+  "/create",
+  describeRoute({
+    tags: ["Workspaces"],
+    summary: "Create workspace from configuration",
+    description: "Create workspace files and register workspace from generated configuration",
+    responses: {
+      200: {
+        description: "Workspace created successfully",
+        content: {
+          "application/json": {
+            schema: resolver(createWorkspaceFromConfigResponseSchema),
+          },
+        },
+      },
+      400: {
+        description: "Invalid configuration",
+        content: {
+          "application/json": {
+            schema: resolver(errorResponseSchema),
+          },
+        },
+      },
+      500: {
+        description: "Creation failed",
+        content: {
+          "application/json": {
+            schema: resolver(errorResponseSchema),
+          },
+        },
+      },
+    },
+  }),
+  validator("json", createWorkspaceFromConfigSchema),
+  async (c) => {
+    try {
+      const { config, workspaceName } = c.req.valid("json");
+
+      // Validate configuration
+      const validationResult = WorkspaceConfigSchema.safeParse(config);
+      if (!validationResult.success) {
+        return c.json({
+          success: false,
+          error: `Invalid workspace configuration: ${
+            validationResult.error.issues.map((issue) => issue.message).join(", ")
+          }`,
+        }, 400);
+      }
+
+      const validatedConfig = validationResult.data;
+
+      // Convert config to YAML
+      const yamlConfig = stringify(validatedConfig, {
+        indent: 2,
+        lineWidth: 100,
+      });
+
+      // Create workspace files
+      const workspaceAdapter = new FilesystemWorkspaceCreationAdapter();
+      const finalWorkspaceName = workspaceName || validatedConfig.workspace.name;
+      const basePath = Deno.cwd(); // Always use current working directory as base
+
+      try {
+        const workspacePath = await workspaceAdapter.createWorkspaceDirectory(
+          basePath,
+          finalWorkspaceName,
+        );
+
+        await workspaceAdapter.writeWorkspaceFiles(workspacePath, yamlConfig);
+
+        // Register workspace with manager
+        const ctx = c.get("app");
+        const manager = ctx.getWorkspaceManager();
+        const workspace = await manager.registerWorkspace(workspacePath, {
+          name: finalWorkspaceName,
+          description: validatedConfig.workspace.description,
+        });
+
+        return c.json({
+          success: true,
+          workspace,
+          workspacePath,
+          filesCreated: ["workspace.yml", ".env"],
+        });
+      } catch (creationError) {
+        return c.json({
+          success: false,
+          error: `Failed to create workspace files: ${
+            creationError instanceof Error ? creationError.message : String(creationError)
+          }`,
+        }, 500);
+      }
+    } catch (error) {
+      return c.json({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       }, 500);
     }
   },

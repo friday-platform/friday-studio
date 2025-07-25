@@ -128,8 +128,8 @@ agents:
     type: "llm"
     description: "GitHub repository discovery specialist for AI agent projects"
     config:
-      model: "claude-3-7-sonnet-latest"
       provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
       tools: ["github-api"]
       max_steps: 15
       tool_choice: "auto"

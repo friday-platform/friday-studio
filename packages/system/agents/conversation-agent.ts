@@ -352,8 +352,7 @@ export class ConversationAgent extends BaseAgent {
 
               case "error":
                 this.logger.error("Stream processing error", {
-                  error: String(event.content),
-                  metadata: event.metadata,
+                  error: JSON.stringify(event.content),
                 });
                 break;
             }
@@ -586,7 +585,7 @@ export class ConversationAgent extends BaseAgent {
       case "error":
         return {
           type: "error",
-          content: String(chunk.error),
+          content: JSON.stringify(chunk.error, null, 2),
           metadata: { error: chunk.error },
           timestamp,
         };

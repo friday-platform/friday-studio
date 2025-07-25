@@ -10,6 +10,7 @@ import {
   getErrorMessage,
   handleDaemonResponse,
 } from "../utils.ts";
+import { generateWorkspace } from "./workspace-creation/generation.ts";
 
 export const workspaceTools = {
   atlas_workspace_list: tool({
@@ -25,6 +26,8 @@ export const workspaceTools = {
       }
     },
   }),
+
+  atlas_create_workspace: generateWorkspace,
 
   atlas_workspace_create: tool({
     description: "Creates a new workspace with optional template and custom configuration.",

@@ -98,14 +98,8 @@ agents:
     config:
       model: "claude-sonnet-4-20250514"
       tools:
-        # workspace draft
-        - "atlas_workspace_draft_create"
-        - "atlas_list_session_drafts"
-        - "atlas_show_draft_config"
-        - "atlas_workspace_draft_update"
-        - "atlas_workspace_draft_validate"
-        - "atlas_publish_draft_to_workspace"
-        - "atlas_delete_draft_config"
+        # advanced workspace creation
+        - "atlas_create_workspace"
         # workspace
         - "atlas_workspace_list"
         - "atlas_workspace_describe"
@@ -256,7 +250,7 @@ agents:
         Focus only on input.message - that's what the user typed.
 
         When users reference "the configuration" or "the workspace" without context,
-        check for existing drafts using atlas_list_session_drafts first.
+        ask for clarification about which workspace they're referring to.
         </input_context>
 
         <available_tools>

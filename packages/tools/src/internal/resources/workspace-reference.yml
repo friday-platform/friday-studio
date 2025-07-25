@@ -400,18 +400,8 @@ agents:
       max_retries: 3
       timeout: "60s"
 
-  # System Agent - Built-in Atlas functionality
-  report-generator:
-    type: "system"
-    description: "Generate reports using built-in Atlas functionality"
-    agent: "report-builder" # Required system agent identifier
-
-    # Optional configuration that follows system agent schema
-    config:
-      model: "claude-3-7-sonnet-latest"
-      temperature: 0.3
-      max_tokens: 4000
-      prompt: "You are a report generation agent that creates comprehensive reports from data analysis"
+  # Note: System agents are not available for user-created workspaces
+  # They are reserved for Atlas internal functionality only
 
   # Remote Agent with ACP protocol only
   # Note: MCP remote agent adapter is not currently working

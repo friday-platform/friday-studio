@@ -1,10 +1,4 @@
-import {
-  ConfigLoader,
-  formatZodError,
-  type SupervisorDefaults,
-  supervisorDefaultsWrapped,
-  WorkspaceConfigSchema,
-} from "@atlas/config";
+import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from "@atlas/config";
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
@@ -29,7 +23,6 @@ import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage.ts";
-import { workspaceDraftRoutes } from "../routes/workspace-drafts.ts";
 import { signalRoutes } from "../routes/signals.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
@@ -281,9 +274,6 @@ export class AtlasDaemon implements AppContext {
 
     // Mount conversation storage routes
     this.app.route("", conversationStorageRoutes);
-
-    // Mount workspace draft routes
-    this.app.route("", workspaceDraftRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {
@@ -556,39 +546,6 @@ export class AtlasDaemon implements AppContext {
     });
 
     // Validate workspace configuration
-    this.app.post("/api/workspaces/validate", async (c) => {
-      try {
-        const body = await c.req.json() as { config: unknown };
-        const { config } = body;
-
-        if (!config) {
-          return c.json({ error: "config is required" }, 400);
-        }
-
-        // Validate using the WorkspaceConfigSchema
-        const validationResult = WorkspaceConfigSchema.safeParse(config);
-
-        if (validationResult.success) {
-          return c.json({
-            valid: true,
-            config: validationResult.data,
-            message: "Configuration is valid",
-          });
-        } else {
-          return c.json({
-            valid: false,
-            errors: validationResult.error.issues,
-            formattedError: formatZodError(validationResult.error),
-          });
-        }
-      } catch (error) {
-        return c.json({
-          error: `Failed to validate configuration: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
-      }
-    });
 
     // Create workspace from configuration YAML
     this.app.post("/api/workspaces/create-from-config", async (c) => {

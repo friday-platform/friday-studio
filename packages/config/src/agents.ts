@@ -33,14 +33,16 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
   type: z.literal("llm"),
   config: z.strictObject({
     // Provider and model
-    provider: z.enum(["anthropic", "openai", "google"]).default("anthropic"),
+    provider: z.enum(["anthropic", "openai", "google"]),
     model: z.string().describe("Model identifier (e.g., 'claude-3-7-sonnet-latest')"),
 
     // Single prompt string
     prompt: z.string().describe("System prompt for the agent"),
 
     // LLM parameters
-    temperature: z.coerce.number().min(0).max(1).optional().describe("Temperature (0-1 range)"),
+    temperature: z.coerce.number().min(0).max(1).optional().default(0.3).describe(
+      "Temperature (0-1 range)",
+    ),
     max_tokens: z.coerce.number().int().positive().optional(),
     max_steps: z.coerce.number().int().positive().optional().describe(
       "Max steps for multi-step tool calling",
@@ -68,7 +70,7 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
 const SystemAgentConfigObjectSchema = z.strictObject({
   // LLM Configuration
   model: z.string().optional().describe("LLM model to use"),
-  temperature: z.coerce.number().min(0).max(2).optional().describe("LLM temperature"),
+  temperature: z.coerce.number().min(0).max(1).optional().default(0.3).describe("LLM temperature"),
   max_tokens: z.coerce.number().min(1).optional().describe("Maximum tokens for LLM response"),
 
   // Tools Configuration

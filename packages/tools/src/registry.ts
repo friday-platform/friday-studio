@@ -5,7 +5,6 @@
 import {
   agentTools,
   conversationTools,
-  draftTools,
   filesystemTools,
   jobTools,
   libraryTools,
@@ -34,7 +33,6 @@ export type ToolCategory =
   | "signal"
   | "agent"
   | "library"
-  | "draft"
   | "system"
   | "conversation"
   | "resource"
@@ -366,7 +364,6 @@ const defaultRegistry = new AtlasToolRegistry({
   signal: signalTools,
   agent: agentTools,
   library: libraryTools,
-  draft: draftTools,
   system: systemTools,
   conversation: conversationTools,
   resource: resourceTools,
@@ -390,7 +387,6 @@ export const atlasTools = defaultRegistry.getAllTools();
 export {
   agentTools,
   conversationTools,
-  draftTools,
   filesystemTools,
   jobTools,
   libraryTools,
