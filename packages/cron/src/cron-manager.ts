@@ -191,6 +191,14 @@ export class CronManager {
     // Persist current state
     await this.persistAllTimers();
 
+    // Close the KV storage connection to free file descriptors
+    try {
+      await this.storage.close();
+      this.logger.info("KV storage connection closed");
+    } catch (error) {
+      this.logger.error("Failed to close KV storage", { error });
+    }
+
     this.isRunning = false;
     this.isShuttingDown = false;
     this.logger.info("CronManager shutdown complete");

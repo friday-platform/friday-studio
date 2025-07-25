@@ -78,49 +78,75 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
   });
 
   await t.step("should restore timer state from storage on initialization", async () => {
-    const storage = new MemoryKVStorage();
-    await storage.initialize();
+    // Create a temporary database file for this test
+    const tempDbPath = await Deno.makeTempFile({ suffix: ".db" });
 
-    // Setup first CronManager and register timer
-    const cronManager1 = new CronManager(storage, mockLogger);
-    await cronManager1.start();
-    await cronManager1.registerTimer(validConfig);
+    try {
+      // First "session" - create timer and shut down completely
+      const { DenoKVStorage } = await import("../../../src/core/storage/deno-kv-storage.ts");
+      const storage1 = new DenoKVStorage(tempDbPath);
+      await storage1.initialize();
 
-    const originalTimer = cronManager1.getTimer(validConfig.workspaceId, validConfig.signalId);
-    const _originalNextExecution = originalTimer?.nextExecution;
+      const cronManager1 = new CronManager(storage1, mockLogger);
+      await cronManager1.start();
+      await cronManager1.registerTimer(validConfig);
 
-    await cronManager1.shutdown();
+      const originalTimer = cronManager1.getTimer(validConfig.workspaceId, validConfig.signalId);
+      const _originalNextExecution = originalTimer?.nextExecution;
 
-    // Create second CronManager with same storage - should restore state
-    const cronManager2 = new CronManager(storage, mockLogger);
-    await cronManager2.start();
+      // Simulate complete shutdown (as would happen in real Atlas shutdown)
+      await cronManager1.shutdown();
 
-    const restoredTimer = cronManager2.getTimer(validConfig.workspaceId, validConfig.signalId);
+      // Second "session" - simulate restart with new storage instance
+      // Opening the same database file to simulate persistence
+      const storage2 = new DenoKVStorage(tempDbPath);
+      await storage2.initialize();
 
-    assertEquals(restoredTimer !== undefined, true, "Timer should be restored");
-    assertEquals(
-      restoredTimer!.workspaceId,
-      validConfig.workspaceId,
-      "Should restore correct workspace ID",
-    );
-    assertEquals(restoredTimer!.signalId, validConfig.signalId, "Should restore correct signal ID");
-    assertEquals(restoredTimer!.schedule, validConfig.schedule, "Should restore correct schedule");
-    assertEquals(restoredTimer!.timezone, validConfig.timezone, "Should restore correct timezone");
-    assertEquals(restoredTimer!.isActive, true, "Should restore active status");
+      const cronManager2 = new CronManager(storage2, mockLogger);
+      await cronManager2.start();
 
-    // Should have a next execution time (may be recalculated if original was in the past)
-    assertEquals(
-      restoredTimer!.nextExecution !== undefined,
-      true,
-      "Should have next execution time",
-    );
-    assertEquals(
-      restoredTimer!.nextExecution!.getTime() > Date.now(),
-      true,
-      "Next execution should be in future",
-    );
+      const restoredTimer = cronManager2.getTimer(validConfig.workspaceId, validConfig.signalId);
 
-    await cronManager2.shutdown();
+      assertEquals(restoredTimer !== undefined, true, "Timer should be restored");
+      assertEquals(
+        restoredTimer!.workspaceId,
+        validConfig.workspaceId,
+        "Should restore correct workspace ID",
+      );
+      assertEquals(
+        restoredTimer!.signalId,
+        validConfig.signalId,
+        "Should restore correct signal ID",
+      );
+      assertEquals(
+        restoredTimer!.schedule,
+        validConfig.schedule,
+        "Should restore correct schedule",
+      );
+      assertEquals(
+        restoredTimer!.timezone,
+        validConfig.timezone,
+        "Should restore correct timezone",
+      );
+      assertEquals(restoredTimer!.isActive, true, "Should restore active status");
+
+      // Should have a next execution time (may be recalculated if original was in the past)
+      assertEquals(
+        restoredTimer!.nextExecution !== undefined,
+        true,
+        "Should have next execution time",
+      );
+      assertEquals(
+        restoredTimer!.nextExecution!.getTime() > Date.now(),
+        true,
+        "Next execution should be in future",
+      );
+
+      await cronManager2.shutdown();
+    } finally {
+      // Clean up the temporary database file
+      await Deno.remove(tempDbPath).catch(() => {});
+    }
   });
 
   await t.step("should handle storage failures gracefully during persistence", async () => {

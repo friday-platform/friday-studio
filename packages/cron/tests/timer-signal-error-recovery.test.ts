@@ -189,41 +189,53 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
   });
 
   await t.step("should maintain timer state across restart cycles", async () => {
-    // First CronManager instance
-    const storage = new MemoryKVStorage();
-    await storage.initialize();
-    let cronManager = new CronManager(storage, mockLogger);
+    // Create a temporary database file for this test
+    const tempDbPath = await Deno.makeTempFile({ suffix: ".db" });
 
-    cronManager.setWakeupCallback(() => {
-      throw new Error("Persistent error");
-    });
+    try {
+      // First CronManager instance
+      const { DenoKVStorage } = await import("../../../src/core/storage/deno-kv-storage.ts");
+      const storage1 = new DenoKVStorage(tempDbPath);
+      await storage1.initialize();
+      const cronManager1 = new CronManager(storage1, mockLogger);
 
-    await cronManager.start();
-    await cronManager.registerTimer(validConfig);
+      cronManager1.setWakeupCallback(() => {
+        throw new Error("Persistent error");
+      });
 
-    // Verify timer is registered
-    let timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
-    assertEquals(timer !== undefined, true, "Timer should be registered");
-    assertEquals(timer!.isActive, true, "Timer should be active");
+      await cronManager1.start();
+      await cronManager1.registerTimer(validConfig);
 
-    // Shutdown
-    await cronManager.shutdown();
+      // Verify timer is registered
+      const timer1 = cronManager1.getTimer(validConfig.workspaceId, validConfig.signalId);
+      assertEquals(timer1 !== undefined, true, "Timer should be registered");
+      assertEquals(timer1!.isActive, true, "Timer should be active");
 
-    // Create new CronManager instance with same storage
-    cronManager = new CronManager(storage, mockLogger);
-    await cronManager.start();
+      // Complete shutdown (as would happen in real Atlas shutdown)
+      await cronManager1.shutdown();
 
-    // Timer should be restored from storage
-    timer = cronManager.getTimer(validConfig.workspaceId, validConfig.signalId);
-    assertEquals(timer !== undefined, true, "Timer should be restored after restart");
-    assertEquals(timer!.isActive, true, "Restored timer should be active");
-    assertEquals(
-      timer!.schedule,
-      validConfig.schedule,
-      "Restored timer should have correct schedule",
-    );
+      // Simulate restart with new storage instance opening the same database
+      const storage2 = new DenoKVStorage(tempDbPath);
+      await storage2.initialize();
 
-    await cronManager.shutdown();
+      const cronManager2 = new CronManager(storage2, mockLogger);
+      await cronManager2.start();
+
+      // Timer should be restored from storage
+      const timer2 = cronManager2.getTimer(validConfig.workspaceId, validConfig.signalId);
+      assertEquals(timer2 !== undefined, true, "Timer should be restored after restart");
+      assertEquals(timer2!.isActive, true, "Restored timer should be active");
+      assertEquals(
+        timer2!.schedule,
+        validConfig.schedule,
+        "Restored timer should have correct schedule",
+      );
+
+      await cronManager2.shutdown();
+    } finally {
+      // Clean up the temporary database file
+      await Deno.remove(tempDbPath).catch(() => {});
+    }
   });
 
   await t.step("should provide detailed status information", async () => {

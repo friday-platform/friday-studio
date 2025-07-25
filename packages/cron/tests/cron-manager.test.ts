@@ -307,10 +307,9 @@ Deno.test("CronManager - Lifecycle Management", async (t) => {
   });
 
   await t.step("should handle rapid start/stop cycles", async () => {
-    const { cronManager } = await createTestCronManager();
-
-    // Rapid start/stop cycles
+    // Create new CronManager for each cycle since storage is closed on shutdown
     for (let i = 0; i < 3; i++) {
+      const { cronManager } = await createTestCronManager();
       await cronManager.start();
       assertEquals(cronManager.isActive(), true);
       await cronManager.shutdown();

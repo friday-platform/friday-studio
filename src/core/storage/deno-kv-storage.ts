@@ -57,6 +57,8 @@ class DenoKVAtomicOperation implements AtomicOperation {
   }
 }
 
+type StorageState = "uninitialized" | "initializing" | "ready" | "closed";
+
 /**
  * Deno KV Storage Implementation
  *
@@ -66,12 +68,49 @@ class DenoKVAtomicOperation implements AtomicOperation {
 export class DenoKVStorage implements KVStorage {
   private kv: Deno.Kv | null = null;
   private path?: string;
+  private state: StorageState = "uninitialized";
+  private initializationPromise: Promise<void> | null = null;
 
   constructor(path?: string) {
     this.path = path;
   }
 
   async initialize(): Promise<void> {
+    switch (this.state) {
+      case "ready":
+        return; // Already initialized
+
+      case "initializing":
+        // If already initializing, wait for the existing initialization to complete
+        if (this.initializationPromise) {
+          return this.initializationPromise;
+        }
+        throw new Error("Storage is initializing but no promise is available");
+
+      case "closed":
+        throw new KVStorageError(
+          "Storage has been closed and cannot be reinitialized",
+          "STORAGE_CLOSED",
+        );
+
+      case "uninitialized":
+        // Proceed with initialization
+        break;
+    }
+
+    // Set state and create initialization promise
+    this.state = "initializing";
+    this.initializationPromise = this.doInitialize();
+
+    try {
+      await this.initializationPromise;
+    } finally {
+      // Clear the promise after completion (success or failure)
+      this.initializationPromise = null;
+    }
+  }
+
+  private async doInitialize(): Promise<void> {
     try {
       // Ensure parent directory exists for file-based KV
       if (this.path) {
@@ -82,7 +121,10 @@ export class DenoKVStorage implements KVStorage {
       }
 
       this.kv = await Deno.openKv(this.path);
+      this.state = "ready";
     } catch (error) {
+      // Reset state on failure
+      this.state = "uninitialized";
       throw new KVConnectionError(
         `Failed to initialize Deno KV storage at ${this.path || "default location"}: ${
           error instanceof Error ? error.message : String(error)
@@ -92,13 +134,26 @@ export class DenoKVStorage implements KVStorage {
     }
   }
 
-  async get<T>(key: string[]): Promise<T | null> {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
+  private ensureReady(): void {
+    if (this.state !== "ready") {
+      throw new KVStorageError(
+        `Storage is not ready (current state: ${this.state})`,
+        "NOT_INITIALIZED",
+      );
     }
+    if (!this.kv) {
+      throw new KVStorageError(
+        "Storage is in ready state but KV instance is missing",
+        "INVALID_STATE",
+      );
+    }
+  }
+
+  async get<T>(key: string[]): Promise<T | null> {
+    this.ensureReady();
 
     try {
-      const result = await this.kv.get<T>(key);
+      const result = await this.kv!.get<T>(key);
       return result.value;
     } catch (error) {
       throw new KVStorageError(
@@ -112,12 +167,10 @@ export class DenoKVStorage implements KVStorage {
   }
 
   async set<T>(key: string[], value: T): Promise<void> {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
-    }
+    this.ensureReady();
 
     try {
-      await this.kv.set(key, value);
+      await this.kv!.set(key, value);
     } catch (error) {
       throw new KVStorageError(
         `Failed to set key [${key.join(", ")}]: ${
@@ -130,12 +183,10 @@ export class DenoKVStorage implements KVStorage {
   }
 
   async delete(key: string[]): Promise<void> {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
-    }
+    this.ensureReady();
 
     try {
-      await this.kv.delete(key);
+      await this.kv!.delete(key);
     } catch (error) {
       throw new KVStorageError(
         `Failed to delete key [${key.join(", ")}]: ${
@@ -148,12 +199,10 @@ export class DenoKVStorage implements KVStorage {
   }
 
   async *list<T>(prefix: string[]): AsyncIterableIterator<KVEntry<T>> {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
-    }
+    this.ensureReady();
 
     try {
-      const iter = this.kv.list<T>({ prefix });
+      const iter = this.kv!.list<T>({ prefix });
 
       for await (const entry of iter) {
         yield {
@@ -174,13 +223,11 @@ export class DenoKVStorage implements KVStorage {
   }
 
   async *watch<T>(prefix: string[]): AsyncIterable<WatchEvent<T>[]> {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
-    }
+    this.ensureReady();
 
     try {
       // Deno KV watch expects an array of key arrays to watch
-      const watcher = this.kv.watch([prefix]);
+      const watcher = this.kv!.watch([prefix]);
 
       for await (const entries of watcher) {
         const events: WatchEvent<T>[] = [];
@@ -211,15 +258,13 @@ export class DenoKVStorage implements KVStorage {
   }
 
   atomic(): AtomicOperation {
-    if (!this.kv) {
-      throw new KVStorageError("Storage not initialized", "NOT_INITIALIZED");
-    }
+    this.ensureReady();
 
-    return new DenoKVAtomicOperation(this.kv.atomic());
+    return new DenoKVAtomicOperation(this.kv!.atomic());
   }
 
   async health(): Promise<boolean> {
-    if (!this.kv) {
+    if (this.state !== "ready" || !this.kv) {
       return false;
     }
 
@@ -277,6 +322,15 @@ export class DenoKVStorage implements KVStorage {
   }
 
   async close(): Promise<void> {
+    if (this.state === "closed") {
+      return; // Already closed
+    }
+
+    if (this.state === "initializing" && this.initializationPromise) {
+      // Wait for initialization to complete before closing
+      await this.initializationPromise.catch(() => {}); // Ignore initialization errors
+    }
+
     if (this.kv) {
       try {
         this.kv.close();
@@ -289,6 +343,8 @@ export class DenoKVStorage implements KVStorage {
         );
       }
     }
+
+    this.state = "closed";
   }
 }
 

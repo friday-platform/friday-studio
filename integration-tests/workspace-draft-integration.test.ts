@@ -9,30 +9,29 @@
  */
 
 import { assertEquals, assertExists, assertGreater } from "@std/assert";
-import { WorkspaceDraftStore } from "../src/core/services/workspace-draft-store.ts";
+import { WorkspaceDraftStore } from "../packages/workspace/src/draft/storage.ts";
 import { createKVStorage, StorageConfigs } from "../src/core/storage/index.ts";
 
 // Test context
 interface TestContext {
   draftStore: WorkspaceDraftStore;
-  kv: Deno.Kv;
+  kvStorage: import("../src/core/storage/index.ts").KVStorage;
 }
 
 async function createTestContext(): Promise<TestContext> {
   // Setup KV storage
-  const kvStorageConfig = StorageConfigs.defaultKV();
+  const kvStorageConfig = StorageConfigs.memory(); // Use memory storage for tests
   const kvStorage = await createKVStorage(kvStorageConfig);
-  await kvStorage.initialize();
-  const kv = (kvStorage as any).kv || await Deno.openKv();
 
-  const draftStore = new WorkspaceDraftStore(kv);
+  const draftStore = new WorkspaceDraftStore(kvStorage);
+  await draftStore.initialize();
 
-  return { draftStore, kv };
+  return { draftStore, kvStorage };
 }
 
 async function cleanup(ctx: TestContext) {
   try {
-    ctx.kv.close();
+    await ctx.draftStore.close();
   } catch {
     // Ignore cleanup errors
   }
@@ -110,7 +109,8 @@ Deno.test("Draft Integration - CRUD Operations", async () => {
     assertEquals(retrieved.id, created.id);
     assertEquals(retrieved.name, testData.name);
 
-    // Test update
+    // Test update with a small delay to ensure different timestamps
+    await new Promise((resolve) => setTimeout(resolve, 10));
     const updated = await ctx.draftStore.updateDraft(
       created.id,
       { workspace: { name: "updated-name" } },
@@ -149,11 +149,13 @@ Deno.test("Draft Integration - Conversation Management", async () => {
     const conversationDrafts = await ctx.draftStore.getConversationDrafts(conversationId);
     assertGreater(conversationDrafts.length, 1);
 
-    const latest = await ctx.draftStore.getLatestConversationDraft(conversationId);
+    // The new API returns sorted drafts (newest first)
+    const latest = conversationDrafts[0];
     assertExists(latest);
     assertEquals(latest.conversationId, conversationId);
 
-    const count = await ctx.draftStore.countConversationDrafts(conversationId);
+    // Count is the length of the drafts array
+    const count = conversationDrafts.length;
     assertGreater(count, 1);
 
     // Test draft locking

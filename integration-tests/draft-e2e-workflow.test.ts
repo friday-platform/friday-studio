@@ -10,7 +10,7 @@
  */
 
 import { assertEquals, assertExists } from "@std/assert";
-import { WorkspaceDraftStore } from "../src/core/services/workspace-draft-store.ts";
+import { WorkspaceDraftStore } from "../packages/workspace/src/draft/storage.ts";
 import { FilesystemWorkspaceCreationAdapter } from "../src/core/services/workspace-creation-adapter.ts";
 // Configuration validation removed to focus on file creation
 import { createKVStorage, StorageConfigs } from "../src/core/storage/index.ts";
@@ -22,27 +22,26 @@ interface TestContext {
   draftStore: WorkspaceDraftStore;
   workspaceAdapter: FilesystemWorkspaceCreationAdapter;
   tempDir: string;
-  kv: Deno.Kv;
+  kvStorage: import("../src/core/storage/index.ts").KVStorage;
 }
 
 async function createTestContext(): Promise<TestContext> {
   const tempDir = await Deno.makeTempDir({ prefix: "atlas_e2e_" });
 
   // Setup KV storage
-  const kvStorageConfig = StorageConfigs.defaultKV();
+  const kvStorageConfig = StorageConfigs.memory(); // Use memory storage for tests
   const kvStorage = await createKVStorage(kvStorageConfig);
-  await kvStorage.initialize();
-  const kv = (kvStorage as any).kv || await Deno.openKv();
 
-  const draftStore = new WorkspaceDraftStore(kv);
+  const draftStore = new WorkspaceDraftStore(kvStorage);
+  await draftStore.initialize();
   const workspaceAdapter = new FilesystemWorkspaceCreationAdapter(tempDir);
 
-  return { draftStore, workspaceAdapter, tempDir, kv };
+  return { draftStore, workspaceAdapter, tempDir, kvStorage };
 }
 
 async function cleanup(ctx: TestContext) {
   try {
-    ctx.kv.close();
+    await ctx.draftStore.close();
     await Deno.remove(ctx.tempDir, { recursive: true });
   } catch {
     // Ignore cleanup errors

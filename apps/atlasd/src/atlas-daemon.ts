@@ -139,8 +139,7 @@ export class AtlasDaemon implements AppContext {
     // Initialize CronManager with KV storage
     logger.info("Initializing CronManager...");
     const kvStorageConfig = StorageConfigs.defaultKV();
-    const kvStorage = await createKVStorage(kvStorageConfig);
-    await kvStorage.initialize();
+    const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
     // Set up workspace wakeup callback
@@ -1716,6 +1715,17 @@ export class AtlasDaemon implements AppContext {
       this.workspaceManager = null;
     }
 
+    // Close LibraryStorage
+    if (this.libraryStorage) {
+      try {
+        await this.libraryStorage.close();
+        this.libraryStorage = null;
+        AtlasLogger.getInstance().info("LibraryStorage closed");
+      } catch (error) {
+        AtlasLogger.getInstance().error("Failed to close LibraryStorage", { error });
+      }
+    }
+
     // Shutdown HTTP server
     if (this.server) {
       try {
@@ -2014,7 +2024,7 @@ export class AtlasDaemon implements AppContext {
         if (now - client.lastActivity > timeoutMs) {
           try {
             client.controller.close();
-          } catch (error) {
+          } catch (_error) {
             // Ignore close errors
           }
           prunedClients++;

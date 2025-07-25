@@ -155,11 +155,15 @@ export async function createKVStorage(config: KVStorageConfig): Promise<KVStorag
   switch (config.type) {
     case "deno-kv": {
       const { DenoKVStorage } = await import("./deno-kv-storage.ts");
-      return new DenoKVStorage(config.connection);
+      const storage = new DenoKVStorage(config.connection);
+      await storage.initialize();
+      return storage;
     }
     case "memory": {
       const { MemoryKVStorage } = await import("./memory-kv-storage.ts");
-      return new MemoryKVStorage();
+      const storage = new MemoryKVStorage();
+      await storage.initialize();
+      return storage;
     }
     default:
       throw new Error(`Unsupported storage type: ${config.type}`);
