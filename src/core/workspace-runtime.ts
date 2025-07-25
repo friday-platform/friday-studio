@@ -228,6 +228,16 @@ export class WorkspaceRuntime {
           sessionCount: this.sessions.size,
         });
 
+        // Start the session to transition from "created" state
+        // Note: We don't await session.start() as it blocks until completion
+        // Instead, we just trigger the start asynchronously
+        session.start().catch((error) => {
+          logger.error("Session start failed", {
+            sessionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
+
         // Create trace headers for supervisor communication
         const traceHeaders = await AtlasTelemetry.createTraceHeaders();
 

@@ -592,6 +592,16 @@ export function createWorkspaceRuntimeMachine(
                       // Store session
                       context.sessions.set(sessionId, session);
 
+                      // Start the session to transition from "created" state
+                      // Note: We don't await session.start() as it blocks until completion
+                      // Instead, we just trigger the start asynchronously
+                      session.start().catch((error) => {
+                        logger.error("Session start failed", {
+                          sessionId,
+                          error: error instanceof Error ? error.message : String(error),
+                        });
+                      });
+
                       // Process signal through supervisor
                       const result = await context.supervisor.processSignal(
                         event.signal,
