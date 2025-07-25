@@ -41,13 +41,21 @@ export class WorkspaceManager {
     await this.registry.initialize();
 
     if (options.registerSystemWorkspaces !== false) {
+      // System workspaces should never fail - if they do, it's a build/code issue
       await this.registerSystemWorkspaces();
     }
 
     if (options.autoImport !== false && !this.isTestMode()) {
-      const imported = await this.importExistingWorkspaces();
-      if (imported > 0) {
-        logger.info(`Auto-imported ${imported} workspace(s)`);
+      try {
+        const imported = await this.importExistingWorkspaces();
+        if (imported > 0) {
+          logger.info(`Auto-imported ${imported} workspace(s)`);
+        }
+      } catch (error) {
+        logger.error("Failed during workspace auto-import", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        // Don't throw - auto-import failure shouldn't prevent daemon startup
       }
     }
   }
@@ -350,14 +358,30 @@ export class WorkspaceManager {
 
     const discovered = [...new Set(workspaces)]; // Remove duplicates
     let imported = 0;
+    let skipped = 0;
 
     for (const workspacePath of discovered) {
       const existing = await this.find({ path: workspacePath });
       if (!existing) {
-        await this.registerWorkspace(workspacePath);
-        imported++;
+        try {
+          await this.registerWorkspace(workspacePath);
+          imported++;
+        } catch (error) {
+          skipped++;
+          logger.warn("Skipping invalid workspace during auto-import", {
+            path: workspacePath,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
+
+    if (skipped > 0) {
+      logger.info(
+        `Auto-import completed: ${imported} imported, ${skipped} skipped due to invalid configuration`,
+      );
+    }
+
     return imported;
   }
 
