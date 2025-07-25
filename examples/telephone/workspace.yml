@@ -38,7 +38,6 @@ tools:
             [
               "atlas_library_list",
               "atlas_library_get",
-              "atlas_library_search",
               "atlas_library_store",
               "atlas_library_stats",
               "atlas_library_templates",

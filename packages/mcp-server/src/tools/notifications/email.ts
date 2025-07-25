@@ -18,7 +18,6 @@ export function registerEmailNotificationTool(server: McpServer, ctx: ToolContex
       description: `Send email notifications via SendGrid.
 
 Key features:
-- SendGrid API integration for reliable email delivery
 - Template-based emails with dynamic content
 - Attachment support
 - Automatic retry with exponential backoff
@@ -27,32 +26,16 @@ Key features:
 Configuration:
 Email notifications use environment variables for configuration:
 
-Required environment variables:
-- SENDGRID_API_KEY: Your SendGrid API key
-
 Optional environment variables:
 - SENDGRID_FROM_EMAIL: Default sender email address (defaults to noreply@tempestdx.com)
 - SENDGRID_FROM_NAME: Default sender name
-- SENDGRID_SANDBOX_MODE: Set to "true" to enable sandbox mode for testing
-
-Example .env file:
-\`\`\`
-SENDGRID_API_KEY=your-sendgrid-api-key-here
-SENDGRID_FROM_EMAIL=notifications@example.com
-SENDGRID_FROM_NAME=Atlas Notifications
-SENDGRID_SANDBOX_MODE=false
-\`\`\`
 
 Common use cases:
 - Alert notifications for system events
 - Status updates for job completions
 - Error notifications for failed operations
 - Scheduled reports and summaries
-
-Security:
-- API keys are stored in environment variables
-- Email addresses are validated
-- Sandbox mode available for testing`,
+`,
       inputSchema: {
         to: z.string().describe("Recipient email address"),
         subject: z.string().describe("Email subject line"),

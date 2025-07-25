@@ -126,7 +126,18 @@ export class AgentExecutionActor implements IAgentExecutionActor {
 
   private buildAgentSystemPrompt(basePrompt: string): string {
     const currentDate = new Date().toISOString().split("T")[0];
-    return `Current date and time: ${currentDate}\n\n${basePrompt}`;
+    const autonomyInstructions =
+      `You are an autonomous agent operating within the Atlas platform. You MUST complete your assigned task immediately without asking for additional input, clarification, or confirmation. Work independently and provide results based on the information and tools available to you.
+
+CRITICAL AUTONOMY REQUIREMENTS:
+- Never ask questions or request additional input
+- Never ask for confirmation before taking actions
+- Complete the task using available information and tools
+- Provide comprehensive output based on your analysis
+- If information is missing, work with what you have and note limitations in your output
+- Execute your task immediately and thoroughly`;
+
+    return `Current date and time: ${currentDate}\n\n${autonomyInstructions}\n\n${basePrompt}`;
   }
 
   private async executeLLMAgent(

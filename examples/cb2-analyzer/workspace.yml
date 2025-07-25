@@ -64,6 +64,7 @@ agents:
     type: llm
     description: Fetch and extract web content using Tavily search for discount analysis
     config:
+      provider: anthropic
       model: claude-3-5-haiku-latest
       timeout: "2m"
       prompt: |
@@ -115,6 +116,7 @@ agents:
     type: llm
     description: Analyze discount data and create comprehensive reports for library storage
     config:
+      provider: anthropic
       model: claude-3-5-sonnet-latest
       timeout: "45s"
       prompt: |
@@ -168,6 +170,5 @@ tools:
         tools:
           allow:
             - "atlas_library_store"
-            - "atlas_library_search"
             - "atlas_library_get"
             - "atlas_library_list"

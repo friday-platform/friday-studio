@@ -23,6 +23,7 @@ agents:
     type: "llm"
     description: "Manages memory operations at session start and end"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       prompt: |
         You are a memory management agent for Atlas workspaces.
@@ -190,6 +191,7 @@ agents:
     type: "llm"
     description: "Test LLM agent for configuration testing"
     config:
+      provider: "anthropic"
       model: "claude-3-7-sonnet-latest"
       prompt: |
         You are a test agent for configuration validation.
@@ -274,10 +276,13 @@ Deno.test("Atlas configuration loads platform settings", async () => {
     const configLoader = new ConfigLoader(adapter, tempDir);
     const mergedConfig = await configLoader.load();
 
+    // Atlas config should be loaded
+    expect(mergedConfig.atlas).not.toBeNull();
+
     // Test atlas config structure
-    expect(mergedConfig.atlas.version).toBe("1.0");
-    expect(mergedConfig.atlas.workspace.name).toBe("Atlas Platform");
-    expect(mergedConfig.atlas.workspace.id).toBe("atlas-platform");
+    expect(mergedConfig.atlas!.version).toBe("1.0");
+    expect(mergedConfig.atlas!.workspace.name).toBe("Atlas Platform");
+    expect(mergedConfig.atlas!.workspace.id).toBe("atlas-platform");
 
     // Test supervisor configurations
     expect(mergedConfig.atlas?.supervisors?.workspace?.model).toBe(
@@ -352,23 +357,24 @@ Deno.test("Workspace configuration loads user-defined components", async () => {
     );
 
     // Test agent definitions
+    expect(workspaceConfig.agents).toBeDefined();
     expect(workspaceConfig.agents!["test-llm-agent"].type).toBe("llm");
     const llmAgent = workspaceConfig.agents!["test-llm-agent"];
-    if (llmAgent.type === "llm") {
-      expect(llmAgent.config.model).toBe("claude-3-7-sonnet-latest");
+    if (llmAgent?.type === "llm") {
+      expect(llmAgent.config?.model).toBe("claude-3-7-sonnet-latest");
       expect(llmAgent.description).toBe("Test LLM agent for configuration testing");
     }
 
     expect(workspaceConfig.agents!["test-system-agent"].type).toBe("system");
     const systemAgent = workspaceConfig.agents!["test-system-agent"];
-    if (systemAgent.type === "system") {
+    if (systemAgent?.type === "system") {
       expect(systemAgent.agent).toBe("test-agent");
       expect(systemAgent.description).toBe("Test system agent");
     }
 
     expect(workspaceConfig.agents!["test-remote-agent"].type).toBe("remote");
     const remoteAgent = workspaceConfig.agents!["test-remote-agent"];
-    if (remoteAgent.type === "remote") {
+    if (remoteAgent?.type === "remote") {
       expect(remoteAgent.config.protocol).toBe("acp");
       expect(remoteAgent.config.endpoint).toBe("https://api.test.com/agent");
       expect(remoteAgent.config.agent_name).toBe("test-agent");

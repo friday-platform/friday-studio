@@ -50,6 +50,7 @@ agents:
     type: llm
     description: Test agent for integration tests
     config:
+      provider: anthropic
       model: claude-3-7-sonnet-latest
       prompt: |
         You are a test agent for integration tests. 

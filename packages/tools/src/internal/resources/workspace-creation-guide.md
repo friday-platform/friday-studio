@@ -39,7 +39,6 @@ Most integrations require credentials. When detecting authentication needs:
 
 1. **Identify required credentials** based on the service:
 
-   - Webhook URLs (Discord, Slack webhooks)
    - API tokens (GitHub, Linear, most APIs)
    - OAuth tokens (Google, Microsoft services)
    - Webhook secrets (Stripe, GitHub webhooks)
@@ -49,7 +48,6 @@ Most integrations require credentials. When detecting authentication needs:
    ```
    To set up this integration, I'll need:
    • Your Stripe API key (find it at dashboard.stripe.com/apikeys)
-   • A Discord webhook URL (from your channel settings)
    • A GitHub personal access token with repo permissions
 
    Please provide these when you're ready.
@@ -57,13 +55,7 @@ Most integrations require credentials. When detecting authentication needs:
 
 3. **Reference in configuration** using environment variables:
    ```yaml
-   tools:
-     mcp:
-       servers:
-         discord:
-           auth:
-             type: bearer
-             token_env: DISCORD_WEBHOOK_URL
+   # Email notifications are handled by atlas_notify_email tool
    ```
 
 ## Example Patterns
@@ -80,7 +72,7 @@ Let's explore how different user intents map to Atlas components:
 - **Agents**:
   - Web scraper (extracts product data)
   - Change detector (compares with previous data)
-  - Notifier (sends Discord alerts)
+  - Notifier (sends email alerts)
 - **Tools**: atlas_fetch, atlas_library_store, atlas_notify_email
 - **Context flow**: Each agent passes results to the next
 
@@ -488,26 +480,105 @@ Memory is automatically available to agents through the Atlas runtime - no speci
 
 ### Currently Available Tools
 
-{{AVAILABLE_TOOLS}}
-
-### Tool Selection Priority: Internal First
-
-**ALWAYS prefer Atlas internal tools** before external MCP servers or web scraping:
-
-#### 1. Use Internal Tools First
-
-Atlas provides powerful built-in tools that handle most automation needs:
+All tools for Atlas workspaces are provided by the MCP Atlas server. Configure it in your workspace with:
 
 ```yaml
+tools:
+  mcp:
+    servers:
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            [
+              "atlas_library_list",
+              "atlas_library_get",
+              "atlas_library_store",
+              "atlas_library_stats",
+              "atlas_library_templates",
+              "atlas_workspace_list",
+              "atlas_workspace_create",
+              "atlas_workspace_delete",
+              "atlas_workspace_describe",
+              "atlas_session_describe",
+              "atlas_session_cancel",
+              "atlas_jobs_list",
+              "atlas_jobs_describe",
+              "atlas_signals_list",
+              "atlas_signals_trigger",
+              "atlas_agents_list",
+              "atlas_agents_describe",
+              "atlas_glob",
+              "atlas_grep",
+              "atlas_ls",
+              "atlas_read",
+              "atlas_write",
+              "tavily_search",
+              "tavily_extract",
+              "tavily_crawl",
+              "atlas_bash",
+              "atlas_notify_email",
+            ]
+        client_config:
+          timeout: "30s"
+```
+
+**Tool Categories and Selection Criteria:**
+
+**ALWAYS select ONLY the specific tools your workspace actually needs**
+
+- **Library Tools**: `atlas_library_list`, `atlas_library_get`, `atlas_library_store`, `atlas_library_stats`, `atlas_library_templates`
+  - Use when: Storing knowledge, templates, persistent data between runs
+- **Workspace Management**: `atlas_workspace_list`, `atlas_workspace_create`, `atlas_workspace_delete`, `atlas_workspace_describe`
+  - Use when: Workspace introspection, management, or creation workflows
+- **Session Control**: `atlas_session_describe`, `atlas_session_cancel`
+  - Use when: Session management, monitoring, or control needed
+- **Job Management**: `atlas_jobs_list`, `atlas_jobs_describe`
+  - Use when: Job introspection or management needed
+- **Signal Management**: `atlas_signals_list`, `atlas_signals_trigger`
+  - Use when: Signal management or triggering needed
+- **Agent Management**: `atlas_agents_list`, `atlas_agents_describe`
+  - Use when: Agent introspection needed
+- **File Operations**: `atlas_glob`, `atlas_grep`, `atlas_ls`, `atlas_read`, `atlas_write`
+  - Use when: Reading files, writing reports, searching codebases, file management
+- **Web Operations**: `tavily_search`, `tavily_extract`, `tavily_crawl`
+  - Use when: Web search, content extraction, website crawling, research tasks
+- **System Operations**: `atlas_bash`
+  - Use when: Running commands, git operations, system integrations, deployments
+- **Notifications**: `atlas_notify_email`
+  - Use when: Sending alerts, reports, status updates via email
+
+### Tool Selection Priority: Atlas-Platform First, Selective Access
+
+**ALWAYS prefer atlas-platform MCP server tools** with ONLY the specific tools needed:
+
+#### 1. Use Atlas-Platform Tools First
+
+The atlas-platform MCP server provides powerful tools that handle most automation needs:
+
+```yaml
+# Configure atlas-platform MCP server with ONLY needed tools
+tools:
+  mcp:
+    servers:
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow: ["atlas_glob", "atlas_read", "atlas_write"] # Only what's needed
+
 agents:
   data-processor:
     config:
       prompt: |
         Process the CSV files in the data directory and generate a summary report.
-      tools: ["atlas_glob", "atlas_read", "atlas_write"]
+      tools: ["atlas-platform"]
 ```
 
-**Common internal tool patterns**:
+**Common atlas-platform tool patterns**:
 
 - **File operations**: `atlas_read`, `atlas_write`, `atlas_list`, `atlas_glob`, `atlas_grep`
 - **Web requests**: `atlas_fetch` (handles both APIs and web scraping)
@@ -516,66 +587,81 @@ agents:
 - **Workspace management**: `atlas_workspace_create`, `atlas_workspace_list`
 - **Session control**: `atlas_session_describe`, `atlas_session_cancel`
 
-#### 2. External MCP Tools (When Internal Tools Insufficient)
+#### 2. External MCP Tools (When Atlas-Platform Tools Insufficient)
 
-Only use external MCP tools when Atlas internal tools can't handle the specific integration:
+Only use external MCP tools when atlas-platform tools can't handle the specific integration:
+
+**AVOID external MCP servers if Atlas tools can handle the need:**
+
+- ❌ External web scraping MCP when Tavily tools provide comprehensive web research
+- ❌ External filesystem MCP when `atlas_read`/`atlas_write` sufficient
+- ❌ External email service when `atlas_notify_email` sufficient
+- ❌ External search engines when Tavily provides AI-powered search
 
 ```yaml
+# Example: Web research using Tavily instead of external web scraping MCP
 tools:
   mcp:
     servers:
-      discord:
+      atlas-platform:
         transport:
-          type: stdio
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-discord"]
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow: ["tavily_search", "tavily_extract", "atlas_library_store"]
+
+agents:
+  research-analyzer:
+    config:
+      prompt: |
+        Use Tavily to research and analyze web content:
+        1. Search for relevant information with tavily_search
+        2. Extract detailed content from URLs with tavily_extract
+        3. Store findings with atlas_library_store
+      tools: ["atlas-platform"]
 ```
 
 #### 3. Web Scraping vs APIs (Last Resort)
 
-**Use `atlas_fetch` for both APIs and web scraping**:
+**Use Tavily tools for web research and content extraction**:
 
 ```yaml
 agents:
-  api-caller:
+  research-agent:
     config:
       prompt: |
-        Use atlas_fetch to call the GitHub API:
-        GET https://api.github.com/repos/user/repo/issues
-        Headers: Authorization: Bearer ${GITHUB_TOKEN}
-      tools: ["atlas_fetch"]
+        Use Tavily to research GitHub repositories and issues:
+        1. Search for relevant repositories with tavily_search
+        2. Extract detailed content with tavily_extract
+        3. Crawl documentation with tavily_crawl
+      tools: ["tavily_search", "tavily_extract", "tavily_crawl"]
 ```
 
-**Use Web Scraping when**:
+**Use Tavily for comprehensive web research**:
 
-- No official API exists
-- API requires paid access
-- Need data as displayed to users
-
-**Use APIs when**:
-
-- Official API available
-- Need real-time data
-- Structured data important
+- AI-powered search with content filtering
+- Intelligent content extraction from URLs
+- Website crawling for systematic data gathering
+- Built-in summarization and answer generation
 
 ### Handling Missing Functionality
 
 When you need functionality not directly available:
 
-1. **Try Atlas internal tools first**:
+1. **Try atlas-platform tools first**:
 
    ```yaml
    agents:
      data-fetcher:
        config:
          prompt: |
-           Use atlas_fetch to get data from example.com/data
-           Extract information from <div class="results"> elements
-           Return structured JSON data
-         tools: ["atlas_fetch"]
+           Use tavily_search to find relevant data on example.com
+           Use tavily_extract to get specific content from URLs
+           Return structured JSON data with insights
+         tools: ["tavily_search", "tavily_extract"]
    ```
 
-2. **Combine internal tools for complex workflows**:
+2. **Combine atlas-platform tools for complex workflows**:
 
    ```yaml
    agents:
@@ -696,67 +782,40 @@ agents:
 
 ## Tool Configuration Examples
 
-### Discord Notifications
+### Email Notifications
 
-```yaml
-tools:
-  mcp:
-    servers:
-      discord:
-        transport:
-          type: stdio
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-discord"]
-        auth:
-          type: bearer
-          token_env: DISCORD_WEBHOOK_URL
-```
-
-Usage in agent:
+Use the built-in `atlas_notify_email` tool for notifications:
 
 ```yaml
 agents:
   notifier:
     config:
       prompt: |
-        Send a Discord message to the webhook with:
-        - Bold title: **New Alert**
-        - Timestamp and details
-        - Color: red for errors, green for success
-      tools: ["discord"]
+        Send an email notification with:
+        - Subject: Alert - New Event
+        - Body with timestamp and details
+        - Priority level for urgent alerts
+      tools: ["atlas_notify_email"]
 ```
 
 ### Database Access
 
-```yaml
-tools:
-  mcp:
-    servers:
-      postgres:
-        transport:
-          type: stdio
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-postgres"]
-        env:
-          DATABASE_URL: "postgresql://user:pass@localhost/db"
-        tools:
-          deny: ["execute_raw_sql"] # Safety first
-```
+For database operations, use external MCP servers designed for specific database types, or access via API endpoints when available.
 
-### Web Scraping
+### Web Research and Content Extraction
+
+Use Tavily tools for comprehensive web research and content analysis:
 
 ```yaml
-tools:
-  mcp:
-    servers:
-      web-browser:
-        transport:
-          type: stdio
-          command: npx
-          args: ["-y", "@modelcontextprotocol/server-puppeteer"]
-        config:
-          headless: true
-          timeout: 30000
+agents:
+  web-researcher:
+    config:
+      prompt: |
+        1. Search for information with tavily_search using specific queries
+        2. Extract content from specific URLs with tavily_extract
+        3. Crawl websites systematically with tavily_crawl
+        4. Generate insights from collected data
+      tools: ["tavily_search", "tavily_extract", "tavily_crawl"]
 ```
 
 ## Best Practices

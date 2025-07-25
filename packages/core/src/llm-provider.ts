@@ -157,7 +157,7 @@ export class LLMProvider {
         stopWhen: stepCountIs(providerConfig.max_steps || 10),
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
-        abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
+        abortSignal: AbortSignal.timeout(providerConfig.timeout || 60000),
       });
 
       // Log the raw result from AI SDK
@@ -291,7 +291,7 @@ export class LLMProvider {
         messages,
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
-        abortSignal: AbortSignal.timeout(providerConfig.timeout || 30000),
+        abortSignal: AbortSignal.timeout(providerConfig.timeout || 60000),
       });
 
       for await (const chunk of stream.textStream) {

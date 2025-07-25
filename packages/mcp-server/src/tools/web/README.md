@@ -1,227 +1,231 @@
-# Web Automation Tools
+# Tavily Web Search Tools
 
-This module extends the basic `atlas_fetch` tool with session-based web automation capabilities,
-including automatic cookie consent handling.
+This module provides AI-powered web search, content extraction, and crawling capabilities using
+Tavily's advanced search engine. These tools are designed for comprehensive web research and content
+analysis workflows.
 
 ## Architecture
 
-**Session-Based Design:**
+**API-Based Design:**
 
-- Persistent browser contexts maintain state across operations
-- Sessions auto-expire after 30 minutes of inactivity
-- Each session runs in an isolated Playwright browser instance
-- Supports multiple concurrent sessions
+- Direct integration with Tavily's REST API
+- No browser automation overhead
+- High-performance search with AI-enhanced results
+- Built-in content extraction and summarization
 
 ## Available Tools
 
-### Session Management
+### Web Search
 
-#### `web_session_create`
+#### `tavily_search`
 
-Creates a persistent browser session for multi-step automation.
+Performs AI-powered web searches with intelligent content filtering and summarization.
 
 ```typescript
-// Create a new session
+// Basic web search
 {
-  "sessionId": "my-session",
-  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-  "viewport": { "width": 1280, "height": 720 },
-  "locale": "en-US"
+  "query": "latest AI developments 2024",
+  "max_results": 10,
+  "include_answer": true
+}
+
+// News-specific search
+{
+  "query": "company layoffs",
+  "topic": "news",
+  "days": 7,
+  "search_depth": "advanced"
+}
+
+// Domain-filtered search
+{
+  "query": "JavaScript frameworks",
+  "include_domains": ["github.com", "stackoverflow.com"],
+  "exclude_domains": ["spam-site.com"]
 }
 ```
 
-#### `web_session_navigate`
+**Parameters:**
 
-Navigates to URLs within a session, maintaining cookies and state.
+- `query` (required): Search query string
+- `search_depth`: "basic" or "advanced" (default: "basic")
+- `topic`: "general" or "news" (default: "general")
+- `days`: Number of recent days for news searches
+- `max_results`: 1-20 results (default: 5)
+- `include_domains`: Array of domains to include
+- `exclude_domains`: Array of domains to exclude
+- `include_answer`: Include AI-generated summary (default: false)
+- `include_raw_content`: Include full page content (default: false)
+- `include_images`: Include images in results (default: false)
+
+#### `tavily_extract`
+
+Extracts and processes content from specific URLs with AI-enhanced parsing.
 
 ```typescript
 {
-  "sessionId": "my-session",
-  "url": "https://example.com",
-  "waitUntil": "networkidle"
+  "urls": [
+    "https://example.com/article1",
+    "https://example.com/article2"
+  ],
+  "include_raw_content": true
 }
 ```
 
-#### `web_session_extract`
+**Parameters:**
 
-Extracts content from the current page in various formats.
+- `urls` (required): Array of URLs to extract content from
+- `include_raw_content`: Include raw text extraction (default: true)
+
+#### `tavily_crawl`
+
+Crawls websites systematically to discover and extract content from multiple pages.
 
 ```typescript
 {
-  "sessionId": "my-session",
-  "format": "markdown",
-  "selector": "article" // Optional: extract specific elements
+  "url": "https://docs.example.com",
+  "max_depth": 2,
+  "exclude_domains": ["ads.example.com"],
+  "include_raw_content": true
 }
 ```
 
-#### `web_session_click`
+**Parameters:**
 
-Clicks elements by selector, text, or accessibility attributes.
+- `url` (required): Starting URL for crawling
+- `max_depth`: Crawling depth 1-3 (default: 1)
+- `exclude_domains`: Domains to skip during crawling
+- `include_raw_content`: Include full content extraction (default: true)
 
-```typescript
-{
-  "sessionId": "my-session",
-  "text": "Accept All Cookies",
-  "timeout": 10
-}
+## Setup and Authentication
+
+### Environment Variables
+
+Set your Tavily API key:
+
+```bash
+export TAVILY_API_KEY="tvly-your-api-key-here"
 ```
 
-#### `web_session_close`
+Get your API key from [Tavily Dashboard](https://app.tavily.com/).
 
-Closes a session and releases resources.
+### Atlas Integration
 
-```typescript
-{
-  "sessionId": "my-session"
-}
-```
+Configure in your workspace.yml:
 
-#### `web_session_list`
-
-Lists all active sessions with their status.
-
-### Cookie Consent Handling
-
-#### `web_session_handle_consent`
-
-Automatically detects and handles cookie consent banners.
-
-```typescript
-{
-  "sessionId": "my-session",
-  "action": "accept", // or "reject" or "detect"
-  "timeout": 10
-}
-```
-
-**Supported Consent Systems:**
-
-- OneTrust
-- CookieBot
-- Quantcast Choice
-- TrustArc
-- Generic patterns (Accept/Reject buttons)
-
-#### `web_session_wait_for_element`
-
-Waits for elements to appear, disappear, or change visibility.
-
-```typescript
-{
-  "sessionId": "my-session",
-  "selector": "#consent-banner",
-  "state": "hidden"
-}
+```yaml
+tools:
+  mcp:
+    servers:
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            - "tavily_search"
+            - "tavily_extract"
+            - "tavily_crawl"
 ```
 
 ## Usage Examples
 
-### Example 1: Handle Cookie Consent and Extract Data
+### Example 1: Research and Analysis
 
 ```typescript
-// 1. Create session
-await callTool("web_session_create", {
-  "sessionId": "news-scraper",
-  "viewport": { "width": 1920, "height": 1080 },
+// 1. Search for recent information
+await callTool("tavily_search", {
+  "query": "AI safety research 2024",
+  "topic": "news",
+  "days": 30,
+  "include_answer": true,
+  "max_results": 10,
 });
 
-// 2. Navigate to site
-await callTool("web_session_navigate", {
-  "sessionId": "news-scraper",
-  "url": "https://example-news-site.com",
-});
-
-// 3. Handle cookie consent
-await callTool("web_session_handle_consent", {
-  "sessionId": "news-scraper",
-  "action": "accept",
-});
-
-// 4. Extract article content
-await callTool("web_session_extract", {
-  "sessionId": "news-scraper",
-  "format": "markdown",
-  "selector": "article",
-});
-
-// 5. Clean up
-await callTool("web_session_close", {
-  "sessionId": "news-scraper",
+// 2. Extract specific articles for detailed analysis
+await callTool("tavily_extract", {
+  "urls": [
+    "https://ai-safety-journal.com/recent-research",
+    "https://research-institute.edu/ai-safety-paper",
+  ],
 });
 ```
 
-### Example 2: Multi-Step Form Interaction
+### Example 2: Competitive Intelligence
 
 ```typescript
-// 1. Create session
-await callTool("web_session_create", {
-  "sessionId": "form-filler",
+// 1. Search competitor information
+await callTool("tavily_search", {
+  "query": "competitor product launches 2024",
+  "search_depth": "advanced",
+  "include_domains": ["techcrunch.com", "venturebeat.com"],
+  "max_results": 15,
 });
 
-// 2. Navigate to form
-await callTool("web_session_navigate", {
-  "sessionId": "form-filler",
-  "url": "https://example.com/contact",
-});
-
-// 3. Handle consent first
-await callTool("web_session_handle_consent", {
-  "sessionId": "form-filler",
-  "action": "accept",
-});
-
-// 4. Click through form steps
-await callTool("web_session_click", {
-  "sessionId": "form-filler",
-  "selector": "#next-step-button",
-});
-
-// 5. Wait for new content to load
-await callTool("web_session_wait_for_element", {
-  "sessionId": "form-filler",
-  "selector": "#step-2-form",
-  "state": "visible",
-});
-
-// 6. Extract final result
-await callTool("web_session_extract", {
-  "sessionId": "form-filler",
-  "format": "text",
+// 2. Crawl competitor documentation
+await callTool("tavily_crawl", {
+  "url": "https://competitor.com/docs",
+  "max_depth": 2,
+  "exclude_domains": ["competitor.com/marketing"],
 });
 ```
 
-### Example 3: Custom Consent Handling
+### Example 3: Content Research
 
 ```typescript
-// For sites with non-standard consent implementations
-await callTool("web_session_handle_consent", {
-  "sessionId": "my-session",
-  "action": "accept",
-  "customSelector": ".custom-accept-btn",
-  "waitAfterClick": 3,
+// 1. Find authoritative sources
+await callTool("tavily_search", {
+  "query": "climate change scientific consensus",
+  "include_domains": ["nature.com", "science.org", "ipcc.ch"],
+  "include_answer": true,
+  "include_raw_content": true,
+});
+
+// 2. Extract full research papers
+await callTool("tavily_extract", {
+  "urls": ["https://nature.com/articles/climate-study-2024"],
+  "include_raw_content": true,
 });
 ```
 
 ## Best Practices
 
-1. **Session Lifecycle**: Always close sessions when done to free resources
-2. **Error Handling**: Sessions auto-expire after 30 minutes of inactivity
-3. **Consent First**: Handle cookie consent before interacting with content
-4. **Wait Strategies**: Use appropriate wait conditions for dynamic content
-5. **Resource Management**: Monitor active sessions with `web_session_list`
+1. **API Key Security**: Store Tavily API key in environment variables, never in code
+2. **Rate Limiting**: Tavily has API limits - implement appropriate delays for bulk operations
+3. **Query Optimization**: Use specific queries and domain filtering for better results
+4. **Content Processing**: Enable `include_answer` for quick summaries, `include_raw_content` for
+   detailed analysis
+5. **Error Handling**: Always handle network errors and API failures gracefully
+6. **Cost Management**: Monitor API usage and adjust max_results based on needs
 
-## Advantages Over Single-Request Tools
+## Advantages Over Traditional Web Scraping
 
-- **Persistent State**: Cookies and session data maintained across operations
-- **Complex Workflows**: Multi-step interactions with forms and navigation
-- **Consent Handling**: Automatic detection and handling of privacy banners
-- **Dynamic Content**: Wait for JavaScript-rendered content to load
-- **Resource Efficiency**: Reuse browser instances for multiple operations
+- **AI-Enhanced Results**: Intelligent content filtering and summarization
+- **No Browser Dependencies**: Direct API integration without browser automation overhead
+- **Built-in Content Extraction**: Advanced text extraction and cleaning
+- **Search Intelligence**: Context-aware search with relevance ranking
+- **Rate Limit Handling**: Built-in request management and error handling
+- **Multi-Format Support**: Handles various content types and formats
 
-## Integration
+## Integration with Atlas Agents
 
-The session-based tools work alongside the original `atlas_fetch` tool:
+Tavily tools work seamlessly with Atlas LLM agents:
 
-- Use `atlas_fetch` for simple, one-off content retrieval
-- Use session tools for complex, multi-step web automation
-- Both tools support the same content formats (text, markdown, HTML)
+```yaml
+agents:
+  research-agent:
+    type: "llm"
+    config:
+      provider: "anthropic"
+      model: "claude-3-5-sonnet-latest"
+      prompt: |
+        You are a research analyst. Use Tavily tools to:
+        1. Search for recent information on your assigned topics
+        2. Extract detailed content from authoritative sources
+        3. Crawl relevant websites for comprehensive coverage
+        4. Synthesize findings into actionable insights
+      tools: ["atlas-platform"]
+```
+
+The Tavily integration provides powerful web research capabilities for Atlas workspaces, enabling
+agents to access current web information with AI-enhanced processing and extraction.

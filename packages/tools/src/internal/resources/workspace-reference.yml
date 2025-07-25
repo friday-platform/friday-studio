@@ -47,15 +47,11 @@ server:
 # ==============================================================================
 # External MCP servers that agents in this workspace can call
 #
-# IMPORTANT: Always prefer Atlas internal tools first:
-# - File operations: atlas_read, atlas_write, atlas_list, atlas_glob, atlas_grep
-# - Web requests: atlas_fetch
-# - System commands: atlas_bash
-# - Notifications: atlas_notify_email
-# - Workspace operations: atlas_workspace_*, atlas_session_*
-# - Library/memory: atlas_library_*, atlas_conversation_storage
+# IMPORTANT: Always configure atlas-platform MCP server first:
+# This provides access to all Atlas tools: atlas_read, atlas_write, atlas_fetch, atlas_bash,
+# atlas_notify_email, atlas_workspace_*, atlas_session_*, atlas_library_*, etc.
 #
-# Only configure external MCP servers when internal tools are insufficient
+# Only configure additional external MCP servers when atlas-platform tools are insufficient
 tools:
   mcp:
     # Client configuration for calling MCP servers
@@ -64,6 +60,45 @@ tools:
 
     # MCP servers available to agents
     servers:
+      # Atlas Platform Integration - Primary server with all Atlas tools
+      atlas-platform:
+        transport:
+          type: "http"
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            [
+              "atlas_library_list",
+              "atlas_library_get",
+              "atlas_library_store",
+              "atlas_library_stats",
+              "atlas_library_templates",
+              "atlas_workspace_list",
+              "atlas_workspace_create",
+              "atlas_workspace_delete",
+              "atlas_workspace_describe",
+              "atlas_session_describe",
+              "atlas_session_cancel",
+              "atlas_jobs_list",
+              "atlas_jobs_describe",
+              "atlas_signals_list",
+              "atlas_signals_trigger",
+              "atlas_agents_list",
+              "atlas_agents_describe",
+              "atlas_glob",
+              "atlas_grep",
+              "atlas_ls",
+              "atlas_read",
+              "atlas_write",
+              "tavily_search",
+              "tavily_extract",
+              "tavily_crawl",
+              "atlas_bash",
+              "atlas_notify_email",
+            ]
+        client_config:
+          timeout: "30s"
+
       # GitHub MCP server for repository operations
       github:
         transport:
@@ -115,9 +150,9 @@ tools:
         tools:
           allow: ["send_message", "receive_stream"]
 
-      # Note: For file operations, prefer Atlas internal tools:
-      # atlas_read, atlas_write, atlas_list, atlas_glob, atlas_grep
-      # Only use external filesystem MCP if you need specific functionality
+      # Note: For file operations, use atlas-platform tools:
+      # atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
+      # Only use external filesystem MCP if you need specific functionality not available in atlas-platform
       filesystem:
         transport:
           type: "stdio"
@@ -264,7 +299,7 @@ jobs:
 
           # Tools granted specifically for this job
           tools:
-            allow: ["github", "atlas_library_get"]
+            allow: ["github", "atlas-platform"]
 
         # Agent with multiple context sources
         - id: "report-writer"
@@ -337,6 +372,10 @@ jobs:
 # AGENTS
 # ==============================================================================
 # All agent types with their specific configurations
+#
+# IMPORTANT: In the tools array, use MCP server names (e.g., "atlas-platform", "github")
+# NOT individual tool names (e.g., "atlas_read", "atlas_write")
+# The MCP server provides access to all its allowed tools
 
 agents:
   # LLM Agent - AI-powered agent
@@ -370,7 +409,7 @@ agents:
       #   toolName: "github"
 
       # Tools available to this agent (simple array format)
-      tools: ["github", "atlas_read", "atlas_write", "atlas_library_get"]
+      tools: ["github", "atlas-platform"]
 
       # Success/error handlers (like job level)
       success:
@@ -457,7 +496,7 @@ agents:
         Focus on practical, business-relevant insights.
       temperature: 0.5
       max_tokens: 3000
-      tools: ["atlas_library_get", "atlas_library_store"]
+      tools: ["atlas-platform"]
 
   # Report writer agent
   report-writer:

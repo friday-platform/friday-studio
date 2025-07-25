@@ -99,17 +99,19 @@ export class WorkspaceGenerator {
         // Check if we have minimum components for a functional workspace
         logger.debug("Analyzing generated workspace components");
         let hasMinimumComponents = false;
-        let signalCount = 0, agentCount = 0, jobCount = 0;
+        let signalCount = 0, agentCount = 0, jobCount = 0, hasAtlasPlatform = false;
         try {
           const config = workspaceBuilder.exportConfig();
           signalCount = Object.keys(config.signals || {}).length;
           agentCount = Object.keys(config.agents || {}).length;
           jobCount = Object.keys(config.jobs || {}).length;
+          hasAtlasPlatform = config.tools?.mcp?.servers?.["atlas-platform"] != null;
 
           logger.debug(
-            `Workspace components: ${signalCount} signals, ${agentCount} agents, ${jobCount} jobs`,
+            `Workspace components: ${signalCount} signals, ${agentCount} agents, ${jobCount} jobs, atlas-platform: ${hasAtlasPlatform}`,
           );
-          hasMinimumComponents = signalCount >= 1 && agentCount >= 1 && jobCount >= 1;
+          hasMinimumComponents = signalCount >= 1 && agentCount >= 1 && jobCount >= 1 &&
+            hasAtlasPlatform;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           logger.debug(`Failed to export config: ${errorMessage}`);
@@ -120,7 +122,9 @@ export class WorkspaceGenerator {
         logger.debug("Running workspace validation");
         const validation = hasMinimumComponents ? workspaceBuilder.validateWorkspace() : {
           success: false,
-          errors: ["Workspace incomplete - missing signals, agents, or jobs"],
+          errors: [
+            "Workspace incomplete - missing signals, agents, jobs, or atlas-platform MCP server",
+          ],
           warnings: [],
         };
 
@@ -201,14 +205,31 @@ Create a complete Atlas workspace configuration using the provided tools. You MU
 2. REQUIRED: Call addScheduleSignal OR addWebhookSignal for triggers
 3. REQUIRED: Call addLLMAgent AND/OR addRemoteAgent for workers
 4. REQUIRED: Call createJob to connect signals to agents
-5. OPTIONAL: Call addMCPIntegration if external services needed
-6. REQUIRED: Call validateWorkspace to check configuration
-7. REQUIRED: Call exportWorkspace to finalize
+5. REQUIRED: Call addAtlasPlatformMCP with specific tools needed for this workspace
+6. OPTIONAL: Call addMCPIntegration if external services needed
+7. REQUIRED: Call validateWorkspace to check configuration
+8. REQUIRED: Call exportWorkspace to finalize
 
 You must create AT LEAST:
 - 1 signal (trigger mechanism)
 - 2 agents (workers to perform tasks)
 - 1 job (connecting signals to agents)
+- atlas-platform MCP server with ONLY the specific tools needed
+
+**TOOL SELECTION GUIDANCE:**
+Analyze the user intent and select ONLY the Atlas tools actually needed:
+
+- **Web scraping/API calls**: atlas_fetch, atlas_web_session_* (if complex web automation needed)
+- **File operations**: atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
+- **Email notifications**: atlas_notify_email
+- **System commands**: atlas_bash
+- **Data persistence**: atlas_library_store, atlas_library_get, atlas_library_list
+- **Workspace management**: atlas_workspace_*, atlas_session_*, atlas_jobs_*
+
+**AVOID EXTERNAL MCP** if Atlas tools can handle the requirement:
+- DON'T add GitHub MCP if atlas_fetch can call GitHub API
+- DON'T add filesystem MCP if atlas_read/atlas_write sufficient
+- DON'T add email MCP if atlas_notify_email sufficient
 
 Do NOT stop after calling just initializeWorkspace. Continue calling tools until you have a complete, functional workspace with all components.
 

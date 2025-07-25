@@ -4,140 +4,6 @@
 
 import { z } from "zod/v4";
 import { tool } from "ai";
-import { agentTools } from "./agent.ts";
-import { conversationTools } from "./conversation.ts";
-import { filesystemTools } from "./filesystem.ts";
-import { jobTools } from "./job.ts";
-import { libraryTools } from "./library.ts";
-import { sessionTools } from "./session.ts";
-import { signalTools } from "./signal.ts";
-import { systemTools } from "./system.ts";
-import { workspaceTools } from "./workspace.ts";
-
-/**
- * Generate tools content using registry-like methods without circular dependencies
- */
-function generateToolsContentFromRegistry(): string {
-  // Create local tool registry structure
-  const toolCategories = {
-    filesystem: filesystemTools,
-    workspace: workspaceTools,
-    session: sessionTools,
-    job: jobTools,
-    signal: signalTools,
-    agent: agentTools,
-    library: libraryTools,
-    system: systemTools,
-    conversation: conversationTools,
-  };
-
-  // Get available categories (mimics registry.getAvailableCategories())
-  const availableCategories = Object.keys(toolCategories);
-
-  // Category display names and descriptions (derived from registry patterns)
-  const getCategoryDisplayName = (category: string): string => {
-    const displayNames: Record<string, string> = {
-      filesystem: "Filesystem Tools",
-      workspace: "Workspace Management Tools",
-      session: "Session Control Tools",
-      job: "Job Management Tools",
-      signal: "Signal Management Tools",
-      agent: "Agent Management Tools",
-      library: "Library Tools",
-      system: "System Integration Tools",
-      conversation: "Conversation Tools",
-    };
-    return displayNames[category] ||
-      `${category.charAt(0).toUpperCase()}${category.slice(1)} Tools`;
-  };
-
-  const getCategoryDescription = (category: string): string => {
-    const descriptions: Record<string, string> = {
-      filesystem: "File system operations for reading, writing, and searching files",
-      workspace: "Workspace lifecycle operations for managing Atlas workspaces",
-      session: "Session lifecycle management for controlling workspace execution",
-      job: "Job configuration and monitoring within workspaces",
-      signal: "Signal configuration and triggering for workspace automation",
-      agent: "Agent configuration and monitoring within workspaces",
-      library: "Knowledge and template management for reusable components",
-      system: "External system integrations and command execution",
-      conversation: "Real-time communication and conversation management",
-    };
-    return descriptions[category] || `Tools for ${category} operations`;
-  };
-
-  // Generate tools content (mimics registry methods)
-  let content = "### Currently Available Tools\n\n";
-  content += "Atlas provides these built-in tools organized by functionality:\n\n";
-
-  // Generate category sections (mimics registry.getToolsByCategory())
-  for (const category of availableCategories) {
-    const tools = toolCategories[category as keyof typeof toolCategories];
-    const displayName = getCategoryDisplayName(category);
-    const description = getCategoryDescription(category);
-
-    content += `**${displayName}** - ${description}\n\n`;
-
-    // List tools in category (mimics Object.entries(tools))
-    for (const [toolName, tool] of Object.entries(tools)) {
-      content += `- \`${toolName}\` - ${tool.description}\n`;
-    }
-    content += "\n";
-  }
-
-  // Add intent-based guidance (derived from common automation patterns)
-  content += "### Tool Selection by Intent\n\n";
-  content += "Choose tools based on what you want to accomplish:\n\n";
-
-  const intentGuidance = {
-    "Web Monitoring": [
-      "atlas_fetch - Scrape websites and APIs",
-      "atlas_bash - Run curl or specialized scraping tools",
-      "atlas_notify_email - Send alerts when changes detected",
-      "atlas_library_store - Remember previous states for comparison",
-    ],
-    "Data Processing": [
-      "atlas_read - Load data files",
-      "atlas_glob - Find all data files matching patterns",
-      "atlas_write - Save processed results",
-      "atlas_library_store - Cache processed data",
-    ],
-    "Code Analysis": [
-      "atlas_grep - Search code for patterns",
-      "atlas_read - Analyze specific files",
-      "atlas_bash - Run linters, tests, or build tools",
-      "atlas_notify_email - Report analysis results",
-    ],
-    "Workflow Automation": [
-      "atlas_workspace_jobs_list - Monitor job status",
-      "atlas_session_describe - Check execution details",
-      "atlas_bash - Execute automated tasks",
-      "atlas_stream_reply - Provide real-time updates",
-    ],
-    "Development & Testing": [
-      "atlas_create_workspace - Generate complete workspace configurations",
-      "atlas_workspace_describe - Examine workspace configurations",
-      "atlas_bash - Run tests and builds",
-      "atlas_workspace_delete - Clean up test workspaces",
-    ],
-    "Content Management": [
-      "atlas_library_list - Browse available content",
-      "atlas_library_get - Retrieve specific content",
-      "atlas_read - Analyze content files",
-      "atlas_write - Generate new content",
-    ],
-  };
-
-  for (const [intent, tools] of Object.entries(intentGuidance)) {
-    content += `**${intent}**:\n`;
-    for (const tool of tools) {
-      content += `- ${tool}\n`;
-    }
-    content += "\n";
-  }
-
-  return content;
-}
 
 const ATLAS_RESOURCES = {
   "atlas://guides/workspace-creation": {
@@ -145,6 +11,13 @@ const ATLAS_RESOURCES = {
     description: "Comprehensive guide for creating Atlas workspaces with patterns and examples",
     mimeType: "text/markdown",
     filePath: new URL("./resources/workspace-creation-guide.md", import.meta.url).pathname,
+  },
+  "atlas://guides/mcp-servers": {
+    name: "Atlas MCP Servers Configuration Guide",
+    description:
+      "Comprehensive guide for configuring MCP servers in Atlas workspaces with production-ready patterns",
+    mimeType: "text/markdown",
+    filePath: new URL("./resources/mcp-servers-guide.md", import.meta.url).pathname,
   },
   "atlas://reference/workspace": {
     name: "Atlas Workspace Reference",
@@ -161,6 +34,7 @@ export const resourceTools = {
 
 Available resources:
 - atlas://guides/workspace-creation - Comprehensive workspace creation guide with patterns and examples
+- atlas://guides/mcp-servers - MCP servers configuration guide with production-ready patterns
 - atlas://reference/workspace - Workspace YAML reference documentation
 
 Use this tool to access detailed technical documentation when helping users with workspace creation, configuration, or troubleshooting.`,
@@ -178,13 +52,7 @@ Use this tool to access detailed technical documentation when helping users with
       }
 
       try {
-        let content = await Deno.readTextFile(resource.filePath);
-
-        // For workspace creation guide, replace tools placeholder with generated content
-        if (uri === "atlas://guides/workspace-creation") {
-          const toolsContent = generateToolsContentFromRegistry();
-          content = content.replace("{{AVAILABLE_TOOLS}}", toolsContent);
-        }
+        const content = await Deno.readTextFile(resource.filePath);
 
         return {
           uri,
