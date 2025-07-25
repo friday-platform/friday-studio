@@ -95,7 +95,8 @@
     "@atlas/storage": "./packages/storage/mod.ts",
     "@atlas/reasoning": "./packages/reasoning/mod.ts",
     "@atlas/signals": "./packages/signals/mod.ts",
-    "@atlas/memory": "./packages/memory/mod.ts"
+    "@atlas/memory": "./packages/memory/mod.ts",
+    "@atlas/oapi-client": "./packages/openapi-client/mod.ts"
   },
   "fmt": {
     "lineWidth": 100

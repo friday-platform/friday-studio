@@ -56,6 +56,7 @@ maintaining transparent, debuggable interactions.
 │  │  - Communication principles                               │  │
 │  │  - Basic Atlas understanding                              │  │
 │  │  - Resource & streaming awareness                         │  │
+│  │  - Persistent task memory patterns                        │  │
 │  └───────────────────────────────────────────────────────────┘  │
 │                              │                                   │
 │                              ▼                                   │
@@ -65,28 +66,39 @@ maintaining transparent, debuggable interactions.
 │  │ - Workspace     │    │  - Rich tool call metadata          │ │
 │  │   creation      │    │  - Detailed result context          │ │
 │  │ - Debugging     │    │  - Resource access calls            │ │
-│  │ - Patterns      │    └──────────────────────────────────────┘ │
+│  │ - Task          │    │  - Todo memory operations           │ │
+│  │   continuity    │    └──────────────────────────────────────┘ │
 │  └─────────────────┘                      │                     │
 │          │                                ▼                     │
 │          ▼                    ┌──────────────────────────────────┐ │
-│  ┌─────────────────┐          │    atlas_stream_event Tool      │ │
-│  │ MCP Resources   │          │  - Event type preservation      │ │
-│  │ atlas://...     │          │  - Metadata attachment          │ │
-│  │ - guides        │          │  - Direct UI delivery           │ │
-│  │ - patterns      │          └──────────────────────────────────┘ │
-│  │ - tool lists    │                             │                │
+│  ┌─────────────────┐          │         Tool Ecosystem          │ │
+│  │ MCP Resources   │          │  - atlas_stream_event           │ │
+│  │ atlas://...     │          │  - atlas_todo_read              │ │
+│  │ - guides        │          │  - atlas_todo_write             │ │
+│  │ - patterns      │          │  - Resource access tools        │ │
+│  │ - tool lists    │          └──────────────────────────────────┘ │
 │  └─────────────────┘                             │                │
+│          │                                       │                │
+│          ▼                                       ▼                │
+│  ┌─────────────────┐          ┌──────────────────────────────────┐ │
+│  │ Conversational  │          │    Stream-Scoped Todo            │ │
+│  │ Task Memory     │◄────────►│         Storage                  │ │
+│  │ - Context       │          │  - StreamId isolation           │ │
+│  │   preservation │          │  - Structured TodoItems         │ │
+│  │ - Multi-step    │          │  - Status & priority tracking   │ │
+│  │   workflows     │          │  - Metadata for context         │ │
+│  └─────────────────┘          └──────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────┘
                                                    │
                                                    ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      UI Event Display                           │
 ├─────────────────────────────────────────────────────────────────┤
-│ thinking: Dimmed reasoning text                                 │
-│ tool_call: Tool name + arguments (including resource access)    │
-│ tool_result: Formatted return data                              │
-│ message_chunk: Primary conversation                             │
-│ error: Exception details + context                              │
+│ thinking: Dimmed reasoning text + todo planning                 │
+│ tool_call: Tool name + arguments (including todos & resources)  │
+│ tool_result: Formatted return data + task status updates        │
+│ message_chunk: Primary conversation + progress context          │
+│ error: Exception details + context + recovery plans             │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -94,10 +106,13 @@ maintaining transparent, debuggable interactions.
 
 - **Expert Knowledge**: MCP resources provide specialized domain expertise
 - **Lightweight Core**: 75% prompt reduction while maintaining capability
+- **Conversational Task Memory**: Context preservation across conversation turns within active
+  streams
 - **Transparent Operation**: Users see all tool calls, reasoning, and results
 - **Enhanced Debugging**: Complete technical context for failure diagnosis
 - **Educational Discovery**: Users learn Atlas concepts by observing interactions
 - **Scalable Expertise**: New capabilities added without core prompt changes
+- **Workflow Continuity**: Multi-step tasks tracked systematically without repetition
 
 ### 2.4 Resource Design Principles
 
@@ -179,7 +194,29 @@ they see it working. They shouldn't need to understand these concepts just to ge
 - Show the "what" before explaining the "how"
 - Let users dig deeper when they're ready
 
-### 3.4 Trust Through Visibility
+### 3.4 Conversational Task Continuity
+
+**Principle**: Maintain context and build upon previous work across conversation turns within the
+same stream to eliminate repetition and preserve user progress.
+
+**Rationale**: Technical users engage in complex, multi-step workflows that often span multiple
+conversation turns. The agent should remember completed tasks, preserve important context (workspace
+IDs, configurations), and avoid recreating existing resources or repeating completed work.
+
+**Todo Lifespan**: Todos are stored per conversation stream and persist across multiple conversation
+turns with the same user. They are automatically cleaned up after periods of inactivity to prevent
+indefinite accumulation while maintaining workflow continuity for active projects.
+
+**Application**:
+
+- Read todo list at conversation start to understand current context
+- Preserve workspace IDs, signal names, and configuration details in task metadata
+- Mark tasks as completed immediately after finishing to avoid duplication
+- Build upon previous work rather than starting from scratch
+- Use structured task tracking for complex multi-step workflows
+- Surface task progress naturally: "Building on the Nike workspace you created earlier..."
+
+### 3.5 Trust Through Visibility
 
 **Principle**: Build confidence by showing what's happening with appropriate technical context.
 
@@ -193,7 +230,7 @@ technical detail to understand and debug if needed.
 - Include relevant technical details: status codes, API endpoints, timing
 - Surface technical information naturally within task context
 
-### 3.5 Developer-Friendly Failures
+### 3.6 Developer-Friendly Failures
 
 **Principle**: When things go wrong, explain both the task impact and technical cause.
 
@@ -207,7 +244,7 @@ issues effectively.
 - Include actionable technical details: "Try adding User-Agent header to workspace.yml"
 - Balance task impact with debugging information
 
-### 3.6 Transparent Tool Interaction
+### 3.7 Transparent Tool Interaction
 
 **Principle**: Make tool usage visible to users while maintaining conversational flow.
 
@@ -223,7 +260,7 @@ users about Atlas capabilities.
 - Surface errors with full technical context: "Tool failed: HTTP 403 from nike.com"
 - Maintain task focus while showing technical operations
 
-### 3.7 Progressive Technical Disclosure
+### 3.8 Progressive Technical Disclosure
 
 **Principle**: Rich events should reveal Atlas concepts organically through observable interactions.
 
@@ -403,6 +440,70 @@ conversation flow. Users see exactly what tools are called, with what parameters
 they return. This builds trust and enables debugging while keeping the conversation focused on the
 user's goal.
 
+### 5.7 The Conversational Task Memory Case
+
+**Session 1 Request**: "Create a workspace to monitor Nike's website for new shoes"
+
+**Session 1 Process**:
+
+```
+💭 Let me check my todo list first to understand any existing context...
+🔧 Calling: atlas_todo_read(streamId: "user-123")
+✅ Empty todo list - starting fresh
+
+💭 I'll create todos for this multi-step workspace creation...
+🔧 Calling: atlas_todo_write
+   todos: [
+     { id: "1", content: "Create Nike monitoring workspace", status: "pending", 
+       metadata: {} },
+     { id: "2", content: "Configure web scraping job", status: "pending" },
+     { id: "3", content: "Set up Discord notifications", status: "pending" }
+   ]
+
+💭 Starting with workspace creation...
+🔧 Calling: atlas_workspace_draft_create(name: "nike-monitor")
+✅ Workspace created with ID: ws-nike-abc123
+
+🔧 Calling: atlas_todo_write  
+   todos: [
+     { id: "1", content: "Create Nike monitoring workspace", status: "completed",
+       metadata: { workspaceId: "ws-nike-abc123", workspaceName: "nike-monitor" } },
+     { id: "2", content: "Configure web scraping job", status: "in_progress" },
+     { id: "3", content: "Set up Discord notifications", status: "pending" }
+   ]
+```
+
+**Session 1 Response**: "I've created a Nike monitoring workspace and started configuring the web
+scraping. The workspace ID is ws-nike-abc123. Ready to continue with Discord notifications?"
+
+---
+
+**Session 2 Request** (later): "Set up the Discord notifications for Nike monitoring"
+
+**Session 2 Process**:
+
+```
+💭 Let me check my todo list to understand the current context...
+🔧 Calling: atlas_todo_read(streamId: "user-123")
+✅ Found existing todos:
+   - [completed] Create Nike monitoring workspace (ws-nike-abc123)
+   - [in_progress] Configure web scraping job  
+   - [pending] Set up Discord notifications
+
+💭 I can see we already have the Nike workspace created. Let me work on the Discord setup...
+🔧 Calling: atlas_workspace_draft_update
+   draftId: "ws-nike-abc123"
+   config: { notifications: { discord: { webhook: "..." } } }
+```
+
+**Session 2 Response**: "I'm building on the Nike monitoring workspace (ws-nike-abc123) you created
+earlier. Adding Discord notifications now..."
+
+**Precedent**: Todo memory eliminates workspace recreation and provides seamless context
+preservation. Users experience continuity across conversation turns within their stream while the
+agent maintains all necessary technical context (workspace IDs, configuration state, task progress)
+without requiring re-explanation.
+
 ## 6. Hierarchy and Dependencies
 
 ### 6.1 Priority Order
@@ -512,6 +613,13 @@ When principles conflict:
 - **Educational tool discovery working**: Users learn Atlas concepts by observing agent interactions
 - **Single event path achieved**: Eliminated duplicate streaming mechanisms and plain text
   flattening
+- **Conversational task memory implemented**: Todo storage with `atlas_todo_read` and
+  `atlas_todo_write` tools scoped to conversation streams
+- **Stream-scoped context preservation**: Workspace IDs, configurations, and task state persist
+  across conversation turns within the same stream
+- **Multi-step workflow tracking**: Complex tasks tracked systematically without duplication
+- **Resource context elimination**: Agent no longer recreates existing workspaces or repeats
+  completed work
 - Task-focused conversation design active
 - Progressive disclosure of technical concepts working
 - Natural language intent recognition strong

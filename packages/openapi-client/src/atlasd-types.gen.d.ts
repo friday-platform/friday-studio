@@ -59,6 +59,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/workspaces/create": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Create workspace from configuration
+     * @description Create workspace files and register workspace from generated configuration
+     */
+    post: operations["POSTApiWorkspacesCreate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/workspaces/{workspaceId}/signals/{signalId}": {
     parameters: {
       query?: never;
@@ -135,7 +155,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/drafts": {
+  "/api/todo-storage/{streamId}": {
     parameters: {
       query?: never;
       header?: never;
@@ -143,23 +163,27 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * List workspace drafts
-     * @description Get a list of workspace drafts with optional filtering
+     * Retrieve todo list
+     * @description Get the todo list for the given stream ID with optional filtering
      */
-    get: operations["GETApiDrafts"];
+    get: operations["GETApiTodo-storage:streamId"];
     put?: never;
     /**
-     * Create workspace draft
-     * @description Create a new workspace draft for iterative development
+     * Store todo list
+     * @description Store or update the complete todo list for the given stream ID
      */
-    post: operations["POSTApiDrafts"];
-    delete?: never;
+    post: operations["POSTApiTodo-storage:streamId"];
+    /**
+     * Delete todo list
+     * @description Delete all todos for the given stream ID
+     */
+    delete: operations["DELETEApiTodo-storage:streamId"];
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/drafts/{draftId}": {
+  "/api/todo-storage": {
     parameters: {
       query?: never;
       header?: never;
@@ -167,60 +191,12 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Show draft configuration
-     * @description Display current draft configuration with formatting options
+     * List all todo streams
+     * @description Get a list of all stream IDs that have todo data (admin endpoint)
      */
-    get: operations["GETApiDrafts:draftId"];
+    get: operations["GETApiTodo-storage"];
     put?: never;
     post?: never;
-    /**
-     * Delete workspace draft
-     * @description Delete a workspace draft and its history
-     */
-    delete: operations["DELETEApiDrafts:draftId"];
-    options?: never;
-    head?: never;
-    /**
-     * Update workspace draft
-     * @description Apply incremental updates to a workspace draft
-     */
-    patch: operations["PATCHApiDrafts:draftId"];
-    trace?: never;
-  };
-  "/api/drafts/{draftId}/validate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Validate draft configuration
-     * @description Validate the current draft configuration against workspace schema
-     */
-    post: operations["POSTApiDrafts:draftIdValidate"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/drafts/{draftId}/publish": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /**
-     * Publish draft as workspace
-     * @description Convert draft to actual workspace configuration file
-     */
-    post: operations["POSTApiDrafts:draftIdPublish"];
     delete?: never;
     options?: never;
     head?: never;
@@ -400,6 +376,94 @@ export interface operations {
         };
       };
       /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @description Error message */
+            error: string;
+            /** @description Error code */
+            code?: string;
+            /** @description Additional error details */
+            details?: unknown;
+          };
+        };
+      };
+    };
+  };
+  POSTApiWorkspacesCreate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: {
+      content: {
+        "application/json": {
+          /** @description Generated workspace configuration */
+          config: {
+            [key: string]: unknown;
+          };
+          /** @description Custom workspace directory name (auto-resolves conflicts with -2, -3, etc.) */
+          workspaceName?: string;
+        };
+      };
+    };
+    responses: {
+      /** @description Workspace created successfully */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            success: boolean;
+            /** @description Workspace information */
+            workspace?: {
+              /** @description Unique workspace identifier (Docker-style name) */
+              id: string;
+              /** @description Human-readable workspace name */
+              name: string;
+              /** @description Workspace description */
+              description?: string;
+              /**
+               * @description Current status of the workspace
+               * @enum {string}
+               */
+              status: "stopped" | "starting" | "running" | "stopping" | "crashed" | "unknown";
+              /** @description Filesystem path to the workspace */
+              path: string;
+              /** @description ISO 8601 timestamp when workspace was created */
+              createdAt: string;
+              /** @description ISO 8601 timestamp when workspace was last seen */
+              lastSeen: string;
+            };
+            workspacePath?: string;
+            filesCreated?: string[];
+            error?: string;
+          };
+        };
+      };
+      /** @description Invalid configuration */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @description Error message */
+            error: string;
+            /** @description Error code */
+            code?: string;
+            /** @description Additional error details */
+            details?: unknown;
+          };
+        };
+      };
+      /** @description Creation failed */
       500: {
         headers: {
           [name: string]: unknown;
@@ -712,49 +776,65 @@ export interface operations {
       };
     };
   };
-  GETApiDrafts: {
+  "GETApiTodo-storage:streamId": {
     parameters: {
       query?: {
-        sessionId?: string;
-        conversationId?: string;
-        includeDetails?: boolean;
+        status?: "pending" | "in_progress" | "completed" | "cancelled";
+        priority?: "high" | "medium" | "low";
+        limit?: number;
       };
       header?: never;
-      path?: never;
+      path: {
+        streamId: string;
+      };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
-      /** @description Drafts retrieved successfully */
+      /** @description Todo list retrieved successfully */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
           "application/json": {
-            drafts: {
+            success: boolean;
+            todos: {
+              /** @description Unique identifier for the todo item */
               id: string;
-              name: string;
-              description: string;
-              config: {
+              /** @description Brief description of the task */
+              content: string;
+              /**
+               * @description Current status of the task
+               * @enum {string}
+               */
+              status: "pending" | "in_progress" | "completed" | "cancelled";
+              /**
+               * @description Priority level of the task
+               * @enum {string}
+               */
+              priority: "high" | "medium" | "low";
+              /** @description Additional context (workspace names, IDs, etc.) */
+              metadata?: {
                 [key: string]: unknown;
               };
-              iterations: {
-                timestamp: string;
-                operation: string;
-                config: {
-                  [key: string]: unknown;
-                };
-                summary: string;
-              }[];
+              /** @description ISO timestamp of creation */
               createdAt: string;
+              /** @description ISO timestamp of last update */
               updatedAt: string;
-              /** @enum {string} */
-              status: "draft" | "published" | "abandoned";
-              sessionId: string;
-              userId: string;
             }[];
-            total: number;
+            todoCount: number;
+          };
+        };
+      };
+      /** @description Stream not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: string;
           };
         };
       };
@@ -771,69 +851,57 @@ export interface operations {
       };
     };
   };
-  POSTApiDrafts: {
+  "POSTApiTodo-storage:streamId": {
     parameters: {
       query?: never;
       header?: never;
-      path?: never;
+      path: {
+        streamId: string;
+      };
       cookie?: never;
     };
     requestBody?: {
       content: {
         "application/json": {
-          /** @description Name of the draft */
-          name: string;
-          /** @description Description of the draft */
-          description: string;
-          /** @description Initial workspace configuration */
-          initialConfig?: {
-            [key: string]: unknown;
-          };
-          /** @description Associated session ID */
-          sessionId?: string;
-          /** @description Associated conversation ID */
-          conversationId?: string;
+          /** @description Complete todo list to store */
+          todos: {
+            /** @description Unique identifier for the todo item */
+            id: string;
+            /** @description Brief description of the task */
+            content: string;
+            /**
+             * @description Current status of the task
+             * @enum {string}
+             */
+            status: "pending" | "in_progress" | "completed" | "cancelled";
+            /**
+             * @description Priority level of the task
+             * @enum {string}
+             */
+            priority: "high" | "medium" | "low";
+            /** @description Additional context (workspace names, IDs, etc.) */
+            metadata?: {
+              [key: string]: unknown;
+            };
+            /** @description ISO timestamp of creation */
+            createdAt: string;
+            /** @description ISO timestamp of last update */
+            updatedAt: string;
+          }[];
         };
       };
     };
     responses: {
-      /** @description Draft created successfully */
+      /** @description Todos stored successfully */
       200: {
         headers: {
           [name: string]: unknown;
         };
         content: {
           "application/json": {
-            /** @description Workspace draft */
-            draft: {
-              id: string;
-              name: string;
-              description: string;
-              config: {
-                [key: string]: unknown;
-              };
-              iterations: {
-                timestamp: string;
-                operation: string;
-                config: {
-                  [key: string]: unknown;
-                };
-                summary: string;
-              }[];
-              createdAt: string;
-              updatedAt: string;
-              /** @enum {string} */
-              status: "draft" | "published" | "abandoned";
-              sessionId: string;
-              userId: string;
-            };
-            /** @description Configuration validation result */
-            validation?: {
-              valid: boolean;
-              errors: string[];
-              warnings: string[];
-            };
             success: boolean;
+            message?: string;
+            error?: string;
           };
         };
       };
@@ -861,90 +929,18 @@ export interface operations {
       };
     };
   };
-  "GETApiDrafts:draftId": {
-    parameters: {
-      query?: {
-        format?: "yaml" | "json" | "summary";
-      };
-      header?: never;
-      path: {
-        draftId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Draft configuration retrieved successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            /** @description Workspace draft */
-            draft: {
-              id: string;
-              name: string;
-              description: string;
-              config: {
-                [key: string]: unknown;
-              };
-              iterations: {
-                timestamp: string;
-                operation: string;
-                config: {
-                  [key: string]: unknown;
-                };
-                summary: string;
-              }[];
-              createdAt: string;
-              updatedAt: string;
-              /** @enum {string} */
-              status: "draft" | "published" | "abandoned";
-              sessionId: string;
-              userId: string;
-            };
-            config: string;
-            format: string;
-          };
-        };
-      };
-      /** @description Draft not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "DELETEApiDrafts:draftId": {
+  "DELETEApiTodo-storage:streamId": {
     parameters: {
       query?: never;
       header?: never;
       path: {
-        draftId: string;
+        streamId: string;
       };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
-      /** @description Draft deleted successfully */
+      /** @description Todos deleted successfully */
       200: {
         headers: {
           [name: string]: unknown;
@@ -952,202 +948,12 @@ export interface operations {
         content: {
           "application/json": {
             success: boolean;
-          };
-        };
-      };
-      /** @description Draft not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "PATCHApiDrafts:draftId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draftId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        "application/json": {
-          /** @description Configuration updates to apply */
-          updates: {
-            [key: string]: unknown;
-          };
-          /** @description Description of the updates being applied */
-          updateDescription: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Draft updated successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            /** @description Workspace draft */
-            draft: {
-              id: string;
-              name: string;
-              description: string;
-              config: {
-                [key: string]: unknown;
-              };
-              iterations: {
-                timestamp: string;
-                operation: string;
-                config: {
-                  [key: string]: unknown;
-                };
-                summary: string;
-              }[];
-              createdAt: string;
-              updatedAt: string;
-              /** @enum {string} */
-              status: "draft" | "published" | "abandoned";
-              sessionId: string;
-              userId: string;
-            };
-            /** @description Configuration validation result */
-            validation?: {
-              valid: boolean;
-              errors: string[];
-              warnings: string[];
-            };
-            success: boolean;
-          };
-        };
-      };
-      /** @description Draft not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "POSTApiDrafts:draftIdValidate": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draftId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Validation completed */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            valid: boolean;
-            errors: string[];
-            warnings: string[];
-          };
-        };
-      };
-      /** @description Draft not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "POSTApiDrafts:draftIdPublish": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        draftId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        "application/json": {
-          /** @description Optional custom path for the workspace */
-          path?: string;
-          /** @description Whether to overwrite existing workspace */
-          overwrite?: boolean;
-        };
-      };
-    };
-    responses: {
-      /** @description Draft published successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            workspacePath?: string;
-            filesCreated?: string[];
+            deleted?: boolean;
             error?: string;
           };
         };
       };
-      /** @description Draft not found */
+      /** @description Stream not found */
       404: {
         headers: {
           [name: string]: unknown;
@@ -1155,6 +961,41 @@ export interface operations {
         content: {
           "application/json": {
             error: string;
+          };
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            error: string;
+          };
+        };
+      };
+    };
+  };
+  "GETApiTodo-storage": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Stream list retrieved successfully */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            success: boolean;
+            streams: string[];
+            total: number;
           };
         };
       };

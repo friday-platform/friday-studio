@@ -206,10 +206,16 @@ export const atlas_conversation_storage = tool({
 });
 
 /**
- * Export all conversation tools
+ * Import todo tools to include in conversation tools
+ */
+import { todoTools } from "./todo.ts";
+
+/**
+ * Export all conversation tools (including todo tools for streamId context injection)
  */
 export const conversationTools = {
   atlas_stream_reply,
   atlas_stream_event,
   atlas_conversation_storage,
+  ...todoTools, // Include todo tools for automatic streamId context injection
 };

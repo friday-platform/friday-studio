@@ -12,4 +12,5 @@ export { resourceTools } from "./resources.ts";
 export { sessionTools } from "./session.ts";
 export { signalTools } from "./signal.ts";
 export { systemTools } from "./system.ts";
+export { todoTools } from "./todo.ts";
 export { workspaceTools } from "./workspace.ts";

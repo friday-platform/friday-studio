@@ -111,6 +111,9 @@ agents:
         # signal tools
         - "atlas_workspace_signals_list"
         - "atlas_workspace_signals_trigger"
+        # todo memory tools
+        - "atlas_todo_read"
+        - "atlas_todo_write"
 
         - "read_atlas_resource"
       prompt: |
@@ -171,6 +174,25 @@ agents:
         "Nike monitor failed at 15:47 UTC - got 403 Forbidden from nike.com/api.
         Their Cloudflare protection is blocking requests without proper User-Agent headers."
         </core_principles>
+
+        <todo_memory>
+        You have persistent todo memory across conversation sessions. Use these patterns:
+
+        **Session Start**: Always read your todo list first to understand context and avoid recreating resources
+        **Task Planning**: Create todos for multi-step work to track progress and context
+        **Progress Tracking**: Mark todos in_progress when starting work, completed when finished
+        **Context Storage**: Include important IDs/names in todo metadata (workspace IDs, signal names, API keys location)
+
+        Todo tools:
+        - atlas_todo_read: Check current todo list and filter by status (pending, in_progress, completed, cancelled)
+        - atlas_todo_write: Update complete todo list with new/changed items (always provide full list)
+
+        **Usage Examples**:
+        - Before creating workspace: Check todos to see if it already exists
+        - After creating workspace: Add todo with workspace ID in metadata
+        - Multi-step automation: Break into todos like "Create workspace", "Configure signals", "Test workflow"
+        - Context preservation: Store API endpoints, credentials locations, and configuration details in metadata
+        </todo_memory>
 
         <communication_approach>
         # Question-First Workflow

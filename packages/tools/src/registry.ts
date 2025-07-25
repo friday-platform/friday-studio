@@ -198,6 +198,14 @@ export class AtlasToolRegistry {
         injectableFields: ["streamId"],
         supportsContextInjection: true,
       },
+      "atlas_todo_read": {
+        injectableFields: ["streamId"],
+        supportsContextInjection: true,
+      },
+      "atlas_todo_write": {
+        injectableFields: ["streamId"],
+        supportsContextInjection: true,
+      },
       // Add more context-dependent tools here as needed
     };
   }
@@ -256,7 +264,7 @@ export class AtlasToolRegistry {
     requirements: { injectableFields: (keyof AgentContext)[] },
   ): ContextInjectionResult {
     // Check if any required context is actually provided (non-null, non-undefined)
-    const availableContext: Record<string, any> = {};
+    const availableContext: Record<string, unknown> = {};
     let hasValidContext = false;
 
     for (const field of requirements.injectableFields) {
@@ -277,8 +285,36 @@ export class AtlasToolRegistry {
     }
 
     // Create context-injected tool (currently only handles streamId for atlas_stream_reply)
-    if (toolName === "atlas_stream_reply" && availableContext.streamId) {
+    if (
+      toolName === "atlas_stream_reply" && availableContext.streamId &&
+      typeof availableContext.streamId === "string"
+    ) {
       const contextAwareTool = this.createContextAwareStreamReplyTool(availableContext.streamId);
+      return {
+        tool: contextAwareTool,
+        contextInjected: true,
+        injectedFields: ["streamId"],
+      };
+    }
+
+    // Handle todo tools with streamId context injection
+    if (
+      toolName === "atlas_todo_read" && availableContext.streamId &&
+      typeof availableContext.streamId === "string"
+    ) {
+      const contextAwareTool = this.createContextAwareTodoReadTool(availableContext.streamId);
+      return {
+        tool: contextAwareTool,
+        contextInjected: true,
+        injectedFields: ["streamId"],
+      };
+    }
+
+    if (
+      toolName === "atlas_todo_write" && availableContext.streamId &&
+      typeof availableContext.streamId === "string"
+    ) {
+      const contextAwareTool = this.createContextAwareTodoWriteTool(availableContext.streamId);
       return {
         tool: contextAwareTool,
         contextInjected: true,
@@ -334,6 +370,93 @@ export class AtlasToolRegistry {
   }
 
   /**
+   * Create context-aware version of atlas_todo_read tool
+   */
+  private createContextAwareTodoReadTool(streamId: string): Tool {
+    return tool({
+      description:
+        "Read current todo list for the session to understand completed and pending tasks. The stream ID is automatically provided via context.",
+      inputSchema: z.object({
+        status: z.enum(["pending", "in_progress", "completed", "cancelled"]).optional()
+          .describe("Filter todos by status to focus on specific task states"),
+        priority: z.enum(["high", "medium", "low"]).optional()
+          .describe("Filter todos by priority level"),
+        limit: z.number().optional().describe("Maximum number of todos to return"),
+      }),
+      execute: async ({ status, priority, limit }) => {
+        if (!streamId) {
+          throw new Error(
+            "streamId is required for atlas_todo_read but was not provided in the context",
+          );
+        }
+
+        // Get the original tool and call it with injected streamId
+        const originalTool = this.getToolByName("atlas_todo_read");
+        if (!originalTool?.execute) {
+          throw new Error("atlas_todo_read tool execute function not found");
+        }
+
+        return await originalTool.execute({
+          streamId,
+          status,
+          priority,
+          limit,
+        }, {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+        });
+      },
+    });
+  }
+
+  /**
+   * Create context-aware version of atlas_todo_write tool
+   */
+  private createContextAwareTodoWriteTool(streamId: string): Tool {
+    return tool({
+      description:
+        "Create and manage structured task list for conversation session. The stream ID is automatically provided via context.",
+      inputSchema: z.object({
+        todos: z.array(z.object({
+          id: z.string().describe("Unique identifier for the todo item"),
+          content: z.string().min(1).describe("Brief description of the task"),
+          status: z.enum(["pending", "in_progress", "completed", "cancelled"])
+            .describe("Current status of the task"),
+          priority: z.enum(["high", "medium", "low"])
+            .describe("Priority level of the task"),
+          metadata: z.record(z.string(), z.unknown()).optional()
+            .describe("Additional context (workspace names, IDs, etc.)"),
+          createdAt: z.string().describe("ISO timestamp of creation"),
+          updatedAt: z.string().describe("ISO timestamp of last update"),
+        })).describe(
+          "Complete todo list to store. This replaces the existing list, so include all todos you want to keep.",
+        ),
+      }),
+      execute: async ({ todos }) => {
+        if (!streamId) {
+          throw new Error(
+            "streamId is required for atlas_todo_write but was not provided in the context",
+          );
+        }
+
+        // Get the original tool and call it with injected streamId
+        const originalTool = this.getToolByName("atlas_todo_write");
+        if (!originalTool?.execute) {
+          throw new Error("atlas_todo_write tool execute function not found");
+        }
+
+        return await originalTool.execute({
+          streamId,
+          todos,
+        }, {
+          toolCallId: crypto.randomUUID(),
+          messages: [],
+        });
+      },
+    });
+  }
+
+  /**
    * Extract tool name from AI SDK Tool (best effort)
    */
   private extractToolName(tool: Tool): string | null {
@@ -365,7 +488,7 @@ const defaultRegistry = new AtlasToolRegistry({
   agent: agentTools,
   library: libraryTools,
   system: systemTools,
-  conversation: conversationTools,
+  conversation: conversationTools, // Now includes todo tools for streamId context injection
   resource: resourceTools,
 });
 
@@ -386,7 +509,7 @@ export const atlasTools = defaultRegistry.getAllTools();
  */
 export {
   agentTools,
-  conversationTools,
+  conversationTools, // Now includes todo tools
   filesystemTools,
   jobTools,
   libraryTools,

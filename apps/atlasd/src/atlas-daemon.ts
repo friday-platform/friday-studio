@@ -23,6 +23,7 @@ import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage.ts";
+import { todoStorageRoutes } from "../routes/todo-storage.ts";
 import { signalRoutes } from "../routes/signals.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
@@ -274,6 +275,9 @@ export class AtlasDaemon implements AppContext {
 
     // Mount conversation storage routes
     this.app.route("", conversationStorageRoutes);
+
+    // Mount todo storage routes
+    this.app.route("", todoStorageRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {
