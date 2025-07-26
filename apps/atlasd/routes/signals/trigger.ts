@@ -1,56 +1,14 @@
-import { z } from "zod/v4";
-import { daemonFactory } from "../src/factory.ts";
+import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { SignalTriggerRequestSchema } from "@atlas/config";
-import { AtlasTelemetry } from "../../../src/utils/telemetry.ts";
-import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
+import { AtlasLogger } from "../../../../src/utils/logger.ts";
+import { errorResponseSchema, signalPathSchema, signalTriggerResponseSchema } from "./schemas.ts";
 
-// Create app instance using factory
-const signalRoutes = daemonFactory.createApp();
+const triggerSignal = daemonFactory.createApp();
 
-// ============================================================================
-// Zod Schemas
-// ============================================================================
-
-// Define response schemas
-const signalTriggerResponseSchema = z
-  .object({
-    message: z.string().meta({ description: "Status message" }),
-    status: z.literal("processing").meta({ description: "Processing status" }),
-    workspaceId: z.string().meta({ description: "Workspace identifier" }),
-    signalId: z.string().meta({ description: "Signal identifier" }),
-    sessionId: z
-      .string()
-      .meta({ description: "Created session ID" }),
-  })
-  .meta({
-    description: "Signal trigger response",
-  });
-
-const errorResponseSchema = z
-  .object({
-    error: z.string().meta({ description: "Error message" }),
-  })
-  .meta({
-    description: "Error response",
-  });
-
-// Define path parameter schema
-const signalPathSchema = z.object({
-  workspaceId: z.string().meta({
-    description: "Workspace identifier (ID or name)",
-  }),
-  signalId: z.string().meta({
-    description: "Signal name as defined in workspace configuration",
-  }),
-});
-
-// ============================================================================
-// Signal Endpoint
-// ============================================================================
-
-signalRoutes.post(
-  "/:workspaceId/signals/:signalId",
+triggerSignal.post(
+  "/",
   describeRoute({
     tags: ["Signals"],
     summary: "Trigger workspace signal",
@@ -181,4 +139,4 @@ enables real-time progress feedback in the UI.
   },
 );
 
-export { signalRoutes };
+export { triggerSignal };

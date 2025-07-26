@@ -107,83 +107,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/conversation-storage/{streamId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Retrieve conversation history
-     * @description Get the complete conversation history for the given stream ID
-     */
-    get: operations["GETApiConversation-storage:streamId"];
-    put?: never;
-    /**
-     * Store conversation message
-     * @description Store a message in the conversation history for the given stream ID
-     */
-    post: operations["POSTApiConversation-storage:streamId"];
-    /**
-     * Delete conversation
-     * @description Delete all conversation history for the given stream ID
-     */
-    delete: operations["DELETEApiConversation-storage:streamId"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/conversation-storage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * List conversations
-     * @description Get a list of all conversations with summary information
-     */
-    get: operations["GETApiConversation-storage"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/todo-storage/{streamId}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * Retrieve todo list
-     * @description Get the todo list for the given stream ID with optional filtering
-     */
-    get: operations["GETApiTodo-storage:streamId"];
-    put?: never;
-    /**
-     * Store todo list
-     * @description Store or update the complete todo list for the given stream ID
-     */
-    post: operations["POSTApiTodo-storage:streamId"];
-    /**
-     * Delete todo list
-     * @description Delete all todos for the given stream ID
-     */
-    delete: operations["DELETEApiTodo-storage:streamId"];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/todo-storage": {
+  "/": {
     parameters: {
       query?: never;
       header?: never;
@@ -194,10 +118,38 @@ export interface paths {
      * List all todo streams
      * @description Get a list of all stream IDs that have todo data (admin endpoint)
      */
-    get: operations["GETApiTodo-storage"];
+    get: operations["GETIndex"];
     put?: never;
     post?: never;
     delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/{streamId}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Retrieve todo list
+     * @description Get the todo list for the given stream ID with optional filtering
+     */
+    get: operations["GET:streamId"];
+    put?: never;
+    /**
+     * Store todo list
+     * @description Store or update the complete todo list for the given stream ID
+     */
+    post: operations["POST:streamId"];
+    /**
+     * Delete todo list
+     * @description Delete all todos for the given stream ID
+     */
+    delete: operations["DELETE:streamId"];
     options?: never;
     head?: never;
     patch?: never;
@@ -565,175 +517,7 @@ export interface operations {
       };
     };
   };
-  "GETApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation history retrieved successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            messages: {
-              messageId: string;
-              userId?: string;
-              content: string;
-              timestamp: string;
-              /** @enum {string} */
-              role: "user" | "assistant";
-              metadata?: {
-                [key: string]: unknown;
-              };
-            }[];
-            messageCount: number;
-          };
-        };
-      };
-      /** @description Conversation not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "POSTApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: {
-      content: {
-        "application/json": {
-          message: {
-            /** @enum {string} */
-            role: "user" | "assistant";
-            content: string;
-          };
-          metadata?: {
-            [key: string]: unknown;
-          };
-          timestamp: string;
-        };
-      };
-    };
-    responses: {
-      /** @description Message stored successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            messageId?: string;
-            error?: string;
-          };
-        };
-      };
-      /** @description Invalid request data */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "DELETEApiConversation-storage:streamId": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        streamId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Conversation deleted successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            deleted?: boolean;
-            error?: string;
-          };
-        };
-      };
-      /** @description Conversation not found */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "GETApiConversation-storage": {
+  GETIndex: {
     parameters: {
       query?: {
         limit?: number;
@@ -745,7 +529,7 @@ export interface operations {
     };
     requestBody?: never;
     responses: {
-      /** @description Conversation list retrieved successfully */
+      /** @description Stream list retrieved successfully */
       200: {
         headers: {
           [name: string]: unknown;
@@ -753,12 +537,7 @@ export interface operations {
         content: {
           "application/json": {
             success: boolean;
-            conversations: {
-              streamId: string;
-              messageCount: number;
-              lastMessage: string;
-              lastTimestamp: string;
-            }[];
+            streams: string[];
             total: number;
           };
         };
@@ -776,7 +555,7 @@ export interface operations {
       };
     };
   };
-  "GETApiTodo-storage:streamId": {
+  "GET:streamId": {
     parameters: {
       query?: {
         status?: "pending" | "in_progress" | "completed" | "cancelled";
@@ -851,7 +630,7 @@ export interface operations {
       };
     };
   };
-  "POSTApiTodo-storage:streamId": {
+  "POST:streamId": {
     parameters: {
       query?: never;
       header?: never;
@@ -929,7 +708,7 @@ export interface operations {
       };
     };
   };
-  "DELETEApiTodo-storage:streamId": {
+  "DELETE:streamId": {
     parameters: {
       query?: never;
       header?: never;
@@ -961,41 +740,6 @@ export interface operations {
         content: {
           "application/json": {
             error: string;
-          };
-        };
-      };
-      /** @description Internal server error */
-      500: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            error: string;
-          };
-        };
-      };
-    };
-  };
-  "GETApiTodo-storage": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Stream list retrieved successfully */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": {
-            success: boolean;
-            streams: string[];
-            total: number;
           };
         };
       };
