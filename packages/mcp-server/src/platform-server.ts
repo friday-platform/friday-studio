@@ -11,6 +11,7 @@ import { registerResources } from "./resources/index.ts";
 import type { ResourceContext } from "./resources/types.ts";
 import { PromptContext } from "./prompts/types.ts";
 import { registerPrompts } from "./prompts/index.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 // Logger interface for dependency injection
 export interface Logger {
@@ -21,7 +22,7 @@ export interface Logger {
 }
 
 export interface PlatformMCPServerDependencies {
-  daemonUrl?: string; // Default: http://localhost:8080
+  daemonUrl?: string; // Default: from getAtlasDaemonUrl()
   logger: Logger;
 }
 
@@ -31,7 +32,7 @@ export class PlatformMCPServer {
   private logger: Logger;
 
   constructor(dependencies: PlatformMCPServerDependencies) {
-    this.daemonUrl = dependencies.daemonUrl || "http://localhost:8080";
+    this.daemonUrl = dependencies.daemonUrl || getAtlasDaemonUrl();
     this.logger = dependencies.logger;
 
     // Initialize MCP server

@@ -2,6 +2,7 @@
  * Daemon API client for CLI commands
  * All CLI commands should use this to communicate with the daemon
  */
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 export interface DaemonClientOptions {
   daemonUrl?: string;
@@ -90,11 +91,9 @@ export interface TemplateConfig {
 export class DaemonClient {
   private daemonUrl: string;
   private timeout: number;
-  private attemptedStart = false;
-  private startingDaemon = false;
 
   constructor(options: DaemonClientOptions = {}) {
-    this.daemonUrl = options.daemonUrl || "http://localhost:8080";
+    this.daemonUrl = options.daemonUrl || getAtlasDaemonUrl();
     this.timeout = options.timeout || 10000; // 10 seconds
   }
 
@@ -478,18 +477,16 @@ export class DaemonClient {
       // Try the request first
       return await this.makeRequestInternal(path, options);
     } catch (error) {
-      // If it's a connection error and we haven't tried starting the daemon yet
+      // If it's a connection error, provide a helpful message
       if (
         error instanceof DaemonApiError &&
-        error.status === 503 &&
-        !this.attemptedStart &&
-        !this.startingDaemon
+        error.status === 503
       ) {
-        // Attempt to auto-start the daemon
-        await this.autoStartDaemon();
-
-        // Retry the request
-        return await this.makeRequestInternal(path, options);
+        // Replace the technical error with a user-friendly message
+        throw new DaemonApiError(
+          "Atlas daemon is not running. Please start it manually with 'atlas service start'",
+          503,
+        );
       }
 
       throw error;
@@ -550,84 +547,6 @@ export class DaemonClient {
       );
     }
   }
-
-  /**
-   * Auto-start the daemon if it's not running
-   */
-  private async autoStartDaemon(): Promise<void> {
-    // Prevent multiple concurrent start attempts
-    if (this.startingDaemon) {
-      // Wait for the other start attempt to complete
-      while (this.startingDaemon) {
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      return;
-    }
-
-    this.startingDaemon = true;
-    this.attemptedStart = true;
-
-    try {
-      // Check one more time if daemon is running (in case another process started it)
-      if (await this.isHealthy()) {
-        return;
-      }
-
-      // Get the port from the daemon URL
-      const url = new URL(this.daemonUrl);
-      const port = url.port || "8080";
-
-      // Start the daemon using the actual binary path
-      const cmd = new Deno.Command(Deno.execPath(), {
-        args: [
-          "task",
-          "atlas",
-          "daemon",
-          "start",
-          "--port",
-          port,
-          "--detached",
-        ],
-        cwd: new URL("../../..", import.meta.url).pathname,
-        stdout: "null",
-        stderr: "null",
-        stdin: "null",
-      });
-
-      cmd.spawn();
-
-      // Wait for daemon to be ready (up to 10 seconds)
-      let isReady = false;
-      for (let i = 0; i < 20; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        try {
-          if (await this.isHealthy()) {
-            isReady = true;
-            break;
-          }
-        } catch {
-          // Ignore errors during startup
-        }
-      }
-
-      if (!isReady) {
-        throw new Error(
-          "Failed to start daemon - timeout waiting for it to become healthy",
-        );
-      }
-    } catch (error) {
-      // Reset the flag so user can try manually
-      this.attemptedStart = false;
-      throw new DaemonApiError(
-        `Failed to auto-start daemon: ${
-          error instanceof Error ? error.message : String(error)
-        }. Please start it manually with 'atlas daemon start'`,
-        503,
-      );
-    } finally {
-      this.startingDaemon = false;
-    }
-  }
 }
 
 export class DaemonApiError extends Error {
@@ -661,6 +580,6 @@ export async function checkDaemonRunning(): Promise<boolean> {
 // Utility function to provide helpful error messages when daemon is not running
 export function createDaemonNotRunningError(): Error {
   return new Error(
-    "Atlas daemon is not running. Start it with 'atlas daemon start' or ensure it's accessible at http://localhost:8080",
+    `Atlas daemon is not running. Start it with 'atlas daemon start' or ensure it's accessible at ${getAtlasDaemonUrl()}`,
   );
 }

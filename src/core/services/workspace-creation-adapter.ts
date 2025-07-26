@@ -1,6 +1,7 @@
 import type { WorkspaceConfig } from "@atlas/config";
 import { join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 /**
  * Interface for creating workspace files from draft configurations
@@ -363,7 +364,7 @@ ANTHROPIC_API_KEY=your-anthropic-api-key-here
 # GOOGLE_API_KEY=your-google-api-key-here
 
 # Atlas daemon URL (usually localhost during development)
-ATLAS_DAEMON_URL=http://localhost:8080
+ATLAS_DAEMON_URL=${getAtlasDaemonUrl()}
 
 # Workspace-specific configuration
 WORKSPACE_LOG_LEVEL=info

@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 import { OutputEntry } from "../modules/conversation/index.ts";
 import { ChatMessage } from "../components/chat-message.tsx";
 
@@ -164,8 +165,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         version: "1.0.0",
       });
 
+      const daemonUrl = getAtlasDaemonUrl();
       const transport = new StreamableHTTPClientTransport(
-        new URL(`http://localhost:${config.daemonPort}/mcp`),
+        new URL(`${daemonUrl}/mcp`),
       );
 
       mcpTransportRef.current = transport;
@@ -209,7 +211,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       try {
         // Use "system" as the workspace ID for the conversation system workspace
         const newConversationClient = new ConversationClient(
-          "http://localhost:8080",
+          getAtlasDaemonUrl(),
           "system",
           "cli-user",
         );
@@ -260,16 +262,22 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       await initializeMcpClient();
     } catch (error) {
       // Clear any loading messages and show error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if the error message already has helpful instructions
+      const hasInstructions = errorMessage.includes("atlas service start");
+
       setOutputBuffer([
         {
           id: `daemon-error-${Date.now()}`,
           component: (
             <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
               <Text color="red">
-                Failed to start Atlas daemon:{" "}
-                {error instanceof Error ? error.message : String(error)}
+                {errorMessage}
               </Text>
-              <Text dimColor>Try running `atlas daemon start` manually.</Text>
+              {!hasInstructions && (
+                <Text dimColor>Try running `atlas service start` manually.</Text>
+              )}
             </Box>
           ),
         },

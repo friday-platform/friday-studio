@@ -1,5 +1,6 @@
 import createClient from "openapi-fetch";
 import type { paths } from "./atlasd-types.gen.d.ts";
+import { getAtlasDaemonUrl } from "./utils.ts";
 
 export interface AtlasClientConfig {
   baseUrl?: string;
@@ -13,7 +14,7 @@ export interface AtlasClientConfig {
  * Returns the bare openapi-fetch client with full type safety
  */
 export function createAtlasClient(config: AtlasClientConfig = {}) {
-  const baseUrl = config.baseUrl || "http://localhost:8080";
+  const baseUrl = config.baseUrl || getAtlasDaemonUrl();
 
   return createClient<paths>({
     baseUrl,

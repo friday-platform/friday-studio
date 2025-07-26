@@ -2,11 +2,13 @@
  * Shared utilities for Atlas AI SDK tools
  */
 
+import { getAtlasDaemonUrl } from "./daemon/utils.ts";
+
 /**
  * Default daemon context for tools
  */
 export const defaultContext = {
-  daemonUrl: Deno.env.get("ATLAS_DAEMON_URL") || "http://localhost:8080",
+  daemonUrl: getAtlasDaemonUrl(),
 };
 
 /**

@@ -5,7 +5,8 @@
 
 import { z } from "zod/v4";
 import { AtlasApiError } from "./errors.ts";
-import { DEFAULT_ATLAS_URL, DEFAULT_TIMEOUT } from "./constants.ts";
+import { DEFAULT_TIMEOUT } from "./constants.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 import {
   AgentInfoSchema,
   CancelSessionResponseSchema,
@@ -73,7 +74,7 @@ export class AtlasClient {
   private timeout: number;
 
   constructor(options: AtlasClientOptions = {}) {
-    this.url = options.url || DEFAULT_ATLAS_URL;
+    this.url = options.url || getAtlasDaemonUrl();
     this.timeout = options.timeout || DEFAULT_TIMEOUT;
   }
 

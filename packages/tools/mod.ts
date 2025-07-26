@@ -50,6 +50,9 @@ export {
 // Export utilities
 export { defaultContext, fetchWithTimeout, handleDaemonResponse } from "./src/utils.ts";
 
+// Export daemon utilities
+export { getAtlasDaemonUrl } from "./src/daemon/utils.ts";
+
 // Export organized tool categories
 export * as internal from "./src/internal/index.ts";
 export * as externalAdapters from "./src/external-adapters/index.ts";

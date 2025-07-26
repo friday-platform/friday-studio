@@ -8,6 +8,7 @@ import type {
 } from "@atlas/config";
 import { WorkspaceBuilder } from "./builder.ts";
 import { resourceTools } from "../resources.ts";
+import { getAtlasDaemonUrl } from "../../daemon/utils.ts";
 
 // Create singleton instance that tools will share
 const workspaceBuilder = new WorkspaceBuilder();
@@ -281,7 +282,7 @@ export const workspaceBuilderTools = {
       const serverConfig: MCPServerConfig = {
         transport: {
           type: "http",
-          url: "http://localhost:8080/mcp",
+          url: `${getAtlasDaemonUrl()}/mcp`,
         },
         tools: {
           allow: requiredTools,

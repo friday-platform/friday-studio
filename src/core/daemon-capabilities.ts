@@ -8,6 +8,7 @@ import { ValidationError } from "../utils/errors.ts";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
 import { Tool } from "ai";
 import { AtlasLogger } from "../utils/logger.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 const ConversationMessageSchema = z.object({
   messageId: z.string().uuid(),
@@ -186,7 +187,7 @@ export function createStreamsImplementation(): DaemonExecutionContext["streams"]
         };
 
         try {
-          const response = await fetch(`http://localhost:8080/api/stream/${streamId}/emit`, {
+          const response = await fetch(`${getAtlasDaemonUrl()}/api/stream/${streamId}/emit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(chunkEvent),
@@ -211,7 +212,7 @@ export function createStreamsImplementation(): DaemonExecutionContext["streams"]
         };
 
         try {
-          const response = await fetch(`http://localhost:8080/api/stream/${streamId}/emit`, {
+          const response = await fetch(`${getAtlasDaemonUrl()}/api/stream/${streamId}/emit`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(transparencyEvent),
@@ -240,7 +241,7 @@ export function createStreamsImplementation(): DaemonExecutionContext["streams"]
       };
 
       try {
-        const response = await fetch(`http://localhost:8080/api/stream/${streamId}/emit`, {
+        const response = await fetch(`${getAtlasDaemonUrl()}/api/stream/${streamId}/emit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(completionEvent),

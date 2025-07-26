@@ -4,6 +4,7 @@ import { Spinner } from "@inkjs/ui";
 import { SSEDebugClient, SSEDebugEvent } from "../../utils/sse-debug-client.ts";
 import { DaemonClient } from "../../utils/daemon-client.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 interface SendState {
   status: "idle" | "creating-session" | "sending" | "monitoring" | "complete" | "error";
@@ -256,7 +257,7 @@ export function builder(y: YargsInstance) {
       alias: "d",
       describe: "Daemon URL",
       type: "string",
-      default: "http://localhost:8080",
+      default: getAtlasDaemonUrl(),
     })
     .option("verbose", {
       alias: "v",

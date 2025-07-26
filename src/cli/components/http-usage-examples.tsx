@@ -1,4 +1,5 @@
 import { Box, Text } from "ink";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 
 interface HttpUsageExamplesProps {
   signal: Record<string, unknown>;
@@ -128,7 +129,7 @@ const generateCurlCommand = (
   const lines: string[] = [];
 
   // Base curl command with method and URL
-  lines.push(`curl -X ${method} http://localhost:8080${path} \\`);
+  lines.push(`curl -X ${method} ${getAtlasDaemonUrl()}${path} \\`);
 
   // Add Content-Type header for requests with body
   if (
