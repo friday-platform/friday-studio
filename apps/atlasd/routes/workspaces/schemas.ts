@@ -83,6 +83,20 @@ export const createWorkspaceFromConfigResponseSchema = z.object({
   error: z.string().optional(),
 }).meta({ description: "Create workspace from configuration response" });
 
+export const updateWorkspaceSchema = z.object({
+  config: z.record(z.string(), z.unknown()).describe("Updated workspace configuration"),
+  backup: z.boolean().optional().default(true).describe("Create backup before updating"),
+}).meta({ description: "Update workspace configuration" });
+
+export const updateWorkspaceResponseSchema = z.object({
+  success: z.boolean(),
+  workspace: workspaceResponseSchema.optional(),
+  backupPath: z.string().optional(),
+  filesModified: z.array(z.string()).optional(),
+  reloadRequired: z.boolean().optional(),
+  error: z.string().optional(),
+}).meta({ description: "Update workspace configuration response" });
+
 // ============================================================================
 // Error Schemas
 // ============================================================================
@@ -106,4 +120,6 @@ export type CreateWorkspaceFromConfigRequest = z.infer<typeof createWorkspaceFro
 export type CreateWorkspaceFromConfigResponse = z.infer<
   typeof createWorkspaceFromConfigResponseSchema
 >;
+export type UpdateWorkspaceRequest = z.infer<typeof updateWorkspaceSchema>;
+export type UpdateWorkspaceResponse = z.infer<typeof updateWorkspaceResponseSchema>;
 export type ErrorResponse = z.infer<typeof errorResponseSchema>;

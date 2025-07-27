@@ -480,6 +480,23 @@ Memory is automatically available to agents through the Atlas runtime - no speci
 
 ### Currently Available Tools
 
+**IMPORTANT: Tool Context Distinction**
+
+There are two distinct tool contexts in Atlas:
+
+1. **Conversation Agent Tools** (for orchestration):
+   - `atlas_workspace_*` - Create, list, update, delete workspaces
+   - `atlas_todo_*` - Memory and context management
+   - `read_atlas_resource` - Access knowledge and patterns
+
+2. **Workspace Tools** (for execution - listed below):
+   - `atlas_notify_email` - Send email notifications
+   - `web_fetch` - Make HTTP requests
+   - `tavily_search` - Web research and data extraction
+   - `atlas_bash` - System operations and commands
+
+**Critical**: When users ask about workspace tools (like `atlas_notify_email`), the conversation agent should respond with workspace creation capability, NOT claim the tool doesn't exist.
+
 All tools for Atlas workspaces are provided by the MCP Atlas server. Configure it in your workspace with:
 
 ```yaml

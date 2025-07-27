@@ -11,6 +11,7 @@ import {
   handleDaemonResponse,
 } from "../utils.ts";
 import { generateWorkspace } from "./workspace-creation/generation.ts";
+import { updateWorkspace } from "./workspace-update/atlas-update-workspace.ts";
 
 export const workspaceTools = {
   atlas_workspace_list: tool({
@@ -28,6 +29,8 @@ export const workspaceTools = {
   }),
 
   atlas_create_workspace: generateWorkspace,
+
+  atlas_update_workspace: updateWorkspace,
 
   atlas_workspace_create: tool({
     description: "Creates a new workspace with optional template and custom configuration.",

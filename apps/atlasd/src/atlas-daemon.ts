@@ -274,10 +274,10 @@ export class AtlasDaemon implements AppContext {
     this.app.route("/api/workspaces", signalRoutes);
 
     // Mount conversation storage routes
-    this.app.route("", conversationStorageRoutes);
+    this.app.route("/api/conversation", conversationStorageRoutes);
 
     // Mount todo storage routes
-    this.app.route("", todoStorageRoutes);
+    this.app.route("/api/todos", todoStorageRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {

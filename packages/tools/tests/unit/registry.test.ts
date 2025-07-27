@@ -147,8 +147,8 @@ Deno.test("AtlasToolRegistry", async (t) => {
     // Filesystem should have 5 tools
     assertEquals(registry.getToolsCountByCategory("filesystem"), 5);
 
-    // Workspace should have 5 tools
-    assertEquals(registry.getToolsCountByCategory("workspace"), 5);
+    // Workspace should have 6 tools
+    assertEquals(registry.getToolsCountByCategory("workspace"), 6);
 
     // Session should have 2 tools
     assertEquals(registry.getToolsCountByCategory("session"), 2);
