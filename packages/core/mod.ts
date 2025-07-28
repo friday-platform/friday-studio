@@ -17,6 +17,9 @@ export {
   type FetchCredentialsOptions,
 } from "./src/credential-fetcher.ts";
 
+// Atlas Configuration
+export { getAtlasBaseUrl, getCredentialsApiUrl, getDiagnosticsApiUrl } from "./src/atlas-config.ts";
+
 // Actor Types
 export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";

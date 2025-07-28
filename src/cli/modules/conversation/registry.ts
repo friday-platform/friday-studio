@@ -7,6 +7,7 @@ import {
   handleInitCommand,
   handleLibraryCommand,
   handleMarkdownCommand,
+  handleSendDiagnosticsCommand,
   handleSessionsCommand,
   handleSignalsCommand,
   handleStatusCommand,
@@ -102,5 +103,12 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     description: "Display markdown syntax examples",
     usage: "/markdown",
     handler: handleMarkdownCommand,
+  },
+
+  "send-diagnostics": {
+    name: "send-diagnostics",
+    description: "Send diagnostic information to Atlas developers",
+    usage: "/send-diagnostics",
+    handler: handleSendDiagnosticsCommand,
   },
 };

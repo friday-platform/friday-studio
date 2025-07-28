@@ -53,6 +53,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Clear the output buffer",
   },
   {
+    command: "/send-diagnostics",
+    description: "Send diagnostic information to Atlas developers",
+  },
+  {
     command: "/exit",
     description: "Exit the Atlas interactive interface (quit, q)",
   },

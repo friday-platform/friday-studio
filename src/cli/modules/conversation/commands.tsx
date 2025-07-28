@@ -6,6 +6,7 @@ import { GitDiff } from "../../components/git-diff.tsx";
 import { ChatMessage } from "../../components/chat-message.tsx";
 import { CommandContext, OutputEntry } from "./types.ts";
 import { MarkdownSandboxCommand } from "./MarkdownSandboxCommand.tsx";
+import { SendDiagnosticsCommand } from "./SendDiagnosticsCommand.tsx";
 
 export const handleWorkspacesCommand = (
   _args: string[],
@@ -301,4 +302,21 @@ export const handleLibraryOpenCommand = async (
       ),
     });
   }
+};
+
+export const handleSendDiagnosticsCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  const diagnosticsCommand = new SendDiagnosticsCommand({
+    onComplete: () => {
+      // No additional action needed after completion
+    },
+  });
+
+  context.addEntry({
+    id: `send-diagnostics-${Date.now()}`,
+    component: diagnosticsCommand.render(),
+  });
+  return [];
 };

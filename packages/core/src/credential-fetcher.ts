@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { getCredentialsApiUrl } from "./atlas-config.ts";
 
 // JWT payload schema
 const JWTPayloadSchema = z.object({
@@ -28,16 +29,8 @@ export interface Credentials {
 }
 
 export class CredentialFetcher {
-  private static readonly DEFAULT_API_URL = "https://atlas.tempestdx.com/api/credentials";
   private static readonly DEFAULT_RETRIES = 3;
   private static readonly DEFAULT_RETRY_DELAY = 1000; // 1 second
-
-  /**
-   * Gets the API URL, preferring environment variable over default
-   */
-  static getApiUrl(): string {
-    return Deno.env.get("ATLAS_URL") || this.DEFAULT_API_URL;
-  }
 
   /**
    * Validates a JWT token format and expiration
@@ -73,7 +66,7 @@ export class CredentialFetcher {
   static async fetchCredentials(options: FetchCredentialsOptions): Promise<Credentials> {
     const {
       atlasKey,
-      apiUrl = this.getApiUrl(),
+      apiUrl = getCredentialsApiUrl(),
       retries = this.DEFAULT_RETRIES,
       retryDelay = this.DEFAULT_RETRY_DELAY,
     } = options;

@@ -874,6 +874,67 @@ export class AtlasClient {
   }
 
   /**
+   * Send diagnostic information to Atlas developers
+   */
+  async sendDiagnostics(gzipPath: string): Promise<void> {
+    // Load .env from Atlas home directory first
+    const { join } = await import("@std/path");
+    const { exists } = await import("@std/fs");
+    const { load } = await import("@std/dotenv");
+    const { getAtlasHome } = await import("../../../src/utils/paths.ts");
+    const { CredentialFetcher, getDiagnosticsApiUrl } = await import("@atlas/core");
+
+    const globalAtlasEnv = join(getAtlasHome(), ".env");
+    if (await exists(globalAtlasEnv)) {
+      await load({ export: true, envPath: globalAtlasEnv });
+    }
+
+    // Get ATLAS_KEY from environment (either from .env or env variable)
+    const atlasKey = Deno.env.get("ATLAS_KEY");
+    if (!atlasKey) {
+      throw new Error(
+        "ATLAS_KEY not found. Please set it in ~/.atlas/.env or as an environment variable.",
+      );
+    }
+
+    // Validate JWT token
+    const validation = CredentialFetcher.validateJWT(atlasKey);
+    if (!validation.valid) {
+      throw new Error(validation.error);
+    }
+
+    // Read the gzip file
+    const diagnosticData = await Deno.readFile(gzipPath);
+
+    // Get filename from path
+    const filename = gzipPath.split("/").pop() || "diagnostics.gz";
+
+    // Send to diagnostic endpoint using centralized URL function
+    const response = await fetch(getDiagnosticsApiUrl(filename), {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${atlasKey}`,
+        "Content-Type": "application/gzip",
+      },
+      body: diagnosticData,
+    });
+
+    if (!response.ok) {
+      let errorMessage = "Failed to upload diagnostics";
+      try {
+        const error = await response.json();
+        if (error.message) {
+          errorMessage = error.message;
+        }
+      } catch {
+        // If JSON parsing fails, use status text
+        errorMessage = `Failed to upload diagnostics: ${response.status} ${response.statusText}`;
+      }
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
    * Shutdown the daemon
    */
   async shutdown(): Promise<{ message: string }> {
