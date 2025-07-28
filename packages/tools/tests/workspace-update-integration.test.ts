@@ -14,15 +14,18 @@ import { updateWorkspace } from "../src/internal/workspace-update/atlas-update-w
 Deno.test("Integration - WorkspaceUpdater functionality", () => {
   // Set up required environment
   Deno.env.set("ANTHROPIC_API_KEY", "test-api-key");
-  
+
   // Test that WorkspaceUpdater can be instantiated
   const updater = new WorkspaceUpdater();
   assertExists(updater);
-  
+
   // Test error handling methods
   const notFoundError = new Error("Workspace not found: test-id");
   const friendlyError = updater.getUserFriendlyError(notFoundError);
-  assertEquals(friendlyError, "The specified workspace could not be found. Please check the workspace identifier.");
+  assertEquals(
+    friendlyError,
+    "The specified workspace could not be found. Please check the workspace identifier.",
+  );
 });
 
 /**
@@ -33,13 +36,13 @@ Deno.test("Integration - atlas_update_workspace tool interface", () => {
   assertExists(updateWorkspace);
   assertExists(updateWorkspace.description);
   assertExists(updateWorkspace.inputSchema);
-  
+
   assertEquals(typeof updateWorkspace.description, "string");
-  
+
   // Test schema structure
   const schema = updateWorkspace.inputSchema;
   assertExists(schema);
-  
+
   // Test that schema can validate input (type-safe approach)
   assertEquals(typeof schema, "object");
 });
@@ -64,7 +67,10 @@ Deno.test("Integration - Workspace update tools functionality", () => {
   }
 
   // Test specific tools exist
-  assertExists(workspaceUpdateTools.listWorkspaceComponents, "listWorkspaceComponents should exist");
+  assertExists(
+    workspaceUpdateTools.listWorkspaceComponents,
+    "listWorkspaceComponents should exist",
+  );
   assertExists(workspaceUpdateTools.updateSignal, "updateSignal should exist");
   assertExists(workspaceUpdateTools.addScheduleSignal, "addScheduleSignal should exist");
 });
@@ -86,7 +92,7 @@ Deno.test("Integration - Error handling patterns", () => {
 });
 
 /**
- * Test workspace updater basic functionality  
+ * Test workspace updater basic functionality
  */
 Deno.test("Integration - WorkspaceUpdater basic functionality", () => {
   Deno.env.set("ANTHROPIC_API_KEY", "test-api-key");
@@ -105,10 +111,10 @@ Deno.test("Integration - Tool schema validation", () => {
   // Test that all tools have proper schemas
   assertExists(workspaceUpdateTools);
   assertEquals(typeof workspaceUpdateTools, "object");
-  
+
   for (const [name, tool] of Object.entries(workspaceUpdateTools)) {
     assertExists(tool.inputSchema, `Tool ${name} should have input schema`);
-    
+
     // Test that schema is an object (valid schema)
     const schema = tool.inputSchema;
     assertEquals(typeof schema, "object", `Tool ${name} should have valid schema`);

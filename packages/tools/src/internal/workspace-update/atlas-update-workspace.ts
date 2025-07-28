@@ -71,9 +71,7 @@ export const updateWorkspace = tool({
           return {
             success: true,
             config,
-            reasoning: debugLevel === "detailed"
-              ? reasoning
-              : "Workspace updated successfully",
+            reasoning: debugLevel === "detailed" ? reasoning : "Workspace updated successfully",
             workspaceName: config.workspace.name,
             workspaceId: workspace.id,
             applied: true,

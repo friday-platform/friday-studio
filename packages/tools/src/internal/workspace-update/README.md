@@ -86,9 +86,10 @@ import { updateWorkspace } from "@atlas/tools";
 // Update workspace with natural language
 const result = await updateWorkspace({
   workspaceIdentifier: "nike-monitor",
-  userIntent: "Add Discord webhook notifications for new shoe drops with URL https://discord.com/api/webhooks/...",
+  userIntent:
+    "Add Discord webhook notifications for new shoe drops with URL https://discord.com/api/webhooks/...",
   conversationContext: "User wants real-time notifications",
-  debugLevel: "minimal"
+  debugLevel: "minimal",
 });
 
 if (result.success) {
@@ -102,21 +103,25 @@ if (result.success) {
 ### Available Update Operations
 
 #### Signal Updates
+
 - **Add new signals**: "Add an HTTP webhook signal on path '/github' with 30 second timeout"
 - **Modify existing signals**: "Change the schedule signal to run every 2 hours instead of daily"
 - **Remove signals**: "Remove the unused webhook signal since we're not using it"
 
-#### Agent Updates  
+#### Agent Updates
+
 - **Update configuration**: "Change the analysis agent to use Claude Sonnet 4 with higher creativity"
 - **Modify prompts**: "Update the agent prompt to be more detailed in error reporting"
 - **Remove agents**: "Remove the backup agent that's no longer needed"
 
 #### Job Updates
+
 - **Modify execution**: "Change the processing job to run agents in parallel instead of sequential"
 - **Update triggers**: "Add the new webhook signal as a trigger for the analysis job"
 - **Remove jobs**: "Remove the outdated data cleanup job"
 
 #### Complex Updates
+
 - **Multi-component changes**: "Add a new monitoring pipeline with webhook signal, analysis agent, and notification job"
 - **Reference updates**: "Rename the 'primary' agent to 'main-analyzer' and update all job references"
 - **Bulk modifications**: "Update all agents to use the latest Claude model"
@@ -126,15 +131,18 @@ if (result.success) {
 ### Main Update Tool
 
 #### `atlas_update_workspace`
+
 Primary interface for workspace updates with AI orchestration.
 
 **Parameters:**
+
 - `workspaceIdentifier` (string): Workspace ID, name, or path to update
-- `userIntent` (string): Natural language description of desired changes  
+- `userIntent` (string): Natural language description of desired changes
 - `conversationContext` (optional string): Additional dialogue context
 - `debugLevel` (optional): "minimal" (default) | "detailed"
 
 **Response:**
+
 ```typescript
 {
   success: boolean;
@@ -149,21 +157,25 @@ Primary interface for workspace updates with AI orchestration.
 ### Component-Specific Tools
 
 #### Signal Tools
+
 - `updateSignal`: Modify existing signal configuration
 - `removeSignal`: Remove signal with dependency checking
 - `addScheduleSignal`, `addHttpSignal`: Add new signals (from creation tools)
 
-#### Agent Tools  
+#### Agent Tools
+
 - `updateAgent`: Modify existing agent configuration
 - `removeAgent`: Remove agent with job reference updates
 - `addLLMAgent`, `addRemoteAgent`: Add new agents (from creation tools)
 
 #### Job Tools
-- `updateJob`: Modify existing job configuration  
+
+- `updateJob`: Modify existing job configuration
 - `removeJob`: Remove job safely
 - `createJob`: Add new jobs (from creation tools)
 
 #### Utility Tools
+
 - `listWorkspaceComponents`: Query existing workspace components for context
 
 ## Error Handling
@@ -171,43 +183,52 @@ Primary interface for workspace updates with AI orchestration.
 The system provides comprehensive error handling with user-friendly messages:
 
 ### Workspace Resolution Errors
+
 ```
 Error: Workspace not found: my-workspace
 Friendly: "The specified workspace could not be found. Please check the workspace identifier."
 ```
 
 ### Validation Errors
+
 ```
 Error: Workspace validation failed: Invalid signal reference
 Friendly: "The workspace update had validation issues. Please try with different modifications."
 ```
 
 ### Reference Integrity
+
 The system automatically detects and repairs broken references:
+
 - **Remove signal with jobs**: Either prevents removal or removes dependent jobs
 - **Rename components**: Updates all references automatically
 - **Missing references**: Provides repair suggestions
 
 ### Progressive Temperature Reduction
+
 Failed attempts automatically reduce AI temperature for more conservative updates:
+
 - Attempt 1: Temperature 0.4 (creative)
-- Attempt 2: Temperature 0.3 (balanced)  
+- Attempt 2: Temperature 0.3 (balanced)
 - Attempt 3: Temperature 0.2 (conservative)
 
 ## Integration with Atlas Daemon
 
 ### Update Endpoint
+
 `POST /api/workspaces/{id}/update`
 
 **Request:**
+
 ```json
 {
-  "config": { /* Updated workspace configuration */ },
+  "config": {/* Updated workspace configuration */},
   "reasoning": "Added Discord notifications with webhook integration"
 }
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -217,6 +238,7 @@ Failed attempts automatically reduce AI temperature for more conservative update
 ```
 
 ### Backup System
+
 - Automatic backup creation before any changes
 - Timestamped backup files for rollback capability
 - Validation before applying changes
@@ -227,20 +249,23 @@ Failed attempts automatically reduce AI temperature for more conservative update
 The system includes comprehensive test coverage:
 
 ### Unit Tests (29 tests)
+
 - WorkspaceBuilder initialization from existing config
 - Component modification methods (update/remove)
 - Reference integrity validation and repair
 - Error handling and rollback scenarios
 
-### Integration Tests (7 tests)  
+### Integration Tests (7 tests)
+
 - WorkspaceUpdater instantiation and functionality
 - Tool interface validation and schema checking
 - Error handling patterns and user-friendly messages
 - Complete workflow from tool call to daemon update
 
 ### Test Coverage
+
 - **Builder Tests**: 46/46 passing
-- **Updater Tests**: 8/8 passing  
+- **Updater Tests**: 8/8 passing
 - **Integration Tests**: 7/7 passing
 - **Total**: 61/61 tests passing
 
@@ -254,6 +279,7 @@ The system includes comprehensive test coverage:
 4. **Add Tests**: Write unit and integration tests for new functionality
 
 ### Tool Development Pattern
+
 ```typescript
 export const updateNewComponent = tool({
   description: "Update existing component configuration",
@@ -261,17 +287,18 @@ export const updateNewComponent = tool({
     id: z.string().describe("Component ID to update"),
     updates: z.object({
       // Component-specific update fields
-    }).describe("Updates to apply")
+    }).describe("Updates to apply"),
   }),
   execute: async ({ id, updates }) => {
     const builder = getUpdateBuilder();
     builder.updateNewComponent(id, updates);
     return { success: true, message: `Updated ${id}` };
-  }
+  },
 });
 ```
 
 ### Validation Guidelines
+
 - Always validate component references after updates
 - Provide clear error messages for user consumption
 - Use progressive temperature reduction for retry attempts
@@ -297,33 +324,39 @@ export const updateNewComponent = tool({
 ### Common Issues
 
 **"Workspace not found"**
+
 - Check workspace identifier (ID, name, or path)
 - Verify workspace exists in Atlas
 - Ensure proper permissions
 
-**"Validation failed"**  
+**"Validation failed"**
+
 - Review proposed changes for component reference issues
 - Check signal/agent ID references in jobs
 - Verify configuration schema compliance
 
 **"Reference integrity errors"**
+
 - Allow automatic repair suggestions
 - Review component dependencies before removal
 - Check for circular references in complex updates
 
 ### Debug Mode
+
 Use `debugLevel: "detailed"` for comprehensive update information:
+
 ```typescript
 const result = await updateWorkspace({
   workspaceIdentifier: "my-workspace",
   userIntent: "Update configuration",
-  debugLevel: "detailed"  // Shows full AI reasoning and tool execution
+  debugLevel: "detailed", // Shows full AI reasoning and tool execution
 });
 ```
 
 ## Future Enhancements
 
 ### Planned Features (Task 8)
+
 - **Session Impact Assessment**: Check active jobs before updates
 - **Hot-Reload Capability**: Update running workspaces without restart
 - **Rollback Endpoint**: `POST /api/workspaces/{id}/rollback`
@@ -331,8 +364,9 @@ const result = await updateWorkspace({
 - **Bulk Operations**: Update multiple workspaces simultaneously
 
 ### Advanced Features
+
 - **Template-Based Updates**: Common modification patterns
-- **Scheduled Updates**: Time-based workspace modifications  
+- **Scheduled Updates**: Time-based workspace modifications
 - **Audit Trail**: Comprehensive change history
 - **Conflict Resolution**: Handle concurrent workspace updates
 
@@ -343,6 +377,7 @@ const result = await updateWorkspace({
 The Atlas Workspace Update System provides a production-ready solution for modifying existing workspaces through natural language instructions. With comprehensive AI orchestration, validation, and error handling, it maintains the same reliability standards as workspace creation while enabling powerful modification capabilities.
 
 **Current Status**: Phase 2 Complete (58% of planned features)
+
 - ✅ Core Infrastructure (WorkspaceBuilder enhancements)
 - ✅ AI Orchestration (WorkspaceUpdater with Generate-Validate-Repair loop)
 - ✅ Tool Integration (Complete set of update/remove tools)

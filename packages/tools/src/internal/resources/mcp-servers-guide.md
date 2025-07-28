@@ -4,16 +4,6 @@
 > sources. This guide covers high-value MCP servers for Atlas workspaces, with actual configuration
 > patterns used in production Atlas deployments.
 
-## Quick Reference
-
-### Essential Atlas MCP Servers
-
-- **[Tavily](#tavily-web-search-platform)**: AI-powered web search, content extraction, and crawling
-- **[GitHub](#1-github-integration)**: Repository operations, code search, issue management
-- **[Filesystem](#3-filesystem-operations)**: Secure file operations with path restrictions
-- **[Memory](#7-persistent-memory)**: Knowledge graph-based persistent memory
-- **[Slack](#17-slack-workspace-integration)**: Team communication and notifications
-
 ### Atlas-Specific Features
 
 - **EMCP Context**: Atlas provides built-in filesystem context without external MCP servers
@@ -29,18 +19,11 @@
 
 ### 1. GitHub Integration
 
-**Package**: `@modelcontextprotocol/server-github` **Status**: Production-ready **Atlas Use Cases**:
-Repository analysis, code review automation, issue tracking
+**Package**: `github-repos-manager-mcp` **Status**: Community-maintained **Atlas Use Cases**: Repository management, issue tracking, team collaboration
 
-**Description**: Essential GitHub API integration for Atlas workspaces. Provides secure file
-operations, repository management, and search capabilities with proper authentication.
+**Description**: Comprehensive GitHub repository automation and management with 89 tools for complete GitHub workflow integration. Features token-based authentication, direct API integration, and no Docker dependency for lightweight performance.
 
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-github
-# Or alternative: npm i github-mcp-server
-```
+**Prerequisites**: GitHub Personal Access Token with scopes: `repo`, `user:read`, `read:org`
 
 **Atlas Configuration**:
 
@@ -53,28 +36,61 @@ tools:
         transport:
           type: "stdio"
           command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-github"]
+          args: ["-y", "github-repos-manager-mcp"]
         auth:
           type: "bearer"
           token_env: "GITHUB_TOKEN"
         tools:
-          allow: ["search_repositories", "get_file_contents", "create_issue"]
+          allow: [
+            "list_repositories",
+            "get_repository_info",
+            "get_file_contents",
+            "create_issue",
+            "list_issues",
+            "set_default_repository",
+          ]
+          # For full access to all 89 tools, use:
+          # allow: ["*"] # or specify individual tools for security
         env:
-          GITHUB_API_URL: "https://api.github.com"
-          LOG_LEVEL: "info"
+          GITHUB_TOKEN: "your-github-pat"
+        client_config:
+          timeout: "60s"
 ```
 
-**Available Tools**:
+**Available Tools** (89 total):
 
-- File operations (read, write, create, delete)
-- Repository management (create, clone, list)
-- Search functionality (code, issues, repositories)
-- Branch management (create, switch, merge)
-- Pull request operations
-- Issue tracking
+**Repository Management**:
 
-**Atlas Integration**: Perfect for code analysis agents, automated issue creation, and repository
-monitoring workflows. Essential for development-focused workspaces.
+- `list_repositories`, `get_repository_info`, `set_default_repository`
+- `search_repositories`, `create_repository`, `delete_repository`
+- `get_file_contents`, `create_file`, `update_file`, `delete_file`
+
+**Issue Management**:
+
+- `create_issue`, `list_issues`, `get_issue`, `update_issue`, `close_issue`
+- `add_issue_labels`, `remove_issue_labels`, `assign_issue`, `unassign_issue`
+
+**Pull Request Operations**:
+
+- `create_pull_request`, `list_pull_requests`, `get_pull_request`
+- `merge_pull_request`, `close_pull_request`, `update_pull_request`
+
+**Branch Management**:
+
+- `list_branches`, `create_branch`, `delete_branch`
+- `get_branch_info`, `compare_branches`
+
+**Collaboration Features**:
+
+- `add_collaborator`, `remove_collaborator`, `list_collaborators`
+- `create_team`, `add_team_member`, `list_teams`
+
+**Content Operations**:
+
+- `upload_image`, `embed_image_in_issue`
+- `search_code`, `search_commits`, `get_commit_info`
+
+**Use Cases**: Repository management, issue tracking, team collaboration, code analysis, automated workflows, content management
 
 ---
 
@@ -83,15 +99,7 @@ monitoring workflows. Essential for development-focused workspaces.
 **Package**: `mcp-server-git` **Status**: Community-maintained **Atlas Use Cases**: Automated
 commits, branch analysis, repository maintenance
 
-**Description**: Local Git repository operations for Atlas agents. Enables version control
-automation within workspace contexts.
-
-**Installation**:
-
-```bash
-pip install mcp-server-git
-# Or: uvx mcp-server-git
-```
+**Description**: Local Git repository operations for Atlas agents. Enables version control automation within workspace contexts.
 
 **Atlas Configuration**:
 
@@ -127,24 +135,15 @@ tools:
 - `git_init` - Initialize repositories
 - `git_branch` - List/manage branches
 
-**Atlas Integration**: Ideal for continuous integration agents, automated commit workflows, and
-repository analysis tasks.
-
 ---
 
-### 3. Filesystem Operations
+### 3. Google GenAI Toolbox
 
-**Package**: `@modelcontextprotocol/server-filesystem` **Status**: Production-ready **Atlas
-Alternative**: Use EMCP context provisioning for better security
+**Package**: `mcp-toolbox` **Status**: Beta **Atlas Use Cases**: Database integration, AI tool development, data access automation
 
-**Description**: Secure file operations for when EMCP context isn't sufficient. Atlas EMCP is
-preferred for most filesystem access needs.
+**Description**: Open-source database toolbox that acts as a control plane between AI applications and databases. Provides centralized tool management, enhanced performance, and end-to-end observability for GenAI applications.
 
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-filesystem
-```
+**Prerequisites**: Database connection and `tools.yaml` configuration file
 
 **Atlas Configuration**:
 
@@ -153,279 +152,38 @@ npm i @modelcontextprotocol/server-filesystem
 tools:
   mcp:
     servers:
-      filesystem:
+      genai-toolbox:
         transport:
           type: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+          command: "toolbox"
+          args: ["--stdio", "--tools-file", "/path/to/tools.yaml"]
         tools:
-          # Use either allow or deny, not both
-          deny: ["write_file", "delete_file"] # Read-only access
-        client_config:
-          timeout: "30s"
-```
-
-**Available Tools**:
-
-- `read_file` - Read file contents
-- `read_multiple_files` - Batch file reading
-- `write_file` - Write to files
-- `edit_file` - Modify existing files
-- `create_directory` - Create directories
-- `list_directory` - List directory contents
-- `move_file` - Move/rename files
-- `search_files` - Search within files
-- `get_file_info` - File metadata
-- `list_allowed_directories` - View accessible paths
-
-**Atlas Integration**: Use sparingly - Atlas EMCP context provides better security and performance
-for most file access patterns.
-
----
-
-### Data & Databases
-
-### 4. Web Content Fetching
-
-**Package**: `@modelcontextprotocol/server-fetch` **Status**: Production-ready **Atlas Use Cases**:
-Content analysis, documentation retrieval, web scraping
-
-**Description**: Essential web content retrieval with automatic markdown conversion. Critical for
-research and analysis workflows.
-
-**Installation**:
-
-```bash
-uvx mcp-server-fetch
-# Or: npx -y @modelcontextprotocol/server-fetch
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    client_config:
-      timeout: "30s"
-    servers:
-      fetch:
-        transport:
-          type: "stdio"
-          command: "uvx"
-          args: ["mcp-server-fetch"]
-        tools:
-          allow: ["fetch"]
-```
-
-**Available Tools**:
-
-- `fetch` - URL fetching with automatic markdown conversion
-- Supports chunked reading with `start_index` parameter
-- Proxy support via `--proxy-url` flag
-
-**Atlas Integration**: Essential for research agents, competitive analysis, and documentation
-workflows. Combines well with memory servers for persistent learning.
-
----
-
-### 5. PostgreSQL Database
-
-**Package**: `@modelcontextprotocol/server-postgres` **Status**: Legacy (consider alternatives)
-**Atlas Use Cases**: Database analysis, report generation, schema inspection
-
-**Description**: Read-only PostgreSQL access for data analysis workflows. Consider modern
-alternatives for new implementations.
-
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-postgres
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      postgres:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-postgres", "postgresql://localhost/mydb"]
-        client_config:
-          timeout: "60s"
+          allow: ["load_toolset", "execute_query", "get_schema", "reload_tools"]
         env:
-          DATABASE_URL: "postgresql://localhost/mydb"
-```
-
-**Available Tools**:
-
-- Database schema inspection
-- Read-only query execution
-- Table structure analysis
-- Safe data retrieval
-
-**Atlas Integration**: Useful for database analysis agents and automated reporting. Ensure read-only
-access for security.
-
----
-
-### 6. SQLite Database
-
-**Package**: `@modelcontextprotocol/server-sqlite` **Status**: Archived (use alternatives) **Atlas
-Use Cases**: Local data analysis, lightweight database queries
-
-**Description**: SQLite database access for local data analysis. Consider alternatives for
-production use.
-
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-sqlite
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      sqlite:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-sqlite", "/data/database.sqlite"]
-        tools:
-          allow: ["query", "describe_table", "list_tables"]
-```
-
-**Available Tools**:
-
-- SQL query execution
-- Schema information extraction
-- Multi-database support
-- Transaction management
-
-**Atlas Integration**: Suitable for local data analysis workflows. Prefer modern database adapters
-for production workspaces.
-
----
-
-### AI & Memory Systems
-
-### 7. Persistent Memory
-
-**Package**: `@modelcontextprotocol/server-memory` **Status**: Production-ready **Atlas
-Integration**: Complements built-in Atlas memory system
-
-**Description**: External memory system that works alongside Atlas's built-in memory. Use for
-specialized memory patterns not covered by Atlas core memory.
-
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-memory
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      memory:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-memory"]
-        env:
-          MEMORY_FILE_PATH: "/workspace/.memory/session.json"
-        tools:
-          allow: ["create_memory", "update_memory", "delete_memory", "list_memories"]
-```
-
-**Available Tools**:
-
-- Entity management and tracking
-- Relationship mapping
-- Observation storage
-- Context preservation
-
-**Memory Categories**:
-
-- Basic identity information
-- Behavioral patterns
-- User preferences
-- Goals and objectives
-- Relationship networks
-
-**Atlas Integration**: Excellent complement to Atlas's built-in memory system. Use for specialized
-knowledge graphs and external memory patterns.
-
----
-
-### 8. Sequential Thinking
-
-**Package**: `@modelcontextprotocol/server-sequential-thinking` **Status**: Experimental **Atlas Use
-Cases**: Complex reasoning, multi-step analysis, problem decomposition
-
-**Description**: Structured thinking processes for complex problem-solving. Enhances agent reasoning
-capabilities.
-
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-sequential-thinking
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      sequential-thinking:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-sequential-thinking"]
-        env:
-          DISABLE_THOUGHT_LOGGING: "true"
+          TOOLBOX_CONFIG: "/path/to/tools.yaml"
         client_config:
-          timeout: "120s"
+          timeout: "90s"
 ```
+
+**Prerequisites**: Binary installation required - see official documentation
 
 **Available Tools**:
 
-- Structured thinking processes
-- Iterative solution refinement
-- Multiple reasoning paths
-- Problem decomposition
+- **Tool Management**: `load_toolset`, `reload_tools`, `list_tools`
+- **Database Operations**: `execute_query`, `get_schema`, `describe_table`
+- **Connection Management**: `test_connection`, `pool_status`
+- **Configuration**: `validate_tools`, `get_config`
 
-**Atlas Integration**: Powerful addition to analytical agents. Use for complex reasoning workflows
-that benefit from structured thinking.
+**Use Cases**: Database integration for AI applications, centralized tool management, data access automation, GenAI application development
 
 ---
 
-### 9. Time & Timezone
+### 4. Time & Timezone
 
 **Package**: `mcp-server-time` **Status**: Community-maintained **Atlas Use Cases**: Scheduling,
 time-based automation, global coordination
 
-**Description**: Time operations for scheduling and coordination workflows. Essential for
-time-sensitive automation.
-
-**Installation**:
-
-```bash
-uvx mcp-server-time
-```
+**Description**: Time operations for scheduling and coordination workflows. Essential for time-sensitive automation.
 
 **Atlas Configuration**:
 
@@ -445,30 +203,22 @@ tools:
 
 **Available Tools**:
 
-- `convert_time` - Timezone conversion with DST support
-- Time zone lookup
-- Date formatting
-- Calendar operations
+- `get_current_time` - Get current time in specified IANA timezone
+- `convert_time` - Convert time between timezones with DST support
 
-**Atlas Integration**: Essential for scheduling agents, time-based triggers, and global workspace
-coordination.
+**Use Cases**: Scheduling agents, time-based triggers, global workspace coordination, meeting scheduling across timezones
 
 ---
 
 ### Cloud & Infrastructure
 
-### 10. Azure Services
+### 5. Azure Services
 
-**Package**: `@azure/mcp`
+**Package**: `@azure/mcp` **Status**: Production-ready **Atlas Use Cases**: Cloud infrastructure management, DevOps automation, security management
 
-**Description**: Official Azure MCP Server with comprehensive Azure service integration for cloud
-management.
+**Description**: Official Microsoft Azure MCP Server with comprehensive Azure service integration. Features 30+ Azure services, hierarchical command routing, and integrated Azure CLI/Developer CLI support.
 
-**Installation**:
-
-```bash
-npm i @azure/mcp
-```
+**Prerequisites**: Azure CLI authentication or Azure credentials configured
 
 **Atlas Configuration**:
 
@@ -481,44 +231,89 @@ tools:
         transport:
           type: "stdio"
           command: "npx"
-          args: ["-y", "@azure/mcp"]
+          args: ["-y", "@azure/mcp@latest", "server", "start"]
         auth:
-          type: "bearer"
-          token_env: "AZURE_ACCESS_TOKEN"
+          type: "service_principal"
+          # Uses environment variables for authentication
+        tools:
+          allow: ["subscription", "group", "keyvault", "storage", "sql", "cosmos", "monitor"]
+          # For full access to all 30+ tools, use:
+          # allow: ["*"] # or specify individual services for security
         env:
-          AZURE_TENANT_ID: "YOUR_TENANT_ID"
-          AZURE_CLIENT_ID: "YOUR_CLIENT_ID"
-          AZURE_CLIENT_SECRET: "YOUR_CLIENT_SECRET"
+          AZURE_TENANT_ID: "your-tenant-id"
+          AZURE_CLIENT_ID: "your-client-id"
+          AZURE_CLIENT_SECRET: "your-client-secret"
+          # Alternative: Use Azure CLI environment
+          # AZURE_SUBSCRIPTION_ID: "your-subscription-id"
         client_config:
-          timeout: "90s"
+          timeout: "120s"
 ```
 
-**Available Tools**:
+**Available Tools** (30+ Azure services):
 
-- Configuration stores management
-- Key-value pair operations
-- Secrets management
-- Keys and certificates handling
-- Log and metrics querying
-- Resource management
+**Core Azure Services**:
 
-**Use Cases**: Cloud infrastructure management, DevOps automation, security management, monitoring
-setup
+- `subscription` - Azure subscription operations and management
+- `group` - Resource group operations and listing
+- `keyvault` - Key Vault secrets, keys, and certificates management
+- `storage` - Storage account operations, containers, blobs, and tables
+- `sql` - Azure SQL databases and servers management
+- `postgres` - Azure Database for PostgreSQL operations
+- `redis` - Azure Redis Cache management
+- `cosmos` - Cosmos DB databases, containers, and document queries
+
+**Container & Compute Services**:
+
+- `aks` - Azure Kubernetes Service cluster management
+- `foundry` - AI Foundry services and resources
+
+**Monitoring & Analytics**:
+
+- `monitor` - Azure Monitor logs and metrics querying
+- `grafana` - Azure Managed Grafana workspace operations
+- `kusto` - Azure Data Explorer cluster operations
+- `search` - Azure AI Search services management
+- `loadtesting` - Azure Load Testing resources
+
+**Integration & Messaging**:
+
+- `servicebus` - Azure Service Bus resource management
+- `appconfig` - App Configuration store operations
+
+**DevOps & Infrastructure**:
+
+- `role` - Azure RBAC and authorization management
+- `marketplace` - Azure Marketplace products and offers
+- `workbooks` - Azure Workbooks resource management
+- `bicepschema` - Bicep Infrastructure as Code generation
+- `azureterraformbestpractices` - Terraform best practices for Azure
+
+**Third-party Integrations**:
+
+- `datadog` - Datadog resource management and querying
+
+**Documentation & Best Practices**:
+
+- `documentation` - Search official Microsoft/Azure documentation
+- `bestpractices` - Production-grade Azure best practices
+
+**CLI Extensions**:
+
+- `extension_az` - Direct Azure CLI command execution
+- `extension_azd` - Azure Developer CLI operations
+- `extension_azqr` - Azure Quick Review compliance reports
+
+**Use Cases**: Cloud infrastructure management, DevOps automation, security management, monitoring setup, compliance reporting, Infrastructure as Code generation
 
 ---
 
-### 11. Stripe Payments
+### 6. Stripe Payments
 
-**Package**: `@stripe/mcp`
+**Package**: `@stripe/mcp` **Status**: Production-ready **Atlas Use Cases**: E-commerce automation, subscription management, payment processing
 
-**Description**: Official Stripe payments and subscription management for e-commerce and billing
-automation.
+**Description**: Official Stripe MCP server for comprehensive payment processing, subscription management, and financial operations. Features OAuth authentication, restricted API key support, and extensive tool coverage.
 
-**Installation**:
-
-```bash
-npm i @stripe/mcp
-```
+**Prerequisites**: Stripe account and API key (restricted keys recommended)
 
 **Atlas Configuration**:
 
@@ -533,46 +328,83 @@ tools:
           command: "npx"
           args: ["-y", "@stripe/mcp", "--tools=all"]
         auth:
-          type: "bearer"
+          type: "api_key"
           token_env: "STRIPE_SECRET_KEY"
         tools:
-          allow: ["create_customer", "create_payment", "list_invoices"]
+          allow: [
+            "create_customer",
+            "list_customers",
+            "create_invoice",
+            "list_invoices",
+            "list_subscriptions",
+            "get_stripe_account_info",
+          ]
+          # For full access to all tools, use:
+          # allow: ["*"] # or specify individual tools for security
+        env:
+          STRIPE_SECRET_KEY: "your-stripe-secret-key"
         client_config:
           timeout: "60s"
 ```
 
-**Environment Variables**: `STRIPE_SECRET_KEY`
+**Available Tools** (Specific tool names):
 
-**Available Tools**:
+**Account Management**:
 
-- Customer management (create, update, delete)
-- Product creation and management
-- Payment processing and tracking
-- Subscription handling
-- Invoice generation
-- Dispute management
-- Analytics and reporting
+- `get_stripe_account_info` - Retrieve account information and settings
+- `retrieve_balance` - Get current account balance and pending amounts
 
-**Use Cases**: E-commerce automation, subscription management, payment processing, financial
-reporting
+**Customer Operations**:
+
+- `create_customer` - Create new customer profiles
+- `list_customers` - Retrieve customer lists with filtering
+- `update_customer` - Modify existing customer information
+- `delete_customer` - Remove customer profiles
+
+**Invoice Management**:
+
+- `create_invoice` - Generate new invoices
+- `create_invoice_item` - Add line items to invoices
+- `finalize_invoice` - Complete and send invoices
+- `list_invoices` - Retrieve invoice collections
+- `update_invoice` - Modify existing invoices
+
+**Subscription Handling**:
+
+- `cancel_subscription` - Terminate subscription services
+- `list_subscriptions` - Retrieve subscription data
+- `update_subscription` - Modify subscription terms
+- `create_subscription` - Set up new recurring billing
+
+**Payment Processing**:
+
+- `create_payment_intent` - Initialize payment flows
+- `confirm_payment_intent` - Complete payment processing
+- `list_payment_intents` - Track payment statuses
+- `create_charge` - Process one-time payments
+
+**Product & Price Management**:
+
+- `create_product` - Add new products to catalog
+- `list_products` - Retrieve product inventory
+- `create_price` - Set pricing for products
+- `list_prices` - Manage pricing structures
+
+**Documentation & Support**:
+
+- `search_documentation` - Query Stripe API documentation
+
+**Use Cases**: E-commerce automation, subscription management, payment processing, financial reporting, invoice automation, customer lifecycle management
 
 ---
 
 ### Web Automation & Testing
 
-### 12. Playwright Browser Automation
+### 7. Playwright Browser Automation
 
-**Package**: `@executeautomation/playwright-mcp-server`
+**Package**: `@executeautomation/playwright-mcp-server` **Status**: Community-maintained **Atlas Use Cases**: Automated testing, web scraping, UI automation
 
-**Description**: Browser automation using Playwright for web page interaction, testing, and
-screenshot capture.
-
-**Installation**:
-
-```bash
-npm install -g @executeautomation/playwright-mcp-server
-# Or: npx @smithery/cli install @executeautomation/playwright-mcp-server --client claude
-```
+**Description**: Browser automation using Playwright for web page interaction, testing, and screenshot capture.
 
 **Atlas Configuration**:
 
@@ -594,107 +426,66 @@ tools:
 
 **Available Tools**:
 
-- Web navigation and interaction
-- Element location and manipulation
-- Screenshot capture
-- Test code generation
-- Form automation
-- Data extraction and scraping
-- Performance monitoring
+**Navigation & Browser Control**:
+
+- `Playwright_navigate` - Navigate to web pages
+- `Playwright_close` - Close browser tabs/windows
+- `playwright_go_back` - Navigate back in browser history
+- `playwright_go_forward` - Navigate forward in browser history
+
+**Element Interaction**:
+
+- `Playwright_click` - Click on web elements
+- `playwright_click_and_switch_tab` - Click and switch to new tab
+- `Playwright_hover` - Hover over elements
+- `Playwright_fill` - Fill form inputs
+- `Playwright_select` - Select dropdown options
+- `playwright_upload_file` - Upload files to forms
+- `playwright_drag` - Drag and drop elements
+- `playwright_press_key` - Press keyboard keys
+
+**Frame & IFrame Operations**:
+
+- `Playwright_iframe_click` - Click elements within iframes
+- `Playwright_iframe_fill` - Fill inputs within iframes
+
+**Data Extraction**:
+
+- `Playwright_screenshot` - Capture page screenshots
+- `playwright_get_visible_text` - Extract visible text content
+- `playwright_get_visible_html` - Extract visible HTML content
+- `Playwright_console_logs` - Retrieve browser console logs
+- `playwright_save_as_pdf` - Save page as PDF
+
+**JavaScript & Evaluation**:
+
+- `Playwright_evaluate` - Execute JavaScript in browser context
+- `playwright_custom_user_agent` - Set custom user agent
+
+**Testing & Assertions**:
+
+- `Playwright_expect_response` - Wait for and validate responses
+- `Playwright_assert_response` - Assert response conditions
+
+**Code Generation**:
+
+- `start_codegen_session` - Start test code generation session
+- `end_codegen_session` - End code generation session
+- `get_codegen_session` - Get current session details
+- `clear_codegen_session` - Clear session data
 
 **Use Cases**: Automated testing, web scraping, UI automation, performance monitoring, screenshot
 generation
 
 ---
 
-### 13. Puppeteer Web Control
-
-**Package**: `mcp-server-puppeteer-py`
-
-**Description**: Browser automation using Puppeteer for web navigation, interaction, and data
-extraction.
-
-**Installation**: Available through GitHub repository (Python-based)
-
-**Available Tools**:
-
-- Browser control and navigation
-- Form automation
-- UI testing capabilities
-- Web scraping
-- PDF generation
-- Performance analysis
-
-**Use Cases**: Web automation, UI testing, data extraction, report generation
-
----
-
 ### Search & Analytics
 
-### 14. Algolia Search Platform
+### 8. Google Analytics 4
 
-**Package**: Built from Go source
-
-**Description**: Search and analytics platform integration with comprehensive API access for search
-functionality.
-
-**Installation**:
-
-```bash
-git clone git@github.com:algolia/mcp.git
-cd mcp/cmd/mcp
-go build
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      algolia:
-        transport:
-          type: "stdio"
-          command: "/usr/local/bin/algolia-mcp"
-        auth:
-          type: "api_key"
-          token_env: "ALGOLIA_API_KEY"
-        env:
-          ALGOLIA_APP_ID: "<APP_ID>"
-          ALGOLIA_INDEX_NAME: "<INDEX_NAME>"
-          ALGOLIA_WRITE_API_KEY: "<ADMIN_API_KEY>"
-        tools:
-          allow: ["search", "analytics", "recommend"]
-```
-
-**Available Tools**:
-
-- `search` - Full-text search capabilities
-- `analytics` - Search analytics and insights
-- `recommend` - Recommendation engine
-- `abtesting` - A/B testing for search
-- `querysuggestions` - Query suggestion management
-- `collections` - Index collection management
-- `monitoring` - Performance monitoring
-- `usage` - Usage analytics
-
-**Use Cases**: Search optimization, analytics tracking, recommendation systems, A/B testing
-
----
-
-### 15. Google Analytics 4
-
-**Package**: `mcp-server-google-analytics`
+**Package**: `mcp-server-google-analytics` **Status**: Community-maintained **Atlas Use Cases**: Website analytics, user behavior analysis, performance tracking
 
 **Description**: GA4 data access with 200+ dimensions and metrics through natural language queries.
-
-**Installation**:
-
-```bash
-npm install -g mcp-server-google-analytics
-# Or: npx -y @smithery/cli install mcp-server-google-analytics --client claude
-```
 
 **Atlas Configuration**:
 
@@ -732,52 +523,11 @@ tools:
 
 ### Authentication & Security
 
-### 16. Auth0 Identity Management
+### 9. Auth0 Identity Management
 
-**Package**: `@auth0/auth0-mcp-server`
+**Package**: `@auth0/auth0-mcp-server` **Status**: Beta **Atlas Use Cases**: Identity management, authentication setup, security monitoring
 
-**Description**: Auth0 tenant management through natural language with secure credential storage.
-
-**Installation**:
-
-```bash
-npx @auth0/auth0-mcp-server init
-```
-
-**Available Tools**:
-
-- **Applications**: CRUD operations for applications
-- **Resource Servers**: API configuration management
-- **Actions**: Deploy and manage Auth0 Actions
-- **Logs**: Retrieve and analyze authentication logs
-- **Forms**: Manage login and registration forms
-
-**Security Features**:
-
-- System keychain credential storage
-- OAuth 2.0 authentication
-- Scoped permissions management
-- Audit logging
-
-**Use Cases**: Identity management, authentication setup, security monitoring, user access control
-
----
-
-### Communication & Messaging
-
-### 17. Slack Workspace Integration
-
-**Package**: `@modelcontextprotocol/server-slack` **Status**: Production-ready **Atlas Use Cases**:
-Notifications, team communication, workflow integration
-
-**Description**: Essential Slack integration for Atlas workspaces. Enables agents to communicate
-with teams and send notifications.
-
-**Installation**:
-
-```bash
-npm i @modelcontextprotocol/server-slack
-```
+**Description**: Auth0 tenant management through natural language with secure credential storage and OAuth 2.0 device authorization flow.
 
 **Atlas Configuration**:
 
@@ -786,94 +536,45 @@ npm i @modelcontextprotocol/server-slack
 tools:
   mcp:
     servers:
-      slack:
+      auth0:
         transport:
           type: "stdio"
           command: "npx"
-          args: ["-y", "@modelcontextprotocol/server-slack"]
+          args: ["-y", "@auth0/auth0-mcp-server", "run"]
         auth:
-          type: "bearer"
-          token_env: "SLACK_BOT_TOKEN"
+          type: "oauth"
+          # OAuth 2.0 device flow - interactive setup required
+        tools:
+          allow: ["get_application", "list_applications", "list_logs", "get_tenant_settings"]
+          # For read-only operations, use:
+          # allow: ["get_application", "list_applications", "list_logs", "get_tenant_settings"]
+          # For full access, add: ["create_application", "update_application", "create_action", "deploy_action"]
         env:
-          SLACK_TEAM_ID: "T01234567"
-          SLACK_CHANNEL_IDS: "C01234567,C76543210"
-        tools:
-          allow: ["send_message", "list_channels", "add_reaction"]
-```
-
-**Required Scopes**: `channels:history`, `channels:read`, `chat:write`, `reactions:write`,
-`users:read`
-
-**Available Tools**:
-
-- List channels and workspaces
-- Post messages to channels
-- Add reactions to messages
-- Retrieve message history
-- Manage users and permissions
-- Channel creation and management
-
-**Atlas Integration**: Critical for team-facing agents. Excellent for sending analysis results,
-alerts, and status updates to development teams.
-
----
-
-### 18. Gmail Email Management
-
-**Package**: `@gongrzhe/server-gmail-autoauth-mcp`
-
-**Description**: Complete Gmail management with auto-authentication support for email automation.
-
-**Installation**:
-
-```bash
-npx -y @smithery/cli install @gongrzhe/server-gmail-autoauth-mcp --client claude
-```
-
-**Atlas Configuration**:
-
-```yaml
-# In workspace.yml
-tools:
-  mcp:
-    servers:
-      gmail:
-        transport:
-          type: "stdio"
-          command: "npx"
-          args: ["@gongrzhe/server-gmail-autoauth-mcp"]
-        tools:
-          allow: ["send_email", "read_email", "search_emails"]
+          DEBUG: "auth0-mcp"
         client_config:
-          timeout: "60s"
+          timeout: "90s"
 ```
 
 **Available Tools**:
 
-- `send_email` - Send emails with attachments
-- `draft_email` - Create email drafts
-- `read_email` - Read email contents
-- `search_emails` - Search across mailbox
-- `download_attachment` - Download file attachments
-- `modify_email` - Update email properties
-- `delete_email` - Delete emails
-- **Label Management**: Create, update, delete labels
-- **Batch Operations**: Bulk email operations
+- **Applications**: `list_applications`, `get_application`, `create_application`, `update_application`
+- **Resource Servers**: `list_resource_servers`, `get_resource_server`, `create_resource_server`, `update_resource_server`
+- **Actions**: `list_actions`, `get_action`, `create_action`, `update_action`, `deploy_action`
+- **Logs**: `list_logs`, `get_log_entry`
+- **Forms**: `list_forms`, `get_form`, `create_form`, `update_form`, `publish_form`
+- **Tenant**: `get_tenant_settings`
 
-**Use Cases**: Email automation, customer service, newsletter management, attachment processing
+**Use Cases**: Identity management, authentication setup, security monitoring, user access control, application configuration
 
 ---
 
 ### Task & Project Management
 
-### 19. Linear Project Management
+### 10. Linear Project Management
 
 **Package**: Official Linear MCP server (remote)
 
-**Description**: Linear project management integration for issue tracking, updates, and team
-coordination.
-
-**Installation**: Remote server at `https://mcp.linear.app/sse`
+**Description**: Linear project management integration for issue tracking, updates, and team coordination.
 
 **Atlas Configuration**:
 
@@ -895,143 +596,155 @@ tools:
           timeout: "120s"
 ```
 
-**Features**:
-
-- Issue creation and management
-- Status updates and tracking
-- Automated reporting
-- Slack integration
-- Google Docs synchronization
-- Team coordination
-
 **Use Cases**: Project tracking, issue management, team collaboration, automated reporting
 
 ---
 
-### 20. Trello Board Management
+### 11. Trello Board Management
 
-**Package**: `mcp-server-ts-trello`
+**Package**: `@delorenj/mcp-server-trello` **Status**: Community-maintained **Atlas Use Cases**: Kanban project management, task tracking, team coordination
 
-**Description**: Trello board management through natural language for kanban-style project
-management.
+**Description**: Trello board management through natural language for kanban-style project management. Features built-in rate limiting, dynamic board selection, and comprehensive error handling.
 
-**Installation**: Available through GitHub repository
+**Atlas Configuration**:
+
+```yaml
+# In workspace.yml
+tools:
+  mcp:
+    servers:
+      trello:
+        transport:
+          type: "stdio"
+          command: "pnpx"
+          args: ["@delorenj/mcp-server-trello"]
+        auth:
+          type: "api_key"
+          token_env: "TRELLO_API_KEY"
+        tools:
+          allow: [
+            "list_boards",
+            "get_lists",
+            "get_cards_by_list_id",
+            "add_card_to_list",
+            "update_card_details",
+          ]
+          # For full access, add: ["archive_card", "move_card", "attach_image_to_card", "set_active_board"]
+        env:
+          TRELLO_API_KEY: "your-api-key"
+          TRELLO_TOKEN: "your-token"
+        client_config:
+          timeout: "60s"
+```
 
 **Available Tools**:
 
-- Board management and creation
-- List management (To Do, In Progress, Done)
-- Card management (create, update, move)
-- Project tracking and reporting
-- Workflow optimization
-- Team collaboration features
+- **Board Management**: `list_boards`, `set_active_board`
+- **Workspace Management**: `list_workspaces`
+- **List Operations**: `get_lists`
+- **Card Operations**: `get_cards_by_list_id`, `add_card_to_list`, `update_card_details`, `move_card`, `archive_card`
+- **Attachments**: `attach_image_to_card`
+- **Activity**: `get_recent_activity`
 
-**Use Cases**: Kanban project management, task tracking, team coordination, workflow automation
+**Use Cases**: Kanban project management, task tracking, team coordination, workflow automation, project reporting
 
 ---
 
-### 21. Notion Workspace
+### 12. Notion Workspace
 
-**Package**: Official Notion MCP server
+**Package**: Official Notion MCP server (remote) **Status**: Production-ready **Atlas Use Cases**: Knowledge management, documentation, project planning
 
-**Description**: Notion database and page management through natural language for knowledge
-management.
+**Description**: Official Notion MCP server for database and page management through natural language. Provides live context from Notion workspace based on user access and permissions.
 
-**Installation**: Available through downloadable package and hosted server
+**Atlas Configuration**:
 
-**Features**:
+```yaml
+# In workspace.yml
+tools:
+  mcp:
+    servers:
+      notion:
+        transport:
+          type: "sse"
+          url: "https://mcp.notion.com/sse"
+        auth:
+          type: "oauth"
+          # OAuth flow through Notion app: Settings → Connections → Notion MCP
+        tools:
+          allow: ["search", "fetch", "create-pages", "update-page", "get-comments"]
+          # For full access, add: ["move-pages", "duplicate-page", "create-database", "update-database"]
+        client_config:
+          timeout: "90s"
+```
 
-- Task management and creation
-- Database queries and management
-- Page creation and editing
-- Note organization
-- Team collaboration
-- Template management
+**Available Tools**:
 
-**Use Cases**: Knowledge management, documentation, project planning, team collaboration
+- **Search & Retrieval**: `search`, `fetch`
+- **Page Management**: `create-pages`, `update-page`, `move-pages`, `duplicate-page`
+- **Database Operations**: `create-database`, `update-database`
+- **Comments**: `create-comment`, `get-comments`
+- **User Management**: `get-users`, `get-user`, `get-self`
+
+**Use Cases**: Knowledge management, documentation, project planning, team collaboration, template creation, workspace organization
 
 ---
 
 ### Content & Email Management
 
-### 22. News API Integration
+### 13. RSS Feed Management
 
-**Package**: `@berlinbra/news-api-mcp`
+**Package**: `mcp_rss` **Status**: Community-maintained **Atlas Use Cases**: Content aggregation, news monitoring, research automation
 
-**Description**: Global news access through News API with advanced filtering and multi-language
-support.
+**Description**: RSS feed management with OPML support and automatic content aggregation. Features MySQL storage, automatic feed updates, and content filtering capabilities.
 
-**Installation**:
+**Prerequisites**: MySQL database required
 
-```bash
-npx -y @smithery/cli install @berlinbra/news-api-mcp --client claude
+**Atlas Configuration**:
+
+```yaml
+# In workspace.yml
+tools:
+  mcp:
+    servers:
+      rss:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["mcp_rss"]
+        tools:
+          allow: ["get_content", "get_sources", "set_tag"]
+        env:
+          # Database configuration
+          DB_HOST: "localhost"
+          DB_PORT: "3306"
+          DB_USERNAME: "root"
+          DB_PASSWORD: "your-password"
+          DB_DATABASE: "mcp_rss"
+
+          # RSS configuration
+          OPML_FILE_PATH: "/path/to/your/feeds.opml"
+          RSS_UPDATE_INTERVAL: "60" # minutes between updates
+        client_config:
+          timeout: "30s"
 ```
 
 **Available Tools**:
 
-- `search-news` - Search news articles
-- `get-top-headlines` - Retrieve top headlines
-- `get-news-sources` - Manage news sources
+- **get_content**: Retrieve RSS articles with optional filtering
+- **get_sources**: List all configured RSS feed sources
+- **set_tag**: Update article status (mark as favorite or normal)
 
-**Features**:
-
-- Multi-language support
-- Category filtering (business, entertainment, health, science, sports, technology)
-- Source management
-- Date-based queries
-- Geographic filtering
-
-**Use Cases**: News monitoring, content curation, market research, trend analysis
-
----
-
-### 23. RSS Feed Management
-
-**Package**: `mcp_rss`
-
-**Description**: RSS feed management with OPML support and content aggregation for news and content
-tracking.
-
-**Installation**:
-
-```bash
-npx mcp_rss
-```
-
-**Configuration**: Requires MySQL database and environment variables for DB connection
-
-**Available Methods**:
-
-- `get_content` - Retrieve feed content
-- `get_sources` - Manage RSS sources
-- `set_tag` - Tag and categorize content
-
-**Features**:
-
-- OPML parsing and import
-- Automatic content updates
-- Content filtering and search
-- Favorite tagging system
-- Multi-feed aggregation
-
-**Use Cases**: Content aggregation, news monitoring, research automation, content curation
+**Use Cases**: Content aggregation, news monitoring, research automation, content curation, RSS feed management
 
 ---
 
 ### Development & Monitoring
 
-### 24. PostHog Analytics & Feature Flags
+### 14. PostHog Analytics & Feature Flags
 
 **Package**: `@posthog/posthog-mcp`
 
-**Description**: Analytics, feature flags, and error tracking integration for product development
-insights.
-
-**Installation**:
-
-```bash
-npx @posthog/wizard@latest mcp add
-```
+**Description**: Analytics, feature flags, and error tracking integration for product development insights.
 
 **Atlas Configuration**:
 
@@ -1055,25 +768,53 @@ tools:
 
 **Available Tools**:
 
-- Feature flag management and testing
-- Analytics queries and insights
-- Error investigation and tracking
-- Project management
-- User behavior analysis
-- A/B testing management
-- Custom event tracking
+**Dashboard Management**:
+
+- `dashboard_create` - Create new dashboards
+- `dashboard_get_all` - List all dashboards
+- `dashboard_update` - Update existing dashboards
+- `dashboard_delete` - Delete dashboards
+
+**Insights & Analytics**:
+
+- `insight_create` - Create new insights
+- `insight_get_all` - List all insights
+- `insight_update` - Update existing insights
+- `insight_delete` - Delete insights
+- `insight_get_sql` - Get SQL for insights
+
+**Feature Flag Management**:
+
+- `feature_flag_create` - Create new feature flags
+- `feature_flag_get_all` - List all feature flags
+- `feature_flag_update` - Update feature flags
+- `feature_flag_delete` - Delete feature flags
+
+**Project & Organization**:
+
+- `organization_get_all` - List organizations
+- `project_get_all` - List projects
+- `project_set_active` - Set active project
+
+**Error Tracking**:
+
+- `error_tracking_list` - List error tracking data
+- `error_tracking_details` - Get error details
+
+**Documentation & Observability**:
+
+- `documentation_search` - Search PostHog documentation
+- `llm_observability_get_costs` - Get LLM observability costs
 
 **Use Cases**: Product analytics, feature rollouts, user behavior analysis, A/B testing
 
 ---
 
-### 25. Sentry Error Tracking
+### 15. Sentry Error Tracking
 
 **Package**: Official Sentry MCP server (remote)
 
 **Description**: Error tracking, performance monitoring, and AI-powered root cause analysis.
-
-**Installation**: Remote server (OAuth) or local STDIO mode
 
 **Atlas Configuration**:
 
@@ -1096,22 +837,27 @@ tools:
 
 **Available Tools**:
 
-- Organizations and project management
-- Teams and user management
-- Issues and error tracking
-- DSN (Data Source Name) management
-- Error analysis and debugging
-- **Seer AI**: AI-powered root cause analysis
-- Release management
-- Performance monitoring
+**Project & Organization Management**:
 
-**Features**:
+- `list_projects` - List accessible Sentry projects
+- `create_project` - Create new projects and retrieve client keys
+- `list_organization_replays` - List replays from organization
 
-- Real-time error tracking
-- Performance monitoring
-- AI-powered root cause analysis
-- Release health monitoring
-- Custom alerting
+**Issue Tracking & Analysis**:
+
+- `list_project_issues` - List issues from specific projects
+- `get_sentry_issue` - Retrieve and analyze specific issues
+- `resolve_short_id` - Get issue details using short ID
+- `list_issue_events` - List events for specific issues
+
+**Event & Error Management**:
+
+- `get_sentry_event` - Retrieve and analyze specific events
+- `list_error_events_in_project` - List error events from projects
+
+**AI-Powered Analysis**:
+
+- **Seer AI Integration**: AI-powered root cause analysis and automated fix recommendations
 
 **Use Cases**: Error monitoring, performance optimization, debugging assistance, release management
 
@@ -1119,31 +865,43 @@ tools:
 
 ### Utility Services
 
-### 26. Weather Data Service
+### 16. Weather Data Service
 
-**Package**: Multiple implementations (`mcp-weather-server`, `@executeautomation/weather-mcp`)
+**Package**: `@timlukahorstmann/mcp-weather` **Status**: Community-maintained **Atlas Use Cases**: Location-based applications, travel planning, weather-dependent automation
 
-**Description**: Real-time weather data and forecasts using Open-Meteo, AccuWeather, or National
-Weather Service APIs.
+**Description**: Real-time weather forecasts using AccuWeather API. Provides accurate hourly and daily weather data for any location with flexible unit systems.
 
-**Installation**:
+**Prerequisites**: AccuWeather API key required
 
-```bash
-pip install mcp-weather-server
-# Or npm equivalent
+**Atlas Configuration**:
+
+```yaml
+# In workspace.yml
+tools:
+  mcp:
+    servers:
+      weather:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "@timlukahorstmann/mcp-weather"]
+        auth:
+          type: "api_key"
+          token_env: "ACCUWEATHER_API_KEY"
+        tools:
+          allow: ["weather-get_hourly", "weather-get_daily"]
+        env:
+          ACCUWEATHER_API_KEY: "your-api-key"
+        client_config:
+          timeout: "30s"
 ```
 
-**Features**:
+**Available Tools**:
 
-- City-based weather queries
-- Weather alerts and warnings
-- Multi-day forecasts
-- Historical weather data
-- No API key required (for some implementations)
-- Multiple data source support
+- **weather-get_hourly**: Get 12-hour weather forecast
+- **weather-get_daily**: Get daily weather forecast
 
-**Use Cases**: Location-based applications, travel planning, weather-dependent automation,
-agriculture
+**Use Cases**: Location-based applications, travel planning, weather-dependent automation, agriculture, event planning
 
 ---
 
@@ -1210,60 +968,3 @@ tools:
 5. **Timeout Controls**: Set appropriate timeouts to prevent hanging operations
 6. **Agent Scoping**: Limit tool access per agent using `tools` in job execution configuration
 7. **Audit Logging**: Atlas automatically logs all MCP tool invocations for security auditing
-
-### Atlas Testing & Debugging
-
-Atlas provides built-in MCP testing and debugging capabilities:
-
-```bash
-# Test MCP server connectivity
-atlas config validate
-
-# View available MCP tools
-atlas tools list
-
-# Test specific MCP server
-atlas tools test github
-
-# Debug MCP tool execution
-atlas signal trigger test-signal --debug
-```
-
-### MCP Inspector Integration
-
-For external testing, use the MCP Inspector:
-
-```bash
-npx @modelcontextprotocol/inspector
-```
-
-### Installation Methods
-
-- **npm/npx**: JavaScript/TypeScript servers
-- **pip/uvx**: Python servers
-- **Remote**: Hosted servers via URL
-- **Docker**: Containerized servers
-- **Source**: Build from repository
-
----
-
-## Getting Started with Atlas MCP
-
-1. **Choose MCP servers** based on your workspace requirements
-2. **Install packages** using npm, pip, or build from source
-3. **Configure in workspace.yml** using Atlas YAML schema
-4. **Set environment variables** for authentication tokens
-5. **Test configuration** using `atlas config validate`
-6. **Deploy agents** that use MCP tools in job execution
-7. **Monitor usage** through Atlas built-in logging and metrics
-
-### Atlas-Specific MCP Features
-
-- **Job Integration**: MCP tools are granted to agents via job `execution.agents[].tools.allow`
-- **Context Provisioning**: Atlas EMCP provides secure filesystem context without MCP servers
-- **Memory Integration**: Built-in workspace memory system complements external MCP memory servers
-- **Signal Processing**: MCP tools can be used in response to HTTP, schedule, or system signals
-- **Multi-Agent Workflows**: MCP tools shared across agent pipelines with proper scoping
-
-This guide provides production-ready MCP server configurations for Atlas workspaces, enabling secure
-and scalable AI agent orchestration with external tool integration.

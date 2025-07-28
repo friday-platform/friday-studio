@@ -18,7 +18,9 @@ export function initializeUpdateBuilder(builder: WorkspaceBuilder): void {
 
 export function getUpdateBuilder(): WorkspaceBuilder {
   if (!workspaceUpdateBuilder) {
-    throw new Error("Workspace update builder not initialized. This indicates a bug in the update process.");
+    throw new Error(
+      "Workspace update builder not initialized. This indicates a bug in the update process.",
+    );
   }
   return workspaceUpdateBuilder;
 }
@@ -35,7 +37,9 @@ export const workspaceUpdateTools = {
       description: z.string(),
     }),
     execute: () => {
-      throw new Error("initializeWorkspace is not available in update mode - workspace already initialized");
+      throw new Error(
+        "initializeWorkspace is not available in update mode - workspace already initialized",
+      );
     },
   }),
 
@@ -46,34 +50,37 @@ export const workspaceUpdateTools = {
     execute: () => {
       const builder = getUpdateBuilder();
       const config = builder.exportConfig();
-      
+
       const components = {
-        signals: Object.keys(config.signals || {}).map(id => ({
+        signals: Object.keys(config.signals || {}).map((id) => ({
           id,
           type: config.signals![id].provider,
           description: config.signals![id].description,
         })),
-        agents: Object.keys(config.agents || {}).map(id => ({
+        agents: Object.keys(config.agents || {}).map((id) => ({
           id,
           type: config.agents![id].type,
           description: config.agents![id].description,
         })),
-        jobs: Object.keys(config.jobs || {}).map(id => ({
+        jobs: Object.keys(config.jobs || {}).map((id) => ({
           id,
           signal: config.jobs![id].triggers[0]?.signal,
           agents: config.jobs![id].execution.agents,
           description: config.jobs![id].description,
         })),
-        mcpServers: config.tools?.mcp?.servers ? Object.keys(config.tools.mcp.servers).map(id => ({
-          id,
-          transport: config.tools!.mcp!.servers![id].transport.type,
-          tools: config.tools!.mcp!.servers![id].tools?.allow?.length || 0,
-        })) : [],
+        mcpServers: config.tools?.mcp?.servers
+          ? Object.keys(config.tools.mcp.servers).map((id) => ({
+            id,
+            transport: config.tools!.mcp!.servers![id].transport.type,
+            tools: config.tools!.mcp!.servers![id].tools?.allow?.length || 0,
+          }))
+          : [],
       };
 
       return {
         status: "listed",
-        message: `Found ${components.signals.length} signals, ${components.agents.length} agents, ${components.jobs.length} jobs, ${components.mcpServers.length} MCP servers`,
+        message:
+          `Found ${components.signals.length} signals, ${components.agents.length} agents, ${components.jobs.length} jobs, ${components.mcpServers.length} MCP servers`,
         components,
       };
     },
@@ -97,9 +104,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Signal update failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "updated", 
-        signalId, 
+      return {
+        status: "updated",
+        signalId,
         message: `Signal '${signalId}' updated successfully`,
         updatedFields: Object.keys(updates),
       };
@@ -107,18 +114,24 @@ export const workspaceUpdateTools = {
   }),
 
   updateAgent: tool({
-    description: "Update an existing agent's configuration", 
+    description: "Update an existing agent's configuration",
     inputSchema: z.object({
       agentId: z.string().describe("ID of the existing agent to update"),
       updates: z.object({
         description: z.string().optional().describe("New description for the agent"),
         prompt: z.string().optional().describe("New system prompt (for LLM agents only)"),
         model: z.string().optional().describe("New model identifier (for LLM agents only)"),
-        temperature: z.number().min(0).max(1).optional().describe("New temperature setting (for LLM agents only)"),
-        tools: z.array(z.string()).optional().describe("New array of MCP server names (for LLM agents only)"),
+        temperature: z.number().min(0).max(1).optional().describe(
+          "New temperature setting (for LLM agents only)",
+        ),
+        tools: z.array(z.string()).optional().describe(
+          "New array of MCP server names (for LLM agents only)",
+        ),
         endpoint: z.string().url().optional().describe("New endpoint URL (for remote agents only)"),
         agentName: z.string().optional().describe("New agent name (for remote agents only)"),
-        defaultMode: z.enum(["sync", "async", "stream"]).optional().describe("New default mode (for remote agents only)"),
+        defaultMode: z.enum(["sync", "async", "stream"]).optional().describe(
+          "New default mode (for remote agents only)",
+        ),
       }).describe("Agent configuration updates to apply"),
     }),
     execute: ({ agentId, updates }) => {
@@ -127,9 +140,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Agent update failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "updated", 
-        agentId, 
+      return {
+        status: "updated",
+        agentId,
         message: `Agent '${agentId}' updated successfully`,
         updatedFields: Object.keys(updates),
       };
@@ -153,9 +166,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Job update failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "updated", 
-        jobId, 
+      return {
+        status: "updated",
+        jobId,
         message: `Job '${jobId}' updated successfully`,
         updatedFields: Object.keys(updates),
       };
@@ -174,9 +187,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Signal removal failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "removed", 
-        signalId, 
+      return {
+        status: "removed",
+        signalId,
         message: `Signal '${signalId}' removed successfully`,
       };
     },
@@ -193,9 +206,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Agent removal failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "removed", 
-        agentId, 
+      return {
+        status: "removed",
+        agentId,
         message: `Agent '${agentId}' removed successfully`,
       };
     },
@@ -212,9 +225,9 @@ export const workspaceUpdateTools = {
       if (!result.success) {
         throw new Error(`Job removal failed: ${result.errors.join("; ")}`);
       }
-      return { 
-        status: "removed", 
-        jobId, 
+      return {
+        status: "removed",
+        jobId,
         message: `Job '${jobId}' removed successfully`,
       };
     },
@@ -426,11 +439,11 @@ export const workspaceUpdateTools = {
     }),
     execute: ({ requiredTools }) => {
       const builder = getUpdateBuilder();
-      
+
       // Validate that all requested tools are available Atlas tools
       const availableAtlasTools = [
         "atlas_library_list",
-        "atlas_library_get", 
+        "atlas_library_get",
         "atlas_library_store",
         "atlas_library_stats",
         "atlas_library_templates",

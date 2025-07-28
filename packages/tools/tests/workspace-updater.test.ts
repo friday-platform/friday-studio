@@ -2,7 +2,7 @@
  * Unit tests for WorkspaceUpdater class
  */
 
-import { assertEquals, assertExists, assertAlmostEquals } from "@std/assert";
+import { assertAlmostEquals, assertEquals, assertExists } from "@std/assert";
 import { WorkspaceUpdater } from "../src/internal/workspace-update/workspace-updater.ts";
 
 // Mock environment variable for the test
@@ -23,7 +23,10 @@ Deno.test({
     const updater = new WorkspaceUpdater();
     const error = new Error("Workspace not found: test-id");
     const friendly = updater.getUserFriendlyError(error);
-    assertEquals(friendly, "The specified workspace could not be found. Please check the workspace identifier.");
+    assertEquals(
+      friendly,
+      "The specified workspace could not be found. Please check the workspace identifier.",
+    );
   },
 });
 
@@ -33,7 +36,10 @@ Deno.test({
     const updater = new WorkspaceUpdater();
     const error = new Error("Workspace validation failed: Invalid signal reference");
     const friendly = updater.getUserFriendlyError(error);
-    assertEquals(friendly, "The workspace update had validation issues. Please try with different modifications.");
+    assertEquals(
+      friendly,
+      "The workspace update had validation issues. Please try with different modifications.",
+    );
   },
 });
 
@@ -74,7 +80,7 @@ Deno.test({
     const temp1 = (updater as any).getTemperatureForAttempt(1);
     const temp2 = (updater as any).getTemperatureForAttempt(2);
     const temp3 = (updater as any).getTemperatureForAttempt(3);
-    
+
     assertAlmostEquals(temp1, 0.4, 0.001);
     assertAlmostEquals(temp2, 0.3, 0.001);
     assertAlmostEquals(temp3, 0.2, 0.001);
@@ -92,6 +98,9 @@ Deno.test({
     ];
 
     const message = (updater as any).buildFailureMessage(2);
-    assertEquals(message, "Failed to update workspace after 2 attempts. Errors encountered:\n1. Error 1\n2. Error 2\n3. Error 3");
+    assertEquals(
+      message,
+      "Failed to update workspace after 2 attempts. Errors encountered:\n1. Error 1\n2. Error 2\n3. Error 3",
+    );
   },
 });

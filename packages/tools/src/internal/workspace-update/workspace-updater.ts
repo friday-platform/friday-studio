@@ -5,7 +5,7 @@ import { getWorkspaceManager } from "@atlas/workspace";
 import type { WorkspaceEntry } from "@atlas/workspace";
 import { logger } from "../../../../../src/utils/logger.ts";
 import { WorkspaceBuilder } from "../workspace-creation/builder.ts";
-import { workspaceUpdateTools, initializeUpdateBuilder } from "./tools.ts";
+import { initializeUpdateBuilder, workspaceUpdateTools } from "./tools.ts";
 import { WORKSPACE_UPDATE_SYSTEM_PROMPT } from "./prompts.ts";
 
 interface AttemptResult {
@@ -61,7 +61,7 @@ export class WorkspaceUpdater {
         // Step 2: Initialize WorkspaceBuilder with existing configuration
         logger.debug("Initializing workspace builder with existing configuration");
         const builder = new WorkspaceBuilder(existingConfig);
-        
+
         // Initialize the singleton builder for tools to use
         initializeUpdateBuilder(builder);
 
@@ -126,7 +126,7 @@ export class WorkspaceUpdater {
         if (validation.success) {
           logger.info(`Workspace update attempt ${attempt} succeeded`);
           const updatedConfig = builder.exportConfig();
-          
+
           return {
             config: updatedConfig,
             workspace,
@@ -201,7 +201,11 @@ export class WorkspaceUpdater {
 - **Signals**: ${Object.keys(existingConfig.signals || {}).length} configured
 - **Agents**: ${Object.keys(existingConfig.agents || {}).length} configured  
 - **Jobs**: ${Object.keys(existingConfig.jobs || {}).length} configured
-- **MCP Servers**: ${existingConfig.tools?.mcp?.servers ? Object.keys(existingConfig.tools.mcp.servers).length : 0} configured
+- **MCP Servers**: ${
+        existingConfig.tools?.mcp?.servers
+          ? Object.keys(existingConfig.tools.mcp.servers).length
+          : 0
+      } configured
 
 **Existing Components**:
 ${this.formatExistingComponents(existingConfig)}`;

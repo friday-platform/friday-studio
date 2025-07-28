@@ -19,7 +19,8 @@ function resetBuilder() {
 }
 
 Deno.test({
-  name: "Workspace Building Tools - initializeWorkspace should initialize workspace with valid parameters",
+  name:
+    "Workspace Building Tools - initializeWorkspace should initialize workspace with valid parameters",
   async fn() {
     resetBuilder();
 
@@ -69,7 +70,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - addScheduleSignal should use default timezone when not provided",
+  name:
+    "Workspace Building Tools - addScheduleSignal should use default timezone when not provided",
   async fn() {
     resetBuilder();
     await workspaceBuilderTools.initializeWorkspace.execute!({
@@ -234,7 +236,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - createJob should create valid job with signal and agent references",
+  name:
+    "Workspace Building Tools - createJob should create valid job with signal and agent references",
   async fn() {
     resetBuilder();
     await workspaceBuilderTools.initializeWorkspace.execute!({
@@ -368,7 +371,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - addMCPIntegration should work with default args and without env",
+  name:
+    "Workspace Building Tools - addMCPIntegration should work with default args and without env",
   async fn() {
     resetBuilder();
     await workspaceBuilderTools.initializeWorkspace.execute!({
@@ -387,7 +391,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - validateWorkspace should validate complete workspace configuration",
+  name:
+    "Workspace Building Tools - validateWorkspace should validate complete workspace configuration",
   async fn() {
     resetBuilder();
     await workspaceBuilderTools.initializeWorkspace.execute!({
@@ -428,7 +433,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - validateWorkspace should fail validation for incomplete workspace",
+  name:
+    "Workspace Building Tools - validateWorkspace should fail validation for incomplete workspace",
   async fn() {
     resetBuilder();
     // Don't initialize workspace
@@ -473,7 +479,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - exportWorkspace should include MCP tools section when servers exist",
+  name:
+    "Workspace Building Tools - exportWorkspace should include MCP tools section when servers exist",
   async fn() {
     resetBuilder();
     await workspaceBuilderTools.initializeWorkspace.execute!({
@@ -518,7 +525,8 @@ Deno.test({
 });
 
 Deno.test({
-  name: "Workspace Building Tools - Tool integration should support complete workspace building workflow",
+  name:
+    "Workspace Building Tools - Tool integration should support complete workspace building workflow",
   async fn() {
     resetBuilder();
 
