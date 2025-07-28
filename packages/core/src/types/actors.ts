@@ -59,6 +59,7 @@ export interface AgentExecutionConfig {
   agent: AgentConfig;
   tools?: string[]; // Agent's specific tools array
   memory?: MemoryConfig;
+  workspaceTools?: ToolsConfig; // Workspace-level tools config for timeout coordination
 }
 
 // ==============================================================================

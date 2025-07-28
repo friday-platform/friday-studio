@@ -851,6 +851,7 @@ Think step by step about the best approach to handle this signal, then use the t
       agent: agentConfig,
       tools: tools,
       memory: this.config?.memory,
+      workspaceTools: this.config?.tools,
     };
   }
 
