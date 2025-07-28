@@ -1362,6 +1362,8 @@ export class AtlasDaemon implements AppContext {
         } (${Object.keys(workspaceObj.signals).length} total)`,
       );
 
+      // Status will be updated to "running" when registerRuntime is called
+
       logger.debug(`Creating WorkspaceRuntime...`);
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
@@ -1374,7 +1376,7 @@ export class AtlasDaemon implements AppContext {
       logger.debug(`Runtime stored in daemon registry`);
 
       // Register runtime with WorkspaceManager
-      manager.registerRuntime(workspace.id, runtime);
+      await manager.registerRuntime(workspace.id, runtime);
       logger.debug(`Runtime registered with WorkspaceManager`);
 
       // Set idle timeout
@@ -1388,6 +1390,9 @@ export class AtlasDaemon implements AppContext {
       return runtime;
     } catch (error) {
       logger.error(`Failed to create workspace runtime for ${workspaceId}:`, error);
+
+      // Status update will be handled by WorkspaceManager if needed
+
       throw error;
     }
   }
@@ -1493,7 +1498,7 @@ export class AtlasDaemon implements AppContext {
 
     // Unregister runtime from WorkspaceManager
     const manager = this.getWorkspaceManager();
-    manager.unregisterRuntime(workspaceId);
+    await manager.unregisterRuntime(workspaceId);
 
     // Clear idle timeout
     const timeoutId = this.idleTimeouts.get(workspaceId);

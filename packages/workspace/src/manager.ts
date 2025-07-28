@@ -202,19 +202,29 @@ export class WorkspaceManager {
     name?: string;
     path?: string;
   }): Promise<WorkspaceEntry | null> {
+    let workspace: WorkspaceEntry | null = null;
+
     if (query.id) {
-      return await this.registry.getWorkspace(query.id);
-    }
-    if (query.name) {
-      return await this.registry.findWorkspaceByName(query.name);
-    }
-    if (query.path) {
+      workspace = await this.registry.getWorkspace(query.id);
+    } else if (query.name) {
+      workspace = await this.registry.findWorkspaceByName(query.name);
+    } else if (query.path) {
       const normalizedPath = await Deno.realPath(query.path).catch(
         () => query.path ?? "",
       );
-      return await this.registry.findWorkspaceByPath(normalizedPath);
+      workspace = await this.registry.findWorkspaceByPath(normalizedPath);
     }
-    return null;
+
+    // If workspace found, check runtime status
+    if (workspace) {
+      const runtime = this.runtimes.get(workspace.id);
+      if (runtime) {
+        // Runtime exists, workspace is running
+        return { ...workspace, status: "running" };
+      }
+    }
+
+    return workspace;
   }
 
   /**
@@ -225,6 +235,16 @@ export class WorkspaceManager {
     includeSystem?: boolean;
   }): Promise<WorkspaceEntry[]> {
     let workspaces = await this.registry.listWorkspaces();
+
+    // Update workspace status based on active runtimes
+    workspaces = workspaces.map((workspace) => {
+      const runtime = this.runtimes.get(workspace.id);
+      if (runtime) {
+        // Runtime exists, workspace is running
+        return { ...workspace, status: "running" as WorkspaceStatus };
+      }
+      return workspace;
+    });
 
     if (options?.status) {
       workspaces = workspaces.filter((w) => w.status === options.status);
@@ -293,17 +313,33 @@ export class WorkspaceManager {
   /**
    * Register an active runtime
    */
-  registerRuntime(workspaceId: string, runtime: WorkspaceRuntime): void {
+  async registerRuntime(workspaceId: string, runtime: WorkspaceRuntime): Promise<void> {
     this.runtimes.set(workspaceId, runtime);
     logger.info("Runtime registered", { workspaceId });
+
+    // Update workspace status to running in registry
+    try {
+      await this.registry.updateWorkspaceStatus(workspaceId, "running");
+      logger.info("Workspace status updated to running", { workspaceId });
+    } catch (error) {
+      logger.error("Failed to update workspace status", { workspaceId, error });
+    }
   }
 
   /**
    * Unregister a runtime
    */
-  unregisterRuntime(workspaceId: string): void {
+  async unregisterRuntime(workspaceId: string): Promise<void> {
     if (this.runtimes.delete(workspaceId)) {
       logger.info("Runtime unregistered", { workspaceId });
+
+      // Update workspace status to stopped in registry
+      try {
+        await this.registry.updateWorkspaceStatus(workspaceId, "stopped");
+        logger.info("Workspace status updated to stopped", { workspaceId });
+      } catch (error) {
+        logger.error("Failed to update workspace status", { workspaceId, error });
+      }
     }
   }
 
