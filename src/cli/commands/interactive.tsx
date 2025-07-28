@@ -3,6 +3,7 @@ import { render } from "ink";
 import { AppProvider } from "../contexts/app-context.tsx";
 import { Component } from "../modules/conversation/component.tsx";
 import { YargsInstance } from "../utils/yargs.ts";
+import { MaxListenersFix } from "../components/max-listeners-fix.tsx";
 
 export const command = "$0";
 export const desc = "Launch interactive Atlas interface";
@@ -33,6 +34,7 @@ export function handler() {
   render(
     <ThemeProvider theme={customTheme}>
       <AppProvider>
+        <MaxListenersFix />
         <Component />
       </AppProvider>
     </ThemeProvider>,

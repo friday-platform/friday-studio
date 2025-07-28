@@ -10,23 +10,30 @@ const DISABLE_BRACKETED_PASTE = "\x1b[?2004l";
  * This hook ensures that bracketed paste mode is enabled when the component
  * mounts and disabled when it unmounts or when the process exits.
  */
-export const useBracketedPaste = () => {
-  const cleanup = () => {
-    process.stdout.write(DISABLE_BRACKETED_PASTE);
-  };
+// Track if bracketed paste has been initialized globally
+let isBracketedPasteInitialized = false;
 
+export const useBracketedPaste = () => {
   useEffect(() => {
+    // Only initialize once globally to prevent multiple listeners
+    if (isBracketedPasteInitialized) {
+      return;
+    }
+    isBracketedPasteInitialized = true;
+
+    // Create a unique cleanup function for this effect instance
+    const cleanup = () => {
+      process.stdout.write(DISABLE_BRACKETED_PASTE);
+    };
+
     process.stdout.write(ENABLE_BRACKETED_PASTE);
 
+    // Add listeners - these will only be added once
     process.on("exit", cleanup);
     process.on("SIGINT", cleanup);
     process.on("SIGTERM", cleanup);
 
-    return () => {
-      cleanup();
-      process.removeListener("exit", cleanup);
-      process.removeListener("SIGINT", cleanup);
-      process.removeListener("SIGTERM", cleanup);
-    };
+    // Since we're managing this globally, we don't remove listeners on unmount
+    // They'll be cleaned up when the process exits
   }, []);
 };
