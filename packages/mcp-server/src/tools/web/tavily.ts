@@ -2,11 +2,82 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ToolContext } from "../types.ts";
 import { createSuccessResponse } from "../types.ts";
 import { z } from "zod";
+import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 /**
  * Tavily web search and extraction tools
  * Based on https://docs.tavily.com/documentation/mcp
  */
+
+/**
+ * Helper function to handle large responses by saving them to Atlas library
+ */
+async function handleLargeResponse(
+  data: unknown,
+  toolName: string,
+  operation: string,
+  ctx: ToolContext,
+): Promise<unknown> {
+  const responseText = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+
+  if (responseText.length <= 2000) {
+    return data;
+  }
+
+  try {
+    // Save to Atlas library
+    const libraryPayload = {
+      type: "artifact",
+      name: `${toolName} - ${operation}`,
+      description: `Large response from ${toolName} ${operation} operation`,
+      content: responseText,
+      format: "json",
+      tags: ["tavily", toolName, "large-response"],
+      source: "agent",
+      metadata: {
+        tool: toolName,
+        operation,
+        originalSize: responseText.length,
+        timestamp: new Date().toISOString(),
+      },
+    };
+
+    const response = await fetchWithTimeout(`${ctx.daemonUrl}/api/library`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(libraryPayload),
+    });
+
+    const result = await handleDaemonResponse(response, "library_store", ctx.logger);
+
+    if (result.success && result.itemId) {
+      return {
+        message:
+          `Tool response saved in the atlas library under id ${result.itemId}. Use atlas_library_get_stream to retrieve the content.`,
+        itemId: result.itemId,
+        originalSize: responseText.length,
+      };
+    } else {
+      // If saving fails, return the original data
+      ctx.logger.warn("Failed to save large response to library, returning original data", {
+        toolName,
+        operation,
+        error: result,
+      });
+      return data;
+    }
+  } catch (error) {
+    // If saving fails, return the original data
+    ctx.logger.warn("Error saving large response to library, returning original data", {
+      toolName,
+      operation,
+      error: (error as Error).message,
+    });
+    return data;
+  }
+}
 
 export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
   // Tavily Search Tool
@@ -55,7 +126,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
           throw new Error("TAVILY_API_KEY environment variable is required");
         }
 
-        const searchParams: any = {
+        const searchParams: Record<string, unknown> = {
           query,
           search_depth,
           topic,
@@ -93,7 +164,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const result = await response.json();
 
-        return createSuccessResponse({
+        const responseData = {
           query,
           answer: result.answer || null,
           results: result.results || [],
@@ -102,7 +173,16 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
           response_time: result.response_time || 0,
           search_depth,
           topic,
-        });
+        };
+
+        const processedData = await handleLargeResponse(
+          responseData,
+          "tavily_search",
+          `search: ${query}`,
+          ctx,
+        );
+
+        return createSuccessResponse(processedData);
       } catch (error) {
         ctx.logger.error("Tavily search error", { error: (error as Error).message, query });
         throw new Error(`Search failed: ${(error as Error).message}`);
@@ -162,11 +242,20 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const result = await response.json();
 
-        return createSuccessResponse({
+        const responseData = {
           results: result.results || [],
           failed_results: result.failed_results || [],
           response_time: result.response_time || 0,
-        });
+        };
+
+        const processedData = await handleLargeResponse(
+          responseData,
+          "tavily_extract",
+          `extract: ${urls.join(", ")}`,
+          ctx,
+        );
+
+        return createSuccessResponse(processedData);
       } catch (error) {
         ctx.logger.error("Tavily extract error", { error: (error as Error).message, urls });
         throw new Error(`Extract failed: ${(error as Error).message}`);
@@ -197,7 +286,7 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
           throw new Error("TAVILY_API_KEY environment variable is required");
         }
 
-        const crawlParams: any = {
+        const crawlParams: Record<string, unknown> = {
           url,
           max_depth,
           include_raw_content,
@@ -223,12 +312,21 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
 
         const result = await response.json();
 
-        return createSuccessResponse({
+        const responseData = {
           results: result.results || [],
           failed_urls: result.failed_urls || [],
           base_url: url,
           max_depth,
-        });
+        };
+
+        const processedData = await handleLargeResponse(
+          responseData,
+          "tavily_crawl",
+          `crawl: ${url}`,
+          ctx,
+        );
+
+        return createSuccessResponse(processedData);
       } catch (error) {
         ctx.logger.error("Tavily crawl error", { error: (error as Error).message, url });
         throw new Error(`Crawl failed: ${(error as Error).message}`);

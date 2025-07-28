@@ -30,6 +30,7 @@ import { registerAgentsListTool } from "./agents/list.ts";
 
 // Import library tools
 import { registerLibraryGetTool } from "./library/get.ts";
+import { registerLibraryGetStreamTool } from "./library/get-stream.ts";
 import { registerLibraryListTool } from "./library/list.ts";
 import { registerLibraryStatsTool } from "./library/stats.ts";
 import { registerLibraryStoreTool } from "./library/store.ts";
@@ -80,6 +81,7 @@ export function registerTools(server: McpServer, context: ToolContext): void {
   // Library tools
   registerLibraryListTool(server, context);
   registerLibraryGetTool(server, context);
+  registerLibraryGetStreamTool(server, context);
   registerLibraryStoreTool(server, context);
   registerLibraryStatsTool(server, context);
   registerLibraryTemplatesTool(server, context);
