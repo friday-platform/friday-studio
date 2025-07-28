@@ -176,6 +176,7 @@ const toolNames = registry.getAllToolNames();
 
 - `atlas_stream_reply` - Send streaming replies via Server-Sent Events for real-time communication
 - `atlas_conversation_storage` - Manage conversation history with support for storing, retrieving, listing, and deleting conversation data
+- `atlas_save_env_var` - Save environment variables to .env file
 
 ## Tool Format
 

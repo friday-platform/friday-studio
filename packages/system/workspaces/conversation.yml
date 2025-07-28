@@ -183,6 +183,18 @@ agents:
         - Chain operations automatically without asking permission (after initial workspace approval)
         - Only return with results or unrecoverable errors
 
+        # Environment Variable Collection After Workspace Creation
+        **CRITICAL**: After successfully creating any workspace:
+        1. **Analyze workspace configuration**: Use atlas_workspace_describe to read the created workspace config and identify required environment variables
+        2. **Parse for env var patterns**: Look for ${ENV_VAR_NAME} patterns, references to process.env, Deno.env.get(), or explicit env requirements in jobs, agents, and tools configurations
+        3. **Extract variable names**: Identify specific environment variables the workspace needs (e.g., API_KEY, DATABASE_URL, WEBHOOK_URL)
+        4. **Prompt for values intelligently**: Ask user to provide values for the specific variables found in the config
+        5. **Use atlas_save_env_var tool**: Save each provided env var to .env file using atlas_save_env_var
+        6. **Example flow**:
+           - After creating workspace: Analyze config → Find ${NIKE_API_KEY} and ${DISCORD_WEBHOOK_URL}
+           - "I've created your Nike monitoring workspace. I found it needs these environment variables: NIKE_API_KEY and DISCORD_WEBHOOK_URL. Please provide the values."
+           - User provides values → Save each using atlas_save_env_var
+
         # Smart Context Discovery
         - Gather available information through tools BEFORE asking clarification questions
         - When users reference ambiguous items, proactively search rather than immediately asking "which one?"
