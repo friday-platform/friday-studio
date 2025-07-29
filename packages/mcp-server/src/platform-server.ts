@@ -30,6 +30,7 @@ export class PlatformMCPServer {
   private server: McpServer;
   private daemonUrl: string;
   private logger: Logger;
+  private currentLoggingLevel: string = "info";
 
   constructor(dependencies: PlatformMCPServerDependencies) {
     this.daemonUrl = dependencies.daemonUrl || getAtlasDaemonUrl();
@@ -43,6 +44,7 @@ export class PlatformMCPServer {
         prompts: {},
         tools: {},
         resources: {},
+        logging: {},
       },
     });
 
@@ -68,9 +70,24 @@ export class PlatformMCPServer {
     };
     registerPrompts(this.server, promptContext);
 
+    // Setup logging request handler
+    this.setupLoggingHandlers();
+
     this.logger.info("Platform MCP Server initialized", {
       daemonUrl: this.daemonUrl,
       serverName: "atlas-platform",
+    });
+  }
+
+  /**
+   * Setup logging request handlers
+   */
+  private setupLoggingHandlers(): void {
+    // For McpServer, logging is handled automatically when capability is declared
+    // The server will accept logging/setLevel requests when logging capability is present
+    this.logger.info("Logging capability enabled for MCP server", {
+      serverName: "atlas-platform",
+      defaultLevel: this.currentLoggingLevel,
     });
   }
 

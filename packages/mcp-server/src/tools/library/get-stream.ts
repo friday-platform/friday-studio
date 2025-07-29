@@ -22,7 +22,8 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         ),
       },
     },
-    async ({ itemId, includeContent = true, chunkSize = 2000 }, { sendNotification }) => {
+    async ({ itemId, includeContent = true, chunkSize = 2000 }) => {
+      const sendNotification = null; // Notification functionality not available in current MCP server architecture
       ctx.logger.info("MCP library_get_stream called", { itemId, includeContent, chunkSize });
 
       // Input validation
