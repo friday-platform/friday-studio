@@ -489,7 +489,12 @@ export class WorkspaceBuilder {
     if (this.mcpServers.size > 0) {
       config.tools = {
         mcp: {
-          client_config: { timeout: "30s" },
+          client_config: { 
+            timeout: {
+              progressTimeout: "2m",
+              maxTotalTimeout: "30m"
+            }
+          },
           servers: Object.fromEntries(this.mcpServers),
         },
       };

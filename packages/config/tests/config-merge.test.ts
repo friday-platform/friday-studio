@@ -326,7 +326,10 @@ Deno.test("Config V2 - should keep MCP servers separate in each config", async (
     tools: {
       mcp: {
         client_config: {
-          timeout: "30s",
+          timeout: {
+            progressTimeout: "2m",
+            maxTotalTimeout: "30m"
+          },
         },
         servers: {
           "atlas-server": {
@@ -342,7 +345,10 @@ Deno.test("Config V2 - should keep MCP servers separate in each config", async (
     tools: {
       mcp: {
         client_config: {
-          timeout: "60s", // Override
+          timeout: {
+            progressTimeout: "3m",  // Override with longer timeout
+            maxTotalTimeout: "60m"
+          },
         },
         servers: {
           "workspace-server": {
@@ -372,8 +378,14 @@ Deno.test("Config V2 - should keep MCP servers separate in each config", async (
   assertEquals(Object.keys(merged.workspace.tools?.mcp?.servers || {}).length, 1);
 
   // Client configs are separate
-  assertEquals(merged.atlas?.tools?.mcp?.client_config?.timeout, "30s");
-  assertEquals(merged.workspace.tools?.mcp?.client_config?.timeout, "60s");
+  assertEquals(merged.atlas?.tools?.mcp?.client_config?.timeout, {
+    progressTimeout: "2m",
+    maxTotalTimeout: "30m"
+  });
+  assertEquals(merged.workspace.tools?.mcp?.client_config?.timeout, {
+    progressTimeout: "3m",
+    maxTotalTimeout: "60m"
+  });
 });
 
 // Cross-reference Validation
@@ -600,7 +612,10 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
     tools: {
       mcp: {
         client_config: {
-          timeout: "30s",
+          timeout: {
+            progressTimeout: "2m",
+            maxTotalTimeout: "30m"
+          },
         },
         servers: {
           "github": {
@@ -621,7 +636,10 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
     tools: {
       mcp: {
         client_config: {
-          timeout: "60s", // Override
+          timeout: {
+            progressTimeout: "3m",  // Override with longer timeout
+            maxTotalTimeout: "60m"
+          },
         },
         servers: {
           "slack": {
@@ -644,7 +662,10 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
   const merged = await loader.load();
 
   // Atlas tools config
-  assertEquals(merged.atlas?.tools?.mcp?.client_config?.timeout, "30s");
+  assertEquals(merged.atlas?.tools?.mcp?.client_config?.timeout, {
+    progressTimeout: "2m",
+    maxTotalTimeout: "30m"
+  });
   const atlasGithub = merged.atlas?.tools?.mcp?.servers?.["github"]?.transport;
   if (atlasGithub && atlasGithub.type === "stdio") {
     assertEquals(atlasGithub.command, "gh-mcp");
@@ -653,7 +674,10 @@ Deno.test("Config V2 - should keep complex nested tool configs separate", async 
   assertEquals(merged.atlas?.tools?.mcp?.tool_policy?.type, "allowlist");
 
   // Workspace tools config
-  assertEquals(merged.workspace.tools?.mcp?.client_config?.timeout, "60s");
+  assertEquals(merged.workspace.tools?.mcp?.client_config?.timeout, {
+    progressTimeout: "3m",
+    maxTotalTimeout: "60m"
+  });
   assertEquals(Object.keys(merged.workspace.tools?.mcp?.servers || {}).length, 2);
 
   const workspaceGithub = merged.workspace.tools?.mcp?.servers?.["github"]?.transport;

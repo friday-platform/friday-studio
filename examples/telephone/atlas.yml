@@ -19,7 +19,9 @@ server:
 tools:
   mcp:
     client_config:
-      timeout: "30s"
+      timeout:
+        progressTimeout: "2m"
+        maxTotalTimeout: "30m"
     tool_policy:
       type: "allowlist"
       allow: ["filesystem-mcp", "memory-mcp"]

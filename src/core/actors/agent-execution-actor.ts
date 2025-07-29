@@ -158,14 +158,8 @@ CRITICAL AUTONOMY REQUIREMENTS:
     // Tools can come from the agent's config or from the execution config
     const mcpServers = this.config.tools;
 
-    // Coordinate timeouts: LLM generation timeout should be at least as long as MCP client timeout
-    const agentTimeoutMs = llmConfig.timeout ? parseDuration(llmConfig.timeout) : 60000; // Default 60s
-    const mcpClientTimeout = this.config.workspaceTools?.mcp?.client_config?.timeout;
-    const mcpTimeoutMs = mcpClientTimeout ? parseDuration(mcpClientTimeout) : 30000; // Default 30s
-
-    // Use the larger timeout with a buffer for coordination overhead
-    const effectiveTimeoutMs = Math.max(agentTimeoutMs, mcpTimeoutMs + 10000); // 10s buffer
-
+    // LLM agents use the watchdog timer through LLMProvider.generateText()
+    // Progress reporting is handled automatically within the LLM provider
     // @FIXME: This is a temporary fix to get the agent execution actor working.
     const result = await LLMProvider.generateText(JSON.stringify(userPrompt), {
       systemPrompt,
@@ -176,7 +170,7 @@ CRITICAL AUTONOMY REQUIREMENTS:
       mcpServers: mcpServers,
       max_steps: llmConfig.max_steps,
       tool_choice: llmConfig.tool_choice,
-      timeout: effectiveTimeoutMs,
+      timeout: this.config.workspaceTimeout, // Use workspace watchdog timeout configuration
       operationContext: {
         operation: "llm_agent_execution",
         agentId: request.agentId,

@@ -27,7 +27,9 @@ tools:
               "browser_pdf_save",
             ]
         client_config:
-          timeout: "30s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 # User-defined agents for web analysis
 agents:
   web-analyzer:

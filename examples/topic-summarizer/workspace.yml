@@ -32,7 +32,9 @@ tools:
               "search_code",
             ]
         client_config:
-          timeout: "90s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 
       # Atlas Platform Integration - Library and Workspace Management
       atlas-platform:
@@ -49,7 +51,9 @@ tools:
               "atlas_library_templates",
             ]
         client_config:
-          timeout: "30s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 # =============================================================================
 # JOB DEFINITIONS - AUTOMATED AI DISCOVERY WORKFLOW
 # =============================================================================

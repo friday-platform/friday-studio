@@ -16,7 +16,9 @@ tools:
         tools:
           allow: ["read_file", "list_directory"]
         client_config:
-          timeout: "30s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 
       # Shell access for running pdftotext commands
       commands:
@@ -27,7 +29,9 @@ tools:
         tools:
           allow: ["run_command"]
         client_config:
-          timeout: "30s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 # =============================================================================
 # SIGNAL CONFIGURATION
 # =============================================================================

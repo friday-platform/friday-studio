@@ -121,12 +121,26 @@ export type ErrorConfig = z.infer<typeof ErrorConfigSchema>;
 // WORKSPACE IDENTITY
 // ==============================================================================
 
+/**
+ * Workspace timeout configuration schema
+ */
+export const WorkspaceTimeoutConfigSchema = z.strictObject({
+  progressTimeout: DurationSchema.default("2m").describe(
+    "Time allowed between progress signals before cancelling for inactivity"
+  ),
+  maxTotalTimeout: DurationSchema.default("30m").describe(
+    "Hard upper limit for any operation"
+  ),
+});
+export type WorkspaceTimeoutConfig = z.infer<typeof WorkspaceTimeoutConfigSchema>;
+
 export const WorkspaceIdentitySchema = z.strictObject({
   // ID is required for atlas platform workspace
   id: z.string().optional().describe("Workspace ID (required for platform workspace)"),
   name: z.string().min(1, "Workspace name cannot be empty"),
   version: z.string().optional().describe("Workspace version"),
   description: z.string().optional().describe("Workspace description"),
+  timeout: WorkspaceTimeoutConfigSchema.optional().describe("Timeout configuration for workspace operations"),
 });
 export type WorkspaceIdentity = z.infer<typeof WorkspaceIdentitySchema>;
 

@@ -505,7 +505,12 @@ function createExistingConfig(): WorkspaceConfig {
     },
     tools: {
       mcp: {
-        client_config: { timeout: "30s" },
+        client_config: { 
+          timeout: {
+            progressTimeout: "2m",
+            maxTotalTimeout: "30m"
+          }
+        },
         servers: {
           "existing-server": {
             transport: {

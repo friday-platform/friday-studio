@@ -14,6 +14,11 @@ import {
 } from "ai";
 import { z } from "zod/v4";
 import { logger } from "../../../src/utils/logger.ts";
+import { WatchdogTimer } from "./watchdog-timer.ts";
+import { 
+  WorkspaceTimeoutConfigSchema,
+  type WorkspaceTimeoutConfig
+} from "@atlas/config";
 
 // Runtime validation schemas
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
@@ -36,7 +41,7 @@ const LLMOptionsSchema = z.object({
     ])
     .optional(),
   apiKey: z.string().optional(),
-  timeout: z.number().positive().optional(),
+  timeout: WorkspaceTimeoutConfigSchema.optional(),
   systemPrompt: z.string().optional(),
   memoryContext: z.string().optional(),
   operationContext: z.record(z.string(), z.unknown()).optional(),
@@ -55,7 +60,7 @@ export interface LLMOptions {
   max_steps?: number;
   tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
   apiKey?: string;
-  timeout?: number;
+  timeout?: WorkspaceTimeoutConfig;
   systemPrompt?: string;
   memoryContext?: string;
   operationContext?: Record<string, unknown>;
@@ -136,6 +141,9 @@ export class LLMProvider {
       hasMcpServers: !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0),
     });
 
+    // Always use watchdog timer (defaults applied by schema if not configured)
+    const watchdog = new WatchdogTimer(providerConfig.timeout);
+
     try {
       const model = this.getModel(providerConfig);
 
@@ -149,6 +157,11 @@ export class LLMProvider {
         ? await this.prepareTools(runtimeContext)
         : undefined;
 
+      // Report progress after tool preparation
+      if (tools) {
+        watchdog.reportProgress();
+      }
+
       const result = await generateText({
         model,
         messages,
@@ -157,8 +170,11 @@ export class LLMProvider {
         stopWhen: stepCountIs(providerConfig.max_steps || 10),
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
-        abortSignal: AbortSignal.timeout(providerConfig.timeout || 60000),
+        abortSignal: watchdog.signal,
       });
+
+      // Report progress after LLM generation completes
+      watchdog.reportProgress();
 
       // Log the raw result from AI SDK
       logger.info("AI SDK generateText result", {
@@ -189,6 +205,9 @@ export class LLMProvider {
       });
       throw error;
     } finally {
+      // Always clean up watchdog timer
+      watchdog.abort("Operation finished");
+      
       logger.info("LLM generation completed", {
         duration: Date.now() - startTime,
       });
@@ -282,6 +301,9 @@ export class LLMProvider {
       model: providerConfig.model,
     });
 
+    // Always use watchdog timer (defaults applied by schema if not configured)
+    const watchdog = new WatchdogTimer(providerConfig.timeout);
+
     try {
       const model = this.getModel(providerConfig);
       const messages = this.buildMessages(validatedPrompt, runtimeContext);
@@ -291,10 +313,12 @@ export class LLMProvider {
         messages,
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
-        abortSignal: AbortSignal.timeout(providerConfig.timeout || 60000),
+        abortSignal: watchdog.signal,
       });
 
       for await (const chunk of stream.textStream) {
+        // Report progress for each streaming chunk
+        watchdog.reportProgress();
         yield chunk;
       }
     } catch (error) {
@@ -304,6 +328,9 @@ export class LLMProvider {
         model: providerConfig.model,
       });
       throw error;
+    } finally {
+      // Always clean up watchdog timer
+      watchdog.abort("Streaming finished");
     }
   }
 
@@ -319,7 +346,7 @@ export class LLMProvider {
       max_steps?: number;
       tool_choice?: "auto" | "required" | "none" | { type: "tool"; toolName: string };
       apiKey?: string;
-      timeout?: number;
+      timeout?: WorkspaceTimeoutConfig;
     };
     runtimeContext: {
       systemPrompt?: string;

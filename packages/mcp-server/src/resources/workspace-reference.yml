@@ -50,7 +50,9 @@ tools:
   mcp:
     # Client configuration for calling MCP servers
     client_config:
-      timeout: "30s" # Timeout in duration format
+      timeout:
+        progressTimeout: "2m"
+        maxTotalTimeout: "30m"
 
     # MCP servers available to agents
     servers:
@@ -63,7 +65,9 @@ tools:
 
         # Client configuration specific to this server
         client_config:
-          timeout: "60s" # Override default timeout
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
 
         # Authentication for this server
         auth:
@@ -101,7 +105,9 @@ tools:
           type: "bearer"
           token_env: "API_TOKEN"
         client_config:
-          timeout: "120s"
+          timeout:
+            progressTimeout: "2m"
+            maxTotalTimeout: "30m"
         tools:
           allow: ["send_message", "receive_stream"]
 

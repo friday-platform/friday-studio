@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod/v4";
-import { AllowDenyFilterSchema, DurationSchema } from "./base.ts";
+import { AllowDenyFilterSchema, DurationSchema, WorkspaceTimeoutConfigSchema } from "./base.ts";
 
 // ==============================================================================
 // PROTOCOL MCP - External tool integration (agents calling MCP servers)
@@ -65,7 +65,7 @@ export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
 export const MCPServerConfigSchema = z.strictObject({
   transport: MCPTransportConfigSchema,
   client_config: z.strictObject({
-    timeout: DurationSchema.optional(),
+    timeout: WorkspaceTimeoutConfigSchema.optional(),
   }).optional(),
   auth: MCPAuthConfigSchema.optional(),
   tools: MCPServerToolFilterSchema.optional(),
@@ -80,8 +80,16 @@ export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
  */
 export const MCPClientConfigSchema = z.strictObject({
   client_config: z.strictObject({
-    timeout: DurationSchema.default("30s"),
-  }).default({ timeout: "30s" }),
+    timeout: WorkspaceTimeoutConfigSchema.default({
+      progressTimeout: "2m",
+      maxTotalTimeout: "30m"
+    }).describe("Watchdog timeout configuration"),
+  }).default({ 
+    timeout: {
+      progressTimeout: "2m",
+      maxTotalTimeout: "30m"
+    }
+  }),
   servers: z.record(z.string(), MCPServerConfigSchema).optional(),
 });
 export type MCPClientConfig = z.infer<typeof MCPClientConfigSchema>;
