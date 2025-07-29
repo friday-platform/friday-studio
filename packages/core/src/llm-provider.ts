@@ -15,10 +15,7 @@ import {
 import { z } from "zod/v4";
 import { logger } from "../../../src/utils/logger.ts";
 import { WatchdogTimer } from "./watchdog-timer.ts";
-import { 
-  WorkspaceTimeoutConfigSchema,
-  type WorkspaceTimeoutConfig
-} from "@atlas/config";
+import { type WorkspaceTimeoutConfig, WorkspaceTimeoutConfigSchema } from "@atlas/config";
 
 // Runtime validation schemas
 const LLMProviderSchema = z.enum(["anthropic", "openai", "google"]);
@@ -207,7 +204,7 @@ export class LLMProvider {
     } finally {
       // Always clean up watchdog timer
       watchdog.abort("Operation finished");
-      
+
       logger.info("LLM generation completed", {
         duration: Date.now() - startTime,
       });

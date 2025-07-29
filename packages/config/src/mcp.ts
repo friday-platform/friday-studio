@@ -82,13 +82,13 @@ export const MCPClientConfigSchema = z.strictObject({
   client_config: z.strictObject({
     timeout: WorkspaceTimeoutConfigSchema.default({
       progressTimeout: "2m",
-      maxTotalTimeout: "30m"
+      maxTotalTimeout: "30m",
     }).describe("Watchdog timeout configuration"),
-  }).default({ 
+  }).default({
     timeout: {
       progressTimeout: "2m",
-      maxTotalTimeout: "30m"
-    }
+      maxTotalTimeout: "30m",
+    },
   }),
   servers: z.record(z.string(), MCPServerConfigSchema).optional(),
 });

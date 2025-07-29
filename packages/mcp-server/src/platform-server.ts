@@ -52,6 +52,7 @@ export class PlatformMCPServer {
     const toolContext: ToolContext = {
       daemonUrl: this.daemonUrl,
       logger: this.logger,
+      server: this.server,
     };
 
     // Register all tools with shared context

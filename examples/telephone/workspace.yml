@@ -4,8 +4,8 @@ workspace:
   name: "Multi-Provider Telephone Game"
   description: "A game where messages transform through multiple agents using different LLM providers"
   timeout:
-    progressTimeout: "2m"      # Time allowed between progress signals
-    maxTotalTimeout: "30m"     # Hard upper limit for any operation
+    progressTimeout: "2m" # Time allowed between progress signals
+    maxTotalTimeout: "30m" # Hard upper limit for any operation
 
 # Server configuration - how this workspace exposes itself via MCP
 server:

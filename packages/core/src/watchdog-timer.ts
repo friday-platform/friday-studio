@@ -1,14 +1,14 @@
 /**
  * WatchdogTimer - Progress-based timeout system for MCP operations and LLM generations
- * 
+ *
  * Replaces static AbortSignal.timeout() with intelligent progress monitoring.
  * Operations must report progress within progressTimeout or be cancelled for inactivity.
  */
 
-import { 
-  WorkspaceTimeoutConfigSchema, 
+import {
+  parseDuration,
   type WorkspaceTimeoutConfig,
-  parseDuration
+  WorkspaceTimeoutConfigSchema,
 } from "@atlas/config";
 
 // =============================================================================
@@ -17,15 +17,15 @@ import {
 
 /**
  * WatchdogTimer provides progress-based timeout monitoring.
- * 
- * Instead of "operation must complete in X seconds", uses 
+ *
+ * Instead of "operation must complete in X seconds", uses
  * "operation must show progress within X seconds or be cancelled for inactivity".
  */
 export class WatchdogTimer {
   private readonly abortController: AbortController;
   private readonly progressTimeoutMs: number;
   private readonly maxTotalTimeoutMs: number;
-  
+
   private progressTimer: number | null = null;
   private totalTimer: number | null = null;
   private isAborted = false;
@@ -33,12 +33,12 @@ export class WatchdogTimer {
   constructor(config?: WorkspaceTimeoutConfig) {
     // Apply defaults and validate configuration
     const validatedConfig = WorkspaceTimeoutConfigSchema.parse(config || {});
-    
+
     this.progressTimeoutMs = parseDuration(validatedConfig.progressTimeout);
     this.maxTotalTimeoutMs = parseDuration(validatedConfig.maxTotalTimeout);
-    
+
     this.abortController = new AbortController();
-    
+
     // Start both timers
     this.resetProgressTimer();
     this.startTotalTimer();
@@ -52,7 +52,7 @@ export class WatchdogTimer {
     if (this.isAborted) {
       return; // Already aborted, ignore progress reports
     }
-    
+
     this.resetProgressTimer();
   }
 
@@ -78,7 +78,7 @@ export class WatchdogTimer {
     if (this.isAborted) {
       return;
     }
-    
+
     this.isAborted = true;
     this.cleanupTimers();
     this.abortController.abort(reason);
@@ -93,7 +93,7 @@ export class WatchdogTimer {
     if (this.progressTimer !== null) {
       clearTimeout(this.progressTimer);
     }
-    
+
     // Set new progress timer
     this.progressTimer = setTimeout(() => {
       this.abort("Operation timed out due to inactivity (no progress reported)");
@@ -111,7 +111,7 @@ export class WatchdogTimer {
       clearTimeout(this.progressTimer);
       this.progressTimer = null;
     }
-    
+
     if (this.totalTimer !== null) {
       clearTimeout(this.totalTimer);
       this.totalTimer = null;

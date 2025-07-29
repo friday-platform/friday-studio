@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { createSuccessResponse } from "../types.ts";
+import { createSendNotification, createSuccessResponse } from "../types.ts";
 import { fetchWithTimeout, handleDaemonResponse } from "../utils.ts";
 
 export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext) {
@@ -23,7 +23,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
       },
     },
     async ({ itemId, includeContent = true, chunkSize = 2000 }) => {
-      const sendNotification = null; // Notification functionality not available in current MCP server architecture
+      const sendNotification = createSendNotification(ctx.server, ctx.logger);
       ctx.logger.info("MCP library_get_stream called", { itemId, includeContent, chunkSize });
 
       // Input validation
@@ -127,7 +127,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
 
         // Stream content in chunks if it's large
         const shouldStream = totalSize > chunkSize && !!sendNotification;
+
         if (shouldStream) {
+          // Actually stream the content in chunks
           const totalChunks = Math.ceil(totalSize / chunkSize);
 
           for (let i = 0; i < totalChunks; i++) {
@@ -135,9 +137,8 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
             const end = Math.min(start + chunkSize, totalSize);
             const chunk = content.slice(start, end);
             const chunkNumber = i + 1;
-            const progress = Math.round((chunkNumber / totalChunks) * 100);
 
-            // Send chunk notification
+            // Send chunk via notification silently (no log line per chunk)
             await sendNotification({
               method: "notifications/message",
               params: {
@@ -147,33 +148,33 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
                   itemId,
                   chunkNumber,
                   totalChunks,
-                  progress,
                   chunkSize: chunk.length,
-                  chunk,
+                  content: chunk,
+                  isLastChunk: chunkNumber === totalChunks,
                   timestamp: new Date().toISOString(),
-                  message: `Streaming chunk ${chunkNumber}/${totalChunks} (${progress}%)`,
+                  message: `Chunk ${chunkNumber}/${totalChunks} (${chunk.length} bytes)`,
                 }),
               },
-            });
+            }, true); // silent = true
 
-            // Small delay to allow for progressive rendering
-            if (i < totalChunks - 1) {
-              await new Promise((resolve) => setTimeout(resolve, 50));
+            // Small delay between chunks to allow processing
+            if (chunkNumber < totalChunks) {
+              await new Promise((resolve) => setTimeout(resolve, 10));
             }
           }
 
-          // Send streaming completion notification
+          // Send completion notification
           await sendNotification({
             method: "notifications/message",
             params: {
               level: "info",
               data: JSON.stringify({
-                type: "library_stream_completed",
+                type: "library_stream_complete",
                 itemId,
-                totalSize,
                 totalChunks,
+                totalSize,
                 timestamp: new Date().toISOString(),
-                message: "Content streaming completed successfully",
+                message: `Streaming complete: ${totalChunks} chunks, ${totalSize} bytes total`,
               }),
             },
           });
@@ -183,7 +184,9 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
         const finalResult = {
           item: result.item,
           content: shouldStream
-            ? `[Content streamed in ${Math.ceil(totalSize / chunkSize)} chunks via notifications]`
+            ? `[Content streamed in ${
+              Math.ceil(totalSize / chunkSize)
+            } chunks via notifications - see notifications for actual content]`
             : content,
           source: "daemon_api",
           streaming: {
@@ -191,6 +194,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
             totalSize,
             chunkSize,
             totalChunks: Math.ceil(totalSize / chunkSize),
+            completed: shouldStream,
           },
           timestamp: new Date().toISOString(),
         };
@@ -201,6 +205,7 @@ export function registerLibraryGetStreamTool(server: McpServer, ctx: ToolContext
           streamingEnabled: shouldStream,
           totalSize,
           totalChunks: Math.ceil(totalSize / chunkSize),
+          streamingCompleted: shouldStream,
         });
 
         return createSuccessResponse(finalResult);

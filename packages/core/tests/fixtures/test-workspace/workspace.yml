@@ -3,8 +3,8 @@ workspace:
   name: "Test Workspace"
   description: "A test workspace for unit tests"
   timeout:
-    progressTimeout: "1s"      # Short timeout for tests
-    maxTotalTimeout: "10s"     # Short total timeout for tests
+    progressTimeout: "1s" # Short timeout for tests
+    maxTotalTimeout: "10s" # Short total timeout for tests
 signals:
   test-signal:
     provider: "http"
