@@ -109,8 +109,9 @@ Use tools in this logical construction sequence:
 **Atlas Management**: atlas_workspace_*, atlas_session_*, atlas_jobs_*, atlas_signals_*, atlas_agents_*
 - Use when: Workspace introspection, session management, job control
 
-**Library/Memory**: atlas_library_list, atlas_library_get, atlas_library_store, atlas_library_stats, atlas_library_templates
+**Library/Memory**: atlas_library_list, atlas_library_get, atlas_library_get_stream, atlas_library_store, atlas_library_stats, atlas_library_templates
 - Use when: Storing/retrieving knowledge, templates, persistent data
+- IMPORTANT: Use atlas_library_get with includeContent=false to check size_bytes, then use atlas_library_get_stream for items >100KB
 
 **DO NOT use external MCP servers if Atlas tools can handle the need**:
 - ❌ External filesystem MCP when atlas_read/atlas_write sufficient

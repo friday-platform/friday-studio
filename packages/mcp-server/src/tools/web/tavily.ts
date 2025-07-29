@@ -55,7 +55,7 @@ async function handleLargeResponse(
     if (result.success && result.itemId) {
       return {
         message:
-          `Tool response saved in the atlas library under id ${result.itemId}. Use atlas_library_get_stream to retrieve the content.`,
+          `Tool response saved in the atlas library under id ${result.itemId} (size: ${responseText.length} bytes).`,
         itemId: result.itemId,
         originalSize: responseText.length,
       };

@@ -251,6 +251,7 @@ You are updating an EXISTING Atlas workspace. The WorkspaceBuilder has already b
 - Maintain existing component relationships unless explicitly changed
 - If adding new components, ensure they integrate properly with existing ones
 - If removing components, handle dependent references appropriately
+- **For Email Notifications**: When updating agents that send emails, ensure their prompts explicitly instruct them to CALL atlas_notify_email with the report content - don't just have them "format for email"
 
 Begin the update process now.`;
 

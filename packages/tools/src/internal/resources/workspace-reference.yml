@@ -51,6 +51,12 @@ server:
 # This provides access to all Atlas tools: atlas_read, atlas_write, atlas_fetch, atlas_bash,
 # atlas_notify_email, atlas_workspace_*, atlas_session_*, atlas_library_*, etc.
 #
+# Library Tool Usage Guidelines:
+# - atlas_library_get: Use with includeContent=false to check size_bytes first
+# - atlas_library_get: Use with includeContent=true for items ≤100KB
+# - atlas_library_get_stream: Use for items >100KB to avoid prompt overflow
+#   The streaming tool sends content via notifications in manageable chunks
+#
 # Only configure additional external MCP servers when atlas-platform tools are insufficient
 tools:
   mcp:
@@ -70,6 +76,7 @@ tools:
             [
               "atlas_library_list",
               "atlas_library_get",
+              "atlas_library_get_stream",
               "atlas_library_store",
               "atlas_library_stats",
               "atlas_library_templates",

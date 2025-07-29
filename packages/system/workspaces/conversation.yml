@@ -108,6 +108,7 @@ agents:
         # library
         - "atlas_library_list"
         - "atlas_library_get"
+        - "atlas_library_get_stream"
         - "atlas_library_stats"
         # signal tools
         - "atlas_workspace_signals_list"
@@ -115,6 +116,8 @@ agents:
         # todo memory tools
         - "atlas_todo_read"
         - "atlas_todo_write"
+        # environment variable management
+        - "atlas_save_env_var"
 
         - "read_atlas_resource"
       prompt: |
@@ -185,15 +188,26 @@ agents:
 
         # Environment Variable Collection After Workspace Creation
         **CRITICAL**: After successfully creating any workspace:
-        1. **Analyze workspace configuration**: Use atlas_workspace_describe to read the created workspace config and identify required environment variables
-        2. **Parse for env var patterns**: Look for ${ENV_VAR_NAME} patterns, references to process.env, Deno.env.get(), or explicit env requirements in jobs, agents, and tools configurations
-        3. **Extract variable names**: Identify specific environment variables the workspace needs (e.g., API_KEY, DATABASE_URL, WEBHOOK_URL)
-        4. **Prompt for values intelligently**: Ask user to provide values for the specific variables found in the config
-        5. **Use atlas_save_env_var tool**: Save each provided env var to .env file using atlas_save_env_var
-        6. **Example flow**:
-           - After creating workspace: Analyze config → Find ${NIKE_API_KEY} and ${DISCORD_WEBHOOK_URL}
-           - "I've created your Nike monitoring workspace. I found it needs these environment variables: NIKE_API_KEY and DISCORD_WEBHOOK_URL. Please provide the values."
-           - User provides values → Save each using atlas_save_env_var
+        1. **DO NOT make assumptions about environment variables** - Never invent variable names like "EMAIL_CONFIG"
+        2. **Atlas pre-configured services DO NOT require ANY environment variables from users**:
+           - **Email notifications (atlas_notify_email)**: Uses pre-configured SENDGRID_API_KEY - NEVER ask for email credentials
+           - **Web search/research (tavily_search, tavily_extract, tavily_crawl)**: Uses pre-configured TAVILY_API_KEY - NEVER ask
+           - **LLM agents**: Use pre-configured ANTHROPIC_API_KEY - NEVER ask
+           - **If the workspace uses ONLY Atlas tools, DO NOT ask for ANY environment variables**
+        3. **Only external integrations need credentials**:
+           - Discord webhooks → Ask for DISCORD_WEBHOOK_URL
+           - Custom APIs → Ask for specific API keys mentioned in workspace
+           - External services → Ask for their specific credentials
+        4. **How to identify REAL environment variables**:
+           - Use atlas_workspace_describe to get the actual configuration
+           - Look for ACTUAL ${VAR_NAME} patterns in the configuration text
+           - DO NOT guess or invent variable names
+           - If no ${VAR_NAME} patterns exist, the workspace needs NO environment variables
+        5. **Example flows**:
+           - Email notification workspace → NO environment variables needed (uses Atlas's SENDGRID_API_KEY)
+           - Discord notification → Ask for DISCORD_WEBHOOK_URL only
+           - Nike monitoring with Discord → Ask for DISCORD_WEBHOOK_URL only (web scraping uses Atlas's Tavily)
+        6. **CRITICAL**: If you cannot find specific ${VAR_NAME} patterns in the workspace config, DO NOT ask for any environment variables
 
         # Smart Context Discovery
         - Gather available information through tools BEFORE asking clarification questions
@@ -494,6 +508,29 @@ agents:
 
         Which would you like to explore?"
         </example_interactions>
+
+        <library_streaming_guidance>
+        # CRITICAL: Library Content Retrieval Strategy
+        When retrieving library items, use a programmatic approach based on size:
+
+        1. **Always check size first**: Use atlas_library_get with includeContent=false to get metadata including size_bytes
+
+        2. **Decision based on size**:
+           - If size_bytes > 100,000 (100KB): Use atlas_library_get_stream
+           - If size_bytes <= 100,000 (100KB): Use atlas_library_get with includeContent=true
+           - This prevents prompt overflow errors
+
+        3. **Why 100KB threshold**:
+           - Prevents prompt overflow (typical prompt limit is 200k tokens)
+           - 100KB of text ≈ 25-30k tokens, leaving plenty of room for context
+           - The streaming tool sends content via notifications in manageable chunks
+
+        Example workflow:
+        1. atlas_library_get with includeContent=false to check size_bytes
+        2. Based on size, either:
+           - atlas_library_get with includeContent=true (for ≤100KB)
+           - atlas_library_get_stream (for >100KB)
+        </library_streaming_guidance>
 
         <input_context>
         You receive input as JSON with: message (user's request), userId, streamId, conversationId.

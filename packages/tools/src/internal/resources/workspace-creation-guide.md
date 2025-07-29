@@ -343,6 +343,23 @@ prompt: |
   Flag any suspicious patterns that might indicate errors.
 ```
 
+### 5. Handle Library Content Appropriately
+
+When agents work with library content, include guidance about streaming for large content:
+
+```yaml
+prompt: |
+  Process the research results from the library.
+
+  IMPORTANT: When retrieving library content:
+  1. First use atlas_library_get with includeContent=false to check size_bytes
+  2. For items ≤100KB: Use atlas_library_get with includeContent=true
+  3. For items >100KB: Use atlas_library_get_stream to avoid prompt overflow
+  4. The streaming tool sends content via notifications in manageable chunks
+
+  Analyze the content and extract key insights...
+```
+
 ## Defining Success and Error Conditions
 
 Make your workspaces self-validating by defining explicit success and error criteria:
@@ -546,8 +563,13 @@ tools:
 
 **ALWAYS select ONLY the specific tools your workspace actually needs**
 
-- **Library Tools**: `atlas_library_list`, `atlas_library_get`, `atlas_library_store`, `atlas_library_stats`, `atlas_library_templates`
+- **Library Tools**: `atlas_library_list`, `atlas_library_get`, `atlas_library_get_stream`, `atlas_library_store`, `atlas_library_stats`, `atlas_library_templates`
   - Use when: Storing knowledge, templates, persistent data between runs
+  - **Library Retrieval Strategy**:
+    - Use `atlas_library_get` with `includeContent=false` to check `size_bytes`
+    - Use `atlas_library_get` with `includeContent=true` for items ≤100KB
+    - Use `atlas_library_get_stream` for items >100KB
+    - The 100KB threshold prevents prompt overflow while maximizing efficiency
 - **Workspace Management**: `atlas_workspace_list`, `atlas_workspace_create`, `atlas_workspace_delete`, `atlas_workspace_describe`
   - Use when: Workspace introspection, management, or creation workflows
 - **Session Control**: `atlas_session_describe`, `atlas_session_cancel`

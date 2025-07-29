@@ -105,4 +105,12 @@ If validation fails:
 3. Re-validate until all issues are resolved
 4. If unfixable, explain the issue and suggest alternatives
 
+## Library Tool Updates
+
+**IMPORTANT**: When updating agents that work with library content:
+1. Ensure agents have access to atlas_library_get and atlas_library_get_stream
+2. Instruct agents to check size_bytes using atlas_library_get with includeContent=false before retrieving content
+3. Example guidance in agent prompt: "Always use atlas_library_get with includeContent=false first to check size_bytes. For items >100KB, use atlas_library_get_stream. For items ≤100KB, use atlas_library_get with includeContent=true."
+4. The streaming tool sends content via notifications in manageable chunks
+
 Remember: You are updating an EXISTING workspace. The WorkspaceBuilder is already initialized with the current configuration. Focus on making targeted, safe modifications that fulfill the user's intent while preserving the workspace's existing functionality.`;

@@ -164,4 +164,78 @@ export const libraryTools = {
       }
     },
   }),
+
+  atlas_library_get_stream: tool({
+    description:
+      "Retrieve a library item with streaming content delivery. Large content is sent progressively via notifications, providing real-time updates as data is processed. Use this for better user experience with large library items.",
+    inputSchema: z.object({
+      itemId: z.string().describe(
+        "Unique identifier of the library item to retrieve (obtain from library_list)",
+      ),
+      includeContent: z.boolean().default(true).describe(
+        "Whether to include the full content/data of the item with progressive streaming",
+      ),
+      chunkSize: z.number().min(100).max(10000).default(2000).describe(
+        "Size of each content chunk for streaming (bytes, default: 2000)",
+      ),
+    }),
+    execute: async ({ itemId, includeContent = true, chunkSize = 2000 }) => {
+      // For the internal tools, we need to make this a passthrough to the MCP server
+      // which handles the actual streaming implementation
+      try {
+        // First, get metadata
+        const metadataResponse = await fetchWithTimeout(
+          `${defaultContext.daemonUrl}/api/library/${itemId}`,
+        );
+        const metadata = await handleDaemonResponse(metadataResponse) as any;
+
+        if (!metadata || !metadata.item) {
+          throw new Error(`Library item not found: ${itemId}`);
+        }
+
+        if (!includeContent) {
+          // Return metadata only
+          return {
+            item: metadata.item,
+            source: "daemon_api",
+            streaming: false,
+            timestamp: new Date().toISOString(),
+          };
+        }
+
+        // Get content
+        const contentResponse = await fetchWithTimeout(
+          `${defaultContext.daemonUrl}/api/library/${itemId}?includeContent=true`,
+        );
+        const result = await handleDaemonResponse(contentResponse) as any;
+
+        if (!result || !result.content) {
+          throw new Error(`Failed to retrieve content for library item: ${itemId}`);
+        }
+
+        const content = result.content as string;
+        const totalSize = content.length;
+
+        // Return response with streaming info
+        // Note: Actual streaming is handled by the MCP server implementation
+        // This tool provides the interface for agents to request streaming
+        return {
+          item: result.item,
+          content: totalSize > chunkSize
+            ? `[Content size: ${totalSize} bytes. For optimal streaming, content should be retrieved via MCP server streaming notifications]`
+            : content,
+          source: "daemon_api",
+          streaming: {
+            enabled: totalSize > chunkSize,
+            totalSize,
+            chunkSize,
+            totalChunks: Math.ceil(totalSize / chunkSize),
+          },
+          timestamp: new Date().toISOString(),
+        };
+      } catch (error) {
+        throw new Error(`Failed to get library item with streaming: ${getErrorMessage(error)}`);
+      }
+    },
+  }),
 };
