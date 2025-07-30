@@ -1,12 +1,12 @@
 # Atlas /send-diagnostics Command Implementation Plan
 
-## Implementation Status: COMPLETED ✅
+## Implementation Status: COMPLETED ✅ (Updated to TAR.GZ format)
 
 ## Overview
 
 This document outlines the implementation plan for adding a `/send-diagnostics` command to the Atlas
 client. The command will collect diagnostic information from the Atlas installation and send it to
-the Tempest diagnostic endpoint.
+the Tempest diagnostic endpoint as a tar.gz archive with proper directory structure.
 
 ## Architecture Overview
 
@@ -18,8 +18,8 @@ the Tempest diagnostic endpoint.
    - Memory data from `getAtlasHome()/memory`
    - Storage database files (`storage.db`, `storage.db-shm`, `storage.db-wal`)
    - All workspace configurations from DenoKV
-3. Creates a gzip archive with structured directory layout
-4. Sends gzip to the diagnostic endpoint using ATLAS_KEY authentication
+3. Creates a tar.gz archive with proper directory structure (no JSON embedding)
+4. Sends tar.gz to the diagnostic endpoint using ATLAS_KEY authentication
 5. Provides user feedback on success/failure
 
 ### Authentication
@@ -369,32 +369,39 @@ Ensure these dependencies are available:
 }
 ```
 
-## Directory Structure in Gzip
+## Directory Structure in TAR.GZ Archive
 
 The diagnostic archive will have the following structure:
 
 ```
-diagnostics/
-├── logs/
-│   ├── atlas.log
-│   ├── workspaces/
-│   │   └── [workspace-logs]
-│   └── [other-log-files]
-├── memory/
-│   └── [memory-files]
-├── storage/
-│   ├── storage.db
-│   ├── storage.db-shm
-│   └── storage.db-wal
-└── workspaces/
-    ├── workspace-name-1/
-    │   ├── workspace.yml
-    │   └── logs/
-    │       └── [runtime-logs]
-    ├── workspace-name-2/
-    │   └── workspace.yml
-    └── [other-workspaces]
+metadata.json                    # Archive metadata (timestamp, version, platform)
+logs/
+├── atlas.log
+├── workspaces/
+│   └── [workspace-logs]
+└── [other-log-files]
+memory/
+└── [memory-files]
+storage/
+├── storage.db
+├── storage.db-shm
+└── storage.db-wal
+workspaces/
+├── workspace-name-1/
+│   ├── workspace.yml
+│   └── logs/
+│       └── [runtime-logs]
+├── workspace-name-2/
+│   └── workspace.yml
+└── [other-workspaces]
 ```
+
+**Key Changes from JSON format:**
+
+- Files are stored in their original form within the tar archive
+- No base64 encoding needed for binary files
+- Proper directory structure is preserved
+- Metadata stored as a separate JSON file instead of wrapping all content
 
 ## Error Handling
 
@@ -483,17 +490,25 @@ Error: Diagnostic archive too large (>100MB). Please contact support.
    `commands.tsx`
 2. **SendDiagnosticsCommand Component**: Created React component with proper error handling and
    progress feedback
-3. **DiagnosticsCollector Utility**: Implemented with native CompressionStream API for gzip
-   compression
+3. **DiagnosticsCollector Utility**: Implemented with @std/tar for creating proper tar archives
 4. **Atlas Client Extension**: Added `sendDiagnostics` method with proper ATLAS_KEY handling
-5. **No External Dependencies**: Used native Deno APIs (CompressionStream) instead of external
-   compression libraries
+5. **TAR.GZ Format**: Uses streaming API to create tar archives with directory structure, then
+   compresses with gzip
 
 ### Key Design Decisions
 
-1. **Gzip Only**: Simplified to use just gzip compression without tar, creating a single compressed
-   JSON file
-2. **Native APIs**: Used Deno's built-in CompressionStream API instead of external dependencies
-3. **Error Handling**: Graceful handling of missing files and directories with console warnings
-4. **Authentication**: Follows existing pattern of loading from `~/.atlas/.env` first, then
+1. **TAR.GZ Format**: Creates proper tar archives with directory structure instead of embedding
+   files in JSON
+2. **Streaming API**: Uses @std/tar's TarStream for efficient memory usage with large archives
+3. **Metadata File**: Stores archive metadata (timestamp, version, platform) as separate JSON file
+4. **Error Handling**: Graceful handling of missing files and directories with console warnings
+5. **Authentication**: Follows existing pattern of loading from `~/.atlas/.env` first, then
    environment variables
+
+### Technical Implementation
+
+1. **Dependencies**: Added `@std/tar` package for tar archive creation
+2. **Archive Creation**: Uses streaming pipeline: ReadableStream → TarStream → CompressionStream
+3. **File Handling**: Opens files as readable streams to avoid loading entire files into memory
+4. **Directory Support**: Properly includes directory entries in tar archive
+5. **Binary Files**: Handles binary files natively without base64 encoding

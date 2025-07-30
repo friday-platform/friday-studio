@@ -907,7 +907,7 @@ export class AtlasClient {
     const diagnosticData = await Deno.readFile(gzipPath);
 
     // Get filename from path
-    const filename = gzipPath.split("/").pop() || "diagnostics.gz";
+    const filename = gzipPath.split("/").pop() || "diagnostics.tar.gz";
 
     // Send to diagnostic endpoint using centralized URL function
     const response = await fetch(getDiagnosticsApiUrl(filename), {

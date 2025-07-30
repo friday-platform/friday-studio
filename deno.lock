@@ -19,6 +19,8 @@
     "jsr:@std/path@1": "1.1.1",
     "jsr:@std/path@^1.0.8": "1.1.1",
     "jsr:@std/path@^1.1.1": "1.1.1",
+    "jsr:@std/streams@^1.0.10": "1.0.10",
+    "jsr:@std/tar@~0.1.7": "0.1.7",
     "jsr:@std/testing@^1.0.12": "1.0.15",
     "jsr:@std/yaml@^1.0.5": "1.0.9",
     "jsr:@std/yaml@^1.0.7": "1.0.9",
@@ -100,6 +102,15 @@
       "integrity": "fe00026bd3a7e6a27f73709b83c607798be40e20c81dde655ce34052fd82ec76",
       "dependencies": [
         "jsr:@std/internal@^1.0.9"
+      ]
+    },
+    "@std/streams@1.0.10": {
+      "integrity": "75c0b1431873cd0d8b3d679015220204d36d3c7420d93b60acfc379eb0dc30af"
+    },
+    "@std/tar@0.1.7": {
+      "integrity": "767ed89376a9665cee6d33144d2a06619e35411ad08b363568582bbaff5b40d2",
+      "dependencies": [
+        "jsr:@std/streams"
       ]
     },
     "@std/testing@1.0.15": {
@@ -1840,6 +1851,7 @@
       "jsr:@std/expect@^1.0.16",
       "jsr:@std/fs@^1.0.19",
       "jsr:@std/path@^1.1.1",
+      "jsr:@std/tar@~0.1.7",
       "jsr:@std/testing@^1.0.12",
       "jsr:@std/yaml@^1.0.7",
       "npm:@ai-sdk/anthropic@2.0.0-beta.8",

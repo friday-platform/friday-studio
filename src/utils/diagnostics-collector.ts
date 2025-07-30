@@ -2,12 +2,17 @@ import { join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
 import { getAtlasHome, getAtlasLogsDir } from "./paths.ts";
 import { walk } from "@std/fs";
+import { TarStream, type TarStreamInput } from "@std/tar/tar-stream";
+import { getAtlasClient } from "@atlas/client";
+import { stringify } from "@std/yaml";
+import { getVersionInfo } from "./version.ts";
 
 export class DiagnosticsCollector {
   private tempDir: string;
 
   constructor() {
-    this.tempDir = join(Deno.makeTempDirSync(), "atlas-diagnostics");
+    // Create temp directory directly without subdirectory
+    this.tempDir = Deno.makeTempDirSync({ prefix: "atlas-diagnostics-" });
   }
 
   async collectAndArchive(): Promise<string> {
@@ -22,10 +27,11 @@ export class DiagnosticsCollector {
     await this.collectMemory();
     await this.collectStorage();
     await this.collectWorkspaces();
+    await this.collectSystemWorkspaces();
 
-    // Create gzip archive
-    const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.gz");
-    await this.createGzipArchive(gzipPath);
+    // Create tar.gz archive
+    const gzipPath = join(Deno.makeTempDirSync(), "diagnostics.tar.gz");
+    await this.createTarGzArchive(gzipPath);
 
     return gzipPath;
   }
@@ -90,7 +96,7 @@ export class DiagnosticsCollector {
               entry.value && typeof entry.value === "object" && "path" in entry.value &&
               "name" in entry.value
             ) {
-              const workspace = entry.value as { name: string; path: string };
+              const workspace = entry.value as { id?: string; name: string; path: string };
               const workspaceYmlPath = join(workspace.path, "workspace.yml");
 
               try {
@@ -98,9 +104,51 @@ export class DiagnosticsCollector {
                 const workspaceDir = join(this.tempDir, "workspaces", workspace.name);
                 await ensureDir(workspaceDir);
 
-                // Copy workspace.yml
+                // Copy workspace.yml if it exists
+                let hasYamlFile = false;
                 if (await exists(workspaceYmlPath)) {
                   await Deno.copyFile(workspaceYmlPath, join(workspaceDir, "workspace.yml"));
+                  hasYamlFile = true;
+                }
+
+                // If no YAML file, try to fetch runtime configuration
+                if (!hasYamlFile && workspace.id) {
+                  try {
+                    const client = getAtlasClient({ timeout: 5000 });
+                    const workspaceDetails = await client.getWorkspace(workspace.id);
+
+                    if (workspaceDetails.config) {
+                      // Save runtime config as YAML
+                      const yamlContent = stringify(workspaceDetails.config);
+                      const configPath = join(workspaceDir, "runtime-config.yml");
+                      await Deno.writeTextFile(configPath, yamlContent);
+
+                      // Also save a note explaining this is runtime config
+                      const notePath = join(workspaceDir, "README.txt");
+                      await Deno.writeTextFile(
+                        notePath,
+                        `This workspace configuration was fetched from the runtime.\n` +
+                          `Workspace ID: ${workspace.id}\n` +
+                          `Name: ${workspace.name}\n` +
+                          `Path: ${workspace.path}\n` +
+                          `Status: ${workspaceDetails.status || "unknown"}\n`,
+                      );
+                    }
+                  } catch (err) {
+                    console.warn(
+                      `Failed to fetch runtime config for ${workspace.name}:`,
+                      err instanceof Error ? err.message : String(err),
+                    );
+                  }
+                } else if (!hasYamlFile && !workspace.id) {
+                  // No YAML file and no ID to fetch runtime config
+                  const notePath = join(workspaceDir, "NO_CONFIG.txt");
+                  await Deno.writeTextFile(
+                    notePath,
+                    `This workspace has no workspace.yml file and no workspace ID for fetching runtime config.\n` +
+                      `Name: ${workspace.name}\n` +
+                      `Path: ${workspace.path}\n`,
+                  );
                 }
 
                 // Also collect workspace runtime logs if available
@@ -117,6 +165,9 @@ export class DiagnosticsCollector {
               }
             }
           }
+
+          // Also collect draft workspaces from KV
+          await this.collectDraftWorkspaces(kv);
         } finally {
           kv.close();
         }
@@ -124,6 +175,139 @@ export class DiagnosticsCollector {
     } catch (err) {
       console.warn(
         "Failed to collect workspaces from KV:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private async collectSystemWorkspaces(): Promise<void> {
+    try {
+      // Create system-workspaces directory
+      const systemDir = join(this.tempDir, "system-workspaces");
+      await ensureDir(systemDir);
+
+      // Try to dynamically import system workspaces
+      try {
+        const { SYSTEM_WORKSPACES } = await import("@packages/system/workspaces");
+
+        for (const [id, config] of Object.entries(SYSTEM_WORKSPACES)) {
+          try {
+            const workspaceDir = join(systemDir, id);
+            await ensureDir(workspaceDir);
+
+            // Save as YAML
+            const yamlContent = stringify(config);
+            const yamlPath = join(workspaceDir, "system-config.yml");
+            await Deno.writeTextFile(yamlPath, yamlContent);
+
+            // Save metadata
+            const metaPath = join(workspaceDir, "README.txt");
+            await Deno.writeTextFile(
+              metaPath,
+              `System workspace: ${id}\n` +
+                `This is a built-in system workspace embedded in the Atlas binary.\n`,
+            );
+          } catch (err) {
+            console.warn(
+              `Failed to save system workspace ${id}:`,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      } catch (err) {
+        // If we can't import system workspaces (e.g., running from source vs compiled),
+        // try to read them from the filesystem
+        const systemWorkspacesPath = join(
+          Deno.cwd(),
+          "packages/system/workspaces",
+        );
+
+        if (await exists(systemWorkspacesPath)) {
+          // Copy all YAML files from system workspaces directory
+          for await (const entry of Deno.readDir(systemWorkspacesPath)) {
+            if (entry.isFile && entry.name.endsWith(".yml")) {
+              try {
+                const sourcePath = join(systemWorkspacesPath, entry.name);
+                const destPath = join(systemDir, entry.name);
+                await Deno.copyFile(sourcePath, destPath);
+              } catch (err) {
+                console.warn(
+                  `Failed to copy system workspace ${entry.name}:`,
+                  err instanceof Error ? err.message : String(err),
+                );
+              }
+            }
+          }
+
+          // Add a note about system workspaces
+          const notePath = join(systemDir, "README.txt");
+          await Deno.writeTextFile(
+            notePath,
+            `System workspaces are built-in workspaces that come with Atlas.\n` +
+              `These YAML files define the system workspace configurations.\n`,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to collect system workspaces:",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  private async collectDraftWorkspaces(kv: Deno.Kv): Promise<void> {
+    try {
+      // Create drafts directory
+      const draftsDir = join(this.tempDir, "drafts");
+      await ensureDir(draftsDir);
+
+      // List all drafts from KV
+      const drafts = kv.list({ prefix: ["drafts"] });
+      let draftCount = 0;
+
+      for await (const entry of drafts) {
+        if (entry.value && typeof entry.value === "object") {
+          draftCount++;
+          const draft = entry.value as any;
+          const draftId = entry.key[entry.key.length - 1] as string;
+
+          try {
+            // Create draft subdirectory
+            const draftDir = join(draftsDir, draftId);
+            await ensureDir(draftDir);
+
+            // Save draft data as JSON
+            const draftPath = join(draftDir, "draft.json");
+            await Deno.writeTextFile(draftPath, JSON.stringify(draft, null, 2));
+
+            // If draft has config, also save as YAML
+            if (draft.config) {
+              const yamlPath = join(draftDir, "draft-config.yml");
+              const yamlContent = stringify(draft.config);
+              await Deno.writeTextFile(yamlPath, yamlContent);
+            }
+          } catch (err) {
+            console.warn(
+              `Failed to collect draft ${draftId}:`,
+              err instanceof Error ? err.message : String(err),
+            );
+          }
+        }
+      }
+
+      if (draftCount > 0) {
+        // Save summary of drafts
+        const summaryPath = join(draftsDir, "README.txt");
+        await Deno.writeTextFile(
+          summaryPath,
+          `Found ${draftCount} draft workspace(s) in KV storage.\n` +
+            `Each draft directory contains the full draft data.\n`,
+        );
+      }
+    } catch (err) {
+      console.warn(
+        "Failed to collect draft workspaces:",
         err instanceof Error ? err.message : String(err),
       );
     }
@@ -151,88 +335,85 @@ export class DiagnosticsCollector {
     }
   }
 
-  private async createGzipArchive(outputPath: string): Promise<void> {
-    // Create a JSON structure with all collected data
-    const diagnosticData: Record<string, unknown> = {
+  private async createTarGzArchive(outputPath: string): Promise<void> {
+    // Create metadata file
+    const metadataPath = join(this.tempDir, "metadata.json");
+    const versionInfo = getVersionInfo();
+    const metadata = {
       timestamp: new Date().toISOString(),
-      atlasVersion: Deno.env.get("ATLAS_VERSION") || "unknown",
+      atlasVersion: versionInfo.version,
+      gitSha: versionInfo.gitSha || undefined,
+      channel: versionInfo.channel,
+      isCompiled: versionInfo.isCompiled,
+      isDev: versionInfo.isDev,
       platform: Deno.build.os,
-      files: {},
+      denoVersion: Deno.version.deno,
     };
+    await Deno.writeTextFile(metadataPath, JSON.stringify(metadata, null, 2));
 
-    // Walk through all collected files and add them to the data structure
-    for await (const entry of walk(this.tempDir)) {
-      if (entry.isFile) {
-        const relativePath = entry.path.replace(this.tempDir + "/", "");
-        try {
-          const content = await Deno.readTextFile(entry.path);
-          diagnosticData.files[relativePath] = content;
-        } catch {
-          // If can't read as text, try binary
-          try {
-            const content = await Deno.readFile(entry.path);
-            diagnosticData.files[relativePath] = btoa(String.fromCharCode(...content));
-          } catch (err) {
-            console.warn(
-              `Failed to read ${relativePath}:`,
-              err instanceof Error ? err.message : String(err),
-            );
-          }
-        }
-      }
+    // Convert directory to tar stream entries
+    const tarEntries = await this.createTarStreamEntries(this.tempDir);
+
+    // Create the output file
+    const outputFile = await Deno.open(outputPath, { write: true, create: true });
+
+    try {
+      // Create tar.gz archive using streaming API
+      await ReadableStream.from(tarEntries)
+        .pipeThrough(new TarStream())
+        .pipeThrough(new CompressionStream("gzip"))
+        .pipeTo(outputFile.writable);
+    } catch (error) {
+      // Close file on error
+      outputFile.close();
+      throw error;
     }
-
-    // Convert to JSON and compress
-    const jsonData = JSON.stringify(diagnosticData, null, 2);
-    const encoder = new TextEncoder();
-    const dataBytes = encoder.encode(jsonData);
-
-    // Use native CompressionStream to gzip the data
-    const compressed = await this.compressData(dataBytes);
-
-    // Write compressed data
-    await Deno.writeFile(outputPath, compressed);
+    // Note: File is automatically closed when writable stream completes
 
     // Clean up temp directory
     await Deno.remove(this.tempDir, { recursive: true });
   }
 
-  private async compressData(data: Uint8Array): Promise<Uint8Array> {
-    // Create a readable stream from the data
-    const readable = new ReadableStream({
-      start(controller) {
-        controller.enqueue(data);
-        controller.close();
-      },
-    });
+  private async createTarStreamEntries(baseDir: string): Promise<TarStreamInput[]> {
+    const entries: TarStreamInput[] = [];
+    const baseDirPath = baseDir.endsWith("/") ? baseDir : baseDir + "/";
 
-    // Pipe through compression stream
-    const compressed = readable.pipeThrough(new CompressionStream("gzip"));
+    // Walk through all files and directories
+    for await (const entry of walk(baseDir)) {
+      // Skip the base directory itself
+      if (entry.path === baseDir) continue;
 
-    // Collect compressed chunks
-    const chunks: Uint8Array[] = [];
-    const reader = compressed.getReader();
+      const relativePath = entry.path.replace(baseDirPath, "");
 
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
+      // Double-check we have a valid relative path
+      if (!relativePath || relativePath.startsWith("/")) continue;
+
+      if (entry.isDirectory) {
+        // Add directory entry
+        entries.push({
+          type: "directory",
+          path: relativePath + "/",
+        });
+      } else if (entry.isFile) {
+        try {
+          const stat = await Deno.stat(entry.path);
+          const file = await Deno.open(entry.path, { read: true });
+
+          entries.push({
+            type: "file",
+            path: relativePath,
+            size: stat.size,
+            readable: file.readable,
+          });
+        } catch (err) {
+          console.warn(
+            `Failed to add ${relativePath} to tar:`,
+            err instanceof Error ? err.message : String(err),
+          );
+        }
       }
-    } finally {
-      reader.releaseLock();
     }
 
-    // Combine chunks into single Uint8Array
-    const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-    const result = new Uint8Array(totalLength);
-    let offset = 0;
-
-    for (const chunk of chunks) {
-      result.set(chunk, offset);
-      offset += chunk.length;
-    }
-
-    return result;
+    return entries;
   }
 }
