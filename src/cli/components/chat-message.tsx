@@ -1,36 +1,57 @@
-import { Box, Text } from "ink";
+import { Box } from "ink";
 import { MarkdownDisplay } from "./markdown-display.tsx";
+import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
+import { useMarkdown } from "../modules/conversation/use-markdown.ts";
+import { useCallback } from "react";
 
 // Chat Message Component
 interface ChatMessageProps {
-  author: string;
+  author?: string;
+  authorColor?: string;
   date?: string;
   message?: string;
-  authorColor?: string;
   children?: React.ReactNode;
+  dimColor?: boolean;
+  hideHeader?: boolean;
+  showCollapsible?: boolean;
+  fixedHeight?: boolean;
 }
 
 export const ChatMessage = ({
-  author,
-  date,
   message,
   children,
-  authorColor = "blue",
+  dimColor = false,
+  hideHeader = false,
+  showCollapsible = false,
+  fixedHeight = false,
 }: ChatMessageProps) => {
-  return (
-    <Box flexDirection="column" flexShrink={0}>
-      <Box flexDirection="row" gap={1}>
-        <Text color={authorColor} bold>
-          {author}
-        </Text>
-        {date && (
-          <Text color={authorColor} dimColor bold>
-            [{date}]
-          </Text>
-        )}
-      </Box>
+  const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
-      {message && <MarkdownDisplay content={message} />}
+  const { height, totalLines, markdown } = useMarkdown(message, dimColor);
+
+  const calculateHeight = useCallback(() => {
+    if (!fixedHeight) return undefined;
+
+    if (showCollapsible) {
+      return Math.min(height, 10);
+    }
+
+    return height;
+  }, [fixedHeight, height, hideHeader, showCollapsible]);
+
+  return (
+    <Box
+      flexDirection="column"
+      flexShrink={0}
+      height={calculateHeight()}
+      overflowY="hidden"
+      width={dimensions.paddedWidth}
+    >
+      <MarkdownDisplay
+        markdown={markdown}
+        totalLines={totalLines}
+        showCollapsible={showCollapsible}
+      />
 
       {children}
     </Box>

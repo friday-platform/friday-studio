@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Box, Static, Text } from "ink";
-import { ChatMessage } from "../../components/chat-message.tsx";
+import { Box, useInput } from "ink";
+
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
@@ -9,19 +9,13 @@ import { ConfigView } from "../../views/ConfigView.tsx";
 import CreditsView from "../../views/CreditsView.tsx";
 import Help from "../../views/help.tsx";
 import { InitView } from "../../views/InitView.tsx";
-import {
-  COMMAND_REGISTRY,
-  handleLibraryOpenCommand,
-  OutputEntry,
-  parseSlashCommand,
-} from "./index.ts";
+import { COMMAND_REGISTRY, handleLibraryOpenCommand, parseSlashCommand } from "./index.ts";
 import { SignalCommand } from "./SignalCommand.tsx";
 import { AgentCommand } from "./AgentCommand.tsx";
 import { JobCommand } from "./JobCommand.tsx";
 import { SessionCommand } from "./SessionCommand.tsx";
 import { WorkspacesCommand } from "./WorkspacesCommand.tsx";
 import { LibraryCommand } from "./LibraryCommand.tsx";
-import { handleComponentsCommand } from "./components-command.tsx";
 import { useBracketedPaste } from "../input/use-bracketed-paste.ts";
 
 export function Component() {
@@ -31,7 +25,7 @@ export function Component() {
     conversationClient,
     conversationSessionId,
     setTypingState,
-    isInitializing,
+    setIsCollapsed,
     exitApp,
   } = useAppContext();
   const [view, setView] = useState<
@@ -44,65 +38,22 @@ export function Component() {
     null,
   );
 
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === "r") {
+        // console.log(""); // hack to ensure the output rerenders :( // CLAUDE_IGNORE: Required for rendering
+        setIsCollapsed((prev) => !prev);
+      }
+    },
+    { isActive: true },
+  );
+
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
-  // Add entry to output buffer
-  const addOutputEntry = (entry: OutputEntry) => {
-    setOutputBuffer((prev) => [...prev, entry]);
-  };
-
-  // Handle LLM input (Phase 2.1)
   const handleLLMInput = async (input: string) => {
-    if (isInitializing) {
-      addOutputEntry({
-        id: `llm-initializing-${Date.now()}`,
-        component: (
-          <Text color="yellow">
-            Initializing conversation system, please wait...
-          </Text>
-        ),
-      });
-      return;
-    }
-
     if (!conversationClient || !conversationSessionId) {
-      addOutputEntry({
-        id: `llm-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Failed to initialize conversation system. Please restart the CLI.
-          </Text>
-        ),
-      });
       return;
     }
-
-    // Add user message using ChatMessage component
-    const now = new Date();
-    const userTimestamp = now
-      .toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-      .toLowerCase()
-      .replace(/\s/g, "");
-    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
-
-    // Force immediate render by using setOutputBuffer directly
-    setOutputBuffer((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        component: (
-          <ChatMessage
-            author={currentUser}
-            date={userTimestamp}
-            message={input}
-            authorColor="green"
-          />
-        ),
-      },
-    ]);
 
     // Show typing indicator
     setTypingState((prev) => ({ ...prev, isTyping: true }));
@@ -112,18 +63,8 @@ export function Component() {
       await conversationClient.sendMessage(conversationSessionId, input);
 
       // The persistent SSE listener will handle the response
-    } catch (error) {
+    } catch {
       setTypingState((prev) => ({ ...prev, isTyping: false }));
-      addOutputEntry({
-        id: `llm-error-${Date.now()}`,
-        component: (
-          <Box paddingLeft={1}>
-            <Text color="red">
-              LLM Error: {error instanceof Error ? error.message : String(error)}
-            </Text>
-          </Box>
-        ),
-      });
     }
   };
 
@@ -196,15 +137,18 @@ export function Component() {
     if (parsed.command === "library") {
       if (parsed.args[0] === "open" && parsed.args[1]) {
         // Handle /library open <item_id> - fire and forget async operation
-        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch(
+        handleLibraryOpenCommand(parsed.args[1], setOutputBuffer).catch(
           (error) => {
-            addOutputEntry({
-              id: `library-open-error-${Date.now()}`,
-              component: (
-                <Text color="red">
-                  Unexpected error: {error instanceof Error ? error.message : String(error)}
-                </Text>
-              ),
+            setOutputBuffer((prev) => {
+              const newMap = new Map(prev);
+              newMap.set(`library-open-error-${Date.now()}`, {
+                id: `library-open-error-${Date.now()}`,
+                type: "error",
+                content: `Unexpected error: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              });
+              return newMap;
             });
           },
         );
@@ -222,35 +166,43 @@ export function Component() {
     }
 
     if (parsed.command === "clear") {
-      setOutputBuffer([]);
-      return;
-    }
-
-    if (parsed.command === "components") {
-      handleComponentsCommand(setOutputBuffer);
+      setOutputBuffer(new Map());
       return;
     }
 
     // Check command registry
     const commandDef = COMMAND_REGISTRY[parsed.command];
     if (!commandDef) {
-      addOutputEntry({
-        id: `error-unknown-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Unknown command: /{parsed.command}. Type /help for available commands.
-          </Text>
-        ),
+      setOutputBuffer((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(`error-unknown-${Date.now()}`, {
+          id: `error-unknown-${Date.now()}`,
+          type: "error",
+          content: `Unknown command: /${parsed.command}. Type /help for available commands.`,
+        });
+        return newMap;
       });
       return;
     }
 
     // Execute command handler
     const outputs = commandDef.handler(parsed.args, {
-      addEntry: addOutputEntry,
+      addEntry: (entry) => {
+        setOutputBuffer((prev) => {
+          const newMap = new Map(prev);
+          newMap.set(entry.id, entry);
+          return newMap;
+        });
+      },
     });
 
-    outputs.forEach(addOutputEntry);
+    outputs.forEach((output) => {
+      setOutputBuffer((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(output.id, output);
+        return newMap;
+      });
+    });
   };
 
   return (
@@ -260,35 +212,6 @@ export function Component() {
       alignItems="flex-start"
       width={dimensions.paddedWidth}
     >
-      <Box flexDirection="column" flexShrink={0}>
-        <Static items={[1]}>
-          {(item) => (
-            <Box key={item} flexDirection="column" flexShrink={0}>
-              <Box flexDirection="row" alignItems="center">
-                <Box flexDirection="column">
-                  <Text>╭───╮</Text>
-                  <Text>│&nbsp;∆&nbsp;│</Text>
-                  <Text>╰───╯</Text>
-                </Box>
-
-                <Box flexDirection="column">
-                  <Text bold>&nbsp;Atlas.&nbsp;</Text>
-                </Box>
-
-                <Box flexDirection="column">
-                  <Text dimColor>Made by Tempest.</Text>
-                </Box>
-              </Box>
-
-              <Box flexDirection="column" paddingLeft={2}>
-                <Text dimColor>⊕ /help for help</Text>
-                <Text dimColor>∶ {Deno.cwd()}</Text>
-              </Box>
-            </Box>
-          )}
-        </Static>
-      </Box>
-
       {view === "command" && (
         <>
           {/* Message buffer for SSE handling and output display */}

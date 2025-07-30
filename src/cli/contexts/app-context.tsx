@@ -1,13 +1,12 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Box, Text } from "ink";
-import { Spinner } from "@inkjs/ui";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
 import { getAtlasDaemonUrl } from "@atlas/tools";
 import { OutputEntry } from "../modules/conversation/index.ts";
-import { ChatMessage } from "../components/chat-message.tsx";
+
+// import ansiEscapes from "ansi-escapes";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -29,14 +28,17 @@ interface TypingState {
 }
 
 interface AppContextType {
-  isLeaderKeyActive: boolean;
-  setLeaderKeyActive: (active: boolean) => void;
+  isCollapsed: boolean;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   config: AtlasConfig;
   updateConfig: (newConfig: AtlasConfig) => void;
   mcpClient: Client | null;
   initializeMcpClient: () => Promise<void>;
-  outputBuffer: OutputEntry[];
-  setOutputBuffer: React.Dispatch<React.SetStateAction<OutputEntry[]>>;
+  // @deprecated: all message should be sent to the SSE stream
+  outputBuffer: Map<string, OutputEntry>;
+  setOutputBuffer: React.Dispatch<
+    React.SetStateAction<Map<string, OutputEntry>>
+  >;
   conversationClient: ConversationClient | null;
   setConversationClient: React.Dispatch<
     React.SetStateAction<ConversationClient | null>
@@ -57,7 +59,7 @@ interface AppProviderProps {
 }
 
 export const AppProvider = ({ children }: AppProviderProps) => {
-  const [isLeaderKeyActive, setIsLeaderKeyActive] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [config, setConfig] = useState<AtlasConfig>({
     apiKey: "",
     daemonPort: "8080",
@@ -71,7 +73,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [mcpClient, setMcpClient] = useState<Client | null>(null);
 
   // Conversation state from conversation component
-  const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
+  const [outputBuffer, setOutputBuffer] = useState<Map<string, OutputEntry>>(
+    new Map(),
+  );
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
   const [conversationSessionId, setConversationSessionId] = useState<
     string | null
@@ -83,6 +87,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   });
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
+  // const [staticKey, setStaticKey] = useState(1);
   const timerIntervalRef = useRef<number | null>(null);
 
   // Store transport reference for cleanup
@@ -90,6 +95,13 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   // Store config in a ref so SSE handler always has latest value
   const configRef = useRef(config);
+
+  // const stdout = useStdout();
+
+  // const refreshStatic = useCallback(() => {
+  //   stdout.write(ansiEscapes.clearTerminal);
+  //   setStaticKey((prev) => prev + 1);
+  // }, [setStaticKey, stdout]);
 
   async function cleanup() {
     if (mcpTransportRef.current) {
@@ -150,10 +162,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     initializeSystem();
   }, []);
 
-  const setLeaderKeyActive = (active: boolean) => {
-    setIsLeaderKeyActive(active);
-  };
-
   const updateConfig = (newConfig: AtlasConfig) => {
     setConfig(newConfig);
   };
@@ -184,7 +192,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       return;
     }
 
-    setOutputBuffer([]);
+    // setOutputBuffer(new Map());
     setIsInitializing(true);
     setHasInitialized(true);
 
@@ -193,16 +201,16 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       const client = getDaemonClient();
 
       // Show loading state
-      setOutputBuffer([
-        {
-          id: `loading-${Date.now()}`,
-          component: (
-            <Box paddingLeft={1}>
-              <Spinner label="Loading..." />
-            </Box>
-          ),
-        },
-      ]);
+      // setOutputBuffer([
+      //   {
+      //     id: `loading-${Date.now()}`,
+      //     component: (
+      //       <Box paddingLeft={1}>
+      //         <Spinner label="Loading..." />
+      //       </Box>
+      //     ),
+      //   },
+      // ]);
 
       // Try to list workspaces - this will trigger auto-start if needed
       await client.listWorkspaces();
@@ -232,31 +240,20 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setIsInitializing(false);
       }
 
-      // Replace loading state with welcome message
-      const welcomeTimestamp = new Date()
-        .toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        })
-        .toLowerCase()
-        .replace(/\s/g, "");
-
-      setOutputBuffer([
-        {
-          id: `welcome-${Date.now()}`,
-          component: (
-            <ChatMessage
-              author="Atlas"
-              date={welcomeTimestamp}
-              message={`How can I help you today? Here are some options to get started:
-- "Tell me about the features in Atlas"
-- "Create a new workspace called..."
-- "Show me any available Workspaces that I can use right now"`}
-              authorColor="blue"
-            />
-          ),
-        },
-      ]);
+      //       setOutputBuffer((prev) => {
+      //         const newMap = new Map(prev);
+      //         newMap.set(`welcome-${Date.now()}`, {
+      //           id: `welcome-${Date.now()}`,
+      //           type: "text",
+      //           author: "Atlas",
+      //           timestamp: new Date().toISOString(),
+      //           content: `How can I help you today? Here are some options to get started:
+      // - "Tell me about the features in Atlas"
+      // - "Create a new workspace called..."
+      // - "Show me any available Workspaces that I can use right now"`,
+      //         });
+      //         return newMap;
+      //       });
 
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
@@ -267,21 +264,17 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       // Check if the error message already has helpful instructions
       const hasInstructions = errorMessage.includes("atlas service start");
 
-      setOutputBuffer([
-        {
-          id: `daemon-error-${Date.now()}`,
-          component: (
-            <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
-              <Text color="red">
-                {errorMessage}
-              </Text>
-              {!hasInstructions && (
-                <Text dimColor>Try running `atlas service start` manually.</Text>
-              )}
-            </Box>
-          ),
-        },
-      ]);
+      // setOutputBuffer((prev) => {
+      //   const newMap = new Map(prev);
+      //   newMap.set(`daemon-error-${Date.now()}`, {
+      //     id: `daemon-error-${Date.now()}`,
+      //     type: "error",
+      //     content: `Failed to start Atlas daemon: ${
+      //       error instanceof Error ? error.message : String(error)
+      //     }`,
+      //   });
+      //   return newMap;
+      // });
       setIsInitializing(false);
     }
   };
@@ -289,8 +282,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   return (
     <AppContext.Provider
       value={{
-        isLeaderKeyActive,
-        setLeaderKeyActive,
+        isCollapsed,
+        setIsCollapsed,
         config,
         updateConfig,
         mcpClient,

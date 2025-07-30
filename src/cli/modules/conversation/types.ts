@@ -1,10 +1,23 @@
-import React from "react";
-
 // Output buffer entry that can hold different component types
 export interface OutputEntry {
   id: string;
-  component: React.ReactElement;
+  type:
+    | "text" // response
+    | "thinking"
+    | "request"
+    | "finish"
+    | "tool_call"
+    | "tool_result"
+    | "tool_error"
+    | "selection_list"
+    | "file_diff"
+    | "directory_listing"
+    | "error"
+    | "header";
+  author?: string;
+  timestamp?: string;
   content?: string;
+  currentlyStreaming?: boolean;
 }
 
 // Command context for handlers
@@ -17,7 +30,10 @@ export interface CommandDefinition {
   name: string;
   description: string;
   usage: string;
-  handler: (args: string[], context: CommandContext) => OutputEntry[];
+  handler: (
+    args: string[],
+    context: CommandContext,
+  ) => Map<string, OutputEntry>;
 }
 
 // Parse command arguments while preserving complex arguments

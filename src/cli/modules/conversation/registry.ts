@@ -6,7 +6,6 @@ import {
   handleCreditsCommand,
   handleInitCommand,
   handleLibraryCommand,
-  handleMarkdownCommand,
   handleSendDiagnosticsCommand,
   handleSessionsCommand,
   handleSignalsCommand,
@@ -96,13 +95,6 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     description: "View and manage workspace configuration",
     usage: "/config [show|validate] [args...]",
     handler: handleConfigCommand,
-  },
-
-  markdown: {
-    name: "markdown",
-    description: "Display markdown syntax examples",
-    usage: "/markdown",
-    handler: handleMarkdownCommand,
   },
 
   "send-diagnostics": {

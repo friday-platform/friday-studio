@@ -42,6 +42,7 @@ interface ConversationStorageOutput {
 }
 
 interface StreamEvent {
+  id: string;
   type: "thinking" | "text" | "tool_call" | "tool_result" | "error" | "finish";
   content: string;
   metadata?: Record<string, unknown>;
@@ -77,6 +78,7 @@ export class ConversationAgent extends BaseAgent {
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
   private toolRegistry: AtlasToolRegistry;
+  private streamId: string | undefined;
 
   constructor(
     config: SystemAgentConfigObject,
@@ -183,6 +185,37 @@ export class ConversationAgent extends BaseAgent {
     let messagesInHistory = 0;
     let isNewConversation = true;
 
+    // Get conversation tools with context injection (streamId, userId automatically handled)
+    const conversationTools = this.toolRegistry.getToolsWithContext(
+      "conversation",
+      {
+        streamId,
+        userId,
+      },
+    );
+
+    // Get user-configured tools by name if specified
+    const configuredTools: Record<string, Tool> = {};
+    if (this.config.tools && this.config.tools.length > 0) {
+      for (const toolName of this.config.tools) {
+        const tool = this.toolRegistry.getToolByName(toolName);
+        if (tool) {
+          configuredTools[toolName] = tool;
+        } else {
+          this.logger.warn(
+            `Configured tool not found in registry: ${toolName}`,
+          );
+        }
+      }
+    }
+
+    // Merge all tools: conversation (with context) + additional categories + configured tools
+    // Conversation tools take precedence to ensure context injection is preserved
+    const finalTools = {
+      ...configuredTools,
+      ...conversationTools, // Last to ensure context injection is preserved
+    };
+
     if (streamId) {
       try {
         const historyResult = await this.loadConversationHistory(streamId);
@@ -200,36 +233,24 @@ export class ConversationAgent extends BaseAgent {
           },
           { userId, timestamp: new Date().toISOString() },
         );
+
+        // send message back in the SSE stream
+        if (finalTools.atlas_stream_event?.execute) {
+          await finalTools.atlas_stream_event.execute(
+            {
+              streamId,
+              id: crypto.randomUUID(),
+              eventType: "request",
+              content: message,
+              timestamp: new Date().toISOString(),
+            },
+            { toolCallId: crypto.randomUUID(), messages: [] },
+          );
+        }
       } catch (error) {
         this.logger.warn("Failed to handle conversation history", { error });
       }
     }
-
-    // Get conversation tools with context injection (streamId, userId automatically handled)
-    const conversationTools = this.toolRegistry.getToolsWithContext("conversation", {
-      streamId,
-      userId,
-    });
-
-    // Get user-configured tools by name if specified
-    const configuredTools: Record<string, Tool> = {};
-    if (this.config.tools && this.config.tools.length > 0) {
-      for (const toolName of this.config.tools) {
-        const tool = this.toolRegistry.getToolByName(toolName);
-        if (tool) {
-          configuredTools[toolName] = tool;
-        } else {
-          this.logger.warn(`Configured tool not found in registry: ${toolName}`);
-        }
-      }
-    }
-
-    // Merge all tools: conversation (with context) + additional categories + configured tools
-    // Conversation tools take precedence to ensure context injection is preserved
-    const finalTools = {
-      ...configuredTools,
-      ...conversationTools, // Last to ensure context injection is preserved
-    };
 
     // atlas_stream_event is mandatory for sending responses to users
     if (!finalTools.atlas_stream_event) {
@@ -304,14 +325,23 @@ export class ConversationAgent extends BaseAgent {
             thinkingBuffer: "",
           };
 
+          let prevChunk:
+            | TextStreamPart<{
+              [x: string]: Tool;
+            }>
+            | undefined = undefined;
+
           for await (const chunk of fullStream) {
-            const event = this.processStreamEvent(chunk);
+            const event = this.processStreamEvent(chunk, prevChunk);
+            prevChunk = chunk;
+
             if (!event || !streamId) continue;
 
             // Stream rich events directly
             if (finalTools.atlas_stream_event?.execute) {
               await finalTools.atlas_stream_event.execute(
                 {
+                  id: event.id,
                   streamId,
                   eventType: event.type,
                   content: event.content,
@@ -382,9 +412,12 @@ export class ConversationAgent extends BaseAgent {
           const processedReasoning = hasAISDKReasoning ? finalReasoning : executionFlow.reasoning;
 
           const reasoningText = hasAISDKReasoning
-            ? finalReasoning.map((item) => typeof item === "string" ? item : JSON.stringify(item))
+            ? finalReasoning
+              .map((item) => typeof item === "string" ? item : JSON.stringify(item))
               .join("\n")
-            : executionFlow.reasoning.join("\n") || executionFlow.thinkingBuffer || "";
+            : executionFlow.reasoning.join("\n") ||
+              executionFlow.thinkingBuffer ||
+              "";
 
           return {
             text: finalText || executionFlow.responseBuffer,
@@ -416,6 +449,7 @@ export class ConversationAgent extends BaseAgent {
             if (streamId && finalTools.atlas_stream_event?.execute) {
               await finalTools.atlas_stream_event.execute(
                 {
+                  id: crypto.randomUUID(),
                   streamId,
                   eventType: "thinking",
                   content: `Retrying (attempt ${attempt}/10)... waiting ${delay / 1000}s`,
@@ -454,11 +488,16 @@ export class ConversationAgent extends BaseAgent {
         if (streamId && finalTools.atlas_stream_event?.execute) {
           await finalTools.atlas_stream_event.execute(
             {
+              id: crypto.randomUUID(),
               streamId,
               eventType: "error",
               content:
                 "I'm experiencing high demand. I tried 10 times but couldn't process your request. Please try again later.",
-              metadata: { errorType: "overload", retriesExhausted: true, attempts: 10 },
+              metadata: {
+                errorType: "overload",
+                retriesExhausted: true,
+                attempts: 10,
+              },
             },
             { toolCallId: crypto.randomUUID(), messages: [] },
           );
@@ -510,6 +549,7 @@ export class ConversationAgent extends BaseAgent {
         result: event.metadata?.result,
       };
     }
+
     return event.metadata;
   }
 
@@ -536,6 +576,15 @@ export class ConversationAgent extends BaseAgent {
     return prompt;
   }
 
+  private getUniqueId(type: string, prevType?: string): string {
+    if (type === prevType && this.streamId) {
+      return this.streamId;
+    }
+
+    this.streamId = crypto.randomUUID();
+    return this.streamId;
+  }
+
   /**
    * Converts AI SDK stream chunks into structured events for processing
    *
@@ -546,12 +595,14 @@ export class ConversationAgent extends BaseAgent {
    */
   private processStreamEvent(
     chunk: TextStreamPart<Record<string, Tool>>,
+    prevChunk: TextStreamPart<Record<string, Tool>> | undefined,
   ): StreamEvent | null {
     const timestamp = Date.now();
 
     switch (chunk.type) {
       case "reasoning":
         return {
+          id: this.getUniqueId("reasoning", prevChunk?.type),
           type: "thinking",
           content: chunk.text,
           timestamp,
@@ -559,6 +610,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "text":
         return {
+          id: this.getUniqueId("text", prevChunk?.type),
           type: "text",
           content: chunk.text,
           timestamp,
@@ -566,6 +618,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "tool-call":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "tool_call",
           content: `Calling ${chunk.toolName}`,
           metadata: {
@@ -577,6 +630,7 @@ export class ConversationAgent extends BaseAgent {
         };
       case "finish":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "finish",
           content: chunk.finishReason,
           timestamp,
@@ -584,6 +638,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "error":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "error",
           content: JSON.stringify(chunk.error, null, 2),
           metadata: { error: chunk.error },
