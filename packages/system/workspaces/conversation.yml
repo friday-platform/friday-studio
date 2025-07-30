@@ -15,8 +15,6 @@ signals:
           type: "string"
         conversationId:
           type: "string"
-        id:
-          type: "string"
         streamId:
           type: "string"
         scope:

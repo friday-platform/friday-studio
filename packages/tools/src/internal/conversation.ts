@@ -21,14 +21,11 @@ export const atlas_stream_reply = tool({
   description:
     "Send a streaming reply to a stream via Server-Sent Events (SSE). Emits messages to connected SSE clients for real-time communication in conversations.",
   inputSchema: z.object({
-    streamId: z
-      .string()
-      .describe("The unique identifier of the stream to send the reply to"),
+    streamId: z.string().describe("The unique identifier of the stream to send the reply to"),
     content: z.string().describe("The content to send as a streaming reply"),
-    metadata: z
-      .record(z.string(), z.unknown())
-      .optional()
-      .describe("Optional metadata to include with the reply"),
+    metadata: z.record(z.string(), z.unknown()).optional().describe(
+      "Optional metadata to include with the reply",
+    ),
   }),
   execute: async ({ streamId, content, metadata }) => {
     try {
@@ -62,9 +59,7 @@ export const atlas_stream_reply = tool({
         result,
       };
     } catch (error) {
-      throw new Error(
-        `Failed to send streaming reply: ${getErrorMessage(error)}`,
-      );
+      throw new Error(`Failed to send streaming reply: ${getErrorMessage(error)}`);
     }
   },
 });
@@ -75,7 +70,6 @@ export const atlas_stream_reply = tool({
 export const atlas_stream_event = tool({
   description: "Stream rich events (thinking, tool calls, messages) to the conversation UI",
   inputSchema: z.object({
-    id: z.string().describe("Unique identifier"),
     streamId: z.string().describe("Stream identifier"),
     eventType: z
       .enum(["thinking", "message", "tool_call", "tool_result", "error"])
@@ -92,11 +86,10 @@ export const atlas_stream_event = tool({
       .optional()
       .describe("Event-specific metadata"),
   }),
-  execute: async ({ id, streamId, eventType, content, metadata }) => {
+  execute: async ({ streamId, eventType, content, metadata }) => {
     try {
       // Direct event type usage (no mapping)
       const event = {
-        id,
         type: eventType,
         data: {
           content,
@@ -135,47 +128,32 @@ export const atlas_stream_event = tool({
 export const atlas_conversation_storage = tool({
   description:
     "Manage conversation history using stream_id as key. Supports storing, retrieving, listing, and deleting conversation data.",
-  inputSchema: z
-    .object({
-      operation: z
-        .enum(["store", "retrieve", "list", "delete"])
-        .describe("The operation to perform on conversation storage"),
-      streamId: z
-        .string()
-        .optional()
-        .describe(
-          "The stream ID to operate on (required for store, retrieve, delete operations)",
-        ),
-      data: z
-        .record(z.string(), z.unknown())
-        .optional()
-        .describe("The data to store (required for store operation)"),
-      limit: z
-        .number()
-        .optional()
-        .describe("Maximum number of items to return (for list operation)"),
-      offset: z
-        .number()
-        .optional()
-        .describe("Number of items to skip (for list operation)"),
-    })
-    .refine(
-      (data) => {
-        // Validate required fields based on operation
-        if (data.operation === "store") {
-          return data.streamId && data.data;
-        }
-        if (data.operation === "retrieve" || data.operation === "delete") {
-          return data.streamId;
-        }
-        // list operation doesn't require streamId
-        return true;
-      },
-      {
-        message:
-          "streamId is required for store, retrieve, and delete operations; data is required for store operation",
-      },
+  inputSchema: z.object({
+    operation: z.enum(["store", "retrieve", "list", "delete"]).describe(
+      "The operation to perform on conversation storage",
     ),
+    streamId: z.string().optional().describe(
+      "The stream ID to operate on (required for store, retrieve, delete operations)",
+    ),
+    data: z.record(z.string(), z.unknown()).optional().describe(
+      "The data to store (required for store operation)",
+    ),
+    limit: z.number().optional().describe("Maximum number of items to return (for list operation)"),
+    offset: z.number().optional().describe("Number of items to skip (for list operation)"),
+  }).refine((data) => {
+    // Validate required fields based on operation
+    if (data.operation === "store") {
+      return data.streamId && data.data;
+    }
+    if (data.operation === "retrieve" || data.operation === "delete") {
+      return data.streamId;
+    }
+    // list operation doesn't require streamId
+    return true;
+  }, {
+    message:
+      "streamId is required for store, retrieve, and delete operations; data is required for store operation",
+  }),
   execute: async ({ operation, streamId, data, limit, offset }) => {
     try {
       let url = `${defaultContext.daemonUrl}/api/conversation-storage`;
@@ -222,9 +200,7 @@ export const atlas_conversation_storage = tool({
         result,
       };
     } catch (error) {
-      throw new Error(
-        `Failed to manage conversation storage: ${getErrorMessage(error)}`,
-      );
+      throw new Error(`Failed to manage conversation storage: ${getErrorMessage(error)}`);
     }
   },
 });
@@ -234,33 +210,26 @@ export const atlas_conversation_storage = tool({
  */
 export const atlas_save_env_var = tool({
   description: "Save environment variables to the .env file in the project root.",
-  inputSchema: z
-    .object({
-      key: z
-        .string()
-        .min(1, "Environment variable key cannot be empty")
-        .describe(
-          "Environment variable name (e.g., API_KEY, DATABASE_URL). Should follow standard naming conventions.",
-        ),
-      value: z
-        .union([z.string(), z.number(), z.boolean()])
-        .describe(
-          "Environment variable value. Will be converted to string for storage.",
-        ),
-    })
-    .refine((data) => {
-      // Validate environment variable key format
-      const keyRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
-      if (!keyRegex.test(data.key)) {
-        if (/^[0-9]/.test(data.key)) {
-          throw new Error("Environment variable key must start with a letter");
-        }
-        throw new Error(
-          "Environment variable key can only contain letters, numbers, and underscores",
-        );
+  inputSchema: z.object({
+    key: z.string().min(1, "Environment variable key cannot be empty").describe(
+      "Environment variable name (e.g., API_KEY, DATABASE_URL). Should follow standard naming conventions.",
+    ),
+    value: z.union([z.string(), z.number(), z.boolean()]).describe(
+      "Environment variable value. Will be converted to string for storage.",
+    ),
+  }).refine((data) => {
+    // Validate environment variable key format
+    const keyRegex = /^[A-Za-z][A-Za-z0-9_]*$/;
+    if (!keyRegex.test(data.key)) {
+      if (/^[0-9]/.test(data.key)) {
+        throw new Error("Environment variable key must start with a letter");
       }
-      return true;
-    }),
+      throw new Error(
+        "Environment variable key can only contain letters, numbers, and underscores",
+      );
+    }
+    return true;
+  }),
   execute: async ({ key, value }) => {
     try {
       // Convert value to string for environment variable storage
@@ -296,10 +265,7 @@ export const atlas_save_env_var = tool({
 
       // Add new key if not found
       if (!keyFound) {
-        if (
-          updatedLines.length > 0 &&
-          updatedLines[updatedLines.length - 1] !== ""
-        ) {
+        if (updatedLines.length > 0 && updatedLines[updatedLines.length - 1] !== "") {
           updatedLines.push(""); // Add blank line before new env var
         }
         updatedLines.push(`${key}=${stringValue}`);
@@ -321,9 +287,7 @@ export const atlas_save_env_var = tool({
         bytesWritten: stats.size,
       };
     } catch (error) {
-      throw new Error(
-        `Failed to save environment variable: ${getErrorMessage(error)}`,
-      );
+      throw new Error(`Failed to save environment variable: ${getErrorMessage(error)}`);
     }
   },
 });

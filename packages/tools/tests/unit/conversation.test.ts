@@ -16,35 +16,16 @@ Deno.test("Conversation Tools", async (t) => {
 
     for (const toolName of expectedTools) {
       assertEquals(toolName in conversationTools, true);
-      assertEquals(
-        typeof conversationTools[toolName as keyof typeof conversationTools],
-        "object",
-      );
+      assertEquals(typeof conversationTools[toolName as keyof typeof conversationTools], "object");
     }
   });
 
   await t.step("all tools should have required properties", () => {
     for (const [toolName, tool] of Object.entries(conversationTools)) {
-      assertEquals(
-        "description" in tool,
-        true,
-        `${toolName} should have description`,
-      );
-      assertEquals(
-        "inputSchema" in tool,
-        true,
-        `${toolName} should have inputSchema`,
-      );
-      assertEquals(
-        "execute" in tool,
-        true,
-        `${toolName} should have execute function`,
-      );
-      assertEquals(
-        typeof tool.execute,
-        "function",
-        `${toolName}.execute should be a function`,
-      );
+      assertEquals("description" in tool, true, `${toolName} should have description`);
+      assertEquals("inputSchema" in tool, true, `${toolName} should have inputSchema`);
+      assertEquals("execute" in tool, true, `${toolName} should have execute function`);
+      assertEquals(typeof tool.execute, "function", `${toolName}.execute should be a function`);
     }
   });
 });
@@ -99,13 +80,10 @@ Deno.test("atlas_stream_reply tool", async (t) => {
   await t.step("should fail when daemon is not available", async () => {
     await assertRejects(
       async () => {
-        await tool.execute!(
-          {
-            streamId: "stream-123",
-            content: "Hello world",
-          },
-          { toolCallId: "test", messages: [] },
-        );
+        await tool.execute!({
+          streamId: "stream-123",
+          content: "Hello world",
+        });
       },
       Error,
       "Failed to send streaming reply",
@@ -128,31 +106,19 @@ Deno.test("atlas_stream_event tool", async (t) => {
     }
 
     // Valid with all event types
-    const eventTypes = [
-      "thinking",
-      "message",
-      "tool_call",
-      "tool_result",
-      "error",
-    ];
+    const eventTypes = ["thinking", "message", "tool_call", "tool_result", "error"];
     for (const eventType of eventTypes) {
       const validParams = {
-        id: "id-123",
         streamId: "stream-123",
         eventType,
         content: `Test ${eventType} content`,
       };
       const result = params.safeParse(validParams);
-      assertEquals(
-        result.success,
-        true,
-        `Should accept ${eventType} event type`,
-      );
+      assertEquals(result.success, true, `Should accept ${eventType} event type`);
     }
 
     // Valid with metadata
     const validWithMetadata = {
-      id: "id-123",
       streamId: "stream-123",
       eventType: "tool_call",
       content: "Calling tool",
@@ -167,7 +133,6 @@ Deno.test("atlas_stream_event tool", async (t) => {
 
     // Valid tool_result with result metadata
     const validToolResult = {
-      id: "id-123",
       streamId: "stream-123",
       eventType: "tool_result",
       content: "Tool completed",
@@ -182,7 +147,6 @@ Deno.test("atlas_stream_event tool", async (t) => {
 
     // Valid error with error metadata
     const validError = {
-      id: "id-123",
       streamId: "stream-123",
       eventType: "error",
       content: "An error occurred",
@@ -224,15 +188,11 @@ Deno.test("atlas_stream_event tool", async (t) => {
   await t.step("should fail when daemon is not available", async () => {
     await assertRejects(
       async () => {
-        await tool.execute!(
-          {
-            id: "id-123",
-            streamId: "stream-123",
-            eventType: "message",
-            content: "Hello world",
-          },
-          { toolCallId: "test", messages: [] },
-        );
+        await tool.execute!({
+          streamId: "stream-123",
+          eventType: "message",
+          content: "Hello world",
+        });
       },
       Error,
       "Failed to stream event",
@@ -309,14 +269,11 @@ Deno.test("atlas_conversation_storage tool", async (t) => {
   await t.step("should fail when daemon is not available", async () => {
     await assertRejects(
       async () => {
-        await tool.execute!(
-          {
-            operation: "store",
-            streamId: "stream-123",
-            data: { message: "Hello world" },
-          },
-          { toolCallId: "test", messages: [] },
-        );
+        await tool.execute!({
+          operation: "store",
+          streamId: "stream-123",
+          data: { message: "Hello world" },
+        });
       },
       Error,
       "Failed to manage conversation storage",

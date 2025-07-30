@@ -163,28 +163,79 @@ export const handleStatusCommand = (
   ];
 };
 
+export const handleDiffCommand = (_args: string[]): OutputEntry[] => {
+  // Show example git diff
+  const exampleDiff = `function calculateTotal(items) {
+-  let total = 0;
+-  for (let i = 0; i < items.length; i++) {
+-    total += items[i].price;
+-  }
++  return items.reduce((total, item) => total + item.price, 0);
+}
+
+function processOrder(order) {
+  const total = calculateTotal(order.items);
++  const tax = total * 0.08;
++  const finalTotal = total + tax;
+-  return { total };
++  return { total, tax, finalTotal };
+}`;
+
+  const now = new Date();
+  const timestamp = now
+    .toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    })
+    .toLowerCase()
+    .replace(/\s/g, "");
+
+  return [
+    {
+      id: `diff-output-${Date.now()}`,
+      component: (
+        <Box flexDirection="column">
+          <ChatMessage
+            author="Δ Atlas"
+            date={timestamp}
+            message="Here's an example git diff:"
+            authorColor="blue"
+          />
+          <GitDiff diffContent={exampleDiff} startingLine={1} endingLine={15} />
+        </Box>
+      ),
+    },
+  ];
+};
+
+export const handleMarkdownCommand = (
+  _args: string[],
+  context: CommandContext,
+): OutputEntry[] => {
+  const markdownEntry = new MarkdownSandboxCommand({
+    onComplete: () => {
+      // No additional action needed after completion
+    },
+  });
+
+  context.addEntry(markdownEntry);
+  return [];
+};
+
 /**
  * Handle /library open <item_id> command
  */
 export const handleLibraryOpenCommand = async (
   itemId: string,
-  setOutputBuffer: React.Dispatch<
-    React.SetStateAction<Map<string, OutputEntry>>
-  >,
+  addOutputEntry: (entry: OutputEntry) => void,
 ) => {
   try {
     const client = getAtlasClient();
 
     // Show loading message
-    setOutputBuffer((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(`library-open-loading-${Date.now()}`, {
-        id: `library-open-loading-${Date.now()}`,
-        type: "text",
-        content: `Opening library item ${itemId}...`,
-      });
-
-      return newMap;
+    addOutputEntry({
+      id: `library-open-loading-${Date.now()}`,
+      component: <Text dimColor>Opening library item {itemId}...</Text>,
     });
 
     // We need to search for the item across all workspaces since we don't have workspace context
@@ -195,33 +246,27 @@ export const handleLibraryOpenCommand = async (
     } catch (error) {
       // If global library doesn't work, we'd need workspace-specific search
       // For now, show an error about needing workspace context
-
-      setOutputBuffer((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(`library-open-error-${Date.now()}`, {
-          id: `library-open-error-${Date.now()}`,
-          type: "error",
-          content:
-            `Could not find library item ${itemId}. Library items may be workspace-specific. ${
-              error instanceof Error ? ` Error: ${error.message}` : ""
-            }`,
-        });
-        return newMap;
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Could not find library item '{itemId}'. Library items may be workspace-specific.
+            {error instanceof Error ? ` Error: ${error.message}` : ""}
+          </Text>
+        ),
       });
       return;
     }
 
     if (!libraryItem.content) {
-      setOutputBuffer((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(`library-open-error-${Date.now()}`, {
-          id: `library-open-error-${Date.now()}`,
-          type: "error",
-          content: `Library item ${itemId} has no content to open.`,
-        });
-        return newMap;
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: (
+          <Text color="red">
+            Library item '{itemId}' has no content to open.
+          </Text>
+        ),
       });
-
       return;
     }
 
@@ -232,37 +277,29 @@ export const handleLibraryOpenCommand = async (
     );
 
     if (openResult.success) {
-      setOutputBuffer((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(`library-open-success-${Date.now()}`, {
-          id: `library-open-success-${Date.now()}`,
-          type: "text",
-          content: `Opened '${libraryItem.item.name}' in default application.`,
-        });
-        return newMap;
+      addOutputEntry({
+        id: `library-open-success-${Date.now()}`,
+        component: (
+          <Text color="green">
+            Opened '{libraryItem.item.name}' in default application.
+            {openResult.tempPath && <Text dimColor>(Temporary file: {openResult.tempPath})</Text>}
+          </Text>
+        ),
       });
     } else {
-      setOutputBuffer((prev) => {
-        const newMap = new Map(prev);
-        newMap.set(`library-open-error-${Date.now()}`, {
-          id: `library-open-error-${Date.now()}`,
-          type: "error",
-          content: `Failed to open file: ${openResult.error}`,
-        });
-        return newMap;
+      addOutputEntry({
+        id: `library-open-error-${Date.now()}`,
+        component: <Text color="red">Failed to open file: {openResult.error}</Text>,
       });
     }
   } catch (error) {
-    setOutputBuffer((prev) => {
-      const newMap = new Map(prev);
-      newMap.set(`library-open-error-${Date.now()}`, {
-        id: `library-open-error-${Date.now()}`,
-        type: "error",
-        content: `Error opening library item: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      });
-      return newMap;
+    addOutputEntry({
+      id: `library-open-error-${Date.now()}`,
+      component: (
+        <Text color="red">
+          Error opening library item: {error instanceof Error ? error.message : String(error)}
+        </Text>
+      ),
     });
   }
 };

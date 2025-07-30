@@ -39,11 +39,9 @@ export class ConversationClient {
   /**
    * Create a new conversation session using direct daemon API
    */
-  async createSession(options?: {
-    userId?: string;
-    scope?: { workspaceId?: string };
-    createOnly?: boolean;
-  }): Promise<ConversationSession> {
+  async createSession(
+    options?: { userId?: string; scope?: { workspaceId?: string }; createOnly?: boolean },
+  ): Promise<ConversationSession> {
     // Use the new direct daemon stream API
     const url = `${this.daemonUrl}/api/streams`;
     // Create session without sending an initial message
@@ -74,14 +72,12 @@ export class ConversationClient {
     return {
       sessionId: result.stream_id,
       mode: "private",
-      participants: [
-        {
-          userId: this.userId,
-          clientType: "atlas-cli",
-          joinedAt: new Date().toISOString(),
-          lastSeen: new Date().toISOString(),
-        },
-      ],
+      participants: [{
+        userId: this.userId,
+        clientType: "atlas-cli",
+        joinedAt: new Date().toISOString(),
+        lastSeen: new Date().toISOString(),
+      }],
       sseUrl: `${this.daemonUrl}${result.sse_url}`,
     };
   }
@@ -96,9 +92,7 @@ export class ConversationClient {
 
     try {
       const workspaces = await this.daemonClient.listWorkspaces();
-      const conversationWorkspace = workspaces.find(
-        (w) => w.id === "atlas-conversation",
-      );
+      const conversationWorkspace = workspaces.find((w) => w.id === "atlas-conversation");
 
       if (!conversationWorkspace) {
         throw new Error(
@@ -125,21 +119,18 @@ export class ConversationClient {
     const workspaceId = await this.getConversationWorkspaceId();
     const client = createAtlasClient();
 
-    const response = await client.POST(
-      "/api/workspaces/{workspaceId}/signals/{signalId}",
-      {
-        params: { path: { workspaceId, signalId: "conversation-stream" } },
-        body: {
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: {
+        streamId: sessionId,
+        payload: {
           streamId: sessionId,
-          payload: {
-            streamId: sessionId,
-            message,
-            userId: this.userId,
-            ...(conversationId && { conversationId }), // Include conversationId if provided
-          },
+          message,
+          userId: this.userId,
+          ...(conversationId && { conversationId }), // Include conversationId if provided
         },
       },
-    );
+    });
 
     if (response.error) {
       throw new Error(
@@ -188,17 +179,13 @@ export class ConversationClient {
             timestamp: parsedData.timestamp || new Date().toISOString(),
             sessionId: parsedData.sessionId || sessionId,
             messageId: message.id,
-            id: parsedData.id,
           };
 
           yield event;
 
           // Only close the connection if explicitly requested
           // @ts-expect-error event is currently untyped.
-          if (
-            event.type === "message_complete" &&
-            event.data?.closeConnection === true
-          ) {
+          if (event.type === "message_complete" && event.data?.closeConnection === true) {
             if (eventSource && eventSource.close) {
               eventSource.close();
             }
@@ -234,9 +221,7 @@ export class ConversationClient {
     }
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to get session: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
     }
 
     return await response.json();
@@ -261,9 +246,7 @@ export class ConversationClient {
    * Get workspace information to verify workspace exists
    */
   async getWorkspace(): Promise<{ id: string; name: string; status: string }> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}`,
-    );
+    const response = await fetch(`${this.daemonUrl}/api/workspaces/${this.workspaceId}`);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
