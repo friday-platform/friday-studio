@@ -311,7 +311,19 @@ export class WorkspaceManager {
       await this.registry.updateWorkspaceStatus(workspaceId, "running");
       logger.info("Workspace status updated to running", { workspaceId });
     } catch (error) {
-      logger.error("Failed to update workspace status", { workspaceId, error });
+      // Log more details about the error
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      // Check if this is a system workspace (they don't exist in registry)
+      const isSystemWorkspace = workspaceId.startsWith("atlas-");
+      logger.warn("Failed to update workspace status to running", {
+        workspaceId,
+        errorMessage,
+        errorType: error?.constructor?.name || "Unknown",
+        isSystemWorkspace,
+        note: isSystemWorkspace
+          ? "System workspaces are not tracked in registry"
+          : "Non-critical - workspace still runs",
+      });
     }
   }
 
@@ -327,7 +339,19 @@ export class WorkspaceManager {
         await this.registry.updateWorkspaceStatus(workspaceId, "stopped");
         logger.info("Workspace status updated to stopped", { workspaceId });
       } catch (error) {
-        logger.error("Failed to update workspace status", { workspaceId, error });
+        // Log more details about the error
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        // Check if this is a system workspace (they don't exist in registry)
+        const isSystemWorkspace = workspaceId.startsWith("atlas-");
+        logger.warn("Failed to update workspace status to stopped", {
+          workspaceId,
+          errorMessage,
+          errorType: error?.constructor?.name || "Unknown",
+          isSystemWorkspace,
+          note: isSystemWorkspace
+            ? "System workspaces are not tracked in registry"
+            : "Non-critical - workspace already stopped",
+        });
       }
     }
   }

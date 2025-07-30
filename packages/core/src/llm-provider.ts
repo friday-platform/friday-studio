@@ -194,8 +194,28 @@ export class LLMProvider {
         steps: result.steps || [],
       };
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check if this is an inactivity timeout (graceful shutdown scenario)
+      if (errorMessage.includes("Operation timed out due to inactivity")) {
+        logger.info("LLM generation ended due to inactivity timeout", {
+          provider: providerConfig.provider,
+          model: providerConfig.model,
+          duration: Date.now() - startTime,
+          reason: "No activity for configured timeout period - graceful shutdown",
+        });
+        // Return empty response for graceful shutdown
+        return {
+          text: "",
+          toolCalls: [],
+          toolResults: [],
+          steps: [],
+        };
+      }
+
+      // For other errors, log as error and throw
       logger.error("LLM generation failed", {
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
         provider: providerConfig.provider,
         model: providerConfig.model,
         duration: Date.now() - startTime,
