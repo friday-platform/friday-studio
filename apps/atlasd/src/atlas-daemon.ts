@@ -6,7 +6,7 @@ import { getAtlasDaemonUrl } from "@atlas/tools";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import type { Context, Next } from "hono";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
 import {
@@ -255,7 +255,28 @@ export class AtlasDaemon implements AppContext {
   }
 
   private setupRoutes() {
-    this.app.use(logger());
+    // Custom HTTP request logger using AtlasLogger
+    this.app.use("*", async (c: Context, next: Next) => {
+      const start = Date.now();
+      const method = c.req.method;
+      const path = c.req.path;
+
+      await next();
+
+      const duration = Date.now() - start;
+      const status = c.res.status;
+
+      // Log in consistent format with other Atlas logs
+      AtlasLogger.getInstance().info(`HTTP ${method} ${path}`, {
+        method,
+        path,
+        status,
+        duration: `${duration}ms`,
+        // Add component to match other logs
+        component: "http",
+      });
+    });
+
     // Setup CORS if configured
     if (this.options.cors) {
       this.app.use(
