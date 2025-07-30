@@ -67,9 +67,9 @@ Section: utils
 Priority: optional
 Homepage: https://atlas.tempestdx.com
 Description: Atlas AI Agent Orchestration Platform
- Build powerful, multi-agent workflows in natural language with Atlas,
- the safest way to automate complex tasks, coordinate agents, and scale
- intelligent execution.
+ Atlas creates intelligent systems from simple conversations. Simply tell Atlas
+ what you want to achieve, and it creates intelligent operations that plan,
+ execute, and adapt, all without brittle workflows or technical setup.
 EOF
 
 # Format EULA text for debconf (add space and dot at beginning of each line)

@@ -130,9 +130,9 @@ Requires(preun): systemd
 Requires(postun): systemd
 
 %description
-Build powerful, multi-agent workflows in natural language with Atlas,
-the safest way to automate complex tasks, coordinate agents, and scale
-intelligent execution.
+Atlas creates intelligent systems from simple conversations. Simply tell Atlas
+what you want to achieve, and it creates intelligent operations that plan,
+execute, and adapt, all without brittle workflows or technical setup.
 
 %pre
 # Create atlas user if it doesn't exist
