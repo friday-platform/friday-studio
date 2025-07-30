@@ -14,10 +14,9 @@ Use tools in this logical construction sequence:
 2. SIGNALS: Add trigger mechanisms (schedule/webhook/system signals)
 3. AGENTS: Add workers that perform tasks (LLM/remote agents)  
 4. JOBS: Connect signals to agent pipelines with proper execution strategy
-5. ATLAS-PLATFORM: ALWAYS call 'addAtlasPlatformMCP' with ONLY the specific tools needed
-6. INTEGRATIONS: Add external MCP servers only if atlas-platform insufficient (consult 'atlas://guides/mcp-servers' resource for configuration patterns)
-7. VALIDATE: Use 'validateWorkspace' to check configuration
-8. EXPORT: Finish with 'exportWorkspace' to finalize
+5. INTEGRATIONS: Add external MCP servers if needed (consult 'atlas://guides/mcp-servers' resource for configuration patterns)
+6. VALIDATE: Use 'validateWorkspace' to check configuration
+7. EXPORT: Finish with 'exportWorkspace' to finalize
 
 ## ATLAS ARCHITECTURAL PATTERNS
 
@@ -40,6 +39,12 @@ Use tools in this logical construction sequence:
 **Monitoring & Alerting Pattern**:
 - Schedule signal → Monitor agent → Analysis agent → Alert agent
 - Example: Health check → Monitor services → Analyze metrics → Send alerts
+
+**Email Report Pattern**:
+- Schedule signal → Data collection agent → Analysis agent → Email report agent
+- Example: Daily schedule → Collect real estate listings → Analyze deals → Send email report with atlas_notify_email
+- CRITICAL: Email agent should use tool_choice: "required" to ensure emails are sent
+- Atlas tools are automatically available - no need to specify tool names in prompts
 
 ## CONSTRUCTION GUIDELINES
 
@@ -65,6 +70,13 @@ Use tools in this logical construction sequence:
 - Natural language processing
 - Data interpretation and insights
 - Choose appropriate models and temperatures
+- **Email notifications**: Create a dedicated email agent using atlas_notify_email
+- **Natural task-focused prompts**: Write prompts that describe WHAT agents should do, not HOW
+  - Email agents: "Send email notifications with the analysis results"
+  - Search agents: "Find current information about the topic"
+  - File agents: "Read the data and save the processed results"
+- **Automatic tool selection**: Agents automatically have access to all atlas-platform tools
+- **Tool enforcement**: Use tool_choice: "required" only when agents MUST use tools (like email notifications)
 
 
 **Remote Agents** - For external services:
@@ -87,18 +99,25 @@ Use tools in this logical construction sequence:
 - Results can be combined later
 - Better for scalable operations
 
-### 4. Tool Selection - Atlas-Platform First, Selective Access
+### 4. Tool Selection - Atlas Tools Are Automatically Available
 
-**ALWAYS configure atlas-platform MCP server with ONLY needed tools**:
-- Analyze what the workspace actually needs to accomplish
-- Select ONLY the specific Atlas tools required for the tasks
-- Common tool categories and when to use them:
+**Atlas tools (atlas_*, tavily_*) are automatically available to ALL agents**:
+- You don't need to configure atlas-platform or include it in tools array
+- ALL agents can use atlas_*, tavily_* tools without any configuration
+- Only specify external MCP servers in the tools array when needed
+- Focus agent prompts on the task, not on specific tool names
+
+**Common Atlas tool categories automatically available:**
 
 **File Operations**: atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
 - Use when: Reading files, writing reports, searching codebases, file management
 
-**Web Operations**: tavily_search, tavily_extract, tavily_crawl
-- Use when: Web research, content extraction, website crawling, competitive intelligence
+**Web Operations (PREFERRED for web scraping)**:
+- tavily_search - AI-powered web search for current information
+- tavily_extract - Extract content from specific URLs
+- tavily_crawl - Crawl websites and extract structured content
+- Use when: Web research, content extraction, website monitoring, competitive intelligence
+- These are the PREFERRED tools for web scraping tasks
 
 **System Operations**: atlas_bash
 - Use when: Running commands, git operations, system integrations, deployments
@@ -113,16 +132,19 @@ Use tools in this logical construction sequence:
 - Use when: Storing/retrieving knowledge, templates, persistent data
 - IMPORTANT: Use atlas_library_get with includeContent=false to check size_bytes, then use atlas_library_get_stream for items >100KB
 
-**DO NOT use external MCP servers if Atlas tools can handle the need**:
-- ❌ External filesystem MCP when atlas_read/atlas_write sufficient
-- ❌ External web scraping MCP when tavily_search/tavily_extract/tavily_crawl provide comprehensive research
-- ❌ External email service when atlas_notify_email sufficient
-- ❌ External search engines when tavily_search provides AI-powered search
+**Only use external MCP servers when Atlas tools are insufficient**:
+- External MCP servers should only be added for specialized capabilities
+- Examples: GitHub API integration, Slack posting, database connections
+- Always check if Atlas tools can handle the need first
 
-**External MCP Servers** (only when Atlas tools truly insufficient):
-- Specialized protocols (beyond HTTP/HTTPS)
-- Complex authentication flows Atlas doesn't support
-- Domain-specific tools with unique capabilities
+**External MCP Servers use STDIO transport**:
+- External servers run as local commands and communicate via stdin/stdout
+- Configuration example:
+  transport: {
+    type: "stdio",
+    command: "deno",
+    args: ["run", "-A", "https://example.com/mcp-server.ts"]
+  }
 
 **MCP Configuration Guidance**: For comprehensive MCP server configuration patterns, including production-ready examples and authentication flows, use the 'read_atlas_resource' tool to access 'atlas://guides/mcp-servers'. This resource contains detailed configuration examples for popular MCP servers like GitHub, Slack, databases, and more.
 
@@ -140,19 +162,19 @@ When validation fails:
 **Example: Nike Shoe Monitoring**
 1. Initialize workspace: "nike-shoe-monitor"  
 2. Add schedule signal: "check_releases" every 30 minutes
-3. Add LLM agent: "product_analyzer" with tools: ["atlas-platform"]
-4. Add LLM agent: "notifier" with tools: ["atlas-platform"] for alerts
+3. Add LLM agent: "product_analyzer" (Atlas tools automatically available)
+4. Add LLM agent: "notifier" with:
+   - tool_choice: "required" (ensures email is sent)
+   - prompt: "Send email notifications about new Nike releases to subscribers"
 5. Create job: "monitor_and_alert" connecting signal to agents
-6. Add atlas-platform MCP server with tools: ["atlas_fetch", "atlas_notify_email", "atlas_library_store"]
-7. Validate and export
+6. Validate and export
 
 **Example: Stripe-HubSpot Sync**
 1. Initialize workspace: "stripe-hubspot-sync"
 2. Add webhook signal: "stripe_webhook" at "/webhook/stripe"
-3. Add LLM agent: "customer_mapper" with tools: ["atlas-platform"] to transform data
-4. Add LLM agent: "hubspot_sync" with tools: ["atlas-platform"] for API calls
+3. Add LLM agent: "customer_mapper" to transform data
+4. Add LLM agent: "hubspot_sync" for API calls
 5. Create job: "sync_customer" for the pipeline
-6. Add atlas-platform MCP server with tools: ["atlas_fetch", "atlas_library_store"] (atlas_fetch can handle HubSpot API)
-7. Validate and export (NO external MCP needed - atlas_fetch handles API calls)
+6. Validate and export
 
 Build workspaces step by step, ensuring each component is properly configured and connected. Always validate before exporting, and provide clear error messages if issues arise.`;

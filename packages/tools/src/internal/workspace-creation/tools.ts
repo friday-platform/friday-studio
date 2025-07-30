@@ -118,13 +118,18 @@ export const workspaceBuilderTools = {
         "System prompt that defines the agent's behavior and capabilities, e.g., 'You analyze Nike products for hype potential...', 'You generate engaging social media content...'",
       ),
       tools: z.array(z.string()).default([]).describe(
-        "Array of MCP server names available to this agent, e.g., ['atlas-platform', 'github'], ['atlas-platform', 'slack']. Use 'atlas-platform' for Atlas internal tools.",
+        "Additional MCP servers for this agent. Atlas tools (atlas_*, tavily_*) are automatically available to all agents. Only specify external MCP servers like ['github'], ['slack'] if needed.",
       ),
       temperature: z.number().min(0).max(1).default(0.3).describe(
         "Controls randomness in model responses (0=deterministic, 1=creative)",
       ),
+      tool_choice: z.enum(["auto", "required", "none"]).optional().describe(
+        "Tool usage strategy: 'auto' (LLM decides), 'required' (must use tools), 'none' (no tools). Use 'required' for agents that MUST use specific tools like email notifications.",
+      ),
     }),
-    execute: ({ agentId, description, provider, model, prompt, tools, temperature }) => {
+    execute: (
+      { agentId, description, provider, model, prompt, tools, temperature, tool_choice },
+    ) => {
       const agentConfig: WorkspaceAgentConfig = {
         type: "llm",
         description,
@@ -134,6 +139,7 @@ export const workspaceBuilderTools = {
           prompt,
           tools,
           temperature,
+          tool_choice,
         },
       };
 
@@ -224,94 +230,12 @@ export const workspaceBuilderTools = {
     },
   }),
 
-  addAtlasPlatformMCP: tool({
-    description: "Add atlas-platform MCP server with only the tools needed for this workspace",
-    inputSchema: z.object({
-      requiredTools: z.array(z.string()).describe(
-        "Array of specific Atlas tools needed for this workspace. Available tools: " +
-          "atlas_library_list, atlas_library_get, atlas_library_store, atlas_library_stats, atlas_library_templates, " +
-          "atlas_workspace_list, atlas_workspace_create, atlas_workspace_delete, atlas_workspace_describe, " +
-          "atlas_session_describe, atlas_session_cancel, atlas_jobs_list, atlas_jobs_describe, " +
-          "atlas_signals_list, atlas_signals_trigger, atlas_agents_list, atlas_agents_describe, " +
-          "atlas_glob, atlas_grep, atlas_ls, atlas_read, atlas_write, " +
-          "tavily_search, tavily_extract, tavily_crawl, " +
-          "atlas_bash, atlas_notify_email",
-      ),
-    }),
-    execute: ({ requiredTools }) => {
-      // Validate that all requested tools are available Atlas tools
-      const availableAtlasTools = [
-        "atlas_library_list",
-        "atlas_library_get",
-        "atlas_library_store",
-        "atlas_library_stats",
-        "atlas_library_templates",
-        "atlas_workspace_list",
-        "atlas_workspace_create",
-        "atlas_workspace_delete",
-        "atlas_workspace_describe",
-        "atlas_session_describe",
-        "atlas_session_cancel",
-        "atlas_jobs_list",
-        "atlas_jobs_describe",
-        "atlas_signals_list",
-        "atlas_signals_trigger",
-        "atlas_agents_list",
-        "atlas_agents_describe",
-        "atlas_glob",
-        "atlas_grep",
-        "atlas_ls",
-        "atlas_read",
-        "atlas_write",
-        "tavily_search",
-        "tavily_extract",
-        "tavily_crawl",
-        "atlas_bash",
-        "atlas_notify_email",
-      ];
-
-      const invalidTools = requiredTools.filter((tool) => !availableAtlasTools.includes(tool));
-      if (invalidTools.length > 0) {
-        throw new Error(
-          `Invalid Atlas tools requested: ${invalidTools.join(", ")}. Available tools: ${
-            availableAtlasTools.join(", ")
-          }`,
-        );
-      }
-
-      const serverConfig: MCPServerConfig = {
-        transport: {
-          type: "http",
-          url: `${getAtlasDaemonUrl()}/mcp`,
-        },
-        tools: {
-          allow: requiredTools,
-        },
-        client_config: {
-          timeout: "30s",
-        },
-      };
-
-      const result = workspaceBuilder.addMCPIntegration("atlas-platform", serverConfig);
-      if (!result.success) {
-        throw new Error(`Atlas-platform MCP integration failed: ${result.errors.join("; ")}`);
-      }
-      return {
-        status: "added",
-        serverName: "atlas-platform",
-        toolsConfigured: requiredTools.length,
-        message: `Atlas-platform MCP server added with ${requiredTools.length} tools: ${
-          requiredTools.join(", ")
-        }`,
-      };
-    },
-  }),
-
   addMCPIntegration: tool({
-    description: "Add external MCP server integration for additional capabilities",
+    description:
+      "Add external MCP server integration for additional capabilities. Note: atlas-platform is automatically provided by the runtime.",
     inputSchema: z.object({
       serverName: z.string().describe(
-        "MCP server identifier, e.g., 'web_scraper', 'email_service', 'database_connector'",
+        "MCP server identifier, e.g., 'github', 'slack', 'database_connector'. Atlas tools are automatically available.",
       ),
       command: z.string().describe(
         "Command to start the MCP server, e.g., 'deno'",
@@ -324,6 +248,15 @@ export const workspaceBuilderTools = {
       ),
     }),
     execute: ({ serverName, command, args, env }) => {
+      // CRITICAL: Prevent using this tool for atlas-platform
+      if (serverName === "atlas-platform") {
+        throw new Error(
+          "atlas-platform is automatically provided by the Atlas runtime. " +
+            "You don't need to add it manually. All Atlas tools (atlas_*, tavily_*) " +
+            "will be available to your agents automatically.",
+        );
+      }
+
       const serverConfig: MCPServerConfig = {
         transport: {
           type: "stdio",

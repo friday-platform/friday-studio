@@ -99,19 +99,18 @@ export class WorkspaceGenerator {
         // Check if we have minimum components for a functional workspace
         logger.debug("Analyzing generated workspace components");
         let hasMinimumComponents = false;
-        let signalCount = 0, agentCount = 0, jobCount = 0, hasAtlasPlatform = false;
+        let signalCount = 0, agentCount = 0, jobCount = 0;
         try {
           const config = workspaceBuilder.exportConfig();
           signalCount = Object.keys(config.signals || {}).length;
           agentCount = Object.keys(config.agents || {}).length;
           jobCount = Object.keys(config.jobs || {}).length;
-          hasAtlasPlatform = config.tools?.mcp?.servers?.["atlas-platform"] != null;
 
           logger.debug(
-            `Workspace components: ${signalCount} signals, ${agentCount} agents, ${jobCount} jobs, atlas-platform: ${hasAtlasPlatform}`,
+            `Workspace components: ${signalCount} signals, ${agentCount} agents, ${jobCount} jobs`,
           );
-          hasMinimumComponents = signalCount >= 1 && agentCount >= 1 && jobCount >= 1 &&
-            hasAtlasPlatform;
+          // NOTE: atlas-platform is injected at runtime, not part of workspace config
+          hasMinimumComponents = signalCount >= 1 && agentCount >= 1 && jobCount >= 1;
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           logger.debug(`Failed to export config: ${errorMessage}`);
@@ -123,7 +122,7 @@ export class WorkspaceGenerator {
         const validation = hasMinimumComponents ? workspaceBuilder.validateWorkspace() : {
           success: false,
           errors: [
-            "Workspace incomplete - missing signals, agents, jobs, or atlas-platform MCP server",
+            "Workspace incomplete - missing signals, agents, or jobs",
           ],
           warnings: [],
         };
@@ -201,25 +200,49 @@ Please analyze these errors and adjust your approach accordingly.`;
 
 Create a complete Atlas workspace configuration using the provided tools. You MUST call ALL necessary tools in this exact sequence:
 
+**AGENT TOOL USAGE**:
+- ALL agents automatically have access to atlas-platform tools (atlas_*, tavily_*)
+- You don't need to list specific tools in prompts - agents can discover and use them as needed
+- Focus agent prompts on WHAT they should do, not HOW (tools will be selected automatically)
+- For critical operations (like email), you can still use tool_choice: "required" to ensure tools are used
+
 1. REQUIRED: Call initializeWorkspace first
 2. REQUIRED: Call addScheduleSignal OR addWebhookSignal for triggers
 3. REQUIRED: Call addLLMAgent AND/OR addRemoteAgent for workers
 4. REQUIRED: Call createJob to connect signals to agents
-5. REQUIRED: Call addAtlasPlatformMCP with specific tools needed for this workspace
-6. OPTIONAL: Call addMCPIntegration if external services needed
-7. REQUIRED: Call validateWorkspace to check configuration
-8. REQUIRED: Call exportWorkspace to finalize
+5. OPTIONAL: Call addMCPIntegration if external services needed (NOT for atlas-platform)
+6. REQUIRED: Call validateWorkspace to check configuration
+7. REQUIRED: Call exportWorkspace to finalize
 
 You must create AT LEAST:
 - 1 signal (trigger mechanism)
 - 2 agents (workers to perform tasks)
 - 1 job (connecting signals to agents)
-- atlas-platform MCP server with ONLY the specific tools needed
 
-**TOOL SELECTION GUIDANCE:**
-Analyze the user intent and select ONLY the Atlas tools actually needed:
+**CRITICAL for Email Workflows**: If the user wants email notifications, you MUST:
+1. Create an email report agent as the last agent in the pipeline
+2. Configure the email agent with tool_choice: "required" to ensure tools are used
+3. Use a natural prompt focused on the task, not specific tools
+4. Example configuration:
+   - prompt: "You are responsible for sending email notifications. Format and send an email report with the analysis results to the configured recipients."
+   - tool_choice: "required" (ensures the agent uses tools to send email)
 
-- **Web scraping/API calls**: atlas_fetch, atlas_web_session_* (if complex web automation needed)
+**IMPORTANT: Atlas Platform Tools**
+All Atlas platform tools (atlas_*, tavily_*) are automatically available to ALL agents at runtime. You do NOT need to:
+- Add atlas-platform as an MCP server
+- Include "atlas-platform" in agent tools arrays
+- Mention specific tool names in agent prompts
+
+Agents can discover and use Atlas tools automatically based on their task requirements.
+
+**ATLAS TOOLS AUTOMATICALLY AVAILABLE:**
+- **Web Search & Scraping (PREFERRED)**:
+  - tavily_search - AI-powered web search
+  - tavily_extract - Extract content from specific URLs
+  - tavily_crawl - Crawl websites and extract structured content
+- **API Calls & Basic Fetching**:
+  - atlas_fetch - Simple HTTP requests
+  - atlas_web_session_* - Complex web automation with sessions
 - **File operations**: atlas_read, atlas_write, atlas_ls, atlas_glob, atlas_grep
 - **Email notifications**: atlas_notify_email
 - **System commands**: atlas_bash

@@ -5,7 +5,10 @@
  */
 
 import { logger } from "../../../src/utils/logger.ts";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 import { type MCPServerConfig } from "./manager.ts";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { experimental_createMCPClient as createMCPClient } from "ai";
 
 // Type definitions for configuration sources
 export interface AtlasConfig {
@@ -58,14 +61,19 @@ export class MCPServerRegistry {
    * @param atlasConfig Platform-level MCP server declarations
    * @param workspaceConfig Workspace-level MCP server declarations
    */
-  static initialize(
+  static async initialize(
     atlasConfig?: AtlasConfig,
     workspaceConfig?: WorkspaceConfig,
-  ): void {
+  ): Promise<void> {
     if (this.initialized) return;
 
-    // 1. Load platform-level MCP servers from atlas.yml
-    const platformServers = this.extractPlatformMCPServers(atlasConfig);
+    // Inject atlas-platform MCP server configuration
+    const platformTools = await this.getAllPlatformTools();
+
+    const atlasConfigWithPlatform = this.injectPlatformServer(atlasConfig, platformTools);
+
+    // 1. Load platform-level MCP servers from atlas.yml (now includes atlas-platform)
+    const platformServers = this.extractPlatformMCPServers(atlasConfigWithPlatform);
 
     // 2. Load workspace-level MCP servers from workspace.yml
     const workspaceServers = this.extractWorkspaceMCPServers(workspaceConfig);
@@ -89,6 +97,7 @@ export class MCPServerRegistry {
         workspaceServerCount: workspaceServers.size,
         totalServerCount: this.serverConfigs.size,
         serverIds: Array.from(this.serverConfigs.keys()),
+        platformToolCount: platformTools.length,
       },
     );
 
@@ -307,5 +316,101 @@ export class MCPServerRegistry {
     logger.debug("MCP Server Registry reset", {
       operation: "mcp_registry_reset",
     });
+  }
+
+  /**
+   * Get all available platform tools from the MCP server
+   */
+  private static async getAllPlatformTools(): Promise<string[]> {
+    try {
+      const daemonUrl = getAtlasDaemonUrl();
+      logger.debug("Fetching platform tools from MCP server", {
+        daemonUrl,
+        endpoint: `${daemonUrl}/mcp`,
+      });
+
+      // Create MCP client with HTTP transport
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`${daemonUrl}/mcp`),
+      );
+
+      const mcpClient = await createMCPClient({
+        transport,
+      });
+
+      // Get tools from the MCP client
+      const tools = await mcpClient.tools();
+      const toolNames = Object.keys(tools);
+
+      if (toolNames.length === 0) {
+        throw new Error("No tools returned from MCP server");
+      }
+
+      logger.info(`Successfully fetched ${toolNames.length} platform tools from MCP server`);
+
+      // Close the client after use
+      await mcpClient.close();
+
+      return toolNames;
+    } catch (error) {
+      logger.error("Failed to get platform tools dynamically", {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      // If we can't get tools dynamically, we should fail initialization
+      // This ensures we never use a static list
+      throw new Error(
+        `Cannot initialize MCPServerRegistry: Failed to fetch platform tools from MCP server. ` +
+          `Ensure the daemon is running and the MCP server is properly initialized. ` +
+          `Error: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
+  /**
+   * Inject atlas-platform MCP server configuration into atlas config
+   */
+  private static injectPlatformServer(
+    atlasConfig: AtlasConfig | undefined,
+    platformTools: string[],
+  ): AtlasConfig {
+    // Create the platform MCP server configuration
+    const platformMCPServer: Partial<MCPServerConfig> = {
+      transport: {
+        type: "http" as const,
+        url: `${getAtlasDaemonUrl()}/mcp`,
+      },
+      tools: {
+        allow: platformTools,
+      },
+    };
+
+    // Merge platform server into atlas config
+    if (!atlasConfig) {
+      return {
+        tools: {
+          mcp: {
+            servers: {
+              "atlas-platform": platformMCPServer,
+            },
+          },
+        },
+      };
+    }
+
+    return {
+      ...atlasConfig,
+      tools: {
+        ...atlasConfig.tools,
+        mcp: {
+          ...atlasConfig.tools?.mcp,
+          servers: {
+            ...atlasConfig.tools?.mcp?.servers,
+            "atlas-platform": platformMCPServer,
+          },
+        },
+      },
+    };
   }
 }

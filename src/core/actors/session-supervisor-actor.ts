@@ -846,6 +846,11 @@ Think step by step about the best approach to handle this signal, then use the t
       tools = agentConfig.config.tools || [];
     }
 
+    // Always include atlas-platform for all agents to access Atlas tools
+    if (!tools.includes("atlas-platform")) {
+      tools = ["atlas-platform", ...tools];
+    }
+
     return {
       agentId,
       agent: agentConfig,

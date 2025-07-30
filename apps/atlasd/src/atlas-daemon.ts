@@ -2,6 +2,7 @@ import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
+import { getAtlasDaemonUrl } from "@atlas/tools";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
@@ -136,6 +137,8 @@ export class AtlasDaemon implements AppContext {
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
+    // Initialize Platform MCP Server (moved to lazy initialization in getMCPServer)
+
     // Set up workspace wakeup callback
     const wakeupCallback: WorkspaceWakeupCallback = async (
       workspaceId: string,
@@ -206,7 +209,7 @@ export class AtlasDaemon implements AppContext {
   private initializeMCPServer(): void {
     const logger = AtlasLogger.getInstance();
 
-    const daemonUrl = `http://${this.options.hostname || "localhost"}:${this.options.port || 8080}`;
+    const daemonUrl = getAtlasDaemonUrl();
 
     this.mcpServer = new PlatformMCPServer({
       daemonUrl,

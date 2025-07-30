@@ -779,33 +779,40 @@ export function createWorkspaceRuntimeMachine(
  */
 async function registerMCPServers(config: MergedConfig, workspaceId: string): Promise<void> {
   try {
-    // Check if workspace has MCP server configuration
-    if (!config.workspace.tools?.mcp?.servers) {
-      logger.debug("No MCP servers configured for workspace", {
-        operation: "mcp_server_registration",
-        workspaceId,
-      });
-      return;
+    logger.info("Starting MCP server registration", {
+      operation: "mcp_server_registration",
+      workspaceId,
+      hasAtlasConfig: !!config.atlas,
+      hasWorkspaceConfig: !!config.workspace,
+    });
+
+    // Initialize MCPServerRegistry to handle merging platform and workspace configs
+    // This will inject atlas-platform configuration
+    await MCPServerRegistry.initialize(
+      config.atlas || undefined, // Platform config - convert null to undefined
+      config.workspace, // Workspace config
+    );
+
+    // Get server IDs from workspace configuration
+    const workspaceServerIds = Object.keys(config.workspace.tools?.mcp?.servers || {});
+
+    // IMPORTANT: After initialization, atlas-platform will be automatically included
+    // in the merged configuration, so we need to also include it in serverIds
+    const allServerIds = [...workspaceServerIds];
+    if (!allServerIds.includes("atlas-platform")) {
+      allServerIds.push("atlas-platform");
     }
 
     logger.info("Registering MCP servers for workspace", {
       operation: "mcp_server_registration",
       workspaceId,
-      serverCount: Object.keys(config.workspace.tools.mcp.servers).length,
-      serverIds: Object.keys(config.workspace.tools.mcp.servers),
+      workspaceServerCount: workspaceServerIds.length,
+      totalServerCount: allServerIds.length,
+      serverIds: allServerIds,
     });
 
-    // Initialize MCPServerRegistry to handle merging platform and workspace configs
-    MCPServerRegistry.initialize(
-      config.atlas, // Platform config
-      config.workspace, // Workspace config
-    );
-
-    // Get server IDs from workspace configuration
-    const serverIds = Object.keys(config.workspace.tools.mcp.servers);
-
-    // Get server configurations from registry
-    const serverConfigs = MCPServerRegistry.getServerConfigs(serverIds);
+    // Get server configurations from registry (now includes atlas-platform)
+    const serverConfigs = MCPServerRegistry.getServerConfigs(allServerIds);
 
     // Get MCPManager instance from LLMProvider
     const mcpManager = LLMProvider.getMCPManager();
