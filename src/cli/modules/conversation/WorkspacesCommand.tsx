@@ -29,8 +29,6 @@ export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
   const handleWorkspaceSelect = async (workspaceId: string) => {
     // Handle special "none" case to exit workspace
     if (workspaceId === "none") {
-      setSelectedWorkspace(null);
-
       // Add workspace exit message to output buffer
       const terminalWidth = dimensions.paddedWidth;
       const messageText = ` Exited workspace `;
@@ -47,6 +45,8 @@ export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
           </Box>
         ),
       });
+
+      // Call onComplete without a workspace to clear selection
       onComplete();
       return;
     }

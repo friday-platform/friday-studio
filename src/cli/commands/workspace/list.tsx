@@ -142,11 +142,11 @@ function WorkspaceList({
           {padRight("NAME", 50)}
           {padRight("STATUS", 10)}
           {padRight("RUNTIME", 10)}
-          {padRight("LAST SEEN", 12)}
+          {padRight("LAST SEEN", 18)}
         </Text>
       </Box>
       <Box>
-        <Text color="gray">{"─".repeat(108)}</Text>
+        <Text color="gray">{"─".repeat(114)}</Text>
       </Box>
 
       {/* Table Rows */}
@@ -160,9 +160,15 @@ function WorkspaceList({
         const runtimeDisplay = formatRuntimeStatus(workspace);
         const runtimeColor = workspace.status === "running" ? "green" : "gray";
 
-        // Format last seen time
+        // Format last seen time with date and time
         const lastSeenDate = new Date(workspace.lastSeen);
-        const lastSeenDisplay = lastSeenDate.toLocaleDateString();
+        const lastSeenDisplay = lastSeenDate.toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        });
 
         return (
           <Box key={i}>
@@ -171,7 +177,7 @@ function WorkspaceList({
               <Text color="yellow">{padRight(workspace.name, 50)}</Text>
               <Text color={statusColor}>{padRight(workspace.status, 10)}</Text>
               <Text color={runtimeColor}>{padRight(runtimeDisplay, 10)}</Text>
-              <Text color="cyan">{padRight(lastSeenDisplay, 12)}</Text>
+              <Text color="cyan">{padRight(lastSeenDisplay, 18)}</Text>
             </Text>
           </Box>
         );

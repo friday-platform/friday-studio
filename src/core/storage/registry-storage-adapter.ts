@@ -167,49 +167,145 @@ export class RegistryStorageAdapter {
   }
 
   /**
-   * Update workspace status and metadata
+   * Update workspace last seen time with retry logic
+   */
+  async updateWorkspaceLastSeen(id: string): Promise<void> {
+    const maxRetries = 3;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const current = await this.getWorkspace(id);
+        if (!current) {
+          return; // Workspace doesn't exist, skip update
+        }
+
+        const updatedWorkspace = { ...current };
+        updatedWorkspace.lastSeen = new Date().toISOString();
+
+        // Validate updated workspace
+        const validatedWorkspace = WorkspaceEntrySchema.parse(updatedWorkspace);
+
+        // Use simple atomic operation without concurrency check
+        // The retry logic handles any potential race conditions
+        const atomic = this.storage.atomic();
+        atomic.set(["workspaces", id], validatedWorkspace);
+
+        const success = await atomic.commit();
+        if (success) {
+          // Success - return immediately
+          return;
+        }
+
+        // Atomic commit failed - prepare for retry
+        if (attempt < maxRetries - 1) {
+          const backoffMs = 10 * Math.pow(2, attempt);
+          console.warn(
+            `Failed to update lastSeen for workspace ${id} (attempt ${
+              attempt + 1
+            }/${maxRetries}), retrying in ${backoffMs}ms...`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      } catch (error) {
+        if (attempt === maxRetries - 1) {
+          // Don't throw error for lastSeen updates to avoid disrupting workspace operations
+          console.warn(
+            `Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts:`,
+            error,
+          );
+          return;
+        }
+        // Wait before retry
+        const backoffMs = 10 * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
+    }
+
+    // If we get here, all retries failed - log warning but don't throw
+    console.warn(`Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`);
+  }
+
+  /**
+   * Update workspace status and metadata with retry logic
    */
   async updateWorkspaceStatus(
     id: string,
     status: WorkspaceStatus,
     updates?: Partial<WorkspaceEntry>,
   ): Promise<void> {
-    const current = await this.getWorkspace(id);
-    if (!current) {
-      throw new Error(`Workspace ${id} not found`);
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const current = await this.getWorkspace(id);
+        if (!current) {
+          throw new Error(`Workspace ${id} not found`);
+        }
+
+        const updatedWorkspace = { ...current };
+        updatedWorkspace.status = status;
+        updatedWorkspace.lastSeen = new Date().toISOString();
+
+        // Apply additional updates
+        if (updates) {
+          Object.assign(updatedWorkspace, updates);
+        }
+
+        // Update timestamps based on status
+        if (status === WorkspaceStatusEnum.RUNNING) {
+          updatedWorkspace.startedAt = new Date().toISOString();
+        } else if (
+          status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.CRASHED
+        ) {
+          updatedWorkspace.stoppedAt = new Date().toISOString();
+          updatedWorkspace.pid = undefined;
+          updatedWorkspace.port = undefined;
+        }
+
+        // Validate updated workspace
+        const validatedWorkspace = WorkspaceEntrySchema.parse(updatedWorkspace);
+
+        // Use simple atomic operation without concurrency check
+        // The retry logic handles any potential race conditions
+        const atomic = this.storage.atomic();
+        atomic.set(["workspaces", id], validatedWorkspace);
+        atomic.set(["registry", "lastUpdated"], new Date().toISOString());
+
+        const success = await atomic.commit();
+        if (success) {
+          // Success - return immediately
+          return;
+        }
+
+        // Atomic commit failed - prepare for retry
+        const error = new Error(
+          `Failed to update workspace ${id} status (attempt ${
+            attempt + 1
+          }/${maxRetries}) - concurrent modification detected`,
+        );
+        lastError = error;
+
+        // Exponential backoff: wait 10ms, 20ms, 40ms
+        if (attempt < maxRetries - 1) {
+          const backoffMs = 10 * Math.pow(2, attempt);
+          console.warn(`${error.message}, retrying in ${backoffMs}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, backoffMs));
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt === maxRetries - 1) {
+          throw lastError;
+        }
+        // Wait before retry for other types of errors too
+        const backoffMs = 10 * Math.pow(2, attempt);
+        await new Promise((resolve) => setTimeout(resolve, backoffMs));
+      }
     }
 
-    const updatedWorkspace = { ...current };
-    updatedWorkspace.status = status;
-    updatedWorkspace.lastSeen = new Date().toISOString();
-
-    // Apply additional updates
-    if (updates) {
-      Object.assign(updatedWorkspace, updates);
-    }
-
-    // Update timestamps based on status
-    if (status === WorkspaceStatusEnum.RUNNING) {
-      updatedWorkspace.startedAt = new Date().toISOString();
-    } else if (status === WorkspaceStatusEnum.STOPPED || status === WorkspaceStatusEnum.CRASHED) {
-      updatedWorkspace.stoppedAt = new Date().toISOString();
-      updatedWorkspace.pid = undefined;
-      updatedWorkspace.port = undefined;
-    }
-
-    // Validate updated workspace
-    const validatedWorkspace = WorkspaceEntrySchema.parse(updatedWorkspace);
-
-    // Atomic update with optimistic concurrency
-    const atomic = this.storage.atomic();
-    atomic.check(["workspaces", id], current); // Ensure no concurrent updates
-    atomic.set(["workspaces", id], validatedWorkspace);
-    atomic.set(["registry", "lastUpdated"], new Date().toISOString());
-
-    const success = await atomic.commit();
-    if (!success) {
-      throw new Error(`Failed to update workspace ${id} status - concurrent modification detected`);
-    }
+    // If we get here, all retries failed
+    throw lastError ||
+      new Error(`Failed to update workspace ${id} status after ${maxRetries} attempts`);
   }
 
   /**

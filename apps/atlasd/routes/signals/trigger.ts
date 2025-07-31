@@ -86,6 +86,15 @@ enables real-time progress feedback in the UI.
             payload || {},
           );
 
+          // Update lastSeen timestamp after signal processing
+          try {
+            const manager = ctx.getWorkspaceManager();
+            await manager.updateWorkspaceLastSeen(workspaceId);
+          } catch (error) {
+            // Log but don't fail the request - lastSeen update is not critical
+            logger.warn(`Failed to update lastSeen for workspace ${workspaceId}`, { error });
+          }
+
           // Reset idle timeout for this workspace
           ctx.resetIdleTimeout(workspaceId);
 

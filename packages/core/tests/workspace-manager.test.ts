@@ -235,14 +235,14 @@ Deno.test("WorkspaceManager - Runtime management", async () => {
     } as any;
 
     // Register runtime
-    manager.registerRuntime(workspace.id, mockRuntime);
+    await manager.registerRuntime(workspace.id, mockRuntime);
 
     assertEquals(manager.getActiveRuntimeCount(), 1);
     assertExists(manager.getRuntime(workspace.id));
     assertEquals(manager.getRuntime(workspace.id), mockRuntime);
 
     // Unregister runtime
-    manager.unregisterRuntime(workspace.id);
+    await manager.unregisterRuntime(workspace.id);
     assertEquals(manager.getActiveRuntimeCount(), 0);
     assertEquals(manager.getRuntime(workspace.id), undefined);
   } finally {

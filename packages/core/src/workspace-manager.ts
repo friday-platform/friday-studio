@@ -370,6 +370,13 @@ export class WorkspaceManager {
     return this.runtimes.size;
   }
 
+  /**
+   * Update workspace last seen timestamp
+   */
+  async updateWorkspaceLastSeen(workspaceId: string): Promise<void> {
+    await this.registry.updateWorkspaceLastSeen(workspaceId);
+  }
+
   // Private helper methods
   private async generateUniqueId(): Promise<string> {
     const existingWorkspaces = await this.registry.listWorkspaces();

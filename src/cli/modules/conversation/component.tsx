@@ -323,9 +323,7 @@ export function Component() {
             <WorkspacesCommand
               key="workspaces-command"
               onComplete={(workspace) => {
-                if (workspace) {
-                  setSelectedWorkspace(workspace);
-                }
+                setSelectedWorkspace(workspace || null);
                 setActiveCommand(null);
               }}
             />
