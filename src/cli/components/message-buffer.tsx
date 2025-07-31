@@ -468,7 +468,8 @@ export const MessageBuffer = () => {
           const errorMessage = error instanceof Error ? error.message : String(error);
           if (
             !errorMessage.includes("signal has been aborted") &&
-            !errorMessage.includes("aborted")
+            !errorMessage.includes("aborted") &&
+            !errorMessage.includes("Bad resource ID")
           ) {
             console.error("SSE error:", error);
           }

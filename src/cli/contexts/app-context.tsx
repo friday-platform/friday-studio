@@ -209,10 +209,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
       // Initialize ConversationClient for system workspace
       try {
-        // Use "system" as the workspace ID for the conversation system workspace
+        // Use "atlas-conversation" as the workspace ID for the conversation system workspace
         const newConversationClient = new ConversationClient(
           getAtlasDaemonUrl(),
-          "system",
+          "atlas-conversation",
           "cli-user",
         );
 
