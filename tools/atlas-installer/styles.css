@@ -539,7 +539,7 @@ body {
   display: none;
   width: 100%;
   max-width: 500px;
-  overflow: scroll;
+  overflow: auto;
 }
 
 .step-content.active {
