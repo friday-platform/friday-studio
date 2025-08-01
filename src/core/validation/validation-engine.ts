@@ -6,7 +6,7 @@
  */
 
 import { z } from "zod/v4";
-import { logger } from "../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import type { ValidationPlanningConfig } from "../planning/planning-config.ts";
 
 // Base validation result interface

@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { AtlasLogger } from "../../../src/utils/logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 
 // JWT payload schema

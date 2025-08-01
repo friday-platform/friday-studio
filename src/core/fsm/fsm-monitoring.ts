@@ -3,7 +3,7 @@
  * Provides performance tracking, health monitoring, and metrics collection
  */
 
-import { logger } from "../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { AtlasTelemetry } from "../../utils/telemetry.ts";
 
 // Types for FSM monitoring

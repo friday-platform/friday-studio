@@ -6,7 +6,7 @@
 import { MergedConfig, WorkspaceSignalConfig } from "@atlas/config";
 import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
 import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";

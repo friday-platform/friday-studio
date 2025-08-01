@@ -8,7 +8,7 @@ import type { AtlasConfig, WorkspaceConfig } from "@atlas/config";
 import { FederationManager } from "./federation-manager.ts";
 import { PlatformMCPServer, WorkspaceMCPServer } from "@atlas/mcp-server";
 import { MCPProxy } from "@atlas/mcp";
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface FederationIntegrationOptions {
   enablePlatformMCPServer?: boolean;

@@ -6,7 +6,7 @@
  * JSONLogic, natural language parsing, and custom evaluators.
  */
 
-import { logger } from "../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface ConditionEvaluationResult {
   matches: boolean;

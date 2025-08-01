@@ -18,7 +18,7 @@ import type {
   RemoteExecutionResult,
   RemoteMessagePart,
 } from "../../../../src/core/agents/remote/types.ts";
-import { logger } from "../../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface MCPAdapterConfig extends BaseRemoteAdapterConfig {
   timeout_ms?: number;
@@ -33,7 +33,7 @@ export class MCPAdapter extends BaseRemoteAdapter {
   private client: Client;
   private transport: StreamableHTTPClientTransport;
   private mcpConfig: MCPAdapterConfig;
-  private mcpLogger = logger.createChildLogger({ component: "MCPAdapter" });
+  private mcpLogger = logger.child({ component: "MCPAdapter" });
   private connected = false;
   private tools: Array<{
     name: string;

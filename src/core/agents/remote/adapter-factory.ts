@@ -5,7 +5,7 @@
 
 import type { RemoteAgentConfig } from "./remote-agent.ts";
 import { BaseRemoteAdapter, type BaseRemoteAdapterConfig } from "./adapters/base-remote-adapter.ts";
-import { logger } from "../../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export type RemoteProtocol = "acp" | "mcp";
 
@@ -13,7 +13,7 @@ export type RemoteProtocol = "acp" | "mcp";
  * Factory class for creating remote agent adapters
  */
 export class RemoteAdapterFactory {
-  private static logger = logger.createChildLogger({ component: "AdapterFactory" });
+  private static logger = logger.child({ component: "AdapterFactory" });
 
   /**
    * Create adapter for the specified protocol

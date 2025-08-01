@@ -10,7 +10,7 @@ import type {
 import { AtlasScope } from "./scope.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
-import { type ChildLogger, logger } from "../utils/logger.ts";
+import { type Logger, logger } from "@atlas/logger";
 import { globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
 
 // Response channel interfaces - moved to daemon layer
@@ -144,7 +144,7 @@ const sessionMachine = createMachine({
             { input }: { input: { intent?: SessionIntent; sessionId: string } },
           ) => {
             // Create logger with session context for FSM operations
-            const fsmLogger = logger.createChildLogger({
+            const fsmLogger = logger.child({
               sessionId: input.sessionId,
               workerType: "session-fsm",
             });
@@ -203,7 +203,7 @@ const sessionMachine = createMachine({
             },
           ) => {
             // Create logger for signal processing
-            const fsmLogger = logger.createChildLogger({
+            const fsmLogger = logger.child({
               sessionId: input.sessionId,
               workerType: "session-fsm",
             });
@@ -286,7 +286,7 @@ const sessionMachine = createMachine({
             }
 
             // Create logger for agent execution
-            const fsmLogger = logger.createChildLogger({
+            const fsmLogger = logger.child({
               sessionId: input.sessionId,
               workerType: "session-fsm",
             });
@@ -395,7 +395,7 @@ const sessionMachine = createMachine({
           };
         }) => {
           // Create logger for result evaluation
-          const fsmLogger = logger.createChildLogger({
+          const fsmLogger = logger.child({
             sessionId: input.sessionId,
             workerType: "session-fsm",
           });
@@ -506,7 +506,7 @@ const sessionMachine = createMachine({
           };
         }) => {
           // Create logger for plan refinement
-          const fsmLogger = logger.createChildLogger({
+          const fsmLogger = logger.child({
             sessionId: input.sessionId,
             workerType: "session-fsm",
           });
@@ -559,7 +559,7 @@ const sessionMachine = createMachine({
           };
         }) => {
           // Create logger for summarization
-          const fsmLogger = logger.createChildLogger({
+          const fsmLogger = logger.child({
             sessionId: input.sessionId,
             workerType: "session-fsm",
           });
@@ -602,7 +602,7 @@ const sessionMachine = createMachine({
               error: ({ event }) => event.error as Error,
             }),
             ({ context, event }) => {
-              const fsmLogger = logger.createChildLogger({
+              const fsmLogger = logger.child({
                 sessionId: context.sessionId,
                 workerType: "session-fsm",
               });
@@ -617,7 +617,7 @@ const sessionMachine = createMachine({
     // Granular error states with retry mechanisms
     planningFailed: {
       entry: ({ context }) => {
-        const fsmLogger = logger.createChildLogger({
+        const fsmLogger = logger.child({
           sessionId: context.sessionId,
           workerType: "session-fsm",
         });
@@ -630,7 +630,7 @@ const sessionMachine = createMachine({
         id: "retryPlanning",
         src: fromPromise(
           async ({ input }: { input: { sessionId: string; currentIteration: number } }) => {
-            const fsmLogger = logger.createChildLogger({
+            const fsmLogger = logger.child({
               sessionId: input.sessionId,
               workerType: "session-fsm",
             });
@@ -677,7 +677,7 @@ const sessionMachine = createMachine({
     },
     signalProcessingFailed: {
       entry: ({ context }) => {
-        const fsmLogger = logger.createChildLogger({
+        const fsmLogger = logger.child({
           sessionId: context.sessionId,
           workerType: "session-fsm",
         });
@@ -690,7 +690,7 @@ const sessionMachine = createMachine({
         id: "retrySignalProcessing",
         src: fromPromise(
           async ({ input }: { input: { sessionId: string; signalIndex: number } }) => {
-            const fsmLogger = logger.createChildLogger({
+            const fsmLogger = logger.child({
               sessionId: input.sessionId,
               workerType: "session-fsm",
             });
@@ -734,7 +734,7 @@ const sessionMachine = createMachine({
     },
     agentExecutionFailed: {
       entry: ({ context }) => {
-        const fsmLogger = logger.createChildLogger({
+        const fsmLogger = logger.child({
           sessionId: context.sessionId,
           workerType: "session-fsm",
         });
@@ -746,7 +746,7 @@ const sessionMachine = createMachine({
       invoke: {
         id: "handleAgentFailure",
         src: fromPromise(async ({ input }: { input: { sessionId: string; iteration: number } }) => {
-          const fsmLogger = logger.createChildLogger({
+          const fsmLogger = logger.child({
             sessionId: input.sessionId,
             workerType: "session-fsm",
           });
@@ -793,7 +793,7 @@ const sessionMachine = createMachine({
     },
     evaluationFailed: {
       entry: ({ context }) => {
-        const fsmLogger = logger.createChildLogger({
+        const fsmLogger = logger.child({
           sessionId: context.sessionId,
           workerType: "session-fsm",
         });
@@ -804,7 +804,7 @@ const sessionMachine = createMachine({
       invoke: {
         id: "fallbackEvaluation",
         src: fromPromise(async ({ input }: { input: { sessionId: string; artifacts: any[] } }) => {
-          const fsmLogger = logger.createChildLogger({
+          const fsmLogger = logger.child({
             sessionId: input.sessionId,
             workerType: "session-fsm",
           });
@@ -854,7 +854,7 @@ const sessionMachine = createMachine({
     failed: {
       type: "final",
       entry: ({ context }) => {
-        const fsmLogger = logger.createChildLogger({
+        const fsmLogger = logger.child({
           sessionId: context.sessionId,
           workerType: "session-fsm",
         });
@@ -898,7 +898,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
   private _startTime?: Date;
   private _stateMachine: ReturnType<typeof createActor<typeof sessionMachine>>;
   private _fsmId: string; // Unique FSM instance ID for monitoring
-  protected logger: ChildLogger;
+  protected logger: Logger;
 
   // Response channels now handled at daemon layer
 
@@ -921,7 +921,7 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     super(workspaceId, undefined, storageAdapter, enableCognitiveLoop);
 
     // Initialize logger for this session
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       sessionId: this.id,
       workerType: "session",
     });
@@ -1235,10 +1235,10 @@ export class WorkspaceSession extends Session {
 }
 
 class DefaultSignalCallback implements IWorkspaceSignalCallback {
-  private logger: ChildLogger;
+  private logger: Logger;
 
   constructor() {
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       workerType: "signal-callback",
     });
   }
@@ -1265,10 +1265,10 @@ class DefaultSignalCallback implements IWorkspaceSignalCallback {
 }
 
 class FunctionCallback implements IWorkspaceSignalCallback {
-  private logger: ChildLogger;
+  private logger: Logger;
 
   constructor(private fn: (result: any) => Promise<void>) {
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       workerType: "function-callback",
     });
   }

@@ -3,7 +3,7 @@
  * Eliminates direct workspace config access from agent execution workers
  */
 
-import { logger } from "../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import {
   type AgentConfig,
   type MCPServerOverrides,

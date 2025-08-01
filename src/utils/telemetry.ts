@@ -8,7 +8,7 @@ import type {
   Tracer,
 } from "@opentelemetry/api";
 import { z } from "zod/v4";
-import { logger } from "./logger.ts";
+import { logger } from "@atlas/logger";
 import { objectEntries } from "./index.ts";
 
 // Zod schemas for runtime validation

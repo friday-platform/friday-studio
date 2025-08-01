@@ -12,7 +12,7 @@
  */
 
 import { CronExpressionParser } from "cron-parser";
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import type { KVStorage } from "./storage/kv-storage.ts";
 
 export interface TimerInfo {

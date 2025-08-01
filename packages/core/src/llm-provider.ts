@@ -13,7 +13,7 @@ import {
   ToolResultUnion,
 } from "ai";
 import { z } from "zod/v4";
-import { logger } from "../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { WatchdogTimer } from "./watchdog-timer.ts";
 import { type WorkspaceTimeoutConfig, WorkspaceTimeoutConfigSchema } from "@atlas/config";
 

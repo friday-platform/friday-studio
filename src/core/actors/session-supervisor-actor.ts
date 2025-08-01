@@ -29,7 +29,7 @@ import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
 import type { IWorkspaceSignal } from "../../types/core.ts";
-import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { type Logger, logger } from "@atlas/logger";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 import { AgentExecutionActor } from "./agent-execution-actor.ts";
 
@@ -90,7 +90,7 @@ export class SessionSupervisorActor implements BaseActor {
   readonly type = "session" as const;
   private sessionId: string;
   private workspaceId?: string;
-  private logger: ChildLogger;
+  private logger: Logger;
   id: string;
   private sessionContext?: SessionContext;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
@@ -112,7 +112,7 @@ export class SessionSupervisorActor implements BaseActor {
     this.workspaceId = workspaceId;
     this.config = config;
 
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       actorId: this.id,
       actorType: "session-supervisor",
       sessionId: this.sessionId,
@@ -136,7 +136,7 @@ export class SessionSupervisorActor implements BaseActor {
       this.id = params.actorId;
       this.sessionId = params.parentId || this.sessionId;
 
-      this.logger = logger.createChildLogger({
+      this.logger = logger.child({
         actorId: this.id,
         actorType: "session-supervisor",
         sessionId: this.sessionId,

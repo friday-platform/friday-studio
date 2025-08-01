@@ -16,7 +16,7 @@ import type {
   RemoteMessagePart,
   RetryConfig,
 } from "../types.ts";
-import { logger } from "../../../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface BaseRemoteAdapterConfig {
   connection: RemoteConnectionConfig;
@@ -41,7 +41,7 @@ export abstract class BaseRemoteAdapter {
   protected config: BaseRemoteAdapterConfig;
   protected metrics: RemoteAgentMetrics;
   protected circuitBreaker: CircuitBreakerState;
-  protected logger = logger.createChildLogger({ component: "RemoteAdapter" });
+  protected logger = logger.child({ component: "RemoteAdapter" });
 
   constructor(config: BaseRemoteAdapterConfig) {
     this.config = config;

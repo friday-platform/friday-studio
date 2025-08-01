@@ -4,7 +4,7 @@
  * Mirrors the pattern established in LLMProviderManager
  */
 
-import { logger } from "../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/tools";
 import { type MCPServerConfig } from "./manager.ts";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";

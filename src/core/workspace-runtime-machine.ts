@@ -11,7 +11,7 @@ import { join } from "@std/path";
 import { assign, fromPromise, setup } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import type { WorkspaceSupervisorConfig } from "@atlas/core";
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import {
   ProcessSignalResult,
   WorkspaceSupervisorActor,

@@ -59,8 +59,4 @@ Deno.test("validate-examples - workspace discovery logic", async () => {
 
   // Clean up resources
   await manager.close();
-
-  // Clean up logger to prevent resource leak
-  const { AtlasLogger } = await import("../src/utils/logger.ts");
-  await AtlasLogger.resetInstance();
 });

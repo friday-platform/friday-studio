@@ -2,7 +2,7 @@ import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { SignalTriggerRequestSchema } from "@atlas/config";
 import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
-import { AtlasLogger } from "../../../../src/utils/logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 import { errorResponseSchema, signalPathSchema, signalTriggerResponseSchema } from "./schemas.ts";
 
 const triggerSignal = daemonFactory.createApp();

@@ -4,7 +4,7 @@ import type { WorkspaceConfig } from "@atlas/config";
 import { workspaceBuilder, workspaceBuilderTools } from "./tools.ts";
 import { WORKSPACE_ARCHITECT_SYSTEM_PROMPT } from "./prompts.ts";
 import type { WorkspaceRequirements } from "./generation.ts";
-import { logger } from "../../../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 interface AttemptResult {
   attempt: number;

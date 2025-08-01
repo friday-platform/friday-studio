@@ -6,10 +6,7 @@
  */
 
 import { expect } from "@std/expect";
-import {
-  type ConditionEvaluationResult,
-  ConditionEvaluatorRegistry,
-} from "../../src/core/conditions/condition-evaluator.ts";
+import { ConditionEvaluatorRegistry } from "../../src/core/conditions/condition-evaluator.ts";
 
 const testConfig = {
   evaluators: {
@@ -65,10 +62,6 @@ Deno.test({
       );
       expect(result3.matches).toBe(false);
     } finally {
-      // Clean up logger instance to prevent resource leaks
-      const { AtlasLogger } = await import("../../src/utils/logger.ts");
-      await AtlasLogger.resetInstance();
-
       // Restore original testing environment
       if (originalTesting === undefined) {
         Deno.env.delete("DENO_TESTING");

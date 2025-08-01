@@ -8,7 +8,7 @@
 import { generateObject } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
-import { logger } from "../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 // Schema for parsed condition structure
 const ConditionParseSchema = z.object({
@@ -227,7 +227,7 @@ Guidelines:
 ${
         options?.avoidInterpretation
           ? `
-IMPORTANT: This is alternative interpretation #${options.alternativeNumber}. 
+IMPORTANT: This is alternative interpretation #${options.alternativeNumber}.
 The primary interpretation was: "${options.avoidInterpretation.explanation}"
 Please provide a DIFFERENT interpretation of the same natural language text.
 `

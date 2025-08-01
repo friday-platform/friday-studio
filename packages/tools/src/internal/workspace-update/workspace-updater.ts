@@ -3,7 +3,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { WorkspaceConfig } from "@atlas/config";
 import { getWorkspaceManager } from "@atlas/workspace";
 import type { WorkspaceEntry } from "@atlas/workspace";
-import { logger } from "../../../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { WorkspaceBuilder } from "../workspace-creation/builder.ts";
 import { initializeUpdateBuilder, workspaceUpdateTools } from "./tools.ts";
 import { WORKSPACE_UPDATE_SYSTEM_PROMPT } from "./prompts.ts";
@@ -199,7 +199,7 @@ export class WorkspaceUpdater {
 - **Name**: ${existingConfig.workspace.name}
 - **Description**: ${existingConfig.workspace.description || "No description"}
 - **Signals**: ${Object.keys(existingConfig.signals || {}).length} configured
-- **Agents**: ${Object.keys(existingConfig.agents || {}).length} configured  
+- **Agents**: ${Object.keys(existingConfig.agents || {}).length} configured
 - **Jobs**: ${Object.keys(existingConfig.jobs || {}).length} configured
 - **MCP Servers**: ${
         existingConfig.tools?.mcp?.servers
@@ -227,7 +227,7 @@ You are updating an EXISTING Atlas workspace. The WorkspaceBuilder has already b
 
 **Available Update Operations**:
 1. **listWorkspaceComponents** - Query current workspace state
-2. **updateSignal** - Modify existing signal configuration  
+2. **updateSignal** - Modify existing signal configuration
 3. **updateAgent** - Modify existing agent configuration
 4. **updateJob** - Modify existing job configuration
 5. **removeSignal** - Remove signal and handle dependent jobs

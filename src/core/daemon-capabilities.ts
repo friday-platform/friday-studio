@@ -7,7 +7,7 @@ import { z } from "zod/v4";
 import { ValidationError } from "../utils/errors.ts";
 import type { AtlasDaemon } from "../../apps/atlasd/src/atlas-daemon.ts";
 import { Tool } from "ai";
-import { AtlasLogger } from "../utils/logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 import { getAtlasDaemonUrl } from "@atlas/tools";
 
 const ConversationMessageSchema = z.object({

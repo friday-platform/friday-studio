@@ -21,7 +21,7 @@ import { exists } from "@std/fs";
 import { basename, join } from "@std/path";
 import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generator.ts";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import { logger } from "../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { WorkspaceEntry, WorkspaceStatus } from "./types.ts";
 
 export interface WorkspaceManagerOptions {

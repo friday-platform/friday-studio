@@ -1,5 +1,5 @@
 import { join } from "@std/path";
-import type { LogEntry } from "../../utils/logger.ts";
+import type { LogEntry } from "@atlas/logger";
 
 export interface LogFilters {
   level?: string;

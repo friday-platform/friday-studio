@@ -8,7 +8,7 @@ import { getAtlasHome } from "../../../utils/paths.ts";
 import { join } from "@std/path";
 import { exists } from "@std/fs";
 import { CredentialFetcher } from "@atlas/core";
-import { AtlasLogger } from "../../../utils/logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 
 interface StartArgs {
   port?: number;

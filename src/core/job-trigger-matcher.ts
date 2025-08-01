@@ -6,7 +6,7 @@
  * using the pluggable condition evaluation system.
  */
 
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 import type { IWorkspaceSignal } from "../types/core.ts";
 import {
   type ConditionEvaluationResult,

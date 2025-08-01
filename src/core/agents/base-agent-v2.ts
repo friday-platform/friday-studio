@@ -20,7 +20,7 @@ import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { MessageManager as Messages } from "../messages.ts";
 import { LLMProvider } from "@atlas/core";
-import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { type Logger, logger } from "@atlas/logger";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
 
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
@@ -30,7 +30,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   memory: ITempestMemoryManager;
   messages: ITempestMessageManager;
   prompts: { system: string; user: string };
-  protected logger: ChildLogger;
+  protected logger: Logger;
   protected memoryConfigManager: MemoryConfigManager;
 
   constructor(memoryConfig?: AtlasMemoryConfig, id?: string) {
@@ -52,7 +52,7 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
     );
 
     // Initialize logger
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       agentId: this.id,
       agentName: this.name(),
       agentType: this.constructor.name,

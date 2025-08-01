@@ -8,7 +8,7 @@
 import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type { IAtlasScope } from "../types/core.ts";
 import { InMemoryStorageAdapter } from "@atlas/storage";
-import { logger } from "../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface MemoryLimits {
   relevant_memories: number;

@@ -1,6 +1,6 @@
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { AtlasLogger } from "./logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 
 // Playwright browser download URLs and metadata
 const BROWSER_NAME = "chromium";

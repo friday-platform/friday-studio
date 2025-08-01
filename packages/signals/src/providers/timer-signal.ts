@@ -5,7 +5,7 @@
 
 import type { HealthStatus, IProvider, ProviderState } from "./types.ts";
 import { ProviderStatus, ProviderType } from "./types.ts";
-import { logger } from "../../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import type { KVStorage } from "../../../../src/core/storage/kv-storage.ts";
 import { CronExpressionParser } from "cron-parser";
 

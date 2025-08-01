@@ -16,13 +16,13 @@ import type {
   AgentResult,
 } from "@atlas/core";
 import { LLMProvider } from "@atlas/core";
-import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { type Logger, logger } from "@atlas/logger";
 import { RemoteAgent } from "../agents/remote/remote-agent.ts";
 import { SystemAgentRegistry } from "../system-agent-registry.ts";
 
 export class AgentExecutionActor implements IAgentExecutionActor {
   readonly type = "agent" as const;
-  private logger: ChildLogger;
+  private logger: Logger;
   id: string;
   private config: AgentExecutionConfig;
 
@@ -34,7 +34,7 @@ export class AgentExecutionActor implements IAgentExecutionActor {
     this.config = config;
 
     // Initialize logger
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       actorId: this.id,
       actorType: "agent-execution",
     });
@@ -45,7 +45,7 @@ export class AgentExecutionActor implements IAgentExecutionActor {
       this.id = params.actorId;
 
       // Update logger with new actor ID
-      this.logger = logger.createChildLogger({
+      this.logger = logger.child({
         actorId: this.id,
         actorType: "agent-execution",
       });

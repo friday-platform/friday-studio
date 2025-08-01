@@ -4,7 +4,7 @@
  */
 
 import { BaseAgent } from "./agents/base-agent-v2.ts";
-import { AtlasLogger } from "../utils/logger.ts";
+import { AtlasLogger } from "@atlas/logger";
 import { z } from "zod/v4";
 
 // Static imports for system agents - embedded at compile time

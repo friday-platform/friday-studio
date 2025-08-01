@@ -1,6 +1,6 @@
 import { join } from "@std/path";
 import { exists } from "@std/fs";
-import { logger } from "../../utils/logger.ts";
+import { logger } from "@atlas/logger";
 
 export interface PatternSolution {
   pattern: string;

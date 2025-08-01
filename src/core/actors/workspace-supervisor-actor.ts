@@ -19,7 +19,7 @@ import type {
 } from "@atlas/core";
 import type { IWorkspaceSignal } from "../../types/core.ts";
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
-import { type ChildLogger, logger } from "../../utils/logger.ts";
+import { type Logger, logger } from "@atlas/logger";
 import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
 
 export interface SessionInfo {
@@ -40,7 +40,7 @@ export interface ProcessSignalResult {
 export class WorkspaceSupervisorActor implements BaseActor {
   readonly type = "workspace" as const;
   private workspaceId: string;
-  private logger: ChildLogger;
+  private logger: Logger;
   id: string;
   private sessions: Map<string, SessionInfo> = new Map();
   private config: WorkspaceSupervisorConfig;
@@ -51,7 +51,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     this.workspaceId = workspaceId;
     this.config = config;
 
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       actorId: this.id,
       actorType: "workspace-supervisor",
       workspaceId: this.workspaceId,
@@ -65,7 +65,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
   initialize(params: ActorInitParams): void {
     this.id = params.actorId;
-    this.logger = logger.createChildLogger({
+    this.logger = logger.child({
       actorId: this.id,
       actorType: "workspace-supervisor",
       workspaceId: this.workspaceId,

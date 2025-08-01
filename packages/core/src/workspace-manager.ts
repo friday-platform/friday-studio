@@ -17,7 +17,7 @@ import { basename, join } from "@std/path";
 import { RegistryStorageAdapter } from "../../../src/core/storage/registry-storage-adapter.ts";
 import { generateUniqueWorkspaceName } from "../../../src/core/utils/id-generator.ts";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
-import { logger } from "../../../src/utils/logger.ts";
+import { logger } from "@atlas/logger";
 import { WorkspaceEntry, WorkspaceStatus } from "./types/workspace.ts";
 import { createRegistryStorage, StorageConfigs } from "../../../src/core/storage/index.ts";
 
