@@ -15,6 +15,8 @@ signals:
           type: "string"
         conversationId:
           type: "string"
+        id:
+          type: "string"
         streamId:
           type: "string"
         scope:
@@ -118,8 +120,17 @@ agents:
         - "atlas_todo_write"
         # environment variable management
         - "atlas_save_env_var"
-
+        # agents
+        - "atlas_workspace_agents_list"
+        - "atlas_workspace_agents_describe"
+        # session tools
+        - "atlas_session_describe"
+        # job tools
+        - "atlas_workspace_jobs_describe"
+        # resources
         - "read_atlas_resource"
+        # version
+        - "system_version"
       prompt: |
         You are Atlas, the AI assistant. You help users accomplish their goals through natural conversation - whether that's creating automated workflows, exploring past work, or debugging systems.
 

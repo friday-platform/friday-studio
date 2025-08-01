@@ -8,16 +8,14 @@ import { useAppContext } from "../contexts/app-context.tsx";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
-  selectedWorkspace?: string | null;
   isDisabled?: boolean;
 }
 
 export const CommandInput = ({
   onSubmit,
-  selectedWorkspace,
   isDisabled = false,
 }: CommandInputProps) => {
-  const { exitApp } = useAppContext();
+  const { exitApp, diagnosticsStatus, daemonStatus } = useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -217,10 +215,27 @@ export const CommandInput = ({
           )}
         </Box>
 
-        {/* Right side: workspace name (always present box) */}
-        <Box>
-          {selectedWorkspace && <Text color="yellow">{selectedWorkspace}</Text>}
-        </Box>
+        {diagnosticsStatus !== "idle" && (
+          <Box flexDirection="row" paddingX={2}>
+            {diagnosticsStatus === "collecting" && <Text dimColor>Collecting...</Text>}
+
+            {diagnosticsStatus === "uploading" && <Text dimColor>Sending...</Text>}
+
+            {diagnosticsStatus === "done" && <Text color="green">Diagnostics sent</Text>}
+
+            {diagnosticsStatus === "error" && <Text color="red">Error: {diagnosticsStatus}</Text>}
+          </Box>
+        )}
+
+        {daemonStatus !== "idle" && (
+          <Box flexDirection="row" paddingX={2}>
+            {daemonStatus === "healthy" && <Text color="green">✓ Atlas daemon is running</Text>}
+            {daemonStatus === "unhealthy" && (
+              <Text color="yellow">◆ Atlas daemon is not running</Text>
+            )}
+            {daemonStatus === "error" && <Text color="red">Error: {daemonStatus}</Text>}
+          </Box>
+        )}
       </Box>
     </Box>
   );

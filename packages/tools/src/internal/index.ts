@@ -14,3 +14,4 @@ export { signalTools } from "./signal.ts";
 export { systemTools } from "./system.ts";
 export { todoTools } from "./todo.ts";
 export { workspaceTools } from "./workspace.ts";
+export { platformTools } from "./platform.ts";

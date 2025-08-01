@@ -8,6 +8,7 @@ import {
   filesystemTools,
   jobTools,
   libraryTools,
+  platformTools,
   resourceTools,
   sessionTools,
   signalTools,
@@ -36,6 +37,7 @@ export type ToolCategory =
   | "system"
   | "conversation"
   | "resource"
+  | "platform"
   | "all";
 
 /**
@@ -177,7 +179,8 @@ export class AtlasToolRegistry {
     const combined: Tools = { ...atlasTools };
     for (const tool of mcpTools) {
       // Use tool description as key if available, otherwise generate one
-      const toolKey = this.extractToolName(tool) || `mcp_tool_${Object.keys(combined).length}`;
+      const toolKey = this.extractToolName(tool) ||
+        `mcp_tool_${Object.keys(combined).length}`;
       combined[toolKey] = tool;
     }
 
@@ -194,15 +197,15 @@ export class AtlasToolRegistry {
    */
   private getContextRequirements(): ToolContextRequirements {
     return {
-      "atlas_stream_reply": {
+      atlas_stream_reply: {
         injectableFields: ["streamId"],
         supportsContextInjection: true,
       },
-      "atlas_todo_read": {
+      atlas_todo_read: {
         injectableFields: ["streamId"],
         supportsContextInjection: true,
       },
-      "atlas_todo_write": {
+      atlas_todo_write: {
         injectableFields: ["streamId"],
         supportsContextInjection: true,
       },
@@ -286,10 +289,13 @@ export class AtlasToolRegistry {
 
     // Create context-injected tool (currently only handles streamId for atlas_stream_reply)
     if (
-      toolName === "atlas_stream_reply" && availableContext.streamId &&
+      toolName === "atlas_stream_reply" &&
+      availableContext.streamId &&
       typeof availableContext.streamId === "string"
     ) {
-      const contextAwareTool = this.createContextAwareStreamReplyTool(availableContext.streamId);
+      const contextAwareTool = this.createContextAwareStreamReplyTool(
+        availableContext.streamId,
+      );
       return {
         tool: contextAwareTool,
         contextInjected: true,
@@ -299,10 +305,13 @@ export class AtlasToolRegistry {
 
     // Handle todo tools with streamId context injection
     if (
-      toolName === "atlas_todo_read" && availableContext.streamId &&
+      toolName === "atlas_todo_read" &&
+      availableContext.streamId &&
       typeof availableContext.streamId === "string"
     ) {
-      const contextAwareTool = this.createContextAwareTodoReadTool(availableContext.streamId);
+      const contextAwareTool = this.createContextAwareTodoReadTool(
+        availableContext.streamId,
+      );
       return {
         tool: contextAwareTool,
         contextInjected: true,
@@ -311,10 +320,13 @@ export class AtlasToolRegistry {
     }
 
     if (
-      toolName === "atlas_todo_write" && availableContext.streamId &&
+      toolName === "atlas_todo_write" &&
+      availableContext.streamId &&
       typeof availableContext.streamId === "string"
     ) {
-      const contextAwareTool = this.createContextAwareTodoWriteTool(availableContext.streamId);
+      const contextAwareTool = this.createContextAwareTodoWriteTool(
+        availableContext.streamId,
+      );
       return {
         tool: contextAwareTool,
         contextInjected: true,
@@ -339,10 +351,13 @@ export class AtlasToolRegistry {
       description:
         "Send a streaming reply to the user. The stream ID is automatically provided via context.",
       inputSchema: z.object({
-        content: z.string().describe("The content to send as a streaming reply"),
-        metadata: z.record(z.string(), z.unknown()).optional().describe(
-          "Optional metadata to include with the reply",
-        ),
+        content: z
+          .string()
+          .describe("The content to send as a streaming reply"),
+        metadata: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Optional metadata to include with the reply"),
       }),
       execute: async ({ content, metadata }) => {
         if (!streamId) {
@@ -357,14 +372,17 @@ export class AtlasToolRegistry {
           throw new Error("atlas_stream_reply tool execute function not found");
         }
 
-        return await originalTool.execute({
-          streamId,
-          content,
-          metadata,
-        }, {
-          toolCallId: crypto.randomUUID(),
-          messages: [],
-        });
+        return await originalTool.execute(
+          {
+            streamId,
+            content,
+            metadata,
+          },
+          {
+            toolCallId: crypto.randomUUID(),
+            messages: [],
+          },
+        );
       },
     });
   }
@@ -377,11 +395,18 @@ export class AtlasToolRegistry {
       description:
         "Read current todo list for the session to understand completed and pending tasks. The stream ID is automatically provided via context.",
       inputSchema: z.object({
-        status: z.enum(["pending", "in_progress", "completed", "cancelled"]).optional()
+        status: z
+          .enum(["pending", "in_progress", "completed", "cancelled"])
+          .optional()
           .describe("Filter todos by status to focus on specific task states"),
-        priority: z.enum(["high", "medium", "low"]).optional()
+        priority: z
+          .enum(["high", "medium", "low"])
+          .optional()
           .describe("Filter todos by priority level"),
-        limit: z.number().optional().describe("Maximum number of todos to return"),
+        limit: z
+          .number()
+          .optional()
+          .describe("Maximum number of todos to return"),
       }),
       execute: async ({ status, priority, limit }) => {
         if (!streamId) {
@@ -396,15 +421,18 @@ export class AtlasToolRegistry {
           throw new Error("atlas_todo_read tool execute function not found");
         }
 
-        return await originalTool.execute({
-          streamId,
-          status,
-          priority,
-          limit,
-        }, {
-          toolCallId: crypto.randomUUID(),
-          messages: [],
-        });
+        return await originalTool.execute(
+          {
+            streamId,
+            status,
+            priority,
+            limit,
+          },
+          {
+            toolCallId: crypto.randomUUID(),
+            messages: [],
+          },
+        );
       },
     });
   }
@@ -417,20 +445,31 @@ export class AtlasToolRegistry {
       description:
         "Create and manage structured task list for conversation session. The stream ID is automatically provided via context.",
       inputSchema: z.object({
-        todos: z.array(z.object({
-          id: z.string().describe("Unique identifier for the todo item"),
-          content: z.string().min(1).describe("Brief description of the task"),
-          status: z.enum(["pending", "in_progress", "completed", "cancelled"])
-            .describe("Current status of the task"),
-          priority: z.enum(["high", "medium", "low"])
-            .describe("Priority level of the task"),
-          metadata: z.record(z.string(), z.unknown()).optional()
-            .describe("Additional context (workspace names, IDs, etc.)"),
-          createdAt: z.string().describe("ISO timestamp of creation"),
-          updatedAt: z.string().describe("ISO timestamp of last update"),
-        })).describe(
-          "Complete todo list to store. This replaces the existing list, so include all todos you want to keep.",
-        ),
+        todos: z
+          .array(
+            z.object({
+              id: z.string().describe("Unique identifier for the todo item"),
+              content: z
+                .string()
+                .min(1)
+                .describe("Brief description of the task"),
+              status: z
+                .enum(["pending", "in_progress", "completed", "cancelled"])
+                .describe("Current status of the task"),
+              priority: z
+                .enum(["high", "medium", "low"])
+                .describe("Priority level of the task"),
+              metadata: z
+                .record(z.string(), z.unknown())
+                .optional()
+                .describe("Additional context (workspace names, IDs, etc.)"),
+              createdAt: z.string().describe("ISO timestamp of creation"),
+              updatedAt: z.string().describe("ISO timestamp of last update"),
+            }),
+          )
+          .describe(
+            "Complete todo list to store. This replaces the existing list, so include all todos you want to keep.",
+          ),
       }),
       execute: async ({ todos }) => {
         if (!streamId) {
@@ -445,13 +484,16 @@ export class AtlasToolRegistry {
           throw new Error("atlas_todo_write tool execute function not found");
         }
 
-        return await originalTool.execute({
-          streamId,
-          todos,
-        }, {
-          toolCallId: crypto.randomUUID(),
-          messages: [],
-        });
+        return await originalTool.execute(
+          {
+            streamId,
+            todos,
+          },
+          {
+            toolCallId: crypto.randomUUID(),
+            messages: [],
+          },
+        );
       },
     });
   }
@@ -490,6 +532,7 @@ const defaultRegistry = new AtlasToolRegistry({
   system: systemTools,
   conversation: conversationTools, // Now includes todo tools for streamId context injection
   resource: resourceTools,
+  platform: platformTools,
 });
 
 /**
@@ -513,6 +556,7 @@ export {
   filesystemTools,
   jobTools,
   libraryTools,
+  platformTools,
   resourceTools,
   sessionTools,
   signalTools,

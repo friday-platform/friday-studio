@@ -30,7 +30,7 @@ export function registerAgentDescribePrompt(
       });
 
       return createSuccessResponse(
-        `Return detailed information about the agent with ID ${agentId} in workspace ${workspaceId}. Use markdown syntax to format the response.`,
+        `Return detailed information about the agent with ID ${agentId} in workspace ${workspaceId} using the \`atlas_workspace_agents_describe\` tool. Use markdown syntax to format the response.`,
       );
     },
   );

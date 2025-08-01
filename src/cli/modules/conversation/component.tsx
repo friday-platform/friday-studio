@@ -1,38 +1,31 @@
 import { useState } from "react";
-import { Box, Static, Text } from "ink";
-import { ChatMessage } from "../../components/chat-message.tsx";
+import { Box, useInput } from "ink";
 import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
-import { ConfigView } from "../../views/ConfigView.tsx";
+// import { ConfigView } from "../../views/ConfigView.tsx";
 import CreditsView from "../../views/CreditsView.tsx";
 import Help from "../../views/help.tsx";
 import { InitView } from "../../views/InitView.tsx";
-import {
-  COMMAND_REGISTRY,
-  handleLibraryOpenCommand,
-  OutputEntry,
-  parseSlashCommand,
-} from "./index.ts";
+import { COMMAND_REGISTRY, parseSlashCommand } from "./index.ts";
 import { SignalCommand } from "./SignalCommand.tsx";
 import { AgentCommand } from "./AgentCommand.tsx";
 import { JobCommand } from "./JobCommand.tsx";
 import { SessionCommand } from "./SessionCommand.tsx";
-import { WorkspacesCommand } from "./WorkspacesCommand.tsx";
 import { LibraryCommand } from "./LibraryCommand.tsx";
-import { handleComponentsCommand } from "./components-command.tsx";
 import { useBracketedPaste } from "../input/use-bracketed-paste.ts";
 
 export function Component() {
   useBracketedPaste();
   const {
-    setOutputBuffer,
     conversationClient,
     conversationSessionId,
     setTypingState,
-    isInitializing,
+    setIsCollapsed,
     exitApp,
+    sendDiagnostics,
+    setDaemonStatus,
   } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -40,69 +33,22 @@ export function Component() {
   const [activeCommand, setActiveCommand] = useState<
     "signal" | "agent" | "job" | "session" | "workspaces" | "library" | null
   >(null);
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(
-    null,
+
+  useInput(
+    (input, key) => {
+      if (key.ctrl && input === "r") {
+        setIsCollapsed((prev) => !prev);
+      }
+    },
+    { isActive: true },
   );
 
   const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
 
-  // Add entry to output buffer
-  const addOutputEntry = (entry: OutputEntry) => {
-    setOutputBuffer((prev) => [...prev, entry]);
-  };
-
-  // Handle LLM input (Phase 2.1)
   const handleLLMInput = async (input: string) => {
-    if (isInitializing) {
-      addOutputEntry({
-        id: `llm-initializing-${Date.now()}`,
-        component: (
-          <Text color="yellow">
-            Initializing conversation system, please wait...
-          </Text>
-        ),
-      });
-      return;
-    }
-
     if (!conversationClient || !conversationSessionId) {
-      addOutputEntry({
-        id: `llm-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Failed to initialize conversation system. Please restart the CLI.
-          </Text>
-        ),
-      });
       return;
     }
-
-    // Add user message using ChatMessage component
-    const now = new Date();
-    const userTimestamp = now
-      .toLocaleTimeString([], {
-        hour: "numeric",
-        minute: "2-digit",
-      })
-      .toLowerCase()
-      .replace(/\s/g, "");
-    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
-
-    // Force immediate render by using setOutputBuffer directly
-    setOutputBuffer((prev) => [
-      ...prev,
-      {
-        id: `user-${Date.now()}`,
-        component: (
-          <ChatMessage
-            author={currentUser}
-            date={userTimestamp}
-            message={input}
-            authorColor="green"
-          />
-        ),
-      },
-    ]);
 
     // Show typing indicator
     setTypingState((prev) => ({ ...prev, isTyping: true }));
@@ -112,23 +58,17 @@ export function Component() {
       await conversationClient.sendMessage(conversationSessionId, input);
 
       // The persistent SSE listener will handle the response
-    } catch (error) {
+    } catch {
       setTypingState((prev) => ({ ...prev, isTyping: false }));
-      addOutputEntry({
-        id: `llm-error-${Date.now()}`,
-        component: (
-          <Box paddingLeft={1}>
-            <Text color="red">
-              LLM Error: {error instanceof Error ? error.message : String(error)}
-            </Text>
-          </Box>
-        ),
-      });
     }
   };
 
   // Command execution handler
   const handleCommand = (input: string) => {
+    if (!conversationClient || !conversationSessionId) {
+      return;
+    }
+
     // Don't process empty input
     if (!input || input.trim() === "") {
       return;
@@ -148,7 +88,6 @@ export function Component() {
       parsed.command === "quit" ||
       parsed.command === "q"
     ) {
-      // Use Ink's exit function for graceful shutdown
       exitApp();
       return;
     }
@@ -158,23 +97,13 @@ export function Component() {
       return;
     }
 
-    if (parsed.command === "init") {
-      setView("init");
-      return;
-    }
-
-    if (parsed.command === "config") {
-      setView("config");
-      return;
-    }
+    // if (parsed.command === "config") {
+    //   setView("config");
+    //   return;
+    // }
 
     if (parsed.command === "credits") {
       setView("credits");
-      return;
-    }
-
-    if (parsed.command === "workspaces") {
-      setActiveCommand("workspaces");
       return;
     }
 
@@ -194,24 +123,6 @@ export function Component() {
     }
 
     if (parsed.command === "library") {
-      if (parsed.args[0] === "open" && parsed.args[1]) {
-        // Handle /library open <item_id> - fire and forget async operation
-        handleLibraryOpenCommand(parsed.args[1], addOutputEntry).catch(
-          (error) => {
-            addOutputEntry({
-              id: `library-open-error-${Date.now()}`,
-              component: (
-                <Text color="red">
-                  Unexpected error: {error instanceof Error ? error.message : String(error)}
-                </Text>
-              ),
-            });
-          },
-        );
-        return;
-      }
-
-      // Default library command - show workspace selection
       setActiveCommand("library");
       return;
     }
@@ -221,36 +132,29 @@ export function Component() {
       return;
     }
 
-    if (parsed.command === "clear") {
-      setOutputBuffer([]);
+    if (parsed.command === "version") {
+      conversationClient.sendPrompt(conversationSessionId, {
+        promptName: "system_version",
+      });
       return;
     }
 
-    if (parsed.command === "components") {
-      handleComponentsCommand(setOutputBuffer);
-      return;
+    if (parsed.command === "status") {
+      setDaemonStatus();
+    }
+
+    if (parsed.command === "send-diagnostics") {
+      sendDiagnostics();
     }
 
     // Check command registry
     const commandDef = COMMAND_REGISTRY[parsed.command];
     if (!commandDef) {
-      addOutputEntry({
-        id: `error-unknown-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Unknown command: /{parsed.command}. Type /help for available commands.
-          </Text>
-        ),
-      });
+      console.error(
+        `Unknown command: /${parsed.command}. Type /help for available commands.`,
+      );
       return;
     }
-
-    // Execute command handler
-    const outputs = commandDef.handler(parsed.args, {
-      addEntry: addOutputEntry,
-    });
-
-    outputs.forEach(addOutputEntry);
   };
 
   return (
@@ -260,35 +164,6 @@ export function Component() {
       alignItems="flex-start"
       width={dimensions.paddedWidth}
     >
-      <Box flexDirection="column" flexShrink={0}>
-        <Static items={[1]}>
-          {(item) => (
-            <Box key={item} flexDirection="column" flexShrink={0}>
-              <Box flexDirection="row" alignItems="center">
-                <Box flexDirection="column">
-                  <Text>╭───╮</Text>
-                  <Text>│&nbsp;∆&nbsp;│</Text>
-                  <Text>╰───╯</Text>
-                </Box>
-
-                <Box flexDirection="column">
-                  <Text bold>&nbsp;Atlas.&nbsp;</Text>
-                </Box>
-
-                <Box flexDirection="column">
-                  <Text dimColor>Made by Tempest.</Text>
-                </Box>
-              </Box>
-
-              <Box flexDirection="column" paddingLeft={2}>
-                <Text dimColor>⊕ /help for help</Text>
-                <Text dimColor>∶ {Deno.cwd()}</Text>
-              </Box>
-            </Box>
-          )}
-        </Static>
-      </Box>
-
       {view === "command" && (
         <>
           {/* Message buffer for SSE handling and output display */}
@@ -319,15 +194,6 @@ export function Component() {
               onComplete={() => setActiveCommand(null)}
             />
           )}
-          {activeCommand === "workspaces" && (
-            <WorkspacesCommand
-              key="workspaces-command"
-              onComplete={(workspace) => {
-                setSelectedWorkspace(workspace || null);
-                setActiveCommand(null);
-              }}
-            />
-          )}
           {activeCommand === "library" && (
             <LibraryCommand
               key="library-command"
@@ -336,18 +202,13 @@ export function Component() {
           )}
 
           {/* Show command input when no active command */}
-          {!activeCommand && (
-            <CommandInput
-              onSubmit={handleCommand}
-              selectedWorkspace={selectedWorkspace}
-            />
-          )}
+          {!activeCommand && <CommandInput onSubmit={handleCommand} />}
         </>
       )}
 
       {view === "help" && <Help onExit={() => setView("command")} />}
       {view === "init" && <InitView onExit={() => setView("command")} />}
-      {view === "config" && <ConfigView onExit={() => setView("command")} />}
+      {/* {view === "config" && <ConfigView onExit={() => setView("command")} />} */}
       {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );

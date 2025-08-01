@@ -16,18 +16,40 @@
 
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { type SystemAgentConfigObject } from "@atlas/config";
-import { AtlasToolRegistry, getAtlasToolRegistry } from "@atlas/tools";
+import { AtlasToolRegistry, getAtlasDaemonUrl, getAtlasToolRegistry } from "@atlas/tools";
 import type { TextStreamPart, Tool } from "ai";
 import { stepCountIs, streamText } from "ai";
 import { z } from "zod/v4";
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { SystemAgentMetadata } from "../../../src/core/system-agent-registry.ts";
 import { isOverloadError, withExponentialBackoff } from "../../../src/utils/exponential-backoff.ts";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { GetPromptResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 
 const ConversationInputSchema = z.object({
-  message: z.string(),
+  message: z.string().optional(),
   streamId: z.string().optional(),
   userId: z.string().optional(),
+  type: z.enum(["user", "prompt"]),
+  parameters: z
+    .object({
+      promptName: z.string(),
+    })
+    .and(z.record(z.string(), z.unknown()))
+    .optional(),
+});
+
+const PromptOutputSchema = z.object({
+  messages: z.array(
+    z.object({
+      role: z.string(),
+      content: z.object({
+        type: z.string(),
+        text: z.string(),
+      }),
+    }),
+  ),
 });
 
 interface ConversationAgentControls {
@@ -42,6 +64,7 @@ interface ConversationStorageOutput {
 }
 
 interface StreamEvent {
+  id: string;
   type: "thinking" | "text" | "tool_call" | "tool_result" | "error" | "finish";
   content: string;
   metadata?: Record<string, unknown>;
@@ -77,6 +100,7 @@ export class ConversationAgent extends BaseAgent {
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
   private toolRegistry: AtlasToolRegistry;
+  private streamId: string | undefined;
 
   constructor(
     config: SystemAgentConfigObject,
@@ -149,6 +173,55 @@ export class ConversationAgent extends BaseAgent {
     return "claude-3-7-sonnet-20250219";
   }
 
+  private async handleDescribeMCP(
+    parameters: {
+      promptName: string;
+    } & Record<string, unknown>,
+  ): Promise<string | undefined> {
+    try {
+      if (!parameters?.promptName) {
+        throw new Error("Missing required parameters");
+      }
+
+      const { promptName, ...params } = parameters;
+
+      const client = new Client({
+        name: "atlas-mcp-client",
+        version: "1.0.0",
+      });
+
+      const daemonUrl = getAtlasDaemonUrl();
+      const transport = new StreamableHTTPClientTransport(
+        new URL(`${daemonUrl}/mcp`),
+      );
+
+      await client.connect(transport);
+
+      const result = await client.request(
+        {
+          method: "prompts/get",
+          params: {
+            name: promptName,
+            arguments: params,
+          },
+        },
+        GetPromptResultSchema,
+      );
+
+      const { messages } = PromptOutputSchema.parse(result);
+      const message = messages[0];
+
+      if (!message) {
+        throw new Error("Could not find a matching prompt");
+      }
+
+      return message.content.text;
+    } catch (error) {
+      console.error("Failed to get prompt from MCP", { error });
+      return;
+    }
+  }
+
   /**
    * Processes user messages and generates AI responses
    *
@@ -171,7 +244,13 @@ export class ConversationAgent extends BaseAgent {
       input: JSON.stringify(input),
     });
 
-    const { message, streamId, userId } = ConversationInputSchema.parse(input);
+    let {
+      streamId,
+      message = "",
+      userId,
+      type = "user",
+      parameters,
+    } = ConversationInputSchema.parse(input);
 
     this.logger.info("Processing message", {
       message: message.substring(0, 100),
@@ -183,33 +262,14 @@ export class ConversationAgent extends BaseAgent {
     let messagesInHistory = 0;
     let isNewConversation = true;
 
-    if (streamId) {
-      try {
-        const historyResult = await this.loadConversationHistory(streamId);
-        if (historyResult.success && historyResult.messages?.length) {
-          historyContext = historyResult.historyContext || "";
-          messagesInHistory = historyResult.messages.length;
-          isNewConversation = false;
-        }
-
-        await this.saveMessage(
-          streamId,
-          {
-            role: "user",
-            content: message,
-          },
-          { userId, timestamp: new Date().toISOString() },
-        );
-      } catch (error) {
-        this.logger.warn("Failed to handle conversation history", { error });
-      }
-    }
-
     // Get conversation tools with context injection (streamId, userId automatically handled)
-    const conversationTools = this.toolRegistry.getToolsWithContext("conversation", {
-      streamId,
-      userId,
-    });
+    const conversationTools = this.toolRegistry.getToolsWithContext(
+      "conversation",
+      {
+        streamId,
+        userId,
+      },
+    );
 
     // Get user-configured tools by name if specified
     const configuredTools: Record<string, Tool> = {};
@@ -219,7 +279,9 @@ export class ConversationAgent extends BaseAgent {
         if (tool) {
           configuredTools[toolName] = tool;
         } else {
-          this.logger.warn(`Configured tool not found in registry: ${toolName}`);
+          this.logger.warn(
+            `Configured tool not found in registry: ${toolName}`,
+          );
         }
       }
     }
@@ -230,6 +292,67 @@ export class ConversationAgent extends BaseAgent {
       ...configuredTools,
       ...conversationTools, // Last to ensure context injection is preserved
     };
+
+    if (streamId) {
+      try {
+        const historyResult = await this.loadConversationHistory(streamId);
+        if (historyResult.success && historyResult.messages?.length) {
+          historyContext = historyResult.historyContext || "";
+          messagesInHistory = historyResult.messages.length;
+          isNewConversation = false;
+        }
+
+        if (type === "prompt" && parameters) {
+          const promptText = await this.handleDescribeMCP(parameters);
+
+          if (!promptText) {
+            throw new Error("Could not get prompt from MCP");
+          }
+
+          if (promptText && finalTools.atlas_stream_event?.execute) {
+            message = promptText;
+
+            await finalTools.atlas_stream_event.execute(
+              {
+                streamId,
+                id: crypto.randomUUID(),
+                eventType: "text",
+                content: "Working...",
+                timestamp: new Date().toISOString(),
+              },
+              { toolCallId: crypto.randomUUID(), messages: [] },
+            );
+          }
+        } else {
+          await this.saveMessage(
+            streamId,
+            {
+              role: "user",
+              content: message,
+            },
+            { userId, timestamp: new Date().toISOString() },
+          );
+
+          // send message back in the SSE stream
+          if (finalTools.atlas_stream_event?.execute) {
+            await finalTools.atlas_stream_event.execute(
+              {
+                streamId,
+                id: crypto.randomUUID(),
+                eventType: "request",
+                content: message,
+                timestamp: new Date().toISOString(),
+              },
+              { toolCallId: crypto.randomUUID(), messages: [] },
+            );
+          }
+        }
+      } catch (error) {
+        this.logger.warn("Failed to handle conversation history", { error });
+
+        return;
+      }
+    }
 
     // atlas_stream_event is mandatory for sending responses to users
     if (!finalTools.atlas_stream_event) {
@@ -304,21 +427,32 @@ export class ConversationAgent extends BaseAgent {
             thinkingBuffer: "",
           };
 
+          let prevChunk:
+            | TextStreamPart<{
+              [x: string]: Tool;
+            }>
+            | undefined = undefined;
+
           for await (const chunk of fullStream) {
-            const event = this.processStreamEvent(chunk);
+            const event = this.processStreamEvent(chunk, prevChunk);
+            prevChunk = chunk;
+
             if (!event || !streamId) continue;
 
             // Stream rich events directly
             if (finalTools.atlas_stream_event?.execute) {
-              await finalTools.atlas_stream_event.execute(
-                {
-                  streamId,
-                  eventType: event.type,
-                  content: event.content,
-                  metadata: this.extractMetadata(event),
-                },
-                { toolCallId: crypto.randomUUID(), messages: [] },
-              );
+              if (event.type !== "thinking" || type !== "prompt") {
+                await finalTools.atlas_stream_event.execute(
+                  {
+                    id: event.id,
+                    streamId,
+                    eventType: event.type,
+                    content: event.content,
+                    metadata: this.extractMetadata(event),
+                  },
+                  { toolCallId: crypto.randomUUID(), messages: [] },
+                );
+              }
             }
 
             switch (event.type) {
@@ -382,9 +516,12 @@ export class ConversationAgent extends BaseAgent {
           const processedReasoning = hasAISDKReasoning ? finalReasoning : executionFlow.reasoning;
 
           const reasoningText = hasAISDKReasoning
-            ? finalReasoning.map((item) => typeof item === "string" ? item : JSON.stringify(item))
+            ? finalReasoning
+              .map((item) => typeof item === "string" ? item : JSON.stringify(item))
               .join("\n")
-            : executionFlow.reasoning.join("\n") || executionFlow.thinkingBuffer || "";
+            : executionFlow.reasoning.join("\n") ||
+              executionFlow.thinkingBuffer ||
+              "";
 
           return {
             text: finalText || executionFlow.responseBuffer,
@@ -416,6 +553,7 @@ export class ConversationAgent extends BaseAgent {
             if (streamId && finalTools.atlas_stream_event?.execute) {
               await finalTools.atlas_stream_event.execute(
                 {
+                  id: crypto.randomUUID(),
                   streamId,
                   eventType: "thinking",
                   content: `Retrying (attempt ${attempt}/10)... waiting ${delay / 1000}s`,
@@ -454,11 +592,16 @@ export class ConversationAgent extends BaseAgent {
         if (streamId && finalTools.atlas_stream_event?.execute) {
           await finalTools.atlas_stream_event.execute(
             {
+              id: crypto.randomUUID(),
               streamId,
               eventType: "error",
               content:
                 "I'm experiencing high demand. I tried 10 times but couldn't process your request. Please try again later.",
-              metadata: { errorType: "overload", retriesExhausted: true, attempts: 10 },
+              metadata: {
+                errorType: "overload",
+                retriesExhausted: true,
+                attempts: 10,
+              },
             },
             { toolCallId: crypto.randomUUID(), messages: [] },
           );
@@ -510,6 +653,7 @@ export class ConversationAgent extends BaseAgent {
         result: event.metadata?.result,
       };
     }
+
     return event.metadata;
   }
 
@@ -536,6 +680,15 @@ export class ConversationAgent extends BaseAgent {
     return prompt;
   }
 
+  private getUniqueId(type: string, prevType?: string): string {
+    if (type === prevType && this.streamId) {
+      return this.streamId;
+    }
+
+    this.streamId = crypto.randomUUID();
+    return this.streamId;
+  }
+
   /**
    * Converts AI SDK stream chunks into structured events for processing
    *
@@ -546,12 +699,14 @@ export class ConversationAgent extends BaseAgent {
    */
   private processStreamEvent(
     chunk: TextStreamPart<Record<string, Tool>>,
+    prevChunk: TextStreamPart<Record<string, Tool>> | undefined,
   ): StreamEvent | null {
     const timestamp = Date.now();
 
     switch (chunk.type) {
       case "reasoning":
         return {
+          id: this.getUniqueId("reasoning", prevChunk?.type),
           type: "thinking",
           content: chunk.text,
           timestamp,
@@ -559,6 +714,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "text":
         return {
+          id: this.getUniqueId("text", prevChunk?.type),
           type: "text",
           content: chunk.text,
           timestamp,
@@ -566,6 +722,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "tool-call":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "tool_call",
           content: `Calling ${chunk.toolName}`,
           metadata: {
@@ -577,6 +734,7 @@ export class ConversationAgent extends BaseAgent {
         };
       case "finish":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "finish",
           content: chunk.finishReason,
           timestamp,
@@ -584,6 +742,7 @@ export class ConversationAgent extends BaseAgent {
 
       case "error":
         return {
+          id: this.getUniqueId("tool_call"),
           type: "error",
           content: JSON.stringify(chunk.error, null, 2),
           metadata: { error: chunk.error },

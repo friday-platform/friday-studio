@@ -9,10 +9,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Show available commands and usage information",
   },
   {
-    command: "/workspaces",
-    description: "View available workspaces",
-  },
-  {
     command: "/credits",
     description: "Show Atlas credits and acknowledgments",
   },
@@ -47,10 +43,6 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
   {
     command: "/version",
     description: "Show Atlas version information",
-  },
-  {
-    command: "/clear",
-    description: "Clear the output buffer",
   },
   {
     command: "/send-diagnostics",

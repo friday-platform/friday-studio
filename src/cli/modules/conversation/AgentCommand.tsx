@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { Text } from "ink";
 import { WorkspaceSelection } from "./workspace-selection.tsx";
 import { AgentSelection } from "../../components/agent-selection.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
-import { handleDescribeMCP } from "./utils/mcp-utils.ts";
-import { OutputEntry } from "./index.ts";
 
 interface AgentCommandProps {
   onComplete: () => void;
@@ -13,13 +10,7 @@ interface AgentCommandProps {
 type AgentFlowState = "workspace-selection" | "agent-selection";
 
 export function AgentCommand({ onComplete }: AgentCommandProps) {
-  const {
-    mcpClient,
-    conversationClient,
-    conversationSessionId,
-    setOutputBuffer,
-    setTypingState,
-  } = useAppContext();
+  const { conversationClient, conversationSessionId } = useAppContext();
 
   const [flowState, setFlowState] = useState<AgentFlowState>(
     "workspace-selection",
@@ -28,65 +19,22 @@ export function AgentCommand({ onComplete }: AgentCommandProps) {
     null,
   );
 
-  const addOutputEntry = (entry: OutputEntry) => {
-    setOutputBuffer((prev) => [...prev, entry]);
-  };
-
   const handleWorkspaceSelect = (workspaceId: string) => {
     setSelectedWorkspace(workspaceId);
     setFlowState("agent-selection");
   };
 
-  const handleAgentSelect = async (agentId: string) => {
-    if (!selectedWorkspace) {
-      addOutputEntry({
-        id: `agent-error-${Date.now()}`,
-        component: <Text color="red">Error: No workspace selected</Text>,
-      });
-      onComplete();
-      return;
-    }
-
-    if (!mcpClient) {
-      addOutputEntry({
-        id: `mcp-error-${Date.now()}`,
-        component: <Text color="red">MCP client not initialized</Text>,
-      });
-      onComplete();
-      return;
-    }
-
+  const handleAgentSelect = (agentId: string) => {
     if (!conversationClient || !conversationSessionId) {
-      addOutputEntry({
-        id: `conversation-error-${Date.now()}`,
-        component: <Text color="red">Conversation system not initialized</Text>,
-      });
       onComplete();
       return;
     }
 
-    try {
-      await handleDescribeMCP({
-        mcpClient,
-        conversationClient,
-        conversationSessionId,
-        workspaceId: selectedWorkspace,
-        itemId: agentId,
-        promptName: "agent_describe",
-        itemType: "agent",
-        setOutputBuffer,
-        setTypingState,
-      });
-    } catch (error) {
-      addOutputEntry({
-        id: `error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Error fetching agent details: {error instanceof Error ? error.message : String(error)}
-          </Text>
-        ),
-      });
-    }
+    conversationClient.sendPrompt(conversationSessionId, {
+      workspaceId: selectedWorkspace,
+      promptName: "agent_describe",
+      agentId: agentId,
+    });
 
     onComplete();
   };

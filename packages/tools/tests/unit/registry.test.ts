@@ -29,6 +29,7 @@ Deno.test("AtlasToolRegistry", async (t) => {
       "system",
       "conversation",
       "resource",
+      "platform",
     ];
 
     assertEquals(categories.sort(), expectedCategories.sort());
@@ -104,12 +105,15 @@ Deno.test("AtlasToolRegistry", async (t) => {
     }
   });
 
-  await t.step("getToolByName() should return null for non-existent tool", () => {
-    const registry = getAtlasToolRegistry();
+  await t.step(
+    "getToolByName() should return null for non-existent tool",
+    () => {
+      const registry = getAtlasToolRegistry();
 
-    const result = registry.getToolByName("non_existent_tool");
-    assertEquals(result, null);
-  });
+      const result = registry.getToolByName("non_existent_tool");
+      assertEquals(result, null);
+    },
+  );
 
   await t.step("hasTools() should correctly identify tool existence", () => {
     const registry = getAtlasToolRegistry();
@@ -119,16 +123,19 @@ Deno.test("AtlasToolRegistry", async (t) => {
     assertEquals(registry.hasTools("non_existent_tool"), false);
   });
 
-  await t.step("getToolNamesByCategory() should return correct tool names", () => {
-    const registry = getAtlasToolRegistry();
+  await t.step(
+    "getToolNamesByCategory() should return correct tool names",
+    () => {
+      const registry = getAtlasToolRegistry();
 
-    const fsToolNames = registry.getToolNamesByCategory("filesystem");
-    assertEquals(fsToolNames.includes("atlas_read"), true);
-    assertEquals(fsToolNames.includes("atlas_write"), true);
-    assertEquals(fsToolNames.includes("atlas_list"), true);
-    assertEquals(fsToolNames.includes("atlas_glob"), true);
-    assertEquals(fsToolNames.includes("atlas_grep"), true);
-  });
+      const fsToolNames = registry.getToolNamesByCategory("filesystem");
+      assertEquals(fsToolNames.includes("atlas_read"), true);
+      assertEquals(fsToolNames.includes("atlas_write"), true);
+      assertEquals(fsToolNames.includes("atlas_list"), true);
+      assertEquals(fsToolNames.includes("atlas_glob"), true);
+      assertEquals(fsToolNames.includes("atlas_grep"), true);
+    },
+  );
 
   await t.step("getAllToolNames() should return all tool names", () => {
     const registry = getAtlasToolRegistry();
@@ -174,6 +181,7 @@ Deno.test("AtlasToolRegistry", async (t) => {
       "agent",
       "library",
       "system",
+      "platform",
     ];
     for (const category of expectedCategories) {
       assertEquals(category in summary.categories, true);
@@ -211,6 +219,7 @@ Deno.test("getAtlasToolRegistry function", async (t) => {
       system: defaultRegistry.getToolsByCategory("system"),
       conversation: defaultRegistry.getToolsByCategory("conversation"),
       resource: defaultRegistry.getToolsByCategory("resource"),
+      platform: defaultRegistry.getToolsByCategory("platform"),
     });
 
     assertEquals(

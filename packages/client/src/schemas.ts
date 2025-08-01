@@ -61,10 +61,12 @@ export const WorkspaceBatchAddRequestSchema = z.object({
 
 export const WorkspaceBatchAddResponseSchema = z.object({
   added: z.array(WorkspaceInfoSchema),
-  failed: z.array(z.object({
-    path: z.string(),
-    error: z.string(),
-  })),
+  failed: z.array(
+    z.object({
+      path: z.string(),
+      error: z.string(),
+    }),
+  ),
 });
 
 // Session schemas
@@ -155,11 +157,13 @@ export const LibraryStatsSchema = z.object({
       size_added_bytes: z.number().optional(),
     }),
   ),
-  storage_stats: z.object({
-    used_bytes: z.number(),
-    limit_bytes: z.number().optional(),
-    percentage_used: z.number().optional(),
-  }).optional(),
+  storage_stats: z
+    .object({
+      used_bytes: z.number(),
+      limit_bytes: z.number().optional(),
+      percentage_used: z.number().optional(),
+    })
+    .optional(),
 });
 
 export const TemplateConfigSchema = z.object({
@@ -180,7 +184,6 @@ export const LibraryItemWithContentSchema = z.object({
 
 // Signal schemas
 export const SignalInfoSchema = z.object({
-  name: z.string(),
   description: z.string().optional(),
 });
 
@@ -233,54 +236,74 @@ export const JobDetailedInfoSchema = z.object({
   name: z.string(),
   description: z.string().optional(),
   task_template: z.string().optional(),
-  triggers: z.array(z.object({
-    signal: z.string(),
-    condition: z.string().optional(),
-  })).optional(),
-  session_prompts: z.object({
-    planning: z.string().optional(),
-    evaluation: z.string().optional(),
-  }).optional(),
+  triggers: z
+    .array(
+      z.object({
+        signal: z.string(),
+        condition: z.string().optional(),
+      }),
+    )
+    .optional(),
+  session_prompts: z
+    .object({
+      planning: z.string().optional(),
+      evaluation: z.string().optional(),
+    })
+    .optional(),
   execution: z.object({
     strategy: z.enum(["sequential", "parallel"]),
-    agents: z.array(z.union([
-      z.string(),
-      z.object({
-        id: z.string(),
-        task: z.string().optional(),
-        input_source: z.enum(["signal", "previous", "combined", "filesystem_context"]).optional(),
-        dependencies: z.array(z.string()).optional(),
-        tools: z.array(z.string()).optional(),
-      }),
-    ])),
-    context: z.object({
-      filesystem: z.object({
-        patterns: z.array(z.string()),
-        base_path: z.string().optional(),
-        max_file_size: z.number().optional(),
-        include_content: z.boolean().optional(),
-      }).optional(),
-      memory: z.object({
-        recall_limit: z.number().optional(),
-        strategy: z.string().optional(),
-      }).optional(),
-    }).optional(),
+    agents: z.array(
+      z.union([
+        z.string(),
+        z.object({
+          id: z.string(),
+          task: z.string().optional(),
+          input_source: z
+            .enum(["signal", "previous", "combined", "filesystem_context"])
+            .optional(),
+          dependencies: z.array(z.string()).optional(),
+          tools: z.array(z.string()).optional(),
+        }),
+      ]),
+    ),
+    context: z
+      .object({
+        filesystem: z
+          .object({
+            patterns: z.array(z.string()),
+            base_path: z.string().optional(),
+            max_file_size: z.number().optional(),
+            include_content: z.boolean().optional(),
+          })
+          .optional(),
+        memory: z
+          .object({
+            recall_limit: z.number().optional(),
+            strategy: z.string().optional(),
+          })
+          .optional(),
+      })
+      .optional(),
     timeout_seconds: z.number().optional(),
     max_iterations: z.number().optional(),
   }),
   success_criteria: z.record(z.string(), z.unknown()).optional(),
-  error_handling: z.object({
-    max_retries: z.number().optional(),
-    retry_delay_seconds: z.number().optional(),
-    timeout_seconds: z.number().optional(),
-    stage_failure_strategy: z.string().optional(),
-  }).optional(),
-  resources: z.object({
-    estimated_duration_seconds: z.number().optional(),
-    max_memory_mb: z.number().optional(),
-    required_capabilities: z.array(z.string()).optional(),
-    concurrent_agent_limit: z.number().optional(),
-  }).optional(),
+  error_handling: z
+    .object({
+      max_retries: z.number().optional(),
+      retry_delay_seconds: z.number().optional(),
+      timeout_seconds: z.number().optional(),
+      stage_failure_strategy: z.string().optional(),
+    })
+    .optional(),
+  resources: z
+    .object({
+      estimated_duration_seconds: z.number().optional(),
+      max_memory_mb: z.number().optional(),
+      required_capabilities: z.array(z.string()).optional(),
+      concurrent_agent_limit: z.number().optional(),
+    })
+    .optional(),
 });
 
 // Workspace template schemas
@@ -291,7 +314,9 @@ export const WorkspaceTemplateInfoSchema = z.object({
   tags: z.array(z.string()).optional(),
 });
 
-export const WorkspaceTemplateListResponseSchema = z.array(WorkspaceTemplateInfoSchema);
+export const WorkspaceTemplateListResponseSchema = z.array(
+  WorkspaceTemplateInfoSchema,
+);
 
 export const CreateWorkspaceFromTemplateRequestSchema = z.object({
   templateId: z.string(),

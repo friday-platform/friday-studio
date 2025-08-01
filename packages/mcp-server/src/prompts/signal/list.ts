@@ -26,7 +26,7 @@ export function registerSignalListPrompt(
       ctx.logger.info("MCP workspace_signals_list called", { workspaceId });
 
       return createSuccessResponse(
-        `Return a list of signals for the workspace with an ID of ${workspaceId}`,
+        `Use the \`atlas_workspace_signals_list\` tool to list signals for the workspace with an ID of ${workspaceId}. Use markdown syntax to format the response.`,
       );
     },
   );

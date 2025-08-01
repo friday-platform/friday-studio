@@ -8,29 +8,29 @@ import type { PromptContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
 
-export function registerSignalDescribePrompt(
+export function registerSignalTriggerPrompt(
   server: McpServer,
   ctx: PromptContext,
 ) {
   server.registerPrompt(
-    "signal_describe",
+    "signal_trigger",
     {
-      title: "Describe Signal",
-      description:
-        "Get detailed information about a specific signal including its configuration, purpose, available tools, system prompts, and current operational status. Useful for understanding signal capabilities and troubleshooting.",
+      title: "Trigger Signal",
+      description: "Trigger a specific signal in a workspace.",
       argsSchema: {
         workspaceId: z.string().describe("Workspace ID containing the signal"),
         signalId: z.string().describe("Signal ID to describe"),
+        input: z.string().optional().describe("Input to the signal"),
       },
     },
-    ({ workspaceId, signalId }) => {
+    ({ workspaceId, signalId, input }) => {
       ctx.logger.info("MCP workspace_signals_describe called", {
         workspaceId,
         signalId,
       });
 
       return createSuccessResponse(
-        `Use the \`atlas_workspace_signals_describe\` tool to describe a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId}. Use markdown syntax to format the response.`,
+        `Use the \`atlas_workspace_signals_trigger\` to trigger a signal. The signal ID is ${signalId}, the workspace id is ${workspaceId} and the input is ${input}. Use markdown syntax to format the response.`,
       );
     },
   );

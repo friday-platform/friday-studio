@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from "ink";
+import { Box, Text, useInput, useStdout } from "ink";
 import { Select } from "./select/index.ts";
 import { useEffect, useState } from "react";
 import { useResponsiveDimensions } from "../utils/useResponsiveDimensions.ts";
@@ -34,16 +34,18 @@ export const SignalSelection = ({
           const client = getAtlasClient();
           const signalList = await client.listSignals(workspaceId);
 
-          const signals = signalList.map((signal) => ({
-            id: signal.name,
-            name: signal.name,
+          const signals = Object.entries(signalList).map(([name, signal]) => ({
+            id: name,
+            name: name,
             description: signal.description || undefined,
           }));
 
           setSignals(signals);
         } else {
           setSignals([]);
-          setError("Daemon not running. Use 'atlas daemon start' to enable signal management.");
+          setError(
+            "Daemon not running. Use 'atlas daemon start' to enable signal management.",
+          );
         }
         setError("");
       } catch (err) {
@@ -106,7 +108,11 @@ export const SignalSelection = ({
   return (
     <Box flexDirection="column" marginTop={1} width={dimensions.paddedWidth}>
       <Box borderStyle="round" borderColor="gray" paddingX={1}>
-        <Select options={options} onChange={handleSelect} visibleOptionCount={8} />
+        <Select
+          options={options}
+          onChange={handleSelect}
+          visibleOptionCount={8}
+        />
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Press Escape to go back</Text>

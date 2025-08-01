@@ -186,7 +186,9 @@ export class AtlasClient {
   /**
    * Add multiple workspaces by paths (batch operation)
    */
-  async addWorkspaces(request: WorkspaceBatchAddRequest): Promise<WorkspaceBatchAddResponse> {
+  async addWorkspaces(
+    request: WorkspaceBatchAddRequest,
+  ): Promise<WorkspaceBatchAddResponse> {
     const response = await this.makeRequest("/api/workspaces/add-batch", {
       method: "POST",
       headers: {
@@ -211,13 +213,18 @@ export class AtlasClient {
   async createWorkspaceFromTemplate(
     request: CreateWorkspaceFromTemplateRequest,
   ): Promise<CreateWorkspaceFromTemplateResponse> {
-    const response = await this.makeRequest("/api/workspaces/create-from-template", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await this.makeRequest(
+      "/api/workspaces/create-from-template",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(
+          CreateWorkspaceFromTemplateRequestSchema.parse(request),
+        ),
       },
-      body: JSON.stringify(CreateWorkspaceFromTemplateRequestSchema.parse(request)),
-    });
+    );
     return CreateWorkspaceFromTemplateResponseSchema.parse(response);
   }
 
@@ -230,13 +237,16 @@ export class AtlasClient {
     config: string;
     path?: string;
   }): Promise<WorkspaceCreateResponse> {
-    const response = await this.makeRequest("/api/workspaces/create-from-config", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const response = await this.makeRequest(
+      "/api/workspaces/create-from-config",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(params),
       },
-      body: JSON.stringify(params),
-    });
+    );
     return WorkspaceCreateResponseSchema.parse(response);
   }
 
@@ -460,11 +470,12 @@ export class AtlasClient {
   /**
    * List signals in a workspace
    */
-  async listSignals(workspaceId: string): Promise<SignalInfo[]> {
+  async listSignals(workspaceId: string) {
     const response = await this.makeRequest(
       `/api/workspaces/${workspaceId}/signals`,
     );
-    return z.array(SignalInfoSchema).parse(response);
+
+    return z.record(z.string(), SignalInfoSchema).parse(response);
   }
 
   /**
@@ -478,7 +489,7 @@ export class AtlasClient {
   ): Promise<SignalDetailedInfo> {
     // First verify the signal exists
     const signals = await this.listSignals(workspaceId);
-    const signal = signals.find((s) => s.name === signalName);
+    const signal = signals[signalName] ?? undefined;
 
     if (!signal) {
       throw new AtlasApiError(
@@ -512,11 +523,15 @@ export class AtlasClient {
       const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
 
       // Extract signal configuration (signals can be at root or under workspace)
-      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
+      const workspace = rawConfig.workspace as
+        | Record<string, unknown>
+        | undefined;
       const signals = (workspace?.signals || rawConfig.signals) as
         | Record<string, unknown>
         | undefined;
-      const signalConfig = signals?.[signalName] as Record<string, unknown> | undefined;
+      const signalConfig = signals?.[signalName] as
+        | Record<string, unknown>
+        | undefined;
 
       if (!signalConfig) {
         throw new AtlasApiError(
@@ -582,8 +597,12 @@ export class AtlasClient {
       const rawConfig = yaml.parse(yamlContent) as Record<string, unknown>;
 
       // Extract job configuration from workspace.yml (jobs can be at root or under workspace)
-      const workspace = rawConfig.workspace as Record<string, unknown> | undefined;
-      const jobs = (workspace?.jobs || rawConfig.jobs) as Record<string, unknown> | undefined;
+      const workspace = rawConfig.workspace as
+        | Record<string, unknown>
+        | undefined;
+      const jobs = (workspace?.jobs || rawConfig.jobs) as
+        | Record<string, unknown>
+        | undefined;
       const jobConfig = jobs?.[jobName] as Record<string, unknown> | undefined;
 
       if (!jobConfig) {
@@ -653,10 +672,7 @@ export class AtlasClient {
     const job = jobs.find((j) => j.name === jobName);
 
     if (!job) {
-      throw new AtlasApiError(
-        `Job '${jobName}' not found in workspace`,
-        404,
-      );
+      throw new AtlasApiError(`Job '${jobName}' not found in workspace`, 404);
     }
 
     // Load job configuration directly using provided workspace path
@@ -882,7 +898,9 @@ export class AtlasClient {
     const { exists } = await import("@std/fs");
     const { load } = await import("@std/dotenv");
     const { getAtlasHome } = await import("../../../src/utils/paths.ts");
-    const { CredentialFetcher, getDiagnosticsApiUrl } = await import("@atlas/core");
+    const { CredentialFetcher, getDiagnosticsApiUrl } = await import(
+      "@atlas/core"
+    );
 
     const globalAtlasEnv = join(getAtlasHome(), ".env");
     if (await exists(globalAtlasEnv)) {
@@ -914,7 +932,7 @@ export class AtlasClient {
     const response = await fetch(getDiagnosticsApiUrl(filename), {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${atlasKey}`,
+        Authorization: `Bearer ${atlasKey}`,
         "Content-Type": "application/gzip",
       },
       body: diagnosticData,

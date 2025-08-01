@@ -1,89 +1,104 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Box, Text } from "ink";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Box, Static, useStdout } from "ink";
 import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
-import { GitDiff } from "./git-diff.tsx";
-import { MultiSelect } from "./multi-select.tsx";
-import { MarkdownDisplay } from "./markdown-display.tsx";
-import { DirectoryTree } from "./directory-tree.tsx";
+// import { GitDiff } from "./git-diff.tsx";
+// import { MultiSelect } from "./multi-select.tsx";
+// import { DirectoryTree } from "./directory-tree.tsx";
+import { Stream } from "../modules/conversation/stream.tsx";
+import { OutputEntry } from "../modules/conversation/types.ts";
+import { Header } from "./header.tsx";
+import { MessageHeader } from "./message-header.tsx";
+import ansiEscapes from "ansi-escapes";
+import { Spinner } from "@inkjs/ui";
+
+const RequestEventSchema = z.object({
+  id: z.string(),
+  type: z.literal("request"),
+  data: z.object({
+    content: z.string(),
+  }),
+  timestamp: z.string(),
+});
 
 const MessageEventSchema = z.object({
+  id: z.string(),
   type: z.literal("text"),
   data: z.object({
     content: z.string(),
   }),
+  timestamp: z.string(),
 });
 
 const FinishEventSchema = z.object({
+  id: z.string(),
   type: z.literal("finish"),
   data: z.object({
     content: z.string(),
   }),
+  timestamp: z.string(),
 });
 
 const ErrorEventSchema = z.object({
+  id: z.string(),
   type: z.literal("error"),
-  data: z.string().optional(),
-});
-
-const SelectionListEventSchema = z.object({
-  type: z.literal("selection_list"),
   data: z.object({
-    label: z.string(),
-    options: z.array(
-      z.object({
-        label: z.string(),
-        value: z.string(),
-      }),
-    ),
+    content: z.string(),
   }),
+  timestamp: z.string(),
 });
 
-const FileDiffEventSchema = z.object({
-  type: z.literal("file_diff"),
-  data: z.object({
-    diffContent: z.string(),
-    startingLine: z.number(),
-    endingLine: z.number(),
-    message: z.string(),
-  }),
-});
+// const SelectionListEventSchema = z.object({
+//   type: z.literal("selection_list"),
+//   data: z.object({
+//     label: z.string(),
+//     options: z.array(
+//       z.object({
+//         label: z.string(),
+//         value: z.string(),
+//       })
+//     ),
+//   }),
+//   timestamp: z.string(),
+// });
 
-type DirectoryNode = {
-  name: string;
-  type: "file" | "directory";
-  active?: boolean;
-  children?: Array<DirectoryNode>;
-};
+// const FileDiffEventSchema = z.object({
+//   type: z.literal("file_diff"),
+//   data: z.object({
+//     diffContent: z.string(),
+//     startingLine: z.number(),
+//     endingLine: z.number(),
+//     message: z.string(),
+//   }),
+//   timestamp: z.string(),
+// });
 
-// Define the recursive directory node schema
-const DirectoryNodeSchema: z.ZodType<DirectoryNode> = z.object({
-  name: z.string(),
-  type: z.enum(["file", "directory"]),
-  active: z.boolean().optional(),
-  children: z.array(z.lazy(() => DirectoryNodeSchema)).optional(),
-});
+// type DirectoryNode = {
+//   name: string;
+//   type: "file" | "directory";
+//   active?: boolean;
+//   children?: Array<DirectoryNode>;
+// };
 
-const DirectoryListingEventSchema = z.object({
-  type: z.literal("directory_listing"),
-  data: z.object({
-    tree: z.lazy(() => DirectoryNodeSchema),
-  }),
-});
+// // Define the recursive directory node schema
+// const DirectoryNodeSchema: z.ZodType<DirectoryNode> = z.object({
+//   name: z.string(),
+//   type: z.enum(["file", "directory"]),
+//   active: z.boolean().optional(),
+//   children: z.array(z.lazy(() => DirectoryNodeSchema)).optional(),
+// });
 
-const RespondingEventSchema = z.object({
-  type: z.literal("responding"),
-  data: z.object({
-    message: z.string(),
-  }),
-});
-
-const RespondingStopEventSchema = z.object({
-  type: z.literal("responding_stop"),
-});
+// const DirectoryListingEventSchema = z.object({
+//   type: z.literal("directory_listing"),
+//   data: z.object({
+//     tree: z.lazy(() => DirectoryNodeSchema),
+//   }),
+//   timestamp: z.string(),
+// });
 
 const ToolCallEventSchema = z.object({
+  id: z.string(),
   type: z.literal("tool_call"),
   data: z.object({
     content: z.string(),
@@ -91,9 +106,11 @@ const ToolCallEventSchema = z.object({
     args: z.record(z.string(), z.unknown()).optional(),
     toolCallId: z.string().optional(),
   }),
+  timestamp: z.string(),
 });
 
 const ToolResultEventSchema = z.object({
+  id: z.string(),
   type: z.literal("tool_result"),
   data: z.object({
     content: z.string(),
@@ -101,81 +118,67 @@ const ToolResultEventSchema = z.object({
     result: z.unknown(),
     toolCallId: z.string().optional(),
   }),
+  timestamp: z.string(),
 });
 
 const ThinkingEventSchema = z.object({
+  id: z.string(),
   type: z.literal("thinking"),
   data: z.object({
     content: z.string(),
   }),
+  timestamp: z.string(),
 });
 
 const SSEEventSchema = z.union([
+  RequestEventSchema,
   FinishEventSchema,
   MessageEventSchema,
   ErrorEventSchema,
-  SelectionListEventSchema,
-  FileDiffEventSchema,
-  DirectoryListingEventSchema,
-  RespondingEventSchema,
-  RespondingStopEventSchema,
+  // SelectionListEventSchema,
+  // FileDiffEventSchema,
+  // DirectoryListingEventSchema,
   ToolCallEventSchema,
   ToolResultEventSchema,
   ThinkingEventSchema,
 ]);
 
-function generateTimestamp() {
-  const now = new Date();
-  return now
-    .toLocaleTimeString([], {
-      hour: "numeric",
-      minute: "2-digit",
-    })
-    .toLowerCase()
-    .replace(/\s/g, "");
-}
-
 export const MessageBuffer = () => {
   const {
-    config,
     conversationClient,
     conversationSessionId,
-    outputBuffer,
-    setOutputBuffer,
     typingState,
     setTypingState,
     sseAbortControllerRef,
+    isCollapsed,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
   const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
     null,
   );
 
-  // Ends currently streaming messages and sets a newline
-  function carriageReturnBuffer() {
-    // Finalize the current streaming message
-    const thinkingId = `thinking-response`;
-    const finalThinkingId = `response-complete-${Date.now()}`;
+  const [sseMessages, setSseMessages] = useState<
+    Map<string, ReturnType<typeof SSEEventSchema.parse>>
+  >(new Map());
+  // const [streamIsPaused, setStreamIsPaused] = useState(false);
+  const [output, setOutput] = useState<OutputEntry[]>([]);
+  const [stream, setStream] = useState<OutputEntry | undefined>();
+  const [interval, setIntervalValue] = useState<
+    ReturnType<
+      typeof setInterval
+    > | null
+  >(null);
+  const [staticKey, setStaticKey] = useState(0);
+  const { stdout } = useStdout();
 
-    const messageId = `message-response`;
-    const finalMessageId = `message-received-${Date.now()}`;
+  const refreshStatic = useCallback(() => {
+    stdout.write(ansiEscapes.clearTerminal);
+    setStaticKey((prev) => prev + 1);
+  }, [setStaticKey, stdout]);
 
-    setOutputBuffer((prev) => {
-      return prev.map((entry) => {
-        // Only finalize thinking if it was actually displayed
-        if (
-          entry.id === thinkingId &&
-          config.conversationDisplay.showReasoningSteps
-        ) {
-          return { ...entry, id: finalThinkingId };
-        }
-        if (entry.id === messageId) {
-          return { ...entry, id: finalMessageId };
-        }
-        return entry;
-      });
-    });
-  }
+  useEffect(() => {
+    refreshStatic();
+  }, [isCollapsed]);
 
   // Create SSE stream when conversation session is ready
   useEffect(() => {
@@ -218,247 +221,16 @@ export const MessageBuffer = () => {
 
           // Parse and validate SSE events with Zod
           const parseResult = SSEEventSchema.safeParse(event);
+
           if (!parseResult.success) {
             continue; // Skip invalid events
           }
 
-          const sseEvent = parseResult.data;
-
-          switch (sseEvent.type) {
-            case "text": {
-              setTypingState((prev) => ({ ...prev, isTyping: true }));
-              const { content } = sseEvent.data;
-              const streamingId = "message-response";
-
-              setOutputBuffer((prev) => {
-                const [filtered, previousOutput] = [
-                  prev.filter((entry) => entry.id !== streamingId),
-                  prev.find((entry) => entry.id === streamingId),
-                ];
-                const previousContent = previousOutput?.content ?? "";
-                const newContent = previousContent + content; //combineTextChunks(previousContent, content);
-                return [
-                  ...filtered,
-                  {
-                    id: streamingId,
-                    content: newContent,
-                    component: (
-                      <ChatMessage
-                        author="Atlas"
-                        authorColor="blue"
-                        date={generateTimestamp()}
-                      >
-                        <MarkdownDisplay content={newContent} />
-                      </ChatMessage>
-                    ),
-                  },
-                ];
-              });
-
-              break;
-            }
-
-            case "error": {
-              setTypingState((prev) => ({ ...prev, isTyping: false }));
-              const errorTimestamp = new Date()
-                .toLocaleTimeString([], {
-                  hour: "numeric",
-                  minute: "2-digit",
-                })
-                .toLowerCase()
-                .replace(/\s/g, "");
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `error-${Date.now()}`,
-                  component: (
-                    <Box flexDirection="column">
-                      <Box flexDirection="row" gap={1}>
-                        <Text color="red" bold>
-                          Error
-                        </Text>
-                        <Text color="red" dimColor bold>
-                          [{errorTimestamp}]
-                        </Text>
-                      </Box>
-                      <Text color="red">
-                        {sseEvent.data || "An error occurred"}
-                      </Text>
-                    </Box>
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "selection_list": {
-              const { label, options } = sseEvent.data;
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `selection-list-${Date.now()}`,
-                  component: (
-                    <ChatMessage author={label} authorColor="yellow">
-                      <MultiSelect options={options} isDisabled={false} />
-                    </ChatMessage>
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "file_diff": {
-              const { diffContent, startingLine, endingLine, message } = sseEvent.data;
-
-              const timestamp = generateTimestamp();
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `file-diff-${Date.now()}`,
-                  component: (
-                    <ChatMessage
-                      author="Atlas"
-                      date={timestamp}
-                      message={message}
-                    >
-                      <GitDiff
-                        diffContent={diffContent}
-                        startingLine={startingLine}
-                        endingLine={endingLine}
-                      />
-                    </ChatMessage>
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "directory_listing": {
-              const { tree } = sseEvent.data;
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `directory-listing-${Date.now()}`,
-                  component: (
-                    <Box paddingLeft={1}>
-                      <DirectoryTree tree={tree} />
-                    </Box>
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "tool_call": {
-              carriageReturnBuffer();
-              setTypingState((prev) => ({ ...prev, isTyping: true }));
-
-              const { toolName, args, toolCallId } = sseEvent.data;
-
-              // Skip if tool calls are disabled in user preferences
-              if (!config.conversationDisplay.showToolCalls) {
-                break;
-              }
-
-              // Simple JSON display for now
-              const argsDisplay = args ? JSON.stringify(args, null, 2) : "No arguments";
-              const fullContent = `Calling: ${toolName}\n${argsDisplay}`;
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `tool-call-${toolCallId || Date.now()}`,
-                  component: (
-                    <MarkdownDisplay
-                      content={fullContent}
-                      dimColor
-                      showCollapsible
-                    />
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "tool_result": {
-              carriageReturnBuffer();
-              setTypingState((prev) => ({ ...prev, isTyping: true }));
-
-              const { toolName, result, toolCallId } = sseEvent.data;
-
-              // Skip if tool results are disabled in user preferences
-              if (!config.conversationDisplay.showToolResults) {
-                break;
-              }
-
-              // Simple JSON display for now
-              const resultDisplay = JSON.stringify(result, null, 2);
-              const fullContent = `${toolName} returned:\n${resultDisplay}`;
-
-              setOutputBuffer((prev) => [
-                ...prev,
-                {
-                  id: `tool-result-${toolCallId || Date.now()}`,
-                  component: (
-                    <MarkdownDisplay
-                      content={fullContent}
-                      dimColor
-                      showCollapsible
-                    />
-                  ),
-                },
-              ]);
-              break;
-            }
-
-            case "thinking": {
-              setTypingState((prev) => ({ ...prev, isTyping: true }));
-              const { content } = sseEvent.data;
-
-              // Skip if reasoning steps are disabled in user preferences
-              if (!config.conversationDisplay.showReasoningSteps) {
-                break;
-              }
-
-              const streamingMessageId = `thinking-response`;
-
-              setOutputBuffer((prev) => {
-                const [filtered, previousOutput] = [
-                  prev.filter((entry) => entry.id !== streamingMessageId),
-                  prev.find((entry) => entry.id === streamingMessageId),
-                ];
-                const previousContent = previousOutput?.content ?? "";
-                const newContent = previousContent + content; // combineTextChunks(previousContent, content);
-                return [
-                  ...filtered,
-                  {
-                    id: streamingMessageId,
-                    content: newContent,
-                    component: (
-                      <MarkdownDisplay
-                        showCollapsible
-                        content={newContent}
-                        dimColor
-                      />
-                    ),
-                  },
-                ];
-              });
-
-              break;
-            }
-
-            case "finish": {
-              carriageReturnBuffer();
-              setTypingState((prev) => ({ ...prev, isTyping: false }));
-
-              break;
-            }
-          }
+          setSseMessages((prev) => {
+            const newMap = new Map(prev);
+            newMap.set(parseResult.data.timestamp, parseResult.data);
+            return newMap;
+          });
         }
       } catch (error) {
         // SSE connection closed or error
@@ -481,38 +253,276 @@ export const MessageBuffer = () => {
     return () => {
       sseListenerStarted.current = false;
     };
-  }, [
-    sseStream,
-    setOutputBuffer,
-    setTypingState,
-    sseAbortControllerRef,
-    config.streamMessages,
-  ]);
+  }, [sseStream, sseAbortControllerRef]);
 
-  {
-    /* {config.streamMessages
-              ? <Spinner label={typingState.message || "Typing..."} />
-              : (
-                <Spinner
-                  label={`${typingState.message || "Typing..."} (${typingState.elapsedSeconds}s)`}
-                />
-              )} */
+  function formatMessage(
+    messages: ReturnType<typeof SSEEventSchema.parse>[],
+  ): OutputEntry | undefined {
+    const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
+
+    const firstMessage = messages[0];
+
+    if (!firstMessage) {
+      return;
+    }
+
+    return {
+      id: firstMessage.id,
+      type: firstMessage.type,
+      timestamp: firstMessage.timestamp,
+      author: firstMessage.type === "text" ? "Atlas" : currentUser,
+      content: messages.map((message) => message.data.content).join(""),
+    };
   }
 
-  return outputBuffer.length > 0
-    ? (
-      <Box flexDirection="column" gap={1}>
-        {outputBuffer.map((entry) => (
-          <React.Fragment key={entry.id}>{entry.component}</React.Fragment>
-        ))}
+  function getGroupedMessages(
+    messageValues: ReturnType<typeof SSEEventSchema.parse>[],
+  ) {
+    // Group messages by ID
+    return messageValues.reduce((groups, message) => {
+      const id = message.id;
+      if (!groups[id]) {
+        groups[id] = [];
+      }
 
-        {/* Typing indicator */}
-        {typingState.isTyping && (
-          <Box>
-            <Text>Thinking...</Text>
-          </Box>
-        )}
-      </Box>
-    )
-    : null;
+      groups[id].push(message);
+
+      return groups;
+    }, {} as Record<string, typeof messageValues>);
+  }
+
+  useEffect(() => {
+    if (typingState.isTyping && !interval) {
+      setIntervalValue(
+        setInterval(() => {
+          setTypingState((prev) => ({
+            ...prev,
+            elapsedSeconds: prev.elapsedSeconds + 1,
+          }));
+        }, 1000),
+      );
+    }
+
+    return () => {
+      if (interval) {
+        clearInterval(interval);
+        setIntervalValue(null);
+      }
+    };
+  }, [typingState.isTyping]);
+
+  useEffect(() => {
+    const messageValues = Array.from(sseMessages.values());
+
+    // Get the latest message to check if it's streaming
+    const latestMessage = messageValues[messageValues.length - 1];
+
+    if (
+      latestMessage &&
+      latestMessage.type === "text" &&
+      typingState.isTyping
+    ) {
+      setTypingState((prev) => ({ ...prev, isTyping: false }));
+      setIntervalValue(null);
+    }
+
+    if (
+      latestMessage &&
+      (latestMessage.type === "text" || latestMessage.type === "thinking")
+    ) {
+      const streamingMessages = getGroupedMessages(
+        messageValues.filter((message) => message.id === latestMessage.id),
+      );
+
+      const staticMessages = getGroupedMessages(
+        messageValues.filter((message) => message.id !== latestMessage.id),
+      );
+
+      setStream(
+        Object.values(streamingMessages)
+          .map(formatMessage)
+          .filter((message) => message !== undefined)[0],
+      );
+
+      setOutput(
+        Object.values(staticMessages)
+          .map(formatMessage)
+          .filter((message) => message !== undefined),
+      );
+    } else {
+      const groupedMessages = getGroupedMessages(messageValues);
+
+      setOutput(
+        Object.values(groupedMessages)
+          .map(formatMessage)
+          .filter((message) => message !== undefined),
+      );
+
+      setStream(undefined);
+    }
+
+    if (
+      latestMessage &&
+      (latestMessage.type === "finish" || latestMessage.type === "error")
+    ) {
+      setTypingState((prev) => ({ ...prev, isTyping: false }));
+      setIntervalValue(null);
+    }
+  }, [
+    sseMessages,
+    typingState.isTyping,
+    interval,
+    setTypingState,
+    setIntervalValue,
+  ]);
+
+  return (
+    <Box flexDirection="column" flexShrink={0}>
+      <Static
+        key={staticKey}
+        items={[
+          {
+            type: "header",
+            id: "atlas-header",
+            content: "",
+          } as unknown as OutputEntry,
+          ...output,
+        ].map((entry) => {
+          if (entry.type === "header") {
+            return <Header key="header" />;
+          }
+
+          if (entry.type === "request") {
+            return (
+              <Box
+                key={entry.id}
+                flexShrink={0}
+                paddingX={2}
+                flexDirection="column"
+              >
+                <Box height={1} />
+                <MessageHeader
+                  author={entry.author}
+                  date={entry.timestamp}
+                  authorColor="green"
+                />
+
+                <ChatMessage
+                  message={entry.content}
+                  author={entry.author}
+                  authorColor="green"
+                  date={entry.timestamp}
+                  fixedHeight
+                />
+              </Box>
+            );
+          }
+
+          // response
+          if (entry.type === "text") {
+            return (
+              <Box
+                key={entry.id}
+                flexShrink={0}
+                paddingX={2}
+                flexDirection="column"
+              >
+                <Box height={1} />
+                <MessageHeader
+                  author="Atlas"
+                  date={entry.timestamp}
+                  authorColor="blue"
+                />
+
+                <ChatMessage
+                  message={entry.content}
+                  author={entry.author}
+                  authorColor="blue"
+                  date={entry.timestamp}
+                  fixedHeight
+                />
+              </Box>
+            );
+          }
+
+          if (entry.type === "thinking") {
+            return (
+              <Box
+                key={entry.id}
+                flexShrink={0}
+                paddingX={2}
+                flexDirection="column"
+              >
+                <Box height={1} />
+                <ChatMessage
+                  message={entry.content}
+                  hideHeader
+                  dimColor
+                  fixedHeight
+                  showCollapsible
+                />
+              </Box>
+            );
+          }
+
+          if (entry.type === "tool_call" || entry.type === "tool_result") {
+            return (
+              <Box
+                key={entry.id}
+                flexShrink={0}
+                paddingX={2}
+                flexDirection="column"
+              >
+                <Box height={1} />
+                <ChatMessage
+                  message={entry.content}
+                  dimColor
+                  showCollapsible
+                  hideHeader
+                  fixedHeight
+                />
+              </Box>
+            );
+          }
+
+          if (entry.type === "error") {
+            return (
+              <Box
+                key={entry.id}
+                flexShrink={0}
+                paddingX={2}
+                flexDirection="column"
+              >
+                <Box height={1} />
+                <ChatMessage
+                  message={entry.content}
+                  hideHeader
+                  author="Error"
+                  authorColor="red"
+                  date={entry.timestamp}
+                  fixedHeight
+                  showCollapsible
+                />
+              </Box>
+            );
+          }
+
+          return null;
+        })}
+      >
+        {(item) => item}
+      </Static>
+
+      <Stream value={stream} />
+
+      {/* Typing indicator */}
+      {typingState.isTyping && (
+        <Box paddingX={1} paddingTop={1}>
+          <Spinner
+            label={`${typingState.message || "Thinking..."} (${typingState.elapsedSeconds}s)`}
+          />
+        </Box>
+      )}
+    </Box>
+  );
 };

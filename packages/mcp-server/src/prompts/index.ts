@@ -26,10 +26,14 @@ import { registerSessionDescribePrompt } from "./session/describe.ts";
 // Import signals prompts
 import { registerSignalListPrompt } from "./signal/list.ts";
 import { registerSignalDescribePrompt } from "./signal/describe.ts";
+import { registerSignalTriggerPrompt } from "./signal/trigger.ts";
 
 // Import workspace prompts
 import { registerWorkspaceListPrompt } from "./workspace/list.ts";
 import { registerWorkspaceDescribePrompt } from "./workspace/describe.ts";
+
+// Import system prompts
+import { registerSystemVersionPrompt } from "./platform/version.ts";
 
 /**
  * Register all prompts with the MCP server
@@ -58,10 +62,14 @@ export function registerPrompts(
   // Signals prompts
   registerSignalListPrompt(server, context);
   registerSignalDescribePrompt(server, context);
+  registerSignalTriggerPrompt(server, context);
 
   // Workspace prompts
   registerWorkspaceListPrompt(server, context);
   registerWorkspaceDescribePrompt(server, context);
+
+  // System
+  registerSystemVersionPrompt(server, context);
 
   context.logger.info("Registered all prompts with MCP server");
 }

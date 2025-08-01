@@ -1,5 +1,4 @@
 export * from "./types.ts";
-export * from "./commands.tsx";
 export * from "./registry.ts";
 export { SignalDetailsWithPath } from "./signal-details-with-path.tsx";
 export { JobDetailsWithPath } from "./job-details-with-path.tsx";

@@ -1,13 +1,15 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Box, Text } from "ink";
-import { Spinner } from "@inkjs/ui";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useStdout } from "ink";
+
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
 import { getAtlasDaemonUrl } from "@atlas/tools";
-import { OutputEntry } from "../modules/conversation/index.ts";
-import { ChatMessage } from "../components/chat-message.tsx";
+import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
+import { getAtlasClient } from "@atlas/client";
+
+import ansiEscapes from "ansi-escapes";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -29,14 +31,12 @@ interface TypingState {
 }
 
 interface AppContextType {
-  isLeaderKeyActive: boolean;
-  setLeaderKeyActive: (active: boolean) => void;
+  isCollapsed: boolean;
+  setIsCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
   config: AtlasConfig;
   updateConfig: (newConfig: AtlasConfig) => void;
   mcpClient: Client | null;
   initializeMcpClient: () => Promise<void>;
-  outputBuffer: OutputEntry[];
-  setOutputBuffer: React.Dispatch<React.SetStateAction<OutputEntry[]>>;
   conversationClient: ConversationClient | null;
   setConversationClient: React.Dispatch<
     React.SetStateAction<ConversationClient | null>
@@ -48,6 +48,10 @@ interface AppContextType {
   setTypingState: React.Dispatch<React.SetStateAction<TypingState>>;
   isInitializing: boolean;
   exitApp: () => Promise<void>;
+  sendDiagnostics: () => Promise<void>;
+  diagnosticsStatus: "idle" | "collecting" | "uploading" | "done" | string;
+  daemonStatus: "healthy" | "unhealthy" | "error" | "idle";
+  setDaemonStatus: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -57,7 +61,7 @@ interface AppProviderProps {
 }
 
 export const AppProvider = ({ children }: AppProviderProps) => {
-  const [isLeaderKeyActive, setIsLeaderKeyActive] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [config, setConfig] = useState<AtlasConfig>({
     apiKey: "",
     daemonPort: "8080",
@@ -70,8 +74,6 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   });
   const [mcpClient, setMcpClient] = useState<Client | null>(null);
 
-  // Conversation state from conversation component
-  const [outputBuffer, setOutputBuffer] = useState<OutputEntry[]>([]);
   const [conversationClient, setConversationClient] = useState<ConversationClient | null>(null);
   const [conversationSessionId, setConversationSessionId] = useState<
     string | null
@@ -83,7 +85,14 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   });
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
-  const timerIntervalRef = useRef<number | null>(null);
+  const [daemonStatus, setDaemonStatusState] = useState<
+    "healthy" | "unhealthy" | "error" | "idle"
+  >("idle");
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<
+    "idle" | "collecting" | "uploading" | "done" | string
+  >("idle");
+
+  // const timerIntervalRef = useRef<number | null>(null);
 
   // Store transport reference for cleanup
   const mcpTransportRef = useRef<StreamableHTTPClientTransport | null>(null);
@@ -117,42 +126,38 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   }, [config]);
 
   // Timer effect for non-streaming mode
-  useEffect(() => {
-    if (typingState.isTyping && !config.streamMessages) {
-      const startTime = Date.now();
-      setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
+  // useEffect(() => {
+  //   if (typingState.isTyping && !config.streamMessages) {
+  //     const startTime = Date.now();
+  //     setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
 
-      const interval = setInterval(() => {
-        const now = Date.now();
-        const elapsed = Math.floor((now - startTime) / 1000);
-        setTypingState((prev) => ({ ...prev, elapsedSeconds: elapsed }));
-      }, 1000);
+  //     const interval = setInterval(() => {
+  //       const now = Date.now();
+  //       const elapsed = Math.floor((now - startTime) / 1000);
+  //       setTypingState((prev) => ({ ...prev, elapsedSeconds: elapsed }));
+  //     }, 1000);
 
-      timerIntervalRef.current = interval;
+  //     timerIntervalRef.current = interval;
 
-      return () => {
-        if (timerIntervalRef.current) {
-          clearInterval(timerIntervalRef.current);
-          timerIntervalRef.current = null;
-        }
-      };
-    } else if (!typingState.isTyping) {
-      // Clean up timer when typing stops
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-        timerIntervalRef.current = null;
-      }
-      setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
-    }
-  }, [typingState.isTyping, config.streamMessages]);
+  //     return () => {
+  //       if (timerIntervalRef.current) {
+  //         clearInterval(timerIntervalRef.current);
+  //         timerIntervalRef.current = null;
+  //       }
+  //     };
+  //   } else if (!typingState.isTyping) {
+  //     // Clean up timer when typing stops
+  //     if (timerIntervalRef.current) {
+  //       clearInterval(timerIntervalRef.current);
+  //       timerIntervalRef.current = null;
+  //     }
+  //     setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
+  //   }
+  // }, [typingState.isTyping, config.streamMessages]);
 
   useEffect(() => {
     initializeSystem();
   }, []);
-
-  const setLeaderKeyActive = (active: boolean) => {
-    setIsLeaderKeyActive(active);
-  };
 
   const updateConfig = (newConfig: AtlasConfig) => {
     setConfig(newConfig);
@@ -184,25 +189,12 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       return;
     }
 
-    setOutputBuffer([]);
     setIsInitializing(true);
     setHasInitialized(true);
 
     try {
       // Try to connect to daemon - this will auto-start it if needed
       const client = getDaemonClient();
-
-      // Show loading state
-      setOutputBuffer([
-        {
-          id: `loading-${Date.now()}`,
-          component: (
-            <Box paddingLeft={1}>
-              <Spinner label="Loading..." />
-            </Box>
-          ),
-        },
-      ]);
 
       // Try to list workspaces - this will trigger auto-start if needed
       await client.listWorkspaces();
@@ -232,71 +224,95 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setIsInitializing(false);
       }
 
-      // Replace loading state with welcome message
-      const welcomeTimestamp = new Date()
-        .toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
-        })
-        .toLowerCase()
-        .replace(/\s/g, "");
-
-      setOutputBuffer([
-        {
-          id: `welcome-${Date.now()}`,
-          component: (
-            <ChatMessage
-              author="Atlas"
-              date={welcomeTimestamp}
-              message={`How can I help you today? Here are some options to get started:
-- "Tell me about the features in Atlas"
-- "Create a new workspace called..."
-- "Show me any available Workspaces that I can use right now"`}
-              authorColor="blue"
-            />
-          ),
-        },
-      ]);
-
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
     } catch (error) {
       // Clear any loading messages and show error
       const errorMessage = error instanceof Error ? error.message : String(error);
 
-      // Check if the error message already has helpful instructions
-      const hasInstructions = errorMessage.includes("atlas service start");
+      console.error(`Failed to start Atlas daemon: ${errorMessage}`);
 
-      setOutputBuffer([
-        {
-          id: `daemon-error-${Date.now()}`,
-          component: (
-            <Box flexDirection="column" marginBottom={1} paddingLeft={1}>
-              <Text color="red">
-                {errorMessage}
-              </Text>
-              {!hasInstructions && (
-                <Text dimColor>Try running `atlas service start` manually.</Text>
-              )}
-            </Box>
-          ),
-        },
-      ]);
       setIsInitializing(false);
     }
+  };
+
+  const setDaemonStatus = async () => {
+    try {
+      // Use getAtlasClient for consistent behavior, but with a short timeout
+      const client = getAtlasClient({ timeout: 1000 }); // 1 second timeout for status check
+      const isHealthy = await client.isHealthy();
+
+      if (isHealthy) {
+        setDaemonStatusState("healthy");
+      } else {
+        setDaemonStatusState("unhealthy");
+      }
+    } catch (_error) {
+      setDaemonStatusState("error");
+    }
+
+    setTimeout(() => {
+      setDaemonStatusState("idle");
+    }, 5000);
+  };
+
+  const sendDiagnostics = async () => {
+    let gzipPath: string | undefined;
+
+    try {
+      // Collect diagnostics
+      const collector = new DiagnosticsCollector();
+      gzipPath = await collector.collectAndArchive();
+
+      // Check size
+      const fileInfo = await Deno.stat(gzipPath);
+      if (fileInfo.size > 100 * 1024 * 1024) {
+        // 100MB
+        throw new Error(
+          "Diagnostic archive too large (>100MB). Please contact support.",
+        );
+      }
+
+      setDiagnosticsStatus("uploading");
+
+      // Upload via client
+      const client = getAtlasClient();
+      await client.sendDiagnostics(gzipPath);
+
+      // Clean up temp file
+      await Deno.remove(gzipPath).catch(() => {}); // Ignore cleanup errors
+
+      setDiagnosticsStatus("done");
+      // setMessage("Diagnostics sent successfully!");
+
+      // Complete after showing success for a moment
+      setTimeout(() => {
+        setDiagnosticsStatus("done");
+      }, 2000);
+    } catch (err) {
+      setDiagnosticsStatus(err instanceof Error ? err.message : String(err));
+
+      // Try to clean up on error too
+      if (gzipPath) {
+        await Deno.remove(gzipPath).catch(() => {});
+      }
+    }
+
+    // Complete after showing error for a moment
+    setTimeout(() => {
+      setDiagnosticsStatus("idle");
+    }, 5000);
   };
 
   return (
     <AppContext.Provider
       value={{
-        isLeaderKeyActive,
-        setLeaderKeyActive,
+        isCollapsed,
+        setIsCollapsed,
         config,
         updateConfig,
         mcpClient,
         initializeMcpClient,
-        outputBuffer,
-        setOutputBuffer,
         conversationClient,
         setConversationClient,
         conversationSessionId,
@@ -306,6 +322,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setTypingState,
         isInitializing,
         exitApp,
+        sendDiagnostics,
+        diagnosticsStatus,
+        daemonStatus,
+        setDaemonStatus,
       }}
     >
       {children}

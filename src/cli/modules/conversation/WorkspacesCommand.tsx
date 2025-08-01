@@ -1,22 +1,11 @@
-import { Box, Text } from "ink";
 import { WorkspaceSelection } from "./workspace-selection.tsx";
-import { useAppContext } from "../../contexts/app-context.tsx";
 import { getDaemonClient } from "../../utils/daemon-client.ts";
-import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
-import { OutputEntry } from "./index.ts";
 
 interface WorkspacesCommandProps {
   onComplete: (selectedWorkspace?: string) => void;
 }
 
 export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
-  const { setOutputBuffer } = useAppContext();
-  const dimensions = useResponsiveDimensions({ minHeight: 24, padding: 1 });
-
-  const addOutputEntry = (entry: OutputEntry) => {
-    setOutputBuffer((prev) => [...prev, entry]);
-  };
-
   const getWorkspaceById = async (workspaceId: string) => {
     try {
       const client = getDaemonClient();
@@ -30,23 +19,22 @@ export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
     // Handle special "none" case to exit workspace
     if (workspaceId === "none") {
       // Add workspace exit message to output buffer
-      const terminalWidth = dimensions.paddedWidth;
-      const messageText = ` Exited workspace `;
-      const totalDashes = Math.max(0, terminalWidth - messageText.length);
-      const leftDashes = Math.floor(totalDashes / 2);
-      const rightDashes = totalDashes - leftDashes;
-      const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+      // const terminalWidth = dimensions.paddedWidth;
+      // const messageText = ` Exited workspace `;
+      // const totalDashes = Math.max(0, terminalWidth - messageText.length);
+      // const leftDashes = Math.floor(totalDashes / 2);
+      // const rightDashes = totalDashes - leftDashes;
+      // const formattedMessage =
+      //   "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
 
-      addOutputEntry({
-        id: `workspace-exited-${Date.now()}`,
-        component: (
-          <Box width={terminalWidth}>
-            <Text dimColor>{formattedMessage}</Text>
-          </Box>
-        ),
-      });
-
-      // Call onComplete without a workspace to clear selection
+      // addOutputEntry({
+      //   id: `workspace-exited-${Date.now()}`,
+      //   component: (
+      //     <Box width={terminalWidth}>
+      //       <Text dimColor>{formattedMessage}</Text>
+      //     </Box>
+      //   ),
+      // });
       onComplete();
       return;
     }
@@ -55,35 +43,30 @@ export function WorkspacesCommand({ onComplete }: WorkspacesCommandProps) {
       const workspace = await getWorkspaceById(workspaceId);
       if (workspace) {
         // Add workspace selection message to output buffer
-        const workspaceName = workspace.name;
-        const terminalWidth = dimensions.paddedWidth;
-        const messageText = ` Entered: ${workspaceName} `;
-        const totalDashes = Math.max(0, terminalWidth - messageText.length);
-        const leftDashes = Math.floor(totalDashes / 2);
-        const rightDashes = totalDashes - leftDashes;
-        const formattedMessage = "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
+        // const workspaceName = workspace.name;
+        // const terminalWidth = dimensions.paddedWidth;
+        // const messageText = ` Entered: ${workspaceName} `;
+        // const totalDashes = Math.max(0, terminalWidth - messageText.length);
+        // const leftDashes = Math.floor(totalDashes / 2);
+        // const rightDashes = totalDashes - leftDashes;
+        // const formattedMessage =
+        //   "─".repeat(leftDashes) + messageText + "─".repeat(rightDashes);
 
-        addOutputEntry({
-          id: `workspace-selected-${Date.now()}`,
-          component: (
-            <Box width={terminalWidth}>
-              <Text dimColor>{formattedMessage}</Text>
-            </Box>
-          ),
-        });
+        // @TODO update when workspace command is back
+        // addOutputEntry({
+        //   id: `workspace-selected-${Date.now()}`,
+        //   component: (
+        //     <Box width={terminalWidth}>
+        //       <Text dimColor>{formattedMessage}</Text>
+        //     </Box>
+        //   ),
+        // });
 
         onComplete(workspace.name);
         return;
       }
     } catch (error) {
-      addOutputEntry({
-        id: `workspace-error-${Date.now()}`,
-        component: (
-          <Text color="red">
-            Error selecting workspace: {error instanceof Error ? error.message : String(error)}
-          </Text>
-        ),
-      });
+      console.error(error);
     }
 
     onComplete();
