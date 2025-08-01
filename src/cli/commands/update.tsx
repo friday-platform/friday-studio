@@ -280,11 +280,14 @@ async function performUpdate(params: {
       successOutput("Binary test passed");
     }
 
-    // Stop service if running
+    // Check for all running atlas processes (service-managed and manually started)
     const daemonStatus = await checkDaemonStatus();
-    if (daemonStatus.running) {
+    const anyAtlasRunning = await checkAnyAtlasProcesses();
+
+    // Stop all atlas processes
+    if (anyAtlasRunning || daemonStatus.running) {
       if (!quiet) {
-        infoOutput("Stopping Atlas service...");
+        infoOutput("Stopping all Atlas processes...");
       }
 
       if (daemonStatus.activeSessions > 0 && !force) {
@@ -304,11 +307,19 @@ async function performUpdate(params: {
         }
       }
 
-      // Stop service
-      const stopCmd = new Deno.Command("atlas", {
-        args: ["service", "stop"],
-      });
-      await stopCmd.output();
+      // Stop service-managed daemon first
+      if (daemonStatus.running) {
+        const stopCmd = new Deno.Command("atlas", {
+          args: ["service", "stop"],
+        });
+        await stopCmd.output();
+      }
+
+      // Kill any remaining atlas processes (manually started daemons)
+      await killAllAtlasProcesses(platform.platform, quiet);
+
+      // Wait a moment for processes to fully terminate
+      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     // Replace binary
@@ -322,19 +333,23 @@ async function performUpdate(params: {
       successOutput("Update installed");
     }
 
-    // Restart service if it was running
-    if (daemonStatus.running) {
+    // Always start the service after update
+    if (!quiet) {
+      infoOutput("Starting Atlas service...");
+    }
+
+    const startCmd = new Deno.Command("atlas", {
+      args: ["service", "start", "--wait"],
+    });
+    const startResult = await startCmd.output();
+
+    if (!startResult.success) {
+      warningOutput("Failed to start Atlas service automatically");
+      infoOutput("Please run 'atlas service start' manually");
+    } else {
       if (!quiet) {
-        infoOutput("Restarting Atlas service...");
+        successOutput("Atlas service started successfully");
       }
-
-      const startCmd = new Deno.Command("atlas", {
-        args: ["service", "start"],
-      });
-      await startCmd.output();
-
-      // Wait for service to be ready
-      await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
     return {
@@ -689,4 +704,116 @@ async function saveChannelPreference(channel: string): Promise<void> {
   // Write config
   await ensureDir(join(Deno.env.get("HOME") || "", ".atlas"));
   await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2));
+}
+
+async function checkAnyAtlasProcesses(): Promise<boolean> {
+  // Check if any atlas daemon processes are running (beyond what checkDaemonStatus found)
+  // This catches manually started instances that might be on custom ports or not responding
+
+  if (Deno.build.os !== "windows") {
+    try {
+      // First try pgrep for atlas daemon processes
+      const result = await new Deno.Command("pgrep", {
+        args: ["-f", "atlas.*daemon.*start"],
+      }).output();
+
+      if (result.success && result.stdout.length > 0) {
+        return true;
+      }
+    } catch {
+      // pgrep not available, fall back to ps
+      try {
+        const result = await new Deno.Command("ps", {
+          args: ["aux"],
+        }).output();
+        const output = new TextDecoder().decode(result.stdout);
+        return output.includes("atlas") && output.includes("daemon") && output.includes("start");
+      } catch {
+        // Unable to check processes
+      }
+    }
+  } else {
+    // Windows: check for atlas.exe processes
+    try {
+      const result = await new Deno.Command("tasklist", {
+        args: ["/FI", "IMAGENAME eq atlas.exe"],
+      }).output();
+      const output = new TextDecoder().decode(result.stdout);
+      return output.includes("atlas.exe");
+    } catch {
+      // Unable to check processes
+    }
+  }
+
+  return false;
+}
+
+async function killAllAtlasProcesses(platform: string, quiet: boolean): Promise<void> {
+  if (platform === "windows") {
+    // On Windows, use taskkill
+    try {
+      const result = await new Deno.Command("taskkill", {
+        args: ["/F", "/IM", "atlas.exe"],
+      }).output();
+      if (!result.success && !quiet) {
+        const stderr = new TextDecoder().decode(result.stderr);
+        if (!stderr.includes("not found")) {
+          warningOutput(`Failed to kill atlas processes: ${stderr}`);
+        }
+      }
+    } catch {
+      // taskkill not available or failed
+    }
+  } else {
+    // On Unix-like systems, use pkill or kill
+    try {
+      // First try pkill
+      const pkillResult = await new Deno.Command("pkill", {
+        args: ["-f", "atlas.*daemon.*start"],
+      }).output();
+
+      // Also try to kill any deno processes running atlas
+      await new Deno.Command("pkill", {
+        args: ["-f", "deno.*atlas.*daemon.*start"],
+      }).output();
+
+      if (!pkillResult.success && !quiet) {
+        // pkill exit code 1 means no processes found, which is OK
+        const exitCode = pkillResult.code;
+        if (exitCode !== 1) {
+          warningOutput(`pkill returned exit code ${exitCode}`);
+        }
+      }
+    } catch {
+      // pkill not available, try using ps and kill
+      try {
+        const psResult = await new Deno.Command("ps", {
+          args: ["aux"],
+        }).output();
+
+        const output = new TextDecoder().decode(psResult.stdout);
+        const lines = output.split("\n");
+
+        for (const line of lines) {
+          if (line.includes("atlas") && line.includes("daemon") && line.includes("start")) {
+            const parts = line.trim().split(/\s+/);
+            const pid = parts[1];
+            if (pid && /^\d+$/.test(pid)) {
+              try {
+                await new Deno.Command("kill", {
+                  args: ["-9", pid],
+                }).output();
+              } catch {
+                // Failed to kill this process, continue with others
+              }
+            }
+          }
+        }
+      } catch {
+        if (!quiet) {
+          warningOutput("Unable to kill atlas processes automatically");
+        }
+      }
+    }
+  }
 }
