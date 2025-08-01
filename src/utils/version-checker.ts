@@ -5,6 +5,7 @@
 
 import { getVersionInfo } from "./version.ts";
 import { ensureDir, existsSync } from "@std/fs";
+import { getAtlasBaseUrl } from "@atlas/core";
 
 export interface VersionResponse {
   channel: string;
@@ -183,7 +184,7 @@ async function fetchLatestVersion(
 ): Promise<VersionResponse | null> {
   try {
     const response = await fetch(
-      `https://atlas.tempestdx.com/version/${channel}`,
+      `${getAtlasBaseUrl()}/version/${channel}`,
       {
         method: "GET",
         headers: {
@@ -299,4 +300,80 @@ export async function checkAndDisplayUpdate(): Promise<void> {
   }
 
   // Silently ignore errors to avoid disrupting CLI usage
+}
+
+export interface UpdateInfo {
+  updateAvailable: boolean;
+  latestVersion?: string;
+  currentVersion: string;
+  downloadUrl?: string;
+}
+
+/**
+ * Check for updates and return download URL for update command
+ */
+export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
+  const versionInfo = getVersionInfo();
+  const currentVersion = versionInfo.version;
+
+  // Determine channel
+  if (!channel) {
+    channel = versionInfo.isNightly ? "nightly" : versionInfo.isDev ? "edge" : "edge";
+  }
+
+  try {
+    const serverResponse = await fetchLatestVersion(channel);
+    if (!serverResponse) {
+      return {
+        updateAvailable: false,
+        currentVersion,
+      };
+    }
+
+    const latestVersion = serverResponse.latest.version;
+
+    // For dev builds, always show update available to release channels
+    const hasUpdate = versionInfo.isDev ? true : isVersionOlder(currentVersion, latestVersion);
+
+    // Build download URL for current platform
+    const platform = Deno.build.os === "darwin"
+      ? "darwin"
+      : Deno.build.os === "linux"
+      ? "linux"
+      : "windows";
+    const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
+    const platformKey = `${platform}_${arch}`;
+
+    const platformData = serverResponse.platforms[platformKey] as { download_url?: string };
+    let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
+
+    // Remove .sha256 extension if present (API might return checksum URL)
+    if (downloadUrl?.endsWith(".sha256")) {
+      downloadUrl = downloadUrl.replace(/\.sha256$/, "");
+    }
+
+    // Adjust download URL for binary-only packages (not installers)
+    if (platform === "darwin" && downloadUrl?.endsWith(".zip")) {
+      downloadUrl = downloadUrl.replace(/\.zip$/, ".tar.gz");
+    } else if (platform === "windows" && downloadUrl?.endsWith(".exe")) {
+      downloadUrl = downloadUrl.replace(/\.exe$/, ".zip");
+    }
+
+    // Make URL absolute
+    if (downloadUrl && !downloadUrl.startsWith("http")) {
+      downloadUrl = `${getAtlasBaseUrl()}${downloadUrl}`;
+    }
+
+    return {
+      updateAvailable: hasUpdate,
+      currentVersion,
+      latestVersion,
+      downloadUrl,
+    };
+  } catch {
+    return {
+      updateAvailable: false,
+      currentVersion,
+    };
+  }
 }

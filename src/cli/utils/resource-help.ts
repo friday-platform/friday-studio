@@ -268,7 +268,33 @@ you're running the latest version with all features and fixes.`,
       "Show current version: atlas version",
       "Check for updates: atlas version --remote",
     ],
-    seeAlso: ["daemon"],
+    seeAlso: ["update", "daemon"],
+  },
+
+  update: {
+    overview: `
+Update Atlas to the latest version. Handles binary replacement, checksum
+verification, and daemon restart automatically.`,
+    concepts: `
+Key Concepts:
+  • Channel Support: Update from stable, edge, or nightly channels
+  • Checksum Verification: SHA256 validation before installation
+  • Permission Handling: Automatic sudo elevation when needed
+  • Daemon Coordination: Graceful restart with session preservation`,
+    commonTasks: [
+      "Update to latest version: atlas update",
+      "Check for updates only: atlas update --check",
+      "Non-interactive update: atlas update --quiet",
+      "Force update with active sessions: atlas update --force",
+      "Switch to edge channel: atlas update --channel edge",
+    ],
+    troubleshooting: [
+      "Permission denied: Update requires sudo for system-wide installation",
+      "Windows file locked: Close all Atlas processes before updating",
+      "Checksum mismatch: Download corrupted, try again",
+      "Active sessions: Use --force to update with running sessions",
+    ],
+    seeAlso: ["version", "daemon"],
   },
 };
 

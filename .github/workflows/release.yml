@@ -108,6 +108,9 @@ jobs:
 
           if [ "${{ matrix.platform }}" == "windows" ]; then
             7z a "./dist/${archive_name}" "./dist/${binary_name}" README.md
+          elif [ "${{ matrix.platform }}" == "darwin" ]; then
+            # Use pax format to preserve extended attributes (including code signatures)
+            tar --format=pax -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           else
             tar -czf "./dist/${archive_name}" -C ./dist "${binary_name}" -C .. README.md
           fi

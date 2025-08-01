@@ -1,0 +1,692 @@
+import { logger } from "@atlas/logger";
+import { getAtlasClient } from "@atlas/client";
+import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
+import { getAtlasVersion } from "../../utils/version.ts";
+import { checkForUpdate } from "../../utils/version-checker.ts";
+import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
+import { YargsInstance } from "../utils/yargs.ts";
+
+interface UpdateOptions {
+  check?: boolean;
+  quiet?: boolean;
+  force?: boolean;
+  channel?: string;
+}
+
+interface UpdateResult {
+  success: boolean;
+  fromVersion: string;
+  toVersion: string;
+  error?: string;
+}
+
+export const command = "update";
+export const desc = "Update Atlas to the latest version";
+
+export const builder = (yargs: YargsInstance) => {
+  return yargs
+    .option("check", {
+      alias: "c",
+      describe: "Check for updates only",
+      type: "boolean",
+      default: false,
+    })
+    .option("quiet", {
+      alias: "q",
+      describe: "Non-interactive update (use defaults)",
+      type: "boolean",
+      default: false,
+    })
+    .option("force", {
+      alias: "f",
+      describe: "Force update even with active sessions",
+      type: "boolean",
+      default: false,
+    })
+    .option("channel", {
+      describe: "Switch to a different channel (stable, edge, nightly)",
+      type: "string",
+      choices: ["stable", "edge", "nightly"],
+    })
+    .example("$0 update", "Update to the latest version")
+    .example("$0 update --check", "Check for updates only")
+    .example("$0 update --quiet", "Update without prompts")
+    .example("$0 update --channel edge", "Switch to edge channel");
+};
+
+export const handler = async (options: UpdateOptions) => {
+  const startTime = Date.now();
+  const currentVersion = getAtlasVersion();
+
+  try {
+    // Determine channel
+    const channel = options.channel || getCurrentChannel(currentVersion);
+
+    // Check for updates
+    if (!options.quiet) {
+      infoOutput("Checking for updates...");
+    }
+    const updateInfo = await checkForUpdate(channel);
+
+    if (!updateInfo.updateAvailable) {
+      successOutput("Atlas is up to date");
+      infoOutput(`Current version: ${currentVersion}`);
+      return;
+    }
+
+    // If check only, display and exit
+    if (options.check) {
+      warningOutput("Update available!");
+      infoOutput(`Current version: ${currentVersion}`);
+      infoOutput(`Latest version:  ${updateInfo.latestVersion}`);
+      console.log("\nRun 'atlas update' to install");
+      return;
+    }
+
+    // Display update information
+    warningOutput("New version available!");
+    infoOutput(`Current: ${currentVersion}`);
+    infoOutput(`Latest:  ${updateInfo.latestVersion}`);
+
+    // Check for active sessions and daemon status
+    const daemonStatus = await checkDaemonStatus();
+
+    if (daemonStatus.running && daemonStatus.activeSessions > 0 && !options.force) {
+      warningOutput(`Atlas daemon has ${daemonStatus.activeSessions} active session(s)`);
+    }
+
+    // Confirm update (unless quiet mode)
+    if (!options.quiet) {
+      const response = prompt("Continue with update [Y/n]?");
+      const confirmed = response === null || response === "" || response.toLowerCase() === "y";
+
+      if (!confirmed) {
+        infoOutput("Update cancelled");
+        return;
+      }
+    }
+
+    // Perform update
+    const result = await performUpdate({
+      currentVersion,
+      targetVersion: updateInfo.latestVersion!,
+      channel,
+      quiet: options.quiet || false,
+      force: options.force || false,
+      downloadUrl: updateInfo.downloadUrl!,
+    });
+
+    // Log update event
+    const duration = Date.now() - startTime;
+    logUpdateEvent({
+      from_version: currentVersion,
+      to_version: result.toVersion,
+      timestamp: new Date(),
+      success: result.success,
+      error: result.error,
+      duration_ms: duration,
+    });
+
+    if (result.success) {
+      successOutput(`Atlas updated to ${result.toVersion}`);
+
+      // If channel was switched, save preference
+      if (options.channel && options.channel !== getCurrentChannel(currentVersion)) {
+        await saveChannelPreference(options.channel);
+        infoOutput(`Switched to ${options.channel} channel`);
+      }
+    } else {
+      errorOutput(`Update failed: ${result.error}`);
+      Deno.exit(1);
+    }
+  } catch (error) {
+    errorOutput(`Update failed: ${error.message}`);
+    Deno.exit(1);
+  }
+};
+
+function getCurrentChannel(version: string): string {
+  // Parse channel from version string
+  if (version.includes("edge")) return "edge";
+  if (version.includes("nightly")) return "nightly";
+  return "stable";
+}
+
+async function checkDaemonStatus(): Promise<{ running: boolean; activeSessions: number }> {
+  try {
+    const client = await getAtlasClient();
+    const isHealthy = await client.isHealthy();
+
+    if (isHealthy) {
+      const status = await client.getDaemonStatus();
+      return {
+        running: true,
+        activeSessions: status.workspaceSessions || 0,
+      };
+    }
+  } catch {
+    // Daemon not running
+  }
+
+  return { running: false, activeSessions: 0 };
+}
+
+async function performUpdate(params: {
+  currentVersion: string;
+  targetVersion: string;
+  channel: string;
+  quiet: boolean;
+  force: boolean;
+  downloadUrl: string;
+}): Promise<UpdateResult> {
+  const { currentVersion, targetVersion, quiet, force, downloadUrl } = params;
+
+  // Create update directory
+  const updateDir = join(Deno.env.get("HOME") || "", ".atlas", "updates");
+
+  try {
+    // Check platform
+    const platform = getPlatformInfo();
+
+    // Check write permissions
+    const permissionCheck = await checkBinaryWritePermission();
+
+    if (!permissionCheck.canWrite && !permissionCheck.needsSudo) {
+      throw new Error(`Cannot write to binary location: ${permissionCheck.binaryPath}`);
+    }
+
+    // Handle Windows file locking
+    if (platform.platform === "windows") {
+      const isAtlasRunning = await checkIfAtlasIsRunning();
+      if (isAtlasRunning) {
+        throw new Error(
+          "Atlas appears to be running on Windows.\n" +
+            "Please close all Atlas processes before updating:\n" +
+            "  1. Run 'atlas daemon stop' to stop the daemon\n" +
+            "  2. Close any Atlas terminal windows\n" +
+            "  3. Run 'atlas update' again",
+        );
+      }
+    }
+
+    // Ensure update directory exists
+    await ensureDir(updateDir);
+
+    // Download new binary
+    const downloadPath = join(
+      updateDir,
+      `atlas-${targetVersion}-${platform.platform}-${platform.arch}`,
+    );
+
+    if (!quiet) {
+      infoOutput("Downloading update...");
+    }
+
+    await downloadBinary({
+      url: downloadUrl,
+      destination: downloadPath,
+      onProgress: quiet ? undefined : (bytes, total) => {
+        const percent = Math.round((bytes / total) * 100);
+        const mb = (bytes / 1024 / 1024).toFixed(1);
+        const totalMb = (total / 1024 / 1024).toFixed(1);
+
+        // Create progress bar
+        const barLength = 40;
+        const filledLength = Math.round((barLength * percent) / 100);
+        const bar = "█".repeat(filledLength) + "░".repeat(barLength - filledLength);
+
+        // Clear line and redraw progress bar
+        Deno.stdout.writeSync(
+          new TextEncoder().encode(`\r  ${bar} ${percent}% (${mb}/${totalMb} MB)`),
+        );
+      },
+    });
+
+    if (!quiet) {
+      // Add newline after progress bar
+      console.log();
+      successOutput("Download complete");
+    }
+
+    // Verify checksum
+    if (!quiet) {
+      infoOutput("Verifying checksum...");
+    }
+
+    const checksumValid = await downloadAndVerifyChecksum(downloadUrl, downloadPath);
+    if (!checksumValid) {
+      throw new Error("Checksum verification failed");
+    }
+
+    if (!quiet) {
+      successOutput("Checksum verified");
+    }
+
+    // Extract binary
+    const extractedBinaryPath = await extractBinary(downloadPath, platform.platform);
+
+    // Test new binary
+    if (!quiet) {
+      infoOutput("Testing new binary...");
+    }
+
+    const testResult = await testNewBinary(extractedBinaryPath);
+    if (!testResult.success) {
+      throw new Error(`New binary test failed: ${testResult.error}`);
+    }
+
+    if (!quiet) {
+      successOutput("Binary test passed");
+    }
+
+    // Stop service if running
+    const daemonStatus = await checkDaemonStatus();
+    if (daemonStatus.running) {
+      if (!quiet) {
+        infoOutput("Stopping Atlas service...");
+      }
+
+      if (daemonStatus.activeSessions > 0 && !force) {
+        // Wait for sessions to complete (with timeout)
+        const timeout = 5 * 60 * 1000; // 5 minutes
+        const startWait = Date.now();
+
+        while (Date.now() - startWait < timeout) {
+          const current = await checkDaemonStatus();
+          if (!current.running || current.activeSessions === 0) break;
+
+          if (!quiet) {
+            infoOutput(`Waiting for ${current.activeSessions} session(s) to complete...`);
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
+      }
+
+      // Stop service
+      const stopCmd = new Deno.Command("atlas", {
+        args: ["service", "stop"],
+      });
+      await stopCmd.output();
+    }
+
+    // Replace binary
+    if (!quiet) {
+      infoOutput("Installing update...");
+    }
+
+    await replaceBinary(extractedBinaryPath, permissionCheck);
+
+    if (!quiet) {
+      successOutput("Update installed");
+    }
+
+    // Restart service if it was running
+    if (daemonStatus.running) {
+      if (!quiet) {
+        infoOutput("Restarting Atlas service...");
+      }
+
+      const startCmd = new Deno.Command("atlas", {
+        args: ["service", "start"],
+      });
+      await startCmd.output();
+
+      // Wait for service to be ready
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+
+    return {
+      success: true,
+      fromVersion: currentVersion,
+      toVersion: targetVersion,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      fromVersion: currentVersion,
+      toVersion: targetVersion,
+      error: error.message,
+    };
+  } finally {
+    // Always cleanup update directory, even on error
+    try {
+      await Deno.remove(updateDir, { recursive: true });
+    } catch {
+      // Ignore cleanup errors
+    }
+  }
+}
+
+interface PlatformInfo {
+  platform: "darwin" | "linux" | "windows";
+  arch: "amd64" | "arm64";
+}
+
+function getPlatformInfo(): PlatformInfo {
+  const platform = Deno.build.os === "darwin"
+    ? "darwin"
+    : Deno.build.os === "linux"
+    ? "linux"
+    : "windows";
+  const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
+  return { platform, arch };
+}
+
+async function checkBinaryWritePermission(): Promise<{
+  canWrite: boolean;
+  needsSudo: boolean;
+  binaryPath: string;
+  owner?: string;
+}> {
+  // Find current binary location
+  const result = await new Deno.Command("which", {
+    args: ["atlas"],
+  }).output();
+
+  if (!result.success) {
+    throw new Error("Atlas binary not found in PATH");
+  }
+
+  const binaryPath = new TextDecoder().decode(result.stdout).trim();
+
+  // Try to write to a test file next to the binary
+  const testPath = `${binaryPath}.update-test`;
+  try {
+    await Deno.writeTextFile(testPath, "test");
+    await Deno.remove(testPath);
+    return { canWrite: true, needsSudo: false, binaryPath };
+  } catch {
+    // Can't write to directory, check if we can overwrite the file itself
+    try {
+      // Check file ownership
+      const statCmd = Deno.build.os === "darwin"
+        ? ["stat", "-f", "%Su", binaryPath]
+        : ["stat", "-c", "%U", binaryPath];
+
+      const ownerResult = await new Deno.Command(statCmd[0], {
+        args: statCmd.slice(1),
+      }).output();
+
+      const owner = new TextDecoder().decode(ownerResult.stdout).trim();
+      const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME");
+
+      if (owner === currentUser) {
+        // We own the file, we should be able to replace it
+        return { canWrite: true, needsSudo: false, binaryPath, owner };
+      }
+
+      // Check if we have sudo access (Unix only)
+      if (Deno.build.os !== "windows") {
+        const sudoCheck = await new Deno.Command("sudo", {
+          args: ["-n", "true"],
+        }).output();
+
+        return {
+          canWrite: false,
+          needsSudo: sudoCheck.success,
+          binaryPath,
+          owner,
+        };
+      }
+
+      return { canWrite: false, needsSudo: false, binaryPath, owner };
+    } catch {
+      return { canWrite: false, needsSudo: false, binaryPath };
+    }
+  }
+}
+
+async function checkIfAtlasIsRunning(): Promise<boolean> {
+  if (Deno.build.os !== "windows") return false;
+
+  try {
+    const result = await new Deno.Command("tasklist", {
+      args: ["/FI", "IMAGENAME eq atlas.exe"],
+    }).output();
+
+    const output = new TextDecoder().decode(result.stdout);
+    return output.includes("atlas.exe");
+  } catch {
+    return false;
+  }
+}
+
+async function downloadBinary(options: {
+  url: string;
+  destination: string;
+  onProgress?: (bytes: number, total: number) => void;
+}): Promise<void> {
+  const response = await fetch(options.url, {
+    redirect: "follow",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
+  }
+
+  // Check if we got HTML instead of binary (login page, error page, etc)
+  const contentType = response.headers.get("content-type");
+  if (contentType?.includes("text/html")) {
+    throw new Error(
+      "Binary download failed: Server returned HTML instead of binary file.\n" +
+        "This usually means authentication is required or the file is not publicly accessible.\n" +
+        "Please contact the Atlas team to resolve this server configuration issue.",
+    );
+  }
+
+  const contentLength = Number(response.headers.get("content-length")) || 0;
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const writer = await Deno.open(options.destination, {
+    write: true,
+    create: true,
+  });
+
+  let receivedBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    await writer.write(value);
+    receivedBytes += value.length;
+
+    if (options.onProgress) {
+      options.onProgress(receivedBytes, contentLength);
+    }
+  }
+
+  writer.close();
+}
+
+async function downloadAndVerifyChecksum(
+  binaryUrl: string,
+  binaryPath: string,
+): Promise<boolean> {
+  // Download checksum file
+  const checksumUrl = `${binaryUrl}.sha256`;
+  const checksumPath = `${binaryPath}.sha256`;
+
+  const checksumResponse = await fetch(checksumUrl);
+  if (!checksumResponse.ok) {
+    warningOutput(`Checksum file not available (${checksumResponse.status})`);
+    warningOutput("Proceeding without checksum verification - use at your own risk");
+    return true; // Skip verification if checksum not available
+  }
+
+  const checksumContent = await checksumResponse.text();
+
+  // Check if we got HTML instead of a checksum (404 page, login redirect, etc)
+  if (checksumContent.trim().startsWith("<") || checksumContent.includes("doctype")) {
+    warningOutput("Checksum file returned HTML content (likely not found)");
+    warningOutput("Proceeding without checksum verification - use at your own risk");
+    return true;
+  }
+
+  await Deno.writeTextFile(checksumPath, checksumContent);
+
+  // Parse expected checksum (format: "hash  filename")
+  const expectedHash = checksumContent.trim().split(/\s+/)[0];
+
+  // Calculate actual checksum of downloaded file
+  const fileData = await Deno.readFile(binaryPath);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", fileData);
+  const actualHash = Array.from(new Uint8Array(hashBuffer))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+
+  // Compare checksums
+  if (actualHash !== expectedHash) {
+    errorOutput("Checksum mismatch!");
+    infoOutput(`Expected: ${expectedHash}`);
+    infoOutput(`Actual:   ${actualHash}`);
+    return false;
+  }
+
+  // Cleanup checksum file
+  await Deno.remove(checksumPath);
+
+  return true;
+}
+
+async function extractBinary(archivePath: string, platform: string): Promise<string> {
+  const tempDir = await Deno.makeTempDir();
+
+  if (platform === "windows") {
+    // Extract from zip
+    const unzipCmd = new Deno.Command("unzip", {
+      args: ["-q", archivePath, "-d", tempDir],
+    });
+    const result = await unzipCmd.output();
+    if (!result.success) {
+      const stderr = new TextDecoder().decode(result.stderr);
+      throw new Error(`Failed to extract zip file: ${stderr}`);
+    }
+    return join(tempDir, "atlas.exe");
+  } else {
+    // Extract from tar.gz (macOS and Linux)
+    const tarCmd = new Deno.Command("tar", {
+      args: ["-xzf", archivePath, "-C", tempDir],
+    });
+    const result = await tarCmd.output();
+    if (!result.success) {
+      const stderr = new TextDecoder().decode(result.stderr);
+      throw new Error(`Failed to extract tar.gz file: ${stderr}`);
+    }
+    return join(tempDir, "atlas");
+  }
+}
+
+async function testNewBinary(binaryPath: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Make binary executable
+    if (Deno.build.os !== "windows") {
+      await Deno.chmod(binaryPath, 0o755);
+    }
+
+    // Test binary execution
+    const cmd = new Deno.Command(binaryPath, {
+      args: ["--version"],
+    });
+
+    const result = await cmd.output();
+
+    if (!result.success) {
+      const stderr = new TextDecoder().decode(result.stderr);
+      return { success: false, error: stderr || "Binary test failed" };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+async function replaceBinary(
+  newBinaryPath: string,
+  permissionCheck: { canWrite: boolean; needsSudo: boolean; binaryPath: string; owner?: string },
+): Promise<void> {
+  const { binaryPath, needsSudo } = permissionCheck;
+
+  if (needsSudo) {
+    // Use sudo to replace binary
+    warningOutput("Update requires elevated permissions");
+    infoOutput(`Binary location: ${binaryPath}`);
+    infoOutput(`Current owner: ${permissionCheck.owner}`);
+
+    const sudoCmd = new Deno.Command("sudo", {
+      args: ["cp", "-f", newBinaryPath, binaryPath],
+      stdin: "inherit",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+
+    const result = await sudoCmd.output();
+    if (!result.success) {
+      throw new Error("Failed to replace binary with sudo");
+    }
+  } else {
+    // Direct replacement
+    await Deno.copyFile(newBinaryPath, binaryPath);
+  }
+
+  // Ensure binary is executable
+  if (Deno.build.os !== "windows") {
+    if (needsSudo) {
+      const chmodCmd = new Deno.Command("sudo", {
+        args: ["chmod", "+x", binaryPath],
+      });
+      await chmodCmd.output();
+    } else {
+      await Deno.chmod(binaryPath, 0o755);
+    }
+  }
+}
+
+function logUpdateEvent(event: {
+  from_version: string;
+  to_version: string;
+  timestamp: Date;
+  success: boolean;
+  error?: string;
+  duration_ms: number;
+}): void {
+  if (event.success) {
+    logger.info("Atlas binary updated successfully", {
+      from_version: event.from_version,
+      to_version: event.to_version,
+      duration_ms: event.duration_ms,
+    });
+  } else {
+    logger.error("Atlas binary update failed", {
+      from_version: event.from_version,
+      to_version: event.to_version,
+      duration_ms: event.duration_ms,
+      error: event.error,
+    });
+  }
+}
+
+async function saveChannelPreference(channel: string): Promise<void> {
+  const configPath = join(Deno.env.get("HOME") || "", ".atlas", "config.json");
+
+  let config: Record<string, unknown> = {};
+
+  // Read existing config if it exists
+  try {
+    const content = await Deno.readTextFile(configPath);
+    config = JSON.parse(content);
+  } catch {
+    // Config doesn't exist yet
+  }
+
+  // Update channel preference
+  config.updateChannel = channel;
+
+  // Write config
+  await ensureDir(join(Deno.env.get("HOME") || "", ".atlas"));
+  await Deno.writeTextFile(configPath, JSON.stringify(config, null, 2));
+}
