@@ -1,6 +1,6 @@
 import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
-import { AtlasLogger } from "@atlas/logger";
+import { logger } from "@atlas/logger";
 
 // Playwright browser download URLs and metadata
 const BROWSER_NAME = "chromium";
@@ -63,7 +63,6 @@ export async function checkAndDownloadBrowsers() {
   const atlasHome = join(Deno.env.get("HOME")!, ".atlas");
   const browsersPath = join(atlasHome, "browsers");
   const browserDir = join(browsersPath, `${BROWSER_NAME}-${BROWSER_REVISION}`);
-  const logger = AtlasLogger.getInstance();
 
   // Check if browser already exists
   if (await exists(browserDir)) {
@@ -118,7 +117,7 @@ export async function checkAndDownloadBrowsers() {
 
     logger.info("Playwright browser downloaded successfully.");
   } catch (error) {
-    logger.error("Failed to download Playwright browser", { error: error.message });
+    logger.error("Failed to download Playwright browser", { error: (error as Error).message });
     // Don't throw - Atlas should still work without browser support
   }
 }

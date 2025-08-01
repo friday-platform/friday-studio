@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { AtlasLogger } from "@atlas/logger";
+import { logger } from "@atlas/logger";
 import { getCredentialsApiUrl } from "./atlas-config.ts";
 
 // JWT payload schema
@@ -100,7 +100,7 @@ export class CredentialFetcher {
 
         // Log expiration if provided
         if (validated.expires_at) {
-          AtlasLogger.getInstance().info(`Credentials expire at: ${validated.expires_at}`);
+          logger.info(`Credentials expire at: ${validated.expires_at}`);
         }
 
         return validated.credentials;
@@ -118,7 +118,7 @@ export class CredentialFetcher {
 
         // Retry on network or server errors
         if (attempt < retries) {
-          AtlasLogger.getInstance().warn(
+          logger.warn(
             `Credential fetch attempt ${attempt + 1} failed, retrying in ${retryDelay}ms...`,
           );
           await new Promise((resolve) => setTimeout(resolve, retryDelay * (attempt + 1)));
