@@ -378,12 +378,7 @@ const WorkspaceAddUI = ({
             </Box>
             <Box marginLeft={2}>
               <Text>
-                • Run <Text color="cyan">atlas tui</Text> to open the interactive interface
-              </Text>
-            </Box>
-            <Box marginLeft={2}>
-              <Text>
-                • Run <Text color="cyan">atlas daemon start</Text> to start the Atlas daemon
+                • Run <Text color="cyan">atlas</Text> to open the interactive interface
               </Text>
             </Box>
           </Box>

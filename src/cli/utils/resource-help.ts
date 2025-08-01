@@ -249,7 +249,6 @@ Key Concepts:
   • Multi-pane Layout: View logs, sessions, and details simultaneously`,
     commonTasks: [
       "Launch interactive mode: atlas or atlas interactive",
-      "Open terminal UI: atlas tui",
       "Navigate with keyboard: Use arrow keys and Enter",
       "Exit interface: Press 'q' or Ctrl+C",
     ],
