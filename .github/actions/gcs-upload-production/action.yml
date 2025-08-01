@@ -63,6 +63,13 @@ runs:
         if ls atlas-*.rpm 1> /dev/null 2>&1; then
           gsutil -m cp atlas-*.rpm gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
         fi
+        # Upload checksum files
+        if ls atlas_*.sha256 1> /dev/null 2>&1; then
+          gsutil -m cp atlas_*.sha256 gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
+        if ls atlas-*.sha256 1> /dev/null 2>&1; then
+          gsutil -m cp atlas-*.sha256 gs://tempest-production-atlas-binaries/${{ inputs.bucket-prefix }}
+        fi
 
         echo "Uploaded ${{ inputs.bucket-prefix }} artifacts to production GCS bucket"
 
