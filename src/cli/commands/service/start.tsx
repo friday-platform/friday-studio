@@ -52,6 +52,12 @@ export const handler = async (argv: StartArgs): Promise<void> => {
     if (argv.wait) {
       infoOutput("Waiting for service to be ready...");
 
+      // On macOS, give launchd extra time to start the process after binary update
+      const platform = serviceManager.getPlatform();
+      if (platform === "macos") {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+
       let attempts = 0;
       const maxAttempts = 30; // 30 seconds
 
@@ -70,8 +76,11 @@ export const handler = async (argv: StartArgs): Promise<void> => {
         attempts++;
       }
 
-      errorOutput("Service start timeout - service may still be starting");
+      // Don't treat timeout as error - service may still be starting
+      infoOutput("Service is taking longer than expected to start");
       infoOutput("Check service status with 'atlas service status'");
+      // Exit with success to avoid false error in update command
+      return;
     } else {
       successOutput("Atlas service start command issued");
       infoOutput("Use 'atlas service status' to check if service started successfully");

@@ -349,17 +349,80 @@ async function performUpdate(params: {
       infoOutput("Starting Atlas service...");
     }
 
-    const startCmd = new Deno.Command("atlas", {
-      args: ["service", "start", "--wait"],
-    });
-    const startResult = await startCmd.output();
+    // Try to start the service - use direct launchctl on macOS for better reliability
+    let serviceStarted = false;
 
-    if (!startResult.success) {
+    try {
+      if (platform.platform === "macos") {
+        // On macOS, use launchctl directly for more reliable start after binary update
+        const startCmd = new Deno.Command("launchctl", {
+          args: ["start", "com.tempestdx.atlas"],
+        });
+        const startResult = await startCmd.output();
+
+        // launchctl start returns 0 even if service is already running
+        serviceStarted = true;
+
+        // Give it a moment to start
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } else {
+        // For other platforms, use the regular service start
+        const startCmd = new Deno.Command("atlas", {
+          args: ["service", "start"],
+        });
+        const startResult = await startCmd.output();
+        serviceStarted = startResult.success;
+      }
+    } catch (error) {
+      // If direct start fails, fall back to atlas service start
+      try {
+        const startCmd = new Deno.Command("atlas", {
+          args: ["service", "start"],
+        });
+        const startResult = await startCmd.output();
+        serviceStarted = startResult.success;
+      } catch {
+        serviceStarted = false;
+      }
+    }
+
+    if (!serviceStarted) {
       warningOutput("Failed to start Atlas service automatically");
       infoOutput("Please run 'atlas service start' manually");
     } else {
       if (!quiet) {
-        successOutput("Atlas service started successfully");
+        successOutput("Atlas service start command issued");
+
+        // Check service status multiple times with shorter intervals
+        let serviceRunning = false;
+        const maxChecks = 10; // Check up to 10 times
+        const checkInterval = 500; // 500ms between checks (total 5 seconds max)
+
+        for (let i = 0; i < maxChecks; i++) {
+          await new Promise((resolve) => setTimeout(resolve, checkInterval));
+
+          try {
+            const statusCmd = new Deno.Command("atlas", {
+              args: ["service", "status"],
+            });
+            const statusResult = await statusCmd.output();
+
+            if (statusResult.success) {
+              const statusOutput = new TextDecoder().decode(statusResult.stdout);
+              if (statusOutput.includes("Service is running")) {
+                successOutput("Atlas service is now running");
+                serviceRunning = true;
+                break;
+              }
+            }
+          } catch {
+            // Ignore status check errors and continue checking
+          }
+        }
+
+        if (!serviceRunning) {
+          infoOutput("Service is still starting. Check status with 'atlas service status'");
+        }
       }
     }
 
