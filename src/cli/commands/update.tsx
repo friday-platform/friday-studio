@@ -69,7 +69,7 @@ export const handler = async (options: UpdateOptions) => {
     }
     const updateInfo = await checkForUpdate(channel);
 
-    if (!updateInfo.updateAvailable) {
+    if (!updateInfo.updateAvailable && !options.force) {
       successOutput("Atlas is up to date");
       infoOutput(`Current version: ${currentVersion}`);
       return;
@@ -85,9 +85,14 @@ export const handler = async (options: UpdateOptions) => {
     }
 
     // Display update information
-    warningOutput("New version available!");
-    infoOutput(`Current: ${currentVersion}`);
-    infoOutput(`Latest:  ${updateInfo.latestVersion}`);
+    if (updateInfo.updateAvailable) {
+      warningOutput("New version available!");
+      infoOutput(`Current: ${currentVersion}`);
+      infoOutput(`Latest:  ${updateInfo.latestVersion}`);
+    } else if (options.force) {
+      warningOutput("Force reinstalling current version");
+      infoOutput(`Current version: ${currentVersion}`);
+    }
 
     // Check for active sessions and daemon status
     const daemonStatus = await checkDaemonStatus();
@@ -107,14 +112,20 @@ export const handler = async (options: UpdateOptions) => {
       }
     }
 
+    // Ensure we have a download URL
+    if (!updateInfo.downloadUrl) {
+      errorOutput("Unable to get download URL for update");
+      return;
+    }
+
     // Perform update
     const result = await performUpdate({
       currentVersion,
-      targetVersion: updateInfo.latestVersion!,
+      targetVersion: updateInfo.latestVersion || currentVersion, // Use current version if forcing reinstall
       channel,
       quiet: options.quiet || false,
       force: options.force || false,
-      downloadUrl: updateInfo.downloadUrl!,
+      downloadUrl: updateInfo.downloadUrl,
     });
 
     // Log update event
