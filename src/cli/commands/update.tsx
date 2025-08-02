@@ -1,6 +1,6 @@
 import { logger } from "@atlas/logger";
 import { getAtlasClient } from "@atlas/client";
-import { ensureDir } from "@std/fs";
+import { ensureDir, exists } from "@std/fs";
 import { join } from "@std/path";
 import { getAtlasVersion } from "../../utils/version.ts";
 import { checkForUpdate } from "../../utils/version-checker.ts";
@@ -118,6 +118,25 @@ export const handler = async (options: UpdateOptions) => {
       return;
     }
 
+    // SAFETY CHECK: Ensure we're downloading the correct package type
+    const isMacOS = Deno.build.os === "darwin";
+    const isLinux = Deno.build.os === "linux";
+    const isWindows = Deno.build.os === "windows";
+
+    if ((isMacOS || isLinux) && !updateInfo.downloadUrl.endsWith(".tar.gz")) {
+      errorOutput(
+        `Invalid package type for ${isMacOS ? "macOS" : "Linux"}: ${updateInfo.downloadUrl}`,
+      );
+      errorOutput("Update process requires .tar.gz binary packages, not installer packages");
+      return;
+    }
+
+    if (isWindows && !updateInfo.downloadUrl.endsWith(".zip")) {
+      errorOutput(`Invalid package type for Windows: ${updateInfo.downloadUrl}`);
+      errorOutput("Update process requires .zip binary packages, not .exe installers");
+      return;
+    }
+
     // Perform update
     const result = await performUpdate({
       currentVersion,
@@ -232,6 +251,7 @@ async function performUpdate(params: {
 
     if (!quiet) {
       infoOutput("Downloading update...");
+      infoOutput(`Download URL: ${downloadUrl}`);
     }
 
     await downloadBinary({
@@ -654,7 +674,16 @@ async function extractBinary(archivePath: string, platform: string): Promise<str
       const stderr = new TextDecoder().decode(result.stderr);
       throw new Error(`Failed to extract zip file: ${stderr}`);
     }
-    return join(tempDir, "atlas.exe");
+    const binaryPath = join(tempDir, "atlas.exe");
+
+    // Verify the binary exists
+    if (!await exists(binaryPath)) {
+      throw new Error(
+        `Binary not found at expected location: ${binaryPath}. The package may be an installer instead of a binary-only package.`,
+      );
+    }
+
+    return binaryPath;
   } else {
     // Extract from tar.gz (macOS and Linux)
     const tarCmd = new Deno.Command("tar", {
@@ -665,7 +694,25 @@ async function extractBinary(archivePath: string, platform: string): Promise<str
       const stderr = new TextDecoder().decode(result.stderr);
       throw new Error(`Failed to extract tar.gz file: ${stderr}`);
     }
-    return join(tempDir, "atlas");
+    const binaryPath = join(tempDir, "atlas");
+
+    // Verify the binary exists
+    if (!await exists(binaryPath)) {
+      // Check if this is an installer package by mistake
+      const installerPath = join(tempDir, "Atlas Installer.app");
+      if (await exists(installerPath)) {
+        throw new Error(
+          `Downloaded installer package instead of binary-only package. ` +
+            `The update system requires the CLI binary package (.tar.gz), not the installer package (.zip). ` +
+            `This is a server configuration issue.`,
+        );
+      }
+      throw new Error(
+        `Binary not found at expected location: ${binaryPath}. The package structure may be incorrect.`,
+      );
+    }
+
+    return binaryPath;
   }
 }
 
@@ -718,7 +765,8 @@ async function replaceBinary(
       throw new Error("Failed to replace binary with sudo");
     }
   } else {
-    // Direct replacement
+    // Direct replacement - just use Deno.copyFile for all platforms
+    // Atlas binaries are single files, not app bundles, so we don't need ditto
     await Deno.copyFile(newBinaryPath, binaryPath);
   }
 

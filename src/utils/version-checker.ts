@@ -352,11 +352,23 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
       downloadUrl = downloadUrl.replace(/\.sha256$/, "");
     }
 
-    // Adjust download URL for binary-only packages (not installers)
-    if (platform === "darwin" && downloadUrl?.endsWith(".zip")) {
-      downloadUrl = downloadUrl.replace(/\.zip$/, ".tar.gz");
-    } else if (platform === "windows" && downloadUrl?.endsWith(".exe")) {
-      downloadUrl = downloadUrl.replace(/\.exe$/, ".zip");
+    // CRITICAL: NEVER download installer packages during update
+    // The update command must ONLY download binary-only packages:
+    // - macOS/Linux: .tar.gz files (contains just atlas binary + README)
+    // - Windows: .zip files (contains just atlas.exe binary)
+    //
+    // NEVER download:
+    // - macOS: .zip files (these are Electron installer apps, 464MB)
+    // - Windows: .exe files (these are installers)
+    //
+    // The version API incorrectly returns installer URLs, so we MUST fix them
+    if (platform === "darwin" || platform === "linux") {
+      // ALWAYS use .tar.gz for macOS and Linux (binary-only package)
+      // Replace any extension with .tar.gz to ensure we get the binary package
+      downloadUrl = downloadUrl.replace(/\.[^/]+$/, ".tar.gz");
+    } else if (platform === "windows") {
+      // Windows binary-only packages are .zip (NOT .exe installers)
+      downloadUrl = downloadUrl.replace(/\.[^/]+$/, ".zip");
     }
 
     // Make URL absolute
