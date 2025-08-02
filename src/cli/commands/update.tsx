@@ -376,6 +376,18 @@ async function performUpdate(params: {
       successOutput("Update installed");
     }
 
+    // Remove quarantine attribute on macOS to prevent SIGKILL
+    if (Deno.build.os === "darwin") {
+      try {
+        const xattrCmd = new Deno.Command("xattr", {
+          args: ["-d", "com.apple.quarantine", permissionCheck.binaryPath],
+        });
+        await xattrCmd.output();
+      } catch {
+        // xattr might fail if the attribute doesn't exist, which is fine
+      }
+    }
+
     // Post-installation verification - skip when self-updating on macOS
     // When the binary updates itself, macOS applies security attributes that cause
     // the first run to fail, but subsequent runs work fine
