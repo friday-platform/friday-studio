@@ -255,7 +255,6 @@ async function performUpdate(params: {
 
     if (!quiet) {
       infoOutput("Downloading update...");
-      infoOutput(`Download URL: ${downloadUrl}`);
     }
 
     await downloadBinary({
@@ -366,29 +365,31 @@ async function performUpdate(params: {
       infoOutput("Installing update...");
     }
 
+    // If we're running from the binary that's being updated, we need to handle this specially
+    const currentBinaryPath = await getCurrentBinaryPath();
+    const isUpdatingSelf = currentBinaryPath === permissionCheck.binaryPath;
+
     await replaceBinary(extractedBinaryPath, permissionCheck);
 
     if (!quiet) {
       successOutput("Update installed");
     }
 
-    // Post-installation verification - just in case
-    if (!quiet) {
-      infoOutput("Verifying installation...");
-    }
+    // Post-installation verification - skip when self-updating on macOS
+    // When the binary updates itself, macOS applies security attributes that cause
+    // the first run to fail, but subsequent runs work fine
+    if (!isUpdatingSelf || Deno.build.os !== "darwin") {
+      if (!quiet) {
+        infoOutput("Verifying installation...");
+      }
 
-    const postInstallTest = await testInstalledBinary(permissionCheck.binaryPath);
-    if (!postInstallTest.success) {
-      // This is bad - we've already replaced the binary
-      errorOutput("WARNING: Post-installation verification failed!");
-      errorOutput(`The updated binary at ${permissionCheck.binaryPath} is not working correctly.`);
-      errorOutput(`Error: ${postInstallTest.error}`);
-      errorOutput("You may need to reinstall Atlas manually.");
-
-      // Don't throw here - the damage is already done
-      // Just warn the user
-    } else if (!quiet) {
-      successOutput("Installation verified");
+      const postInstallTest = await testInstalledBinary(permissionCheck.binaryPath);
+      if (!postInstallTest.success) {
+        warningOutput("Post-installation verification had issues");
+        warningOutput(`The binary may require manual verification: ${postInstallTest.error}`);
+      } else if (!quiet) {
+        successOutput("Installation verified");
+      }
     }
 
     // Always start the service after update
@@ -508,6 +509,20 @@ function getPlatformInfo(): PlatformInfo {
     : "windows";
   const arch = Deno.build.arch === "x86_64" ? "amd64" : "arm64";
   return { platform, arch };
+}
+
+async function getCurrentBinaryPath(): Promise<string | null> {
+  try {
+    // Check if we're running from a compiled binary
+    const execPath = Deno.execPath();
+    if (execPath.includes("deno")) {
+      // Running from source with Deno
+      return null;
+    }
+    return execPath;
+  } catch {
+    return null;
+  }
 }
 
 async function checkBinaryWritePermission(): Promise<{
