@@ -248,13 +248,60 @@ ipcMain.handle("install-atlas-binary", async () => {
         const { execSync } = require("child_process");
 
         try {
+          // First check if Atlas is currently running and stop it if necessary
+          if (fs.existsSync(systemBinaryPath)) {
+            try {
+              // Try to stop the service first (which manages the daemon)
+              execSync(`"${systemBinaryPath}" service stop`, {
+                timeout: 5000,
+                stdio: "ignore",
+              });
+              // Wait for service to stop
+              await new Promise((resolve) => setTimeout(resolve, 2000));
+            } catch {
+              // If service stop fails, try to stop the daemon directly
+              try {
+                execSync(`"${systemBinaryPath}" daemon stop`, {
+                  timeout: 5000,
+                  stdio: "ignore",
+                });
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+              } catch {
+                // If both fail, kill any atlas processes
+                try {
+                  execSync("pkill -f atlas", {
+                    timeout: 5000,
+                    stdio: "ignore",
+                  });
+                  await new Promise((resolve) => setTimeout(resolve, 1000));
+                } catch {
+                  // Ignore if no processes to kill
+                }
+              }
+            }
+          }
+
           // First, create .atlas/bin directory and copy binary there (no admin needed)
           const userBinDir = path.dirname(userBinaryPath);
           if (!fs.existsSync(userBinDir)) {
             fs.mkdirSync(userBinDir, { recursive: true });
           }
 
-          // Copy binary to user location
+          // Check if user binary exists and is in use
+          if (fs.existsSync(userBinaryPath)) {
+            try {
+              // Try to stop any running instance using the user binary
+              execSync(`"${userBinaryPath}" daemon stop`, {
+                timeout: 5000,
+                stdio: "ignore",
+              });
+              await new Promise((resolve) => setTimeout(resolve, 1000));
+            } catch {
+              // Ignore errors, process might not be running
+            }
+          }
+
+          // Copy binary to user location (overwrite existing)
           fs.copyFileSync(binarySource, userBinaryPath);
           fs.chmodSync(userBinaryPath, 0o755);
 
@@ -705,10 +752,7 @@ cd /d "${userProfile}"
             } catch {}
           } catch (taskError) {
             // If Task Scheduler fails, log error but don't start daemon directly
-            console.error(
-              "Task Scheduler failed:",
-              taskError,
-            );
+            console.error("Task Scheduler failed:", taskError);
             // Return error instead of trying to start daemon in foreground
             return {
               success: false,
@@ -840,6 +884,20 @@ cd /d "${userProfile}"
         }
 
         try {
+          // First try to stop any existing service
+          try {
+            execSync(`"${binaryPath}" service stop`, {
+              encoding: "utf8",
+              timeout: 10000,
+              env: envConfig,
+              stdio: "ignore",
+            });
+            // Wait for service to stop
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          } catch {
+            // Service might not be running, continue
+          }
+
           // Always try to install/reinstall service to handle updates
           const installCommand = `"${binaryPath}" service install --force`;
           execSync(installCommand, {
