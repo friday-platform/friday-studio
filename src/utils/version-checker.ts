@@ -324,6 +324,7 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
   try {
     const serverResponse = await fetchLatestVersion(channel);
     if (!serverResponse) {
+      console.error(`No server response for channel: ${channel}`);
       return {
         updateAvailable: false,
         currentVersion,
@@ -347,28 +348,17 @@ export async function checkForUpdate(channel?: string): Promise<UpdateInfo> {
     const platformData = serverResponse.platforms[platformKey] as { download_url?: string };
     let downloadUrl = platformData?.download_url || serverResponse.latest.download_url;
 
-    // Remove .sha256 extension if present (API might return checksum URL)
+    // CRITICAL FIX: The version API is returning .sha256 URLs instead of binary URLs
+    // Remove .sha256 extension if present to get the actual binary URL
     if (downloadUrl?.endsWith(".sha256")) {
       downloadUrl = downloadUrl.replace(/\.sha256$/, "");
     }
 
-    // CRITICAL: NEVER download installer packages during update
-    // The update command must ONLY download binary-only packages:
-    // - macOS/Linux: .tar.gz files (contains just atlas binary + README)
-    // - Windows: .zip files (contains just atlas.exe binary)
-    //
-    // NEVER download:
-    // - macOS: .zip files (these are Electron installer apps, 464MB)
-    // - Windows: .exe files (these are installers)
-    //
-    // The version API incorrectly returns installer URLs, so we MUST fix them
-    if (platform === "darwin" || platform === "linux") {
-      // ALWAYS use .tar.gz for macOS and Linux (binary-only package)
-      // Replace any extension with .tar.gz to ensure we get the binary package
-      downloadUrl = downloadUrl.replace(/\.[^/]+$/, ".tar.gz");
-    } else if (platform === "windows") {
-      // Windows binary-only packages are .zip (NOT .exe installers)
-      downloadUrl = downloadUrl.replace(/\.[^/]+$/, ".zip");
+    // CRITICAL FIX 2: The version API returns .zip URLs for macOS but we need .tar.gz
+    // Fix the extension based on platform
+    if ((platform === "darwin" || platform === "linux") && downloadUrl) {
+      // Replace .zip with .tar.gz for macOS/Linux
+      downloadUrl = downloadUrl.replace(/\.zip$/, ".tar.gz");
     }
 
     // Make URL absolute

@@ -222,8 +222,12 @@ async function performUpdate(params: {
     // Check write permissions
     const permissionCheck = await checkBinaryWritePermission();
 
-    if (!permissionCheck.canWrite && !permissionCheck.needsSudo) {
-      throw new Error(`Cannot write to binary location: ${permissionCheck.binaryPath}`);
+    if (!permissionCheck.canWrite) {
+      throw new Error(
+        `Cannot write to binary location: ${permissionCheck.binaryPath}\n` +
+          `The file may be owned by another user or in a protected directory.\n` +
+          `Current owner: ${permissionCheck.owner || "unknown"}`,
+      );
     }
 
     // Handle Windows file locking
@@ -353,7 +357,11 @@ async function performUpdate(params: {
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
 
-    // Replace binary
+    // CRITICAL: The binary has already been tested in the temp directory
+    // The testNewBinary function already verified it works
+    // Now we just need to replace the old binary
+
+    // Now we can safely replace the binary
     if (!quiet) {
       infoOutput("Installing update...");
     }
@@ -362,6 +370,25 @@ async function performUpdate(params: {
 
     if (!quiet) {
       successOutput("Update installed");
+    }
+
+    // Post-installation verification - just in case
+    if (!quiet) {
+      infoOutput("Verifying installation...");
+    }
+
+    const postInstallTest = await testInstalledBinary(permissionCheck.binaryPath);
+    if (!postInstallTest.success) {
+      // This is bad - we've already replaced the binary
+      errorOutput("WARNING: Post-installation verification failed!");
+      errorOutput(`The updated binary at ${permissionCheck.binaryPath} is not working correctly.`);
+      errorOutput(`Error: ${postInstallTest.error}`);
+      errorOutput("You may need to reinstall Atlas manually.");
+
+      // Don't throw here - the damage is already done
+      // Just warn the user
+    } else if (!quiet) {
+      successOutput("Installation verified");
     }
 
     // Always start the service after update
@@ -485,12 +512,12 @@ function getPlatformInfo(): PlatformInfo {
 
 async function checkBinaryWritePermission(): Promise<{
   canWrite: boolean;
-  needsSudo: boolean;
   binaryPath: string;
   owner?: string;
 }> {
-  // Find current binary location
-  const result = await new Deno.Command("which", {
+  // Find current binary location using platform-specific command
+  const findCmd = Deno.build.os === "windows" ? "where" : "which";
+  const result = await new Deno.Command(findCmd, {
     args: ["atlas"],
   }).output();
 
@@ -498,51 +525,44 @@ async function checkBinaryWritePermission(): Promise<{
     throw new Error("Atlas binary not found in PATH");
   }
 
-  const binaryPath = new TextDecoder().decode(result.stdout).trim();
+  const output = new TextDecoder().decode(result.stdout).trim();
+  // On Windows, 'where' might return multiple paths, take the first one
+  const binaryPath = output.split(/\r?\n/)[0];
 
   // Try to write to a test file next to the binary
   const testPath = `${binaryPath}.update-test`;
   try {
     await Deno.writeTextFile(testPath, "test");
     await Deno.remove(testPath);
-    return { canWrite: true, needsSudo: false, binaryPath };
+    return { canWrite: true, binaryPath };
   } catch {
     // Can't write to directory, check if we can overwrite the file itself
     try {
       // Check file ownership
       const statCmd = Deno.build.os === "darwin"
         ? ["stat", "-f", "%Su", binaryPath]
+        : Deno.build.os === "windows"
+        ? null
         : ["stat", "-c", "%U", binaryPath];
 
-      const ownerResult = await new Deno.Command(statCmd[0], {
-        args: statCmd.slice(1),
-      }).output();
+      let owner: string | undefined;
+      if (statCmd) {
+        const ownerResult = await new Deno.Command(statCmd[0], {
+          args: statCmd.slice(1),
+        }).output();
+        owner = new TextDecoder().decode(ownerResult.stdout).trim();
+      }
 
-      const owner = new TextDecoder().decode(ownerResult.stdout).trim();
       const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME");
 
       if (owner === currentUser) {
         // We own the file, we should be able to replace it
-        return { canWrite: true, needsSudo: false, binaryPath, owner };
+        return { canWrite: true, binaryPath, owner };
       }
 
-      // Check if we have sudo access (Unix only)
-      if (Deno.build.os !== "windows") {
-        const sudoCheck = await new Deno.Command("sudo", {
-          args: ["-n", "true"],
-        }).output();
-
-        return {
-          canWrite: false,
-          needsSudo: sudoCheck.success,
-          binaryPath,
-          owner,
-        };
-      }
-
-      return { canWrite: false, needsSudo: false, binaryPath, owner };
+      return { canWrite: false, binaryPath, owner };
     } catch {
-      return { canWrite: false, needsSudo: false, binaryPath };
+      return { canWrite: false, binaryPath };
     }
   }
 }
@@ -665,11 +685,15 @@ async function extractBinary(archivePath: string, platform: string): Promise<str
   const tempDir = await Deno.makeTempDir();
 
   if (platform === "windows") {
-    // Extract from zip
-    const unzipCmd = new Deno.Command("unzip", {
-      args: ["-q", archivePath, "-d", tempDir],
+    // Extract from zip using PowerShell on Windows
+    const psCmd = new Deno.Command("powershell", {
+      args: [
+        "-NoProfile",
+        "-Command",
+        `Expand-Archive -Path '${archivePath}' -DestinationPath '${tempDir}' -Force`,
+      ],
     });
-    const result = await unzipCmd.output();
+    const result = await psCmd.output();
     if (!result.success) {
       const stderr = new TextDecoder().decode(result.stderr);
       throw new Error(`Failed to extract zip file: ${stderr}`);
@@ -741,45 +765,69 @@ async function testNewBinary(binaryPath: string): Promise<{ success: boolean; er
   }
 }
 
-async function replaceBinary(
-  newBinaryPath: string,
-  permissionCheck: { canWrite: boolean; needsSudo: boolean; binaryPath: string; owner?: string },
-): Promise<void> {
-  const { binaryPath, needsSudo } = permissionCheck;
-
-  if (needsSudo) {
-    // Use sudo to replace binary
-    warningOutput("Update requires elevated permissions");
-    infoOutput(`Binary location: ${binaryPath}`);
-    infoOutput(`Current owner: ${permissionCheck.owner}`);
-
-    const sudoCmd = new Deno.Command("sudo", {
-      args: ["cp", "-f", newBinaryPath, binaryPath],
-      stdin: "inherit",
-      stdout: "inherit",
-      stderr: "inherit",
+async function testInstalledBinary(
+  binaryPath: string,
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Test binary execution from its installed location
+    const cmd = new Deno.Command(binaryPath, {
+      args: ["--version"],
+      stdout: "piped",
+      stderr: "piped",
     });
 
-    const result = await sudoCmd.output();
+    const result = await cmd.output();
+
     if (!result.success) {
-      throw new Error("Failed to replace binary with sudo");
+      const stderr = new TextDecoder().decode(result.stderr);
+
+      // Check for specific macOS code signing error
+      if (result.code === -9 || result.signal === "SIGKILL") {
+        return {
+          success: false,
+          error:
+            "Binary killed by macOS (SIGKILL). This usually indicates code signing or security policy issues.",
+        };
+      }
+
+      return {
+        success: false,
+        error: stderr || `Binary test failed with exit code ${result.code}`,
+      };
     }
-  } else {
-    // Direct replacement - just use Deno.copyFile for all platforms
-    // Atlas binaries are single files, not app bundles, so we don't need ditto
-    await Deno.copyFile(newBinaryPath, binaryPath);
+
+    // Also verify the output looks reasonable
+    const stdout = new TextDecoder().decode(result.stdout);
+    if (!stdout.includes("Atlas")) {
+      return { success: false, error: "Binary output does not look like Atlas CLI" };
+    }
+
+    return { success: true };
+  } catch (error) {
+    // Handle cases where the binary is killed before it can even start
+    if (error.message.includes("killed") || error.message.includes("SIGKILL")) {
+      return {
+        success: false,
+        error: "Binary killed by system. This indicates code signing or security policy issues.",
+      };
+    }
+    return { success: false, error: error.message };
   }
+}
+
+async function replaceBinary(
+  newBinaryPath: string,
+  permissionCheck: { canWrite: boolean; binaryPath: string; owner?: string },
+): Promise<void> {
+  const { binaryPath } = permissionCheck;
+
+  // Direct replacement - just use Deno.copyFile for all platforms
+  // Atlas binaries are single files, not app bundles, so we don't need ditto
+  await Deno.copyFile(newBinaryPath, binaryPath);
 
   // Ensure binary is executable
   if (Deno.build.os !== "windows") {
-    if (needsSudo) {
-      const chmodCmd = new Deno.Command("sudo", {
-        args: ["chmod", "+x", binaryPath],
-      });
-      await chmodCmd.output();
-    } else {
-      await Deno.chmod(binaryPath, 0o755);
-    }
+    await Deno.chmod(binaryPath, 0o755);
   }
 }
 
