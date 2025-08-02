@@ -219,6 +219,24 @@ ipcMain.handle("install-atlas-binary", async () => {
 
       // Copy binary with .exe extension (overwrite existing)
       fs.copyFileSync(binarySource, installPath);
+
+      // Immediately update PATH for Windows
+      const { execSync } = require("child_process");
+      try {
+        const psCommand = `
+          $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+          if ($userPath -notlike "*${installDir}*") {
+            [Environment]::SetEnvironmentVariable('Path', $userPath + ';${installDir}', 'User')
+          }
+        `.trim();
+
+        execSync(`powershell -Command "${psCommand}"`, {
+          windowsHide: true,
+          stdio: "ignore",
+        });
+      } catch {
+        // PATH update failed silently
+      }
     } else {
       // macOS/Linux: Use symlink-based installation
       const userBinaryPath = path.join(os.homedir(), ".atlas", "bin", "atlas");
@@ -367,6 +385,7 @@ ipcMain.handle("setup-path", async () => {
             $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
             if ($userPath -notlike "*${atlasDir}*") {
               [Environment]::SetEnvironmentVariable('Path', $userPath + ';${atlasDir}', 'User')
+              $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')
             }
           `.trim();
 
@@ -374,6 +393,24 @@ ipcMain.handle("setup-path", async () => {
             windowsHide: true,
             stdio: "ignore",
           });
+
+          // Also update PATH for current process and all child processes
+          // This ensures immediate availability in new terminals
+          const currentPath = process.env.PATH || "";
+          if (!currentPath.includes(atlasDir)) {
+            process.env.PATH = `${currentPath};${atlasDir}`;
+          }
+
+          // Force Windows to broadcast WM_SETTINGCHANGE to notify all applications
+          // about the PATH change
+          try {
+            execSync(
+              `powershell -Command "[System.Environment]::SetEnvironmentVariable('Path', [System.Environment]::GetEnvironmentVariable('Path', 'User'), 'User')"`,
+              { windowsHide: true, stdio: "ignore" },
+            );
+          } catch {
+            // Broadcast might fail but PATH is still updated
+          }
         } catch {
           // PATH update failed, but we have Start Menu shortcut
         }
@@ -381,7 +418,7 @@ ipcMain.handle("setup-path", async () => {
         return {
           success: true,
           message:
-            `Atlas shortcut added to Start Menu. You can now run 'atlas' from Start Menu or new terminals.`,
+            `Atlas has been added to your PATH and Start Menu.\n\nYou can now use 'atlas' from any new command prompt or PowerShell window.\n\nNote: If 'atlas' is not recognized in existing terminals, please close and reopen them.`,
         };
       } catch (error) {
         return {
@@ -667,24 +704,18 @@ cd /d "${userProfile}"
               fs.unlinkSync(taskXmlPath);
             } catch {}
           } catch (taskError) {
-            // If Task Scheduler fails, start daemon directly
+            // If Task Scheduler fails, log error but don't start daemon directly
             console.error(
-              "Task Scheduler failed, starting daemon directly:",
+              "Task Scheduler failed:",
               taskError,
             );
-
-            const daemonProc = spawn(
-              binaryPath,
-              ["daemon", "start", "--port", "8080"],
-              {
-                detached: true,
-                stdio: "ignore",
-                env: envConfig,
-                cwd: userProfile,
-                windowsHide: true,
-              },
-            );
-            daemonProc.unref();
+            // Return error instead of trying to start daemon in foreground
+            return {
+              success: false,
+              action,
+              error:
+                `Failed to create Windows Task Scheduler entry for Atlas service: ${taskError.message}. Please run 'atlas service install' manually after installation.`,
+            };
           }
 
           // Create Start Menu shortcut for Atlas client
@@ -742,14 +773,16 @@ cd /d "${userProfile}"
             return {
               success: true,
               action,
-              message: `Atlas daemon started successfully. Atlas shortcut added to Start Menu.`,
+              message:
+                `Atlas service started successfully!\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
             };
           } catch {
             // Daemon might be starting, consider it success
             return {
               success: true,
               action,
-              message: `Atlas daemon is starting. Atlas shortcut added to Start Menu.`,
+              message:
+                `Atlas service is starting...\n\nAtlas has been added to your PATH and Start Menu.\nYou can now use 'atlas' from any new command prompt or PowerShell window.`,
             };
           }
         } catch (error) {
@@ -1009,7 +1042,7 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
           cwd: os.homedir(),
         });
       } catch (execError) {
-        const errorMessage = `Command: ${command}\nStdout: ${execError.stdout || "N/A"}\nStderr: ${
+        const errorMessage = `Stdout: ${execError.stdout || "N/A"}\nStderr: ${
           execError.stderr || "N/A"
         }\nError: ${execError.message}`;
         return {
