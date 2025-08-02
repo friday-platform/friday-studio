@@ -41,38 +41,11 @@ start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
     try {
       await Deno.mkdir(startupFolder, { recursive: true });
       await Deno.writeTextFile(startupBatch, batchContent);
+      console.log(`Atlas startup configured successfully`);
+      console.log(`Auto-start: ${startupBatch}`);
     } catch (error) {
       console.warn(`Could not create startup entry: ${error}`);
     }
-
-    // Create manual control scripts on desktop
-    const desktopPath = `${homeDir}\\Desktop`;
-
-    const startScript = `@echo off
-echo Starting Atlas daemon...
-"${binaryPath}" daemon start --port ${config.port} --detached
-echo Atlas daemon started.
-pause
-`;
-
-    const stopScript = `@echo off
-echo Stopping Atlas daemon...
-"${binaryPath}" daemon stop
-echo Atlas daemon stopped.
-pause
-`;
-
-    const startScriptPath = `${desktopPath}\\Start Atlas.bat`;
-    const stopScriptPath = `${desktopPath}\\Stop Atlas.bat`;
-
-    await Deno.writeTextFile(startScriptPath, startScript);
-    await Deno.writeTextFile(stopScriptPath, stopScript);
-
-    console.log(`Atlas startup configured successfully`);
-    console.log(`Auto-start: ${startupBatch}`);
-    console.log(`Manual controls on Desktop:`);
-    console.log(`  Start: ${startScriptPath}`);
-    console.log(`  Stop: ${stopScriptPath}`);
   }
 
   async uninstall(): Promise<void> {
@@ -90,22 +63,9 @@ pause
       `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup\\Atlas.bat`;
     try {
       await Deno.remove(startupBatch);
+      console.log("Atlas startup entries removed successfully");
     } catch {
       // File might not exist
-    }
-
-    // Remove desktop shortcuts
-    const desktopPath = `${homeDir}\\Desktop`;
-    const startScriptPath = `${desktopPath}\\Start Atlas.bat`;
-    const stopScriptPath = `${desktopPath}\\Stop Atlas.bat`;
-
-    try {
-      await Deno.remove(startScriptPath).catch(() => {});
-      await Deno.remove(stopScriptPath).catch(() => {});
-
-      console.log("Atlas startup entries removed successfully");
-    } catch (error) {
-      console.warn(`Some files could not be removed: ${error}`);
     }
   }
 

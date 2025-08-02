@@ -248,9 +248,10 @@ async function performUpdate(params: {
     await ensureDir(updateDir);
 
     // Download new binary
+    const fileExtension = platform.platform === "windows" ? ".zip" : ".tar.gz";
     const downloadPath = join(
       updateDir,
-      `atlas-${targetVersion}-${platform.platform}-${platform.arch}`,
+      `atlas-${targetVersion}-${platform.platform}-${platform.arch}${fileExtension}`,
     );
 
     if (!quiet) {
@@ -586,12 +587,34 @@ async function checkIfAtlasIsRunning(): Promise<boolean> {
   if (Deno.build.os !== "windows") return false;
 
   try {
+    // Get current process PID
+    const currentPid = Deno.pid;
+
+    // Get all atlas.exe processes
     const result = await new Deno.Command("tasklist", {
-      args: ["/FI", "IMAGENAME eq atlas.exe"],
+      args: ["/FI", "IMAGENAME eq atlas.exe", "/FO", "CSV"],
     }).output();
 
     const output = new TextDecoder().decode(result.stdout);
-    return output.includes("atlas.exe");
+    const lines = output.split("\n");
+
+    // Parse CSV output to check PIDs
+    let otherAtlasProcesses = false;
+    for (const line of lines) {
+      if (line.includes("atlas.exe") && !line.includes("Image Name")) {
+        // Parse CSV line: "Image Name","PID","Session Name","Session#","Mem Usage"
+        const parts = line.split(",");
+        if (parts.length >= 2) {
+          const pid = parts[1].replace(/"/g, "").trim();
+          if (pid && pid !== currentPid.toString()) {
+            otherAtlasProcesses = true;
+            break;
+          }
+        }
+      }
+    }
+
+    return otherAtlasProcesses;
   } catch {
     return false;
   }
@@ -918,15 +941,31 @@ async function checkAnyAtlasProcesses(): Promise<boolean> {
       }
     }
   } else {
-    // Windows: check for atlas.exe processes
+    // Windows: check for atlas.exe processes (excluding current process)
     try {
+      const currentPid = Deno.pid;
       const result = await new Deno.Command("tasklist", {
-        args: ["/FI", "IMAGENAME eq atlas.exe"],
+        args: ["/FI", "IMAGENAME eq atlas.exe", "/FO", "CSV"],
       }).output();
       const output = new TextDecoder().decode(result.stdout);
-      return output.includes("atlas.exe");
+      const lines = output.split("\n");
+
+      // Check if there are any OTHER atlas.exe processes
+      for (const line of lines) {
+        if (line.includes("atlas.exe") && !line.includes("Image Name")) {
+          const parts = line.split(",");
+          if (parts.length >= 2) {
+            const pid = parts[1].replace(/"/g, "").trim();
+            if (pid && pid !== currentPid.toString()) {
+              return true; // Found another atlas.exe process
+            }
+          }
+        }
+      }
+      return false;
     } catch {
       // Unable to check processes
+      return false;
     }
   }
 

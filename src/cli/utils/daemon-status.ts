@@ -1,4 +1,21 @@
 import { infoOutput, successOutput } from "./output.ts";
+import { type AtlasClient, getAtlasClient } from "@atlas/client";
+
+/**
+ * Get a client for local daemon management on a specific port.
+ * This is used by daemon management commands (start/stop/status) to manage
+ * local daemon instances. It always uses localhost regardless of ATLAS_DAEMON_URL.
+ *
+ * @param port The port to connect to (defaults to 8080)
+ * @param timeout Optional timeout in milliseconds
+ * @returns Atlas client configured for local daemon management
+ */
+export function getLocalDaemonClient(port: number = 8080, timeout?: number): AtlasClient {
+  return getAtlasClient({
+    url: `http://localhost:${port}`,
+    ...(timeout !== undefined && { timeout }),
+  });
+}
 
 export interface DaemonStatus {
   uptime: number;

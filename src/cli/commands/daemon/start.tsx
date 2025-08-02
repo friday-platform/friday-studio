@@ -2,8 +2,11 @@ import { load } from "@std/dotenv";
 import { AtlasDaemon } from "@atlas/atlasd";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
-import { displayDaemonStatus, fetchDaemonStatus } from "../../utils/daemon-status.ts";
-import { getAtlasClient } from "@atlas/client";
+import {
+  displayDaemonStatus,
+  fetchDaemonStatus,
+  getLocalDaemonClient,
+} from "../../utils/daemon-status.ts";
 import { getAtlasHome } from "../../../utils/paths.ts";
 import { join } from "@std/path";
 import { exists } from "@std/fs";
@@ -90,7 +93,7 @@ export const handler = async (argv: StartArgs): Promise<void> => {
 
     // Check if daemon is already running
     const port = argv.port || 8080;
-    const client = getAtlasClient({ url: `http://localhost:${port}` });
+    const client = getLocalDaemonClient(port);
     const isRunning = await client.isHealthy();
     if (isRunning) {
       infoOutput(`Atlas daemon is already running on port ${port}`);
@@ -199,7 +202,7 @@ function isLocalOnlyMode(value: string | undefined): boolean {
 }
 
 async function _checkDaemonRunning(port: number): Promise<boolean> {
-  const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 2000 });
+  const client = getLocalDaemonClient(port, 2000);
   return await client.isHealthy();
 }
 
@@ -211,6 +214,13 @@ async function startDetached(argv: StartArgs): Promise<void> {
   // Check if we're running as a compiled binary
   const isCompiledBinary = execPath.endsWith("atlas-test") || execPath.endsWith("atlas") ||
     execPath.endsWith("atlas.exe");
+
+  // On Windows, we need to use a different approach for true background process
+  if (Deno.build.os === "windows") {
+    // Use Windows-specific method to start process in background
+    await startWindowsDetached(argv, execPath, mainModule, isCompiledBinary);
+    return;
+  }
 
   let cmd;
   if (isCompiledBinary) {
@@ -279,7 +289,7 @@ async function startDetached(argv: StartArgs): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 
   // Check if it's running
-  const client = getAtlasClient({ url: `http://localhost:${argv.port || 8080}` });
+  const client = getLocalDaemonClient(argv.port || 8080);
   const isRunning = await client.isHealthy();
   if (isRunning) {
     successOutput(`Atlas daemon started in background`);
@@ -294,6 +304,110 @@ async function startDetached(argv: StartArgs): Promise<void> {
   Deno.exit(0);
 }
 
+async function startWindowsDetached(
+  argv: StartArgs,
+  execPath: string,
+  mainModule: string,
+  isCompiledBinary: boolean,
+): Promise<void> {
+  // Build the command arguments
+  const args: string[] = [];
+
+  if (isCompiledBinary) {
+    // For compiled binaries
+    args.push(
+      "daemon",
+      "start",
+      "--port",
+      (argv.port || 8080).toString(),
+      "--hostname",
+      argv.hostname || "localhost",
+      "--max-workspaces",
+      (argv.maxWorkspaces || 10).toString(),
+      "--idle-timeout",
+      (argv.idleTimeout || 300).toString(),
+    );
+    if (argv.logLevel) args.push("--log-level", argv.logLevel);
+    if (argv.atlasConfig) args.push("--atlas-config", argv.atlasConfig);
+  } else {
+    // For source code execution
+    args.push(
+      "run",
+      "--allow-all",
+      "--unstable-kv",
+      "--unstable-broadcast-channel",
+      "--unstable-worker-options",
+      "--env-file",
+      mainModule,
+      "daemon",
+      "start",
+      "--port",
+      (argv.port || 8080).toString(),
+      "--hostname",
+      argv.hostname || "localhost",
+      "--max-workspaces",
+      (argv.maxWorkspaces || 10).toString(),
+      "--idle-timeout",
+      (argv.idleTimeout || 300).toString(),
+    );
+    if (argv.logLevel) args.push("--log-level", argv.logLevel);
+    if (argv.atlasConfig) args.push("--atlas-config", argv.atlasConfig);
+  }
+
+  // Create a VBScript to launch atlas in background (more reliable than PowerShell)
+  const tempDir = await Deno.makeTempDir();
+  const vbsFile = `${tempDir}\\atlas-daemon.vbs`;
+
+  // Build command line
+  const cmdLine = `"${execPath}" ${args.map((arg) => `"${arg}"`).join(" ")}`;
+
+  // VBScript content - launches process truly detached
+  const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "${cmdLine}", 0, False`;
+
+  await Deno.writeTextFile(vbsFile, vbsContent);
+
+  // Execute the VBScript
+  const cmd = new Deno.Command("wscript.exe", {
+    args: [vbsFile],
+    env: {
+      ...Deno.env.toObject(),
+      ATLAS_DETACHED: "true",
+    },
+    stdout: "null",
+    stderr: "null",
+    stdin: "null",
+  });
+
+  const _child = cmd.spawn();
+
+  // Give VBScript a moment to launch the process
+  await new Promise((resolve) => setTimeout(resolve, 1000));
+
+  // Clean up VBScript file
+  try {
+    await Deno.remove(vbsFile);
+    await Deno.remove(tempDir);
+  } catch {
+    // Ignore cleanup errors
+  }
+
+  // Give it a moment to start
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+
+  // Check if it's running
+  const client = getLocalDaemonClient(argv.port || 8080);
+  const isRunning = await client.isHealthy();
+  if (isRunning) {
+    successOutput(`Atlas daemon started in background`);
+    successOutput(`Port: ${argv.port || 8080}`);
+    successOutput(`Status: atlas daemon status`);
+  } else {
+    errorOutput("Failed to start daemon in background");
+    Deno.exit(1);
+  }
+}
+
 async function startForeground(argv: StartArgs): Promise<void> {
   const daemon = new AtlasDaemon({
     port: argv.port,
@@ -304,10 +418,10 @@ async function startForeground(argv: StartArgs): Promise<void> {
 
   // Start browser download in background (non-blocking)
   import("../../../utils/browser-manager.ts").then(({ checkAndDownloadBrowsers }) => {
-    checkAndDownloadBrowsers().catch((error) => {
+    checkAndDownloadBrowsers().catch((_error) => {
       // Browser manager will log errors internally
     });
-  }).catch((error) => {
+  }).catch((_error) => {
     // Module loading errors are rare but non-fatal
   });
 

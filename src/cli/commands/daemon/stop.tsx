@@ -1,6 +1,6 @@
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasClient } from "@atlas/client";
+import { getLocalDaemonClient } from "../../utils/daemon-status.ts";
 
 interface StopArgs {
   port?: number;
@@ -32,7 +32,7 @@ export function builder(y: YargsInstance) {
 export const handler = async (argv: StopArgs): Promise<void> => {
   try {
     const port = argv.port || 8080;
-    const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 5000 });
+    const client = getLocalDaemonClient(port, 5000);
 
     // First check if daemon is running
     let status;
@@ -89,8 +89,3 @@ export const handler = async (argv: StopArgs): Promise<void> => {
     Deno.exit(1);
   }
 };
-
-async function checkDaemonRunning(port: number): Promise<boolean> {
-  const client = getAtlasClient({ url: `http://localhost:${port}`, timeout: 2000 });
-  return await client.isHealthy();
-}
