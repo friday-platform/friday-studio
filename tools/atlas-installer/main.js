@@ -220,8 +220,9 @@ ipcMain.handle("install-atlas-binary", async () => {
       // Copy binary with .exe extension (overwrite existing)
       fs.copyFileSync(binarySource, installPath);
     } else {
-      // macOS/Linux: Install to /usr/local/bin
-      installPath = "/usr/local/bin/atlas";
+      // macOS/Linux: Use symlink-based installation
+      const userBinaryPath = path.join(os.homedir(), ".atlas", "bin", "atlas");
+      const systemBinaryPath = "/usr/local/bin/atlas";
 
       // Use platform-specific privilege escalation
       if (process.platform === "darwin") {
@@ -229,31 +230,57 @@ ipcMain.handle("install-atlas-binary", async () => {
         const { execSync } = require("child_process");
 
         try {
-          // Copy binary as current user first to avoid corrupting it with osascript
-          const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
-          fs.copyFileSync(binarySource, tempInstallPath);
-
-          // Use a simpler approach - directly execute the commands with proper escaping
-          // Note: macOS will always show "osascript" in the dialog when using osascript
-          execSync(
-            `osascript -e 'do shell script "mv \\"${tempInstallPath}\\" \\"${installPath}\\" && chmod 755 \\"${installPath}\\"" with administrator privileges with prompt "Atlas Installer needs administrator access to install the CLI binary to /usr/local/bin/"'`,
-          );
-        } catch (execError) {
-          // Clean up temp file if it exists
-          const tempInstallPath = path.join(os.tmpdir(), "atlas_temp");
-          try {
-            if (fs.existsSync(tempInstallPath)) {
-              fs.unlinkSync(tempInstallPath);
-            }
-          } catch (cleanupError) {
-            // Ignore cleanup errors
+          // First, create .atlas/bin directory and copy binary there (no admin needed)
+          const userBinDir = path.dirname(userBinaryPath);
+          if (!fs.existsSync(userBinDir)) {
+            fs.mkdirSync(userBinDir, { recursive: true });
           }
 
+          // Copy binary to user location
+          fs.copyFileSync(binarySource, userBinaryPath);
+          fs.chmodSync(userBinaryPath, 0o755);
+
+          // Check if there's an existing installation
+          let existingIsSymlink = false;
+          let existingTarget = null;
+
+          try {
+            const stats = fs.lstatSync(systemBinaryPath);
+            if (stats.isSymbolicLink()) {
+              existingIsSymlink = true;
+              existingTarget = fs.readlinkSync(systemBinaryPath);
+            }
+          } catch {
+            // No existing installation
+          }
+
+          // Prepare the installation command based on existing setup
+          let installCommand;
+          if (existingIsSymlink) {
+            // If already a symlink, just update the target (might not need sudo)
+            installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
+          } else if (fs.existsSync(systemBinaryPath)) {
+            // If direct binary exists, replace with symlink
+            installCommand =
+              `rm -f ${systemBinaryPath} && ln -sf ${userBinaryPath} ${systemBinaryPath}`;
+          } else {
+            // Fresh installation
+            installCommand = `ln -sf ${userBinaryPath} ${systemBinaryPath}`;
+          }
+
+          // Execute with admin privileges using proper escaping
+          const script =
+            `do shell script "${installCommand}" with administrator privileges with prompt "Atlas Installer needs administrator access to create a symlink in /usr/local/bin/"`;
+          execSync(`osascript -e '${script}'`);
+
+          // Update installPath to reflect the actual binary location
+          installPath = userBinaryPath;
+        } catch (execError) {
           // Provide more detailed error information
           return {
             success: false,
             error:
-              `Installation failed: ${execError.message}. Binary source: ${binarySource}, Install path: ${installPath}`,
+              `Installation failed: ${execError.message}. Binary source: ${binarySource}, User path: ${userBinaryPath}`,
           };
         }
       } else {

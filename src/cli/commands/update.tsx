@@ -223,8 +223,12 @@ async function performUpdate(params: {
     const permissionCheck = await checkBinaryWritePermission();
 
     if (!permissionCheck.canWrite) {
+      const location = permissionCheck.isSymlink
+        ? `${permissionCheck.binaryPath} -> ${permissionCheck.actualBinaryPath}`
+        : permissionCheck.binaryPath;
+
       throw new Error(
-        `Cannot write to binary location: ${permissionCheck.binaryPath}\n` +
+        `Cannot write to binary location: ${location}\n` +
           `The file may be owned by another user or in a protected directory.\n` +
           `Current owner: ${permissionCheck.owner || "unknown"}`,
       );
@@ -374,6 +378,9 @@ async function performUpdate(params: {
 
     if (!quiet) {
       successOutput("Update installed");
+      if (permissionCheck.isSymlink) {
+        infoOutput(`Updated binary through symlink: ${permissionCheck.actualBinaryPath}`);
+      }
     }
 
     // Remove quarantine attribute on macOS to prevent SIGKILL
@@ -541,6 +548,8 @@ async function getCurrentBinaryPath(): Promise<string | null> {
 async function checkBinaryWritePermission(): Promise<{
   canWrite: boolean;
   binaryPath: string;
+  actualBinaryPath?: string;
+  isSymlink?: boolean;
   owner?: string;
 }> {
   // Find current binary location using platform-specific command
@@ -557,21 +566,39 @@ async function checkBinaryWritePermission(): Promise<{
   // On Windows, 'where' might return multiple paths, take the first one
   const binaryPath = output.split(/\r?\n/)[0];
 
-  // Try to write to a test file next to the binary
-  const testPath = `${binaryPath}.update-test`;
+  // Check if it's a symlink and resolve to actual path
+  let actualBinaryPath = binaryPath;
+  let isSymlink = false;
+
+  try {
+    const stat = await Deno.lstat(binaryPath);
+    if (stat.isSymlink) {
+      isSymlink = true;
+      const linkTarget = await Deno.readLink(binaryPath);
+      // Resolve relative paths
+      actualBinaryPath = linkTarget.startsWith("/")
+        ? linkTarget
+        : join(binaryPath, "..", linkTarget);
+    }
+  } catch {
+    // If we can't check symlink status, continue with original path
+  }
+
+  // Try to write to a test file next to the actual binary
+  const testPath = `${actualBinaryPath}.update-test`;
   try {
     await Deno.writeTextFile(testPath, "test");
     await Deno.remove(testPath);
-    return { canWrite: true, binaryPath };
+    return { canWrite: true, binaryPath, actualBinaryPath, isSymlink };
   } catch {
     // Can't write to directory, check if we can overwrite the file itself
     try {
-      // Check file ownership
+      // Check file ownership on the actual binary
       const statCmd = Deno.build.os === "darwin"
-        ? ["stat", "-f", "%Su", binaryPath]
+        ? ["stat", "-f", "%Su", actualBinaryPath]
         : Deno.build.os === "windows"
         ? null
-        : ["stat", "-c", "%U", binaryPath];
+        : ["stat", "-c", "%U", actualBinaryPath];
 
       let owner: string | undefined;
       if (statCmd) {
@@ -585,12 +612,12 @@ async function checkBinaryWritePermission(): Promise<{
 
       if (owner === currentUser) {
         // We own the file, we should be able to replace it
-        return { canWrite: true, binaryPath, owner };
+        return { canWrite: true, binaryPath, actualBinaryPath, isSymlink, owner };
       }
 
-      return { canWrite: false, binaryPath, owner };
+      return { canWrite: false, binaryPath, actualBinaryPath, isSymlink, owner };
     } catch {
-      return { canWrite: false, binaryPath };
+      return { canWrite: false, binaryPath, actualBinaryPath, isSymlink };
     }
   }
 }
@@ -867,33 +894,251 @@ async function testInstalledBinary(
 
 async function replaceBinary(
   newBinaryPath: string,
-  permissionCheck: { canWrite: boolean; binaryPath: string; owner?: string },
+  permissionCheck: {
+    canWrite: boolean;
+    binaryPath: string;
+    actualBinaryPath?: string;
+    isSymlink?: boolean;
+    owner?: string;
+  },
 ): Promise<void> {
-  const { binaryPath } = permissionCheck;
+  const { binaryPath, actualBinaryPath, isSymlink } = permissionCheck;
+
+  // Enhanced logging for debugging
+  logger.debug("Starting binary replacement", {
+    binaryPath,
+    actualBinaryPath,
+    isSymlink,
+    platform: Deno.build.os,
+  });
 
   if (Deno.build.os === "darwin") {
-    // On macOS, use 'ditto' to preserve code signatures and all metadata
-    // This prevents issues with com.apple.provenance and code signature validation
-    const dittoCmd = new Deno.Command("ditto", {
-      args: [newBinaryPath, binaryPath],
-    });
-    const result = await dittoCmd.output();
+    // Use the symlink resolution from permission check if available
+    let targetPath = binaryPath;
 
-    if (!result.success) {
-      // Fall back to mv if ditto fails
-      // First remove the old binary
-      await Deno.remove(binaryPath);
-      // Then move the new one in place
-      await Deno.rename(newBinaryPath, binaryPath);
+    // Double-check if it's a symlink (redundant but safe)
+    if (isSymlink && actualBinaryPath) {
+      targetPath = actualBinaryPath;
+      logger.debug("Updating through symlink", {
+        symlink: binaryPath,
+        target: targetPath,
+      });
+    } else {
+      // Additional symlink check as fallback
+      try {
+        const stat = await Deno.lstat(binaryPath);
+        if (stat.isSymlink) {
+          const linkTarget = await Deno.readLink(binaryPath);
+
+          // Check for broken symlink
+          targetPath = linkTarget.startsWith("/") ? linkTarget : join(binaryPath, "..", linkTarget);
+
+          // Verify the target exists
+          try {
+            await Deno.stat(targetPath);
+          } catch (e) {
+            throw new Error(
+              `Symlink points to non-existent file: ${binaryPath} -> ${targetPath}\n` +
+                `Please fix the symlink or reinstall Atlas`,
+            );
+          }
+
+          logger.debug("Symlink resolved", {
+            symlink: binaryPath,
+            target: targetPath,
+          });
+        }
+      } catch (error) {
+        // If lstat fails, the binary path doesn't exist
+        if (error instanceof Deno.errors.NotFound) {
+          throw new Error(`Binary not found at ${binaryPath}`);
+        }
+        // Other errors, continue with normal flow
+        logger.debug("Symlink check failed, using direct path", { error: error.message });
+      }
+    }
+
+    // Detect circular symlinks (max depth 10)
+    const maxDepth = 10;
+    let depth = 0;
+    let checkPath = targetPath;
+    const visited = new Set<string>();
+
+    while (depth < maxDepth) {
+      try {
+        const stat = await Deno.lstat(checkPath);
+        if (!stat.isSymlink) break;
+
+        if (visited.has(checkPath)) {
+          throw new Error(
+            `Circular symlink detected: ${Array.from(visited).join(" -> ")} -> ${checkPath}`,
+          );
+        }
+        visited.add(checkPath);
+
+        const nextTarget = await Deno.readLink(checkPath);
+        checkPath = nextTarget.startsWith("/") ? nextTarget : join(checkPath, "..", nextTarget);
+        depth++;
+      } catch {
+        break;
+      }
+    }
+
+    if (depth >= maxDepth) {
+      throw new Error(`Symlink chain too deep (>${maxDepth}): ${binaryPath}`);
+    }
+
+    // Now perform the actual replacement
+    targetPath = checkPath;
+
+    // First, try using ditto for the replacement
+    try {
+      const dittoCmd = new Deno.Command("ditto", {
+        args: [newBinaryPath, targetPath],
+      });
+      const result = await dittoCmd.output();
+
+      if (!result.success) {
+        // Log ditto failure
+        const stderr = new TextDecoder().decode(result.stderr);
+        logger.debug("ditto command failed, trying direct replacement", {
+          stderr,
+          target: targetPath,
+        });
+
+        // If ditto fails, try direct replacement
+        await Deno.remove(targetPath);
+        await Deno.rename(newBinaryPath, targetPath);
+      }
+
+      logger.debug("Binary replaced successfully", {
+        method: result.success ? "ditto" : "direct",
+        target: targetPath,
+      });
+      return;
+    } catch (error) {
+      // If we're updating through a symlink and direct update fails,
+      // provide a more helpful error message
+      if (isSymlink) {
+        throw new Error(
+          `Failed to update binary through symlink\n` +
+            `Symlink: ${binaryPath}\n` +
+            `Target: ${targetPath}\n` +
+            `Error: ${error.message}\n` +
+            `Try running 'sudo atlas update' or reinstalling Atlas`,
+        );
+      }
+      // Continue to fallback method below
+      logger.debug("Direct replacement failed, trying fallback method", {
+        error: error.message,
+        target: targetPath,
+      });
+    }
+
+    // For regular files or if symlink update failed, try to remove then copy
+    // This avoids permission issues with overwriting in-place
+    try {
+      await Deno.remove(targetPath);
+
+      // Use ditto to copy to the now-empty location
+      const dittoCmd = new Deno.Command("ditto", {
+        args: [newBinaryPath, targetPath],
+      });
+      const result = await dittoCmd.output();
+
+      if (!result.success) {
+        // If ditto still fails, just move the file
+        logger.debug("ditto failed on regular file, using rename", {
+          target: targetPath,
+        });
+        await Deno.rename(newBinaryPath, targetPath);
+      }
+
+      logger.debug("Binary replaced successfully", {
+        method: result.success ? "ditto" : "rename",
+        target: targetPath,
+      });
+    } catch (removeError) {
+      logger.debug("Failed to remove existing binary, trying atomic swap", {
+        error: removeError.message,
+        target: targetPath,
+      });
+
+      // If we can't remove, try to move the new file to a temp location
+      // and then swap atomically
+      const tempPath = `${targetPath}.new`;
+
+      try {
+        // Copy new binary to temp location
+        const dittoCmd = new Deno.Command("ditto", {
+          args: [newBinaryPath, tempPath],
+        });
+        const result = await dittoCmd.output();
+
+        if (!result.success) {
+          logger.debug("ditto to temp location failed, using copyFile", {
+            tempPath,
+          });
+          await Deno.copyFile(newBinaryPath, tempPath);
+        }
+
+        // Make temp file executable
+        await Deno.chmod(tempPath, 0o755);
+
+        // Atomically replace old with new
+        await Deno.rename(tempPath, targetPath);
+
+        logger.debug("Binary replaced successfully with atomic swap", {
+          target: targetPath,
+        });
+      } catch (error) {
+        // Clean up temp file if it exists
+        try {
+          await Deno.remove(tempPath);
+        } catch {
+          // Ignore cleanup errors
+        }
+
+        // Re-throw with more context
+        throw new Error(
+          `Failed to update binary at ${targetPath}: ${error.message}\n` +
+            `Original error: ${removeError.message}\n` +
+            `${isSymlink ? `Note: This is a symlink pointing to ${targetPath}` : ""}`,
+        );
+      }
     }
   } else {
-    // For other platforms, use standard copy
-    await Deno.copyFile(newBinaryPath, binaryPath);
+    // For other platforms, determine the actual target
+    const targetPath = isSymlink && actualBinaryPath ? actualBinaryPath : binaryPath;
+
+    logger.debug("Replacing binary on non-macOS platform", {
+      platform: Deno.build.os,
+      target: targetPath,
+      isSymlink,
+    });
+
+    try {
+      await Deno.copyFile(newBinaryPath, targetPath);
+      logger.debug("Binary copied successfully", { target: targetPath });
+    } catch (error) {
+      if (isSymlink) {
+        throw new Error(
+          `Failed to update binary through symlink: ${binaryPath} -> ${targetPath}\n` +
+            `Error: ${error.message}`,
+        );
+      }
+      throw error;
+    }
   }
 
-  // Ensure binary is executable
+  // Ensure binary is executable (use the resolved path)
   if (Deno.build.os !== "windows") {
-    await Deno.chmod(binaryPath, 0o755);
+    const targetPath = isSymlink && actualBinaryPath ? actualBinaryPath : binaryPath;
+    await Deno.chmod(targetPath, 0o755);
+    logger.debug("Binary permissions set", {
+      target: targetPath,
+      permissions: "0755",
+    });
   }
 }
 
