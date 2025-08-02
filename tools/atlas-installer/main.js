@@ -12,7 +12,6 @@ function createWindow() {
     resizable: true,
     minWidth: 600,
     minHeight: 400,
-    title: "Atlas Installer",
     titleBarStyle: "hiddenInset",
     fullscreenable: false,
     maximizable: false,
