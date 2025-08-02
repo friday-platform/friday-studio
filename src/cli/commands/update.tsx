@@ -871,9 +871,25 @@ async function replaceBinary(
 ): Promise<void> {
   const { binaryPath } = permissionCheck;
 
-  // Direct replacement - just use Deno.copyFile for all platforms
-  // Atlas binaries are single files, not app bundles, so we don't need ditto
-  await Deno.copyFile(newBinaryPath, binaryPath);
+  if (Deno.build.os === "darwin") {
+    // On macOS, use 'ditto' to preserve code signatures and all metadata
+    // This prevents issues with com.apple.provenance and code signature validation
+    const dittoCmd = new Deno.Command("ditto", {
+      args: [newBinaryPath, binaryPath],
+    });
+    const result = await dittoCmd.output();
+
+    if (!result.success) {
+      // Fall back to mv if ditto fails
+      // First remove the old binary
+      await Deno.remove(binaryPath);
+      // Then move the new one in place
+      await Deno.rename(newBinaryPath, binaryPath);
+    }
+  } else {
+    // For other platforms, use standard copy
+    await Deno.copyFile(newBinaryPath, binaryPath);
+  }
 
   // Ensure binary is executable
   if (Deno.build.os !== "windows") {
