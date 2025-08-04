@@ -120,7 +120,12 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
       console.log(JSON.stringify(agent, null, 2));
     } else {
       // Render with Ink
-      render(<AgentDetailCommand agent={agent} />);
+      const { unmount } = render(<AgentDetailCommand agent={agent} />);
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

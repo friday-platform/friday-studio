@@ -110,7 +110,8 @@ export async function handler(argv: ListArgs) {
       metadata: item.metadata,
     }));
 
-    render(<LibraryListComponent items={componentItems} />);
+    const { unmount } = render(<LibraryListComponent items={componentItems} />);
+    setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch library items");
     console.error(

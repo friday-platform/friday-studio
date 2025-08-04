@@ -239,7 +239,17 @@ export function handler(args: InitArgs) {
     Deno.exit(1);
   }
 
-  render(<WorkspaceInitFlow targetPath={args.path} />);
+  const { unmount } = render(<WorkspaceInitFlow targetPath={args.path} />);
+
+  // Handle process termination gracefully
+  const cleanup = () => {
+    unmount();
+    Deno.exit(0);
+  };
+
+  // Register cleanup handlers
+  Deno.addSignalListener("SIGINT", cleanup);
+  Deno.addSignalListener("SIGTERM", cleanup);
 }
 
 /**

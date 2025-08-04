@@ -27,6 +27,8 @@ export function builder(y: YargsInstance) {
 }
 
 export const handler = async (argv: ListArgs): Promise<void> => {
+  let unmount: (() => void) | undefined;
+
   try {
     // Get workspaces from daemon API using OpenAPI client
     // Note: Unlike the old daemon-client, this doesn't auto-start the daemon
@@ -41,17 +43,24 @@ export const handler = async (argv: ListArgs): Promise<void> => {
     const workspaces = data;
 
     // Render appropriate view based on output format
-    const { unmount } = render(
+    const renderResult = render(
       argv.json
         ? <JsonOutput workspaces={workspaces} />
         : <WorkspaceList registeredWorkspaces={workspaces} />,
     );
+
+    unmount = renderResult.unmount;
 
     // Give a moment for render then exit
     setTimeout(() => {
       unmount();
     }, 100);
   } catch (error) {
+    // Ensure cleanup before exiting on error
+    if (unmount) {
+      unmount();
+    }
+
     // Provide helpful error message if daemon is not running
     const errorMessage = error instanceof Error ? error.message : String(error);
     if (errorMessage.includes("Failed to fetch") || errorMessage.includes("NetworkError")) {

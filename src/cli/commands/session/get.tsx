@@ -78,7 +78,12 @@ export const handler = async (argv: GetArgs): Promise<void> => {
         result: session.result,
         error: session.error,
       };
-      render(<SessionDetailCommand session={sessionDetail} />);
+      const { unmount } = render(<SessionDetailCommand session={sessionDetail} />);
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

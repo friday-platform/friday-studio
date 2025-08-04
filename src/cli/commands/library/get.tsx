@@ -87,12 +87,13 @@ export async function handler(argv: GetArgs) {
       return;
     }
 
-    render(
+    const { unmount } = render(
       <ItemDetailDisplay
         itemDetail={itemDetail}
         includeContent={argv.content}
       />,
     );
+    setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch item");
     console.error(

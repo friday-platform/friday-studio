@@ -241,9 +241,13 @@ const WorkspaceAddUI = ({
   // Handle completion
   useEffect(() => {
     if (status === "complete" || status === "error") {
-      onComplete();
+      // Add a small delay for error state to ensure the error message is visible
+      const delay = status === "error" ? 500 : 0;
+      setTimeout(() => {
+        onComplete();
+      }, delay);
     }
-  }, [status]);
+  }, [status, onComplete]);
 
   if (args.json) {
     // Output JSON for scripting
@@ -391,19 +395,41 @@ const WorkspaceAddUI = ({
 };
 
 export async function handler(argv: AddArgs): Promise<void> {
-  const { waitUntilExit } = render(
+  const { waitUntilExit, unmount } = render(
     <WorkspaceAddUI
       args={argv}
       onComplete={() => {
-        // For non-JSON output, exit after a short delay to ensure render completes
+        // For non-JSON output, unmount and exit after a short delay to ensure render completes
         if (!argv.json) {
-          setTimeout(() => Deno.exit(0), 100);
+          setTimeout(() => {
+            unmount();
+            Deno.exit(0);
+          }, 100);
         }
       }}
     />,
   );
 
-  if (argv.json) {
-    await waitUntilExit();
+  // Handle process termination gracefully
+  const cleanup = () => {
+    unmount();
+  };
+
+  // Register cleanup handlers
+  Deno.addSignalListener("SIGINT", cleanup);
+  Deno.addSignalListener("SIGTERM", cleanup);
+
+  try {
+    if (argv.json) {
+      await waitUntilExit();
+    }
+  } catch (error) {
+    // Ensure cleanup on error
+    unmount();
+    throw error;
+  } finally {
+    // Remove signal listeners
+    Deno.removeSignalListener("SIGINT", cleanup);
+    Deno.removeSignalListener("SIGTERM", cleanup);
   }
 }

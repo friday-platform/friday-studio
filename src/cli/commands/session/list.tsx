@@ -83,7 +83,12 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       }));
 
       // Render with Ink
-      render(<SessionListComponent sessions={transformedSessions} />);
+      const { unmount } = render(<SessionListComponent sessions={transformedSessions} />);
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

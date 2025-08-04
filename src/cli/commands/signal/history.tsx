@@ -121,7 +121,12 @@ export const handler = async (argv: HistoryArgs): Promise<void> => {
     if (argv.json) {
       console.log(JSON.stringify(historyData, null, 2));
     } else {
-      render(<SignalHistoryCommand data={historyData} />);
+      const { unmount } = render(<SignalHistoryCommand data={historyData} />);
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

@@ -52,12 +52,17 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       );
     } else {
       // Render with Ink
-      render(
+      const { unmount } = render(
         <SignalListComponent
           signalEntries={Object.entries(config.signals || {})}
           workspaceName={workspace.name}
         />,
       );
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

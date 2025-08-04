@@ -70,7 +70,8 @@ export async function handler(argv: TemplatesArgs) {
       return;
     }
 
-    render(<TemplatesDisplay templates={templates} />);
+    const { unmount } = render(<TemplatesDisplay templates={templates} />);
+    setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch templates");
     console.error(

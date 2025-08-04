@@ -48,7 +48,8 @@ export async function handler(argv: StatsArgs) {
       return;
     }
 
-    render(<StatsDisplay stats={stats} />);
+    const { unmount } = render(<StatsDisplay stats={stats} />);
+    setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Failed to fetch statistics");
     console.error(

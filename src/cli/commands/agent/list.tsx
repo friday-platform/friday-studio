@@ -123,9 +123,14 @@ export const handler = async (argv: ListArgs): Promise<void> => {
       }));
 
       // Render with Ink
-      render(
+      const { unmount } = render(
         <AgentListComponent agents={transformedAgents} workspaceName={workspaceName} />,
       );
+
+      // Give a moment for render then exit
+      setTimeout(() => {
+        unmount();
+      }, 100);
     }
   } catch (error) {
     console.error(

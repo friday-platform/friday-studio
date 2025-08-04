@@ -1,4 +1,4 @@
-import { Box, render, Text } from "ink";
+import { Box, render, Text, useApp } from "ink";
 import { useEffect, useState } from "react";
 import { getWorkspaceManager } from "@atlas/workspace";
 import { YargsInstance } from "../../utils/yargs.ts";
@@ -107,7 +107,27 @@ export const handler = async (argv: LogsArgs): Promise<void> => {
       await runDirectLogs(workspaceId, argv);
     } else {
       // Use Ink for interactive display
-      render(<LogsDisplay workspaceId={workspaceId} flags={argv} />);
+      const { unmount, waitUntilExit } = render(
+        <LogsDisplay workspaceId={workspaceId} flags={argv} />,
+      );
+
+      // Handle process termination gracefully
+      const cleanup = () => {
+        unmount();
+        Deno.exit(0);
+      };
+
+      // Register cleanup handlers
+      Deno.addSignalListener("SIGINT", cleanup);
+      Deno.addSignalListener("SIGTERM", cleanup);
+
+      try {
+        await waitUntilExit();
+      } finally {
+        // Remove signal listeners
+        Deno.removeSignalListener("SIGINT", cleanup);
+        Deno.removeSignalListener("SIGTERM", cleanup);
+      }
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -175,6 +195,7 @@ async function runDirectLogs(workspaceId: string, flags: LogsArgs): Promise<void
 
 // Ink component for interactive log display
 function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsArgs }) {
+  const { exit } = useApp();
   const [logs, setLogs] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -219,7 +240,7 @@ function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsA
         // Exit after displaying logs
         setTimeout(() => {
           if (mounted) {
-            Deno.exit(0);
+            exit();
           }
         }, 100);
       } catch (err) {
@@ -227,7 +248,7 @@ function LogsDisplay({ workspaceId, flags }: { workspaceId: string; flags: LogsA
           setError((err as Error).message);
           setLoading(false);
           setTimeout(() => {
-            Deno.exit(1);
+            exit();
           }, 100);
         }
       }

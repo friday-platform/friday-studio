@@ -143,7 +143,8 @@ export async function handler(argv: GenerateArgs) {
     } else if (argv.json) {
       console.log(JSON.stringify(result, null, 2));
     } else {
-      render(<GenerationResultDisplay result={result} stored={argv.store} />);
+      const { unmount } = render(<GenerationResultDisplay result={result} stored={argv.store} />);
+      setTimeout(() => unmount(), 100);
     }
   } catch (error) {
     s.stop("Generation failed");

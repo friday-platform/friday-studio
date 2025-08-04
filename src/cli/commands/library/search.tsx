@@ -91,7 +91,8 @@ export async function handler(argv: SearchArgs) {
       return;
     }
 
-    render(<SearchResultsDisplay result={result} query={argv.query} />);
+    const { unmount } = render(<SearchResultsDisplay result={result} query={argv.query} />);
+    setTimeout(() => unmount(), 100);
   } catch (error) {
     s.stop("Search failed");
     console.error(
