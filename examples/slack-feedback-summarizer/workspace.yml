@@ -38,7 +38,6 @@ tools:
               "conversations_replies",
               "conversations_add_message",
               "conversations_search_messages",
-              "channels_list",
             ]
         client_config:
           timeout:
@@ -80,7 +79,7 @@ signals:
       properties:
         hours_back:
           type: "number"
-          default: 48
+          default: 24
           description: "Number of hours to look back for feedback"
         channel_override:
           type: "string"
@@ -101,7 +100,7 @@ agents:
     description: "Slack message retrieval specialist for feedback collection"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-20250514"
       tools: ["slack-mcp"]
       max_steps: 10
       tool_choice: "auto"
@@ -115,7 +114,7 @@ agents:
         1. **Channel Access**:
            - Target channel: #atlasfeedback (Channel ID: YOUR-FEEDBACK-CHANNEL-ID)
            - Use conversations_history with channel_id parameter
-           - Set limit to "2d" to get messages from last 48 hours
+           - Set limit to "1d" to get messages from last 24 hours
            - The tool expects channel_id not channel parameter
            - Include activity messages can be set to false
 
@@ -163,7 +162,7 @@ agents:
     description: "Feedback analysis and categorization specialist"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-20250514"
       tools: []
       max_steps: 8
       tool_choice: "auto"
@@ -212,7 +211,7 @@ agents:
     description: "Summary generation and Slack posting specialist"
     config:
       provider: "anthropic"
-      model: "claude-3-7-sonnet-latest"
+      model: "claude-sonnet-4-20250514"
       tools: ["slack-mcp"]
       max_steps: 5
       tool_choice: "auto"
@@ -224,7 +223,7 @@ agents:
 
         **Summary Generation Process**:
         1. **Executive Summary**:
-           - Total feedback items in last 48 hours
+           - Total feedback items in last 24 hours
            - Breakdown by category and sentiment
            - Key highlights and critical issues
            - Notable trends or changes
@@ -283,7 +282,7 @@ agents:
 
         ```
         📊 *Atlas Feedback Summary* - [Date]
-        _Analysis Period: Last 48 hours from #atlasfeedback_
+        _Analysis Period: Last 24 hours from #atlasfeedback_
 
         *📈 Overview*
         • Total Feedback Items: X
@@ -370,7 +369,7 @@ jobs:
     prompt: |
       Planning:
         Execute a comprehensive feedback analysis workflow:
-        1. Collect all messages from #atlasfeedback for the last 48 hours
+        1. Collect all messages from #atlasfeedback for the last 24 hours
         2. Analyze and categorize the feedback by type and sentiment
         3. Identify trends, patterns, and critical issues
         4. Generate a well-formatted summary report
@@ -379,7 +378,7 @@ jobs:
 
       Evaluation:
         Evaluate the success of the feedback analysis:
-        - Were all messages from the last 48 hours successfully collected?
+        - Were all messages from the last 24 hours successfully collected?
         - Was the feedback properly categorized and analyzed?
         - Was the summary comprehensive and well-formatted?
         - Was the summary successfully posted to the target channel?
@@ -390,7 +389,7 @@ jobs:
         - id: "feedback-collector"
           context:
             signal: true
-            task: "Retrieve all messages from #atlasfeedback channel for the last 48 hours"
+            task: "Retrieve all messages from #atlasfeedback channel for the last 24 hours"
         - id: "feedback-analyzer"
           context:
             steps: "previous"
