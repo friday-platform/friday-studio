@@ -37,4 +37,4 @@ checkAndDisplayUpdate().catch(() => {
 });
 
 // Parse the commands
-const _argv = await cli.parseAsync();
+await cli.parseAsync();

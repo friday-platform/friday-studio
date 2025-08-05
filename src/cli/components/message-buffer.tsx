@@ -6,12 +6,17 @@ import { ChatMessage } from "./chat-message.tsx";
 // import { GitDiff } from "./git-diff.tsx";
 // import { MultiSelect } from "./multi-select.tsx";
 // import { DirectoryTree } from "./directory-tree.tsx";
-import { Stream } from "../modules/conversation/stream.tsx";
 import { OutputEntry } from "../modules/conversation/types.ts";
 import { Header } from "./header.tsx";
 import { MessageHeader } from "./message-header.tsx";
 import ansiEscapes from "ansi-escapes";
 import { Spinner } from "@inkjs/ui";
+
+interface TypingState {
+  isTyping: boolean;
+  elapsedSeconds: number;
+  message?: string;
+}
 
 const RequestEventSchema = z.object({
   id: z.string(),
@@ -147,10 +152,8 @@ export const MessageBuffer = () => {
   const {
     conversationClient,
     conversationSessionId,
-    typingState,
-    setTypingState,
     sseAbortControllerRef,
-    isCollapsed,
+    staticKey,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
   const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
@@ -160,25 +163,12 @@ export const MessageBuffer = () => {
   const [sseMessages, setSseMessages] = useState<
     Map<string, ReturnType<typeof SSEEventSchema.parse>>
   >(new Map());
-  // const [streamIsPaused, setStreamIsPaused] = useState(false);
   const [output, setOutput] = useState<OutputEntry[]>([]);
-  const [stream, setStream] = useState<OutputEntry | undefined>();
-  const [interval, setIntervalValue] = useState<
-    ReturnType<
-      typeof setInterval
-    > | null
-  >(null);
-  const [staticKey, setStaticKey] = useState(0);
-  const { stdout } = useStdout();
 
-  const refreshStatic = useCallback(() => {
-    stdout.write(ansiEscapes.clearTerminal);
-    setStaticKey((prev) => prev + 1);
-  }, [setStaticKey, stdout]);
-
-  useEffect(() => {
-    refreshStatic();
-  }, [isCollapsed]);
+  const [typingState, setTypingState] = useState<TypingState>({
+    isTyping: false,
+    elapsedSeconds: 0,
+  });
 
   // Create SSE stream when conversation session is ready
   useEffect(() => {
@@ -292,24 +282,27 @@ export const MessageBuffer = () => {
   }
 
   useEffect(() => {
-    if (typingState.isTyping && !interval) {
-      setIntervalValue(
-        setInterval(() => {
-          setTypingState((prev) => ({
-            ...prev,
-            elapsedSeconds: prev.elapsedSeconds + 1,
-          }));
-        }, 1000),
-      );
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    if (typingState.isTyping) {
+      interval = setInterval(() => {
+        setTypingState((prev) => ({
+          ...prev,
+          elapsedSeconds: prev.elapsedSeconds + 1,
+        }));
+      }, 1000);
+    } else {
+      if (interval) {
+        clearInterval(interval);
+      }
     }
 
     return () => {
       if (interval) {
         clearInterval(interval);
-        setIntervalValue(null);
       }
     };
-  }, [typingState.isTyping]);
+  }, [typingState, setTypingState]);
 
   useEffect(() => {
     const messageValues = Array.from(sseMessages.values());
@@ -317,31 +310,23 @@ export const MessageBuffer = () => {
     // Get the latest message to check if it's streaming
     const latestMessage = messageValues[messageValues.length - 1];
 
-    if (
-      latestMessage &&
-      latestMessage.type === "text" &&
-      typingState.isTyping
-    ) {
-      setTypingState((prev) => ({ ...prev, isTyping: false }));
-      setIntervalValue(null);
+    if (latestMessage?.type === "request") {
+      setTypingState({
+        isTyping: true,
+        elapsedSeconds: 0,
+      });
     }
 
-    if (
-      latestMessage &&
-      (latestMessage.type === "text" || latestMessage.type === "thinking")
-    ) {
-      const streamingMessages = getGroupedMessages(
-        messageValues.filter((message) => message.id === latestMessage.id),
-      );
+    if (latestMessage?.type === "finish" || latestMessage?.type === "error") {
+      setTypingState({
+        isTyping: false,
+        elapsedSeconds: 0,
+      });
+    }
 
+    if (latestMessage?.type === "text" || latestMessage?.type === "thinking") {
       const staticMessages = getGroupedMessages(
         messageValues.filter((message) => message.id !== latestMessage.id),
-      );
-
-      setStream(
-        Object.values(streamingMessages)
-          .map(formatMessage)
-          .filter((message) => message !== undefined)[0],
       );
 
       setOutput(
@@ -357,24 +342,8 @@ export const MessageBuffer = () => {
           .map(formatMessage)
           .filter((message) => message !== undefined),
       );
-
-      setStream(undefined);
     }
-
-    if (
-      latestMessage &&
-      (latestMessage.type === "finish" || latestMessage.type === "error")
-    ) {
-      setTypingState((prev) => ({ ...prev, isTyping: false }));
-      setIntervalValue(null);
-    }
-  }, [
-    sseMessages,
-    typingState.isTyping,
-    interval,
-    setTypingState,
-    setIntervalValue,
-  ]);
+  }, [sseMessages]);
 
   return (
     <Box flexDirection="column" flexShrink={0}>
@@ -513,14 +482,9 @@ export const MessageBuffer = () => {
         {(item) => item}
       </Static>
 
-      <Stream value={stream} />
-
-      {/* Typing indicator */}
       {typingState.isTyping && (
-        <Box paddingX={1} paddingTop={1}>
-          <Spinner
-            label={`${typingState.message || "Thinking..."} (${typingState.elapsedSeconds}s)`}
-          />
+        <Box paddingX={1} paddingTop={1} flexShrink={0}>
+          <Spinner label={`Thinking... (${typingState.elapsedSeconds}s)`} />
         </Box>
       )}
     </Box>

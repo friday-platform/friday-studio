@@ -4,10 +4,8 @@ import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
-// import { ConfigView } from "../../views/ConfigView.tsx";
 import CreditsView from "../../views/CreditsView.tsx";
 import Help from "../../views/help.tsx";
-import { InitView } from "../../views/InitView.tsx";
 import { COMMAND_REGISTRY, parseSlashCommand } from "./index.ts";
 import { SignalCommand } from "./SignalCommand.tsx";
 import { AgentCommand } from "./AgentCommand.tsx";
@@ -21,7 +19,7 @@ export function Component() {
   const {
     conversationClient,
     conversationSessionId,
-    setTypingState,
+
     setIsCollapsed,
     exitApp,
     sendDiagnostics,
@@ -51,16 +49,13 @@ export function Component() {
     }
 
     // Show typing indicator
-    setTypingState((prev) => ({ ...prev, isTyping: true }));
 
     try {
       // Just send the message - the persistent SSE listener will handle the response
       await conversationClient.sendMessage(conversationSessionId, input);
 
       // The persistent SSE listener will handle the response
-    } catch {
-      setTypingState((prev) => ({ ...prev, isTyping: false }));
-    }
+    } catch {}
   };
 
   // Command execution handler
@@ -207,8 +202,6 @@ export function Component() {
       )}
 
       {view === "help" && <Help onExit={() => setView("command")} />}
-      {view === "init" && <InitView onExit={() => setView("command")} />}
-      {/* {view === "config" && <ConfigView onExit={() => setView("command")} />} */}
       {view === "credits" && <CreditsView onExit={() => setView("command")} />}
     </Box>
   );

@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useStdout } from "ink";
 import process from "node:process";
 
+import { useAppContext } from "../contexts/app-context.tsx";
+
 export interface ResponsiveDimensions {
   width: number;
   height: number;
@@ -25,6 +27,7 @@ export interface ResponsiveDimensionsOptions {
 export const useResponsiveDimensions = (
   options: ResponsiveDimensionsOptions = {},
 ): ResponsiveDimensions => {
+  const { refreshStatic } = useAppContext();
   const { minHeight = 24, padding = 0 } = options;
   const { stdout } = useStdout();
   const [, setForceUpdate] = useState(0);
@@ -35,13 +38,14 @@ export const useResponsiveDimensions = (
   const terminalHeight = Math.max(minHeight, actualTerminalHeight);
 
   // Calculate dimensions with padding
-  const paddedWidth = Math.max(0, terminalWidth - (padding * 2));
-  const paddedHeight = Math.max(0, terminalHeight - (padding * 2));
+  const paddedWidth = Math.max(0, terminalWidth - padding * 2);
+  const paddedHeight = Math.max(0, terminalHeight - padding * 2);
 
   // Listen for terminal resize events
   useEffect(() => {
     const handleResize = () => {
       setForceUpdate((prev) => prev + 1);
+      refreshStatic();
     };
 
     // Listen to both resize events for better compatibility

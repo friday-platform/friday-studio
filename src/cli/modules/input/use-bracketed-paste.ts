@@ -35,5 +35,11 @@ export const useBracketedPaste = () => {
 
     // Since we're managing this globally, we don't remove listeners on unmount
     // They'll be cleaned up when the process exits
+
+    return () => {
+      process.off("exit", cleanup);
+      process.off("SIGINT", cleanup);
+      process.off("SIGTERM", cleanup);
+    };
   }, []);
 };

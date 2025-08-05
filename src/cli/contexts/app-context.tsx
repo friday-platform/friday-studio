@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import { useStdout } from "ink";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
@@ -8,7 +7,7 @@ import { getDaemonClient } from "../utils/daemon-client.ts";
 import { getAtlasDaemonUrl } from "@atlas/tools";
 import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
 import { getAtlasClient } from "@atlas/client";
-
+import { useStdout } from "ink";
 import ansiEscapes from "ansi-escapes";
 
 interface ConversationDisplayPrefs {
@@ -22,12 +21,6 @@ interface AtlasConfig {
   daemonPort: string;
   streamMessages: boolean;
   conversationDisplay: ConversationDisplayPrefs;
-}
-
-interface TypingState {
-  isTyping: boolean;
-  elapsedSeconds: number;
-  message?: string;
 }
 
 interface AppContextType {
@@ -44,14 +37,14 @@ interface AppContextType {
   conversationSessionId: string | null;
   setConversationSessionId: React.Dispatch<React.SetStateAction<string | null>>;
   sseAbortControllerRef: React.RefObject<AbortController | null>;
-  typingState: TypingState;
-  setTypingState: React.Dispatch<React.SetStateAction<TypingState>>;
   isInitializing: boolean;
   exitApp: () => Promise<void>;
   sendDiagnostics: () => Promise<void>;
   diagnosticsStatus: "idle" | "collecting" | "uploading" | "done" | string;
   daemonStatus: "healthy" | "unhealthy" | "error" | "idle";
   setDaemonStatus: () => Promise<void>;
+  staticKey: number;
+  refreshStatic: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -79,10 +72,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     string | null
   >(null);
   const sseAbortControllerRef = useRef<AbortController | null>(null);
-  const [typingState, setTypingState] = useState<TypingState>({
-    isTyping: false,
-    elapsedSeconds: 0,
-  });
+
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
   const [daemonStatus, setDaemonStatusState] = useState<
@@ -91,14 +81,19 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "collecting" | "uploading" | "done" | string
   >("idle");
-
-  // const timerIntervalRef = useRef<number | null>(null);
+  const [staticKey, setStaticKey] = useState(0);
 
   // Store transport reference for cleanup
   const mcpTransportRef = useRef<StreamableHTTPClientTransport | null>(null);
 
   // Store config in a ref so SSE handler always has latest value
   const configRef = useRef(config);
+  const { stdout } = useStdout();
+
+  const refreshStatic = useCallback(() => {
+    stdout.write(ansiEscapes.clearTerminal);
+    setStaticKey((prev) => prev + 1);
+  }, [setStaticKey, stdout]);
 
   async function cleanup() {
     if (mcpTransportRef.current) {
@@ -122,38 +117,12 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   }
 
   useEffect(() => {
+    refreshStatic();
+  }, [isCollapsed]);
+
+  useEffect(() => {
     configRef.current = config;
   }, [config]);
-
-  // Timer effect for non-streaming mode
-  // useEffect(() => {
-  //   if (typingState.isTyping && !config.streamMessages) {
-  //     const startTime = Date.now();
-  //     setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
-
-  //     const interval = setInterval(() => {
-  //       const now = Date.now();
-  //       const elapsed = Math.floor((now - startTime) / 1000);
-  //       setTypingState((prev) => ({ ...prev, elapsedSeconds: elapsed }));
-  //     }, 1000);
-
-  //     timerIntervalRef.current = interval;
-
-  //     return () => {
-  //       if (timerIntervalRef.current) {
-  //         clearInterval(timerIntervalRef.current);
-  //         timerIntervalRef.current = null;
-  //       }
-  //     };
-  //   } else if (!typingState.isTyping) {
-  //     // Clean up timer when typing stops
-  //     if (timerIntervalRef.current) {
-  //       clearInterval(timerIntervalRef.current);
-  //       timerIntervalRef.current = null;
-  //     }
-  //     setTypingState((prev) => ({ ...prev, elapsedSeconds: 0 }));
-  //   }
-  // }, [typingState.isTyping, config.streamMessages]);
 
   useEffect(() => {
     initializeSystem();
@@ -318,14 +287,14 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         conversationSessionId,
         setConversationSessionId,
         sseAbortControllerRef,
-        typingState,
-        setTypingState,
         isInitializing,
         exitApp,
         sendDiagnostics,
         diagnosticsStatus,
         daemonStatus,
         setDaemonStatus,
+        staticKey,
+        refreshStatic,
       }}
     >
       {children}
