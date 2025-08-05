@@ -136,6 +136,7 @@ export class LLMProvider {
       model: providerConfig.model,
       hasTools: !!(runtimeContext.tools && Object.keys(runtimeContext.tools).length > 0),
       hasMcpServers: !!(runtimeContext.mcpServers && runtimeContext.mcpServers.length > 0),
+      mcpServerList: runtimeContext.mcpServers || [],
     });
 
     // Always use watchdog timer (defaults applied by schema if not configured)
@@ -158,6 +159,16 @@ export class LLMProvider {
       if (tools) {
         watchdog.reportProgress();
       }
+
+      // Debug logging for tools
+      logger.info("Tools prepared for LLM execution", {
+        needsTools,
+        hasTools,
+        hasMcpServers,
+        toolCount: tools ? Object.keys(tools).length : 0,
+        toolNames: tools ? Object.keys(tools) : [],
+        mcpServers: runtimeContext.mcpServers || [],
+      });
 
       const result = await generateText({
         model,

@@ -1,0 +1,84 @@
+# Development files
+.git/
+.gitignore
+.env*
+!.env.ci
+
+# Documentation and non-essential files
+*.md
+docs/
+REASONING_FIXES.md
+GETTING_STARTED.md
+LICENSE-EULA.html
+
+# Test files
+**/tests/
+**/*.test.ts
+**/test/
+integration-tests/
+coverage/
+
+# Development tools and configs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (if any)
+node_modules/
+
+# Build artifacts and temporary files
+build/
+dist/
+tmp/
+temp/
+.tmp/
+*.tmp
+*.log
+atlas-daemon.log
+atlas-test.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Development scripts
+scripts/
+tools/atlas-installer/
+
+# Examples and demos (keep only essential ones)
+examples/
+specs/
+
+# Compiled binaries (we'll build fresh in container)
+atlas
+atlas.exe
+
+# Package manager files from other ecosystems
+package.json
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+composer.json
+requirements.txt
+Pipfile
+Cargo.toml
+go.mod
+
+# IDE and editor files
+*.sublime-*
+.vscode/
+.idea/
+*.iml
+
+# Temporary and cache files
+.cache/
+.deno/
+**/target/
+**/.next/
+**/.nuxt/
+**/coverage/
+
+# Lint and format configs (keep main ones)
+lint-staged.config.js

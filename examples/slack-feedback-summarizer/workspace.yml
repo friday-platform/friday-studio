@@ -1,0 +1,427 @@
+version: "1.0"
+
+workspace:
+  name: "slack-feedback-summarizer"
+  description: "Automated Slack feedback analysis and daily summary generation from #atlasfeedback channel"
+
+# Enable MCP server support for this workspace
+server:
+  mcp:
+    enabled: true
+
+# =============================================================================
+# TOOLS CONFIGURATION - SLACK MCP SERVER
+# =============================================================================
+# Integrates Slack API for reading messages and posting summaries
+# =============================================================================
+
+tools:
+  mcp:
+    servers:
+      # Slack MCP Server Integration using korotovsky/slack-mcp-server
+      # IMPORTANT: This server does NOT support bot tokens (xoxb-)!
+      # You need either:
+      # 1. User OAuth token (xoxp-) OR
+      # 2. Browser tokens (xoxc- and xoxd-)
+      slack-mcp:
+        transport:
+          type: "stdio"
+          command: "npx"
+          args: ["-y", "slack-mcp-server@latest"]
+        env:
+          SLACK_MCP_XOXP_TOKEN: "xoxp-YOUR-SLACK-USER-TOKEN-HERE"
+          SLACK_MCP_ADD_MESSAGE_TOOL: "true"
+        tools:
+          allow:
+            [
+              "conversations_history",
+              "conversations_replies",
+              "conversations_add_message",
+              "conversations_search_messages",
+              "channels_list",
+            ]
+        client_config:
+          timeout:
+            progressTimeout: "5m"
+            maxTotalTimeout: "15m"
+
+# =============================================================================
+# SIGNAL CONFIGURATION - DAILY SCHEDULED TRIGGER
+# =============================================================================
+# Daily trigger at 9pm for feedback summarization
+# Manual trigger available for testing
+# =============================================================================
+
+signals:
+  # Daily Automated Summary Generation
+  daily-summary:
+    description: "Daily trigger at 9pm for feedback summarization"
+    provider: "schedule"
+    config:
+      schedule: "0 21 * * *" # 9pm every day
+      timezone: "America/Los_Angeles" # Adjust to your timezone
+    schema:
+      type: "object"
+      properties:
+        trigger_type:
+          type: "string"
+          enum: ["scheduled"]
+          default: "scheduled"
+      required: ["trigger_type"]
+
+  # Manual Trigger for Testing
+  manual-summary:
+    description: "Manual HTTP trigger for on-demand feedback analysis"
+    provider: "http"
+    config:
+      path: "/summarize"
+    schema:
+      type: "object"
+      properties:
+        hours_back:
+          type: "number"
+          default: 48
+          description: "Number of hours to look back for feedback"
+        channel_override:
+          type: "string"
+          description: "Optional channel override for testing"
+      required: []
+
+# =============================================================================
+# AGENT CONFIGURATION - FEEDBACK ANALYSIS SPECIALISTS
+# =============================================================================
+# feedback-collector: Retrieves messages from Slack channel
+# feedback-analyzer: Analyzes and categorizes feedback
+# summary-generator: Creates comprehensive summary and posts to Slack
+# =============================================================================
+
+agents:
+  feedback-collector:
+    type: "llm"
+    description: "Slack message retrieval specialist for feedback collection"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      tools: ["slack-mcp"]
+      max_steps: 10
+      tool_choice: "auto"
+      temperature: 0.2
+      max_tokens: 4000
+      timeout: "3m"
+      prompt: |
+        You are a Slack feedback collection specialist responsible for retrieving messages from the #atlasfeedback channel.
+
+        **Your Collection Process**:
+        1. **Channel Access**:
+           - Target channel: #atlasfeedback (Channel ID: YOUR-FEEDBACK-CHANNEL-ID)
+           - Use conversations_history with channel_id parameter
+           - Set limit to "2d" to get messages from last 48 hours
+           - The tool expects channel_id not channel parameter
+           - Include activity messages can be set to false
+
+        2. **Message Extraction**:
+           - Messages are returned in CSV format with columns: UserID,UserName,RealName,Channel,ThreadTs,Text,Time,Cursor
+           - Extract message text, author username (not ID), timestamp from the CSV
+           - Use the UserName field for display, not UserID
+           - Include thread replies if ThreadTs is present
+           - Filter out bot messages unless they contain user feedback
+           - Preserve context and full conversations
+
+        3. **Data Organization**:
+           - Parse the CSV response carefully
+           - Group related messages and threads
+           - Maintain chronological order
+           - Identify feedback themes and topics
+           - Note message frequency and engagement
+
+        **Output Format**:
+        Provide structured JSON with all feedback messages:
+        ```json
+        {
+          "feedback_messages": [
+            {
+              "timestamp": "2025-01-01T10:00:00Z",
+              "author": "username",
+              "message": "feedback content",
+              "thread_replies": [],
+              "category": "feature_request|bug_report|general_feedback"
+            }
+          ],
+          "collection_metadata": {
+            "channel": "#atlasfeedback",
+            "channel_id": "YOUR-FEEDBACK-CHANNEL-ID",
+            "start_time": "timestamp",
+            "end_time": "timestamp",
+            "total_messages": 50,
+            "unique_authors": 12
+          }
+        }
+        ```
+
+  feedback-analyzer:
+    type: "llm"
+    description: "Feedback analysis and categorization specialist"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      tools: []
+      max_steps: 8
+      tool_choice: "auto"
+      temperature: 0.3
+      max_tokens: 4000
+      timeout: "2m"
+      prompt: |
+        You are a feedback analysis specialist who categorizes and analyzes user feedback from Slack messages.
+
+        **Your Analysis Process**:
+        1. **Categorization**:
+           - Feature Requests: New functionality or enhancements
+           - Bug Reports: Issues, errors, or problems
+           - Performance Feedback: Speed, reliability concerns
+           - User Experience: UI/UX feedback and suggestions
+           - Documentation: Requests for better docs or examples
+           - General Feedback: Praise, criticism, or other comments
+
+        2. **Sentiment Analysis**:
+           - Positive: Praise, satisfaction, success stories
+           - Negative: Frustration, complaints, issues
+           - Neutral: Questions, suggestions, observations
+           - Critical: Urgent issues requiring immediate attention
+
+        3. **Priority Assessment**:
+           - High: Critical bugs, security issues, major blockers
+           - Medium: Feature requests, UX improvements
+           - Low: Nice-to-have features, minor issues
+
+        4. **Theme Identification**:
+           - Common patterns across multiple feedback items
+           - Recurring issues or requests
+           - Trending topics or concerns
+
+        5. **Actionable Insights**:
+           - Specific recommendations based on feedback
+           - Quick wins (1-2 days) vs medium-term (2-4 days) vs strategic (1-2 weeks)
+           - Use startup timelines: days not weeks/months
+           - Focus on rapid iteration and immediate impact
+
+        **Store Analysis Results**:
+        After analysis, store the results in the atlas library for historical tracking and trend analysis.
+
+  summary-generator:
+    type: "llm"
+    description: "Summary generation and Slack posting specialist"
+    config:
+      provider: "anthropic"
+      model: "claude-3-7-sonnet-latest"
+      tools: ["slack-mcp"]
+      max_steps: 5
+      tool_choice: "auto"
+      temperature: 0.4
+      max_tokens: 4000
+      timeout: "2m"
+      prompt: |
+        You are a summary generation specialist who creates comprehensive daily feedback summaries and posts them to Slack.
+
+        **Summary Generation Process**:
+        1. **Executive Summary**:
+           - Total feedback items in last 48 hours
+           - Breakdown by category and sentiment
+           - Key highlights and critical issues
+           - Notable trends or changes
+
+        2. **Detailed Sections**:
+           - **Critical Issues** (if any):
+             - Include specific error messages or failure descriptions
+             - Note which users reported the issue and when
+             - Assess potential impact on users
+             - Suggest immediate actions if applicable
+
+           - **Feature Requests**:
+             - List each request with user context and use case
+             - Group similar requests and note frequency
+             - Include user quotes where relevant
+             - Prioritize based on user impact and frequency
+
+           - **Bug Reports**:
+             - Describe the bug behavior and expected behavior
+             - Include steps to reproduce if mentioned
+             - Note affected users and frequency
+             - Link related issues together
+
+           - **Positive Feedback**:
+             - Quote specific praise from users
+             - Highlight which features users love
+             - Note successful use cases
+             - Include user success stories
+
+           - **Trending Topics**:
+             - Identify patterns across multiple feedback items
+             - Note increasing or decreasing trends
+             - Highlight new themes emerging
+             - Connect related feedback across categories
+
+        3. **Formatting for Slack**:
+           - Use Slack markdown for clear formatting
+           - Include emoji indicators for categories
+           - Provide detailed but scannable content
+           - Target length: 800-1200 words for comprehensive coverage
+           - Use bullet points and sub-bullets for clarity
+           - Include relevant user quotes in italics
+           - CRITICAL: Always use @username format (e.g., @david, @lukasz), NEVER use Slack user IDs (e.g., @U05JAT8RJ93)
+           - Extract usernames from the CSV data, not user IDs
+
+        4. **Posting Instructions**:
+           - Target channel: #atlasfeedback (Channel ID: YOUR-FEEDBACK-CHANNEL-ID)
+           - Use conversations_add_message with these parameters:
+             - channel_id: "YOUR-SUMMARY-CHANNEL-ID"
+             - payload: The formatted summary message
+             - content_type: "text/markdown" (REQUIRED for proper formatting)
+           - Include timestamp and analysis period in the message
+
+        **Slack Message Format**:
+        IMPORTANT: Always specify content_type: "text/markdown" when posting to ensure proper formatting!
+
+        ```
+        📊 *Atlas Feedback Summary* - [Date]
+        _Analysis Period: Last 48 hours from #atlasfeedback_
+
+        *📈 Overview*
+        • Total Feedback Items: X
+        • Active Contributors: Y
+        • Overall Sentiment: [Positive/Mixed/Negative] (X% positive, Y% negative, Z% neutral)
+        • Most Active Period: [Time range with most feedback]
+        • New vs Returning Contributors: X new, Y returning
+
+        *🚨 Critical Issues* (if any)
+        • *[Issue Title]*
+          - Reported by: @username1, @username2 (X total reports)
+          - First reported: [Timestamp]
+          - Impact: [Description of user impact]
+          - Error details: _"[Specific error message or behavior]"_
+          - Suggested action: [Immediate steps to address]
+
+        *✨ Feature Requests* (Top 5)
+        1. *[Feature Name]* - requested by X users
+           - Use case: [Why users want this]
+           - User quote: _"[Relevant quote from feedback]"_
+           - Priority: [High/Medium/Low based on impact]
+
+        2. *[Feature Name]* - requested by Y users
+           - Context: [Additional details about the request]
+           - Related to: [Any connected features or issues]
+
+        *🐛 Bug Reports*
+        • *[Bug Description]*
+          - Reported by: @username (and X others)
+          - Frequency: [How often it occurs]
+          - Steps to reproduce: [If provided]
+          - Current behavior vs Expected: [Brief comparison]
+          - Workaround: [If any users found one]
+
+        *💚 Positive Feedback*
+        • *[Feature/Aspect Praised]*
+          - User quote: _"[Specific praise from user]"_
+          - Impact: [How it's helping users]
+        • *Success Story*: @username reported [specific achievement/benefit]
+
+        *📌 Trending Topics*
+        • *[Topic 1]*: X mentions (↑ increased from last period)
+          - Key concerns: [Main points users are raising]
+          - Example feedback: _"[Representative quote]"_
+        • *[Topic 2]*: Y mentions
+          - Pattern identified: [What's driving this trend]
+          - Related issues: [Connected feedback items]
+
+        *🎯 Recommended Actions*
+        1. *Quick Wins (1-2 days)*
+           - [Specific fixes that can be done immediately]
+           - Why: [Based on which critical feedback]
+           - Impact: [Expected benefit]
+
+        2. *Medium-Term (2-4 days)*
+           - [Features or improvements needing more work]
+           - Addresses: [Which feedback items]
+           - Resources: [Who should work on it]
+
+        3. *Strategic (1-2 weeks)*
+           - [Larger improvements or new features]
+           - Rationale: [Long-term user benefit]
+           - Dependencies: [What needs to be done first]
+
+        _Generated by Atlas Feedback Summarizer_
+        ```
+
+        Note: Use single asterisks (*) for bold in Slack markdown, not double asterisks (**)
+
+# =============================================================================
+# JOB DEFINITIONS - FEEDBACK SUMMARIZATION WORKFLOW
+# =============================================================================
+# Main job: daily-feedback-summary runs at 9pm daily
+# Manual trigger available for testing and on-demand summaries
+# =============================================================================
+
+jobs:
+  daily-feedback-summary:
+    name: "daily-feedback-summary"
+    description: "Automated daily feedback collection, analysis, and summary generation"
+    triggers:
+      - signal: "daily-summary"
+      - signal: "manual-summary"
+    prompt: |
+      Planning:
+        Execute a comprehensive feedback analysis workflow:
+        1. Collect all messages from #atlasfeedback for the last 48 hours
+        2. Analyze and categorize the feedback by type and sentiment
+        3. Identify trends, patterns, and critical issues
+        4. Generate a well-formatted summary report
+        5. Post the summary to #lcf-bot-test channel
+        6. Store the analysis in workspace memory for trend tracking
+
+      Evaluation:
+        Evaluate the success of the feedback analysis:
+        - Were all messages from the last 48 hours successfully collected?
+        - Was the feedback properly categorized and analyzed?
+        - Was the summary comprehensive and well-formatted?
+        - Was the summary successfully posted to the target channel?
+        - Was the analysis stored for future reference?
+    execution:
+      strategy: "sequential"
+      agents:
+        - id: "feedback-collector"
+          context:
+            signal: true
+            task: "Retrieve all messages from #atlasfeedback channel for the last 48 hours"
+        - id: "feedback-analyzer"
+          context:
+            steps: "previous"
+            task: "Analyze and categorize all collected feedback, identify patterns and priorities"
+        - id: "summary-generator"
+          context:
+            steps: "previous"
+            task: "Generate comprehensive summary and post to #lcf-bot-test channel"
+
+# =============================================================================
+# MEMORY CONFIGURATION - FEEDBACK TRACKING AND TREND ANALYSIS
+# =============================================================================
+# Workspace memory for tracking feedback trends over time
+# =============================================================================
+
+memory:
+  enabled: true
+  scope: "workspace"
+  session:
+    include_in_context: true
+    max_context_entries: 20
+  retention:
+    max_age_days: 90 # Keep feedback history for 90 days
+    max_entries: 5000
+    cleanup_interval_hours: 24
+  include_types:
+    - "feedback_summaries"
+    - "feedback_categories"
+    - "sentiment_analysis"
+    - "trend_tracking"
+    - "critical_issues"
+    - "feature_requests"
+    - "user_patterns"
+    - "action_items"

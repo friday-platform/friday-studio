@@ -786,6 +786,20 @@ async function registerMCPServers(config: MergedConfig, workspaceId: string): Pr
       hasWorkspaceConfig: !!config.workspace,
     });
 
+    // Debug logging to see what config we have
+    logger.debug("Config structure before MCPServerRegistry.initialize", {
+      operation: "mcp_server_registration",
+      workspaceId,
+      configKeys: Object.keys(config),
+      workspaceConfigKeys: config.workspace ? Object.keys(config.workspace) : [],
+      hasWorkspaceTools: !!config.workspace?.tools,
+      hasWorkspaceMcp: !!config.workspace?.tools?.mcp,
+      hasWorkspaceServers: !!config.workspace?.tools?.mcp?.servers,
+      workspaceServerIds: config.workspace?.tools?.mcp?.servers
+        ? Object.keys(config.workspace.tools.mcp.servers)
+        : [],
+    });
+
     // Initialize MCPServerRegistry to handle merging platform and workspace configs
     // This will inject atlas-platform configuration
     await MCPServerRegistry.initialize(

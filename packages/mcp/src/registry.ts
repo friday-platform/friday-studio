@@ -67,6 +67,20 @@ export class MCPServerRegistry {
   ): Promise<void> {
     if (this.initialized) return;
 
+    // Debug logging to understand what's being passed
+    logger.debug("MCPServerRegistry.initialize called", {
+      operation: "mcp_registry_initialization",
+      hasAtlasConfig: !!atlasConfig,
+      hasWorkspaceConfig: !!workspaceConfig,
+      workspaceConfigKeys: workspaceConfig ? Object.keys(workspaceConfig) : [],
+      hasTools: !!workspaceConfig?.tools,
+      hasMcp: !!workspaceConfig?.tools?.mcp,
+      hasServers: !!workspaceConfig?.tools?.mcp?.servers,
+      serverIds: workspaceConfig?.tools?.mcp?.servers
+        ? Object.keys(workspaceConfig.tools.mcp.servers)
+        : [],
+    });
+
     // Inject atlas-platform MCP server configuration
     const platformTools = await this.getAllPlatformTools();
 
