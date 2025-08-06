@@ -8,6 +8,7 @@ import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
 import { getAtlasClient } from "@atlas/client";
 import { useStdout } from "ink";
 import ansiEscapes from "ansi-escapes";
+import { setupTerminal } from "../modules/enable-multiline/index.ts";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -44,6 +45,7 @@ interface AppContextType {
   setDaemonStatus: () => Promise<void>;
   enableMultiline: () => Promise<void>;
   multilineSetupStatus: "idle" | "running" | "done" | string;
+  multilineTerminalType: "Apple_Terminal" | "iTerm.app" | "ghostty" | null;
   staticKey: number;
   refreshStatic: () => void;
 }
@@ -85,6 +87,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [multilineSetupStatus, setMultilineSetupStatus] = useState<
     "idle" | "running" | "done" | string
   >("idle");
+  const [multilineTerminalType, setMultilineTerminalType] = useState<
+    "Apple_Terminal" | "iTerm.app" | "ghostty" | null
+  >(null);
 
   // const timerIntervalRef = useRef<number | null>(null);
   const [staticKey, setStaticKey] = useState(0);
@@ -287,6 +292,10 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
       if (result.success) {
         setMultilineSetupStatus("done");
+        // Store the terminal type if available
+        if (result.terminalType) {
+          setMultilineTerminalType(result.terminalType);
+        }
       } else {
         setMultilineSetupStatus(result.error || "Failed to configure terminal");
       }
@@ -297,6 +306,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     // Reset status after showing for a moment
     setTimeout(() => {
       setMultilineSetupStatus("idle");
+      setMultilineTerminalType(null); // Reset terminal type too
     }, 5000);
   };
 
@@ -322,6 +332,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setDaemonStatus,
         enableMultiline,
         multilineSetupStatus,
+        multilineTerminalType,
         staticKey,
         refreshStatic,
       }}

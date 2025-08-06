@@ -47,14 +47,20 @@ export async function setupTerminal(): Promise<SetupResult> {
 
   // Handle supported terminals
   switch (terminal.type) {
-    case "Apple_Terminal":
-      return await setupAppleTerminal();
+    case "Apple_Terminal": {
+      const result = await setupAppleTerminal();
+      return { ...result, terminalType: "Apple_Terminal" };
+    }
 
-    case "iTerm.app":
-      return await setupITerm2();
+    case "iTerm.app": {
+      const result = await setupITerm2();
+      return { ...result, terminalType: "iTerm.app" };
+    }
 
-    case "ghostty":
-      return await setupGhostty();
+    case "ghostty": {
+      const result = await setupGhostty();
+      return { ...result, terminalType: "ghostty" };
+    }
 
     case "unknown":
       return {

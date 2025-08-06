@@ -22,6 +22,7 @@ export interface SetupResult {
   success: boolean;
   error?: string; // Only populated on failure
   backupPath?: string;
+  terminalType?: "Apple_Terminal" | "iTerm.app" | "ghostty"; // Terminal type for context
 }
 
 export interface TerminalSetupState {

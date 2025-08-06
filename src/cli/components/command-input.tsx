@@ -15,7 +15,8 @@ export const CommandInput = ({
   onSubmit,
   isDisabled = false,
 }: CommandInputProps) => {
-  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus } = useAppContext();
+  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus, multilineTerminalType } =
+    useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -241,7 +242,13 @@ export const CommandInput = ({
           <Box flexDirection="row" paddingX={2}>
             {multilineSetupStatus === "running" && <Text dimColor>Configuring terminal...</Text>}
 
-            {multilineSetupStatus === "done" && <Text color="green">Multiline input enabled</Text>}
+            {multilineSetupStatus === "done" && (
+              <Text color="green">
+                Multiline input enabled
+                {multilineTerminalType === "Apple_Terminal" &&
+                  ". Please restart Terminal.app to apply changes"}
+              </Text>
+            )}
 
             {multilineSetupStatus !== "running" && multilineSetupStatus !== "done" && (
               <Text color="red">Error: {multilineSetupStatus}</Text>
