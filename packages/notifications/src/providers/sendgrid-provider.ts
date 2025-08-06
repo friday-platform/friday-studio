@@ -3,6 +3,7 @@
  */
 
 import sgMail from "@sendgrid/mail";
+import { z } from "zod/v4";
 import type {
   EmailParams,
   MessageParams,
@@ -11,6 +12,16 @@ import type {
 } from "@atlas/config";
 import { BaseNotificationProvider, type BaseProviderConfig } from "./base-provider.ts";
 import { NotificationSendError, ProviderConfigError } from "../types.ts";
+import { getAtlasVersion } from "../../../../src/utils/version.ts";
+
+// JWT payload schema for Atlas keys
+const AtlasJWTPayloadSchema = z.object({
+  email: z.string().email().optional(),
+  iss: z.literal("tempest-atlas").optional(),
+  sub: z.string(),
+  exp: z.number(),
+  iat: z.number(),
+});
 
 /**
  * SendGrid-specific configuration
@@ -287,7 +298,73 @@ export class SendGridProvider extends BaseNotificationProvider {
     // Always use 'tempest-atlas' IP pool
     message.ipPoolName = "tempest-atlas";
 
+    // Add custom Atlas tracking headers
+    message.headers = this.buildCustomHeaders();
+
     return message as unknown as sgMail.MailDataRequired;
+  }
+
+  /**
+   * Build custom headers for Atlas tracking
+   */
+  private buildCustomHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+
+    // Add Atlas version
+    headers["X-Atlas-Version"] = getAtlasVersion();
+
+    // Add hostname (always lowercase)
+    try {
+      headers["X-Atlas-Hostname"] = Deno.hostname().toLowerCase();
+    } catch {
+      headers["X-Atlas-Hostname"] = "unknown";
+    }
+
+    // Add user from Atlas key if available
+    const atlasKey = Deno.env.get("ATLAS_KEY");
+    if (atlasKey) {
+      const userEmail = this.extractUserFromJWT(atlasKey);
+      if (userEmail) {
+        headers["X-Atlas-User"] = userEmail;
+      }
+    }
+
+    return headers;
+  }
+
+  /**
+   * Extract user email from JWT token using proper validation
+   */
+  private extractUserFromJWT(token: string): string | null {
+    try {
+      // JWT consists of three base64url-encoded parts separated by dots
+      const parts = token.split(".");
+      if (parts.length !== 3) {
+        return null;
+      }
+
+      // Decode the payload (second part)
+      const payloadString = parts[1];
+      if (!payloadString) {
+        return null;
+      }
+
+      // Decode base64url (handle URL-safe base64)
+      const payload = JSON.parse(atob(payloadString.replace(/-/g, "+").replace(/_/g, "/")));
+
+      // Validate with Zod schema
+      const validatedPayload = AtlasJWTPayloadSchema.safeParse(payload);
+
+      if (!validatedPayload.success) {
+        return null;
+      }
+
+      // Return email if present and valid
+      return validatedPayload.data.email || null;
+    } catch {
+      // Silently fail if JWT parsing fails - headers are optional enhancements
+      return null;
+    }
   }
 
   /**
