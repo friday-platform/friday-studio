@@ -15,7 +15,7 @@ export const CommandInput = ({
   onSubmit,
   isDisabled = false,
 }: CommandInputProps) => {
-  const { exitApp, diagnosticsStatus, daemonStatus } = useAppContext();
+  const { exitApp, diagnosticsStatus, daemonStatus, multilineSetupStatus } = useAppContext();
 
   const [currentInput, setCurrentInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -234,6 +234,18 @@ export const CommandInput = ({
               <Text color="yellow">◆ Atlas daemon is not running</Text>
             )}
             {daemonStatus === "error" && <Text color="red">Error: {daemonStatus}</Text>}
+          </Box>
+        )}
+
+        {multilineSetupStatus !== "idle" && (
+          <Box flexDirection="row" paddingX={2}>
+            {multilineSetupStatus === "running" && <Text dimColor>Configuring terminal...</Text>}
+
+            {multilineSetupStatus === "done" && <Text color="green">Multiline input enabled</Text>}
+
+            {multilineSetupStatus !== "running" && multilineSetupStatus !== "done" && (
+              <Text color="red">Error: {multilineSetupStatus}</Text>
+            )}
           </Box>
         )}
       </Box>

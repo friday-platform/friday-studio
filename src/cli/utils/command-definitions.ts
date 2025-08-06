@@ -49,6 +49,10 @@ export const COMMAND_DEFINITIONS: CommandDefinition[] = [
     description: "Send diagnostic information to Atlas developers",
   },
   {
+    command: "/enable-multiline",
+    description: "Configure terminal for multi-line input (macOS only)",
+  },
+  {
     command: "/exit",
     description: "Exit the Atlas interactive interface (quit, q)",
   },

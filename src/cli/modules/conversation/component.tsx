@@ -24,6 +24,7 @@ export function Component() {
     exitApp,
     sendDiagnostics,
     setDaemonStatus,
+    enableMultiline,
   } = useAppContext();
   const [view, setView] = useState<
     "help" | "command" | "init" | "config" | "credits"
@@ -124,6 +125,11 @@ export function Component() {
 
     if (parsed.command === "session") {
       setActiveCommand("session");
+      return;
+    }
+
+    if (parsed.command === "enable-multiline") {
+      enableMultiline();
       return;
     }
 

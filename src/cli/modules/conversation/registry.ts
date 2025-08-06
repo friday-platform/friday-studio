@@ -67,4 +67,10 @@ export const COMMAND_REGISTRY: Record<string, CommandDefinition> = {
     description: "Send diagnostic information to Atlas developers",
     usage: "/send-diagnostics",
   },
+
+  "enable-multiline": {
+    name: "enable-multiline",
+    description: "Configure terminal for multi-line input (macOS only)",
+    usage: "/enable-multiline",
+  },
 };

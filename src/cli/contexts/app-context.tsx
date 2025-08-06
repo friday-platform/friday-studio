@@ -1,5 +1,4 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
@@ -43,6 +42,8 @@ interface AppContextType {
   diagnosticsStatus: "idle" | "collecting" | "uploading" | "done" | string;
   daemonStatus: "healthy" | "unhealthy" | "error" | "idle";
   setDaemonStatus: () => Promise<void>;
+  enableMultiline: () => Promise<void>;
+  multilineSetupStatus: "idle" | "running" | "done" | string;
   staticKey: number;
   refreshStatic: () => void;
 }
@@ -81,6 +82,11 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "collecting" | "uploading" | "done" | string
   >("idle");
+  const [multilineSetupStatus, setMultilineSetupStatus] = useState<
+    "idle" | "running" | "done" | string
+  >("idle");
+
+  // const timerIntervalRef = useRef<number | null>(null);
   const [staticKey, setStaticKey] = useState(0);
 
   // Store transport reference for cleanup
@@ -273,6 +279,27 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     }, 5000);
   };
 
+  const enableMultiline = async () => {
+    try {
+      setMultilineSetupStatus("running");
+
+      const result = await setupTerminal();
+
+      if (result.success) {
+        setMultilineSetupStatus("done");
+      } else {
+        setMultilineSetupStatus(result.error || "Failed to configure terminal");
+      }
+    } catch (err) {
+      setMultilineSetupStatus(err instanceof Error ? err.message : String(err));
+    }
+
+    // Reset status after showing for a moment
+    setTimeout(() => {
+      setMultilineSetupStatus("idle");
+    }, 5000);
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -293,6 +320,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         diagnosticsStatus,
         daemonStatus,
         setDaemonStatus,
+        enableMultiline,
+        multilineSetupStatus,
         staticKey,
         refreshStatic,
       }}
