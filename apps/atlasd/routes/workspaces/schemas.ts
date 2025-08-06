@@ -94,6 +94,9 @@ export const updateWorkspaceResponseSchema = z.object({
   backupPath: z.string().optional(),
   filesModified: z.array(z.string()).optional(),
   reloadRequired: z.boolean().optional(),
+  runtimeReloaded: z.boolean().optional(),
+  runtimeDestroyed: z.boolean().optional(),
+  message: z.string().optional(),
   error: z.string().optional(),
 }).meta({ description: "Update workspace configuration response" });
 

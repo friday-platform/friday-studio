@@ -252,6 +252,7 @@ You are updating an EXISTING Atlas workspace. The WorkspaceBuilder has already b
 - If adding new components, ensure they integrate properly with existing ones
 - If removing components, handle dependent references appropriately
 - **For Email Notifications**: When updating agents that send emails, ensure their prompts explicitly instruct them to CALL atlas_notify_email with the report content - don't just have them "format for email"
+- **CRITICAL FOR VALUE UPDATES**: When changing values like email addresses, URLs, or names - ALWAYS check and update ALL occurrences across ALL fields (description, prompt, config, etc.). For agents, this means updating BOTH the description AND prompt fields if the value appears in both
 
 Begin the update process now.`;
 

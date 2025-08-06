@@ -89,14 +89,16 @@ enables real-time progress feedback in the UI.
           // Update lastSeen timestamp after signal processing
           try {
             const manager = ctx.getWorkspaceManager();
-            await manager.updateWorkspaceLastSeen(workspaceId);
+            await manager.updateWorkspaceLastSeen(runtime.workspace.id);
           } catch (error) {
             // Log but don't fail the request - lastSeen update is not critical
-            logger.warn(`Failed to update lastSeen for workspace ${workspaceId}`, { error });
+            logger.warn(`Failed to update lastSeen for workspace ${runtime.workspace.id}`, {
+              error,
+            });
           }
 
           // Reset idle timeout for this workspace
-          ctx.resetIdleTimeout(workspaceId);
+          ctx.resetIdleTimeout(runtime.workspace.id);
 
           return c.json({
             message: "Signal accepted for processing",

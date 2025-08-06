@@ -12,6 +12,10 @@ export interface AppContext {
   // Signal route methods
   getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime>;
   resetIdleTimeout(workspaceId: string): void;
+
+  // Runtime management methods
+  getWorkspaceRuntime(workspaceId: string): WorkspaceRuntime | undefined;
+  destroyWorkspaceRuntime(workspaceId: string): Promise<void>;
 }
 
 // Define variables available in context

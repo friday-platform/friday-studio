@@ -124,7 +124,7 @@ export class AgentExecutionActor implements IAgentExecutionActor {
     return await systemAgent.invoke(request.input);
   }
 
-  private buildAgentSystemPrompt(basePrompt: string): string {
+  private buildAgentSystemPrompt(basePrompt: string, agentDescription?: string): string {
     const currentDate = new Date().toISOString().split("T")[0];
     const autonomyInstructions =
       `You are an autonomous agent operating within the Atlas platform. You MUST complete your assigned task immediately without asking for additional input, clarification, or confirmation. Work independently and provide results based on the information and tools available to you.
@@ -137,7 +137,12 @@ CRITICAL AUTONOMY REQUIREMENTS:
 - If information is missing, work with what you have and note limitations in your output
 - Execute your task immediately and thoroughly`;
 
-    return `Current date and time: ${currentDate}\n\n${autonomyInstructions}\n\n${basePrompt}`;
+    // Include agent description if provided - this contains critical configuration like email addresses
+    const descriptionSection = agentDescription
+      ? `\n\nAGENT ROLE AND CONFIGURATION:\n${agentDescription}`
+      : "";
+
+    return `Current date and time: ${currentDate}\n\n${autonomyInstructions}${descriptionSection}\n\n${basePrompt}`;
   }
 
   private async executeLLMAgent(
@@ -151,7 +156,7 @@ CRITICAL AUTONOMY REQUIREMENTS:
       model: llmConfig.model,
     });
 
-    const systemPrompt = this.buildAgentSystemPrompt(llmConfig.prompt);
+    const systemPrompt = this.buildAgentSystemPrompt(llmConfig.prompt, agentConfig.description);
     const userPrompt = request.input;
 
     // Use generateTextWithTools if MCP servers or tools are configured

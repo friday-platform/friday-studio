@@ -42,3 +42,6 @@ tools/atlas-installer/*.blockmap
 tools/atlas-installer/builder-debug.yml
 tools/atlas-installer/*.backup
 tools/atlas-installer/*.bak
+
+# Test directories
+test-workspace-watcher*

@@ -3,6 +3,9 @@ import { describeRoute, resolver, validator } from "hono-openapi";
 import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { WorkspaceConfigSchema } from "@atlas/config";
+import { logger } from "@atlas/logger";
+import { SessionStatusEnum } from "../../../../src/core/constants/session-status.ts";
+import type { IWorkspaceSession } from "../../../../src/types/core.ts";
 import {
   errorResponseSchema,
   updateWorkspaceResponseSchema,
@@ -116,13 +119,106 @@ updateWorkspace.post(
         // In future, we could analyze config differences to determine this
         const reloadRequired = true;
 
-        return c.json({
-          success: true,
-          workspace,
-          backupPath,
-          filesModified,
-          reloadRequired,
-        });
+        // Get the daemon context to access runtime
+        const runtime = ctx.getWorkspaceRuntime(workspace.id);
+
+        if (runtime) {
+          logger.info("Configuration updated, reloading runtime", {
+            workspaceId,
+            workspaceActualId: workspace.id,
+            currentState: "running",
+          });
+
+          try {
+            // Wait for active sessions with timeout
+            const sessions = runtime.getSessions();
+            const activeSessions = sessions.filter((s: IWorkspaceSession) =>
+              s.status === SessionStatusEnum.RUNNING || s.status === SessionStatusEnum.STARTING
+            );
+
+            if (activeSessions.length > 0) {
+              logger.info("Waiting for active sessions to complete", {
+                workspaceId,
+                workspaceActualId: workspace.id,
+                activeSessionCount: activeSessions.length,
+                sessionIds: activeSessions.map((s: IWorkspaceSession) => s.id),
+              });
+
+              // Wait up to 30 seconds for sessions to complete
+              const timeout = 30000;
+              const startTime = Date.now();
+
+              while (
+                activeSessions.some((s: IWorkspaceSession) =>
+                  s.status === SessionStatusEnum.RUNNING
+                ) &&
+                Date.now() - startTime < timeout
+              ) {
+                await new Promise((resolve) => setTimeout(resolve, 1000));
+              }
+
+              if (Date.now() - startTime >= timeout) {
+                logger.warn("Timeout waiting for sessions, forcing shutdown", {
+                  workspaceId,
+                  workspaceActualId: workspace.id,
+                  remainingSessionCount: activeSessions.filter((s: IWorkspaceSession) =>
+                    s.status === SessionStatusEnum.RUNNING
+                  ).length,
+                });
+              }
+            }
+
+            // Destroy the runtime
+            await ctx.destroyWorkspaceRuntime(workspace.id);
+
+            logger.info("Runtime destroyed successfully", {
+              workspaceId,
+              workspaceActualId: workspace.id,
+              willRecreateOnNextAccess: true,
+            });
+
+            return c.json({
+              success: true,
+              workspace,
+              backupPath,
+              filesModified,
+              reloadRequired,
+              runtimeReloaded: true,
+              runtimeDestroyed: true,
+            });
+          } catch (error) {
+            logger.error("Failed to reload runtime", {
+              workspaceId,
+              workspaceActualId: workspace.id,
+              error: error instanceof Error ? error.message : String(error),
+            });
+
+            return c.json({
+              success: true,
+              workspace,
+              backupPath,
+              filesModified,
+              reloadRequired,
+              runtimeReloaded: false,
+              error: "Failed to destroy runtime",
+            });
+          }
+        } else {
+          logger.info("No runtime to reload", {
+            workspaceId,
+            workspaceActualId: workspace.id,
+          });
+
+          return c.json({
+            success: true,
+            workspace,
+            backupPath,
+            filesModified,
+            reloadRequired,
+            runtimeReloaded: false,
+            message: "No active runtime",
+          });
+        }
       } catch (updateError) {
         return c.json({
           success: false,

@@ -20,6 +20,7 @@ import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { logger } from "@atlas/logger";
+import { SessionStatusEnum } from "../../../src/core/constants/session-status.ts";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -30,6 +31,7 @@ import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
 import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
 import { parse } from "@std/yaml";
+import { WorkspaceFileWatcher } from "./workspace-file-watcher.ts";
 
 export interface AtlasDaemonOptions {
   port?: number;
@@ -72,6 +74,7 @@ export class AtlasDaemon implements AppContext {
   private mcpServer: PlatformMCPServer | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private sseHealthCheckInterval: number | null = null;
+  private fileWatcher: WorkspaceFileWatcher | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
     this.options = {
@@ -141,6 +144,13 @@ export class AtlasDaemon implements AppContext {
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
+    // Initialize file watcher
+    logger.info("Initializing file watcher...");
+    this.fileWatcher = new WorkspaceFileWatcher({
+      onConfigChange: this.handleWorkspaceConfigChange.bind(this),
+      debounceMs: 1000, // Wait 1 second after last change
+    });
+
     // Initialize Platform MCP Server (moved to lazy initialization in getMCPServer)
 
     // Set up workspace wakeup callback
@@ -184,7 +194,6 @@ export class AtlasDaemon implements AppContext {
     await this.discoverAndRegisterExistingCronSignals();
 
     // Initialize system agent registry
-    logger.info("Initializing system agent registry...");
     await SystemAgentRegistry.initialize(kvStorage);
 
     // Start SSE health check interval
@@ -1463,6 +1472,12 @@ export class AtlasDaemon implements AppContext {
       await manager.registerRuntime(workspace.id, runtime);
       logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
 
+      // Start watching workspace configuration file if not a system workspace
+      if (this.fileWatcher && !workspace.metadata?.system) {
+        await this.fileWatcher.watchWorkspace(workspace);
+        logger.debug("Started watching workspace configuration", { workspaceId: workspace.id });
+      }
+
       // Set idle timeout
       this.resetIdleTimeout(workspace.id);
       logger.debug("Idle timeout set", { workspaceId: workspace.id });
@@ -1492,7 +1507,7 @@ export class AtlasDaemon implements AppContext {
     for (const [workspaceId, runtime] of this.runtimes) {
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
-        (s) => s.status === "running" || s.status === "starting",
+        (s) => s.status === SessionStatusEnum.RUNNING || s.status === SessionStatusEnum.STARTING,
       );
 
       if (!hasActiveSessions) {
@@ -1566,9 +1581,14 @@ export class AtlasDaemon implements AppContext {
   /**
    * Destroy a workspace runtime
    */
-  private async destroyWorkspaceRuntime(workspaceId: string) {
+  async destroyWorkspaceRuntime(workspaceId: string) {
     const runtime = this.runtimes.get(workspaceId);
     if (!runtime) return;
+
+    // Stop watching workspace configuration file
+    if (this.fileWatcher) {
+      await this.fileWatcher.unwatchWorkspace(workspaceId);
+    }
 
     try {
       await runtime.shutdown();
@@ -1593,6 +1613,19 @@ export class AtlasDaemon implements AppContext {
   }
 
   // setupSystemWorkspaceRoutes removed - using standard workspace + daemon capabilities pattern
+
+  /**
+   * Handle workspace configuration changes detected by file watcher
+   */
+  private async handleWorkspaceConfigChange(workspaceId: string, filePath: string) {
+    logger.info("Workspace configuration changed, reloading runtime", {
+      workspaceId,
+      filePath,
+    });
+
+    // Reuse existing runtime destruction logic
+    await this.destroyWorkspaceRuntime(workspaceId);
+  }
 
   private setupSignalHandlers() {
     const daemonId = crypto.randomUUID().slice(0, 8);
@@ -1733,6 +1766,12 @@ export class AtlasDaemon implements AppContext {
       clearTimeout(timeoutId);
     }
     this.idleTimeouts.clear();
+
+    // Stop file watcher
+    if (this.fileWatcher) {
+      await this.fileWatcher.stop();
+      this.fileWatcher = null;
+    }
 
     // Stop SSE health check
     if (this.sseHealthCheckInterval) {
