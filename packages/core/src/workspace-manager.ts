@@ -469,7 +469,7 @@ export class WorkspaceManager {
         await runtime.shutdown();
       } catch (error) {
         // Log error but don't throw - continue with other cleanup
-        console.error(`Error shutting down workspace runtime:`, error);
+        logger.error(`Error shutting down workspace runtime`, { error });
       }
     });
 

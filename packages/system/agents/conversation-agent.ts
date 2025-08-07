@@ -217,7 +217,7 @@ export class ConversationAgent extends BaseAgent {
 
       return message.content.text;
     } catch (error) {
-      console.error("Failed to get prompt from MCP", { error });
+      this.logger.error("Failed to get prompt from MCP", { error });
       return;
     }
   }

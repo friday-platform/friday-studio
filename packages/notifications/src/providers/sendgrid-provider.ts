@@ -13,6 +13,7 @@ import type {
 import { BaseNotificationProvider, type BaseProviderConfig } from "./base-provider.ts";
 import { NotificationSendError, ProviderConfigError } from "../types.ts";
 import { getAtlasVersion } from "../../../../src/utils/version.ts";
+import { logger } from "@atlas/logger";
 
 // JWT payload schema for Atlas keys
 const AtlasJWTPayloadSchema = z.object({
@@ -98,7 +99,7 @@ export class SendGridProvider extends BaseNotificationProvider {
    */
   async sendEmail(params: EmailParams): Promise<NotificationResult> {
     try {
-      console.log("🔍 SendGrid sendEmail called with params:", {
+      logger.debug("SendGrid sendEmail called with params", {
         to: params.to,
         subject: params.subject,
         from: params.from,
@@ -109,10 +110,10 @@ export class SendGridProvider extends BaseNotificationProvider {
       });
 
       this.validateEmailParams(params);
-      console.log("✅ SendGrid email params validated successfully");
+      logger.debug("SendGrid email params validated successfully");
 
       const message = this.buildEmailMessage(params);
-      console.log("📨 Built SendGrid message:", {
+      logger.debug("Built SendGrid message", {
         to: message.to,
         from: message.from,
         subject: message.subject,
@@ -124,9 +125,9 @@ export class SendGridProvider extends BaseNotificationProvider {
         ipPoolName: message.ipPoolName,
       });
 
-      console.log("🚀 Sending email via SendGrid API...");
+      logger.debug("Sending email via SendGrid API");
       const response = await sgMail.send(message);
-      console.log("✅ SendGrid API response:", {
+      logger.info("SendGrid API response", {
         statusCode: response[0]?.statusCode,
         messageId: response[0]?.headers?.["x-message-id"],
         body: response[0]?.body,
@@ -140,7 +141,7 @@ export class SendGridProvider extends BaseNotificationProvider {
         },
       );
     } catch (error) {
-      console.error("❌ SendGrid sendEmail error:", {
+      logger.error("SendGrid sendEmail error", {
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
         // @ts-ignore - SendGrid error object structure

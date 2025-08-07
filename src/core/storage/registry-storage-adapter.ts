@@ -9,6 +9,7 @@
 import { type KVStorage } from "./kv-storage.ts";
 import { WorkspaceEntry, WorkspaceEntrySchema, WorkspaceStatusEnum } from "@atlas/workspace";
 import type { WorkspaceStatus } from "@atlas/workspace";
+import { logger } from "@atlas/logger";
 
 /**
  * Registry-specific storage operations
@@ -199,7 +200,7 @@ export class RegistryStorageAdapter {
         // Atomic commit failed - prepare for retry
         if (attempt < maxRetries - 1) {
           const backoffMs = 10 * Math.pow(2, attempt);
-          console.warn(
+          logger.warn(
             `Failed to update lastSeen for workspace ${id} (attempt ${
               attempt + 1
             }/${maxRetries}), retrying in ${backoffMs}ms...`,
@@ -209,9 +210,9 @@ export class RegistryStorageAdapter {
       } catch (error) {
         if (attempt === maxRetries - 1) {
           // Don't throw error for lastSeen updates to avoid disrupting workspace operations
-          console.warn(
-            `Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts:`,
-            error,
+          logger.warn(
+            `Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`,
+            { error },
           );
           return;
         }
@@ -222,7 +223,7 @@ export class RegistryStorageAdapter {
     }
 
     // If we get here, all retries failed - log warning but don't throw
-    console.warn(`Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`);
+    logger.warn(`Failed to update lastSeen for workspace ${id} after ${maxRetries} attempts`);
   }
 
   /**
@@ -289,7 +290,7 @@ export class RegistryStorageAdapter {
         // Exponential backoff: wait 10ms, 20ms, 40ms
         if (attempt < maxRetries - 1) {
           const backoffMs = 10 * Math.pow(2, attempt);
-          console.warn(`${error.message}, retrying in ${backoffMs}ms...`);
+          logger.warn(`${error.message}, retrying in ${backoffMs}ms...`);
           await new Promise((resolve) => setTimeout(resolve, backoffMs));
         }
       } catch (error) {

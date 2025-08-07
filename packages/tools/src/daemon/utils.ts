@@ -2,6 +2,8 @@
  * Daemon-related utilities for Atlas
  */
 
+import { logger } from "@atlas/logger";
+
 // Private constants
 const DEFAULT_DAEMON_URL = "http://localhost:8080";
 
@@ -29,7 +31,7 @@ export function getAtlasDaemonUrl(): string {
   if (envUrl) {
     // Validate the URL from environment
     if (!isValidUrl(envUrl)) {
-      console.warn(
+      logger.warn(
         `Invalid ATLAS_DAEMON_URL: "${envUrl}". Must be a valid URL (e.g., http://localhost:8080). Using default.`,
       );
       return DEFAULT_DAEMON_URL;

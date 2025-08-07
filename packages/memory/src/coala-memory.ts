@@ -23,6 +23,7 @@ import {
   VectorSearchLocalStorageAdapter,
   type VectorSearchQuery,
 } from "@atlas/storage";
+import { logger } from "@atlas/logger";
 import { getAtlasHome } from "../../../src/utils/paths.ts";
 import { join } from "@std/path";
 import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
@@ -206,7 +207,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     // Index in vector search if enabled and memory type is indexed
     if (this.vectorSearch && this.vectorIndexedTypes.has(metadata.memoryType)) {
       this.indexMemoryInVectorSearch(memory).catch((error) => {
-        console.warn(`Failed to index memory ${key} in vector search:`, error);
+        logger.warn(`Failed to index memory ${key} in vector search`, { error, key });
       });
     }
 
@@ -317,7 +318,10 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       if (this.vectorSearch && this.vectorIndexedTypes.has(memory.memoryType)) {
         const vectorId = `${memory.memoryType}_${memory.id}`;
         this.vectorSearch.deleteEmbeddings([vectorId]).catch((error) => {
-          console.warn(`Failed to remove pruned memory ${memory.id} from vector search:`, error);
+          logger.warn(`Failed to remove pruned memory ${memory.id} from vector search`, {
+            error,
+            memoryId: memory.id,
+          });
         });
       }
     }
@@ -381,7 +385,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       if (this.vectorSearch && this.vectorIndexedTypes.has(memory.memoryType)) {
         const vectorId = `${memory.memoryType}_${memory.id}`;
         this.vectorSearch.deleteEmbeddings([vectorId]).catch((error) => {
-          console.warn(`Failed to remove memory ${key} from vector search:`, error);
+          logger.warn(`Failed to remove memory ${key} from vector search`, { error, key });
         });
       }
     }
@@ -459,7 +463,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         this.consolidate();
         this.prune();
       } catch (error) {
-        console.warn("CoALA cognitive loop error:", error);
+        logger.warn("CoALA cognitive loop error", { error });
       }
     }, this.cognitiveLoopInterval);
   }
@@ -468,7 +472,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     // If delay is 0, commit immediately (useful for tests)
     if (this.commitDebounceDelay === 0) {
       this.commitToStorage().catch((error) => {
-        console.error("Failed to commit memory to storage:", error);
+        logger.error("Failed to commit memory to storage", { error });
       });
       return;
     }
@@ -485,7 +489,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     this.commitDebounceTimer = setTimeout(() => {
       if (this.pendingCommit) {
         this.commitToStorage().catch((error) => {
-          console.error("Failed to commit memory to storage:", error);
+          logger.error("Failed to commit memory to storage", { error });
         });
       }
     }, this.commitDebounceDelay);
@@ -581,7 +585,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         }
       }
     } catch (error) {
-      console.warn("Failed to load CoALA memories from storage:", error);
+      logger.warn("Failed to load CoALA memories from storage", { error });
     }
   }
 
@@ -684,7 +688,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       const kgStorageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
       this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
     } catch (error) {
-      console.warn("Failed to initialize knowledge graph for semantic memory:", error);
+      logger.warn("Failed to initialize knowledge graph for semantic memory", { error });
     }
   }
 
@@ -705,14 +709,14 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   // Store facts in knowledge graph (called from semantic memory operations)
   async storeFactsInKnowledgeGraph(facts: ExtractedFact[]): Promise<string[]> {
     if (!this.knowledgeGraph) {
-      console.warn("Knowledge graph not available for fact storage");
+      logger.warn("Knowledge graph not available for fact storage");
       return [];
     }
 
     try {
       return await this.knowledgeGraph.storeFacts(facts);
     } catch (error) {
-      console.error("Error storing facts in knowledge graph:", error);
+      logger.error("Error storing facts in knowledge graph", { error });
       return [];
     }
   }
@@ -730,7 +734,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     try {
       return await this.knowledgeGraph.queryKnowledge(query);
     } catch (error) {
-      console.error("Error querying knowledge graph:", error);
+      logger.error("Error querying knowledge graph", { error });
       return { entities: [], relationships: [], facts: [] };
     }
   }
@@ -748,7 +752,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       });
       return results.facts;
     } catch (error) {
-      console.error("Error getting semantic facts:", error);
+      logger.error("Error getting semantic facts", { error });
       return [];
     }
   }
@@ -762,7 +766,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     try {
       return await this.knowledgeGraph.getWorkspaceKnowledgeSummary();
     } catch (error) {
-      console.error("Error getting workspace knowledge summary:", error);
+      logger.error("Error getting workspace knowledge summary", { error });
       return null;
     }
   }
@@ -789,7 +793,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         const extractedFacts = this.convertToExtractedFacts(fact, key);
         await this.knowledgeGraph.storeFacts(extractedFacts);
       } catch (error) {
-        console.warn("Failed to store fact in knowledge graph:", error);
+        logger.warn("Failed to store fact in knowledge graph", { error });
       }
     }
   }
@@ -1027,12 +1031,11 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         ...config,
       };
 
-      console.log(
-        "Vector search initialized for memory types:",
-        Array.from(this.vectorIndexedTypes),
-      );
+      logger.info("Vector search initialized for memory types", {
+        memoryTypes: Array.from(this.vectorIndexedTypes),
+      });
     } catch (error) {
-      console.warn("Failed to initialize vector search:", error);
+      logger.warn("Failed to initialize vector search", { error });
     }
   }
 
@@ -1086,7 +1089,10 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       // Store in vector index
       await this.vectorSearch.upsertEmbeddings([embedding]);
     } catch (error) {
-      console.error(`Failed to index memory ${memory.id} in vector search:`, error);
+      logger.error(`Failed to index memory ${memory.id} in vector search`, {
+        error,
+        memoryId: memory.id,
+      });
     }
   }
 
@@ -1129,7 +1135,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     minSimilarity?: number;
   }): Promise<Array<CoALAMemoryEntry & { similarity: number }>> {
     if (!this.vectorSearch || !this.embeddingProvider) {
-      console.warn("Vector search not available");
+      logger.warn("Vector search not available");
       return [];
     }
 
@@ -1165,7 +1171,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
       return memoryResults;
     } catch (error) {
-      console.error("Vector search failed:", error);
+      logger.error("Vector search failed", { error });
       return [];
     }
   }
@@ -1264,7 +1270,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
           source: "vector" as const,
         })));
       } catch (error) {
-        console.warn("Vector search failed, falling back to text search:", error);
+        logger.warn("Vector search failed, falling back to text search", { error });
 
         // Fallback to traditional text search for vector-indexed types
         const fallbackMemories = this.queryMemories({
@@ -1361,9 +1367,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
         return query.limit ? filteredResults.slice(0, query.limit) : filteredResults;
       } catch (error) {
-        console.warn(
-          "Vector search failed in queryMemoriesEnhanced, falling back to traditional search:",
-          error,
+        logger.warn(
+          "Vector search failed in queryMemoriesEnhanced, falling back to traditional search",
+          { error },
         );
         return this.queryMemories(query);
       }
@@ -1645,7 +1651,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     try {
       return await this.vectorSearch.getStats();
     } catch (error) {
-      console.error("Failed to get vector search stats:", error);
+      logger.error("Failed to get vector search stats", { error });
       return null;
     }
   }
@@ -1655,7 +1661,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
    */
   async rebuildVectorIndex(): Promise<void> {
     if (!this.vectorSearch) {
-      console.warn("Vector search not available");
+      logger.warn("Vector search not available for index rebuild");
       return;
     }
 
@@ -1671,7 +1677,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         memoriesToIndex.push(...typeMemories);
       }
 
-      console.log(`Rebuilding vector index for ${memoriesToIndex.length} memories`);
+      logger.info("Rebuilding vector index", { memoryCount: memoriesToIndex.length });
 
       // Index in batches
       const batchSize = this.vectorSearchConfig?.batchSize || 10;
@@ -1683,9 +1689,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
         }
       }
 
-      console.log("Vector index rebuild completed");
+      logger.info("Vector index rebuild completed");
     } catch (error) {
-      console.error("Failed to rebuild vector index:", error);
+      logger.error("Failed to rebuild vector index", { error });
     }
   }
 
