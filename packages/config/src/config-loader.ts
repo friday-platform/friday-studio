@@ -212,36 +212,17 @@ export class ConfigValidationError extends Error {
 // USAGE EXAMPLE
 // ==============================================================================
 
-async function _example() {
-  // Create adapter (would come from @atlas/storage)
-  const adapter: ConfigurationAdapter = {
-    readYaml(_path: string) {
-      // Read YAML file
-      return Promise.resolve({});
-    },
-    exists(_path: string) {
-      return Promise.resolve(true);
-    },
-    getWorkspacePath() {
-      return "/workspace";
-    },
-  };
-
-  // Create loader
-  const loader = new ConfigLoader(adapter, "/workspace");
-
-  try {
-    // Load configuration
-    const config = await loader.load();
-
-    // Use type-safe configuration
-    console.log(`Workspace: ${config.workspace.workspace.name}`);
-
-    // Validate signal payloads at runtime
-    const signalPayload = { dataset: "sales", format: "json" };
-    loader.validateSignalPayload("data-webhook", signalPayload, config);
-  } catch (error) {
-    // ConfigValidationError now includes details in its message automatically
-    console.error(error);
-  }
-}
+// Example usage:
+// const adapter: ConfigurationAdapter = {
+//   readYaml(_path: string) {
+//     return Promise.resolve({});
+//   },
+//   exists(_path: string) {
+//     return Promise.resolve(true);
+//   },
+//   getWorkspacePath() {
+//     return "/workspace";
+//   },
+// };
+// const loader = new ConfigLoader(adapter, "/workspace");
+// const config = await loader.load();

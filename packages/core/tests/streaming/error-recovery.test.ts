@@ -7,15 +7,15 @@ import type { AgentContext, StreamEvent } from "@atlas/agent-sdk";
 
 /**
  * Tests streaming resilience - ensures Atlas continues working when streaming fails.
- * 
+ *
  * ATLAS ARCHITECTURE CONTEXT:
  * Streaming is a "nice to have" feature - agent execution must never fail due to
  * streaming errors. These tests verify the fire-and-forget nature of streaming:
  * - Network failures don't block agent execution
- * - MCP notification errors are handled gracefully  
+ * - MCP notification errors are handled gracefully
  * - HTTP stream emitter recovers from intermittent failures
  * - Concurrent stream errors don't cause cascading failures
- * 
+ *
  * MOCKING STRATEGY:
  * - Stubs globalThis.fetch to simulate network failures
  * - Creates mock MCP servers that reject notifications
@@ -44,10 +44,10 @@ Deno.test("Streaming Error Recovery", async (t) => {
           version: "1.0.0",
           description: "",
           displayName: "Test Agent",
-          expertise: { 
-            domains: ["testing"], 
-            capabilities: ["basic execution"], 
-            examples: ["run test task"] 
+          expertise: {
+            domains: ["testing"],
+            capabilities: ["basic execution"],
+            examples: ["run test task"],
           },
         },
         execute: () => Promise.resolve({ result: "success" }),
@@ -166,10 +166,10 @@ Deno.test("Streaming Error Recovery", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Failing Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: (_prompt: string, context: AgentContext) => {
@@ -244,7 +244,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
     const orchestrator = new AgentOrchestrator(config, logger);
     orchestrator.initialize();
 
-    // MOCK: Random 50% failure rate for network calls  
+    // MOCK: Random 50% failure rate for network calls
     stub(globalThis, "fetch", () => {
       if (Math.random() > 0.5) {
         return Promise.reject(new Error("Random network error"));
@@ -260,10 +260,10 @@ Deno.test("Streaming Error Recovery", async (t) => {
           version: "1.0.0",
           description: "",
           displayName: "Test Agent",
-          expertise: { 
-            domains: ["testing"], 
-            capabilities: ["basic execution"], 
-            examples: ["run test task"] 
+          expertise: {
+            domains: ["testing"],
+            capabilities: ["basic execution"],
+            examples: ["run test task"],
           },
         },
         execute: (_prompt: string, context: AgentContext) => {

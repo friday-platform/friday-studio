@@ -8,16 +8,16 @@ tools:
     servers:
       broken-transport:
         transport:
-          type: invalid-type  # Invalid transport type
+          type: invalid-type # Invalid transport type
           command: nonexistent-command
-      
+
       missing-command:
         transport:
           type: stdio
           # Missing required 'command' field
           args:
             - --flag
-      
+
       invalid-filter:
         transport:
           type: stdio

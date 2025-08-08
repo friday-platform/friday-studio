@@ -1,6 +1,6 @@
 /**
  * Tool Call Recorder
- * 
+ *
  * Records and verifies MCP tool calls during agent execution for testing.
  */
 
@@ -38,11 +38,11 @@ export class ToolCallRecorder {
     fn: () => Promise<T>,
   ): Promise<T> {
     const startTime = Date.now();
-    
+
     try {
       const result = await fn();
       const duration = Date.now() - startTime;
-      
+
       this.recordCall({
         toolName,
         serverName,
@@ -50,11 +50,11 @@ export class ToolCallRecorder {
         result,
         duration,
       });
-      
+
       return result;
     } catch (error) {
       const duration = Date.now() - startTime;
-      
+
       this.recordCall({
         toolName,
         serverName,
@@ -62,7 +62,7 @@ export class ToolCallRecorder {
         error,
         duration,
       });
-      
+
       throw error;
     }
   }
@@ -78,14 +78,14 @@ export class ToolCallRecorder {
    * Get calls for a specific tool
    */
   getCallsForTool(toolName: string): ToolCall[] {
-    return this.calls.filter(call => call.toolName === toolName);
+    return this.calls.filter((call) => call.toolName === toolName);
   }
 
   /**
    * Get calls for a specific server
    */
   getCallsForServer(serverName: string): ToolCall[] {
-    return this.calls.filter(call => call.serverName === serverName);
+    return this.calls.filter((call) => call.serverName === serverName);
   }
 
   /**
@@ -112,28 +112,30 @@ export class ToolCallRecorder {
   /**
    * Verify a sequence of calls
    */
-  verifyCallSequence(expectedSequence: Array<{
-    toolName: string;
-    serverName?: string;
-  }>): boolean {
+  verifyCallSequence(
+    expectedSequence: Array<{
+      toolName: string;
+      serverName?: string;
+    }>,
+  ): boolean {
     if (this.calls.length < expectedSequence.length) {
       return false;
     }
-    
+
     let callIndex = 0;
     for (const expected of expectedSequence) {
-      const found = this.calls.slice(callIndex).findIndex(call => 
+      const found = this.calls.slice(callIndex).findIndex((call) =>
         call.toolName === expected.toolName &&
         (!expected.serverName || call.serverName === expected.serverName)
       );
-      
+
       if (found === -1) {
         return false;
       }
-      
+
       callIndex += found + 1;
     }
-    
+
     return true;
   }
 
@@ -141,7 +143,7 @@ export class ToolCallRecorder {
    * Verify no calls were made to specific tools
    */
   verifyNoCalls(toolNames: string[]): boolean {
-    return !this.calls.some(call => toolNames.includes(call.toolName));
+    return !this.calls.some((call) => toolNames.includes(call.toolName));
   }
 
   /**
@@ -159,20 +161,20 @@ export class ToolCallRecorder {
     const byServer: Record<string, number> = {};
     let totalDuration = 0;
     let timedCalls = 0;
-    
+
     for (const call of this.calls) {
       byTool[call.toolName] = (byTool[call.toolName] || 0) + 1;
       byServer[call.serverName] = (byServer[call.serverName] || 0) + 1;
-      
+
       if (call.duration !== undefined) {
         totalDuration += call.duration;
         timedCalls++;
       }
     }
-    
-    const successfulCalls = this.calls.filter(c => !c.error).length;
-    const failedCalls = this.calls.filter(c => c.error).length;
-    
+
+    const successfulCalls = this.calls.filter((c) => !c.error).length;
+    const failedCalls = this.calls.filter((c) => c.error).length;
+
     return {
       totalCalls: this.calls.length,
       successfulCalls,
@@ -206,15 +208,15 @@ export class ToolCallRecorder {
     expectedArgs: any,
     serverName?: string,
   ): void {
-    const found = this.calls.find(call =>
+    const found = this.calls.find((call) =>
       call.toolName === toolName &&
       (!serverName || call.serverName === serverName) &&
       JSON.stringify(call.args) === JSON.stringify(expectedArgs)
     );
-    
+
     if (!found) {
       throw new Error(
-        `Tool ${toolName} was not called with expected arguments: ${JSON.stringify(expectedArgs)}`
+        `Tool ${toolName} was not called with expected arguments: ${JSON.stringify(expectedArgs)}`,
       );
     }
   }
@@ -227,14 +229,14 @@ export class ToolCallRecorder {
     expectedCount: number,
     serverName?: string,
   ): void {
-    const calls = this.calls.filter(call =>
+    const calls = this.calls.filter((call) =>
       call.toolName === toolName &&
       (!serverName || call.serverName === serverName)
     );
-    
+
     if (calls.length !== expectedCount) {
       throw new Error(
-        `Tool ${toolName} was called ${calls.length} times, expected ${expectedCount}`
+        `Tool ${toolName} was called ${calls.length} times, expected ${expectedCount}`,
       );
     }
   }

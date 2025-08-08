@@ -983,16 +983,17 @@ Think step by step about the best approach to handle this signal, then use the t
     };
   }
 
-  private toolExecutor(
-    toolName: string,
-    parameters: Record<string, unknown>,
-  ): Promise<ToolExecutorResult> {
-    return Promise.resolve({
-      success: true,
-      result: `Tool ${toolName} executed with parameters: ${JSON.stringify(parameters)}`,
-      duration: 100,
-    });
-  }
+  // Placeholder for future tool execution
+  // private toolExecutor(
+  //   toolName: string,
+  //   parameters: Record<string, unknown>,
+  // ): Promise<ToolExecutorResult> {
+  //   return Promise.resolve({
+  //     success: true,
+  //     result: `Tool ${toolName} executed with parameters: ${JSON.stringify(parameters)}`,
+  //     duration: 100,
+  //   });
+  // }
 
   async execute(): Promise<SessionResult> {
     const startTime = Date.now();

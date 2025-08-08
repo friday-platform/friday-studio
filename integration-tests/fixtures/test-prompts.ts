@@ -1,6 +1,6 @@
 /**
  * Test Prompts for Agent MCP Server Access Testing
- * 
+ *
  * Collection of prompts used for testing different scenarios
  */
 

@@ -90,25 +90,25 @@ interface LibraryMetadata {
   workspace_id?: string;
 }
 
-// Schema for validating library item data (currently unused, but available for future validation)
-const _LibraryItemStoreSchema = z.object({
-  id: z.string(),
-  type: z.string(),
-  name: z.string(),
-  description: z.string().optional(),
-  content: z.union([z.string(), z.instanceof(Uint8Array)]),
-  metadata: z.object({
-    format: z.string(),
-    source: z.string(),
-    session_id: z.string().optional(),
-    agent_ids: z.array(z.string()).optional(),
-    custom_fields: z.record(z.string(), z.unknown()).optional(),
-  }),
-  created_at: z.string(),
-  updated_at: z.string(),
-  tags: z.array(z.string()),
-  workspace_id: z.string().optional(),
-});
+// Schema for validating library item data (for future use)
+// const LibraryItemStoreSchema = z.object({
+//   id: z.string(),
+//   type: z.string(),
+//   name: z.string(),
+//   description: z.string().optional(),
+//   content: z.union([z.string(), z.instanceof(Uint8Array)]),
+//   metadata: z.object({
+//     format: z.string(),
+//     source: z.string(),
+//     session_id: z.string().optional(),
+//     agent_ids: z.array(z.string()).optional(),
+//     custom_fields: z.record(z.string(), z.unknown()).optional(),
+//   }),
+//   created_at: z.string(),
+//   updated_at: z.string(),
+//   tags: z.array(z.string()),
+//   workspace_id: z.string().optional(),
+// });
 
 /**
  * Library-specific storage operations with hybrid storage

@@ -12,7 +12,6 @@ import {
   ProviderType,
 } from "./types.ts";
 import {
-  createEventSource,
   createRetryableSSEStream,
   parseSSEData,
 } from "../../../../src/core/agents/remote/adapters/sse-utils.ts";
@@ -91,7 +90,6 @@ class StreamProviderSignal implements IProviderSignal {
 }
 
 class StreamRuntimeSignal extends AtlasScope {
-  private eventSource?: ReturnType<typeof createEventSource>;
   private signalProcessor?: (signalId: string, payload: any) => Promise<void>;
   private signalId?: string;
   private abortController?: AbortController;

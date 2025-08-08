@@ -1,6 +1,6 @@
 /**
  * MCP Server Test Harness
- * 
+ *
  * Utilities for spawning, managing, and cleaning up test MCP servers
  * during integration testing.
  */
@@ -138,7 +138,7 @@ export class MCPServerTestHarness {
    */
   private async waitForServerReady(url: string, timeout: number): Promise<void> {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeout) {
       try {
         const response = await fetch(`${url}/health`);
@@ -148,9 +148,9 @@ export class MCPServerTestHarness {
       } catch {
         // Server not ready yet
       }
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
-    
+
     throw new Error(`Server at ${url} did not become ready within ${timeout}ms`);
   }
 

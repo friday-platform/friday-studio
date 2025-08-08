@@ -175,7 +175,7 @@ export class K8sAuthManager {
   static async loadFromServiceAccount(): Promise<K8sAuthConfig> {
     const tokenPath = "/var/run/secrets/kubernetes.io/serviceaccount/token";
     const caPath = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt";
-    const _namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace";
+    // const namespacePath = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"; // For future use
 
     try {
       // Check if we're in a pod with service account
@@ -479,7 +479,7 @@ export class K8sAuthManager {
       ]);
 
       if (code !== 0) {
-        const _errorOutput = new TextDecoder().decode(stderr);
+        // const errorOutput = new TextDecoder().decode(stderr); // For debugging
         // SECURITY FIX: Don't expose full error output, it might contain sensitive info
         throw new Error(`Auth command failed with code ${code}`);
       }

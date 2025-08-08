@@ -1,14 +1,10 @@
 /**
  * Agent Execution Helpers for Integration Testing
- * 
+ *
  * Utilities for executing agents and capturing results during testing.
  */
 
-import type { 
-  AgentExecutionResult, 
-  AgentSessionData, 
-  AtlasAgent 
-} from "@atlas/agent-sdk";
+import type { AgentExecutionResult, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import { createAgent } from "@atlas/agent-sdk";
 import type { MCPServerConfig } from "@atlas/config";
 import type { AtlasAgentsMCPServer } from "../../packages/core/src/agent-server/server.ts";
@@ -36,7 +32,7 @@ export function createTestAgent(config: {
     handler: config.handler || (async (prompt, context) => {
       // Default handler that lists available MCP tools
       const tools: Record<string, any> = {};
-      
+
       // Get tools from all MCP servers
       if (context.mcp) {
         const servers = config.mcpServers ? Object.keys(config.mcpServers) : [];
@@ -49,7 +45,7 @@ export function createTestAgent(config: {
           }
         }
       }
-      
+
       return {
         type: "text",
         content: JSON.stringify({
@@ -78,7 +74,7 @@ export function createMCPToolAgent(config: {
     expertise: {
       domains: ["testing", "mcp"],
       capabilities: Object.keys(config.toolHandlers),
-      examples: Object.keys(config.toolHandlers).map(tool => `use ${tool}`),
+      examples: Object.keys(config.toolHandlers).map((tool) => `use ${tool}`),
     },
     mcp: config.mcpServers,
     handler: async (prompt, context) => {
@@ -88,7 +84,7 @@ export function createMCPToolAgent(config: {
           return await handler(prompt, context);
         }
       }
-      
+
       // Default: list available tools
       const tools: string[] = [];
       for (const serverName of Object.keys(config.mcpServers)) {
@@ -99,7 +95,7 @@ export function createMCPToolAgent(config: {
           // Ignore errors
         }
       }
-      
+
       return {
         type: "text",
         content: `Available tools: ${tools.join(", ")}`,
@@ -122,9 +118,9 @@ export async function executeAgent(
     workspaceId: sessionData?.workspaceId || "test-workspace",
     userId: sessionData?.userId || "test-user",
   };
-  
+
   const mergedSession = { ...defaultSession, ...sessionData };
-  
+
   return await server.executeAgent(agentId, prompt, mergedSession);
 }
 
@@ -164,7 +160,7 @@ export class AgentExecutionValidator {
   getResponseJson<T = any>(): T | undefined {
     const text = this.getResponseText();
     if (!text) return undefined;
-    
+
     try {
       return JSON.parse(text);
     } catch {
@@ -203,7 +199,7 @@ export async function batchExecuteAgents(
   return await Promise.all(
     executions.map(({ agentId, prompt, sessionData }) =>
       executeAgent(server, agentId, prompt, sessionData)
-    )
+    ),
   );
 }
 
@@ -218,10 +214,13 @@ export async function executeAgentWithTimeout(
   timeoutMs: number,
 ): Promise<AgentExecutionResult> {
   const timeoutPromise = new Promise<AgentExecutionResult>((_, reject) => {
-    setTimeout(() => reject(new Error(`Agent execution timed out after ${timeoutMs}ms`)), timeoutMs);
+    setTimeout(
+      () => reject(new Error(`Agent execution timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
   });
-  
+
   const executionPromise = executeAgent(server, agentId, prompt, sessionData);
-  
+
   return await Promise.race([executionPromise, timeoutPromise]);
 }

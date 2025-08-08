@@ -1,4 +1,4 @@
-import { MergedConfig, WorkspaceConfig } from "@atlas/config";
+import { WorkspaceConfig } from "@atlas/config";
 import type {
   IWorkspace,
   IWorkspaceAction,

@@ -15,7 +15,9 @@ server.registerTool(
   {
     description: "Perform basic arithmetic calculations",
     inputSchema: {
-      expression: z.string().describe("Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5')"),
+      expression: z.string().describe(
+        "Mathematical expression to evaluate (e.g., '2 + 2', '10 * 5')",
+      ),
     },
   },
   ({ expression }) => {
@@ -26,11 +28,11 @@ server.registerTool(
       if (sanitized !== expression) {
         throw new Error("Invalid characters in expression");
       }
-      
+
       // Using Function constructor for simple math evaluation
       // This is safer than eval but still should be replaced with a proper parser in production
       const result = new Function("return " + sanitized)();
-      
+
       return {
         content: [
           { type: "text", text: result.toString() },
@@ -83,7 +85,7 @@ server.registerTool(
         ],
       };
     }
-    
+
     const sum = numbers.reduce((a, b) => a + b, 0);
     const mean = sum / numbers.length;
     const sorted = [...numbers].sort((a, b) => a - b);
@@ -92,7 +94,7 @@ server.registerTool(
       : sorted[Math.floor(sorted.length / 2)];
     const min = Math.min(...numbers);
     const max = Math.max(...numbers);
-    
+
     const stats = {
       count: numbers.length,
       sum,
@@ -101,7 +103,7 @@ server.registerTool(
       min,
       max,
     };
-    
+
     return {
       content: [
         { type: "text", text: JSON.stringify(stats) },

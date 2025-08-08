@@ -1,6 +1,6 @@
 /**
  * Mock MCP HTTP Server for testing
- * 
+ *
  * Implements minimal MCP protocol over HTTP to test the orchestrator
  */
 
@@ -25,11 +25,11 @@ interface MCPResponse {
 
 export class MockMCPServer {
   private abortController: AbortController;
-  
+
   constructor(private port: number) {
     this.abortController = new AbortController();
   }
-  
+
   async start(): Promise<void> {
     Deno.serve({
       port: this.port,
@@ -39,35 +39,35 @@ export class MockMCPServer {
       },
       handler: async (req) => {
         const url = new URL(req.url);
-        
+
         // Handle SSE endpoint for streaming
         if (url.pathname === "/sse") {
           return this.handleSSE(req);
         }
-        
+
         // Handle JSON-RPC requests
         if (req.method === "POST") {
           return await this.handleJSONRPC(req);
         }
-        
+
         return new Response("Not Found", { status: 404 });
       },
     });
   }
-  
+
   private async handleJSONRPC(req: Request): Promise<Response> {
     try {
       const body = await req.text();
       const request: MCPRequest = JSON.parse(body);
-      
-      logger.debug("Mock MCP received request", { 
+
+      logger.debug("Mock MCP received request", {
         method: request.method,
         id: request.id,
-        params: request.params 
+        params: request.params,
       });
-      
+
       let response: MCPResponse;
-      
+
       switch (request.method) {
         case "initialize":
           response = {
@@ -77,15 +77,15 @@ export class MockMCPServer {
               protocolVersion: "2025-06-18",
               serverInfo: {
                 name: "mock-mcp-server",
-                version: "1.0.0"
+                version: "1.0.0",
               },
               capabilities: {
-                tools: {}
-              }
-            }
+                tools: {},
+              },
+            },
           };
           break;
-          
+
         case "tools/list":
           response = {
             jsonrpc: "2.0",
@@ -99,69 +99,71 @@ export class MockMCPServer {
                   properties: {
                     prompt: { type: "string" },
                     context: { type: "object" },
-                    _sessionContext: { type: "object" }
+                    _sessionContext: { type: "object" },
                   },
-                  required: ["prompt"]
-                }
-              }]
-            }
+                  required: ["prompt"],
+                },
+              }],
+            },
           };
           break;
-          
+
         case "tools/call":
           response = await this.handleToolCall(request);
           break;
-          
+
         default:
           response = {
             jsonrpc: "2.0",
             id: request.id,
             error: {
               code: -32601,
-              message: `Method not found: ${request.method}`
-            }
+              message: `Method not found: ${request.method}`,
+            },
           };
       }
-      
+
       return new Response(JSON.stringify(response), {
         status: 200,
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
       });
-      
     } catch (error) {
       logger.error("Error handling JSON-RPC request", { error });
-      return new Response(JSON.stringify({
-        jsonrpc: "2.0",
-        id: null,
-        error: {
-          code: -32700,
-          message: "Parse error"
-        }
-      }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" }
-      });
+      return new Response(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: {
+            code: -32700,
+            message: "Parse error",
+          },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
   }
-  
+
   private async handleToolCall(request: MCPRequest): Promise<MCPResponse> {
     const { name, arguments: args } = request.params;
-    
+
     if (name !== "test-agent") {
       return {
         jsonrpc: "2.0",
         id: request.id,
         error: {
           code: -32602,
-          message: `Unknown tool: ${name}`
-        }
+          message: `Unknown tool: ${name}`,
+        },
       };
     }
-    
+
     // Simulate agent execution
     const prompt = args.prompt;
     let agentResult: TestAgentResponse;
-    
+
     if (prompt.toLowerCase().includes("echo")) {
       const message = prompt.replace(/echo/i, "").trim();
       agentResult = {
@@ -197,33 +199,33 @@ export class MockMCPServer {
         timestamp: new Date().toISOString(),
       };
     }
-    
+
     // Wrap in the expected MCP response format
     const executionResult = {
       type: "completed",
-      result: agentResult
+      result: agentResult,
     };
-    
+
     return {
       jsonrpc: "2.0",
       id: request.id,
       result: {
         content: [{
           type: "text",
-          text: JSON.stringify(executionResult)
-        }]
-      }
+          text: JSON.stringify(executionResult),
+        }],
+      },
     };
   }
-  
+
   private handleSSE(req: Request): Response {
     // Return SSE stream for notifications
     const stream = new ReadableStream({
       start(controller) {
         // Send initial connection event
         const encoder = new TextEncoder();
-        controller.enqueue(encoder.encode("event: open\ndata: {\"type\":\"connection\"}\n\n"));
-        
+        controller.enqueue(encoder.encode('event: open\ndata: {"type":"connection"}\n\n'));
+
         // Keep connection alive with periodic pings
         const interval = setInterval(() => {
           try {
@@ -232,18 +234,18 @@ export class MockMCPServer {
             clearInterval(interval);
           }
         }, 30000);
-      }
+      },
     });
-    
+
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+        "Connection": "keep-alive",
+      },
     });
   }
-  
+
   stop(): void {
     this.abortController.abort();
   }

@@ -3,12 +3,12 @@ import {
   AgentExecutionContext,
   AgentOrchestrator,
 } from "../../src/orchestrator/agent-orchestrator.ts";
-import type { StreamEvent, AgentContext } from "@atlas/agent-sdk";
+import type { AgentContext, StreamEvent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 
 /**
  * Tests workspace isolation in Atlas streaming architecture.
- * 
+ *
  * ATLAS ARCHITECTURE CONTEXT:
  * Atlas supports multiple workspaces running agents concurrently. Each workspace
  * is an isolated environment with its own configuration, agents, and execution context.
@@ -16,7 +16,7 @@ import { createLogger } from "@atlas/logger";
  * - Same session IDs are used in different workspaces
  * - Same agents execute in multiple workspaces simultaneously
  * - Workspaces share the same AgentOrchestrator instance
- * 
+ *
  * TESTING STRATEGY:
  * - Uses MOCK agents that emit workspace-specific events
  * - Tests REAL AgentOrchestrator workspace isolation mechanisms
@@ -62,10 +62,10 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Test Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: (_prompt: string, context: AgentContext) => {
@@ -140,10 +140,10 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Slow Test Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: async (_prompt: string, context: AgentContext) => {
@@ -207,8 +207,8 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
     orchestrator.initialize();
 
     // Each workspace has different processing logic
-    let ws1Count = 0;        // Counts progress events
-    let ws2Sum = 0;          // Sums progress percentages
+    let ws1Count = 0; // Counts progress events
+    let ws2Sum = 0; // Sums progress percentages
     const ws3Events: string[] = []; // Logs text events
 
     const workspace1: AgentExecutionContext = {
@@ -251,10 +251,10 @@ Deno.test("Multi-Workspace Streaming", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Multi Event Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: (_prompt: string, context: AgentContext) => {

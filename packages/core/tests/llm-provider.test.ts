@@ -184,7 +184,9 @@ function withMockLLMProvider(testFn: () => Promise<void>) {
 const mockCalculatorTool: Tool = {
   description: "Perform basic calculations",
   inputSchema: z.object({
-    operation: z.enum(["add", "subtract", "multiply", "divide"]).describe("The operation to perform"),
+    operation: z.enum(["add", "subtract", "multiply", "divide"]).describe(
+      "The operation to perform",
+    ),
     a: z.number().describe("First number"),
     b: z.number().describe("Second number"),
   }),
@@ -535,7 +537,7 @@ Deno.test({
         maxTotalTimeout: "1s",
       },
     });
-    
+
     // Timeout should return empty response
     expect(result.text).toBe("");
     expect(result.toolCalls).toEqual([]);
@@ -649,7 +651,10 @@ Deno.test({
       },
       tool_choice: "none", // Prevent tool calls to avoid validation errors
     };
-    const toolResult = await LLMProvider.generateText("What is 2+2? Just tell me the answer.", toolOptions);
+    const toolResult = await LLMProvider.generateText(
+      "What is 2+2? Just tell me the answer.",
+      toolOptions,
+    );
 
     // Same response structure
     expect(toolResult).toHaveProperty("text");

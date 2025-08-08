@@ -9,19 +9,19 @@ import type { AgentContext } from "@atlas/agent-sdk";
 
 /**
  * Tests session isolation - the most critical aspect of Atlas streaming.
- * 
+ *
  * ATLAS ARCHITECTURE CONTEXT:
  * Sessions represent individual execution contexts within a workspace. Multiple
  * sessions can run concurrently, potentially using the same MCP client infrastructure.
  * The AgentOrchestrator maintains activeStreamHandlers map with composite keys
  * (sessionId:agentId) to route events correctly.
- * 
+ *
  * CRITICAL INVARIANT:
  * Events from one session must NEVER leak to another session, even when:
  * - Sessions share the same MCP client
  * - Sessions execute the same agent
  * - Sessions run in the same workspace
- * 
+ *
  * TESTING STRATEGY:
  * - Uses spy functions to track exact event delivery
  * - MOCK agents emit session-specific events
@@ -63,10 +63,10 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Test Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: (_prompt: string, context: AgentContext) => {
@@ -123,10 +123,10 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
         version: "1.0.0",
         description: "",
         displayName: "Test Agent",
-        expertise: { 
-          domains: ["testing"], 
-          capabilities: ["basic execution"], 
-          examples: ["run test task"] 
+        expertise: {
+          domains: ["testing"],
+          capabilities: ["basic execution"],
+          examples: ["run test task"],
         },
       },
       execute: () => Promise.resolve({ result: "done" }),
@@ -149,12 +149,20 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
 
       // Verify handler cleanup after execution
       // Note: Accessing private field for leak detection test
-      assertEquals((orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> }).activeStreamHandlers.has(`${sessionId}:agent`), false);
+      assertEquals(
+        (orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> })
+          .activeStreamHandlers.has(`${sessionId}:agent`),
+        false,
+      );
     }
 
     // KEY TEST: All handlers cleaned up, no memory leak
     // Note: Accessing private field for leak detection test
-    assertEquals((orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> }).activeStreamHandlers.size, 0);
+    assertEquals(
+      (orchestrator as unknown as { activeStreamHandlers: Map<string, unknown> })
+        .activeStreamHandlers.size,
+      0,
+    );
 
     await orchestrator.shutdown();
   });
@@ -196,10 +204,10 @@ Deno.test("Session Isolation with Shared MCP Client", async (t) => {
           version: "1.0.0",
           description: "",
           displayName: `Test ${agentId}`,
-          expertise: { 
-            domains: ["testing"], 
-            capabilities: ["basic execution"], 
-            examples: ["run test task"] 
+          expertise: {
+            domains: ["testing"],
+            capabilities: ["basic execution"],
+            examples: ["run test task"],
           },
         },
         execute: (_prompt: string, context: AgentContext) => {

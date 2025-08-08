@@ -1,6 +1,6 @@
 /**
  * Workspace Configuration Helpers for Integration Testing
- * 
+ *
  * Provides utilities for creating mock workspace configurations
  * with MCP server setups for testing agent-workspace interactions.
  */

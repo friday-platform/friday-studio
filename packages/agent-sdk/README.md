@@ -1,28 +1,35 @@
 # Atlas Agent SDK
 
-Build single-purpose agents that handle natural language prompts. Each agent focuses on a specific domain - GitHub operations, Slack messaging, security scanning, etc.
+Build single-purpose agents that handle natural language prompts. Each agent focuses on a specific
+domain - GitHub operations, Slack messaging, security scanning, etc.
 
 ## What It Does
 
 The SDK lets you create agents that:
+
 - Interpret natural language prompts within their domain
 - Access MCP tools to perform actions
 - Stream responses back to Atlas in real-time
 - Request supervisor approval for high-risk operations
 
-Agents are **LLM-agnostic** - you bring your own LLM library (AI SDK, OpenAI SDK, etc.) and the SDK provides the infrastructure.
+Agents are **LLM-agnostic** - you bring your own LLM library (AI SDK, OpenAI SDK, etc.) and the SDK
+provides the infrastructure.
 
 ## Technical Architecture
 
 ### Core Design Principles
 
-1. **Natural Language Interface**: Agents receive prompts, not structured inputs. No action routing or command parsing - the agent's LLM interprets the request.
+1. **Natural Language Interface**: Agents receive prompts, not structured inputs. No action routing
+   or command parsing - the agent's LLM interprets the request.
 
-2. **Domain Experts**: Each agent specializes in one area. A GitHub agent knows about repositories, PRs, and code. A Slack agent knows about channels and messaging.
+2. **Domain Experts**: Each agent specializes in one area. A GitHub agent knows about repositories,
+   PRs, and code. A Slack agent knows about channels and messaging.
 
-3. **LLM-Agnostic**: The SDK doesn't provide LLM capabilities. Agents import their preferred LLM library and configuration.
+3. **LLM-Agnostic**: The SDK doesn't provide LLM capabilities. Agents import their preferred LLM
+   library and configuration.
 
-4. **MCP Transport**: All agents are exposed through a unified MCP server as individual tools, maintaining session state across executions.
+4. **MCP Transport**: All agents are exposed through a unified MCP server as individual tools,
+   maintaining session state across executions.
 
 ### How It Works
 
@@ -68,16 +75,16 @@ The SDK provides agents with a context object containing:
 interface AgentContext {
   // All available tools from MCP servers (unified access)
   tools: Record<string, AtlasTool>;
-  
+
   // Session information (workspace, user, etc.)
   session: AgentSessionData;
-  
+
   // Validated environment variables
   env: Record<string, string>;
-  
+
   // Stream events back to Atlas
   stream: StreamEmitter;
-  
+
   // Logger with session context
   logger: Logger;
 }
@@ -88,10 +95,10 @@ interface AgentContext {
 Agents can stream various event types back to Atlas:
 
 ```typescript
-handler: async (prompt, { stream }) => {
+handler: (async (prompt, { stream }) => {
   // Progress updates
   stream.emit({ type: "text", content: "Starting analysis...\n" });
-  
+
   // Stream LLM responses
   const result = await streamText({
     model: anthropic("claude-3-sonnet"),
@@ -100,18 +107,18 @@ handler: async (prompt, { stream }) => {
       if (chunk.text) {
         stream.emit({ type: "text", content: chunk.text });
       }
-    }
+    },
   });
-  
+
   // Usage stats
-  stream.emit({ 
-    type: "usage", 
-    tokens: { input: 100, output: 200 }
+  stream.emit({
+    type: "usage",
+    tokens: { input: 100, output: 200 },
   });
-  
+
   stream.emit({ type: "finish" });
   return result;
-}
+});
 ```
 
 ### Environment Variables
@@ -184,13 +191,14 @@ interface AgentServerAdapter {
     agentId: string,
     prompt: string,
     sessionData: AgentSessionData,
-    contextOverrides?: Partial<AgentContext>
+    contextOverrides?: Partial<AgentContext>,
   ): Promise<AgentExecutionResult>;
   // ... other methods
 }
 ```
 
-This allows different server types (MCP, HTTP, etc.) to host agents without the SDK knowing server-specific details.
+This allows different server types (MCP, HTTP, etc.) to host agents without the SDK knowing
+server-specific details.
 
 ### Approval Flow
 
@@ -201,7 +209,7 @@ Agents can request supervisor approval for high-risk operations:
 const result = await tools.request_supervisor_approval({
   action: "Delete repository",
   risk_level: "critical",
-  rationale: "User requested repository deletion"
+  rationale: "User requested repository deletion",
 });
 
 // This throws AwaitingSupervisorDecision exception
@@ -230,17 +238,17 @@ export const myAgent = createAgent({
   id: "my-agent",
   version: "1.0.0",
   description: "Does something specific",
-  
+
   expertise: {
     domains: ["my-domain"],
     capabilities: ["capability-1", "capability-2"],
-    examples: ["do this thing", "do that thing"]
+    examples: ["do this thing", "do that thing"],
   },
-  
+
   handler: async (prompt, context) => {
     // Your agent logic here
     return { result: "Done" };
-  }
+  },
 });
 ```
 
@@ -300,9 +308,11 @@ Agents are registered with the Atlas daemon and exposed through the unified MCP 
 Creates an Atlas agent.
 
 **Parameters:**
+
 - `config: CreateAgentConfig` - Agent configuration
 
 **Returns:**
+
 - `AtlasAgent` - The agent instance
 
 ### Configuration Fields
@@ -380,6 +390,7 @@ deno lint
 ### Why LLM-Agnostic?
 
 Agents bring their own LLM libraries because:
+
 - Future-proof: New LLM features work immediately
 - No abstraction leakage: Provider-specific options stay with the agent
 - Developer freedom: Use any LLM provider or configuration
@@ -388,6 +399,7 @@ Agents bring their own LLM libraries because:
 ### Why Natural Language?
 
 Agents receive prompts, not structured commands because:
+
 - Flexibility: Handle novel requests without code changes
 - True autonomy: Agents decide how to accomplish tasks
 - Simpler implementation: No action routing or dispatch logic
@@ -396,6 +408,7 @@ Agents receive prompts, not structured commands because:
 ### Why MCP Transport?
 
 MCP provides:
+
 - Standardized protocol with tooling
 - Built-in session support
 - Streaming capabilities

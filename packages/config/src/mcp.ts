@@ -9,21 +9,21 @@
 import { z } from "zod/v4";
 import { WorkspaceTimeoutConfigSchema } from "./base.ts";
 import {
-  MCPServerConfigSchema,
-  type MCPServerConfig,
-  MCPTransportConfigSchema,
-  type MCPTransportConfig,
-  MCPAuthConfigSchema,
   type MCPAuthConfig,
-  MCPServerToolFilterSchema,
+  MCPAuthConfigSchema,
+  type MCPServerConfig,
+  MCPServerConfigSchema,
   type MCPServerToolFilter,
+  MCPServerToolFilterSchema,
+  type MCPTransportConfig,
+  MCPTransportConfigSchema,
 } from "@atlas/agent-sdk";
 
 // ==============================================================================
 // PROTOCOL MCP - External tool integration (agents calling MCP servers)
 // ==============================================================================
 
-// Note: Core MCP types (MCPTransportConfig, MCPAuthConfig, MCPServerToolFilter) 
+// Note: Core MCP types (MCPTransportConfig, MCPAuthConfig, MCPServerToolFilter)
 // are imported from @atlas/agent-sdk above
 
 /**
@@ -107,12 +107,12 @@ export type AtlasToolsConfig = z.infer<typeof AtlasToolsConfigSchema>;
 
 // Re-export MCP types from agent-sdk for backward compatibility
 export {
-  MCPServerConfig,
-  MCPServerConfigSchema,
-  MCPTransportConfig,
-  MCPTransportConfigSchema,
   MCPAuthConfig,
   MCPAuthConfigSchema,
+  MCPServerConfig,
+  MCPServerConfigSchema,
   MCPServerToolFilter,
   MCPServerToolFilterSchema,
+  MCPTransportConfig,
+  MCPTransportConfigSchema,
 };

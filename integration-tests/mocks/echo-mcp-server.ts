@@ -73,7 +73,7 @@ server.registerTool(
     },
   },
   ({ text }) => {
-    const wordCount = text.trim().split(/\s+/).filter(w => w.length > 0).length;
+    const wordCount = text.trim().split(/\s+/).filter((w) => w.length > 0).length;
     return {
       content: [
         { type: "text", text: wordCount.toString() },

@@ -1,6 +1,6 @@
 /**
  * Test Agent Registry
- * 
+ *
  * Extended version of InMemoryAgentRegistry with additional
  * testing utilities and domain filtering support.
  */
@@ -20,7 +20,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
    */
   async registerAgent(agent: AtlasAgent): Promise<void> {
     await super.registerAgent(agent);
-    
+
     this.registrationHistory.push({
       agentId: agent.metadata.id,
       timestamp: Date.now(),
@@ -34,7 +34,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   async unregisterAgent(agentId: string): Promise<void> {
     const agents = this.getInternalAgentsMap();
     agents.delete(agentId);
-    
+
     this.registrationHistory.push({
       agentId,
       timestamp: Date.now(),
@@ -70,9 +70,9 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
    */
   async getAgentsByDomains(domains: string[]): Promise<AgentMetadata[]> {
     const agents = await this.listAgents();
-    
-    return agents.filter(agent =>
-      agent.expertise.domains.some(domain => domains.includes(domain))
+
+    return agents.filter((agent) =>
+      agent.expertise.domains.some((domain) => domains.includes(domain))
     );
   }
 
@@ -81,10 +81,10 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
    */
   async getAgentsByCapabilities(capabilities: string[]): Promise<AgentMetadata[]> {
     const agents = await this.listAgents();
-    
-    return agents.filter(agent =>
-      capabilities.every(cap =>
-        agent.expertise.capabilities.some(agentCap =>
+
+    return agents.filter((agent) =>
+      capabilities.every((cap) =>
+        agent.expertise.capabilities.some((agentCap) =>
           agentCap.toLowerCase().includes(cap.toLowerCase())
         )
       )
@@ -110,16 +110,17 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   } {
     const agents = Array.from(this.getInternalAgentsMap().values());
     const byDomain: Record<string, number> = {};
-    
+
     for (const agent of agents) {
       for (const domain of agent.metadata.expertise.domains) {
         byDomain[domain] = (byDomain[domain] || 0) + 1;
       }
     }
-    
-    const registrations = this.registrationHistory.filter(h => h.action === "register").length;
-    const unregistrations = this.registrationHistory.filter(h => h.action === "unregister").length;
-    
+
+    const registrations = this.registrationHistory.filter((h) => h.action === "register").length;
+    const unregistrations =
+      this.registrationHistory.filter((h) => h.action === "unregister").length;
+
     return {
       total: this.size(),
       byDomain,
@@ -138,7 +139,7 @@ export class TestAgentRegistry extends InMemoryAgentRegistry {
   }> {
     const agents = await this.listAgents();
     const stats = this.getStats();
-    
+
     return {
       agents,
       stats,

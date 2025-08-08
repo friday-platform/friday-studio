@@ -165,9 +165,9 @@ export async function setupTestServers(): Promise<TestSetup> {
   // Start mock MCP server
   const mcpServer = new MockMCPServer(ports.mcp);
   await mcpServer.start();
-  
+
   // Wait a bit for server to be ready
-  await new Promise(resolve => setTimeout(resolve, 100));
+  await new Promise((resolve) => setTimeout(resolve, 100));
 
   const orchestrator = new AgentOrchestrator(
     {

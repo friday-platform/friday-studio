@@ -31,8 +31,8 @@ server.registerTool(
   },
   async ({ userId }) => {
     // Simulate async operation
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
     const user = users.get(userId);
     if (!user) {
       return {
@@ -41,7 +41,7 @@ server.registerTool(
         ],
       };
     }
-    
+
     return {
       content: [
         { type: "text", text: JSON.stringify(user) },
@@ -63,8 +63,8 @@ server.registerTool(
   },
   async ({ userId, title, content }) => {
     // Simulate async operation
-    await new Promise(resolve => setTimeout(resolve, 150));
-    
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
     const postId = `post-${Date.now()}`;
     const post = {
       id: postId,
@@ -73,9 +73,9 @@ server.registerTool(
       content,
       createdAt: new Date().toISOString(),
     };
-    
+
     posts.set(postId, post);
-    
+
     return {
       content: [
         { type: "text", text: JSON.stringify(post) },
@@ -96,16 +96,16 @@ server.registerTool(
   },
   async ({ maxPrice, limit = 10 }) => {
     // Simulate async operation
-    await new Promise(resolve => setTimeout(resolve, 50));
-    
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
     let itemList = Array.from(items.values());
-    
+
     if (maxPrice !== undefined) {
-      itemList = itemList.filter(item => item.price <= maxPrice);
+      itemList = itemList.filter((item) => item.price <= maxPrice);
     }
-    
+
     itemList = itemList.slice(0, limit);
-    
+
     return {
       content: [
         { type: "text", text: JSON.stringify({ items: itemList, total: itemList.length }) },

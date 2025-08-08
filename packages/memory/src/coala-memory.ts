@@ -30,18 +30,12 @@ import {
   ExtractedFact,
   type IKnowledgeGraphStorageAdapter,
   type KnowledgeEntity as MemoryKnowledgeEntity,
-  type KnowledgeFact as MemoryKnowledgeFact,
   KnowledgeGraphManager,
   KnowledgeGraphQuery,
-  type KnowledgeRelationship as MemoryKnowledgeRelationship,
 } from "./knowledge-graph.ts";
 import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
 import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
-import {
-  extractSearchTerms,
-  type ProcessedPrompt,
-  tokenizePrompt,
-} from "../../../src/utils/prompt-tokenizer.ts";
+import { type ProcessedPrompt, tokenizePrompt } from "../../../src/utils/prompt-tokenizer.ts";
 
 export interface CoALAMemoryEntry {
   id: string;
