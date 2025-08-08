@@ -30,11 +30,14 @@ export class WindowsService implements PlatformServiceManager {
       `${homeDir}\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Startup`;
     const startupBatch = `${startupFolder}\\Atlas.bat`;
 
-    // Create batch file content
+    // Create batch file content that starts service in background
     const batchContent = `@echo off
-rem Atlas Daemon Auto-Start
+rem Atlas Service Auto-Start
 cd /d "${homeDir}"
-start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
+rem Start Atlas service (which manages the daemon in background)
+"${binaryPath}" service install --port ${config.port}
+"${binaryPath}" service start
+exit
 `;
 
     // Write to startup folder
@@ -80,23 +83,62 @@ start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
       // Continue with start if status check fails
     }
 
-    // Start Atlas daemon directly
+    // Start Atlas daemon in background using Windows-specific approach
     const binaryPath = getAtlasBinaryPath();
-    const cmd = new Deno.Command(binaryPath, {
-      args: ["daemon", "start", "--port", "8080", "--detached"],
+
+    // On Windows, we need to use 'start' command to run in background
+    // since --detached flag doesn't work properly
+    const cmd = new Deno.Command("cmd", {
+      args: [
+        "/c",
+        "start",
+        "/B",
+        "",
+        binaryPath,
+        "daemon",
+        "start",
+        "--port",
+        "8080",
+      ],
       stdout: "piped",
       stderr: "piped",
+      cwd: Deno.env.get("USERPROFILE") || "C:\\Users\\Default",
     });
 
     const result = await cmd.output();
     if (!result.success) {
       const error = new TextDecoder().decode(result.stderr);
       const stdout = new TextDecoder().decode(result.stdout);
-      throw new Error(`Failed to start Atlas daemon: ${error} ${stdout}`);
+      // If the start command fails, try direct execution as fallback
+      const fallbackCmd = new Deno.Command(binaryPath, {
+        args: ["daemon", "start", "--port", "8080"],
+        stdout: "piped",
+        stderr: "piped",
+        stdin: "null",
+      });
+
+      // Spawn and detach
+      fallbackCmd.spawn();
+
+      // Give it a moment to start
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+
+      // Check if it started
+      const status = await this.getStatus();
+      if (!status.running) {
+        throw new Error(`Failed to start Atlas daemon: ${error} ${stdout}`);
+      }
     }
   }
 
   async stop(force = false): Promise<void> {
+    // First check if process is actually running
+    const status = await this.getStatus();
+    if (!status.running) {
+      // No process to stop
+      return;
+    }
+
     // Try graceful shutdown first
     try {
       const atlasPath = getAtlasBinaryPath();
@@ -106,20 +148,40 @@ start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
         stderr: "piped",
       });
       await stopCmd.output();
+
+      // Give it a moment to shut down gracefully
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     } catch {
       // If graceful shutdown fails, continue to force kill
     }
 
-    // Force kill Atlas processes
-    try {
-      const killCmd = new Deno.Command("taskkill", {
-        args: ["/F", "/IM", "atlas.exe"],
-        stdout: "piped",
-        stderr: "piped",
-      });
-      await killCmd.output();
-    } catch {
-      // Ignore kill failures if no processes to kill
+    // Force kill Atlas processes if still running or if force flag is set
+    if (force || (await this.getStatus()).running) {
+      try {
+        const killCmd = new Deno.Command("taskkill", {
+          args: ["/F", "/IM", "atlas.exe"],
+          stdout: "piped",
+          stderr: "piped",
+        });
+        const result = await killCmd.output();
+        // Check if the kill was successful
+        if (!result.success) {
+          const error = new TextDecoder().decode(result.stderr);
+          // Only throw if it's not a "process not found" error
+          if (!error.includes("not found") && !error.includes("No tasks")) {
+            throw new Error(`Failed to stop process: ${error}`);
+          }
+        }
+      } catch (error) {
+        // Re-throw if it's not a "process not found" error
+        if (
+          error instanceof Error &&
+          !error.message.includes("not found") &&
+          !error.message.includes("No tasks")
+        ) {
+          throw error;
+        }
+      }
     }
   }
 
@@ -139,10 +201,17 @@ start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
       const pidResult = await pidCmd.output();
       if (pidResult.success) {
         const pidOutput = new TextDecoder().decode(pidResult.stdout).trim();
-        const csvMatch = pidOutput.match(/"atlas\.exe","(\d+)"/);
-        if (csvMatch) {
-          pid = parseInt(csvMatch[1], 10);
-          running = true;
+        // Check if the output indicates no tasks found
+        if (pidOutput.includes("INFO: No tasks are running") || pidOutput === "") {
+          // No atlas.exe process found
+          running = false;
+        } else {
+          // Try to parse CSV output for atlas.exe
+          const csvMatch = pidOutput.match(/"atlas\.exe","(\d+)"/);
+          if (csvMatch && csvMatch[1]) {
+            pid = parseInt(csvMatch[1], 10);
+            running = true;
+          }
         }
       }
     } catch {
@@ -213,11 +282,11 @@ start /B "" "${binaryPath}" daemon start --port ${config.port} --detached
     }
   }
 
-  private async createServiceWrapper(
-    wrapperPath: string,
-    binaryPath: string,
-    port: number,
-  ): Promise<void> {
+  private createServiceWrapper(
+    _wrapperPath: string,
+    _binaryPath: string,
+    _port: number,
+  ): void {
     // Skip creating service wrapper - use direct daemon installation instead
     // Windows services work better with direct executable registration
     console.log("Using direct daemon registration for Windows service");

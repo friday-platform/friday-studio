@@ -234,19 +234,8 @@ async function performUpdate(params: {
       );
     }
 
-    // Handle Windows file locking
-    if (platform.platform === "windows") {
-      const isAtlasRunning = await checkIfAtlasIsRunning();
-      if (isAtlasRunning) {
-        throw new Error(
-          "Atlas appears to be running on Windows.\n" +
-            "Please close all Atlas processes before updating:\n" +
-            "  1. Run 'atlas daemon stop' to stop the daemon\n" +
-            "  2. Close any Atlas terminal windows\n" +
-            "  3. Run 'atlas update' again",
-        );
-      }
-    }
+    // Note: Windows file locking is handled by Move-and-Delay pattern in replaceBinary()
+    // No need to check if Atlas is running - the update will work even with running processes
 
     // Ensure update directory exists
     await ensureDir(updateDir);

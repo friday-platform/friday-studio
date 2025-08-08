@@ -668,7 +668,10 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
           );
           const daemonStarter = `@echo off
 cd /d "${userProfile}"
-"${binaryPath}" daemon start --port 8080
+rem Install and start Atlas service
+"${binaryPath}" service install --port 8080
+"${binaryPath}" service start
+exit
 `;
           fs.writeFileSync(atlasStarterPath, daemonStarter);
 
@@ -713,7 +716,7 @@ cd /d "${userProfile}"
   <Actions Context="Author">
     <Exec>
       <Command>${binaryPath}</Command>
-      <Arguments>daemon start --port 8080</Arguments>
+      <Arguments>service start</Arguments>
       <WorkingDirectory>${userProfile}</WorkingDirectory>
     </Exec>
   </Actions>
@@ -1030,7 +1033,12 @@ ipcMain.handle("manage-atlas-daemon", async (event, action = "start") => {
       try {
         const { spawn } = require("child_process");
 
-        const daemonProcess = spawn(binaryPath, ["daemon", "start"], {
+        // Use service start instead of daemon start for proper background execution
+        const serviceArgs = process.platform === "win32"
+          ? ["service", "start"] // Windows: use service
+          : ["daemon", "start"]; // Unix: daemon can detach properly
+
+        const daemonProcess = spawn(binaryPath, serviceArgs, {
           detached: true,
           stdio: ["ignore", "ignore", "ignore"],
           env: {
