@@ -10,6 +10,7 @@ import { useStdout } from "ink";
 import ansiEscapes from "ansi-escapes";
 import { setupTerminal } from "../modules/enable-multiline/index.ts";
 import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts";
+import { DIAGNOSTICS_STATUS, type DiagnosticsStatus } from "../constants/diagnostics-status.ts";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -41,7 +42,7 @@ interface AppContextType {
   isInitializing: boolean;
   exitApp: () => Promise<void>;
   sendDiagnostics: () => Promise<void>;
-  diagnosticsStatus: "idle" | "collecting" | "uploading" | "done" | string;
+  diagnosticsStatus: DiagnosticsStatus;
   daemonStatus: DaemonStatus;
   setDaemonStatus: () => Promise<void>;
   setDaemonStatusState: (status: DaemonStatus) => void;
@@ -83,9 +84,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
   const [daemonStatus, setDaemonStatusState] = useState<DaemonStatus>(
     DAEMON_STATUS.IDLE,
   );
-  const [diagnosticsStatus, setDiagnosticsStatus] = useState<
-    "idle" | "collecting" | "uploading" | "done" | string
-  >("idle");
+  const [diagnosticsStatus, setDiagnosticsStatus] = useState<DiagnosticsStatus>(
+    DIAGNOSTICS_STATUS.IDLE,
+  );
   const [multilineSetupStatus, setMultilineSetupStatus] = useState<
     "idle" | "running" | "done" | string
   >("idle");
@@ -237,7 +238,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       }
     } catch {
       // Daemon is not running
-      setDaemonStatusState("unhealthy");
+      setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
     }
 
     try {
@@ -274,9 +275,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
-    } catch (error) {
+    } catch (_error) {
       // Set daemon status to unhealthy when initialization fails
-      setDaemonStatusState("unhealthy");
+      setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
 
       setIsInitializing(false);
 
@@ -302,7 +303,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         // Don't hide unhealthy status - it should persist
       }
     } catch (_error) {
-      setDaemonStatusState("unhealthy");
+      setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
       // Don't hide unhealthy status - it should persist
     }
   };
@@ -311,6 +312,8 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     let gzipPath: string | undefined;
 
     try {
+      setDiagnosticsStatus(DIAGNOSTICS_STATUS.COLLECTING);
+
       // Collect diagnostics
       const collector = new DiagnosticsCollector();
       gzipPath = await collector.collectAndArchive();
@@ -324,7 +327,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         );
       }
 
-      setDiagnosticsStatus("uploading");
+      setDiagnosticsStatus(DIAGNOSTICS_STATUS.UPLOADING);
 
       // Upload via client
       const client = getAtlasClient();
@@ -333,13 +336,13 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       // Clean up temp file
       await Deno.remove(gzipPath).catch(() => {}); // Ignore cleanup errors
 
-      setDiagnosticsStatus("done");
+      setDiagnosticsStatus(DIAGNOSTICS_STATUS.DONE);
       // setMessage("Diagnostics sent successfully!");
 
-      // Complete after showing success for a moment
+      // Reset to idle after showing success for a moment
       setTimeout(() => {
-        setDiagnosticsStatus("done");
-      }, 2000);
+        setDiagnosticsStatus(DIAGNOSTICS_STATUS.IDLE);
+      }, 3000);
     } catch (err) {
       setDiagnosticsStatus(err instanceof Error ? err.message : String(err));
 
@@ -347,12 +350,12 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       if (gzipPath) {
         await Deno.remove(gzipPath).catch(() => {});
       }
-    }
 
-    // Complete after showing error for a moment
-    setTimeout(() => {
-      setDiagnosticsStatus("idle");
-    }, 5000);
+      // Reset to idle after showing error for a moment
+      setTimeout(() => {
+        setDiagnosticsStatus(DIAGNOSTICS_STATUS.IDLE);
+      }, 5000);
+    }
   };
 
   const enableMultiline = async () => {

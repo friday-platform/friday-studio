@@ -6,6 +6,7 @@ import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { DAEMON_STATUS } from "../constants/daemon-status.ts";
+import { DIAGNOSTICS_STATUS } from "../constants/diagnostics-status.ts";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
@@ -217,29 +218,44 @@ export const CommandInput = ({
           )}
         </Box>
 
-        {diagnosticsStatus !== "idle" && (
-          <Box flexDirection="row" paddingX={2}>
-            {diagnosticsStatus === "collecting" && <Text dimColor>Collecting...</Text>}
+        {/* Show diagnostics status if active, otherwise show daemon status */}
+        {diagnosticsStatus !== DIAGNOSTICS_STATUS.IDLE
+          ? (
+            <Box flexDirection="row" paddingX={2}>
+              {diagnosticsStatus === DIAGNOSTICS_STATUS.COLLECTING && (
+                <Text dimColor>Collecting...</Text>
+              )}
 
-            {diagnosticsStatus === "uploading" && <Text dimColor>Sending...</Text>}
+              {diagnosticsStatus === DIAGNOSTICS_STATUS.UPLOADING && (
+                <Text dimColor>Sending...</Text>
+              )}
 
-            {diagnosticsStatus === "done" && <Text color="green">Diagnostics sent</Text>}
+              {diagnosticsStatus === DIAGNOSTICS_STATUS.DONE && (
+                <Text color="green">Diagnostics sent</Text>
+              )}
 
-            {diagnosticsStatus === "error" && <Text color="red">Error: {diagnosticsStatus}</Text>}
-          </Box>
-        )}
-
-        {daemonStatus !== DAEMON_STATUS.IDLE && (
-          <Box flexDirection="row" paddingX={2}>
-            {daemonStatus === DAEMON_STATUS.HEALTHY && (
-              <Text color="green">✓ Atlas daemon is running</Text>
-            )}
-            {daemonStatus === DAEMON_STATUS.UNHEALTHY && (
-              <Text color="yellow">◆ Atlas daemon is not running</Text>
-            )}
-            {daemonStatus === DAEMON_STATUS.ERROR && <Text color="red">Error: {daemonStatus}</Text>}
-          </Box>
-        )}
+              {![
+                DIAGNOSTICS_STATUS.COLLECTING,
+                DIAGNOSTICS_STATUS.UPLOADING,
+                DIAGNOSTICS_STATUS.DONE,
+              ].includes(diagnosticsStatus) && <Text color="red">Error: {diagnosticsStatus}</Text>}
+            </Box>
+          )
+          : daemonStatus !== DAEMON_STATUS.IDLE
+          ? (
+            <Box flexDirection="row" paddingX={2}>
+              {daemonStatus === DAEMON_STATUS.HEALTHY && (
+                <Text color="green">✓ Atlas daemon is running</Text>
+              )}
+              {daemonStatus === DAEMON_STATUS.UNHEALTHY && (
+                <Text color="yellow">◆ Atlas daemon is not running</Text>
+              )}
+              {daemonStatus === DAEMON_STATUS.ERROR && (
+                <Text color="red">Error: {daemonStatus}</Text>
+              )}
+            </Box>
+          )
+          : null}
 
         {multilineSetupStatus !== "idle" && (
           <Box flexDirection="row" paddingX={2}>

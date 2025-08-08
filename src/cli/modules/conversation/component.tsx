@@ -74,10 +74,6 @@ export function Component() {
 
   // Command execution handler
   const handleCommand = (input: string) => {
-    if (!conversationClient || !conversationSessionId) {
-      return;
-    }
-
     // Don't process empty input
     if (!input || input.trim() === "") {
       return;
@@ -86,12 +82,16 @@ export function Component() {
     // Parse command
     const parsed = parseSlashCommand(input);
     if (!parsed) {
-      // Send non-slash input to LLM
+      // Send non-slash input to LLM (requires daemon)
+      if (!conversationClient || !conversationSessionId) {
+        console.error("Cannot send message to LLM: Atlas daemon is not running");
+        return;
+      }
       handleLLMInput(input);
       return;
     }
 
-    // Special handling for certain commands
+    // Commands that work WITHOUT daemon connection
     if (
       parsed.command === "exit" ||
       parsed.command === "quit" ||
@@ -113,6 +113,27 @@ export function Component() {
 
     if (parsed.command === "credits") {
       setView("credits");
+      return;
+    }
+
+    if (parsed.command === "enable-multiline") {
+      enableMultiline();
+      return;
+    }
+
+    if (parsed.command === "status") {
+      setDaemonStatus();
+      return;
+    }
+
+    if (parsed.command === "send-diagnostics") {
+      sendDiagnostics();
+      return;
+    }
+
+    // Commands that REQUIRE daemon connection
+    if (!conversationClient || !conversationSessionId) {
+      console.error(`Cannot execute /${parsed.command}: Atlas daemon is not running`);
       return;
     }
 
@@ -151,14 +172,6 @@ export function Component() {
         promptName: "system_version",
       });
       return;
-    }
-
-    if (parsed.command === "status") {
-      setDaemonStatus();
-    }
-
-    if (parsed.command === "send-diagnostics") {
-      sendDiagnostics();
     }
 
     // Check command registry
