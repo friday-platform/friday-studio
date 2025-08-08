@@ -39,7 +39,7 @@ export const atlas_todo_read = tool({
   execute: async ({ streamId, status, priority, limit }) => {
     try {
       const client = createAtlasClient();
-      const response = await client.GET("/api/todo-storage/{streamId}", {
+      const response = await client.GET("/api/todos/{streamId}", {
         params: {
           path: { streamId },
           query: { status, priority, limit },
@@ -81,7 +81,7 @@ export const atlas_todo_write = tool({
       const validatedTodos = todos.map((todo) => TodoItemSchema.parse(todo));
 
       const client = createAtlasClient();
-      const response = await client.POST("/api/todo-storage/{streamId}", {
+      const response = await client.POST("/api/todos/{streamId}", {
         params: {
           path: { streamId },
         },

@@ -11,10 +11,12 @@
 
 import type {
   IAtlasAgent,
+  IAtlasGate,
   IAtlasScope,
   ITempestContextManager,
   ITempestMemoryManager,
   ITempestMessageManager,
+  IWorkspaceSupervisor,
 } from "../../types/core.ts";
 import { ContextManager as Context } from "../context.ts";
 import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
@@ -26,6 +28,7 @@ import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts
 export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
   id: string;
   parentScopeId?: string;
+  supervisor?: IWorkspaceSupervisor;
   context: ITempestContextManager;
   memory: ITempestMemoryManager;
   messages: ITempestMessageManager;
@@ -57,6 +60,30 @@ export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
       agentName: this.name(),
       agentType: this.constructor.name,
     });
+
+    // Initialize gates array
+    this.gates = [];
+  }
+
+  // Conversation management methods required by IAtlasScope
+  newConversation(): ITempestMessageManager {
+    this.messages = new Messages();
+    return this.messages;
+  }
+
+  getConversation(): ITempestMessageManager {
+    return this.messages;
+  }
+
+  archiveConversation(): void {
+    // Archive current conversation to memory if needed
+    this.logger.info("Archiving conversation");
+  }
+
+  deleteConversation(): void {
+    // Clear the current conversation
+    this.messages = new Messages();
+    this.logger.info("Deleted conversation");
   }
 
   // Abstract methods that subclasses must implement

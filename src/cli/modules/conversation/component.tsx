@@ -4,6 +4,7 @@ import { CommandInput } from "../../components/command-input.tsx";
 import { MessageBuffer } from "../../components/message-buffer.tsx";
 import { useAppContext } from "../../contexts/app-context.tsx";
 import { useResponsiveDimensions } from "../../utils/useResponsiveDimensions.ts";
+import { getAtlasClient } from "@atlas/client";
 import CreditsView from "../../views/CreditsView.tsx";
 import Help from "../../views/help.tsx";
 import { COMMAND_REGISTRY, parseSlashCommand } from "./index.ts";
@@ -46,6 +47,18 @@ export function Component() {
 
   const handleLLMInput = async (input: string) => {
     if (!conversationClient || !conversationSessionId) {
+      // Check daemon health and potentially reinitialize
+      try {
+        const client = getAtlasClient({ timeout: 1000 });
+        const isHealthy = await client.isHealthy();
+        if (!isHealthy) {
+          // Daemon is not running, don't send the message
+          return;
+        }
+      } catch {
+        // Daemon is not available
+        return;
+      }
       return;
     }
 

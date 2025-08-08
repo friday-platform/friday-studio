@@ -149,6 +149,8 @@ export function registerGrepTool(server: McpServer, _ctx: ToolContext) {
         const lineNum = parseInt(parts[1], 10);
         const lineText = parts[2];
 
+        if (!filePath) continue;
+
         let modTime = 0;
         try {
           const stats = await Deno.stat(filePath);

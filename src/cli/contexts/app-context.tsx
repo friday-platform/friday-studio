@@ -9,6 +9,7 @@ import { getAtlasClient } from "@atlas/client";
 import { useStdout } from "ink";
 import ansiEscapes from "ansi-escapes";
 import { setupTerminal } from "../modules/enable-multiline/index.ts";
+import { DAEMON_STATUS, type DaemonStatus } from "../constants/daemon-status.ts";
 
 interface ConversationDisplayPrefs {
   showReasoningSteps: boolean;
@@ -41,8 +42,9 @@ interface AppContextType {
   exitApp: () => Promise<void>;
   sendDiagnostics: () => Promise<void>;
   diagnosticsStatus: "idle" | "collecting" | "uploading" | "done" | string;
-  daemonStatus: "healthy" | "unhealthy" | "error" | "idle";
+  daemonStatus: DaemonStatus;
   setDaemonStatus: () => Promise<void>;
+  setDaemonStatusState: (status: DaemonStatus) => void;
   enableMultiline: () => Promise<void>;
   multilineSetupStatus: "idle" | "running" | "done" | string;
   multilineTerminalType: "Apple_Terminal" | "iTerm.app" | "ghostty" | null;
@@ -78,9 +80,9 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
   const [isInitializing, setIsInitializing] = useState(false);
   const [hasInitialized, setHasInitialized] = useState(false);
-  const [daemonStatus, setDaemonStatusState] = useState<
-    "healthy" | "unhealthy" | "error" | "idle"
-  >("idle");
+  const [daemonStatus, setDaemonStatusState] = useState<DaemonStatus>(
+    DAEMON_STATUS.IDLE,
+  );
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<
     "idle" | "collecting" | "uploading" | "done" | string
   >("idle");
@@ -139,6 +141,60 @@ export const AppProvider = ({ children }: AppProviderProps) => {
     initializeSystem();
   }, []);
 
+  // Periodic health check when daemon is unhealthy
+  useEffect(() => {
+    if (daemonStatus !== DAEMON_STATUS.UNHEALTHY) {
+      return;
+    }
+
+    const checkInterval = setInterval(async () => {
+      try {
+        const client = getAtlasClient({ timeout: 1000 });
+        const isHealthy = await client.isHealthy();
+
+        if (isHealthy) {
+          // Daemon is now running! Reinitialize the system
+          setDaemonStatusState(DAEMON_STATUS.HEALTHY);
+
+          // Reinitialize conversation client
+          try {
+            const newConversationClient = new ConversationClient(
+              getAtlasDaemonUrl(),
+              "atlas-conversation",
+              "cli-user",
+            );
+
+            const session = await newConversationClient.createSession();
+
+            setConversationClient(newConversationClient);
+            setConversationSessionId(session.sessionId);
+            newConversationClient.sseUrl = session.sseUrl;
+
+            // Create AbortController for SSE
+            const abortController = new AbortController();
+            sseAbortControllerRef.current = abortController;
+
+            // Auto-hide success message after 3 seconds
+            setTimeout(() => {
+              setDaemonStatusState(DAEMON_STATUS.IDLE);
+            }, 3000);
+          } catch {
+            // Failed to initialize conversation, but daemon is running
+          }
+
+          // Initialize MCP client
+          await initializeMcpClient();
+        }
+      } catch {
+        // Still unhealthy, keep checking
+      }
+    }, 2000); // Check every 2 seconds
+
+    return () => {
+      clearInterval(checkInterval);
+    };
+  }, [daemonStatus]);
+
   const updateConfig = (newConfig: AtlasConfig) => {
     setConfig(newConfig);
   };
@@ -171,6 +227,18 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
     setIsInitializing(true);
     setHasInitialized(true);
+
+    // Check daemon status immediately on startup
+    try {
+      const client = getAtlasClient({ timeout: 1000 });
+      const isHealthy = await client.isHealthy();
+      if (!isHealthy) {
+        setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+      }
+    } catch {
+      // Daemon is not running
+      setDaemonStatusState("unhealthy");
+    }
 
     try {
       // Try to connect to daemon - this will auto-start it if needed
@@ -207,12 +275,13 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
     } catch (error) {
-      // Clear any loading messages and show error
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      console.error(`Failed to start Atlas daemon: ${errorMessage}`);
+      // Set daemon status to unhealthy when initialization fails
+      setDaemonStatusState("unhealthy");
 
       setIsInitializing(false);
+
+      // Don't log to console since we're showing in UI
+      // Silent fail - daemon status indicator will show the issue
     }
   };
 
@@ -223,17 +292,19 @@ export const AppProvider = ({ children }: AppProviderProps) => {
       const isHealthy = await client.isHealthy();
 
       if (isHealthy) {
-        setDaemonStatusState("healthy");
+        setDaemonStatusState(DAEMON_STATUS.HEALTHY);
+        // Only hide the success message after 5 seconds
+        setTimeout(() => {
+          setDaemonStatusState(DAEMON_STATUS.IDLE);
+        }, 5000);
       } else {
-        setDaemonStatusState("unhealthy");
+        setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+        // Don't hide unhealthy status - it should persist
       }
     } catch (_error) {
-      setDaemonStatusState("error");
+      setDaemonStatusState("unhealthy");
+      // Don't hide unhealthy status - it should persist
     }
-
-    setTimeout(() => {
-      setDaemonStatusState("idle");
-    }, 5000);
   };
 
   const sendDiagnostics = async () => {
@@ -330,6 +401,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         diagnosticsStatus,
         daemonStatus,
         setDaemonStatus,
+        setDaemonStatusState,
         enableMultiline,
         multilineSetupStatus,
         multilineTerminalType,

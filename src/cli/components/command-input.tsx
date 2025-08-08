@@ -5,6 +5,7 @@ import { TextInput } from "../modules/input/text-input.tsx";
 import { COMMAND_DEFINITIONS } from "../utils/command-definitions.ts";
 import type { AttachmentData } from "../modules/input/use-text-input-state.ts";
 import { useAppContext } from "../contexts/app-context.tsx";
+import { DAEMON_STATUS } from "../constants/daemon-status.ts";
 
 export interface CommandInputProps {
   onSubmit: (command: string) => void;
@@ -228,13 +229,15 @@ export const CommandInput = ({
           </Box>
         )}
 
-        {daemonStatus !== "idle" && (
+        {daemonStatus !== DAEMON_STATUS.IDLE && (
           <Box flexDirection="row" paddingX={2}>
-            {daemonStatus === "healthy" && <Text color="green">✓ Atlas daemon is running</Text>}
-            {daemonStatus === "unhealthy" && (
+            {daemonStatus === DAEMON_STATUS.HEALTHY && (
+              <Text color="green">✓ Atlas daemon is running</Text>
+            )}
+            {daemonStatus === DAEMON_STATUS.UNHEALTHY && (
               <Text color="yellow">◆ Atlas daemon is not running</Text>
             )}
-            {daemonStatus === "error" && <Text color="red">Error: {daemonStatus}</Text>}
+            {daemonStatus === DAEMON_STATUS.ERROR && <Text color="red">Error: {daemonStatus}</Text>}
           </Box>
         )}
 

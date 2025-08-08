@@ -253,8 +253,34 @@ export class ConversationClient {
         }
       }
     } catch (error) {
+      // Handle specific connection errors with user-friendly messages
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Check for daemon shutdown or connection loss
+      if (
+        errorMessage.includes("error reading a body from connection") ||
+        errorMessage.includes("Connection refused") ||
+        errorMessage.includes("ECONNREFUSED")
+      ) {
+        throw new Error(
+          "Connection to Atlas daemon lost. The daemon may have been stopped or restarted.",
+        );
+      }
+
+      // Check for network issues
+      if (
+        errorMessage.includes("Failed to fetch") ||
+        errorMessage.includes("NetworkError") ||
+        errorMessage.includes("ERR_NETWORK")
+      ) {
+        throw new Error(
+          "Network connection to Atlas daemon failed. Please check your network and daemon status.",
+        );
+      }
+
+      // Default error message for other cases
       throw new Error(
-        `SSE connection failed: ${error instanceof Error ? error.message : String(error)}`,
+        `SSE connection error: ${errorMessage}`,
       );
     } finally {
       // Ensure the connection is closed

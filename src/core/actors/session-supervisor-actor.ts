@@ -552,7 +552,7 @@ Your role is to analyze the incoming signal and create an execution plan using a
 
 Signal Information:
 - Signal ID: ${context.signal.id}
-- Signal Type: ${context.signal.type}
+- Signal Type: ${context.signal.type || "unknown"}
 - Payload: ${JSON.stringify(context.payload)}
 
 Available Agents:

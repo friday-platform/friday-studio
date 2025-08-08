@@ -12,6 +12,7 @@ import {
 import { BaseAgent } from "../../../src/core/agents/base-agent-v2.ts";
 import type { AtlasMemoryConfig } from "../../../src/core/memory-config.ts";
 import type { IWorkspaceSignal } from "../../../src/types/core.ts";
+import { LLMProvider } from "@atlas/core";
 
 export interface SignalFactExtractionResult {
   extractedFacts: ExtractedFact[];
@@ -46,6 +47,23 @@ export class FactExtractor extends BaseAgent {
       user:
         "Analyze content and extract facts that will be valuable for future reference and automation.",
     };
+  }
+
+  /**
+   * Generate LLM response using LLMProvider
+   */
+  private async generateLLM(
+    model: string,
+    systemPrompt: string,
+    userPrompt: string,
+    _includeMemory: boolean,
+    _metadata?: Record<string, unknown>,
+  ): Promise<string> {
+    const response = await LLMProvider.generateText(userPrompt, {
+      systemPrompt,
+      model,
+    });
+    return response.text;
   }
 
   // Implement required BaseAgent methods
@@ -104,7 +122,7 @@ export class FactExtractor extends BaseAgent {
     const startTime = Date.now();
 
     try {
-      this.log(`Starting comprehensive fact extraction from session: ${sessionId}`);
+      this.logger.info(`Starting comprehensive fact extraction from session: ${sessionId}`);
 
       // Extract facts using LLM with session-wide context
       const extractedFacts = await this.performSessionFactExtraction(
@@ -122,7 +140,7 @@ export class FactExtractor extends BaseAgent {
         ? extractedFacts.reduce((sum, fact) => sum + fact.confidence, 0) / extractedFacts.length
         : 0;
 
-      this.log(
+      this.logger.info(
         `Extracted ${extractedFacts.length} facts from session ${sessionId} in ${processingTime}ms`,
       );
 
@@ -138,7 +156,7 @@ export class FactExtractor extends BaseAgent {
         },
       };
     } catch (error) {
-      this.log(`Error extracting facts from session ${sessionId}: ${error}`);
+      this.logger.error(`Error extracting facts from session ${sessionId}: ${error}`);
       throw new Error(`Session fact extraction failed: ${error}`);
     }
   }
@@ -154,7 +172,7 @@ export class FactExtractor extends BaseAgent {
     const startTime = Date.now();
 
     try {
-      this.log(`Starting fact extraction from agent execution: ${agentId}`);
+      this.logger.info(`Starting fact extraction from agent execution: ${agentId}`);
 
       // Prepare agent execution content for analysis
       const executionContent = this.prepareAgentExecutionContent(
@@ -176,7 +194,7 @@ export class FactExtractor extends BaseAgent {
         ? extractedFacts.reduce((sum, fact) => sum + fact.confidence, 0) / extractedFacts.length
         : 0;
 
-      this.log(
+      this.logger.info(
         `Extracted ${extractedFacts.length} facts from agent ${agentId} execution in ${processingTime}ms`,
       );
 
@@ -192,7 +210,7 @@ export class FactExtractor extends BaseAgent {
         },
       };
     } catch (error) {
-      this.log(`Error extracting facts from agent ${agentId} execution: ${error}`);
+      this.logger.error(`Error extracting facts from agent ${agentId} execution: ${error}`);
       throw new Error(`Agent fact extraction failed: ${error}`);
     }
   }
@@ -205,7 +223,7 @@ export class FactExtractor extends BaseAgent {
     const startTime = Date.now();
 
     try {
-      this.log(`Starting fact extraction from signal: ${signal.id}`);
+      this.logger.info(`Starting fact extraction from signal: ${signal.id}`);
 
       // Prepare signal content for analysis
       const signalContent = this.prepareSignalContent(signal, payload);
@@ -221,7 +239,7 @@ export class FactExtractor extends BaseAgent {
         ? extractedFacts.reduce((sum, fact) => sum + fact.confidence, 0) / extractedFacts.length
         : 0;
 
-      this.log(
+      this.logger.info(
         `Extracted ${extractedFacts.length} facts from signal ${signal.id} in ${processingTime}ms`,
       );
 
@@ -237,7 +255,7 @@ export class FactExtractor extends BaseAgent {
         },
       };
     } catch (error) {
-      this.log(`Error extracting facts from signal ${signal.id}: ${error}`);
+      this.logger.error(`Error extracting facts from signal ${signal.id}: ${error}`);
       throw new Error(`Fact extraction failed: ${error}`);
     }
   }
@@ -397,8 +415,8 @@ IMPORTANT:
       // Validate and enhance extracted facts
       return this.validateAndEnhanceFacts(extractedFacts, signalId);
     } catch (error) {
-      this.log(`Error in LLM fact extraction: ${error}`);
-      this.log(`LLM Response that failed parsing: ${error}`);
+      this.logger.error(`Error in LLM fact extraction: ${error}`);
+      this.logger.error(`LLM Response that failed parsing: ${error}`);
       return []; // Return empty array on parsing failure
     }
   }
@@ -496,8 +514,8 @@ Return empty array [] if no significant new facts are discovered.`;
       // Validate and enhance extracted facts
       return this.validateAndEnhanceFacts(extractedFacts, agentId);
     } catch (error) {
-      this.log(`Error in LLM agent fact extraction: ${error}`);
-      this.log(`LLM Response that failed parsing: ${error}`);
+      this.logger.error(`Error in LLM agent fact extraction: ${error}`);
+      this.logger.error(`LLM Response that failed parsing: ${error}`);
       return []; // Return empty array on parsing failure
     }
   }
@@ -600,8 +618,8 @@ Return ONLY a valid JSON array of facts with this structure:
       // Validate and enhance extracted facts
       return this.validateAndEnhanceFacts(extractedFacts, sessionId);
     } catch (error) {
-      this.log(`Error in LLM session fact extraction: ${error}`);
-      this.log(`LLM Response that failed parsing: ${error}`);
+      this.logger.error(`Error in LLM session fact extraction: ${error}`);
+      this.logger.error(`LLM Response that failed parsing: ${error}`);
       return []; // Return empty array on parsing failure
     }
   }
@@ -764,7 +782,7 @@ Return ONLY a valid JSON array of facts with this structure:
         statement.toLowerCase().includes(fact.statement.toLowerCase())
       );
     } catch (error) {
-      this.log(`Error checking existing facts: ${error}`);
+      this.logger.error(`Error checking existing facts: ${error}`);
       return false;
     }
   }
@@ -785,7 +803,7 @@ Return ONLY a valid JSON array of facts with this structure:
           .join(", ")
       }`;
     } catch (error) {
-      this.log(`Error getting workspace context: ${error}`);
+      this.logger.error(`Error getting workspace context: ${error}`);
       return "No existing workspace knowledge available.";
     }
   }

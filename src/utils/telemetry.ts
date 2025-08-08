@@ -389,7 +389,16 @@ export class AtlasTelemetry {
       const parts = validatedTraceContext.split("-");
       const traceId = parts[1];
       const spanId = parts[2];
-      const traceFlags = parseInt(parts[3], 16);
+      const traceFlagsStr = parts[3];
+
+      if (!traceId || !spanId || !traceFlagsStr) {
+        logger.warn("Invalid trace context parts", {
+          parentTraceContext: validatedTraceContext,
+        });
+        return undefined;
+      }
+
+      const traceFlags = parseInt(traceFlagsStr, 16);
 
       logger.debug("Manually extracting parent trace context", {
         parentTraceContext: validatedTraceContext,

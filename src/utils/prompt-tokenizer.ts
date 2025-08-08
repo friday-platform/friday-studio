@@ -277,8 +277,8 @@ function extractKeyPhrases(words: string[], removeStopWords: boolean): string[] 
 
   // Extract 2-word phrases
   for (let i = 0; i < words.length - 1; i++) {
-    const word1 = words[i].replace(/[^\w]/g, "");
-    const word2 = words[i + 1].replace(/[^\w]/g, "");
+    const word1 = words[i]?.replace(/[^\w]/g, "") || "";
+    const word2 = words[i + 1]?.replace(/[^\w]/g, "") || "";
 
     if (word1.length < 2 || word2.length < 2) continue;
 
@@ -290,9 +290,9 @@ function extractKeyPhrases(words: string[], removeStopWords: boolean): string[] 
 
   // Extract 3-word phrases for important concepts
   for (let i = 0; i < words.length - 2; i++) {
-    const word1 = words[i].replace(/[^\w]/g, "");
-    const word2 = words[i + 1].replace(/[^\w]/g, "");
-    const word3 = words[i + 2].replace(/[^\w]/g, "");
+    const word1 = words[i]?.replace(/[^\w]/g, "") || "";
+    const word2 = words[i + 1]?.replace(/[^\w]/g, "") || "";
+    const word3 = words[i + 2]?.replace(/[^\w]/g, "") || "";
 
     if (word1.length < 2 || word2.length < 2 || word3.length < 2) continue;
 

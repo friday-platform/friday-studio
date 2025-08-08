@@ -391,7 +391,10 @@ export class LibraryStorageAdapter {
       for (const type of types) {
         for await (const { key } of this.storage.list(["library", "indexes", "by_type", type])) {
           if (key.length === 5) { // ['library', 'indexes', 'by_type', type, id]
-            typeIds.add(key[4]);
+            const itemId = key[4];
+            if (typeof itemId === "string") {
+              typeIds.add(itemId);
+            }
           }
         }
       }
@@ -406,7 +409,10 @@ export class LibraryStorageAdapter {
       for (const tag of query.tags) {
         for await (const { key } of this.storage.list(["library", "indexes", "by_tag", tag])) {
           if (key.length === 5) { // ['library', 'indexes', 'by_tag', tag, id]
-            tagIds.add(key[4]);
+            const itemId = key[4];
+            if (typeof itemId === "string") {
+              tagIds.add(itemId);
+            }
           }
         }
       }

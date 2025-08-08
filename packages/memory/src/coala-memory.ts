@@ -26,7 +26,15 @@ import {
 import { logger } from "@atlas/logger";
 import { getAtlasHome } from "../../../src/utils/paths.ts";
 import { join } from "@std/path";
-import { ExtractedFact, KnowledgeGraphManager, KnowledgeGraphQuery } from "./knowledge-graph.ts";
+import {
+  ExtractedFact,
+  type IKnowledgeGraphStorageAdapter,
+  type KnowledgeEntity as MemoryKnowledgeEntity,
+  type KnowledgeFact as MemoryKnowledgeFact,
+  KnowledgeGraphManager,
+  KnowledgeGraphQuery,
+  type KnowledgeRelationship as MemoryKnowledgeRelationship,
+} from "./knowledge-graph.ts";
 import type { IEmbeddingProvider } from "../../../src/types/vector-search.ts";
 import { createEmbeddingProvider } from "../../../src/core/embedding/mock-embedding-provider.ts";
 import {
@@ -685,7 +693,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
       // Get base path for storage - assume we can get this from the scope or store
       const basePath = this.getKnowledgeGraphBasePath();
-      const kgStorageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
+      const storageAdapter = new KnowledgeGraphLocalStorageAdapter(basePath);
+      // Create an adapter to convert between storage and memory KnowledgeEntity types
+      const kgStorageAdapter = this.createKnowledgeGraphAdapter(storageAdapter);
       this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
     } catch (error) {
       logger.warn("Failed to initialize knowledge graph for semantic memory", { error });
@@ -1693,6 +1703,79 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     } catch (error) {
       logger.error("Failed to rebuild vector index", { error });
     }
+  }
+
+  /**
+   * Create an adapter to convert between storage and memory KnowledgeEntity types
+   */
+  private createKnowledgeGraphAdapter(
+    storageAdapter: KnowledgeGraphLocalStorageAdapter,
+  ): IKnowledgeGraphStorageAdapter {
+    return {
+      // Entity operations - convert between storage and memory entity types
+      storeEntity: async (entity: MemoryKnowledgeEntity) => {
+        // Convert memory entity to storage entity
+        const storageEntity = {
+          ...entity,
+          createdAt: entity.timestamp || new Date(),
+          updatedAt: new Date(),
+        };
+        // Remove memory-specific fields that storage doesn't have
+        const { source, timestamp, ...entityForStorage } = storageEntity as any;
+        await storageAdapter.storeEntity(entityForStorage);
+      },
+      getEntity: async (id: string) => {
+        const entity = await storageAdapter.getEntity(id);
+        if (!entity) return null;
+        // Convert storage entity to memory entity
+        const { createdAt, updatedAt, ...baseEntity } = entity as any;
+        return {
+          ...baseEntity,
+          source: "storage",
+          timestamp: createdAt || new Date(),
+        } as MemoryKnowledgeEntity;
+      },
+      queryEntities: async (query: KnowledgeGraphQuery) => {
+        const entities = await storageAdapter.queryEntities(query);
+        // Convert each storage entity to memory entity
+        return entities.map((entity: any) => {
+          const { createdAt, updatedAt, ...baseEntity } = entity;
+          return {
+            ...baseEntity,
+            source: "storage",
+            timestamp: createdAt || new Date(),
+          } as MemoryKnowledgeEntity;
+        });
+      },
+      updateEntity: async (id: string, updates: Partial<MemoryKnowledgeEntity>) => {
+        // Convert updates to storage format
+        const { source, timestamp, ...storageUpdates } = updates as any;
+        await storageAdapter.updateEntity(id, {
+          ...storageUpdates,
+          updatedAt: new Date(),
+        });
+      },
+      deleteEntity: async (id: string) => {
+        await storageAdapter.deleteEntity(id);
+      },
+
+      // Relationship operations - pass through as they have the same structure
+      storeRelationship: storageAdapter.storeRelationship.bind(storageAdapter),
+      getRelationship: storageAdapter.getRelationship.bind(storageAdapter),
+      queryRelationships: storageAdapter.queryRelationships.bind(storageAdapter),
+      getEntityRelationships: storageAdapter.getEntityRelationships.bind(storageAdapter),
+      deleteRelationship: storageAdapter.deleteRelationship.bind(storageAdapter),
+
+      // Fact operations - pass through as they have the same structure
+      storeFact: storageAdapter.storeFact.bind(storageAdapter),
+      getFact: storageAdapter.getFact.bind(storageAdapter),
+      queryFacts: storageAdapter.queryFacts.bind(storageAdapter),
+      deleteFact: storageAdapter.deleteFact.bind(storageAdapter),
+
+      // Graph operations - pass through
+      getNeighbors: storageAdapter.getNeighbors.bind(storageAdapter),
+      findPath: storageAdapter.findPath.bind(storageAdapter),
+    };
   }
 
   // Cleanup

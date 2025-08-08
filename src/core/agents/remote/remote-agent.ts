@@ -113,7 +113,7 @@ export class RemoteAgent extends BaseAgent {
 
       // Create protocol-specific adapter
       this.adapter = await RemoteAdapterFactory.createAdapter(
-        this.config.protocol,
+        this.config.protocol as "acp" | "mcp",
         this.config,
       );
 

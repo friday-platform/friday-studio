@@ -399,7 +399,8 @@ export class CronManager {
     nextExecution?: Date;
   } {
     const activeTimers = this.listActiveTimers();
-    const nextExecution = activeTimers.length > 0 ? activeTimers[0].nextExecution : undefined;
+    const firstTimer = activeTimers[0];
+    const nextExecution = firstTimer?.nextExecution;
 
     return {
       totalTimers: this.timers.size,
@@ -742,11 +743,19 @@ export class CronManager {
         // Log details of failures
         results.forEach((result, index) => {
           if (result.status === "rejected") {
-            const [timerKey] = Array.from(this.timers.entries())[index];
-            this.logger.error("Timer persistence failed", {
-              timerKey,
-              error: result.reason,
-            });
+            const entry = Array.from(this.timers.entries())[index];
+            if (entry) {
+              const [timerKey] = entry;
+              this.logger.error("Timer persistence failed", {
+                timerKey,
+                error: result.reason,
+              });
+            } else {
+              this.logger.error("Timer persistence failed", {
+                index,
+                error: result.reason,
+              });
+            }
           }
         });
       } else {

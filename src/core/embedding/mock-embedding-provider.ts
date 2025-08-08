@@ -66,7 +66,9 @@ export class MockEmbeddingProvider implements IEmbeddingProvider {
     const chars = Array.from(charFreq.keys()).sort();
     for (let i = 0; i < Math.min(chars.length, 50) && index < this.dimension; i++) {
       const char = chars[i];
-      const freq = charFreq.get(char)! / normalizedText.length;
+      const charCount = charFreq.get(char);
+      if (!charCount) continue;
+      const freq = charCount / normalizedText.length;
       embedding[index++] = Math.tanh(freq * 10);
     }
 
@@ -74,7 +76,9 @@ export class MockEmbeddingProvider implements IEmbeddingProvider {
     const sortedWords = Array.from(wordFreq.keys()).sort();
     for (let i = 0; i < Math.min(sortedWords.length, 100) && index < this.dimension; i++) {
       const word = sortedWords[i];
-      const freq = wordFreq.get(word)! / words.length;
+      const wordCount = wordFreq.get(word);
+      if (!wordCount) continue;
+      const freq = wordCount / words.length;
 
       // Hash word to get consistent position
       const wordHash = this.simpleHash(word);

@@ -135,8 +135,9 @@ export const workspaceRuntimeMachineSetup = setup({
         logger.debug("Loading configuration from disk", {
           workspaceId: context.workspace.id,
         });
-        const adapter = new FilesystemConfigAdapter(context.options.workspacePath);
-        const configLoader = new ConfigLoader(adapter, context.options.workspacePath);
+        const workspacePath = context.options.workspacePath || Deno.cwd();
+        const adapter = new FilesystemConfigAdapter(workspacePath);
+        const configLoader = new ConfigLoader(adapter, workspacePath);
         mergedConfig = await configLoader.load();
       }
 

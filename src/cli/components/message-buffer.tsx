@@ -1,16 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Box, Static, useStdout } from "ink";
+import { useEffect, useRef, useState } from "react";
+import { Box, Static } from "ink";
 import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
-// import { GitDiff } from "./git-diff.tsx";
-// import { MultiSelect } from "./multi-select.tsx";
-// import { DirectoryTree } from "./directory-tree.tsx";
 import { OutputEntry } from "../modules/conversation/types.ts";
 import { Header } from "./header.tsx";
 import { MessageHeader } from "./message-header.tsx";
-import ansiEscapes from "ansi-escapes";
 import { Spinner } from "@inkjs/ui";
+import { DAEMON_STATUS } from "../constants/daemon-status.ts";
 
 interface TypingState {
   isTyping: boolean;
@@ -54,54 +51,6 @@ const ErrorEventSchema = z.object({
   timestamp: z.string(),
 });
 
-// const SelectionListEventSchema = z.object({
-//   type: z.literal("selection_list"),
-//   data: z.object({
-//     label: z.string(),
-//     options: z.array(
-//       z.object({
-//         label: z.string(),
-//         value: z.string(),
-//       })
-//     ),
-//   }),
-//   timestamp: z.string(),
-// });
-
-// const FileDiffEventSchema = z.object({
-//   type: z.literal("file_diff"),
-//   data: z.object({
-//     diffContent: z.string(),
-//     startingLine: z.number(),
-//     endingLine: z.number(),
-//     message: z.string(),
-//   }),
-//   timestamp: z.string(),
-// });
-
-// type DirectoryNode = {
-//   name: string;
-//   type: "file" | "directory";
-//   active?: boolean;
-//   children?: Array<DirectoryNode>;
-// };
-
-// // Define the recursive directory node schema
-// const DirectoryNodeSchema: z.ZodType<DirectoryNode> = z.object({
-//   name: z.string(),
-//   type: z.enum(["file", "directory"]),
-//   active: z.boolean().optional(),
-//   children: z.array(z.lazy(() => DirectoryNodeSchema)).optional(),
-// });
-
-// const DirectoryListingEventSchema = z.object({
-//   type: z.literal("directory_listing"),
-//   data: z.object({
-//     tree: z.lazy(() => DirectoryNodeSchema),
-//   }),
-//   timestamp: z.string(),
-// });
-
 const ToolCallEventSchema = z.object({
   id: z.string(),
   type: z.literal("tool_call"),
@@ -140,9 +89,6 @@ const SSEEventSchema = z.union([
   FinishEventSchema,
   MessageEventSchema,
   ErrorEventSchema,
-  // SelectionListEventSchema,
-  // FileDiffEventSchema,
-  // DirectoryListingEventSchema,
   ToolCallEventSchema,
   ToolResultEventSchema,
   ThinkingEventSchema,
@@ -154,6 +100,7 @@ export const MessageBuffer = () => {
     conversationSessionId,
     sseAbortControllerRef,
     staticKey,
+    setDaemonStatusState,
   } = useAppContext();
   const sseListenerStarted = useRef(false);
   const [sseStream, setSseStream] = useState<AsyncIterable<unknown> | null>(
@@ -180,13 +127,23 @@ export const MessageBuffer = () => {
       return;
     }
 
-    // Start SSE stream
-    const sseIterator = conversationClient.streamEvents(
-      conversationSessionId,
-      conversationClient.sseUrl,
-      sseAbortControllerRef.current?.signal,
-    );
-    setSseStream(sseIterator);
+    const connectSSE = () => {
+      // Create new abort controller for this connection
+      if (!sseAbortControllerRef.current) {
+        sseAbortControllerRef.current = new AbortController();
+      }
+
+      // Start SSE stream
+      const sseIterator = conversationClient.streamEvents(
+        conversationSessionId,
+        conversationClient.sseUrl,
+        sseAbortControllerRef.current?.signal,
+      );
+      setSseStream(sseIterator);
+      sseListenerStarted.current = false; // Reset listener flag for new stream
+    };
+
+    connectSSE();
 
     return () => {
       // Clean up SSE connection
@@ -233,7 +190,22 @@ export const MessageBuffer = () => {
             !errorMessage.includes("aborted") &&
             !errorMessage.includes("Bad resource ID")
           ) {
-            console.error("SSE error:", error);
+            // Stop the thinking spinner immediately when connection is lost
+            setTypingState({
+              isTyping: false,
+              elapsedSeconds: 0,
+            });
+
+            // Handle daemon connection loss with user-friendly message
+            if (errorMessage.includes("Connection to Atlas daemon lost")) {
+              setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+            } else if (errorMessage.includes("Network connection to Atlas daemon failed")) {
+              setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+            } else {
+              // Any other SSE error means connection is lost - always notify and reconnect
+              console.error("SSE connection error:", errorMessage);
+              setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
+            }
           }
         }
       }
