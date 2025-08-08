@@ -331,7 +331,6 @@ export class MCPManager {
             operation: "mcp_tools_retrieval",
             serverId,
             toolCount: Object.keys(filteredTools).length,
-            toolNames: Object.keys(filteredTools),
           },
         );
       } catch (error) {
@@ -360,7 +359,6 @@ export class MCPManager {
       operation: "mcp_tools_retrieval",
       serverIds,
       totalToolCount: Object.keys(allTools).length,
-      toolNames: Object.keys(allTools),
     });
 
     return allTools;

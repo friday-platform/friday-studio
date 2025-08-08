@@ -45,6 +45,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private sessions: Map<string, SessionInfo> = new Map();
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
+  private agentOrchestrator?: any; // Will be set by workspace runtime
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
     this.id = id || crypto.randomUUID();
@@ -86,10 +87,18 @@ export class WorkspaceSupervisorActor implements BaseActor {
     });
   }
 
+  setAgentOrchestrator(orchestrator: any): void {
+    this.agentOrchestrator = orchestrator;
+    this.logger.info("Agent orchestrator set for workspace supervisor", {
+      workspaceId: this.workspaceId,
+    });
+  }
+
   processSignal(
     signal: IWorkspaceSignal,
     payload: Record<string, unknown>,
     sessionId: string,
+    streamId?: string,
   ): Promise<ProcessSignalResult> {
     try {
       this.logger.info("Processing signal", {
@@ -105,6 +114,11 @@ export class WorkspaceSupervisorActor implements BaseActor {
         this.workspaceId,
         crypto.randomUUID(),
       );
+
+      // Pass orchestrator to session supervisor if available
+      if (this.agentOrchestrator) {
+        sessionActor.setAgentOrchestrator(this.agentOrchestrator);
+      }
 
       const sessionInfo: SessionInfo = {
         sessionId,
@@ -178,6 +192,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
             payload,
             availableAgents,
             jobSpec,
+            streamId: streamId || (payload.streamId as string | undefined), // Use streamId parameter first, fallback to payload
           };
 
           this.logger.info("Session context created", {

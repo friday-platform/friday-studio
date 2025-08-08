@@ -59,6 +59,26 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/workspaces/{workspaceId}/config": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Get workspace configuration
+     * @description Returns the complete workspace configuration for agent server consumption, including MCP server configurations and agent definitions
+     */
+    get: operations["GETApiWorkspaces:workspaceIdConfig"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/workspaces/{workspaceId}/update": {
     parameters: {
       query?: never;
@@ -127,7 +147,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/conversation": {
+  "/api/conversation-storage": {
     parameters: {
       query?: never;
       header?: never;
@@ -138,7 +158,7 @@ export interface paths {
      * List conversations
      * @description Get a list of all conversations with summary information
      */
-    get: operations["GETApiConversation"];
+    get: operations["GETApiConversation-storage"];
     put?: never;
     post?: never;
     delete?: never;
@@ -147,7 +167,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/conversation/{streamId}": {
+  "/api/conversation-storage/{streamId}": {
     parameters: {
       query?: never;
       header?: never;
@@ -158,18 +178,18 @@ export interface paths {
      * Retrieve conversation history
      * @description Get the complete conversation history for the given stream ID
      */
-    get: operations["GETApiConversation:streamId"];
+    get: operations["GETApiConversation-storage:streamId"];
     put?: never;
     /**
      * Store conversation message
      * @description Store a message in the conversation history for the given stream ID
      */
-    post: operations["POSTApiConversation:streamId"];
+    post: operations["POSTApiConversation-storage:streamId"];
     /**
      * Delete conversation
      * @description Delete all conversation history for the given stream ID
      */
-    delete: operations["DELETEApiConversation:streamId"];
+    delete: operations["DELETEApiConversation-storage:streamId"];
     options?: never;
     head?: never;
     patch?: never;
@@ -375,6 +395,683 @@ export interface operations {
               sessions: number;
               /** @description Number of active workers */
               workers: number;
+            };
+          };
+        };
+      };
+      /** @description Workspace not found */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @description Error message */
+            error: string;
+            /** @description Error code */
+            code?: string;
+            /** @description Additional error details */
+            details?: unknown;
+          };
+        };
+      };
+      /** @description Internal server error */
+      500: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            /** @description Error message */
+            error: string;
+            /** @description Error code */
+            code?: string;
+            /** @description Additional error details */
+            details?: unknown;
+          };
+        };
+      };
+    };
+  };
+  "GETApiWorkspaces:workspaceIdConfig": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspaceId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successfully retrieved workspace configuration */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            config: {
+              /**
+               * @description Configuration version (currently '1.0')
+               * @constant
+               */
+              version: "1.0";
+              workspace: {
+                /** @description Workspace ID (required for platform workspace) */
+                id?: string;
+                name: string;
+                /** @description Workspace version */
+                version?: string;
+                /** @description Workspace description */
+                description?: string;
+                /** @description Timeout configuration for workspace operations */
+                timeout?: {
+                  /**
+                   * @description Time allowed between progress signals before cancelling for inactivity
+                   * @default 2m
+                   */
+                  progressTimeout: string;
+                  /**
+                   * @description Hard upper limit for any operation
+                   * @default 30m
+                   */
+                  maxTotalTimeout: string;
+                };
+              };
+              server?: {
+                /** @description Atlas exposing itself as MCP server */
+                mcp?: {
+                  /** @default false */
+                  enabled: boolean;
+                  discoverable?: {
+                    /** @description Capability patterns to expose (e.g., 'workspace_*') */
+                    capabilities?: string[];
+                    /** @description Job patterns to expose as MCP tools */
+                    jobs?: string[];
+                  };
+                };
+              };
+              tools?: {
+                /** @description MCP servers that agents can call */
+                mcp?: {
+                  /** @default {
+                   *       "timeout": {
+                   *         "progressTimeout": "2m",
+                   *         "maxTotalTimeout": "30m"
+                   *       }
+                   *     } */
+                  client_config: {
+                    /**
+                     * @description Watchdog timeout configuration
+                     * @default {
+                     *       "progressTimeout": "2m",
+                     *       "maxTotalTimeout": "30m"
+                     *     }
+                     */
+                    timeout: {
+                      /**
+                       * @description Time allowed between progress signals before cancelling for inactivity
+                       * @default 2m
+                       */
+                      progressTimeout: string;
+                      /**
+                       * @description Hard upper limit for any operation
+                       * @default 30m
+                       */
+                      maxTotalTimeout: string;
+                    };
+                  };
+                  servers?: {
+                    [key: string]: {
+                      transport: {
+                        /** @constant */
+                        type: "stdio";
+                        command: string;
+                        args?: string[];
+                      } | {
+                        /** @constant */
+                        type: "http";
+                        /** Format: uri */
+                        url: string;
+                      } | {
+                        /** @constant */
+                        type: "sse";
+                        /** Format: uri */
+                        url: string;
+                      };
+                      client_config?: {
+                        timeout?: {
+                          /**
+                           * @description Time allowed between progress signals before cancelling for inactivity
+                           * @default 2m
+                           */
+                          progressTimeout: string;
+                          /**
+                           * @description Hard upper limit for any operation
+                           * @default 30m
+                           */
+                          maxTotalTimeout: string;
+                        };
+                      };
+                      auth?: {
+                        /** @enum {string} */
+                        type: "bearer" | "api_key" | "basic";
+                        /** @description Header name for the token */
+                        header?: string;
+                        /** @description Environment variable containing the token */
+                        token_env?: string;
+                        /** @description For basic auth */
+                        username_env?: string;
+                        /** @description For basic auth */
+                        password_env?: string;
+                      };
+                      /** @description Filter which tools to allow or deny from this MCP server */
+                      tools?: {
+                        allow?: string[];
+                        deny?: string[];
+                      };
+                      /** @description Environment variables for the server process */
+                      env?: {
+                        [key: string]: string;
+                      };
+                    };
+                  };
+                };
+              };
+              signals?: {
+                [key: string]: {
+                  description: string;
+                  /** @description JSON Schema for signal payload validation */
+                  schema?: {
+                    [key: string]: unknown;
+                  };
+                  /** @constant */
+                  provider: "http";
+                  config: {
+                    /** @description HTTP path for the webhook (method is always POST) */
+                    path: string;
+                    /** @description Timeout for signal processing */
+                    timeout?: string;
+                  };
+                } | {
+                  description: string;
+                  /** @description JSON Schema for signal payload validation */
+                  schema?: {
+                    [key: string]: unknown;
+                  };
+                  /** @constant */
+                  provider: "schedule";
+                  config: {
+                    /** @description Cron expression (e.g., '0 9 * * *' for daily at 9 AM) */
+                    schedule: string;
+                    /**
+                     * @description Timezone for the schedule
+                     * @default UTC
+                     */
+                    timezone: string;
+                  };
+                } | {
+                  description: string;
+                  /** @description JSON Schema for signal payload validation */
+                  schema?: {
+                    [key: string]: unknown;
+                  };
+                  /** @constant */
+                  provider: "system";
+                };
+              };
+              jobs?: {
+                [key: string]: {
+                  /** @description MCP-compliant job name */
+                  name?: string;
+                  description?: string;
+                  triggers?: {
+                    /** @description Signal name that triggers this job */
+                    signal: string;
+                    /** @description Condition for triggering */
+                    condition?: {
+                      /** @description JSONLogic expression (cached and executed at runtime) */
+                      jsonlogic: unknown;
+                    } | {
+                      /** @description Natural language prompt (converted to JSONLogic and cached) */
+                      prompt: string;
+                    };
+                  }[];
+                  context?: {
+                    /** @description Job-level file context */
+                    files?: {
+                      /** @description Glob patterns for files (supports exclusions with !) */
+                      patterns: string[];
+                      base_path?: string;
+                      max_file_size?: number;
+                      /** @default true */
+                      include_content: boolean;
+                    };
+                  };
+                  /** @description Single prompt string for supervisor */
+                  prompt?: string;
+                  execution: {
+                    /**
+                     * @default sequential
+                     * @enum {string}
+                     */
+                    strategy: "sequential" | "parallel";
+                    /** @description Agent pipeline */
+                    agents: (string | {
+                      /** @description Agent ID */
+                      id: string;
+                      /** @description Optional nickname for reference */
+                      nickname?: string;
+                      context?: {
+                        /** @description Include signal data */
+                        signal?: boolean;
+                        /**
+                         * @description Include step outputs
+                         * @enum {string}
+                         */
+                        steps?: "previous" | "all";
+                        /** @description Specific agent outputs to include */
+                        agents?: string[];
+                        /** @description Include filesystem context */
+                        files?: boolean;
+                        /** @description Additional task description appended to prompt */
+                        task?: string;
+                      };
+                      /** @description Explicit agent dependencies */
+                      dependencies?: string[];
+                      /** @description Tool access override for this agent */
+                      tools?: {
+                        allow?: string[];
+                        deny?: string[];
+                      };
+                    })[];
+                    /** @description Execution-level context */
+                    context?: {
+                      files?: {
+                        /** @description Glob patterns for files (supports exclusions with !) */
+                        patterns: string[];
+                        base_path?: string;
+                        max_file_size?: number;
+                        /** @default true */
+                        include_content: boolean;
+                      };
+                    };
+                  };
+                  success?: {
+                    /** @description Condition that can be either JSONLogic or a natural language prompt */
+                    condition: {
+                      /** @description JSONLogic expression (cached and executed at runtime) */
+                      jsonlogic: unknown;
+                    } | {
+                      /** @description Natural language prompt (converted to JSONLogic and cached) */
+                      prompt: string;
+                    };
+                    /** @description Structured output schema */
+                    schema?: {
+                      [key: string]: unknown;
+                    };
+                  };
+                  error?: {
+                    /** @description Condition that can be either JSONLogic or a natural language prompt */
+                    condition: {
+                      /** @description JSONLogic expression (cached and executed at runtime) */
+                      jsonlogic: unknown;
+                    } | {
+                      /** @description Natural language prompt (converted to JSONLogic and cached) */
+                      prompt: string;
+                    };
+                  };
+                  config?: {
+                    timeout?: string;
+                    supervision?: {
+                      /** @enum {string} */
+                      level?: "minimal" | "standard" | "detailed";
+                      /** @description Skip planning phase for simple jobs */
+                      skip_planning?: boolean;
+                    };
+                    memory?: {
+                      /** @default true */
+                      enabled: boolean;
+                      /** @default true */
+                      fact_extraction: boolean;
+                      /**
+                       * @description Include summary in session receipt
+                       * @default true
+                       */
+                      summary: boolean;
+                    };
+                  };
+                };
+              };
+              agents?: {
+                [key: string]: {
+                  /** @description Agent purpose/description */
+                  description: string;
+                  /** @constant */
+                  type: "llm";
+                  config: {
+                    /** @enum {string} */
+                    provider: "anthropic" | "openai" | "google";
+                    /** @description Model identifier (e.g., 'claude-3-7-sonnet-latest') */
+                    model: string;
+                    /** @description System prompt for the agent */
+                    prompt: string;
+                    /**
+                     * @description Temperature (0-1 range)
+                     * @default 0.3
+                     */
+                    temperature: number;
+                    max_tokens?: number;
+                    /** @description Max steps for multi-step tool calling */
+                    max_steps?: number;
+                    tool_choice?: "auto" | "required" | "none";
+                    /** @description Available tools (simple array) */
+                    tools?: string[];
+                    success?: {
+                      /** @description Condition that can be either JSONLogic or a natural language prompt */
+                      condition: {
+                        /** @description JSONLogic expression (cached and executed at runtime) */
+                        jsonlogic: unknown;
+                      } | {
+                        /** @description Natural language prompt (converted to JSONLogic and cached) */
+                        prompt: string;
+                      };
+                      /** @description Structured output schema */
+                      schema?: {
+                        [key: string]: unknown;
+                      };
+                    };
+                    error?: {
+                      /** @description Condition that can be either JSONLogic or a natural language prompt */
+                      condition: {
+                        /** @description JSONLogic expression (cached and executed at runtime) */
+                        jsonlogic: unknown;
+                      } | {
+                        /** @description Natural language prompt (converted to JSONLogic and cached) */
+                        prompt: string;
+                      };
+                    };
+                    max_retries?: number;
+                    timeout?: string;
+                  };
+                } | {
+                  /** @description Agent purpose/description */
+                  description: string;
+                  /** @constant */
+                  type: "system";
+                  /** @description System agent identifier */
+                  agent: string;
+                  /** @description System agent configuration */
+                  config?: {
+                    /** @description LLM model to use */
+                    model?: string;
+                    /**
+                     * @description LLM temperature
+                     * @default 0.3
+                     */
+                    temperature: number;
+                    /** @description Maximum tokens for LLM response */
+                    max_tokens?: number;
+                    /** @description Array of tool names available to the agent */
+                    tools?: string[];
+                    /** @description Enable reasoning capabilities */
+                    use_reasoning?: boolean;
+                    /** @description Maximum reasoning steps */
+                    max_reasoning_steps?: number;
+                    /** @description System prompt for the agent */
+                    prompt?: string;
+                  };
+                } | {
+                  /** @description Agent purpose/description */
+                  description: string;
+                  /** @constant */
+                  type: "remote";
+                  config: {
+                    /** @constant */
+                    protocol: "acp";
+                    /** Format: uri */
+                    endpoint: string;
+                    agent_name: string;
+                    /**
+                     * @default async
+                     * @enum {string}
+                     */
+                    default_mode: "sync" | "async" | "stream";
+                    /** @default 30s */
+                    health_check_interval: string;
+                    auth?: {
+                      /** @enum {string} */
+                      type: "bearer" | "api_key" | "basic";
+                      /** @description Header name for the token */
+                      header?: string;
+                      /** @description Environment variable containing the token */
+                      token_env?: string;
+                      /** @description For basic auth */
+                      username_env?: string;
+                      /** @description For basic auth */
+                      password_env?: string;
+                    };
+                    timeout?: string;
+                    /** @default 2 */
+                    max_retries: number;
+                    /** @description System prompt for the agent */
+                    prompt?: string;
+                    schema?: {
+                      /** @default false */
+                      validate_input: boolean;
+                      /** @default false */
+                      validate_output: boolean;
+                      input?: {
+                        [key: string]: unknown;
+                      };
+                      output?: {
+                        [key: string]: unknown;
+                      };
+                    };
+                    success?: {
+                      /** @description Condition that can be either JSONLogic or a natural language prompt */
+                      condition: {
+                        /** @description JSONLogic expression (cached and executed at runtime) */
+                        jsonlogic: unknown;
+                      } | {
+                        /** @description Natural language prompt (converted to JSONLogic and cached) */
+                        prompt: string;
+                      };
+                      /** @description Structured output schema */
+                      schema?: {
+                        [key: string]: unknown;
+                      };
+                    };
+                    error?: {
+                      /** @description Condition that can be either JSONLogic or a natural language prompt */
+                      condition: {
+                        /** @description JSONLogic expression (cached and executed at runtime) */
+                        jsonlogic: unknown;
+                      } | {
+                        /** @description Natural language prompt (converted to JSONLogic and cached) */
+                        prompt: string;
+                      };
+                    };
+                  };
+                };
+              };
+              memory?: {
+                /** @default true */
+                enabled: boolean;
+                /**
+                 * @description Memory scope level
+                 * @enum {string}
+                 */
+                scope?: "workspace" | "session" | "agent";
+                retention?: {
+                  max_age_days: number;
+                  max_entries: number;
+                  cleanup_interval_hours?: number;
+                };
+                session?: {
+                  include_in_context?: boolean;
+                  max_context_entries?: number;
+                };
+                /** @description Types of memory to track */
+                include_types?: string[];
+              };
+              notifications?: {
+                /** @description Notification providers by name */
+                providers?: {
+                  [key: string]: {
+                    /**
+                     * @description Whether this provider is enabled
+                     * @default true
+                     */
+                    enabled: boolean;
+                    /** @description Human-readable description of this provider */
+                    description?: string;
+                    /** @constant */
+                    provider: "sendgrid";
+                    config: {
+                      /** @description Environment variable containing SendGrid API key */
+                      api_key_env: string;
+                      /**
+                       * Format: email
+                       * @description Default from email address
+                       */
+                      from_email: string;
+                      /** @description Default from name */
+                      from_name?: string;
+                      /** @description Default template ID */
+                      template_id?: string;
+                      /**
+                       * @description Request timeout
+                       * @default 30s
+                       */
+                      timeout: string;
+                      /**
+                       * @description Enable sandbox mode for testing
+                       * @default false
+                       */
+                      sandbox_mode: boolean;
+                    };
+                  } | {
+                    /**
+                     * @description Whether this provider is enabled
+                     * @default true
+                     */
+                    enabled: boolean;
+                    /** @description Human-readable description of this provider */
+                    description?: string;
+                    /** @constant */
+                    provider: "slack";
+                    config: {
+                      /** @description Environment variable containing Slack webhook URL */
+                      webhook_url_env: string;
+                      /** @description Default channel (e.g., '#general') */
+                      channel?: string;
+                      /** @description Bot username */
+                      username?: string;
+                      /** @description Bot icon emoji */
+                      icon_emoji?: string;
+                      /**
+                       * @description Request timeout
+                       * @default 30s
+                       */
+                      timeout: string;
+                    };
+                  } | {
+                    /**
+                     * @description Whether this provider is enabled
+                     * @default true
+                     */
+                    enabled: boolean;
+                    /** @description Human-readable description of this provider */
+                    description?: string;
+                    /** @constant */
+                    provider: "teams";
+                    config: {
+                      /** @description Environment variable containing Teams webhook URL */
+                      webhook_url_env: string;
+                      /**
+                       * @description Request timeout
+                       * @default 30s
+                       */
+                      timeout: string;
+                    };
+                  } | {
+                    /**
+                     * @description Whether this provider is enabled
+                     * @default true
+                     */
+                    enabled: boolean;
+                    /** @description Human-readable description of this provider */
+                    description?: string;
+                    /** @constant */
+                    provider: "discord";
+                    config: {
+                      /** @description Environment variable containing Discord webhook URL */
+                      webhook_url_env: string;
+                      /** @description Bot username */
+                      username?: string;
+                      /**
+                       * Format: uri
+                       * @description Bot avatar URL
+                       */
+                      avatar_url?: string;
+                      /**
+                       * @description Request timeout
+                       * @default 30s
+                       */
+                      timeout: string;
+                    };
+                  };
+                };
+                /** @description Default notification settings */
+                defaults?: {
+                  /**
+                   * @description Whether notifications are enabled by default
+                   * @default true
+                   */
+                  enabled: boolean;
+                  /** @description Default provider name to use */
+                  provider?: string;
+                  /**
+                   * @description Default number of retry attempts
+                   * @default 3
+                   */
+                  retry_attempts: number;
+                  /**
+                   * @description Default delay between retry attempts
+                   * @default 5s
+                   */
+                  retry_delay: string;
+                  /**
+                   * @description Retry backoff multiplier
+                   * @default 2
+                   */
+                  retry_backoff: number;
+                  /**
+                   * @description Default request timeout
+                   * @default 30s
+                   */
+                  timeout: string;
+                };
+              };
+              federation?: {
+                sharing?: {
+                  [key: string]: {
+                    workspaces?: string | string[];
+                    /** @description Single scope or array of scopes */
+                    scopes?: string | string[];
+                    grants?: {
+                      workspace: string;
+                      /** @description Single scope or array of scopes */
+                      scopes: string | string[];
+                    }[];
+                  };
+                };
+                scope_sets?: {
+                  [key: string]: string[];
+                };
+              };
             };
           };
         };
@@ -679,7 +1376,7 @@ export interface operations {
       };
     };
   };
-  GETApiConversation: {
+  "GETApiConversation-storage": {
     parameters: {
       query?: {
         limit?: number;
@@ -722,7 +1419,7 @@ export interface operations {
       };
     };
   };
-  "GETApiConversation:streamId": {
+  "GETApiConversation-storage:streamId": {
     parameters: {
       query?: never;
       header?: never;
@@ -780,7 +1477,7 @@ export interface operations {
       };
     };
   };
-  "POSTApiConversation:streamId": {
+  "POSTApiConversation-storage:streamId": {
     parameters: {
       query?: never;
       header?: never;
@@ -842,7 +1539,7 @@ export interface operations {
       };
     };
   };
-  "DELETEApiConversation:streamId": {
+  "DELETEApiConversation-storage:streamId": {
     parameters: {
       query?: never;
       header?: never;

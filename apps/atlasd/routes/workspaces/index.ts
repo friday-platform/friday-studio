@@ -1,6 +1,7 @@
 import { daemonFactory } from "../../src/factory.ts";
 import { listWorkspaces } from "./list.ts";
 import { getWorkspace } from "./get.ts";
+import { getWorkspaceConfig } from "./get-config.ts";
 import { createWorkspace } from "./create.ts";
 import { updateWorkspace } from "./update.ts";
 
@@ -13,6 +14,7 @@ const workspacesRoutes = daemonFactory.createApp();
 // Mount individual endpoints
 workspacesRoutes.route("/", listWorkspaces);
 workspacesRoutes.route("/:workspaceId", getWorkspace);
+workspacesRoutes.route("/:workspaceId/config", getWorkspaceConfig);
 workspacesRoutes.route("/:workspaceId/update", updateWorkspace);
 workspacesRoutes.route("/create", createWorkspace);
 

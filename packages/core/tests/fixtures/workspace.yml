@@ -1,0 +1,38 @@
+version: "1.0"
+workspace:
+  name: "Test Workspace"
+  description: "A test workspace for unit tests"
+  timeout:
+    progressTimeout: "1s" # Short timeout for tests
+    maxTotalTimeout: "10s" # Short total timeout for tests
+signals:
+  test-signal:
+    provider: "http"
+    description: "Test signal for testing"
+    config:
+      path: "/webhook"
+    schema:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+      required: ["message"]
+jobs:
+  test-job:
+    description: "Test job"
+    execution:
+      strategy: "sequential"
+      agents:
+        - "test-agent"
+    triggers:
+      - signal: "test-signal"
+        condition:
+          prompt: "When the payload message equals 'trigger'"
+agents:
+  test-agent:
+    type: "llm"
+    description: "Test agent"
+    config:
+      prompt: "You are a test agent."
+      model: "claude-3-haiku"
+      provider: "anthropic"

@@ -160,6 +160,7 @@ Deno.test({
       message: userMessage,
       streamId: testStreamId,
       userId: "test-user",
+      type: "user",
     });
 
     console.log("Response received from AI SDK");
@@ -246,6 +247,7 @@ Deno.test({
         message: testCase.message,
         streamId: testCase.streamId,
         userId: "test-user",
+        type: "user",
       });
 
       // Verify
@@ -297,6 +299,7 @@ Deno.test({
       message: "Hello! Can you hear me?",
       // No streamId provided
       userId: "test-user",
+      type: "user",
     });
 
     // Should still work but atlas_stream_reply might fail or handle it differently

@@ -1,5 +1,7 @@
 // Core Atlas interfaces based on technical design document
 
+import type { AgentOrchestrator } from "@atlas/core";
+
 export interface IAtlasScope {
   id: string;
   parentScopeId?: string;
@@ -60,6 +62,8 @@ export interface IWorkspace extends IAtlasScope {
   // currentActiveSessions() - moved to runtime
   // getAllArtifacts() - moved to runtime
   snapshot(): object;
+  // Agent orchestrator access (implemented in WorkspaceRuntime)
+  getAgentOrchestrator?(): AgentOrchestrator | undefined;
 }
 
 export interface IWorkspaceArtifact {

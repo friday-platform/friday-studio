@@ -78,13 +78,6 @@ export class AtlasLoggerV2 implements Logger {
   }
 
   private formatLogEntry(level: LogLevel, message: string, context: LogContext): LogEntry {
-    let hostname = "unknown";
-    try {
-      hostname = Deno.hostname?.() || "unknown";
-    } catch {
-      hostname = "unknown";
-    }
-
     // Process context to serialize Error objects
     const processedContext = { ...context };
     if (processedContext.error !== undefined) {
@@ -95,8 +88,6 @@ export class AtlasLoggerV2 implements Logger {
       timestamp: new Date().toISOString(),
       level,
       message,
-      pid: Deno.pid,
-      hostname,
       context: processedContext,
     };
   }
@@ -186,7 +177,8 @@ export class AtlasLoggerV2 implements Logger {
   }
 
   private getComponentName(context: LogContext): string {
-    const parts = ["atlas"];
+    const parts = ["∆"];
+    if (context.workspaceId) parts.push(context.workspaceId);
     if (context.agentId) parts.push(context.agentId);
     return parts.join(":");
   }

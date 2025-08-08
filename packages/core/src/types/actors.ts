@@ -96,7 +96,10 @@ export interface SessionResult {
   duration: number;
 }
 
-export interface AgentResult {
+/**
+ * @deprecated Will be replaced by orchestrator's AgentResult
+ */
+export interface LegacyAgentResult {
   agentId: string;
   output: unknown;
   duration: number;
@@ -166,7 +169,7 @@ export interface SessionSupervisorActor extends BaseActor {
  */
 export interface AgentExecutionActor extends BaseActor {
   type: "agent";
-  execute(context: AgentContext): Promise<AgentResult>;
+  execute(context: AgentContext): Promise<LegacyAgentResult>;
 }
 
 // ==============================================================================

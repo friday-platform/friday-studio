@@ -11,5 +11,6 @@ export const OPENAPI_DOCUMENTATION = {
     { name: "Sessions", description: "Session management operations" },
     { name: "Library", description: "Library storage operations" },
     { name: "Daemon", description: "Daemon control operations" },
+    { name: "Agents", description: "Agent discovery and metadata operations" },
   ],
 };

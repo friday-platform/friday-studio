@@ -2,7 +2,7 @@ import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { SignalTriggerRequestSchema } from "@atlas/config";
 import { AtlasTelemetry } from "../../../../src/utils/telemetry.ts";
-import { AtlasLogger } from "@atlas/logger";
+import { createLogger } from "@atlas/logger";
 import { errorResponseSchema, signalPathSchema, signalTriggerResponseSchema } from "./schemas.ts";
 
 const triggerSignal = daemonFactory.createApp();
@@ -62,14 +62,14 @@ enables real-time progress feedback in the UI.
   validator("json", SignalTriggerRequestSchema),
   async (c) => {
     const { workspaceId, signalId } = c.req.valid("param");
-    const { payload } = c.req.valid("json");
+    const { payload, streamId } = c.req.valid("json");
 
     const ctx = c.get("app");
 
     return await AtlasTelemetry.withServerSpan(
       "POST /api/workspaces/:workspaceId/signals/:signalId",
       async (span) => {
-        const logger = AtlasLogger.getInstance();
+        const logger = createLogger({ workspaceId, signalId, streamId });
         AtlasTelemetry.addComponentAttributes(span, "signal", {
           id: signalId,
           workspaceId,
@@ -84,21 +84,23 @@ enables real-time progress feedback in the UI.
           const session = await runtime.triggerSignalWithSession(
             signalId,
             payload || {},
+            streamId,
           );
 
           // Update lastSeen timestamp after signal processing
           try {
             const manager = ctx.getWorkspaceManager();
-            await manager.updateWorkspaceLastSeen(runtime.workspace.id);
+            await manager.updateWorkspaceLastSeen(runtime.workspaceId);
           } catch (error) {
             // Log but don't fail the request - lastSeen update is not critical
-            logger.warn(`Failed to update lastSeen for workspace ${runtime.workspace.id}`, {
+            logger.warn("Failed to update lastSeen for workspace", {
+              workspaceId: runtime.workspaceId,
               error,
             });
           }
 
           // Reset idle timeout for this workspace
-          ctx.resetIdleTimeout(runtime.workspace.id);
+          ctx.resetIdleTimeout(runtime.workspaceId);
 
           return c.json({
             message: "Signal accepted for processing",

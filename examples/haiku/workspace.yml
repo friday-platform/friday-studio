@@ -1,0 +1,55 @@
+version: "1.0"
+
+workspace:
+  name: "Haiku Poetry Workspace"
+  description: "Transform any input into beautiful haiku poetry using the Atlas agent SDK"
+  timeout:
+    progressTimeout: "2m"
+    maxTotalTimeout: "30m"
+
+# Server configuration - how this workspace exposes itself via MCP
+server:
+  mcp:
+    enabled: true
+    discoverable:
+      capabilities:
+        - "workspace_jobs_*"
+      jobs:
+        - create-haiku
+
+# Signal definitions
+signals:
+  haiku-request:
+    description: "Request to transform text into a haiku"
+    provider: "http"
+    schema:
+      type: "object"
+      properties:
+        text:
+          type: "string"
+          description: "The text to transform into a haiku"
+      required:
+        - "text"
+    config:
+      path: "/haiku"
+      timeout: 30s
+
+# Job definitions
+jobs:
+  create-haiku:
+    name: "create-haiku"
+    description: "Transform input text into a traditional 5-7-5 syllable haiku poem"
+    triggers:
+      - signal: "haiku-request"
+    execution:
+      strategy: "sequential"
+      agents:
+        - "haiku"
+
+# Agent definitions - referencing the bundled haiku agent
+agents:
+  haiku:
+    type: atlas
+    agent: haiku
+    environment:
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"

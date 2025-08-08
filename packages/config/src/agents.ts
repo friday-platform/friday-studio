@@ -10,6 +10,7 @@ import {
   SuccessConfigSchema,
 } from "./base.ts";
 import { MCPAuthConfigSchema } from "./mcp.ts";
+import { AtlasAgentConfigSchema } from "@atlas/agent-sdk";
 
 // ==============================================================================
 // BASE AGENT SCHEMA
@@ -51,6 +52,11 @@ const LLMAgentConfigSchema = BaseAgentConfigSchema.extend({
     // Tool configuration
     tool_choice: LLMToolChoiceSchema.optional(),
     tools: z.array(z.string()).optional().describe("Available tools (simple array)"),
+
+    // Provider-specific options
+    provider_options: z.record(z.string(), z.unknown()).optional().describe(
+      "Provider-specific options passed directly to the LLM SDK",
+    ),
 
     // Success/error handlers
     success: SuccessConfigSchema.optional(),
@@ -143,6 +149,7 @@ export const WorkspaceAgentConfigSchema = z.discriminatedUnion("type", [
   LLMAgentConfigSchema,
   SystemAgentConfigSchema,
   RemoteAgentConfigSchema,
+  AtlasAgentConfigSchema,
 ]);
 
 export type WorkspaceAgentConfig = z.infer<typeof WorkspaceAgentConfigSchema>;

@@ -112,6 +112,7 @@ agents:
         Your task is to introduce realistic phonetic distortions and sound-alike substitutions to messages.
         Focus on words that sound similar but have different meanings, and common mishearing patterns.
         The transformations should be plausible and natural, as if someone slightly misheard the message.
+        Mishear the following message:
 
   embellishment-agent:
     type: "llm"
@@ -125,6 +126,7 @@ agents:
         Your task is to add vivid details, context, and narrative elements to the message you receive.
         Enhance the story with descriptive language, background information, and creative flourishes.
         The core message should remain recognizable but enriched with additional elements.
+        Embellish the following message:
 
   reinterpretation-agent:
     type: "llm"
@@ -138,3 +140,4 @@ agents:
         Your task is to dramatically transform and reinterpret the message while maintaining some plausible connection.
         Apply creative misunderstandings, context shifts, and meaning transformations.
         The result should show how information can mutate through sequential processing.
+        Reinterpret the following message:

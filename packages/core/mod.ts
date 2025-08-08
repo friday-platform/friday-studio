@@ -10,6 +10,9 @@
 export type { LLMOptions, LLMResponse } from "./src/llm-provider.ts";
 export { LLMProvider } from "./src/llm-provider.ts";
 
+// MCP Server Pool
+export { GlobalMCPServerPool } from "./src/mcp-server-pool.ts";
+
 // Credential Fetcher
 export {
   CredentialFetcher,
@@ -25,3 +28,35 @@ export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";
 export * from "./src/types/xstate-events.ts";
 export * from "./src/types/xstate-contexts.ts";
+
+// Stream Emitters
+export {
+  CallbackStreamEmitter,
+  HTTPStreamEmitter,
+  MCPStreamEmitter,
+  NoOpStreamEmitter,
+} from "./src/streaming/stream-emitters.ts";
+
+export * from "./src/agent-server/mod.ts";
+
+// Agent Orchestrator
+export { AgentOrchestrator } from "./src/orchestrator/index.ts";
+export type {
+  AgentExecutionContext,
+  AgentOrchestratorConfig,
+  AgentResult,
+  ApprovalDecision,
+  IAgentOrchestrator,
+} from "./src/orchestrator/index.ts";
+
+// Agent Conversion Layer
+export {
+  convertLLMAgentToSDK,
+  convertLLMToAgent,
+  convertYAMLAgentToSDK,
+  convertYAMLToAgent,
+} from "./src/agent-conversion/index.ts";
+export type { LLMAgentConfig, YAMLAgentDefinition } from "./src/agent-conversion/index.ts";
+
+// Agent Loader and Registry
+export { AgentLoader, AgentRegistry } from "./src/agent-loader/index.ts";

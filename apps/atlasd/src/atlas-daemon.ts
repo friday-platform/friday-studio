@@ -6,6 +6,7 @@ import { getAtlasDaemonUrl } from "@atlas/tools";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
+import { AgentRegistry, AtlasAgentsMCPServer, GlobalMCPServerPool } from "@atlas/core";
 import type { Context, Next } from "hono";
 import { DaemonCapabilityRegistry } from "../../../src/core/daemon-capabilities.ts";
 import type { LibrarySearchQuery } from "../../../src/core/library/types.ts";
@@ -27,6 +28,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage/index.ts";
 import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
+import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
 import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
@@ -72,8 +74,26 @@ export class AtlasDaemon implements AppContext {
   private workspaceCreationAdapter: FilesystemWorkspaceCreationAdapter | null = null;
   private cronManager: CronManager | null = null;
   private mcpServer: PlatformMCPServer | null = null;
+  private mcpServerPool: GlobalMCPServerPool | null = null;
   private workspaceManager: WorkspaceManager | null = null;
   private sseHealthCheckInterval: number | null = null;
+  private agentSessionCleanupInterval: number | null = null;
+  // Store per-session MCP servers and transports
+  private agentSessions = new Map<string, {
+    server: AtlasAgentsMCPServer;
+    transport: StreamableHTTPTransport;
+    createdAt: number;
+    lastUsed: number;
+  }>();
+  // Track active SSE connections per session
+  private agentSSEConnections = new Set<string>();
+  // Single shared agent registry
+  private agentRegistry: AgentRegistry | null = null;
+  // Session limits
+  private readonly MAX_AGENT_SESSIONS = 100;
+  private readonly AGENT_SESSION_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+  // Store the actual port after server starts
+  #port: number | undefined;
   private fileWatcher: WorkspaceFileWatcher | null = null;
 
   constructor(options: AtlasDaemonOptions = {}) {
@@ -87,6 +107,13 @@ export class AtlasDaemon implements AppContext {
     this.app = createApp(this);
     this.setupRoutes();
     this.setupSignalHandlers();
+  }
+
+  get port(): number {
+    if (!this.#port) {
+      throw new Error("Port not initialized. Call start() first.");
+    }
+    return this.#port;
   }
 
   public getWorkspaceManager(): WorkspaceManager {
@@ -144,6 +171,27 @@ export class AtlasDaemon implements AppContext {
     const kvStorage = await createKVStorage(kvStorageConfig); // createKVStorage now calls initialize()
     this.cronManager = new CronManager(kvStorage, logger);
 
+    // Initialize Platform MCP Server
+    logger.info("Initializing Platform MCP server...");
+    const daemonUrl = getAtlasDaemonUrl();
+    this.mcpServer = new PlatformMCPServer({
+      daemonUrl,
+      logger: logger.child({ component: "platform-mcp-server" }),
+    });
+    logger.info("Platform MCP server initialized");
+
+    // Initialize Global MCP Server Pool
+    logger.info("Initializing Global MCP Server Pool...");
+    this.mcpServerPool = new GlobalMCPServerPool(logger);
+
+    // Initialize agent registry with bundled agents
+    logger.info("Initializing agent registry...");
+    const agentRegistry = new AgentRegistry({
+      includeSystemAgents: false, // Only bundled and user agents
+    });
+    await agentRegistry.initialize();
+    logger.info("Agent registry initialized");
+    this.agentRegistry = agentRegistry;
     // Initialize file watcher
     logger.info("Initializing file watcher...");
     this.fileWatcher = new WorkspaceFileWatcher({
@@ -199,6 +247,9 @@ export class AtlasDaemon implements AppContext {
     // Start SSE health check interval
     this.startSSEHealthCheck();
 
+    // Start agent session cleanup interval
+    this.startAgentSessionCleanup();
+
     this.isInitialized = true;
     logger.info("Atlas daemon initialized");
   }
@@ -218,29 +269,89 @@ export class AtlasDaemon implements AppContext {
   }
 
   /**
-   * Initialize MCP server instance
-   */
-  private initializeMCPServer(): void {
-    const daemonUrl = getAtlasDaemonUrl();
-
-    this.mcpServer = new PlatformMCPServer({
-      daemonUrl,
-      logger: logger.child({ component: "platform-mcp-server" }),
-    });
-  }
-
-  /**
-   * Get MCP server instance (lazy initialization)
+   * Get MCP server instance
    */
   private getMCPServer(): PlatformMCPServer {
     if (!this.mcpServer) {
-      this.initializeMCPServer();
+      throw new Error("Platform MCP server not initialized. Call initialize() first.");
     }
-    return this.mcpServer!;
+    return this.mcpServer;
   }
 
   /**
-   * Initialize system workspaces
+   * Get or create per-session MCP server
+   */
+  private async getOrCreateAgentSession(sessionId: string): Promise<{
+    server: AtlasAgentsMCPServer;
+    transport: StreamableHTTPTransport;
+  }> {
+    const existing = this.agentSessions.get(sessionId);
+    if (existing) {
+      existing.lastUsed = Date.now();
+      return { server: existing.server, transport: existing.transport };
+    }
+
+    // Create new session
+    logger.info("[Daemon] Creating new agent MCP session", { sessionId });
+
+    // Create transport
+    const transport = new StreamableHTTPTransport({
+      sessionIdGenerator: () => sessionId,
+      onsessioninitialized: (sid) => {
+        logger.info("[Daemon] Agent session initialized", { sessionId: sid });
+      },
+    });
+
+    // Create per-session MCP server
+    const server = AtlasAgentsMCPServer.create({
+      daemonUrl: getAtlasDaemonUrl(),
+      logger: logger,
+      agentRegistry: this.agentRegistry!,
+      mcpServerPool: this.mcpServerPool!,
+      sessionId: sessionId,
+      hasActiveSSE: (sid?: string) => {
+        const checkId = sid || sessionId;
+        return this.agentSSEConnections.has(checkId);
+      },
+    });
+
+    // Start the server and connect transport
+    await server.start();
+    await server.getServer().connect(transport);
+
+    // Store session
+    this.agentSessions.set(sessionId, {
+      server,
+      transport,
+      createdAt: Date.now(),
+      lastUsed: Date.now(),
+    });
+
+    // Set up cleanup
+    transport.onclose = () => {
+      logger.info("[Daemon] Agent session closed", { sessionId });
+      this.cleanupAgentSession(sessionId);
+    };
+
+    return { server, transport };
+  }
+
+  /**
+   * Clean up agent session
+   */
+  private async cleanupAgentSession(sessionId: string): Promise<void> {
+    const session = this.agentSessions.get(sessionId);
+    if (session) {
+      await session.server.stop();
+      this.agentSessions.delete(sessionId);
+      this.agentSSEConnections.delete(sessionId);
+      logger.info("[Daemon] Agent session cleaned up", { sessionId });
+    }
+  }
+
+  /**
+   * Initialize the daemon - load supervisor defaults, initialize WorkspaceManager, etc.
+   * Must be called before start()
    */
   // System workspace methods removed - using standard workspace pattern
 
@@ -312,6 +423,8 @@ export class AtlasDaemon implements AppContext {
 
     // Mount todo storage routes
     this.app.route("/api/todos", todoStorageRoutes);
+    // Mount agent routes
+    this.app.route("/api/agents", agentsRoutes);
 
     // Create a new workspace (functionality moved to create-from-template and create-from-config endpoints)
     this.app.post("/api/workspaces", (c) => {
@@ -1211,30 +1324,119 @@ export class AtlasDaemon implements AppContext {
     // Mount Scalar UI endpoint
     this.app.get("/openapi", scalarHandler);
 
-    // MCP endpoint
-    this.app.all("/mcp", async (c) => {
-      try {
-        // Get MCP server instance
-        const mcpServer = this.getMCPServer();
+    // Proxy to platform MCP server with specific CORS for MCP
+    this.app.all(
+      "/mcp",
+      cors({
+        origin: this.options.cors || "*",
+        credentials: true,
+        exposeHeaders: ["Mcp-Session-Id"],
+        allowHeaders: ["Content-Type", "Mcp-Session-Id"],
+      }),
+      async (c) => {
+        try {
+          // Get MCP server instance
+          const mcpServer = this.getMCPServer();
 
-        // Create streaming transport
-        const transport = new StreamableHTTPTransport();
+          // Create streaming transport
+          const transport = new StreamableHTTPTransport();
 
-        // Connect MCP server to transport
-        await mcpServer.getServer().connect(transport);
+          // Connect MCP server to transport
+          await mcpServer.getServer().connect(transport);
 
-        // Handle the request
-        return transport.handleRequest(c);
-      } catch (error) {
-        logger.error("MCP endpoint error", { error });
-        return c.json(
-          {
-            error: `MCP server error: ${error instanceof Error ? error.message : String(error)}`,
-          },
-          500,
-        );
-      }
-    });
+          // Handle the request
+          return transport.handleRequest(c);
+        } catch (error) {
+          logger.error("MCP endpoint error", { error });
+          return c.json(
+            {
+              error: `MCP server error: ${error instanceof Error ? error.message : String(error)}`,
+            },
+            500,
+          );
+        }
+      },
+    );
+
+    // Handle agents MCP server requests with specific CORS for MCP
+    this.app.all(
+      "/agents",
+      cors({
+        origin: this.options.cors || "*",
+        credentials: true,
+        exposeHeaders: ["Mcp-Session-Id"],
+        allowHeaders: ["Content-Type", "Mcp-Session-Id"],
+      }),
+      async (c) => {
+        try {
+          const sessionId = c.req.header("mcp-session-id");
+
+          // For new sessions (no session ID on POST), generate one.
+          // This is helpful when using MCP Inspector where it initializes a new connection
+          // without a pre-existing Atlas Session ID.
+          if (!sessionId && c.req.method === "POST") {
+            const newSessionId = crypto.randomUUID();
+            logger.info("Creating new SSE session for Agent Server", { sessionId: newSessionId });
+
+            // Create and store the session
+            const { transport } = await this.getOrCreateAgentSession(newSessionId);
+
+            // Handle the request - this will set the Mcp-Session-Id header
+            const response = await transport.handleRequest(c);
+
+            // The transport now has the session ID set
+            if (transport.sessionId) {
+              logger.info("Session ID set on transport", {
+                sessionId: transport.sessionId,
+                originalId: newSessionId,
+              });
+            }
+
+            return response;
+          } else if (sessionId) {
+            // Existing session - get or create
+            const { transport } = await this.getOrCreateAgentSession(sessionId);
+
+            // Track SSE connections for GET requests
+            if (c.req.method === "GET") {
+              logger.info("Establishing SSE connection to Agent Server", { sessionId });
+              this.agentSSEConnections.add(sessionId);
+            }
+
+            // Handle DELETE specially - clean up after processing
+            if (c.req.method === "DELETE") {
+              logger.info("Terminating Agent Server SSE session", { sessionId });
+              const response = await transport.handleRequest(c);
+              await this.cleanupAgentSession(sessionId);
+              return response;
+            }
+
+            // Handle the request
+            return transport.handleRequest(c);
+          } else {
+            // No session ID and not a POST request - this is an error
+            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
+              method: c.req.method,
+            });
+            return c.json({
+              jsonrpc: "2.0",
+              error: {
+                code: -32000,
+                message: "Session ID required for non-initialize requests",
+              },
+              id: null,
+            }, 400);
+          }
+        } catch (error) {
+          logger.error("Agents MCP endpoint error", { error });
+          return c.json({
+            error: `Agents MCP server error: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          }, 500);
+        }
+      },
+    );
 
     this.app.post("/api/daemon/shutdown", (c) => {
       // Graceful shutdown endpoint
@@ -1461,7 +1663,9 @@ export class AtlasDaemon implements AppContext {
       runtime = new WorkspaceRuntime(workspaceObj, mergedConfig, {
         lazy: true, // Always use lazy loading in daemon mode
         workspacePath: workspace.metadata?.system ? undefined : workspace.path, // Pass workspace path for daemon mode
-        libraryStorage: this.libraryStorage, // Share daemon's library storage
+        libraryStorage: this.libraryStorage || undefined, // Share daemon's library storage
+        mcpServerPool: this.mcpServerPool || undefined, // Share daemon's MCP server pool
+        daemonUrl: `http://localhost:${this.options.port}`, // Pass daemon URL for MCP tool fetching
       });
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
@@ -1688,10 +1892,8 @@ export class AtlasDaemon implements AppContext {
         port,
         hostname,
         onListen: ({ hostname, port }) => {
-          logger.info(
-            `Atlas daemon running on http://${hostname}:${port}`,
-            { hostname, port },
-          );
+          this.#port = port;
+          logger.info("👹 Atlas daemon running", { hostname, port });
         },
       },
       this.app.fetch,
@@ -1723,6 +1925,7 @@ export class AtlasDaemon implements AppContext {
       port,
       hostname,
       onListen: ({ hostname, port }) => {
+        this.actualPort = port; // Store the actual port
         logger.info("Atlas daemon running", {
           hostname,
           port,
@@ -1779,6 +1982,12 @@ export class AtlasDaemon implements AppContext {
       this.sseHealthCheckInterval = null;
     }
 
+    // Stop agent session cleanup
+    if (this.agentSessionCleanupInterval) {
+      clearInterval(this.agentSessionCleanupInterval);
+      this.agentSessionCleanupInterval = null;
+    }
+
     // Close all SSE connections
     for (const [sessionId, clients] of this.sseClients.entries()) {
       for (const client of clients) {
@@ -1791,10 +2000,30 @@ export class AtlasDaemon implements AppContext {
     }
     this.sseClients.clear();
 
+    // Clean up agent sessions
+    for (const sessionId of this.agentSessions.keys()) {
+      try {
+        await this.cleanupAgentSession(sessionId);
+      } catch (error) {
+        logger.debug("Error cleaning up agent session", { error, sessionId });
+      }
+    }
+    this.agentSessions.clear();
+    this.agentSSEConnections.clear();
+
     // Shutdown CronManager
     if (this.cronManager) {
       await this.cronManager.shutdown();
       this.cronManager = null;
+    }
+
+    // Note: Per-session MCP servers are cleaned up above
+
+    // Dispose MCP Server Pool
+    if (this.mcpServerPool) {
+      logger.info("Disposing Global MCP Server Pool...");
+      await this.mcpServerPool.dispose();
+      this.mcpServerPool = null;
     }
 
     // Shutdown WorkspaceManager
@@ -2099,6 +2328,71 @@ export class AtlasDaemon implements AppContext {
     logger.info("SSE health check started", {
       intervalMs: this.options.sseHeartbeatIntervalMs,
     });
+  }
+
+  /**
+   * Start agent session cleanup interval
+   */
+  private startAgentSessionCleanup(): void {
+    if (this.agentSessionCleanupInterval) {
+      clearInterval(this.agentSessionCleanupInterval);
+    }
+
+    // Check every minute for stale sessions
+    this.agentSessionCleanupInterval = setInterval(() => {
+      this.performAgentSessionCleanup();
+    }, 60000);
+
+    logger.info("Agent session cleanup started", {
+      intervalMs: 60000,
+      maxSessions: this.MAX_AGENT_SESSIONS,
+      timeoutMs: this.AGENT_SESSION_TIMEOUT_MS,
+    });
+  }
+
+  /**
+   * Clean up stale agent sessions
+   */
+  private async performAgentSessionCleanup(): Promise<void> {
+    const now = Date.now();
+    const sessionsToCleanup: string[] = [];
+
+    // Find stale sessions
+    for (const [sessionId, session] of this.agentSessions) {
+      if (now - session.lastUsed > this.AGENT_SESSION_TIMEOUT_MS) {
+        sessionsToCleanup.push(sessionId);
+      }
+    }
+
+    // Clean up stale sessions
+    if (sessionsToCleanup.length > 0) {
+      logger.info("Cleaning up stale agent sessions", {
+        count: sessionsToCleanup.length,
+        totalSessions: this.agentSessions.size,
+      });
+
+      for (const sessionId of sessionsToCleanup) {
+        await this.cleanupAgentSession(sessionId);
+      }
+    }
+
+    // Enforce session limit (LRU eviction)
+    if (this.agentSessions.size > this.MAX_AGENT_SESSIONS) {
+      const sortedSessions = Array.from(this.agentSessions.entries())
+        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+
+      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
+
+      logger.warn("Evicting LRU agent sessions due to limit", {
+        evictionCount: toEvict.length,
+        totalSessions: this.agentSessions.size,
+        maxSessions: this.MAX_AGENT_SESSIONS,
+      });
+
+      for (const [sessionId] of toEvict) {
+        await this.cleanupAgentSession(sessionId);
+      }
+    }
   }
 
   /**

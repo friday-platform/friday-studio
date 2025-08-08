@@ -35,8 +35,8 @@
     "dev": "OTEL_DENO=true deno run --allow-all --unstable-raw-imports --watch src/cli.tsx",
     "start": "OTEL_DENO=true deno run --allow-all --unstable-raw-imports src/cli.tsx",
     "test": "OTEL_DENO=true deno test --allow-all --unstable-raw-imports --no-check --env-file",
-    "test:unit": "OTEL_DENO=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts' --ignore='packages/mcp/tests/manager.test.ts' --ignore='packages/core/test/llm-provider.test.ts'",
-    "test:integration": "OTEL_DENO=true ATLAS_USE_LLM_MOCKS=true deno test --allow-all --env-file --no-check 'integration-tests/**/*.test.ts' 'packages/mcp/tests/manager.test.ts' 'packages/core/test/llm-provider.test.ts'",
+    "test:unit": "OTEL_DENO=true deno test --allow-all --env-file --no-check --ignore='integration-tests/**/*.test.ts' --ignore='packages/mcp/tests/manager.test.ts'",
+    "test:integration": "OTEL_DENO=true ATLAS_USE_LLM_MOCKS=true deno test --allow-all --env-file --no-check 'integration-tests/**/*.test.ts' 'packages/mcp/tests/manager.test.ts'",
     "fmt": "deno fmt",
     "lint": "deno lint",
     "example-acp-server": "deno run --allow-net --allow-env examples/workspaces/remote-agents/server.ts",
@@ -49,6 +49,7 @@
     "validate-imports-staged": "deno run --allow-read --allow-write --allow-run scripts/validate-imports-staged.ts"
   },
   "imports": {
+    "@hono/mcp": "npm:@hono/mcp@^0.1.0",
     "@hono/standard-validator": "npm:@hono/standard-validator@^0.1.4",
     "@modelcontextprotocol/sdk": "npm:@modelcontextprotocol/sdk@^1.15.0",
     "@opentelemetry/api": "npm:@opentelemetry/api@^1.9.0",

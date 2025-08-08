@@ -21,6 +21,7 @@ import { Session } from "./session.ts";
 import { LLMProvider } from "@atlas/core";
 import { MCPServerRegistry } from "@atlas/mcp";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
+import { AgentOrchestrator, convertLLMToAgent, GlobalMCPServerPool } from "@atlas/core";
 
 interface StreamSignalData {
   runtimeSignal: any; // Runtime signal instance
@@ -37,6 +38,7 @@ export interface WorkspaceRuntimeContext {
     libraryStorage?: LibraryStorageAdapter;
   };
   supervisor?: WorkspaceSupervisorActor;
+  agentOrchestrator?: AgentOrchestrator;
   sessions: Map<string, IWorkspaceSession>;
   activeStreamSignals: Map<string, StreamSignalData>;
   isShuttingDown: boolean;
@@ -55,6 +57,7 @@ export type WorkspaceRuntimeEvent =
     signal: IWorkspaceSignal;
     payload: Record<string, unknown>;
     sessionId?: string;
+    streamId?: string;
     traceHeaders?: Record<string, string>;
   }
   | { type: "SESSION_CREATED"; sessionId: string }
@@ -65,7 +68,11 @@ export type WorkspaceRuntimeEvent =
   | { type: "STORE_SESSION_RESULT"; sessionId: string; result: ProcessSignalResult }
   | {
     type: "xstate.done.actor.initializeWorkspace";
-    output: { supervisor: WorkspaceSupervisorActor; mergedConfig: MergedConfig };
+    output: {
+      supervisor: WorkspaceSupervisorActor;
+      mergedConfig: MergedConfig;
+      agentOrchestrator: AgentOrchestrator;
+    };
   }
   | {
     type: "xstate.done.actor.initializeStreams";
@@ -82,6 +89,8 @@ export interface WorkspaceRuntimeMachineInput {
   config: MergedConfig;
   workspacePath?: string;
   libraryStorage?: LibraryStorageAdapter;
+  mcpServerPool?: GlobalMCPServerPool;
+  daemonUrl?: string;
 }
 
 // Setup the machine with proper typing
@@ -93,7 +102,11 @@ export const workspaceRuntimeMachineSetup = setup({
   },
   actors: {
     initializeWorkspace: fromPromise<
-      { supervisor: WorkspaceSupervisorActor; mergedConfig: MergedConfig },
+      {
+        supervisor: WorkspaceSupervisorActor;
+        mergedConfig: MergedConfig;
+        agentOrchestrator: AgentOrchestrator;
+      },
       { context: WorkspaceRuntimeContext }
     >(async ({ input }) => {
       const { context } = input;
@@ -177,13 +190,120 @@ export const workspaceRuntimeMachineSetup = setup({
         });
       }
 
+      // @deprecated Extract system agents for backwards compatibility
+      // This will be removed once all system agents are migrated to SDK
+      const systemAgents = new Map<string, import("@atlas/core").SystemAgentConfig>();
+      if (mergedConfig.workspace.agents) {
+        for (const [agentId, agentConfig] of Object.entries(mergedConfig.workspace.agents)) {
+          if (agentConfig.type === "system" && agentConfig.agent) {
+            systemAgents.set(agentId, {
+              type: "system",
+              agent: agentConfig.agent,
+              config: agentConfig.config || {},
+            });
+            logger.warn("Registering deprecated system agent", {
+              workspaceId: context.workspace.id,
+              agentId,
+              systemAgentId: agentConfig.agent,
+              message: "Please migrate this agent to SDK format",
+            });
+          }
+        }
+      }
+
+      if (systemAgents.size > 0) {
+        logger.info("System agents registered for backwards compatibility", {
+          workspaceId: context.workspace.id,
+          systemAgentCount: systemAgents.size,
+          systemAgentIds: Array.from(systemAgents.keys()),
+        });
+      }
+
+      // Create Agent Orchestrator for MCP-based agent execution
+      const agentOrchestrator = new AgentOrchestrator(
+        {
+          agentsServerUrl: `http://localhost:8080/agents`,
+          headers: {
+            "X-Atlas-Workspace-ID": context.workspace.id,
+          },
+          executionTimeout: mergedConfig.atlas?.execution?.agent_timeout
+            ? mergedConfig.atlas.execution.agent_timeout * 1000
+            : 300000,
+          systemAgents, // @deprecated - pass system agents for backwards compatibility
+          mcpServerPool: context.options.mcpServerPool,
+          daemonUrl: context.options.daemonUrl,
+        },
+        logger.child({
+          component: "AgentOrchestrator",
+          workspaceId: context.workspace.id,
+        }),
+      );
+
+      // Initialize the orchestrator
+      await agentOrchestrator.initialize();
+
+      logger.info("Agent orchestrator initialized", {
+        workspaceId: context.workspace.id,
+      });
+
+      // Auto-wrap LLM agents from workspace config
+      if (mergedConfig.workspace.agents) {
+        let wrappedCount = 0;
+        for (
+          const [agentId, agentConfig] of Object.entries(
+            mergedConfig.workspace.agents,
+          )
+        ) {
+          if (agentConfig.type === "llm") {
+            logger.info(`Auto-wrapping LLM agent: ${agentId}`, {
+              workspaceId: context.workspace.id,
+            });
+
+            try {
+              // Convert LLM config to SDK agent
+              const wrappedAgent = convertLLMToAgent(
+                agentConfig,
+                agentId,
+                logger.child({ component: "LLMAgentWrapper", agentId }),
+              );
+
+              // Register with orchestrator for direct execution
+              agentOrchestrator.registerWrappedAgent(agentId, wrappedAgent);
+              wrappedCount++;
+
+              logger.info(`Successfully wrapped and registered LLM agent: ${agentId}`, {
+                workspaceId: context.workspace.id,
+                agentName: wrappedAgent.metadata.name,
+                domains: wrappedAgent.metadata.expertise.domains,
+              });
+            } catch (error) {
+              logger.error(`Failed to wrap LLM agent ${agentId}:`, {
+                workspaceId: context.workspace.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              // Continue with other agents
+            }
+          }
+        }
+
+        if (wrappedCount > 0) {
+          logger.info("LLM agent wrapping completed", {
+            workspaceId: context.workspace.id,
+            wrappedCount,
+          });
+        }
+      }
+
+      // Pass orchestrator to workspace supervisor
+      supervisor.setAgentOrchestrator(agentOrchestrator);
+
       logger.info("Workspace supervisor actor initialized", {
         workspaceId: context.workspace.id,
         supervisorId: "supervisor-" + context.workspace.id,
         agentsCount: Object.keys(mergedConfig.workspace.agents || {}).length,
       });
 
-      return { supervisor, mergedConfig };
+      return { supervisor, mergedConfig, agentOrchestrator };
     }),
     initializeStreams: fromPromise<
       { activeStreamSignals: Map<string, StreamSignalData> },
@@ -332,9 +452,11 @@ export const workspaceRuntimeMachineSetup = setup({
         logger.info("Assigning supervisor from initializeWorkspace output", {
           supervisorId: event.output.supervisor?.id,
           supervisorType: event.output.supervisor?.type,
+          hasOrchestrator: !!event.output.agentOrchestrator,
         });
         return {
           supervisor: event.output.supervisor,
+          agentOrchestrator: event.output.agentOrchestrator,
         };
       }
       logger.warn("assignSupervisor: Event type not matched", {
@@ -392,6 +514,8 @@ export function createWorkspaceRuntimeMachine(
       options: {
         workspacePath: input.workspacePath,
         libraryStorage: input.libraryStorage,
+        mcpServerPool: input.mcpServerPool,
+        daemonUrl: input.daemonUrl,
       },
       sessions: new Map(),
       activeStreamSignals: new Map(),
@@ -486,7 +610,7 @@ export function createWorkspaceRuntimeMachine(
 
                       self.send({
                         type: "PROCESS_SIGNAL",
-                        signal: signal as IWorkspaceSignal,
+                        signal: signal,
                         payload,
                       });
                     },
@@ -608,6 +732,7 @@ export function createWorkspaceRuntimeMachine(
                         event.signal,
                         event.payload,
                         sessionId,
+                        event.streamId,
                       );
 
                       return { sessionId, result };

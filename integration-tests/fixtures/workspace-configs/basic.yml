@@ -1,0 +1,19 @@
+name: Basic Test Workspace
+version: 1.0.0
+description: Basic workspace for MCP server testing
+
+agents:
+  - test-agent-1
+  - test-agent-2
+
+tools:
+  mcp:
+    servers:
+      echo:
+        transport:
+          type: stdio
+          command: deno
+          args:
+            - run
+            - --allow-all
+            - ./integration-tests/mocks/echo-mcp-server.ts

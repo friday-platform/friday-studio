@@ -14,12 +14,15 @@ import {
   createWorkspaceRuntimeMachine,
   type WorkspaceRuntimeMachineInput,
 } from "./workspace-runtime-machine.ts";
+import { AgentOrchestrator, GlobalMCPServerPool } from "@atlas/core";
 
 export interface WorkspaceRuntimeOptions {
   lazy?: boolean;
   supervisorModel?: string;
   workspacePath?: string;
   libraryStorage?: LibraryStorageAdapter;
+  mcpServerPool?: GlobalMCPServerPool;
+  daemonUrl?: string;
 }
 
 /**
@@ -52,6 +55,8 @@ export class WorkspaceRuntime {
       config,
       workspacePath: options.workspacePath,
       libraryStorage: options.libraryStorage,
+      mcpServerPool: options.mcpServerPool,
+      daemonUrl: options.daemonUrl,
     };
 
     // Create and start the state machine
@@ -96,12 +101,23 @@ export class WorkspaceRuntime {
     return typeof state.value === "string" ? state.value : JSON.stringify(state.value);
   }
 
+  get workspaceId(): string {
+    return this.workspace.id;
+  }
+
   /**
    * Process a signal and create a session
    */
   async processSignal(
-    signal: IWorkspaceSignal,
+    signal: {
+      id: string;
+      name?: string;
+      provider?: { id: string; name: string };
+      [key: string]: unknown;
+    },
     payload: Record<string, unknown>,
+    sessionId?: string,
+    streamId?: string,
   ): Promise<IWorkspaceSession> {
     return await AtlasTelemetry.withServerSpan(
       "workspace.processSignal",
@@ -247,6 +263,7 @@ export class WorkspaceRuntime {
           signal,
           payload,
           sessionId,
+          streamId,
           traceHeaders,
         });
 
@@ -315,6 +332,17 @@ export class WorkspaceRuntime {
       state: this.getState(),
       stats: currentState.context.stats,
     };
+  }
+
+  /**
+   * Get the agent orchestrator for this workspace
+   */
+  getAgentOrchestrator(): AgentOrchestrator {
+    const state = this.stateMachine.getSnapshot();
+    if (!state.context.agentOrchestrator) {
+      throw new Error("Agent orchestrator not initialized");
+    }
+    return state.context.agentOrchestrator;
   }
 
   /**
@@ -419,7 +447,7 @@ export class WorkspaceRuntime {
           id: signalName,
           name: signalName,
           ...(signalConfig as object),
-        } as IWorkspaceSignal;
+        };
         const result = await this.processSignal(signal, payload || {});
         return { sessionId: result.id || crypto.randomUUID() };
       }
@@ -493,6 +521,7 @@ export class WorkspaceRuntime {
   async triggerSignalWithSession(
     signalName: string,
     payload?: Record<string, unknown>,
+    streamId?: string,
   ): Promise<IWorkspaceSession> {
     const signals = ((this.config?.workspace as Record<string, unknown>)?.signals as Record<
       string,
@@ -506,8 +535,8 @@ export class WorkspaceRuntime {
       id: signalName,
       name: signalName,
       ...(signalConfig as object),
-    } as IWorkspaceSignal;
-    return await this.processSignal(signal, payload || {});
+    };
+    return await this.processSignal(signal, payload || {}, undefined, streamId);
   }
 
   /**

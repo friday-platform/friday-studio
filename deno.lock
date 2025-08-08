@@ -27,26 +27,26 @@
     "npm:@ai-sdk/anthropic@2.0.0-beta.8": "2.0.0-beta.8_zod@3.25.76",
     "npm:@ai-sdk/google@2.0.0-beta.13": "2.0.0-beta.13_zod@3.25.76",
     "npm:@ai-sdk/openai@2.0.0-beta.11": "2.0.0-beta.11_zod@3.25.76",
-    "npm:@hono/mcp@0.1": "0.1.0_@modelcontextprotocol+sdk@1.17.0__express@5.1.0__zod@3.25.76_hono@4.8.9",
-    "npm:@hono/standard-validator@~0.1.4": "0.1.4_@standard-schema+spec@1.0.0_hono@4.8.9",
-    "npm:@inkjs/ui@2": "2.0.0_ink@6.1.0__@types+react@19.1.8__react@19.1.0_@types+react@19.1.8_react@19.1.0",
+    "npm:@hono/mcp@0.1": "0.1.1_@modelcontextprotocol+sdk@1.17.0__express@5.1.0__zod@3.25.76_hono@4.8.10",
+    "npm:@hono/standard-validator@~0.1.4": "0.1.4_@standard-schema+spec@1.0.0_hono@4.8.10",
+    "npm:@inkjs/ui@2": "2.0.0_ink@6.1.0__@types+react@19.1.9__react@19.1.1_@types+react@19.1.9_react@19.1.1",
     "npm:@modelcontextprotocol/sdk@^1.12.1": "1.17.0_express@5.1.0_zod@3.25.76",
     "npm:@modelcontextprotocol/sdk@^1.15.0": "1.17.0_express@5.1.0_zod@3.25.76",
     "npm:@opentelemetry/api@^1.9.0": "1.9.0",
-    "npm:@scalar/hono-api-reference@~0.9.9": "0.9.12_hono@4.8.9",
+    "npm:@scalar/hono-api-reference@~0.9.9": "0.9.13_hono@4.8.10",
     "npm:@sendgrid/mail@^8.1.5": "8.1.5",
     "npm:@types/node@*": "22.15.15",
-    "npm:@types/react@^19.1.8": "19.1.8",
+    "npm:@types/react@^19.1.8": "19.1.9",
     "npm:@worker-tools/html-rewriter@~0.1.0-pre.19": "0.1.0-pre.19",
     "npm:ai@5.0.0-beta.25": "5.0.0-beta.25_zod@3.25.76",
     "npm:ansi-escapes@7": "7.0.0",
     "npm:chalk@^5.4.1": "5.4.1",
     "npm:cron-parser@^5.3.0": "5.3.0",
     "npm:eventsource-parser@^3.0.3": "3.0.3",
-    "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@19.1.8_react@19.1.0",
-    "npm:hono-openapi@~0.5.0-rc.2": "0.5.0-rc.3_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.9_@standard-community+standard-json@0.3.0-rc.3__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.3___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.3.0___zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.8.9_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.3.0__zod@3.25.76",
-    "npm:hono@^4.8.5": "4.8.9",
-    "npm:ink@^6.0.1": "6.1.0_@types+react@19.1.8_react@19.1.0",
+    "npm:fullscreen-ink@^0.0.2": "0.0.2_@types+react@19.1.9_react@19.1.1",
+    "npm:hono-openapi@~0.5.0-rc.2": "0.5.0-rc.3_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.10_@standard-community+standard-json@0.3.0-rc.3__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.3___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.3.0___zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.8.10_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.3.0__zod@3.25.76",
+    "npm:hono@^4.8.5": "4.8.10",
+    "npm:ink@^6.0.1": "6.1.0_@types+react@19.1.9_react@19.1.1",
     "npm:js-levenshtein@^1.1.6": "1.1.6",
     "npm:lint-staged@^16.1.2": "16.1.2",
     "npm:marked-terminal@^7.3.0": "7.3.0_marked@16.1.1",
@@ -55,7 +55,7 @@
     "npm:openapi-fetch@~0.12.4": "0.12.5",
     "npm:openapi-typescript@^7.4.4": "7.8.0_typescript@5.8.3",
     "npm:playwright@^1.54.1": "1.54.1",
-    "npm:react@^19.1.0": "19.1.0",
+    "npm:react@^19.1.0": "19.1.1",
     "npm:turndown@^7.2.0": "7.2.0",
     "npm:xstate@^5.20.1": "5.20.1",
     "npm:zod-openapi@^5.1.0": "5.3.0_zod@3.25.76",
@@ -199,21 +199,21 @@
     "@colors/colors@1.5.0": {
       "integrity": "sha512-ooWCrlZP11i8GImSjTHYHLkvFDP48nS4+204nGb1RiX/WXYHmJA2III9/e2DWVabCESdW7hBAEzHRqUn9OUVvQ=="
     },
-    "@hono/mcp@0.1.0_@modelcontextprotocol+sdk@1.17.0__express@5.1.0__zod@3.25.76_hono@4.8.9": {
-      "integrity": "sha512-IELNnKF5tjbUm+wthfToZrNxZIjs1RWLiwCx8N+m8xfJcL6hfcpj/21Gsw8HL88lbnCh191mbFwYvXnx856QZg==",
+    "@hono/mcp@0.1.1_@modelcontextprotocol+sdk@1.17.0__express@5.1.0__zod@3.25.76_hono@4.8.10": {
+      "integrity": "sha512-2iQ4xBKfQdBBJP3V1/XCVyxQZeWWnxJG+5ytu9/Xuwwje3D70fm9ws0VV536rZ3CKWrnZZ/X+xeJ7FwR3ErVbw==",
       "dependencies": [
         "@modelcontextprotocol/sdk",
         "hono"
       ]
     },
-    "@hono/standard-validator@0.1.4_@standard-schema+spec@1.0.0_hono@4.8.9": {
+    "@hono/standard-validator@0.1.4_@standard-schema+spec@1.0.0_hono@4.8.10": {
       "integrity": "sha512-NPxSO9/Z1FFaJ34/0WJA0JoFRrVrJOG5P/i+PBJu7jCw9v0u8WmGiJu0zv+bTk1pjplBjjczAd59x2X50spRmQ==",
       "dependencies": [
         "@standard-schema/spec",
         "hono"
       ]
     },
-    "@inkjs/ui@2.0.0_ink@6.1.0__@types+react@19.1.8__react@19.1.0_@types+react@19.1.8_react@19.1.0": {
+    "@inkjs/ui@2.0.0_ink@6.1.0__@types+react@19.1.9__react@19.1.1_@types+react@19.1.9_react@19.1.1": {
       "integrity": "sha512-5+8fJmwtF9UvikzLfph9sA+LS+l37Ij/szQltkuXLOAXwNkBX9innfzh4pLGXIB59vKEQUtc6D4qGvhD7h3pAg==",
       "dependencies": [
         "chalk@5.4.1",
@@ -272,27 +272,27 @@
         "yaml-ast-parser"
       ]
     },
-    "@scalar/core@0.3.10": {
-      "integrity": "sha512-WKLaZk5zj65CbS0Ox0BMZ1GX9gFrVdwgV/cdRjT2Av8H5CizOSirXk4PwdsU8V8Q4gAltVy9cnt6yKc2ZnRY+w==",
+    "@scalar/core@0.3.11": {
+      "integrity": "sha512-4O3mC29k2STz4quBHrpsl6czxi94F3dy8Ej/OPbELS2myKO4GoxromT0BiKSLPAThCnmJ0rqMZ7k9NsgzVjEgA==",
       "dependencies": [
         "@scalar/types"
       ]
     },
-    "@scalar/hono-api-reference@0.9.12_hono@4.8.9": {
-      "integrity": "sha512-ygbQsh+5QaRyAx851utApy12FW+wSRLuOBTpL2U5RVzDjvN6vMBZs119mqH1BmY6ltVn8k7DvS2Ooyx0ttah/A==",
+    "@scalar/hono-api-reference@0.9.13_hono@4.8.10": {
+      "integrity": "sha512-79Gs+/2/FcqwZ3Lp0lsv3pFKHY1qBF2ONkfgh/gxRsd8Z+RZRTDBZafe7OConj+c4tHm0Zz3bKTKEV0OMQi/aA==",
       "dependencies": [
         "@scalar/core",
         "hono"
       ]
     },
-    "@scalar/openapi-types@0.3.6": {
-      "integrity": "sha512-hkLIgDIQxSgZNYCqNkty2p/V8hjeMf711uT8IKIjNw8oaT/cjT1HC/3V0FVhJ6x2eaufir+WXt5Zqv/iVk5pyQ==",
+    "@scalar/openapi-types@0.3.7": {
+      "integrity": "sha512-QHSvHBVDze3+dUwAhIGq6l1iOev4jdoqdBK7QpfeN1Q4h+6qpVEw3EEqBiH0AXUSh/iWwObBv4uMgfIx0aNZ5g==",
       "dependencies": [
         "zod@3.24.1"
       ]
     },
-    "@scalar/types@0.2.10": {
-      "integrity": "sha512-ZlOzYoYzzGRnMr6RufAnjksv94MyL4s4HElg9mdo9gQXPch24lNiE0pE0k6vxdB+ncgbGWZ1T6qCC/lJXMLL1Q==",
+    "@scalar/types@0.2.11": {
+      "integrity": "sha512-SUZzGmoisWsYv33LmmT/ajvSlcl9ZDj9d5RncJ+wB9ZQ2l018xlfpDIH9Kdfo+6KCKQOe3LYLXfH4Lzm891Mag==",
       "dependencies": [
         "@scalar/openapi-types",
         "nanoid",
@@ -368,8 +368,8 @@
         "undici-types"
       ]
     },
-    "@types/react@19.1.8": {
-      "integrity": "sha512-AwAfQ2Wa5bCx9WP8nZL2uMZWod7J7/JSplxbTmBQ5ms6QpqNYm672H0Vu9ZVKVngQ+ii4R/byguVEUZQyeg44g==",
+    "@types/react@19.1.9": {
+      "integrity": "sha512-WmdoynAX8Stew/36uTSVMcLJJ1KRh6L3IZRx1PZ7qJtBqT3dYTgyDTx8H1qoRghErydW7xw9mSJ3wS//tCRpFA==",
       "dependencies": [
         "csstype"
       ]
@@ -826,7 +826,7 @@
       "os": ["darwin"],
       "scripts": true
     },
-    "fullscreen-ink@0.0.2_@types+react@19.1.8_react@19.1.0": {
+    "fullscreen-ink@0.0.2_@types+react@19.1.9_react@19.1.1": {
       "integrity": "sha512-5AiV01q8EfOvG2BrYlmNQtUxDSEBf4p8EN+3R0GRvdDKSh2sphUE+7UKTMMq4qMWq1XuhcJB7TGR8O+UD5VyQw==",
       "dependencies": [
         "ink",
@@ -888,7 +888,7 @@
     "highlight.js@10.7.3": {
       "integrity": "sha512-tzcUFauisWKNHaRkN4Wjl/ZA07gENAjFl3J/c480dprkGTg5EQstgaNFqBfUqCq54kZRIEcreTsAgF/m2quD7A=="
     },
-    "hono-openapi@0.5.0-rc.3_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.9_@standard-community+standard-json@0.3.0-rc.3__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.3___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.3.0___zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.8.9_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.3.0__zod@3.25.76": {
+    "hono-openapi@0.5.0-rc.3_@hono+standard-validator@0.1.4__@standard-schema+spec@1.0.0__hono@4.8.10_@standard-community+standard-json@0.3.0-rc.3__@standard-schema+spec@1.0.0__@types+json-schema@7.0.15__zod@3.25.76_@standard-community+standard-openapi@0.2.0-rc.1__@standard-community+standard-json@0.3.0-rc.3___@standard-schema+spec@1.0.0___@types+json-schema@7.0.15___zod@3.25.76__@standard-schema+spec@1.0.0__openapi-types@12.1.3__zod@3.25.76__zod-openapi@5.3.0___zod@3.25.76__@types+json-schema@7.0.15_@types+json-schema@7.0.15_hono@4.8.10_openapi-types@12.1.3_zod@3.25.76_zod-openapi@5.3.0__zod@3.25.76": {
       "integrity": "sha512-AOTLtvCSR/HyOpRFtSqCyncrR48OqIhdpoHGG8p7HZK07X+jO7V5zVm5EWhMkuJaH0VgdltfZxUDSA092w7S4Q==",
       "dependencies": [
         "@hono/standard-validator",
@@ -905,8 +905,8 @@
         "zod@3.25.76"
       ]
     },
-    "hono@4.8.9": {
-      "integrity": "sha512-ERIxkXMRhUxGV7nS/Af52+j2KL60B1eg+k6cPtgzrGughS+espS9KQ7QO0SMnevtmRlBfAcN0mf1jKtO6j/doA=="
+    "hono@4.8.10": {
+      "integrity": "sha512-DRMYbR3aFk6YET1FCSAFbgF2cWYTz5j0YAFYPECx9fmrbKBDAYnWU+YCgRTpOaatxMYN6e68U/2IG39zRP4W/A=="
     },
     "http-errors@2.0.0": {
       "integrity": "sha512-FtwrG/euBzaEjYeRqOgly7G0qviiXoJWnvEH2Z1plBdXgbyjv34pHTSb9zoeHMyDy33+DWy5Wt9Wo+TURtOYSQ==",
@@ -940,7 +940,7 @@
     "inherits@2.0.4": {
       "integrity": "sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ=="
     },
-    "ink@6.1.0_@types+react@19.1.8_react@19.1.0": {
+    "ink@6.1.0_@types+react@19.1.9_react@19.1.1": {
       "integrity": "sha512-YQ+lbMD79y3FBAJXXZnuRajLEgaMFp102361eY5NrBIEVCi9oFo7gNZU4z2LBWlcjZFiTt7jetlkIbKCCH4KJA==",
       "dependencies": [
         "@alcalzone/ansi-tokenize",
@@ -1324,15 +1324,15 @@
         "unpipe"
       ]
     },
-    "react-reconciler@0.32.0_react@19.1.0": {
+    "react-reconciler@0.32.0_react@19.1.1": {
       "integrity": "sha512-2NPMOzgTlG0ZWdIf3qG+dcbLSoAc/uLfOwckc3ofy5sSK0pLJqnQLpUFxvGcN2rlXSjnVtGeeFLNimCQEj5gOQ==",
       "dependencies": [
         "react",
         "scheduler@0.26.0"
       ]
     },
-    "react@19.1.0": {
-      "integrity": "sha512-FS+XFBNvn3GTAWq26joslQgWNoFu08F4kl0J4CgdNKADkdSGXQyTCnKteIAJy96Br6YbpEU1LSzV5dYtjMkMDg=="
+    "react@19.1.1": {
+      "integrity": "sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ=="
     },
     "require-directory@2.1.1": {
       "integrity": "sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q=="
@@ -1858,6 +1858,7 @@
       "npm:@ai-sdk/anthropic@2.0.0-beta.8",
       "npm:@ai-sdk/google@2.0.0-beta.13",
       "npm:@ai-sdk/openai@2.0.0-beta.11",
+      "npm:@hono/mcp@0.1",
       "npm:@hono/standard-validator@~0.1.4",
       "npm:@inkjs/ui@2",
       "npm:@modelcontextprotocol/sdk@^1.15.0",
@@ -1887,7 +1888,6 @@
     "members": {
       "apps/atlasd": {
         "dependencies": [
-          "npm:@hono/mcp@0.1",
           "npm:zod-openapi@^5.1.0"
         ]
       },

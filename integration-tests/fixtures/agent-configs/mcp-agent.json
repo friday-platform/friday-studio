@@ -1,0 +1,46 @@
+{
+  "id": "mcp-enabled-agent",
+  "name": "MCP Enabled Agent",
+  "version": "1.0.0",
+  "description": "Agent with self-reported MCP servers",
+  "expertise": {
+    "domains": ["testing", "mcp", "math"],
+    "capabilities": [
+      "echo operations",
+      "mathematical calculations",
+      "api interactions"
+    ],
+    "examples": [
+      "echo hello",
+      "calculate 2 + 2",
+      "fetch user data"
+    ]
+  },
+  "mcp": {
+    "echo": {
+      "transport": {
+        "type": "stdio",
+        "command": "deno",
+        "args": [
+          "run",
+          "--allow-all",
+          "./integration-tests/mocks/echo-mcp-server.ts"
+        ]
+      }
+    },
+    "math": {
+      "transport": {
+        "type": "stdio",
+        "command": "deno",
+        "args": [
+          "run",
+          "--allow-all",
+          "./integration-tests/mocks/math-mcp-server.ts"
+        ]
+      },
+      "tools": {
+        "allow": ["calculate", "statistics"]
+      }
+    }
+  }
+}

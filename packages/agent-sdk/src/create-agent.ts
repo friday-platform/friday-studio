@@ -1,0 +1,167 @@
+/**
+ * Create Agent Function
+ *
+ * Main API for creating domain expert agents that interpret natural language
+ * prompts and accomplish tasks within their expertise.
+ */
+
+import type {
+  AgentContext,
+  AgentEnvironmentConfig,
+  AgentHandler,
+  AgentLLMConfig,
+  AgentMCPServerConfig,
+  AgentMetadata,
+  AtlasAgent,
+  CreateAgentConfig,
+} from "./types.ts";
+import {
+  AgentEnvironmentConfigSchema,
+  AgentLLMConfigSchema,
+  AgentMetadataSchema,
+  MCPServerConfigSchema,
+} from "./types.ts";
+import { z } from "zod/v4";
+
+/**
+ * Internal implementation of AtlasAgent
+ */
+class AtlasAgentImpl implements AtlasAgent {
+  metadata: AgentMetadata;
+  private handler: AgentHandler;
+  private environment?: AgentEnvironmentConfig;
+  private mcp?: Record<string, AgentMCPServerConfig>;
+  private llm?: AgentLLMConfig;
+
+  constructor(config: CreateAgentConfig) {
+    // Extract metadata from config
+    this.metadata = {
+      id: config.id,
+      displayName: config.displayName,
+      version: config.version,
+      description: config.description,
+      expertise: config.expertise,
+      metadata: config.metadata,
+    };
+
+    this.handler = config.handler;
+    this.environment = config.environment;
+    this.mcp = config.mcp;
+    this.llm = config.llm;
+
+    // Validate configuration
+    this.validateConfig();
+  }
+
+  private validateConfig(): void {
+    // Validate metadata using Zod schema
+    const metadataResult = AgentMetadataSchema.safeParse(this.metadata);
+    if (!metadataResult.success) {
+      throw new Error(z.prettifyError(metadataResult.error));
+    }
+
+    // Validate optional configurations if present
+    if (this.environment) {
+      const envResult = AgentEnvironmentConfigSchema.safeParse(this.environment);
+      if (!envResult.success) {
+        throw new Error(`Environment config error:\n${z.prettifyError(envResult.error)}`);
+      }
+    }
+
+    if (this.mcp) {
+      for (const [serverName, config] of Object.entries(this.mcp)) {
+        const mcpResult = MCPServerConfigSchema.safeParse(config);
+        if (!mcpResult.success) {
+          throw new Error(
+            `Invalid MCP server config for '${serverName}':\n${z.prettifyError(mcpResult.error)}`,
+          );
+        }
+      }
+    }
+
+    if (this.llm) {
+      const llmResult = AgentLLMConfigSchema.safeParse(this.llm);
+      if (!llmResult.success) {
+        throw new Error(`LLM config error:\n${z.prettifyError(llmResult.error)}`);
+      }
+    }
+  }
+
+  async execute(prompt: string, context: AgentContext): Promise<unknown> {
+    try {
+      // Execute the handler with the prompt and context
+      return await this.handler(prompt, context);
+    } catch (error) {
+      // Re-throw AwaitingSupervisorDecision exceptions
+      if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {
+        throw error;
+      }
+
+      // Wrap other errors with agent context
+      throw new Error(
+        `Agent ${this.metadata.id} execution failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
+
+  get environmentConfig(): AgentEnvironmentConfig | undefined {
+    return this.environment;
+  }
+
+  get mcpConfig(): Record<string, AgentMCPServerConfig> | undefined {
+    return this.mcp;
+  }
+
+  get llmConfig(): AgentLLMConfig | undefined {
+    return this.llm;
+  }
+}
+
+/**
+ * Create a domain expert agent
+ *
+ * @example
+ * ```typescript
+ * export const githubAgent = createAgent({
+ *   id: "github",
+ *   displayName: "GitHub Agent",
+ *   version: "1.0.0",
+ *   description: "GitHub domain expert for repository operations",
+ *
+ *   expertise: {
+ *     domains: ["github", "vcs", "security"],
+ *     capabilities: [
+ *       "repository security scanning",
+ *       "pull request review",
+ *       "issue management"
+ *     ],
+ *     examples: [
+ *       "scan my repository for vulnerabilities",
+ *       "review PR #123 for code quality"
+ *     ]
+ *   },
+ *
+ *   handler: async (prompt, { mcp, state, stream }) => {
+ *     // Bring your own LLM
+ *     const { generateText } = await import('ai');
+ *     const { anthropic } = await import('@ai-sdk/anthropic');
+ *
+ *     const githubTools = await mcp.getTools("github");
+ *     const platformTools = await mcp.getTools("atlas-platform");
+ *
+ *     const result = await generateText({
+ *       model: anthropic('claude-3-sonnet-20240229'),
+ *       prompt,
+ *       tools: { ...githubTools, ...platformTools }
+ *     });
+ *
+ *     return result;
+ *   }
+ * });
+ * ```
+ */
+export function createAgent(config: CreateAgentConfig): AtlasAgent {
+  return new AtlasAgentImpl(config);
+}

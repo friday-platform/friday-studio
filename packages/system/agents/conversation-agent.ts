@@ -239,9 +239,10 @@ export class ConversationAgent extends BaseAgent {
    * 5. Processes stream events (thinking, text, tool calls)
    * 6. Persists conversation state
    */
-  protected async execute(input?: unknown): Promise<unknown> {
+  protected async execute(input?: unknown, streaming?: (data: string) => void): Promise<unknown> {
     this.logger.info("ConversationAgent execute called", {
       input: JSON.stringify(input),
+      hasStreaming: !!streaming,
     });
 
     let {
@@ -436,6 +437,17 @@ export class ConversationAgent extends BaseAgent {
           for await (const chunk of fullStream) {
             const event = this.processStreamEvent(chunk, prevChunk);
             prevChunk = chunk;
+
+            // Call the streaming callback if provided
+            if (streaming && event) {
+              if (event.type === "thinking") {
+                streaming(`💭 ${event.content}`);
+              } else if (event.type === "text") {
+                streaming(event.content);
+              } else if (event.type === "tool_call") {
+                streaming(`🔧 Calling tool: ${event.toolName}`);
+              }
+            }
 
             if (!event || !streamId) continue;
 

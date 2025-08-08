@@ -7,10 +7,6 @@ import { BaseAgent } from "./agents/base-agent-v2.ts";
 import { AtlasLogger } from "@atlas/logger";
 import { z } from "zod/v4";
 
-// Static imports for system agents - embedded at compile time
-import { ConversationAgent } from "../../packages/system/agents/conversation-agent.ts";
-import { FactExtractor } from "../../packages/system/agents/fact-extractor.ts";
-
 // Zod schema for agent ID validation
 const AgentIdSchema = z.string().regex(
   /^[a-zA-Z0-9_-]+$/,
@@ -58,8 +54,8 @@ export class SystemAgentRegistry {
     this.kvStorage = kvStorage;
     this.logger.info("Initializing system agent registry...");
 
-    // Register system agents - embedded at compile time
-    this.discoverAgents();
+    // Register system agents using dynamic imports
+    await this.discoverAgents();
 
     // Store agent metadata in KV
     await this.storeAgentMetadata();
@@ -71,11 +67,23 @@ export class SystemAgentRegistry {
   }
 
   /**
-   * Register system agents statically - works in compiled binaries
+   * Register system agents using dynamic imports to avoid circular dependencies
+   * This is an exceptional case where dynamic imports are required
    */
-  private static discoverAgents(): void {
+  private static async discoverAgents(): Promise<void> {
     try {
-      // Register all system agents - these are embedded at compile time
+      // Dynamic imports to break circular dependency with BaseAgent
+      // This is necessary because FactExtractor extends BaseAgent which can create
+      // a circular dependency when system-agent-registry is imported elsewhere
+      const [
+        { ConversationAgent },
+        { FactExtractor },
+      ] = await Promise.all([
+        import("../../packages/system/agents/conversation-agent.ts"),
+        import("../../packages/system/agents/fact-extractor.ts"),
+      ]);
+
+      // Register all system agents
       const systemAgents: SystemAgentConstructor[] = [
         ConversationAgent,
         FactExtractor,

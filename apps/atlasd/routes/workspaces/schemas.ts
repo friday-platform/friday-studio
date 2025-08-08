@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { WorkspaceConfigSchema } from "@atlas/config";
 
 // ============================================================================
 // Shared Parameter Schemas
@@ -64,6 +65,12 @@ export const workspaceDetailsResponseSchema = z.object({
   description: "Detailed workspace information including configuration and runtime status",
 });
 
+export const workspaceConfigResponseSchema = z.object({
+  config: WorkspaceConfigSchema,
+}).meta({
+  description: "Workspace configuration data for agent server consumption",
+});
+
 // ============================================================================
 // Input Schemas
 // ============================================================================
@@ -119,6 +126,7 @@ export const errorResponseSchema = z.object({
 
 export type WorkspaceResponse = z.infer<typeof workspaceResponseSchema>;
 export type WorkspaceDetailsResponse = z.infer<typeof workspaceDetailsResponseSchema>;
+export type WorkspaceConfigResponse = z.infer<typeof workspaceConfigResponseSchema>;
 export type CreateWorkspaceFromConfigRequest = z.infer<typeof createWorkspaceFromConfigSchema>;
 export type CreateWorkspaceFromConfigResponse = z.infer<
   typeof createWorkspaceFromConfigResponseSchema

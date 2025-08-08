@@ -41,7 +41,5 @@ export interface LogEntry {
   timestamp: string; // ISO 8601 format
   level: LogLevel;
   message: string;
-  pid: number;
-  hostname: string;
   context: LogContext;
 }

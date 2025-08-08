@@ -14,12 +14,12 @@
 import type { JobSpecification } from "@atlas/config";
 import type {
   ActorInitParams,
-  AgentExecutePayload,
   AgentExecutionConfig,
   AgentTask,
   BaseActor,
   CombinedAgentInput,
   ExecutionPlanReasoningStep,
+  IAgentOrchestrator,
   SessionResult,
   SessionSupervisorConfig,
   ToolExecutorResult,
@@ -28,10 +28,11 @@ import type { Tool } from "ai";
 import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
-import type { IWorkspaceSignal } from "../../types/core.ts";
+import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
 import { type Logger, logger } from "@atlas/logger";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
-import { AgentExecutionActor } from "./agent-execution-actor.ts";
+import { AwaitingSupervisorDecision, StreamEmitter, StreamEvent } from "@atlas/agent-sdk";
+import { HTTPStreamEmitter, NoOpStreamEmitter } from "@atlas/core";
 
 export interface SessionContext {
   sessionId: string;
@@ -41,6 +42,7 @@ export interface SessionContext {
   jobSpec?: JobSpecification;
   availableAgents: string[];
   constraints?: Record<string, unknown>;
+  streamId?: string; // Optional streamId for streaming support
   additionalPrompts?: {
     planning?: string;
     evaluation?: string;
@@ -97,9 +99,20 @@ export class SessionSupervisorActor implements BaseActor {
   private status: "idle" | "planning" | "executing" | "completed" | "failed" = "idle";
   private config?: SessionSupervisorConfig;
   private cachedPlan?: ExecutionPlan;
+  private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
+  private artifacts: IWorkspaceArtifact[] = []; // Store session artifacts
   private llmProvider = createAnthropic({
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
+
+  // Stream management
+  private baseStreamEmitter?: StreamEmitter;
+  private streamMetrics = {
+    totalEvents: 0,
+    filteredEvents: 0,
+    errorEvents: 0,
+    agentMetrics: new Map<string, { events: number; errors: number }>(),
+  };
 
   constructor(
     sessionId: string,
@@ -114,7 +127,7 @@ export class SessionSupervisorActor implements BaseActor {
 
     this.logger = logger.child({
       actorId: this.id,
-      actorType: "session-supervisor",
+      component: "SessionSupervisorActor",
       sessionId: this.sessionId,
       workspaceId: this.workspaceId,
     });
@@ -128,6 +141,13 @@ export class SessionSupervisorActor implements BaseActor {
       sessionId: this.sessionId,
       agentCount: Object.keys(config.agents).length,
       jobName: config.job.name,
+    });
+  }
+
+  setAgentOrchestrator(orchestrator: IAgentOrchestrator): void {
+    this.agentOrchestrator = orchestrator;
+    this.logger.info("Agent orchestrator set", {
+      sessionId: this.sessionId,
     });
   }
 
@@ -158,7 +178,20 @@ export class SessionSupervisorActor implements BaseActor {
     this.logger.info("Session supervisor actor shutting down", {
       sessionId: this.sessionId,
       workspaceId: this.workspaceId,
+      streamMetrics: this.streamMetrics,
     });
+
+    // End streaming
+    if (this.baseStreamEmitter) {
+      this.streamSessionEvent("session.completed", {
+        totalAgents: this.streamMetrics.agentMetrics.size,
+        totalEvents: this.streamMetrics.totalEvents,
+        filteredEvents: this.streamMetrics.filteredEvents,
+      });
+
+      void this.baseStreamEmitter.end();
+    }
+
     this.status = "completed";
   }
 
@@ -167,11 +200,31 @@ export class SessionSupervisorActor implements BaseActor {
     // Clear cached plan when context changes
     this.cachedPlan = undefined;
 
+    // Initialize streaming if streamId provided
+    if (context.streamId) {
+      this.baseStreamEmitter = new HTTPStreamEmitter(
+        context.streamId,
+        context.sessionId,
+        Deno.env.get("ATLAS_DAEMON_URL") || "http://localhost:8080",
+        this.logger,
+      );
+
+      // Emit session start event
+      this.streamSessionEvent("session_started", {
+        sessionId: context.sessionId,
+        signalId: context.signal.id,
+        workspaceId: context.workspaceId,
+      });
+    } else {
+      this.baseStreamEmitter = new NoOpStreamEmitter();
+    }
+
     this.logger.info("Session initialized", {
       sessionId: context.sessionId,
       workspaceId: context.workspaceId,
       signalId: context.signal.id,
       availableAgents: context.availableAgents.length,
+      hasStreaming: !!context.streamId,
     });
   }
 
@@ -296,6 +349,24 @@ export class SessionSupervisorActor implements BaseActor {
       }
     }
 
+    // Store agent results as artifact
+    if (allResults.length > 0) {
+      const agentResultsArtifact: IWorkspaceArtifact = {
+        id: crypto.randomUUID(),
+        type: "agent_results",
+        data: allResults,
+        createdAt: new Date(),
+        createdBy: this.sessionId,
+      };
+      this.artifacts.push(agentResultsArtifact);
+
+      this.logger.info("Stored agent results as artifact", {
+        artifactId: agentResultsArtifact.id,
+        resultCount: allResults.length,
+        sessionId: this.sessionId,
+      });
+    }
+
     // Generate session summary
     const duration = Date.now() - sessionStartTime;
     const summary = this.generateSessionSummary(allResults, plan, duration);
@@ -345,10 +416,17 @@ export class SessionSupervisorActor implements BaseActor {
   ): Promise<AgentResult> {
     const startTime = Date.now();
 
+    // the signal that triggers the session - payload is whatever json is in -d
     let input: unknown = this.sessionContext?.payload;
 
     if (agentTask.inputSource === "previous" && previousResults.length > 0) {
-      input = previousResults[previousResults.length - 1]?.output;
+      const lastOutput = previousResults[previousResults.length - 1]?.output;
+      // If the output is an LLM response object, extract the actual response text
+      if (typeof lastOutput === "object" && lastOutput !== null && "response" in lastOutput) {
+        input = (lastOutput as any).response;
+      } else {
+        input = lastOutput;
+      }
     } else if (agentTask.inputSource === "combined") {
       const combinedInput: CombinedAgentInput = {
         original: this.sessionContext?.payload || {},
@@ -366,40 +444,6 @@ export class SessionSupervisorActor implements BaseActor {
       }
     }
 
-    const payload: AgentExecutePayload = {
-      agentId: agentTask.agentId,
-      input,
-      sessionContext: {
-        sessionId: this.sessionId,
-        workspaceId: this.workspaceId || "global",
-        task: agentTask.task,
-        reasoning: agentTask.reasoning,
-      },
-    };
-
-    // Get agent execution configuration
-    const agentExecutionConfig = this.getAgentExecutionConfig(agentTask.agentId);
-
-    const agentActor = new AgentExecutionActor(
-      crypto.randomUUID(),
-      agentExecutionConfig,
-    );
-
-    await agentActor.initialize();
-
-    // Debug log: Pretty print agent input
-    this.logger.debug("Agent Input Debug", {
-      agentId: agentTask.agentId,
-      inputSource: agentTask.inputSource,
-      input: JSON.stringify(input, null, 2),
-      inputType: typeof input,
-      inputSizeBytes: JSON.stringify(input).length,
-      previousResultsCount: previousResults.length,
-      lastPreviousAgentId: previousResults.length > 0
-        ? previousResults[previousResults.length - 1]?.agentId
-        : null,
-    });
-
     this.logger.info("Executing agent", {
       agentId: agentTask.agentId,
       task: agentTask.task,
@@ -407,11 +451,103 @@ export class SessionSupervisorActor implements BaseActor {
       reasoning: agentTask.reasoning,
     });
 
+    // Stream agent start
+    this.streamSessionEvent("agent.started", {
+      agentId: agentTask.agentId,
+      task: agentTask.task,
+      phase: agentTask.phase || "execution",
+    });
+
     let result;
+
+    if (!this.agentOrchestrator) {
+      throw new Error("Agent orchestrator is not available");
+    }
+
+    // Use orchestrator if available (new MCP-based execution)
+    this.logger.info("Using orchestrator for execution");
     try {
-      result = await agentActor.executeTask(payload);
+      // @deprecated Check if this is a system agent that expects objects
+      // System agents should receive input as-is, not stringified
+      const agentConfig = this.config?.agents?.[agentTask.agentId];
+      const isSystemAgent = agentConfig?.type === "system";
+
+      // Extract the actual message/input to send to the agent
+      let prompt: string | unknown;
+
+      if (isSystemAgent) {
+        // @deprecated System agents receive input as-is
+        prompt = input;
+        this.logger.debug("Passing raw input to system agent", {
+          agentId: agentTask.agentId,
+          inputType: typeof input,
+        });
+      } else if (agentTask.task && agentTask.task !== "Execute job task") {
+        // Use explicit task if provided
+        prompt = agentTask.task;
+      } else if (typeof input === "string") {
+        // Direct string input (e.g., from previous agent)
+        prompt = input;
+      } else if (typeof input === "object" && input !== null && "message" in input) {
+        // Extract message from signal payload
+        prompt = (input as any).message;
+      } else if (typeof input === "object" && input !== null && "text" in input) {
+        // Extract text from signal payload (common field name)
+        prompt = (input as any).text;
+      } else {
+        // Fallback to JSON representation
+        prompt = JSON.stringify(input);
+      }
+
+      const orchestratorResult = await this.agentOrchestrator.executeAgent(
+        agentTask.agentId,
+        prompt,
+        {
+          sessionId: this.sessionId,
+          workspaceId: this.workspaceId || "global",
+          streamId: this.sessionContext?.streamId,
+          previousResults,
+          additionalContext: {
+            input,
+            reasoning: agentTask.reasoning,
+          },
+          // Pass callback for stream events
+          onStreamEvent: (event) => {
+            this.handleAgentStreamEvent(
+              agentTask.agentId,
+              agentTask.phase || "execution",
+              event,
+            );
+          },
+        },
+      );
+
+      // Extract output from orchestrator result
+      result = {
+        output: orchestratorResult.output,
+        duration: orchestratorResult.duration,
+      };
+
+      // Stream agent completion
+      this.streamSessionEvent("agent.completed", {
+        agentId: agentTask.agentId,
+        duration: Date.now() - startTime,
+        success: true,
+      });
     } catch (error) {
-      this.logger.error("Agent execution failed", {
+      // Check if it's an approval exception
+      if (error instanceof AwaitingSupervisorDecision) {
+        return await this.handleApprovalRequest(error, agentTask, startTime);
+      }
+
+      // Stream agent failure
+      this.streamSessionEvent("agent.failed", {
+        agentId: agentTask.agentId,
+        duration: Date.now() - startTime,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      this.logger.error("Agent orchestrator execution failed", {
         agentId: agentTask.agentId,
         error: error instanceof Error ? error.message : String(error),
       });
@@ -431,19 +567,6 @@ export class SessionSupervisorActor implements BaseActor {
       toolCalls: result.toolCalls,
       toolResults: result.toolResults,
     };
-
-    // Debug log: Pretty print agent output
-    this.logger.debug("Agent Output Debug", {
-      agentId: agentTask.agentId,
-      output: JSON.stringify(result.output, null, 2),
-      outputType: typeof result.output,
-      outputSizeBytes: JSON.stringify(result.output).length,
-      hasToolCalls: !!result.toolCalls?.length,
-      toolCallsCount: result.toolCalls?.length || 0,
-      toolCalls: result.toolCalls ? JSON.stringify(result.toolCalls, null, 2) : null,
-      toolResults: result.toolResults ? JSON.stringify(result.toolResults, null, 2) : null,
-      duration,
-    });
 
     this.logger.info("Agent execution completed", {
       agentId: agentTask.agentId,
@@ -909,5 +1032,138 @@ Think step by step about the best approach to handle this signal, then use the t
 
   getStatus(): "idle" | "planning" | "executing" | "completed" | "failed" {
     return this.status;
+  }
+
+  /**
+   * Get all artifacts created during session execution
+   */
+  getArtifacts(): IWorkspaceArtifact[] {
+    return [...this.artifacts];
+  }
+
+  /**
+   * Handles approval requests from agents.
+   *
+   * @disclaimer TEMPORARY IMPLEMENTATION - This currently auto-approves all requests.
+   * Full approval handling with policies, UI integration, and human-in-the-loop
+   * has been designed but not yet implemented. See tasks/supervisor-approval-handling.md
+   * for the complete design.
+   *
+   * TODO: Implement full approval handling as specified in the design document.
+   */
+  private async handleApprovalRequest(
+    error: AwaitingSupervisorDecision,
+    agentTask: AgentTask,
+    startTime: number,
+  ): Promise<AgentResult> {
+    const { request, approvalId, agentId } = error;
+
+    // Log the approval request for audit trail
+    this.logger.warn(
+      "Auto-approving agent request (temporary implementation)",
+      {
+        approvalId,
+        agentId,
+        request: request,
+        sessionId: this.sessionId,
+        disclaimer:
+          "This is a temporary auto-approval. Full approval handling not yet implemented.",
+      },
+    );
+
+    // Auto-approve with clear indication this is temporary
+    const decision = {
+      approved: true,
+      reason: "Auto-approved (temporary implementation - full approval handling pending)",
+    };
+
+    // Resume agent execution with approval
+    if (!this.agentOrchestrator) {
+      throw new Error("Agent orchestrator not available for approval resumption");
+    }
+
+    const orchestratorResult = await this.agentOrchestrator.resumeWithApproval(
+      approvalId,
+      decision,
+    );
+
+    const duration = Date.now() - startTime;
+
+    // Return formatted result
+    return {
+      agentId,
+      task: agentTask.task,
+      input: request,
+      output: orchestratorResult.output,
+      duration,
+      timestamp: new Date().toISOString(),
+      reasoning: agentTask.reasoning,
+      approvalDecision: decision,
+    };
+  }
+
+  // Central stream event handler - all agent streams flow through here
+  private handleAgentStreamEvent(
+    agentId: string,
+    phase: string,
+    event: StreamEvent,
+  ): void {
+    // Update metrics
+    this.streamMetrics.totalEvents++;
+    const agentMetrics = this.streamMetrics.agentMetrics.get(agentId) ||
+      { events: 0, errors: 0 };
+    agentMetrics.events++;
+
+    if (event.type === "error") {
+      this.streamMetrics.errorEvents++;
+      agentMetrics.errors++;
+    }
+
+    this.streamMetrics.agentMetrics.set(agentId, agentMetrics);
+
+    // Enrich event with session context
+    const enrichedEvent = this.enrichStreamEvent(event, agentId, phase);
+
+    // Emit supervised event
+    this.baseStreamEmitter?.emit(enrichedEvent);
+  }
+
+  // Enrich events with session metadata
+  private enrichStreamEvent(
+    event: StreamEvent,
+    agentId: string,
+    phase: string,
+  ): StreamEvent {
+    // Add metadata to all events
+    const enriched = {
+      ...event,
+      metadata: {
+        ...(event as any).metadata,
+        sessionId: this.sessionId,
+        agentId,
+        phase,
+        timestamp: Date.now(),
+        sequenceNumber: this.streamMetrics.totalEvents,
+      },
+    } as any;
+
+    // Special handling for text events - add agent prefix
+    if (event.type === "text") {
+      return {
+        ...enriched,
+        content: `[${agentId}]: ${event.content}`,
+      };
+    }
+
+    return enriched;
+  }
+
+  // Stream session-level events
+  private streamSessionEvent(eventType: string, data: unknown): void {
+    this.baseStreamEmitter?.emit({
+      type: "custom",
+      eventType: `session.${eventType}`,
+      data,
+    });
   }
 }

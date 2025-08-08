@@ -108,6 +108,7 @@ Deno.test({
     const invokeResult = await agent.invoke({
       message: userMessage,
       streamId: "test-simple-math",
+      type: "user",
     });
 
     console.log("Response received from AI SDK");
@@ -185,6 +186,7 @@ Deno.test({
       {
         message: userMessage,
         streamId: "test-multi-step",
+        type: "user",
       },
       (data: string) => {
         streamedContent.push(data);
@@ -219,14 +221,17 @@ Deno.test({
 
     // Check that the response shows the work
     const toolCallArgsStr = JSON.stringify(toolCall.args);
+    const reasoningStr = typeof result.reasoning === "string"
+      ? result.reasoning
+      : JSON.stringify(result.reasoning);
     const hasStepByStep = toolCallArgsStr.toLowerCase().includes("step") ||
-      result.reasoning.toLowerCase().includes("step");
+      reasoningStr.toLowerCase().includes("step");
     assertEquals(hasStepByStep, true, "Should show step-by-step work");
 
     // Verify intermediate calculations are shown
     const hasIntermediateCalcs =
       (toolCallArgsStr.includes("50") || toolCallArgsStr.includes("75")) ||
-      (result.reasoning.includes("50") || result.reasoning.includes("75"));
+      (reasoningStr.includes("50") || reasoningStr.includes("75"));
     assertEquals(hasIntermediateCalcs, true, "Should show intermediate calculations");
 
     // Check streaming worked
@@ -242,6 +247,6 @@ Deno.test({
     assertEquals(hasFinalAnswer, true, "Should have streamed content related to the answer");
 
     console.log("Test passed!");
-    console.log(`Final answer: 25 found in response: ${result.reasoning.includes("25")}`);
+    console.log(`Final answer: 25 found in response: ${reasoningStr.includes("25")}`);
   },
 });

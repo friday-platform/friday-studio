@@ -7,73 +7,24 @@
  */
 
 import { z } from "zod/v4";
-import { AllowDenyFilterSchema, DurationSchema, WorkspaceTimeoutConfigSchema } from "./base.ts";
+import { WorkspaceTimeoutConfigSchema } from "./base.ts";
+import {
+  MCPServerConfigSchema,
+  type MCPServerConfig,
+  MCPTransportConfigSchema,
+  type MCPTransportConfig,
+  MCPAuthConfigSchema,
+  type MCPAuthConfig,
+  MCPServerToolFilterSchema,
+  type MCPServerToolFilter,
+} from "@atlas/agent-sdk";
 
 // ==============================================================================
 // PROTOCOL MCP - External tool integration (agents calling MCP servers)
 // ==============================================================================
 
-/**
- * MCP transport configuration
- */
-const MCPTransportStdioSchema = z.strictObject({
-  type: z.literal("stdio"),
-  command: z.string(),
-  args: z.array(z.string()).optional(),
-});
-
-const MCPTransportHTTPSchema = z.strictObject({
-  type: z.literal("http"),
-  url: z.url(),
-});
-
-const MCPTransportSSESchema = z.strictObject({
-  type: z.literal("sse"),
-  url: z.url(),
-});
-
-export const MCPTransportConfigSchema = z.discriminatedUnion("type", [
-  MCPTransportStdioSchema,
-  MCPTransportHTTPSchema,
-  MCPTransportSSESchema,
-]);
-export type MCPTransportConfig = z.infer<typeof MCPTransportConfigSchema>;
-
-/**
- * MCP authentication configuration
- */
-export const MCPAuthConfigSchema = z.strictObject({
-  type: z.enum(["bearer", "api_key", "basic"]),
-  header: z.string().optional().describe("Header name for the token"),
-  token_env: z.string().optional().describe("Environment variable containing the token"),
-  username_env: z.string().optional().describe("For basic auth"),
-  password_env: z.string().optional().describe("For basic auth"),
-});
-export type MCPAuthConfig = z.infer<typeof MCPAuthConfigSchema>;
-
-/**
- * Tool filter for MCP servers - which tools to allow/deny
- */
-export const MCPServerToolFilterSchema = AllowDenyFilterSchema.describe(
-  "Filter which tools to allow or deny from this MCP server",
-);
-export type MCPServerToolFilter = z.infer<typeof MCPServerToolFilterSchema>;
-
-/**
- * Individual MCP server configuration
- */
-export const MCPServerConfigSchema = z.strictObject({
-  transport: MCPTransportConfigSchema,
-  client_config: z.strictObject({
-    timeout: WorkspaceTimeoutConfigSchema.optional(),
-  }).optional(),
-  auth: MCPAuthConfigSchema.optional(),
-  tools: MCPServerToolFilterSchema.optional(),
-  env: z.record(z.string(), z.string()).optional().describe(
-    "Environment variables for the server process",
-  ),
-});
-export type MCPServerConfig = z.infer<typeof MCPServerConfigSchema>;
+// Note: Core MCP types (MCPTransportConfig, MCPAuthConfig, MCPServerToolFilter) 
+// are imported from @atlas/agent-sdk above
 
 /**
  * MCP client configuration for calling external MCP servers
@@ -153,3 +104,15 @@ export const AtlasToolsConfigSchema = ToolsConfigSchema.extend({
   }).optional(),
 });
 export type AtlasToolsConfig = z.infer<typeof AtlasToolsConfigSchema>;
+
+// Re-export MCP types from agent-sdk for backward compatibility
+export {
+  MCPServerConfig,
+  MCPServerConfigSchema,
+  MCPTransportConfig,
+  MCPTransportConfigSchema,
+  MCPAuthConfig,
+  MCPAuthConfigSchema,
+  MCPServerToolFilter,
+  MCPServerToolFilterSchema,
+};
