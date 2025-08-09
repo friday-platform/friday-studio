@@ -363,7 +363,16 @@ async function performUpdate(params: {
     const currentBinaryPath = await getCurrentBinaryPath();
     const isUpdatingSelf = currentBinaryPath === permissionCheck.binaryPath;
 
-    await replaceBinary(extractedBinaryPath, permissionCheck);
+    // On Windows, if we are updating the running binary itself, we must stage
+    // a self-replacement using a detached batch script to avoid file-in-use errors
+    const isWindows = Deno.build.os === "windows";
+    const isSelfUpdatingWindows = isWindows && isUpdatingSelf;
+
+    if (isSelfUpdatingWindows) {
+      await windowsSelfReplace(extractedBinaryPath, permissionCheck.binaryPath);
+    } else {
+      await replaceBinary(extractedBinaryPath, permissionCheck);
+    }
 
     if (!quiet) {
       successOutput("Update installed");
@@ -387,7 +396,7 @@ async function performUpdate(params: {
     // Post-installation verification - skip when self-updating on macOS
     // When the binary updates itself, macOS applies security attributes that cause
     // the first run to fail, but subsequent runs work fine
-    if (!isUpdatingSelf || Deno.build.os !== "darwin") {
+    if (!isSelfUpdatingWindows && (!isUpdatingSelf || Deno.build.os !== "darwin")) {
       if (!quiet) {
         infoOutput("Verifying installation...");
       }
@@ -401,7 +410,18 @@ async function performUpdate(params: {
       }
     }
 
-    // Always start the service after update
+    // Always start the service after update (Windows: ensure service is installed)
+    // If we scheduled a Windows self-replacement, the batch script will start the service
+    if (isSelfUpdatingWindows) {
+      if (!quiet) {
+        infoOutput("Finishing update in background. Service will restart shortly...");
+      }
+      return {
+        success: true,
+        fromVersion: currentVersion,
+        toVersion: targetVersion,
+      };
+    }
     if (!quiet) {
       infoOutput("Starting Atlas service...");
     }
@@ -424,6 +444,18 @@ async function performUpdate(params: {
         await new Promise((resolve) => setTimeout(resolve, 2000));
       } else {
         // For other platforms, use the regular service start
+        // Windows: proactively (re)install service to ensure Startup entry exists after binary swap
+        if (platform.platform === "windows") {
+          try {
+            const installCmd = new Deno.Command("atlas", {
+              args: ["service", "install", "--force", "--port", "8080"],
+            });
+            await installCmd.output();
+          } catch {
+            // ignore install failure, attempt start anyway
+          }
+        }
+
         const startCmd = new Deno.Command("atlas", {
           args: ["service", "start"],
         });
@@ -1131,6 +1163,49 @@ async function replaceBinary(
   }
 }
 
+// Windows self-replacement: stage a detached batch that waits for this process to exit,
+// copies the new binary over the running one, starts the service, and cleans up.
+async function windowsSelfReplace(tempBinaryPath: string, targetBinaryPath: string): Promise<void> {
+  // Create a temporary directory to hold scripts
+  const tempDir = await Deno.makeTempDir();
+  const updaterBat = join(tempDir, "atlas-self-update.bat");
+
+  // Escape paths for cmd
+  const esc = (p: string) => p.replaceAll("/", "\\");
+  const newBin = esc(tempBinaryPath);
+  const targetBin = esc(targetBinaryPath);
+
+  const batContent = [
+    "@echo off",
+    "setlocal enableextensions",
+    ":waitloop",
+    // Try to rename the target; if locked, wait and retry
+    `rename "${targetBin}" "atlas.exe.old" >NUL 2>&1`,
+    "if %ERRORLEVEL% NEQ 0 (",
+    "  timeout /t 1 >NUL",
+    "  goto waitloop",
+    ")",
+    // Move new binary into place
+    `copy /Y "${newBin}" "${targetBin}" >NUL`,
+    // Start service to restore background daemon
+    `"${targetBin}" service install --force --port 8080 >NUL 2>&1`,
+    `"${targetBin}" service start >NUL 2>&1`,
+    // Cleanup old binary and temp files
+    `del /F /Q "${esc(targetBinaryPath)}.old" >NUL 2>&1`,
+    `del /F /Q "%~f0" >NUL 2>&1`,
+  ].join("\r\n");
+
+  await Deno.writeTextFile(updaterBat, batContent);
+
+  // Launch the batch detached
+  new Deno.Command("cmd.exe", {
+    args: ["/C", updaterBat],
+    stdout: "null",
+    stderr: "null",
+    stdin: "null",
+  }).spawn();
+}
+
 function logUpdateEvent(event: {
   from_version: string;
   to_version: string;
@@ -1236,19 +1311,46 @@ async function checkAnyAtlasProcesses(): Promise<boolean> {
 
 async function killAllAtlasProcesses(platform: string, quiet: boolean): Promise<void> {
   if (platform === "windows") {
-    // On Windows, use taskkill
+    // On Windows, enumerate atlas.exe PIDs and kill each, excluding the current process
     try {
-      const result = await new Deno.Command("taskkill", {
-        args: ["/F", "/IM", "atlas.exe"],
+      const currentPid = Deno.pid.toString();
+      const list = await new Deno.Command("tasklist", {
+        args: ["/FI", "IMAGENAME eq atlas.exe", "/FO", "CSV", "/NH"],
+        stdout: "piped",
+        stderr: "piped",
       }).output();
-      if (!result.success && !quiet) {
-        const stderr = new TextDecoder().decode(result.stderr);
-        if (!stderr.includes("not found")) {
-          warningOutput(`Failed to kill atlas processes: ${stderr}`);
+
+      if (!list.success) return;
+      const output = new TextDecoder().decode(list.stdout);
+      const pids: string[] = [];
+      for (const line of output.split(/\r?\n/)) {
+        if (!line.includes("atlas.exe")) continue;
+        const parts = line.split(",");
+        if (parts.length >= 2) {
+          const pid = parts[1].replace(/"/g, "").trim();
+          if (pid && pid !== currentPid) pids.push(pid);
+        }
+      }
+
+      for (const pid of pids) {
+        try {
+          const res = await new Deno.Command("taskkill", {
+            args: ["/PID", pid, "/F"],
+            stdout: "piped",
+            stderr: "piped",
+          }).output();
+          if (!res.success && !quiet) {
+            const stderr = new TextDecoder().decode(res.stderr);
+            if (!stderr.includes("not found") && !stderr.includes("No such process")) {
+              warningOutput(`Failed to kill atlas PID ${pid}: ${stderr}`);
+            }
+          }
+        } catch {
+          // ignore individual failures
         }
       }
     } catch {
-      // taskkill not available or failed
+      // Unable to enumerate/kill processes
     }
   } else {
     // On Unix-like systems, use pkill or kill
