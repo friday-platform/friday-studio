@@ -658,22 +658,34 @@ ipcMain.handle("manage-atlas-service", async (event, action = "start") => {
             // No processes to kill
           }
 
-          // Create Atlas daemon starter batch file
-          const atlasStarterPath = path.join(
-            userProfile,
-            "AppData",
-            "Local",
-            "Atlas",
-            "atlas-daemon.bat",
-          );
-          const daemonStarter = `@echo off
-cd /d "${userProfile}"
-rem Install and start Atlas service
-"${binaryPath}" service install --port 8080
-"${binaryPath}" service start
-exit
-`;
-          fs.writeFileSync(atlasStarterPath, daemonStarter);
+          // Ensure the Windows service is actually installed before scheduling a start
+          try {
+            // Prefer a forced reinstall to keep Startup entry and config in sync
+            execSync(`"${binaryPath}" service install --force --port 8080`, {
+              encoding: "utf8",
+              timeout: 30000,
+              env: envConfig,
+              cwd: os.homedir(),
+              stdio: "ignore",
+            });
+          } catch {
+            // Fallback to non-force if force is not supported
+            try {
+              execSync(`"${binaryPath}" service install --port 8080`, {
+                encoding: "utf8",
+                timeout: 30000,
+                env: envConfig,
+                cwd: os.homedir(),
+                stdio: "ignore",
+              });
+            } catch (installErr) {
+              return {
+                success: false,
+                action,
+                error: `Failed to install Atlas service on Windows: ${installErr.message}`,
+              };
+            }
+          }
 
           // Start daemon using Windows Task Scheduler for background execution
           try {
@@ -734,7 +746,7 @@ exit
               // Task doesn't exist
             }
 
-            // Create the task
+            // Create the task to run service start on logon (service is pre-installed above)
             execSync(
               `schtasks /create /xml "${taskXmlPath}" /tn "AtlasDaemon"`,
               {
@@ -743,7 +755,7 @@ exit
               },
             );
 
-            // Start the task immediately
+            // Start the task immediately (runs: atlas service start)
             execSync('schtasks /run /tn "AtlasDaemon"', {
               encoding: "utf8",
               stdio: "ignore",

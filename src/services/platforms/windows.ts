@@ -12,10 +12,12 @@ import {
 export class WindowsService implements PlatformServiceManager {
   private serviceName: string;
   private paths: ReturnType<typeof getPlatformPaths>;
+  private configPath: string;
 
   constructor() {
     this.serviceName = getDefaultServiceName();
     this.paths = getPlatformPaths();
+    this.configPath = `${this.paths.configDir}\\service.json`;
   }
 
   async install(config: ServiceConfig): Promise<void> {
@@ -24,6 +26,17 @@ export class WindowsService implements PlatformServiceManager {
 
     // Create log directory
     await Deno.mkdir(this.paths.logDir, { recursive: true });
+
+    // Persist configuration for later start/status
+    try {
+      await Deno.mkdir(this.paths.configDir, { recursive: true });
+      await Deno.writeTextFile(
+        this.configPath,
+        JSON.stringify({ port: config.port }, null, 2),
+      );
+    } catch (_err) {
+      // Best effort; start() will fallback to default port
+    }
 
     // For Windows, we'll use the Startup folder approach (no admin required)
     const startupFolder =
@@ -35,7 +48,6 @@ export class WindowsService implements PlatformServiceManager {
 rem Atlas Service Auto-Start
 cd /d "${homeDir}"
 rem Start Atlas service (which manages the daemon in background)
-"${binaryPath}" service install --port ${config.port}
 "${binaryPath}" service start
 exit
 `;
@@ -70,6 +82,13 @@ exit
     } catch {
       // File might not exist
     }
+
+    // Remove stored config
+    try {
+      await Deno.remove(this.configPath);
+    } catch {
+      // ignore
+    }
   }
 
   async start(): Promise<void> {
@@ -83,51 +102,40 @@ exit
       // Continue with start if status check fails
     }
 
-    // Start Atlas daemon in background using Windows-specific approach
+    // Start Atlas daemon in a background windowless process using PowerShell Start-Process
     const binaryPath = getAtlasBinaryPath();
+    const port = await this.getConfiguredPort();
+    const psArgs = [
+      "-NoProfile",
+      "-Command",
+      // Use -WindowStyle Hidden to avoid a visible window
+      `Start-Process -WindowStyle Hidden -FilePath '${
+        binaryPath.replaceAll("'", "''")
+      }' -ArgumentList 'daemon start --port ${port}'`,
+    ];
 
-    // On Windows, we need to use 'start' command to run in background
-    // since --detached flag doesn't work properly
-    const cmd = new Deno.Command("cmd", {
-      args: [
-        "/c",
-        "start",
-        "/B",
-        "",
-        binaryPath,
-        "daemon",
-        "start",
-        "--port",
-        "8080",
-      ],
-      stdout: "piped",
-      stderr: "piped",
-      cwd: Deno.env.get("USERPROFILE") || "C:\\Users\\Default",
-    });
-
-    const result = await cmd.output();
-    if (!result.success) {
-      const error = new TextDecoder().decode(result.stderr);
-      const stdout = new TextDecoder().decode(result.stdout);
-      // If the start command fails, try direct execution as fallback
-      const fallbackCmd = new Deno.Command(binaryPath, {
-        args: ["daemon", "start", "--port", "8080"],
-        stdout: "piped",
-        stderr: "piped",
+    try {
+      const cmd = new Deno.Command("powershell.exe", {
+        args: psArgs,
+        stdout: "null",
+        stderr: "null",
         stdin: "null",
       });
+      cmd.spawn();
+    } catch (error) {
+      throw new Error(
+        `Failed to launch Atlas daemon in background: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
-      // Spawn and detach
-      fallbackCmd.spawn();
-
-      // Give it a moment to start
+    // Wait up to ~10s for the daemon to report running
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Check if it started
-      const status = await this.getStatus();
-      if (!status.running) {
-        throw new Error(`Failed to start Atlas daemon: ${error} ${stdout}`);
-      }
+      const s = await this.getStatus();
+      if (s.running) break;
     }
   }
 
@@ -186,54 +194,73 @@ exit
   }
 
   async getStatus(): Promise<ServiceStatus> {
-    // Check if Atlas daemon is running by checking process
+    // Determine daemon status by checking the listening port and mapping to PID
     let running = false;
     let pid: number | undefined;
     let port: number | undefined;
 
-    // Get PID using Windows tasklist
+    const configuredPort = await this.getConfiguredPort();
     try {
-      const pidCmd = new Deno.Command("tasklist", {
-        args: ["/FI", "IMAGENAME eq atlas.exe", "/FO", "CSV", "/NH"],
+      // netstat -ano shows PID for listening sockets on Windows
+      const netstatCmd = new Deno.Command("netstat", {
+        args: ["-ano"],
         stdout: "piped",
         stderr: "piped",
       });
-      const pidResult = await pidCmd.output();
-      if (pidResult.success) {
-        const pidOutput = new TextDecoder().decode(pidResult.stdout).trim();
-        // Check if the output indicates no tasks found
-        if (pidOutput.includes("INFO: No tasks are running") || pidOutput === "") {
-          // No atlas.exe process found
-          running = false;
-        } else {
-          // Try to parse CSV output for atlas.exe
-          const csvMatch = pidOutput.match(/"atlas\.exe","(\d+)"/);
-          if (csvMatch && csvMatch[1]) {
-            pid = parseInt(csvMatch[1], 10);
-            running = true;
+      const netstatResult = await netstatCmd.output();
+      if (netstatResult.success) {
+        const output = new TextDecoder().decode(netstatResult.stdout);
+        // Match lines like: TCP    0.0.0.0:8080         0.0.0.0:0              LISTENING       1234
+        const line = output.split("\n").find((l) =>
+          l.includes(`:${configuredPort}`) && l.toUpperCase().includes("LISTENING")
+        );
+        if (line) {
+          const parts = line.trim().split(/\s+/);
+          const maybePid = parts[parts.length - 1];
+          const parsedPid = Number.parseInt(maybePid, 10);
+          if (Number.isFinite(parsedPid)) {
+            // Verify the PID belongs to atlas.exe
+            try {
+              const tlCmd = new Deno.Command("tasklist", {
+                args: ["/FI", `PID eq ${parsedPid}`, "/FO", "CSV", "/NH"],
+                stdout: "piped",
+                stderr: "piped",
+              });
+              const tlRes = await tlCmd.output();
+              if (tlRes.success) {
+                const tlOut = new TextDecoder().decode(tlRes.stdout).trim();
+                if (tlOut && tlOut.startsWith('"atlas.exe"')) {
+                  pid = parsedPid;
+                  running = true;
+                  port = configuredPort;
+                }
+              }
+            } catch {
+              // If tasklist check fails, still consider the port as running
+              pid = parsedPid;
+              running = true;
+              port = configuredPort;
+            }
           }
         }
       }
     } catch {
-      // PID detection failed, daemon is not running
-    }
-
-    if (running) {
-      // Try to detect port from Atlas daemon status
+      // If netstat fails, fall back to simple process presence (best-effort)
       try {
-        const atlasCmd = new Deno.Command(getAtlasBinaryPath(), {
-          args: ["daemon", "status", "--json"],
+        const pidCmd = new Deno.Command("tasklist", {
+          args: ["/FI", "IMAGENAME eq atlas.exe", "/FO", "CSV", "/NH"],
           stdout: "piped",
           stderr: "piped",
         });
-        const atlasResult = await atlasCmd.output();
-        if (atlasResult.success) {
-          const statusData = JSON.parse(new TextDecoder().decode(atlasResult.stdout));
-          port = statusData.port || 8080;
+        const pidResult = await pidCmd.output();
+        if (pidResult.success) {
+          const out = new TextDecoder().decode(pidResult.stdout).trim();
+          if (!(out.includes("INFO:") || out === "")) {
+            running = true; // unknown PID/port
+          }
         }
       } catch {
-        // Default port if detection fails
-        port = 8080;
+        // ignore
       }
     }
 
@@ -280,6 +307,19 @@ exit
     } catch {
       return false;
     }
+  }
+
+  private async getConfiguredPort(): Promise<number> {
+    try {
+      const text = await Deno.readTextFile(this.configPath);
+      const data = JSON.parse(text) as { port?: number };
+      if (typeof data.port === "number" && data.port > 0 && data.port < 65536) {
+        return data.port;
+      }
+    } catch {
+      // ignore
+    }
+    return 8080;
   }
 
   private createServiceWrapper(
