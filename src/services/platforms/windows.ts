@@ -163,32 +163,60 @@ exit
       // If graceful shutdown fails, continue to force kill
     }
 
-    // Force kill Atlas processes if still running or if force flag is set
+    // Force kill daemon-only atlas processes if still running or if force flag is set
+    // Avoid killing the updater or CLI processes running other commands
     if (force || (await this.getStatus()).running) {
       try {
-        const killCmd = new Deno.Command("taskkill", {
-          args: ["/F", "/IM", "atlas.exe"],
+        // Use PowerShell to enumerate atlas.exe processes with their command lines
+        const listCmd = new Deno.Command("powershell.exe", {
+          args: [
+            "-NoProfile",
+            "-Command",
+            // Convert to JSON for reliable parsing; handle zero/one/many results
+            "($procs = Get-CimInstance Win32_Process -Filter \"name='atlas.exe'\") | Select-Object ProcessId, CommandLine | ConvertTo-Json -Compress",
+          ],
           stdout: "piped",
           stderr: "piped",
         });
-        const result = await killCmd.output();
-        // Check if the kill was successful
-        if (!result.success) {
-          const error = new TextDecoder().decode(result.stderr);
-          // Only throw if it's not a "process not found" error
-          if (!error.includes("not found") && !error.includes("No tasks")) {
-            throw new Error(`Failed to stop process: ${error}`);
+        const listRes = await listCmd.output();
+
+        if (listRes.success) {
+          const json = new TextDecoder().decode(listRes.stdout).trim();
+          if (json) {
+            let entries: Array<{ ProcessId: number; CommandLine?: string }>; // may be array or single object
+            try {
+              const parsed = JSON.parse(json);
+              entries = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+              entries = [];
+            }
+
+            const currentPid = Deno.pid;
+            const daemonPids = entries
+              .filter((e) => typeof e.ProcessId === "number")
+              .filter((e) =>
+                (e.CommandLine || "").toLowerCase().includes("daemon") &&
+                (e.CommandLine || "").toLowerCase().includes("start")
+              )
+              .map((e) => e.ProcessId)
+              .filter((pid) => pid !== currentPid);
+
+            for (const pid of daemonPids) {
+              try {
+                const kill = new Deno.Command("taskkill", {
+                  args: ["/PID", String(pid), "/F"],
+                  stdout: "piped",
+                  stderr: "piped",
+                });
+                await kill.output();
+              } catch {
+                // ignore individual failures
+              }
+            }
           }
         }
-      } catch (error) {
-        // Re-throw if it's not a "process not found" error
-        if (
-          error instanceof Error &&
-          !error.message.includes("not found") &&
-          !error.message.includes("No tasks")
-        ) {
-          throw error;
-        }
+      } catch {
+        // As a last resort, do not blanket-kill by image name to avoid terminating the updater
       }
     }
   }
