@@ -1,7 +1,7 @@
 import { logger } from "@atlas/logger";
 import { getAtlasClient } from "@atlas/client";
 import { ensureDir, exists } from "@std/fs";
-import { join } from "@std/path";
+import { dirname, join } from "@std/path";
 import { getAtlasVersion } from "../../utils/version.ts";
 import { checkForUpdate } from "../../utils/version-checker.ts";
 import { errorOutput, infoOutput, successOutput, warningOutput } from "../utils/output.ts";
@@ -19,6 +19,7 @@ interface UpdateResult {
   fromVersion: string;
   toVersion: string;
   error?: string;
+  isWindowsSelfUpdate?: boolean;
 }
 
 export const command = "update";
@@ -165,6 +166,11 @@ export const handler = async (options: UpdateOptions) => {
       if (options.channel && options.channel !== getCurrentChannel(currentVersion)) {
         await saveChannelPreference(options.channel);
         infoOutput(`Switched to ${options.channel} channel`);
+      }
+
+      // On Windows self-update, we must exit immediately to allow the batch script to replace the binary
+      if (result.isWindowsSelfUpdate) {
+        Deno.exit(0);
       }
     } else {
       errorOutput(`Update failed: ${result.error}`);
@@ -361,7 +367,25 @@ async function performUpdate(params: {
 
     // If we're running from the binary that's being updated, we need to handle this specially
     const currentBinaryPath = await getCurrentBinaryPath();
-    const isUpdatingSelf = currentBinaryPath === permissionCheck.binaryPath;
+
+    // Normalize paths for comparison (Windows paths can have different cases and separators)
+    const normalizePath = (p: string | null | undefined): string => {
+      if (!p) return "";
+      // On Windows, normalize to lowercase and forward slashes for comparison
+      if (Deno.build.os === "windows") {
+        return p.toLowerCase().replace(/\\/g, "/");
+      }
+      return p;
+    };
+
+    const normalizedCurrent = normalizePath(currentBinaryPath);
+    const normalizedTarget = normalizePath(
+      permissionCheck.actualBinaryPath || permissionCheck.binaryPath,
+    );
+
+    const isUpdatingSelf = normalizedCurrent !== "" &&
+      (normalizedCurrent === normalizedTarget ||
+        normalizedCurrent === normalizePath(permissionCheck.binaryPath));
 
     // On Windows, if we are updating the running binary itself, we must stage
     // a self-replacement using a detached batch script to avoid file-in-use errors
@@ -414,12 +438,15 @@ async function performUpdate(params: {
     // If we scheduled a Windows self-replacement, the batch script will start the service
     if (isSelfUpdatingWindows) {
       if (!quiet) {
-        infoOutput("Finishing update in background. Service will restart shortly...");
+        infoOutput("Finishing update in background...");
+        warningOutput("\n⚠️  IMPORTANT: After the update completes, manually restart the service:");
+        infoOutput("   atlas.exe service start --wait\n");
       }
       return {
         success: true,
         fromVersion: currentVersion,
         toVersion: targetVersion,
+        isWindowsSelfUpdate: true,
       };
     }
     if (!quiet) {
@@ -519,6 +546,7 @@ async function performUpdate(params: {
       success: true,
       fromVersion: currentVersion,
       toVersion: targetVersion,
+      isWindowsSelfUpdate: false,
     };
   } catch (error) {
     return {
@@ -573,19 +601,30 @@ async function checkBinaryWritePermission(): Promise<{
   isSymlink?: boolean;
   owner?: string;
 }> {
-  // Find current binary location using platform-specific command
-  const findCmd = Deno.build.os === "windows" ? "where" : "which";
-  const result = await new Deno.Command(findCmd, {
-    args: ["atlas"],
-  }).output();
+  // First, check if we're running from a compiled binary
+  const currentExecPath = await getCurrentBinaryPath();
 
-  if (!result.success) {
-    throw new Error("Atlas binary not found in PATH");
+  let binaryPath: string;
+
+  if (currentExecPath) {
+    // If we're running from a compiled binary, use that path directly
+    // This ensures we update the actual running binary
+    binaryPath = currentExecPath;
+  } else {
+    // Otherwise, find binary location using platform-specific command
+    const findCmd = Deno.build.os === "windows" ? "where" : "which";
+    const result = await new Deno.Command(findCmd, {
+      args: ["atlas"],
+    }).output();
+
+    if (!result.success) {
+      throw new Error("Atlas binary not found in PATH");
+    }
+
+    const output = new TextDecoder().decode(result.stdout).trim();
+    // On Windows, 'where' might return multiple paths, take the first one
+    binaryPath = output.split(/\r?\n/)[0];
   }
-
-  const output = new TextDecoder().decode(result.stdout).trim();
-  // On Windows, 'where' might return multiple paths, take the first one
-  const binaryPath = output.split(/\r?\n/)[0];
 
   // Check if it's a symlink and resolve to actual path
   let actualBinaryPath = binaryPath;
@@ -1178,32 +1217,75 @@ async function windowsSelfReplace(tempBinaryPath: string, targetBinaryPath: stri
   const batContent = [
     "@echo off",
     "setlocal enableextensions",
+    // Wait a bit for the parent process to exit
+    "timeout /t 3 /nobreak > nul 2>&1",
     ":waitloop",
-    // Try to rename the target; if locked, wait and retry
-    `rename "${targetBin}" "atlas.exe.old" >NUL 2>&1`,
+    // Try to move the target; if locked, wait and retry
+    `move /Y "${targetBin}" "${targetBin}.old" > nul 2>&1`,
     "if %ERRORLEVEL% NEQ 0 (",
-    "  timeout /t 1 >NUL",
+    "  timeout /t 1 /nobreak > nul 2>&1",
     "  goto waitloop",
     ")",
-    // Move new binary into place
-    `copy /Y "${newBin}" "${targetBin}" >NUL`,
-    // Start service to restore background daemon
-    `"${targetBin}" service install --force --port 8080 >NUL 2>&1`,
-    `"${targetBin}" service start >NUL 2>&1`,
+    // Now copy new binary into place
+    `copy /Y "${newBin}" "${targetBin}" > nul 2>&1`,
+    // Ensure the binary is copied successfully
+    "if %ERRORLEVEL% NEQ 0 (",
+    "  echo Failed to copy new binary >> %TEMP%\\atlas-update-error.log",
+    `  move /Y "${targetBin}.old" "${targetBin}" > nul 2>&1`,
+    "  exit /b 1",
+    ")",
+    // Verify the new binary works
+    `"${targetBin}" --version > nul 2>&1`,
+    "if %ERRORLEVEL% NEQ 0 (",
+    "  echo New binary failed version check >> %TEMP%\\atlas-update-error.log",
+    `  move /Y "${targetBin}.old" "${targetBin}" > nul 2>&1`,
+    "  exit /b 1",
+    ")",
+    // Wait a moment for file operations to complete
+    "timeout /t 3 /nobreak > nul 2>&1",
+    // NOTE: Service restart on Windows is not implemented due to fundamental limitations.
+    // Batch scripts spawned from terminating processes run in a restricted context that
+    // cannot successfully launch new services or daemons. Multiple approaches were tested
+    // and all failed: direct batch commands, Task Scheduler, PowerShell, WMI, dual scripts,
+    // and Windows Script Host. Users must manually restart the service or use an external
+    // monitoring solution. See docs/WINDOWS_UPDATE_TESTING.md for workarounds.
+    // Show notification to user about manual restart requirement
+    `echo. >> CON`,
+    `echo ======================================== >> CON`,
+    `echo  Atlas Update Complete! >> CON`,
+    `echo ======================================== >> CON`,
+    `echo. >> CON`,
+    `echo  IMPORTANT: Please manually restart the service: >> CON`,
+    `echo  ^> atlas.exe service start --wait >> CON`,
+    `echo. >> CON`,
+    `echo ======================================== >> CON`,
+    "timeout /t 5 /nobreak > nul 2>&1",
     // Cleanup old binary and temp files
-    `del /F /Q "${esc(targetBinaryPath)}.old" >NUL 2>&1`,
-    `del /F /Q "%~f0" >NUL 2>&1`,
+    `del /F /Q "${targetBin}.old" > nul 2>&1`,
+    `del /F /Q "${newBin}" > nul 2>&1`,
+    // Self-delete this batch script
+    `(goto) 2>nul & del "%~f0"`,
   ].join("\r\n");
 
   await Deno.writeTextFile(updaterBat, batContent);
 
-  // Launch the batch detached
-  new Deno.Command("cmd.exe", {
-    args: ["/C", updaterBat],
+  // Launch the batch script with START to ensure it runs detached
+  // Use cmd.exe with START /B to run the batch script in background
+  const startCmd = new Deno.Command("cmd.exe", {
+    args: ["/c", "start", "/b", "", updaterBat],
     stdout: "null",
     stderr: "null",
     stdin: "null",
-  }).spawn();
+    windowsRawArguments: false,
+  });
+
+  // Spawn the batch script - it will wait for this process to exit
+  const child = startCmd.spawn();
+
+  // Give the batch script a moment to start before we exit
+  // This prevents a race condition where the process might exit before
+  // the batch script is ready to detect it
+  await new Promise((resolve) => setTimeout(resolve, 500));
 }
 
 function logUpdateEvent(event: {
