@@ -1,0 +1,53 @@
+name: atlas-cd
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+
+env:
+  GAR_LOCATION: us-west2
+  PROJECT_NAME: ${{ secrets.GCP_PROJECT }}
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REPOSITORY: atlas
+
+jobs:
+  build-publish:
+    name: Build and Publish
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        id: build-image
+        run: |-
+          docker build \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" \
+            --tag "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:latest" \
+            --build-arg GITHUB_SHA="$GITHUB_SHA" \
+            --build-arg GITHUB_REF="$GITHUB_REF" \
+          .
+          echo "image=$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY:$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - id: "auth"
+        name: "Authenticate to Google Cloud"
+        uses: "google-github-actions/auth@v2"
+        with:
+          project_id: ${{ secrets.GCP_PROJECT }}
+          workload_identity_provider: "projects/${{ env.PROJECT_ID }}/locations/global/workloadIdentityPools/github/providers/atlas-github"
+
+      - name: Docker configuration
+        run: |-
+          echo ${{ steps.auth.outputs.auth_token }} | docker login -u oauth2accesstoken --password-stdin https://${{ env.GAR_LOCATION }}-docker.pkg.dev
+
+      - name: Push image
+        run: |-
+          docker push -a "$GAR_LOCATION-docker.pkg.dev/$PROJECT_NAME/$REPOSITORY/$REPOSITORY"
