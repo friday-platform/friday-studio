@@ -22,11 +22,14 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
         ),
       },
     },
-    async ({ workspaceId, signalName, payload }) => {
+    ({ workspaceId, signalName, payload }) => {
       ctx.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
 
+      /**
+       * TEMPORARILY DISABLED WHILE TRACKING DOWN HANGING PROMISE.
+       */
       try {
-        const response = await fetch(
+        fetch(
           `${ctx.daemonUrl}/api/workspaces/${workspaceId}/signals/${signalName}`,
           {
             method: "POST",
@@ -37,21 +40,21 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
           },
         );
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(
-            `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
-          );
-        }
+        // if (!response.ok) {
+        //   const errorData = await response.json().catch(() => ({}));
+        //   throw new Error(
+        //     `Daemon API error: ${response.status} - ${errorData.error || response.statusText}`,
+        //   );
+        // }
 
-        const result = await response.json();
+        // const result = await response.json();
 
         return createSuccessResponse({
           success: true,
           workspaceId,
           signalName,
-          status: result.status,
-          message: result.message,
+          // status: result.status,
+          // message: result.message,
           source: "daemon_api",
         });
       } catch (error) {
