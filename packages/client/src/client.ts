@@ -6,7 +6,7 @@
 import { z } from "zod/v4";
 import { AtlasApiError } from "./errors.ts";
 import { DEFAULT_TIMEOUT } from "./constants.ts";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import {
   AgentInfoSchema,
   CancelSessionResponseSchema,

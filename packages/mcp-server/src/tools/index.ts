@@ -52,6 +52,9 @@ import { registerBashTool } from "./system/bash.ts";
 // Import notification tools
 import { registerEmailNotificationTool } from "./notifications/email.ts";
 
+// Import platform tools
+import { registerVersionTool } from "./platform/version.ts";
+
 /**
  * Register all tools with the MCP server
  */
@@ -101,6 +104,8 @@ export function registerTools(server: McpServer, context: ToolContext): void {
 
   // Notification tools
   registerEmailNotificationTool(server, context);
+
+  registerVersionTool(server, context);
 
   context.logger.info("Registered all tools with MCP server");
 }

@@ -1,12 +1,7 @@
 import { daemonFactory } from "../../src/factory.ts";
 import { describeRoute, resolver, validator } from "hono-openapi";
 import { InMemoryTodoStorage } from "../../../../src/core/daemon-capabilities.ts";
-import {
-  errorResponseSchema,
-  getTodosQuerySchema,
-  streamIdParamSchema,
-  todoListResponseSchema,
-} from "./schemas.ts";
+import { errorResponseSchema, streamIdParamSchema, todoListResponseSchema } from "./schemas.ts";
 
 const getTodos = daemonFactory.createApp();
 
@@ -15,7 +10,7 @@ getTodos.get(
   describeRoute({
     tags: ["Todo Storage"],
     summary: "Retrieve todo list",
-    description: "Get the todo list for the given stream ID with optional filtering",
+    description: "Get the todo list for the given stream ID",
     responses: {
       200: {
         description: "Todo list retrieved successfully",
@@ -44,14 +39,12 @@ getTodos.get(
     },
   }),
   validator("param", streamIdParamSchema),
-  validator("query", getTodosQuerySchema),
   (c) => {
     try {
       const { streamId } = c.req.valid("param");
-      const { status, priority, limit } = c.req.valid("query");
 
       const storage = InMemoryTodoStorage.getInstance();
-      const todos = storage.getTodos(streamId, { status, priority, limit });
+      const todos = storage.getTodos(streamId);
 
       return c.json({
         success: true,

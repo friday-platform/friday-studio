@@ -61,60 +61,6 @@ Deno.test("Explicit StreamId Management", async (t) => {
     await orchestrator.shutdown();
   });
 
-  await t.step("should handle automatic streamId generation for orchestrator", async () => {
-    const config = {
-      agentsServerUrl: "http://localhost:8081/mcp",
-      executionTimeout: 10000,
-    };
-    const logger = createLogger({ level: "error" });
-    const orchestrator = new AgentOrchestrator(config, logger);
-    orchestrator.initialize();
-
-    // When orchestrator has onStreamEvent but no streamId, it generates one
-    const onStreamEvent = spy();
-    const context: AgentExecutionContext = {
-      sessionId: "session-1",
-      workspaceId: "workspace-1",
-      onStreamEvent, // Has callback but no streamId
-    };
-
-    // Mock a simple MCP request/response
-    let capturedToolCallArgs: any;
-    const originalCallTool = orchestrator["getOrCreateSessionClient"];
-    // @ts-ignore - mocking private method
-    orchestrator["getOrCreateSessionClient"] = async (sessionId: string) => {
-      return {
-        client: {
-          callTool: async (args: any) => {
-            capturedToolCallArgs = args;
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  type: "completed",
-                  result: { success: true },
-                }),
-              }],
-            };
-          },
-        },
-        transport: {},
-        lastActivity: Date.now(),
-      };
-    };
-
-    await orchestrator.executeAgent("mcp-agent", "task", context);
-
-    // Verify streamId was generated
-    assertExists(capturedToolCallArgs);
-    assertExists(capturedToolCallArgs.arguments._sessionContext.streamId);
-    // Generated streamId should match pattern
-    const generatedStreamId = capturedToolCallArgs.arguments._sessionContext.streamId;
-    assertEquals(generatedStreamId.startsWith("stream-"), true);
-
-    await orchestrator.shutdown();
-  });
-
   await t.step("should respect explicit streamId over generated one", async () => {
     const config = {
       agentsServerUrl: "http://localhost:8081/mcp",

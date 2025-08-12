@@ -12,8 +12,6 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Logger } from "@atlas/logger";
-// @deprecated Import for backwards compatibility with system agents. Remove when migrated to SDK.
-import { SystemAgentRegistry } from "../../../../src/core/system-agent-registry.ts";
 import {
   type AgentContext,
   ApprovalRequestSchema,
@@ -25,7 +23,9 @@ import { StreamContentNotificationSchema, StreamEvent } from "../types/streaming
 import { z } from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
+import type { AgentToolParams } from "../agent-server/types.ts";
 
+// FIXME: this is wrong.
 const MCPToolResultSchema = z.object({
   content: z.array(
     z.discriminatedUnion("type", [
@@ -77,16 +77,6 @@ interface PendingApproval {
   timestamp: number;
 }
 
-/**
- * @deprecated This interface is for backwards compatibility with system agents.
- * Will be removed once all system agents are migrated to SDK.
- */
-export interface SystemAgentConfig {
-  type: "system";
-  agent: string; // e.g., 'conversation-agent' or 'fact-extractor'
-  config?: Record<string, unknown>;
-}
-
 export interface AgentOrchestratorConfig {
   /** URL of the atlas-agents MCP server */
   agentsServerUrl: string;
@@ -96,18 +86,10 @@ export interface AgentOrchestratorConfig {
   executionTimeout?: number;
   /** Max time to wait for approval in ms */
   approvalTimeout?: number;
-
-  // New fields for MCP access
   /** Global MCP server pool for workspace tools */
   mcpServerPool?: GlobalMCPServerPool;
   /** Daemon URL for fetching workspace config */
   daemonUrl?: string;
-
-  /**
-   * @deprecated System agent configuration for backwards compatibility.
-   * Will be removed once all system agents are migrated to SDK.
-   */
-  systemAgents?: Map<string, SystemAgentConfig> | undefined;
 }
 
 const CompletedAgentResultSchema = z.object({
@@ -135,23 +117,10 @@ const ApprovalDecisionSchema = z.object({
   conditions: z.array(z.string()).optional(),
 });
 
-const AgentMetadataSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  description: z.string(),
-  expertise: z.object({
-    domains: z.array(z.string()),
-    capabilities: z.array(z.string()),
-    examples: z.array(z.string()),
-  }).optional(),
-});
-
 export type CompletedAgentResult = z.infer<typeof CompletedAgentResultSchema>;
 export type AwaitingApprovalResult = z.infer<typeof AwaitingApprovalResultSchema>;
 export type AgentExecutionResult = z.infer<typeof AgentExecutionResultSchema>;
 export type ValidatedApprovalDecision = z.infer<typeof ApprovalDecisionSchema>;
-export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
-export type AgentExpertise = AgentMetadata["expertise"];
 
 /**
  * Orchestrator interface for executing Atlas agents.
@@ -164,7 +133,7 @@ export interface IAgentOrchestrator {
   /** Run an agent with a task */
   executeAgent(
     agentId: string,
-    prompt: string | unknown, // @deprecated - unknown type for backwards compatibility with system agents
+    prompt: string,
     context: AgentExecutionContext,
   ): Promise<AgentResult>;
 
@@ -208,12 +177,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
 
   /**
-   * @deprecated System agents map for backwards compatibility.
-   * Will be removed once all system agents are migrated to SDK.
-   */
-  private systemAgents: Map<string, SystemAgentConfig>;
-
-  /**
    * @param config Connection settings for atlas-agents MCP server
    * @param logger Logger instance for debugging and monitoring
    */
@@ -224,20 +187,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       headers: config.headers || {},
       executionTimeout: config.executionTimeout || 300000, // 5 minutes
       approvalTimeout: config.approvalTimeout || 300000, // 5 minutes
-      systemAgents: config.systemAgents || new Map(), // @deprecated - for backwards compatibility
       // Store new config fields
       mcpServerPool: config.mcpServerPool,
       daemonUrl: config.daemonUrl,
     };
-
-    // @deprecated Initialize system agents map for backwards compatibility
-    this.systemAgents = config.systemAgents || new Map();
-
-    if (this.systemAgents.size > 0) {
-      this.logger.warn("Using deprecated system agent support. Please migrate to SDK agents.", {
-        systemAgentIds: Array.from(this.systemAgents.keys()),
-      });
-    }
 
     // Initialize context builder if we have the required dependencies
     if (config.mcpServerPool && config.daemonUrl) {
@@ -274,19 +227,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       agentId,
       agentName: agent.metadata.displayName,
       expertise: agent.metadata.expertise.domains,
-    });
-  }
-
-  /**
-   * @deprecated Register a system agent for backwards compatibility.
-   * Will be removed once all system agents are migrated to SDK.
-   */
-  registerSystemAgent(agentId: string, config: SystemAgentConfig): void {
-    this.systemAgents.set(agentId, config);
-    this.logger.warn("Registered deprecated system agent", {
-      agentId,
-      systemAgentId: config.agent,
-      message: "Please migrate this agent to SDK format",
     });
   }
 
@@ -354,7 +294,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    */
   async executeAgent(
     agentId: string,
-    prompt: string | unknown, // @deprecated - unknown type for backwards compatibility with system agents
+    prompt: string,
     context: AgentExecutionContext,
   ): Promise<AgentResult> {
     const startTime = Date.now();
@@ -374,27 +314,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
 
     try {
-      // @deprecated Check for system agent first (backwards compatibility)
-      const systemConfig = this.systemAgents.get(agentId);
-      if (systemConfig) {
-        return await this.executeSystemAgent(
-          agentId,
-          systemConfig,
-          prompt,
-          context,
-          startTime,
-          logger,
-        );
-      }
-
       const wrappedAgent = this.wrappedAgents.get(agentId);
       if (wrappedAgent) {
-        // Wrapped agents expect string prompts
-        const promptStr = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
         return await this.executeWrappedAgent(
           wrappedAgent,
           agentId,
-          promptStr,
+          prompt,
           context,
           startTime,
           logger,
@@ -402,24 +327,15 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       }
       const mcpSetup = await this.getOrCreateSessionClient(context.sessionId);
 
-      // MCP agents expect string prompts
-      const promptStr = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
-
       logger.debug("Executing agent via MCP", {
         agentId,
         sessionId: context.sessionId,
-        prompt: promptStr.substring(0, 100) + "...",
+        prompt: prompt,
         hasStreamCallback: !!context.onStreamEvent,
       });
 
-      // Auto-generate stream ID for real-time updates
-      const streamId = context.streamId ||
-        (context.onStreamEvent
-          ? `stream-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-          : undefined);
-
-      const toolCallArgs = {
-        prompt: promptStr,
+      const toolCallArgs: AgentToolParams = {
+        prompt: prompt,
         context: {
           previousResults: context.previousResults,
           additionalInfo: context.additionalContext,
@@ -429,13 +345,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
           sessionId: context.sessionId,
           workspaceId: context.workspaceId,
           userId: context.userId,
-          streamId,
+          streamId: context.streamId,
         },
       };
 
       const toolResult = await mcpSetup.client.callTool(
         { name: agentId, arguments: toolCallArgs },
-        CallToolResultSchema,
       );
 
       const executionResult = this.parseAgentResponse(toolResult);
@@ -469,7 +384,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       return {
         agentId,
-        task: promptStr,
+        task: prompt,
         input: context,
         output,
         duration: Date.now() - startTime,
@@ -488,9 +403,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         throw error;
       }
 
-      // Convert prompt to string for error case
-      const promptStr = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
-
       this.logger.error("Agent execution failed", {
         agentId,
         error,
@@ -499,7 +411,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       return {
         agentId,
-        task: promptStr,
+        task: prompt,
         input: context,
         output: null,
         error: error instanceof Error ? error.message : String(error),
@@ -530,18 +442,20 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     try {
       const mcpSetup = await this.getOrCreateSessionClient(pending.sessionContext.sessionId);
 
+      const resumeArgs: Partial<AgentToolParams> = {
+        _approvalId: approvalId,
+        _approvalDecision: validatedDecision,
+        _sessionContext: {
+          sessionId: pending.sessionContext.sessionId,
+          workspaceId: pending.sessionContext.workspaceId,
+          userId: pending.sessionContext.userId,
+        },
+      };
+
       const toolResult = await mcpSetup.client.callTool(
         {
           name: pending.agentId,
-          arguments: {
-            _approvalId: approvalId,
-            _approvalDecision: validatedDecision,
-            _sessionContext: {
-              sessionId: pending.sessionContext.sessionId,
-              workspaceId: pending.sessionContext.workspaceId,
-              userId: pending.sessionContext.userId,
-            },
-          },
+          arguments: resumeArgs,
         },
         CallToolResultSchema,
       );
@@ -592,80 +506,6 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         agentId: pending.agentId,
         task: "Resume with approval",
         input: decision,
-        output: null,
-        error: error instanceof Error ? error.message : String(error),
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-      };
-    }
-  }
-
-  /**
-   * @deprecated Execute system agents directly for backwards compatibility.
-   * Will be removed once all system agents are migrated to SDK.
-   */
-  private async executeSystemAgent(
-    agentId: string,
-    systemConfig: SystemAgentConfig,
-    prompt: string | unknown, // @deprecated - system agents can receive objects
-    context: AgentExecutionContext,
-    startTime: number,
-    logger: Logger,
-  ): Promise<AgentResult> {
-    try {
-      // @deprecated System agents may receive objects or strings as input
-      const promptPreview = typeof prompt === "string"
-        ? prompt.substring(0, 100) + "..."
-        : JSON.stringify(prompt).substring(0, 100) + "...";
-
-      logger.debug("Executing deprecated system agent", {
-        systemAgentId: systemConfig.agent,
-        instanceId: agentId,
-        prompt: promptPreview,
-      });
-
-      // Create system agent instance from registry
-      const systemAgent = SystemAgentRegistry.createAgent(
-        systemConfig.agent,
-        systemConfig.config || {},
-        agentId, // instance ID
-      );
-
-      // System agents receive input as-is without transformation
-      // The prompt parameter might be an object for system agents
-      const output = await systemAgent.invoke(prompt);
-
-      logger.info("System agent execution completed", {
-        agentId,
-        systemAgentId: systemConfig.agent,
-        duration: Date.now() - startTime,
-      });
-
-      // Convert prompt to string for task field
-      const taskStr = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
-
-      return {
-        agentId,
-        task: taskStr,
-        input: context,
-        output,
-        duration: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-      };
-    } catch (error) {
-      logger.error("System agent execution failed", {
-        agentId,
-        systemAgentId: systemConfig.agent,
-        error,
-      });
-
-      // Convert prompt to string for task field
-      const taskStr = typeof prompt === "string" ? prompt : JSON.stringify(prompt);
-
-      return {
-        agentId,
-        task: taskStr,
-        input: context,
         output: null,
         error: error instanceof Error ? error.message : String(error),
         duration: Date.now() - startTime,
@@ -818,16 +658,11 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     if (!setup) {
       this.logger.info("Creating new MCP client for session", { sessionId });
 
-      const client = new Client({
-        name: "atlas-agent-orchestrator",
-        version: "1.0.0",
-      });
+      const client = new Client({ name: "atlas-agent-orchestrator", version: "1.0.0" });
 
       const transport = new StreamableHTTPClientTransport(
         new URL(this.config.agentsServerUrl),
-        {
-          requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } },
-        },
+        { requestInit: { headers: { ...this.config.headers, "mcp-session-id": sessionId } } },
       );
 
       await client.connect(transport);
@@ -858,11 +693,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const mcpSessionId = transport.sessionId;
 
-      setup = {
-        client,
-        transport,
-        lastActivity: Date.now(),
-      };
+      setup = { client, transport, lastActivity: Date.now() };
 
       this.mcpSessions.set(sessionId, setup);
 

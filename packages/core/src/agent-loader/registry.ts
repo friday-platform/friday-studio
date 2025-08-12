@@ -138,7 +138,7 @@ export class AgentRegistry {
       throw new Error("SDK adapter not initialized");
     }
 
-    const id = agent.metadata.id || agent.metadata.name;
+    const id = agent.metadata.id;
     this.sdkAdapter.registerAgent(agent);
     this.registeredAgents.set(id, agent);
     this.agentSourceTypes.set(id, "sdk");
@@ -245,9 +245,7 @@ export class AgentRegistry {
 
   /** Check if an agent is a system agent */
   private isSystemAgent(agentIdOrAgent: string | AtlasAgent): boolean {
-    const id = typeof agentIdOrAgent === "string"
-      ? agentIdOrAgent
-      : (agentIdOrAgent.metadata.id || agentIdOrAgent.metadata.name);
+    const id = typeof agentIdOrAgent === "string" ? agentIdOrAgent : (agentIdOrAgent.metadata.id);
     return this.agentSourceTypes.get(id) === "system";
   }
 }

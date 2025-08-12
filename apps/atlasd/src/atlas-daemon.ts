@@ -2,7 +2,7 @@ import { ConfigLoader, type SupervisorDefaults, supervisorDefaultsWrapped } from
 import { CronManager, type CronTimerConfig, type WorkspaceWakeupCallback } from "@atlas/cron";
 import { PlatformMCPServer } from "@atlas/mcp-server";
 import { FilesystemConfigAdapter, FilesystemWorkspaceCreationAdapter } from "@atlas/storage";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { StreamableHTTPTransport } from "@hono/mcp";
 import { dirname, join } from "@std/path";
 import { cors } from "hono/cors";
@@ -31,7 +31,6 @@ import { signalRoutes } from "../routes/signals/index.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
-import { SystemAgentRegistry } from "../../../src/core/system-agent-registry.ts";
 import { parse } from "@std/yaml";
 import { WorkspaceFileWatcher } from "./workspace-file-watcher.ts";
 
@@ -187,7 +186,7 @@ export class AtlasDaemon implements AppContext {
     // Initialize agent registry with bundled agents
     logger.info("Initializing agent registry...");
     const agentRegistry = new AgentRegistry({
-      includeSystemAgents: false, // Only bundled and user agents
+      includeSystemAgents: true,
     });
     await agentRegistry.initialize();
     logger.info("Agent registry initialized");
@@ -240,9 +239,6 @@ export class AtlasDaemon implements AppContext {
 
     // Register cron signals for all existing workspaces
     await this.discoverAndRegisterExistingCronSignals();
-
-    // Initialize system agent registry
-    await SystemAgentRegistry.initialize(kvStorage);
 
     // Start SSE health check interval
     this.startSSEHealthCheck();
@@ -2271,11 +2267,7 @@ export class AtlasDaemon implements AppContext {
     const clients = this.sseClients.get(sessionId);
 
     if (!clients || clients.length === 0) {
-      logger.warn("No SSE clients connected", {
-        sessionId,
-        availableSessions: Array.from(this.sseClients.keys()),
-        totalClients: this.sseClients.size,
-      });
+      logger.warn("No SSE clients connected", { sessionId });
       return;
     }
 

@@ -11,7 +11,7 @@ import { registerResources } from "./resources/index.ts";
 import type { ResourceContext } from "./resources/types.ts";
 import { PromptContext } from "./prompts/types.ts";
 import { registerPrompts } from "./prompts/index.ts";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 // Logger interface for dependency injection
 export interface Logger {

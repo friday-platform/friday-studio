@@ -4,7 +4,7 @@ import { Spinner } from "@inkjs/ui";
 import { SSEDebugClient, SSEDebugEvent } from "../../utils/sse-debug-client.ts";
 import { DaemonClient } from "../../utils/daemon-client.ts";
 import { YargsInstance } from "../../utils/yargs.ts";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 interface MonitorState {
   status: "connecting" | "monitoring" | "error" | "stopped";

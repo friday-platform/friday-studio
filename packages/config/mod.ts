@@ -42,6 +42,12 @@ export {
   supervisorDefaultsWrapped,
 } from "./src/supervisor-defaults.ts";
 
+// Todo schemas
+export * from "./src/todos.ts";
+
+// Message stream schemas for SSE events
+export * from "./src/message-stream.ts";
+
 // Helper function for formatting Zod errors
 export function formatZodError(error: z.ZodError): string {
   return z.prettifyError(error);

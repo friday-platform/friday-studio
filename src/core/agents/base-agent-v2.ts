@@ -10,9 +10,6 @@
  */
 
 import type {
-  IAtlasAgent,
-  IAtlasGate,
-  IAtlasScope,
   ITempestContextManager,
   ITempestMemoryManager,
   ITempestMessageManager,
@@ -25,7 +22,11 @@ import { LLMProvider } from "@atlas/core";
 import { type Logger, logger } from "@atlas/logger";
 import { type AtlasMemoryConfig, MemoryConfigManager } from "../memory-config.ts";
 
-export abstract class BaseAgent implements IAtlasAgent, IAtlasScope {
+/**
+ * @deprecated As soon as the remote agent adapter has been migrated, this class should be removed.
+ * @see src/core/agents/remote/remote-agent.ts
+ */
+export abstract class BaseAgent {
   id: string;
   parentScopeId?: string;
   supervisor?: IWorkspaceSupervisor;

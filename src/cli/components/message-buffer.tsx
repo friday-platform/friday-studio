@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Box, Static } from "ink";
-import { z } from "zod/v4";
 import { useAppContext } from "../contexts/app-context.tsx";
 import { ChatMessage } from "./chat-message.tsx";
 import { OutputEntry } from "../modules/conversation/types.ts";
@@ -8,91 +7,13 @@ import { Header } from "./header.tsx";
 import { MessageHeader } from "./message-header.tsx";
 import { Spinner } from "@inkjs/ui";
 import { DAEMON_STATUS } from "../constants/daemon-status.ts";
+import { SSEEventSchema } from "@atlas/config";
 
 interface TypingState {
   isTyping: boolean;
   elapsedSeconds: number;
   message?: string;
 }
-
-const RequestEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("request"),
-  data: z.object({
-    content: z.string(),
-  }),
-  timestamp: z.string(),
-});
-
-const MessageEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("text"),
-  data: z.object({
-    content: z.string(),
-  }),
-  timestamp: z.string(),
-});
-
-const FinishEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("finish"),
-  data: z.object({
-    content: z.string(),
-  }),
-  timestamp: z.string(),
-});
-
-const ErrorEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("error"),
-  data: z.object({
-    content: z.string(),
-  }),
-  timestamp: z.string(),
-});
-
-const ToolCallEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("tool_call"),
-  data: z.object({
-    content: z.string(),
-    toolName: z.string(),
-    args: z.record(z.string(), z.unknown()).optional(),
-    toolCallId: z.string().optional(),
-  }),
-  timestamp: z.string(),
-});
-
-const ToolResultEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("tool_result"),
-  data: z.object({
-    content: z.string(),
-    toolName: z.string(),
-    result: z.unknown(),
-    toolCallId: z.string().optional(),
-  }),
-  timestamp: z.string(),
-});
-
-const ThinkingEventSchema = z.object({
-  id: z.string(),
-  type: z.literal("thinking"),
-  data: z.object({
-    content: z.string(),
-  }),
-  timestamp: z.string(),
-});
-
-const SSEEventSchema = z.union([
-  RequestEventSchema,
-  FinishEventSchema,
-  MessageEventSchema,
-  ErrorEventSchema,
-  ToolCallEventSchema,
-  ToolResultEventSchema,
-  ThinkingEventSchema,
-]);
 
 export const MessageBuffer = () => {
   const {

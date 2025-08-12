@@ -5,7 +5,6 @@
 import type { Logger } from "../platform-server.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { LoggingMessageNotification } from "@modelcontextprotocol/sdk/types.js";
-import type { WatchdogTimer } from "@atlas/core";
 
 /**
  * Context provided to all tool handlers
@@ -14,7 +13,6 @@ export interface ToolContext {
   daemonUrl: string;
   logger: Logger;
   server: McpServer;
-  watchdog?: WatchdogTimer;
 }
 
 /**
@@ -73,8 +71,8 @@ export function createSendNotification(server: McpServer, logger: Logger) {
       };
 
       // Use the server's sendLoggingMessage if available
-      if (typeof (server as any).sendLoggingMessage === "function") {
-        await (server as any).sendLoggingMessage(notification.params);
+      if (typeof server.sendLoggingMessage === "function") {
+        await server.sendLoggingMessage(notification.params);
       } else if (!silent) {
         // Fallback: log to server logger (sanitize content for logging)
         const sanitizedParams = sanitizeNotificationForLogging(notification.params);

@@ -5,8 +5,6 @@ import {
   workspaceConfigResponseSchema,
   workspaceIdParamSchema,
 } from "./schemas.ts";
-import { ConfigLoader } from "@atlas/config";
-import { FilesystemConfigAdapter } from "@atlas/storage";
 
 const getWorkspaceConfig = daemonFactory.createApp();
 
@@ -59,10 +57,14 @@ getWorkspaceConfig.get(
         }, 404);
       }
 
-      // Load the workspace configuration
-      const configAdapter = new FilesystemConfigAdapter(workspace.path);
-      const configLoader = new ConfigLoader(configAdapter, workspace.path);
-      const config = await configLoader.load();
+      // Load the workspace configuration using WorkspaceManager
+      // This handles both filesystem and system workspaces
+      const config = await manager.getWorkspaceConfig(workspace.id);
+      if (!config) {
+        return c.json({
+          error: `Failed to load workspace configuration: ${workspace.id}`,
+        }, 500);
+      }
 
       // Return just the config portion that agents need
       return c.json({

@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { TodoItemSchema as BaseTodoItemSchema } from "@atlas/config";
 
 // ============================================================================
 // Parameter Schemas
@@ -8,30 +9,12 @@ export const streamIdParamSchema = z.object({
   streamId: z.string().min(1).meta({ description: "Stream ID for todo operations" }),
 }).meta({ description: "Stream ID parameter" });
 
-export const getTodosQuerySchema = z.object({
-  status: z.enum(["pending", "in_progress", "completed", "cancelled"]).optional()
-    .meta({ description: "Filter todos by status" }),
-  priority: z.enum(["high", "medium", "low"]).optional()
-    .meta({ description: "Filter todos by priority" }),
-  limit: z.coerce.number().optional().meta({ description: "Maximum number of todos to return" }),
-}).meta({ description: "Query parameters for todo filtering" });
-
 // ============================================================================
 // Data Schemas
 // ============================================================================
 
-export const todoItemSchema = z.object({
-  id: z.string().meta({ description: "Unique identifier for the todo item" }),
-  content: z.string().min(1).meta({ description: "Brief description of the task" }),
-  status: z.enum(["pending", "in_progress", "completed", "cancelled"])
-    .meta({ description: "Current status of the task" }),
-  priority: z.enum(["high", "medium", "low"])
-    .meta({ description: "Priority level of the task" }),
-  metadata: z.record(z.string(), z.unknown()).optional()
-    .meta({ description: "Additional context (workspace names, IDs, etc.)" }),
-  createdAt: z.string().meta({ description: "ISO timestamp of creation" }),
-  updatedAt: z.string().meta({ description: "ISO timestamp of last update" }),
-}).meta({ description: "Todo item structure" });
+// Re-export the shared TodoItemSchema from @atlas/config
+export const todoItemSchema = BaseTodoItemSchema;
 
 // ============================================================================
 // Input Schemas

@@ -2,7 +2,7 @@
  * Daemon API client for CLI commands
  * All CLI commands should use this to communicate with the daemon
  */
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 export interface DaemonClientOptions {
   daemonUrl?: string;

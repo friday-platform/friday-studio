@@ -25,7 +25,7 @@ We implemented a comprehensive solution that:
 The PlatformMCPServer is already initialized but should use `getAtlasDaemonUrl()`:
 
 ```typescript
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 // Updated in initializeMCPServer() method:
 private initializeMCPServer(): void {
@@ -65,7 +65,7 @@ this.app.post("/mcp", async (c) => {
 Update the initialize method to inject atlas-platform configuration with all available tools:
 
 ```typescript
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { experimental_createMCPClient as createMCPClient } from "ai";
 
@@ -182,7 +182,10 @@ export class MCPServerRegistry {
 Update the `registerMCPServers` function to handle async initialization:
 
 ```typescript
-async function registerMCPServers(config: MergedConfig, workspaceId: string): Promise<void> {
+async function registerMCPServers(
+  config: MergedConfig,
+  workspaceId: string,
+): Promise<void> {
   try {
     // Check if workspace has MCP server configuration
     if (!config.workspace.tools?.mcp?.servers) {
@@ -272,7 +275,7 @@ Modify the getAgentExecutionConfig method to automatically include atlas-platfor
 ```typescript
 private getAgentExecutionConfig(agentId: string): AgentExecutionConfig {
     // ... existing code ...
-    
+
     let tools: string[] = [];
     if (agentConfig.type === "llm") {
       tools = agentConfig.config.tools || [];
@@ -317,6 +320,7 @@ tool_choice: z.enum(["auto", "required", "none"]).optional().describe(
 
 3. **Configuration Injection**: MCPServerRegistry.initialize() automatically injects the
    atlas-platform MCP server configuration:
+
    ```yaml
    tools:
      mcp:
@@ -417,6 +421,7 @@ Our implementation solved tool selection challenges through:
    - Agents discover and use appropriate tools based on task
 
 2. **Natural Task-Focused Prompts**: Agents use natural language:
+
    ```yaml
    # Before: Tool-specific prompts
    prompt: "You MUST use atlas_notify_email to send emails"
@@ -426,6 +431,7 @@ Our implementation solved tool selection challenges through:
    ```
 
 3. **Tool Choice for Critical Operations**:
+
    ```yaml
    # Ensure email agent uses tools
    tool_choice: "required"

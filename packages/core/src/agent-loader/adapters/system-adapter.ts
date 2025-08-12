@@ -1,9 +1,6 @@
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import type { AgentAdapter, AgentSourceData, AgentSourceType, AgentSummary } from "./types.ts";
-
-// TODO: Phase 5 - Import actual system agents when converted to SDK format
-// import { ConversationAgent } from "../../../../system/agents/conversation-agent.ts";
-// import { FactExtractor } from "../../../../system/agents/fact-extractor.ts";
+import { conversationAgent } from "../../../../system/agents/conversation/conversation.agent.ts";
 
 /**
  * Loads built-in Atlas system agents.
@@ -19,14 +16,8 @@ export class SystemAgentAdapter implements AgentAdapter {
     this.registerSystemAgents();
   }
 
-  /** Load system agents - currently pending SDK conversion */
   private registerSystemAgents(): void {
-    throw new Error("System agents have not yet been ported to the SDK.");
-    // TODO: Phase 5 - Register system agents when converted to AtlasAgent format
-    // const systemAgents = [
-    //   { id: "conversation", class: ConversationAgent },
-    //   { id: "fact-extractor", class: FactExtractor },
-    // ];
+    this.agents.set(conversationAgent.metadata.id, conversationAgent);
   }
 
   loadAgent(id: string): Promise<AgentSourceData> {

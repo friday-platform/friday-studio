@@ -51,5 +51,6 @@ agents:
   haiku:
     type: atlas
     agent: haiku
+    description: "A haiku agent that generates haikus from text"
     environment:
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"

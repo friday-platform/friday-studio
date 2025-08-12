@@ -3,7 +3,7 @@
  */
 
 import { getAtlasClient } from "./client.ts";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 /**
  * Check if the Atlas daemon is running and accessible

@@ -73,7 +73,7 @@ jobs:
     execution:
       strategy: "sequential"
       agents:
-        - id: "conversation-agent"
+        - id: "conversation"
   list-conversations:
     name: "list-conversations"
     description: "Query conversation history"
@@ -93,7 +93,7 @@ jobs:
       agents:
         - id: "conversation-loader"
 agents:
-  conversation-agent:
+  conversation:
     type: "system"
     agent: "conversation"
     description: "Handle conversations with scope awareness and workspace creation"

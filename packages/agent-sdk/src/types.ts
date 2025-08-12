@@ -303,6 +303,7 @@ export const AgentSessionDataSchema = z.object({
   sessionId: z.string(),
   workspaceId: z.string(),
   userId: z.string().optional(),
+  streamId: z.string().optional(),
 });
 
 export type AgentSessionData = z.infer<typeof AgentSessionDataSchema>;
@@ -476,6 +477,7 @@ export interface AgentRegistry {
 export const AtlasAgentConfigSchema = z.object({
   type: z.literal("atlas"),
   agent: z.string().describe("Atlas agent ID from registry"),
+  description: z.string().describe("Agent description"),
   version: z.string().optional().describe("Agent version (defaults to latest)"),
   config: z.record(z.string(), z.unknown()).optional().describe(
     "Agent-specific configuration passed to the agent",

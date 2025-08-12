@@ -1,7 +1,7 @@
 import type { WorkspaceConfig } from "@atlas/config";
 import { join } from "@std/path";
 import { ensureDir, exists } from "@std/fs";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 /**
  * Interface for creating workspace files from draft configurations
@@ -384,7 +384,7 @@ ${config.workspace?.description || "An Atlas workspace for AI agent orchestratio
 
 This workspace contains:
 - **${agentCount} agent${agentCount === 1 ? "" : "s"}** - AI agents that perform specific tasks
-- **${jobCount} job${jobCount === 1 ? "" : "s"}** - Workflows that coordinate agent execution  
+- **${jobCount} job${jobCount === 1 ? "" : "s"}** - Workflows that coordinate agent execution
 - **${signalCount} signal${signalCount === 1 ? "" : "s"}** - Triggers that initiate workflows
 
 ## Quick Start
@@ -427,7 +427,7 @@ ${
         : "No jobs configured."
     }
 
-### Signals  
+### Signals
 ${
       signalCount > 0
         ? Object.keys(config.signals!).map((name) =>

@@ -1,7 +1,7 @@
 import { AtlasDaemon, OPENAPI_DOCUMENTATION } from "@atlas/atlasd";
 import { generateSpecs } from "hono-openapi";
 import openapiTS, { astToString } from "openapi-typescript";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 /**
  * Generate TypeScript types from the Atlas daemon OpenAPI spec

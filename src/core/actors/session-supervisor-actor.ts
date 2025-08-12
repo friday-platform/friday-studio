@@ -22,7 +22,6 @@ import type {
   IAgentOrchestrator,
   SessionResult,
   SessionSupervisorConfig,
-  ToolExecutorResult,
 } from "@atlas/core";
 import type { Tool } from "ai";
 import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
@@ -471,18 +470,16 @@ export class SessionSupervisorActor implements BaseActor {
       // System agents should receive input as-is, not stringified
       const agentConfig = this.config?.agents?.[agentTask.agentId];
       const isSystemAgent = agentConfig?.type === "system";
+      // System agents are referenced by ID
+      let agentId = isSystemAgent ? agentConfig.agent : agentTask.agentId;
 
       // Extract the actual message/input to send to the agent
-      let prompt: string | unknown;
+      let prompt: string;
 
-      if (isSystemAgent) {
-        // @deprecated System agents receive input as-is
-        prompt = input;
-        this.logger.debug("Passing raw input to system agent", {
-          agentId: agentTask.agentId,
-          inputType: typeof input,
-        });
-      } else if (agentTask.task && agentTask.task !== "Execute job task") {
+      /**
+       * @FIXME: this is really rough code.
+       */
+      if (agentTask.task && agentTask.task !== "Execute job task") {
         // Use explicit task if provided
         prompt = agentTask.task;
       } else if (typeof input === "string") {
@@ -500,7 +497,7 @@ export class SessionSupervisorActor implements BaseActor {
       }
 
       const orchestratorResult = await this.agentOrchestrator.executeAgent(
-        agentTask.agentId,
+        agentId,
         prompt,
         {
           sessionId: this.sessionId,
@@ -944,43 +941,6 @@ Think step by step about the best approach to handle this signal, then use the t
 
   private generateWorkingMemorySummary(_summary: SessionSummary): void {
     this.logger.debug("Generating working memory summary", { sessionId: this.sessionId });
-  }
-
-  /**
-   * Get agent configuration and create execution config
-   * Centralizes agent configuration access
-   */
-  private getAgentExecutionConfig(agentId: string): AgentExecutionConfig {
-    const agentConfig = this.config?.agents?.[agentId];
-    if (!agentConfig) {
-      this.logger.error("Agent configuration not found", {
-        agentId,
-        availableAgents: Object.keys(this.config?.agents || {}),
-        hasConfig: !!this.config,
-        hasAgents: !!this.config?.agents,
-      });
-      throw new Error(`Agent configuration not found: ${agentId}`);
-    }
-
-    let tools: string[] = [];
-    if (agentConfig.type === "llm") {
-      tools = agentConfig.config.tools || [];
-    } else if (agentConfig.type === "system") {
-      tools = agentConfig.config.tools || [];
-    }
-
-    // Always include atlas-platform for all agents to access Atlas tools
-    if (!tools.includes("atlas-platform")) {
-      tools = ["atlas-platform", ...tools];
-    }
-
-    return {
-      agentId,
-      agent: agentConfig,
-      tools: tools,
-      memory: this.config?.memory,
-      workspaceTools: this.config?.tools,
-    };
   }
 
   // Placeholder for future tool execution

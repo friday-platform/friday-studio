@@ -37,6 +37,13 @@ export {
   NoOpStreamEmitter,
 } from "./src/streaming/stream-emitters.ts";
 
+// AI to SSE Stream Converter
+export {
+  convertAIStreamToSSE,
+  createRequestEvent,
+  resetStreamIdTracker,
+} from "./src/streaming/ai-to-sse-converter.ts";
+
 export * from "./src/agent-server/mod.ts";
 
 // Agent Orchestrator

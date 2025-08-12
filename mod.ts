@@ -6,7 +6,6 @@ export * from "./src/core/scope.ts";
 export * from "./src/core/workspace.ts";
 export * from "./src/core/actors/workspace-supervisor-actor.ts";
 export * from "./src/core/actors/session-supervisor-actor.ts";
-export * from "./src/core/actors/agent-execution-actor.ts";
 export * from "./src/core/session.ts";
 export * from "./src/core/manager.ts";
 export * from "./src/core/context.ts";

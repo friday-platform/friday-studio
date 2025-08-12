@@ -17,6 +17,4 @@ export type {
   AwaitingApprovalResult,
   CompletedAgentResult,
   IAgentOrchestrator,
-  // @deprecated Backwards compatibility export - remove when system agents migrated
-  SystemAgentConfig,
 } from "./agent-orchestrator.ts";

@@ -47,7 +47,10 @@ export function createAgentContextBuilder(deps: AgentContextBuilderDeps) {
     const agentLogger = logger.child({
       agentId: agent.metadata.id,
       workspaceId: sessionData.workspaceId,
+      sessionId: sessionData.sessionId,
+      streamId: sessionData.streamId,
     });
+
     // 1. Fetch all tools directly from MCP servers
     let allTools: Record<string, AtlasTool> = {};
     try {

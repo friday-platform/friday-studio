@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
-import { checkJobDiscoverable, checkWorkspaceMCPEnabled } from "../utils.ts";
+import { checkJobDiscoverable } from "../utils.ts";
 
 export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -23,22 +23,6 @@ export function registerJobsListTool(server: McpServer, ctx: ToolContext) {
     },
     async ({ workspaceId }) => {
       ctx.logger.info("MCP workspace_jobs_list called", { workspaceId });
-
-      // SECURITY: Check if workspace has MCP enabled
-      const mcpEnabled = await checkWorkspaceMCPEnabled(ctx.daemonUrl, workspaceId, ctx.logger);
-      if (!mcpEnabled) {
-        ctx.logger.warn("Platform MCP: Blocked workspace operation - MCP disabled", {
-          workspaceId,
-          operation: "workspace_jobs_list",
-        });
-        // Use MCP standard error code for authorization failure
-        const error = new Error(
-          `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
-        );
-        // deno-lint-ignore no-explicit-any
-        (error as any).code = -32000; // MCP server error code for authorization
-        throw error;
-      }
 
       try {
         const response = await fetch(`${ctx.daemonUrl}/api/workspaces/${workspaceId}/jobs`);

@@ -4,7 +4,7 @@
 
 import { assertEquals, assertExists, assertStringIncludes } from "@std/assert";
 import { WorkspaceConfigSchema } from "@atlas/config";
-import { generateWorkspace } from "../packages/tools/src/internal/workspace-creation/generation.ts";
+import { generateWorkspace } from "../packages/system/agents/conversation/tools/workspace-creation/generation.ts";
 
 // Realistic test scenarios for comprehensive validation
 const testScenarios = [

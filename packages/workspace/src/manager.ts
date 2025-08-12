@@ -9,7 +9,7 @@
  * - Provides clean separation between system and user workspaces
  */
 
-import { ConfigLoader, MergedConfig, WorkspaceConfig } from "@atlas/config";
+import { ConfigLoader, MergedConfig } from "@atlas/config";
 import { FilesystemConfigAdapter } from "@atlas/storage";
 import {
   createRegistryStorage,
@@ -173,11 +173,12 @@ export class WorkspaceManager {
 
     // Handle system workspaces
     if (workspace.metadata?.system && workspace.id in SYSTEM_WORKSPACES) {
-      const config: WorkspaceConfig = SYSTEM_WORKSPACES[workspace.id];
-      return {
-        atlas: null,
-        workspace: config,
-      };
+      const config = SYSTEM_WORKSPACES[workspace.id];
+      if (!config) {
+        logger.error(`Missing configuration for system workspace: ${workspace.id}`);
+        return null;
+      }
+      return { atlas: null, workspace: config };
     }
 
     // Regular workspace - load from filesystem

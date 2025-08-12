@@ -64,7 +64,7 @@ export class AgentExecutionManager {
     this.contextBuilder = contextBuilder;
     this.sessionMemory = sessionMemory;
     this.approvalQueue = approvalQueue;
-    this.logger = logger;
+    this.logger = logger.child({ component: "AgentExecutionManager" });
   }
 
   /**
@@ -97,11 +97,8 @@ export class AgentExecutionManager {
    * @throws {AwaitingSupervisorDecision} When agent requests approval
    * @throws {Error} When execution fails
    */
-  executeAgent(
-    agentId: string,
-    prompt: string,
-    sessionData: AgentSessionData,
-  ): Promise<unknown> {
+  executeAgent(agentId: string, prompt: string, sessionData: AgentSessionData): Promise<unknown> {
+    this.logger.info("Executing agent", { agentId, prompt, ...sessionData });
     const actor = this.getOrCreateExecutionActor(agentId);
 
     return new Promise((resolve, reject) => {

@@ -1,5 +1,5 @@
 import { Box, Text } from "ink";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 
 interface HttpUsageExamplesProps {
   signal: Record<string, unknown>;

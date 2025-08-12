@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { ConversationClient } from "../utils/conversation-client.ts";
 import { getDaemonClient } from "../utils/daemon-client.ts";
-import { getAtlasDaemonUrl } from "@atlas/tools";
+import { getAtlasDaemonUrl } from "@atlas/atlasd";
 import { DiagnosticsCollector } from "../../utils/diagnostics-collector.ts";
 import { getAtlasClient } from "@atlas/client";
 import { useStdout } from "ink";

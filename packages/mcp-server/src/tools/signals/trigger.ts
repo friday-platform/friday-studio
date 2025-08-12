@@ -7,7 +7,6 @@ import { z } from "zod";
 import type { ToolContext } from "../types.ts";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createSuccessResponse } from "../types.ts";
-import { checkWorkspaceMCPEnabled } from "../utils.ts";
 
 export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) {
   server.registerTool(
@@ -25,21 +24,6 @@ export function registerSignalsTriggerTool(server: McpServer, ctx: ToolContext) 
     },
     async ({ workspaceId, signalName, payload }) => {
       ctx.logger.info("MCP workspace_signals_trigger called", { workspaceId, signalName });
-
-      // SECURITY: Check if workspace has MCP enabled
-      const mcpEnabled = await checkWorkspaceMCPEnabled(ctx.daemonUrl, workspaceId, ctx.logger);
-      if (!mcpEnabled) {
-        ctx.logger.warn("Platform MCP: Blocked workspace operation - MCP disabled", {
-          workspaceId,
-          operation: "workspace_signals_trigger",
-        });
-        const error = new Error(
-          `MCP is disabled for workspace '${workspaceId}'. Enable it in workspace.yml server.mcp.enabled to access workspace capabilities.`,
-        );
-        // deno-lint-ignore no-explicit-any
-        (error as any).code = -32000;
-        throw error;
-      }
 
       try {
         const response = await fetch(

@@ -190,35 +190,6 @@ export const workspaceRuntimeMachineSetup = setup({
         });
       }
 
-      // @deprecated Extract system agents for backwards compatibility
-      // This will be removed once all system agents are migrated to SDK
-      const systemAgents = new Map<string, import("@atlas/core").SystemAgentConfig>();
-      if (mergedConfig.workspace.agents) {
-        for (const [agentId, agentConfig] of Object.entries(mergedConfig.workspace.agents)) {
-          if (agentConfig.type === "system" && agentConfig.agent) {
-            systemAgents.set(agentId, {
-              type: "system",
-              agent: agentConfig.agent,
-              config: agentConfig.config || {},
-            });
-            logger.warn("Registering deprecated system agent", {
-              workspaceId: context.workspace.id,
-              agentId,
-              systemAgentId: agentConfig.agent,
-              message: "Please migrate this agent to SDK format",
-            });
-          }
-        }
-      }
-
-      if (systemAgents.size > 0) {
-        logger.info("System agents registered for backwards compatibility", {
-          workspaceId: context.workspace.id,
-          systemAgentCount: systemAgents.size,
-          systemAgentIds: Array.from(systemAgents.keys()),
-        });
-      }
-
       // Create Agent Orchestrator for MCP-based agent execution
       const agentOrchestrator = new AgentOrchestrator(
         {
@@ -229,7 +200,6 @@ export const workspaceRuntimeMachineSetup = setup({
           executionTimeout: mergedConfig.atlas?.execution?.agent_timeout
             ? mergedConfig.atlas.execution.agent_timeout * 1000
             : 300000,
-          systemAgents, // @deprecated - pass system agents for backwards compatibility
           mcpServerPool: context.options.mcpServerPool,
           daemonUrl: context.options.daemonUrl,
         },

@@ -134,6 +134,19 @@ export interface SessionManagerConfig {
 }
 
 /**
+ * Session context for agent isolation and tracking
+ * DUPLICATED FROM AGENT SDK DUE TO ZOD/V4<>V3 nonsense.
+ * @FIXME: Remove this once the MCP Server supports Zod/v4.
+ * @see packages/agent-sdk/src/types.ts
+ */
+export const AgentSessionDataSchema = z.object({
+  sessionId: z.string(),
+  workspaceId: z.string(),
+  userId: z.string().optional(),
+  streamId: z.string().optional(),
+});
+
+/**
  * MCP tool parameter schema
  *
  * Note: Session context is passed as tool arguments due to MCP SDK limitation.
@@ -148,15 +161,8 @@ export const AgentToolParamsSchema = z.object({
   /** Additional context if needed */
   context: z.unknown().optional().describe("Additional context if needed"),
 
-  /**
-   * Session context for agent isolation and tracking
-   */
-  _sessionContext: z.object({
-    sessionId: z.string(),
-    workspaceId: z.string(),
-    userId: z.string().optional(),
-    streamId: z.string().optional(),
-  }).optional(),
+  /** Session context for agent isolation and tracking */
+  _sessionContext: AgentSessionDataSchema,
 
   /** Resume support for supervisor approvals */
   _approvalId: z.string().optional(),

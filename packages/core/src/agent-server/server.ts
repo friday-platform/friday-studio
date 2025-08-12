@@ -23,24 +23,27 @@ import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "@atlas/core";
 
 export class AtlasAgentsMCPServer implements AgentServerAdapter {
+  #logger: Logger;
   private server: McpServer;
   private agentRegistry: AgentRegistry;
   private loadedAgents = new Map<string, AtlasAgent>();
   private approvalQueue: ApprovalQueueManager;
   private executionManager: AgentExecutionManager;
   private buildAgentContext: ReturnType<typeof createAgentContextBuilder>;
-  private logger: Logger;
   private isRunning = false;
   private sessionId: string;
   private hasActiveSSEFn?: (sessionId?: string) => boolean;
 
   constructor(deps: AgentServerDependencies & { disableTimeouts?: boolean; sessionId: string }) {
     this.agentRegistry = deps.agentRegistry;
-    this.logger = deps.logger;
+    this.#logger = deps.logger.child({
+      component: "AtlasAgentsMCPServer",
+      sessionId: deps.sessionId,
+    });
     this.hasActiveSSEFn = deps.hasActiveSSE;
     this.sessionId = deps.sessionId;
 
-    // Standard MCP server with notification capabilities
+    // MCP server configured for Atlas agent orchestration with SSE notification support
     this.server = new McpServer({
       name: "atlas-agents",
       version: "1.0.0",
@@ -54,19 +57,19 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       },
     });
 
-    this.logger.debug("[AtlasAgentsMCPServer] Created MCP server", {
+    this.#logger.debug("Created MCP server", {
       serverName: "atlas-agents",
       serverVersion: "1.0.0",
       hasNotificationSupport: typeof this.server.server?.notification === "function",
     });
 
-    // Initialize approval queue for suspended executions
+    // Initialize approval queue for managing suspended agent executions awaiting human decisions
     this.approvalQueue = new ApprovalQueueManager(
       deps.logger.child({ component: "approval-queue-manager" }),
     );
 
-    // Initialize context builder factory
-    this.logger.info("[AtlasAgentsMCPServer] Checking server.server in constructor", {
+    // Debug MCP server internal structure for SSE notification capabilities
+    this.#logger.info("Checking server.server in constructor", {
       hasServerServer: !!this.server.server,
       serverServerType: this.server.server?.constructor?.name,
       serverServerKeys: this.server.server ? Object.keys(this.server.server) : [],
@@ -94,15 +97,19 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       deps.logger.child({ component: "agent-execution-manager" }),
     );
 
-    this.logger.info("Agent execution manager initialized with memory integration support");
+    this.#logger.info("Agent execution manager initialized with memory integration support");
 
     this.registerAgentTools().catch((error) => {
-      this.logger.error("Failed to register agent tools", { error });
+      this.#logger.error("Failed to register agent tools", { error });
     });
     this.registerAgentResources();
   }
 
-  /** Register all agents as MCP tools with lazy loading */
+  /**
+   * Register all agents from the registry as MCP tools.
+   * Each agent becomes a callable MCP tool with lazy loading support.
+   * Tools are registered with Zod schema validation for type safety.
+   */
   private async registerAgentTools(): Promise<void> {
     const agents = await this.agentRegistry.listAgents();
 
@@ -114,13 +121,12 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         {
           title: agent.displayName,
           description: this.formatAgentDescription(agent),
-          inputSchema: AgentToolParamsSchema.shape, // 'inputSchema' expects ZodRawShape
+          inputSchema: AgentToolParamsSchema.shape,
         },
-        // Handler receives args directly, no toolContext
         async (args) => {
           const agentId = agent.id;
 
-          this.logger.debug(`MCP tool handler called for agent: ${agentId}`, {
+          this.#logger.debug("MCP tool handler called for agent", {
             args: JSON.stringify(args),
             agentId,
             displayName: agent.displayName,
@@ -138,7 +144,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           // Session still comes from _sessionContext parameter - no changes!
           const session = args._sessionContext;
 
-          this.logger.info(`[AtlasAgentsMCPServer] Session context:`, {
+          this.#logger.info("Session context", {
             hasSession: !!session,
             orchestratorSessionId: session?.sessionId,
             serverSessionId: this.sessionId,
@@ -151,20 +157,10 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             throw new Error("No session data available - authentication required");
           }
 
-          // Keep the original orchestrator session ID for notifications
-          const sessionWithStream = {
-            ...session,
-            sessionId: session.sessionId, // Keep original for notification routing
-            streamId: session.streamId,
-          };
+          const result = await this.executeAgent(agentId, args.prompt, session);
 
-          const result = await this.executeAgent(
+          this.#logger.debug("Agent execution result", {
             agentId,
-            args.prompt,
-            sessionWithStream,
-          );
-
-          this.logger.debug(`Agent execution result for ${agentId}:`, {
             result: JSON.stringify(result),
             resultType: typeof result,
           });
@@ -173,7 +169,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         },
       );
 
-      this.logger.info(`Registered agent as MCP tool: ${toolName} (${agent.displayName})`, {
+      this.#logger.info("Registered agent as MCP tool", {
         toolName,
         agentId: agent.id,
         displayName: agent.displayName,
@@ -183,7 +179,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     }
   }
 
-  /** Format agent metadata as JSON for MCP tool descriptions */
+  /**
+   * Format agent metadata as JSON string for MCP tool descriptions.
+   * MCP requires tool descriptions as strings, so we serialize the agent's
+   * expertise information to provide rich context to LLMs.
+   */
   private formatAgentDescription(meta: AgentMetadata): string {
     return JSON.stringify({
       text: meta.description,
@@ -192,10 +192,15 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     });
   }
 
-  /** Load and cache agent from registry - now supports dynamic imports */
+  /**
+   * Load agent from registry with caching and dynamic import fallback.
+   * First attempts to load from the agent registry, then falls back to
+   * dynamic imports for agents not in the registry. Implements lazy loading
+   * to improve startup performance.
+   */
   private async loadAgent(agentId: string): Promise<AtlasAgent> {
     if (!this.loadedAgents.has(agentId)) {
-      this.logger.info(`Lazy loading agent: ${agentId}`);
+      this.#logger.info("Lazy loading agent", { agentId });
       const startTime = Date.now();
 
       try {
@@ -209,28 +214,36 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
             const dynamicAgent = agentModule.default || agentModule.agent;
             if (dynamicAgent) {
               this.loadedAgents.set(agentId, dynamicAgent);
-              this.logger.info(
-                `Dynamically loaded agent ${agentId} in ${Date.now() - startTime}ms`,
-              );
+              this.#logger.info("Dynamically loaded agent", {
+                agentId,
+                loadTimeMs: Date.now() - startTime,
+              });
               return dynamicAgent;
             }
           } catch (importErr) {
-            this.logger.error(`Failed to dynamically load agent ${agentId}:`, { error: importErr });
+            this.#logger.error("Failed to dynamically load agent", { agentId, error: importErr });
             throw new Error(`Agent not found: ${agentId}`);
           }
         } else {
           this.loadedAgents.set(agentId, agent);
         }
-        this.logger.info(`Loaded agent ${agentId} from registry in ${Date.now() - startTime}ms`);
+        this.#logger.info("Loaded agent from registry", {
+          agentId,
+          loadTimeMs: Date.now() - startTime,
+        });
       } catch (error) {
-        this.logger.error(`Failed to load agent ${agentId}:`, { error });
+        this.#logger.error("Failed to load agent", { agentId, error });
         throw error;
       }
     }
     return this.loadedAgents.get(agentId)!;
   }
 
-  /** Register MCP resources for agent discovery */
+  /**
+   * Register MCP resources that provide agent discovery and metadata.
+   * Creates resources for listing all agents and accessing individual
+   * agent expertise information via MCP resource protocol.
+   */
   private registerAgentResources(): void {
     this.server.registerResource(
       "agents/list",
@@ -261,11 +274,15 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     );
 
     this.registerAgentExpertiseResources().catch((error) => {
-      this.logger.error("Failed to register expertise resources", { error });
+      this.#logger.error("Failed to register expertise resources", { error });
     });
   }
 
-  /** Create expertise resource for each agent */
+  /**
+   * Register individual expertise resources for each agent.
+   * Creates MCP resources that expose each agent's domains, capabilities,
+   * and example use cases for discovery by LLM orchestrators.
+   */
   private async registerAgentExpertiseResources(): Promise<void> {
     const agents = await this.agentRegistry.listAgents();
     for (const agent of agents) {
@@ -296,7 +313,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     }
   }
 
-  /** Register new agent dynamically */
+  /**
+   * Register new agent dynamically at runtime.
+   * Adds agent to registry, updates MCP tools, and creates expertise resources.
+   * Enables hot-loading of new agents without server restart.
+   */
   async registerAgent(agent: AtlasAgent): Promise<void> {
     await this.agentRegistry.registerAgent(agent);
     await this.registerAgentTools();
@@ -327,20 +348,21 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   }
 
   /**
-   * Remove agent from cache.
-   * @FIXME: once FastMCP supports dynamic tool removal, we should unload it here.
+   * Remove agent from cache and execution manager.
+   * Note: MCP tool removal not yet supported - agents remain callable
+   * until server restart. This is a known limitation of the MCP protocol.
    */
   unregisterAgent(agentId: string): void {
     this.loadedAgents.delete(agentId);
     this.executionManager.unloadAgent(agentId);
   }
 
-  /** List all agent metadata */
+  /** List all registered agent metadata */
   async listAgents(): Promise<AgentMetadata[]> {
     return await this.agentRegistry.listAgents();
   }
 
-  /** Get agent by ID */
+  /** Get agent instance by ID from registry */
   async getAgent(agentId: string): Promise<AtlasAgent | undefined> {
     return await this.agentRegistry.getAgent(agentId);
   }
@@ -366,12 +388,12 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     prompt: string,
     sessionData: AgentSessionData,
   ): Promise<AgentExecutionResult> {
-    this.logger.debug(`[AtlasAgentsMCPServer] executeAgent called`, {
+    this.#logger.debug("executeAgent called", {
       agentId,
       sessionId: sessionData.sessionId,
       streamId: (sessionData as AgentSessionData & { streamId?: string }).streamId,
       workspaceId: sessionData.workspaceId,
-      prompt: prompt.substring(0, 50) + "...",
+      prompt: prompt,
     });
 
     try {
@@ -400,18 +422,23 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
         };
       }
 
-      this.logger.error(`Agent execution failed: ${agentId}`, { error });
+      console.error("Halp", error);
+      this.#logger.error("Agent execution failed", { agentId, error });
       throw error;
     }
   }
 
-  /** Get agent expertise by ID */
+  /** Get agent expertise metadata by ID */
   async getAgentExpertise(agentId: string): Promise<AgentExpertise | undefined> {
     const agent = await this.agentRegistry.getAgent(agentId);
     return agent?.metadata.expertise;
   }
 
-  /** Handle approval responses */
+  /**
+   * Resume suspended agent execution with human approval decision.
+   * Processes approval responses from supervisors and continues agent
+   * execution with the provided decision context.
+   */
   private async resumeWithApproval(
     approvalId: string,
     decision: unknown,
@@ -456,45 +483,53 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
           request: error.request,
         };
       }
-      this.logger.error(`Failed to resume agent with approval:`, { approvalId, error });
+      this.#logger.error("Failed to resume agent with approval", { approvalId, error });
       throw error;
     }
   }
 
-  /** Start MCP server (no HTTP server needed - handled by daemon) */
+  /**
+   * Start the MCP server.
+   * Unlike traditional servers, this doesn't bind to ports as the daemon
+   * handles transport layer communication via stdio/SSE.
+   */
   start(): Promise<void> {
     if (this.isRunning) {
       throw new Error("Server is already running");
     }
 
     this.isRunning = true;
-    this.logger.info("Atlas Agents MCP server started (transport handled by daemon)");
+    this.#logger.info("Atlas Agents MCP server started (transport handled by daemon)");
     return Promise.resolve();
   }
 
-  /** Stop MCP server and cleanup */
+  /**
+   * Stop MCP server and cleanup all resources.
+   * Shuts down execution manager, clears approval queue, and marks server
+   * as stopped to prevent new executions.
+   */
   stop(): Promise<void> {
     if (!this.isRunning) {
       return Promise.resolve();
     }
 
-    // Cleanup execution manager and all active agent executions
+    // Shutdown execution manager and terminate all active agent executions
     this.executionManager.shutdown();
 
-    // Cleanup approval queue
+    // Clear all pending approvals from queue
     this.approvalQueue.clearAll();
 
     this.isRunning = false;
-    this.logger.info("Atlas Agents MCP server stopped");
+    this.#logger.info("Atlas Agents MCP server stopped");
     return Promise.resolve();
   }
 
-  /** Get MCP server instance */
+  /** Get underlying MCP server instance for transport layer */
   getServer(): McpServer {
     return this.server;
   }
 
-  /** Get approval queue instance */
+  /** Get approval queue manager for suspended executions */
   getApprovalQueue(): ApprovalQueueManager {
     return this.approvalQueue;
   }
@@ -518,13 +553,17 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     });
   }
 
-  /** Check if we have an active SSE connection */
+  /**
+   * Check if there's an active Server-Sent Events connection.
+   * Used to determine if real-time notifications can be sent to clients.
+   * Falls back to daemon's SSE tracking for session-specific connections.
+   */
   private hasActiveSSE(sessionId?: string): boolean {
     // Use daemon's SSE tracking for this session
     const sid = sessionId || this.sessionId;
     if (this.hasActiveSSEFn && sid) {
       const hasSSE = this.hasActiveSSEFn(sid);
-      this.logger.info("[AtlasAgentsMCPServer] SSE check", {
+      this.#logger.info("SSE check", {
         sessionId: sid,
         hasSSE,
         source: "daemon",
