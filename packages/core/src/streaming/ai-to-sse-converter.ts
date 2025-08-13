@@ -43,9 +43,9 @@ export function convertAIStreamToSSE(
   const timestamp = new Date().toISOString();
 
   switch (chunk.type) {
-    case "reasoning": {
+    case "reasoning-delta": {
       const event: ThinkingEvent = {
-        id: getUniqueId("reasoning", prevChunk?.type),
+        id: getUniqueId("reasoning-delta", prevChunk?.type),
         type: "thinking",
         data: { content: chunk.text },
         timestamp,
@@ -53,9 +53,9 @@ export function convertAIStreamToSSE(
       return event;
     }
 
-    case "text": {
+    case "text-delta": {
       const event: MessageEvent = {
-        id: getUniqueId("text", prevChunk?.type),
+        id: getUniqueId("text-delta", prevChunk?.type),
         type: "text",
         data: { content: chunk.text || "" },
         timestamp,
