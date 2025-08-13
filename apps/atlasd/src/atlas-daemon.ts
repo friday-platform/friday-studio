@@ -28,6 +28,7 @@ import { workspacesRoutes } from "../routes/workspaces/index.ts";
 import { conversationStorageRoutes } from "../routes/conversation-storage/index.ts";
 import { todoStorageRoutes } from "../routes/todo-storage/index.ts";
 import { signalRoutes } from "../routes/signals/index.ts";
+import { userRoutes } from "../routes/user/index.ts";
 import { agents as agentsRoutes } from "../routes/agents/index.ts";
 import { type AppContext, createApp } from "./factory.ts";
 import { WorkspaceManager } from "@atlas/workspace";
@@ -78,12 +79,15 @@ export class AtlasDaemon implements AppContext {
   private sseHealthCheckInterval: number | null = null;
   private agentSessionCleanupInterval: number | null = null;
   // Store per-session MCP servers and transports
-  private agentSessions = new Map<string, {
-    server: AtlasAgentsMCPServer;
-    transport: StreamableHTTPTransport;
-    createdAt: number;
-    lastUsed: number;
-  }>();
+  private agentSessions = new Map<
+    string,
+    {
+      server: AtlasAgentsMCPServer;
+      transport: StreamableHTTPTransport;
+      createdAt: number;
+      lastUsed: number;
+    }
+  >();
   // Track active SSE connections per session
   private agentSSEConnections = new Set<string>();
   // Single shared agent registry
@@ -269,7 +273,9 @@ export class AtlasDaemon implements AppContext {
    */
   private getMCPServer(): PlatformMCPServer {
     if (!this.mcpServer) {
-      throw new Error("Platform MCP server not initialized. Call initialize() first.");
+      throw new Error(
+        "Platform MCP server not initialized. Call initialize() first.",
+      );
     }
     return this.mcpServer;
   }
@@ -417,6 +423,8 @@ export class AtlasDaemon implements AppContext {
     // Mount conversation storage routes
     this.app.route("/api/conversation-storage", conversationStorageRoutes);
 
+    this.app.route("/api/user", userRoutes);
+
     // Mount todo storage routes
     this.app.route("/api/todos", todoStorageRoutes);
     // Mount agent routes
@@ -447,11 +455,14 @@ export class AtlasDaemon implements AppContext {
         return c.json({ message: `Workspace ${workspaceId} deleted` });
       } catch (error) {
         logger.error("Failed to delete workspace", { error, workspaceId });
-        return c.json({
-          error: `Failed to delete workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to delete workspace: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -566,11 +577,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(workspaceInfo, 201);
       } catch (error) {
         logger.error("Failed to add workspace", { error });
-        return c.json({
-          error: `Failed to add workspace: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to add workspace: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -704,11 +718,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(results, 200);
       } catch (error) {
         logger.error("Failed to add workspaces", { error });
-        return c.json({
-          error: `Failed to add workspaces: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to add workspaces: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -776,20 +793,26 @@ export class AtlasDaemon implements AppContext {
         // Extract and register cron signals
         await this.registerWorkspaceCronSignals(entry.id, workspacePath);
 
-        return c.json({
-          id: entry.id,
-          name: entry.name,
-          path: entry.path,
-          description,
-          message: `Workspace created from configuration`,
-        }, 201);
+        return c.json(
+          {
+            id: entry.id,
+            name: entry.name,
+            path: entry.path,
+            description,
+            message: `Workspace created from configuration`,
+          },
+          201,
+        );
       } catch (error) {
         logger.error("Failed to create workspace from config", { error });
-        return c.json({
-          error: `Failed to create workspace from config: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to create workspace from config: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -813,11 +836,14 @@ export class AtlasDaemon implements AppContext {
         );
       } catch (error) {
         logger.error("Failed to refresh config", { error });
-        return c.json({
-          error: `Failed to refresh config: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to refresh config: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -838,11 +864,14 @@ export class AtlasDaemon implements AppContext {
         );
       } catch (error) {
         logger.error("Failed to refresh atlas config", { error });
-        return c.json({
-          error: `Failed to refresh atlas config: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to refresh atlas config: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -938,7 +967,10 @@ export class AtlasDaemon implements AppContext {
         if (session) {
           try {
             await runtime.cancelSession(sessionId);
-            return c.json({ message: `Session ${sessionId} cancelled`, workspaceId });
+            return c.json({
+              message: `Session ${sessionId} cancelled`,
+              workspaceId,
+            });
           } catch (error) {
             logger.error("Failed to cancel session", { error, sessionId });
             return c.json({
@@ -963,9 +995,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(agents);
       } catch (error) {
         logger.error("Failed to list agents", { error, workspaceId });
-        return c.json({
-          error: `Failed to list agents: ${error instanceof Error ? error.message : String(error)}`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to list agents: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -979,12 +1016,19 @@ export class AtlasDaemon implements AppContext {
         const agent = runtime.describeAgent(agentId);
         return c.json(agent);
       } catch (error) {
-        logger.error("Failed to describe agent", { error, workspaceId, agentId });
-        return c.json({
-          error: `Failed to describe agent: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        logger.error("Failed to describe agent", {
+          error,
+          workspaceId,
+          agentId,
+        });
+        return c.json(
+          {
+            error: `Failed to describe agent: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -998,11 +1042,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(signals);
       } catch (error) {
         logger.error("Failed to list signals", { error, workspaceId });
-        return c.json({
-          error: `Failed to list signals: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to list signals: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1016,9 +1063,12 @@ export class AtlasDaemon implements AppContext {
         return c.json(jobs);
       } catch (error) {
         logger.error("Failed to list jobs", { error, workspaceId });
-        return c.json({
-          error: `Failed to list jobs: ${error instanceof Error ? error.message : String(error)}`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to list jobs: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          500,
+        );
       }
     });
 
@@ -1035,12 +1085,18 @@ export class AtlasDaemon implements AppContext {
         const sessions = await runtime.listSessions();
         return c.json(sessions);
       } catch (error) {
-        logger.error("Failed to list workspace sessions", { error, workspaceId });
-        return c.json({
-          error: `Failed to list workspace sessions: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        logger.error("Failed to list workspace sessions", {
+          error,
+          workspaceId,
+        });
+        return c.json(
+          {
+            error: `Failed to list workspace sessions: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1067,11 +1123,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(result);
       } catch (error) {
         logger.error("Failed to list library items", { error });
-        return c.json({
-          error: `Failed to list library items: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to list library items: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1096,11 +1155,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(result);
       } catch (error) {
         logger.error("Failed to search library", { error });
-        return c.json({
-          error: `Failed to search library: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to search library: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1115,11 +1177,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(templates);
       } catch (error) {
         logger.error("Failed to list templates", { error });
-        return c.json({
-          error: `Failed to list templates: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to list templates: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1134,11 +1199,14 @@ export class AtlasDaemon implements AppContext {
         return c.json(stats);
       } catch (error) {
         logger.error("Failed to get library stats", { error });
-        return c.json({
-          error: `Failed to get library stats: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to get library stats: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1168,11 +1236,14 @@ export class AtlasDaemon implements AppContext {
         );
       } catch (error) {
         logger.error("Failed to generate from template", { error });
-        return c.json({
-          error: `Failed to generate from template: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to generate from template: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1204,11 +1275,14 @@ export class AtlasDaemon implements AppContext {
         }
       } catch (error) {
         logger.error("Failed to get library item", { error, itemId });
-        return c.json({
-          error: `Failed to get library item: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to get library item: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1265,11 +1339,14 @@ export class AtlasDaemon implements AppContext {
         });
       } catch (error) {
         logger.error("Failed to create library item", { error });
-        return c.json({
-          error: `Failed to create library item: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to create library item: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1290,11 +1367,14 @@ export class AtlasDaemon implements AppContext {
         return c.json({ message: `Library item ${itemId} deleted` });
       } catch (error) {
         logger.error("Failed to delete library item", { error, itemId });
-        return c.json({
-          error: `Failed to delete library item: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        }, 500);
+        return c.json(
+          {
+            error: `Failed to delete library item: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          },
+          500,
+        );
       }
     });
 
@@ -1372,7 +1452,9 @@ export class AtlasDaemon implements AppContext {
           // without a pre-existing Atlas Session ID.
           if (!sessionId && c.req.method === "POST") {
             const newSessionId = crypto.randomUUID();
-            logger.info("Creating new SSE session for Agent Server", { sessionId: newSessionId });
+            logger.info("Creating new SSE session for Agent Server", {
+              sessionId: newSessionId,
+            });
 
             // Create and store the session
             const { transport } = await this.getOrCreateAgentSession(newSessionId);
@@ -1395,13 +1477,17 @@ export class AtlasDaemon implements AppContext {
 
             // Track SSE connections for GET requests
             if (c.req.method === "GET") {
-              logger.info("Establishing SSE connection to Agent Server", { sessionId });
+              logger.info("Establishing SSE connection to Agent Server", {
+                sessionId,
+              });
               this.agentSSEConnections.add(sessionId);
             }
 
             // Handle DELETE specially - clean up after processing
             if (c.req.method === "DELETE") {
-              logger.info("Terminating Agent Server SSE session", { sessionId });
+              logger.info("Terminating Agent Server SSE session", {
+                sessionId,
+              });
               const response = await transport.handleRequest(c);
               await this.cleanupAgentSession(sessionId);
               return response;
@@ -1411,25 +1497,34 @@ export class AtlasDaemon implements AppContext {
             return transport.handleRequest(c);
           } else {
             // No session ID and not a POST request - this is an error
-            logger.error("[Daemon] Invalid request - no session ID for non-POST", {
-              method: c.req.method,
-            });
-            return c.json({
-              jsonrpc: "2.0",
-              error: {
-                code: -32000,
-                message: "Session ID required for non-initialize requests",
+            logger.error(
+              "[Daemon] Invalid request - no session ID for non-POST",
+              {
+                method: c.req.method,
               },
-              id: null,
-            }, 400);
+            );
+            return c.json(
+              {
+                jsonrpc: "2.0",
+                error: {
+                  code: -32000,
+                  message: "Session ID required for non-initialize requests",
+                },
+                id: null,
+              },
+              400,
+            );
           }
         } catch (error) {
           logger.error("Agents MCP endpoint error", { error });
-          return c.json({
-            error: `Agents MCP server error: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          }, 500);
+          return c.json(
+            {
+              error: `Agents MCP server error: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            },
+            500,
+          );
         }
       },
     );
@@ -1471,12 +1566,14 @@ export class AtlasDaemon implements AppContext {
           }
 
           // Trigger signal with streamId
-          runtime.triggerSignal(body.signal, {
-            ...body,
-            streamId,
-          }).catch((error) => {
-            logger.error("Signal trigger failed", { error });
-          });
+          runtime
+            .triggerSignal(body.signal, {
+              ...body,
+              streamId,
+            })
+            .catch((error) => {
+              logger.error("Signal trigger failed", { error });
+            });
         }
 
         return c.json({
@@ -1505,9 +1602,7 @@ export class AtlasDaemon implements AppContext {
         const { message, userId, scope, metadata, conversationId } = body;
 
         // Trigger the conversation workspace signal with the message
-        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime(
-          "atlas-conversation",
-        );
+        const conversationWorkspace = await this.getOrCreateWorkspaceRuntime("atlas-conversation");
 
         await conversationWorkspace.triggerSignal("conversation-stream", {
           streamId,
@@ -1525,9 +1620,12 @@ export class AtlasDaemon implements AppContext {
         });
       } catch (error) {
         logger.error("Stream API error", { streamId, error });
-        return c.json({
-          error: `Stream API error: ${error instanceof Error ? error.message : String(error)}`,
-        }, 500);
+        return c.json(
+          {
+            error: `Stream API error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          500,
+        );
       }
     });
 
@@ -1544,9 +1642,12 @@ export class AtlasDaemon implements AppContext {
         return c.json({ success: true });
       } catch (error) {
         logger.error("SSE emit error", { streamId, error });
-        return c.json({
-          error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}`,
-        }, 500);
+        return c.json(
+          {
+            error: `SSE emit error: ${error instanceof Error ? error.message : String(error)}`,
+          },
+          500,
+        );
       }
     });
   }
@@ -1554,7 +1655,9 @@ export class AtlasDaemon implements AppContext {
   /**
    * Get or create a workspace runtime on-demand
    */
-  async getOrCreateWorkspaceRuntime(workspaceId: string): Promise<WorkspaceRuntime> {
+  async getOrCreateWorkspaceRuntime(
+    workspaceId: string,
+  ): Promise<WorkspaceRuntime> {
     try {
       logger.debug("getOrCreateWorkspaceRuntime called", { workspaceId });
 
@@ -1567,17 +1670,24 @@ export class AtlasDaemon implements AppContext {
 
       // Check concurrent workspace limit
       if (this.runtimes.size >= this.options.maxConcurrentWorkspaces!) {
-        logger.warn("Maximum concurrent workspaces reached, attempting eviction", {
-          maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
-        });
+        logger.warn(
+          "Maximum concurrent workspaces reached, attempting eviction",
+          {
+            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
+          },
+        );
         // Find the oldest idle workspace to evict
         const oldestWorkspace = this.findOldestIdleWorkspace();
         if (oldestWorkspace) {
-          logger.info("Evicting oldest idle workspace", { workspaceId: oldestWorkspace });
+          logger.info("Evicting oldest idle workspace", {
+            workspaceId: oldestWorkspace,
+          });
           await this.destroyWorkspaceRuntime(oldestWorkspace);
         } else {
           const error = "Maximum concurrent workspaces reached";
-          logger.error(error, { maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces });
+          logger.error(error, {
+            maxConcurrentWorkspaces: this.options.maxConcurrentWorkspaces,
+          });
           throw new Error(`${error} (${this.options.maxConcurrentWorkspaces})`);
         }
       }
@@ -1612,7 +1722,10 @@ export class AtlasDaemon implements AppContext {
             );
           }
         } catch (error) {
-          logger.error("Failed to access workspace path", { error, workspacePath: workspace.path });
+          logger.error("Failed to access workspace path", {
+            error,
+            workspacePath: workspace.path,
+          });
           throw new Error(`Workspace path does not exist: ${workspace.path}`);
         }
       } else {
@@ -1666,16 +1779,22 @@ export class AtlasDaemon implements AppContext {
       logger.debug("WorkspaceRuntime created", { workspaceId: workspace.id });
 
       this.runtimes.set(workspace.id, runtime);
-      logger.debug("Runtime stored in daemon registry", { workspaceId: workspace.id });
+      logger.debug("Runtime stored in daemon registry", {
+        workspaceId: workspace.id,
+      });
 
       // Register runtime with WorkspaceManager
       await manager.registerRuntime(workspace.id, runtime);
-      logger.debug("Runtime registered with WorkspaceManager", { workspaceId: workspace.id });
+      logger.debug("Runtime registered with WorkspaceManager", {
+        workspaceId: workspace.id,
+      });
 
       // Start watching workspace configuration file if not a system workspace
       if (this.fileWatcher && !workspace.metadata?.system) {
         await this.fileWatcher.watchWorkspace(workspace);
-        logger.debug("Started watching workspace configuration", { workspaceId: workspace.id });
+        logger.debug("Started watching workspace configuration", {
+          workspaceId: workspace.id,
+        });
       }
 
       // Set idle timeout
@@ -1689,7 +1808,10 @@ export class AtlasDaemon implements AppContext {
 
       return runtime;
     } catch (error) {
-      logger.error("Failed to create workspace runtime", { error, workspaceId });
+      logger.error("Failed to create workspace runtime", {
+        error,
+        workspaceId,
+      });
 
       // Status update will be handled by WorkspaceManager if needed
 
@@ -1707,7 +1829,9 @@ export class AtlasDaemon implements AppContext {
     for (const [workspaceId, runtime] of this.runtimes) {
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
-        (s) => s.status === SessionStatusEnum.RUNNING || s.status === SessionStatusEnum.STARTING,
+        (s) =>
+          s.status === SessionStatusEnum.RUNNING ||
+          s.status === SessionStatusEnum.STARTING,
       );
 
       if (!hasActiveSessions) {
@@ -1793,7 +1917,10 @@ export class AtlasDaemon implements AppContext {
     try {
       await runtime.shutdown();
     } catch (error) {
-      logger.error("Error shutting down workspace runtime", { error, workspaceId });
+      logger.error("Error shutting down workspace runtime", {
+        error,
+        workspaceId,
+      });
     }
 
     this.runtimes.delete(workspaceId);
@@ -1817,7 +1944,10 @@ export class AtlasDaemon implements AppContext {
   /**
    * Handle workspace configuration changes detected by file watcher
    */
-  private async handleWorkspaceConfigChange(workspaceId: string, filePath: string) {
+  private async handleWorkspaceConfigChange(
+    workspaceId: string,
+    filePath: string,
+  ) {
     logger.info("Workspace configuration changed, reloading runtime", {
       workspaceId,
       filePath,
@@ -1846,15 +1976,17 @@ export class AtlasDaemon implements AppContext {
         Deno.exit(1);
       }, 30000);
 
-      this.shutdown().then(() => {
-        clearTimeout(shutdownTimeout);
-        logger.info("Daemon shutdown complete", { daemonId });
-        Deno.exit(0);
-      }).catch((error) => {
-        clearTimeout(shutdownTimeout);
-        logger.error("Error during shutdown", { error, daemonId });
-        Deno.exit(1);
-      });
+      this.shutdown()
+        .then(() => {
+          clearTimeout(shutdownTimeout);
+          logger.info("Daemon shutdown complete", { daemonId });
+          Deno.exit(0);
+        })
+        .catch((error) => {
+          clearTimeout(shutdownTimeout);
+          logger.error("Error during shutdown", { error, daemonId });
+          Deno.exit(1);
+        });
     };
 
     const sigintHandler = () => handleShutdown("SIGINT");
@@ -1917,18 +2049,21 @@ export class AtlasDaemon implements AppContext {
       serverReady = resolve;
     });
 
-    this.server = Deno.serve({
-      port,
-      hostname,
-      onListen: ({ hostname, port }) => {
-        this.actualPort = port; // Store the actual port
-        logger.info("Atlas daemon running", {
-          hostname,
-          port,
-        });
-        serverReady();
+    this.server = Deno.serve(
+      {
+        port,
+        hostname,
+        onListen: ({ hostname, port }) => {
+          this.actualPort = port; // Store the actual port
+          logger.info("Atlas daemon running", {
+            hostname,
+            port,
+          });
+          serverReady();
+        },
       },
-    }, this.app.fetch);
+      this.app.fetch,
+    );
 
     await readyPromise;
     return { finished: this.server.finished };
@@ -1990,7 +2125,10 @@ export class AtlasDaemon implements AppContext {
         try {
           client.controller.close();
         } catch (error) {
-          logger.debug("Error closing SSE client for session", { error, sessionId });
+          logger.debug("Error closing SSE client for session", {
+            error,
+            sessionId,
+          });
         }
       }
     }
@@ -2220,11 +2358,14 @@ export class AtlasDaemon implements AppContext {
             progress: `${processedWorkspaces}/${workspaces.length}`,
           });
         } catch (error) {
-          logger.warn("Failed to register cron signals for existing workspace", {
-            workspaceId: workspace.id,
-            workspacePath: workspace.path,
-            error,
-          });
+          logger.warn(
+            "Failed to register cron signals for existing workspace",
+            {
+              workspaceId: workspace.id,
+              workspacePath: workspace.path,
+              error,
+            },
+          );
           processedWorkspaces++;
         }
       }
@@ -2370,10 +2511,14 @@ export class AtlasDaemon implements AppContext {
 
     // Enforce session limit (LRU eviction)
     if (this.agentSessions.size > this.MAX_AGENT_SESSIONS) {
-      const sortedSessions = Array.from(this.agentSessions.entries())
-        .sort((a, b) => a[1].lastUsed - b[1].lastUsed);
+      const sortedSessions = Array.from(this.agentSessions.entries()).sort(
+        (a, b) => a[1].lastUsed - b[1].lastUsed,
+      );
 
-      const toEvict = sortedSessions.slice(0, this.agentSessions.size - this.MAX_AGENT_SESSIONS);
+      const toEvict = sortedSessions.slice(
+        0,
+        this.agentSessions.size - this.MAX_AGENT_SESSIONS,
+      );
 
       logger.warn("Evicting LRU agent sessions due to limit", {
         evictionCount: toEvict.length,
@@ -2437,7 +2582,10 @@ export class AtlasDaemon implements AppContext {
               // Ignore close errors
             }
             prunedClients++;
-            logger.debug("Pruned disconnected SSE client during heartbeat", { sessionId, error });
+            logger.debug("Pruned disconnected SSE client during heartbeat", {
+              sessionId,
+              error,
+            });
           }
         }
       }

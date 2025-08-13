@@ -82,6 +82,7 @@ function getFetchOptions(options?: RequestInit): RequestInit {
     headers: {
       Accept: "text/event-stream",
       "Cache-Control": "no-cache",
+      "Access-Control-Allow-Origin": "*",
       ...options?.headers,
     },
     cache: "no-store",
@@ -112,7 +113,9 @@ export function createSSEAbortController(timeoutMs?: number): AbortController {
   if (timeoutMs && timeoutMs > 0) {
     setTimeout(() => {
       if (!controller.signal.aborted) {
-        controller.abort(new Error(`SSE connection timed out after ${timeoutMs}ms`));
+        controller.abort(
+          new Error(`SSE connection timed out after ${timeoutMs}ms`),
+        );
       }
     }, timeoutMs);
   }

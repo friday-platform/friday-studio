@@ -1,6 +1,6 @@
-import { createEventSource } from "../../core/agents/remote/adapters/sse-utils.ts";
+import { createEventSource } from "../../../../../../src/core/agents/remote/adapters/sse-utils.ts";
 import { createAtlasClient } from "@atlas/oapi-client";
-import { DaemonClient } from "./daemon-client.ts";
+import { DaemonClient } from "./daemon.ts";
 
 export interface ConversationSession {
   sessionId: string;
@@ -57,15 +57,13 @@ export class ConversationClient {
 
     const response = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
       body: JSON.stringify(body),
     });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);
-      throw new Error(
-        `Failed to create conversation session (${response.status}): ${errorText}`,
-      );
+      throw new Error(`Failed to create conversation session (${response.status}): ${errorText}`);
     }
 
     const result = await response.json();
@@ -96,9 +94,7 @@ export class ConversationClient {
 
     try {
       const workspaces = await this.daemonClient.listWorkspaces();
-      const conversationWorkspace = workspaces.find(
-        (w) => w.id === "atlas-conversation",
-      );
+      const conversationWorkspace = workspaces.find((w) => w.id === "atlas-conversation");
 
       if (!conversationWorkspace) {
         throw new Error(
@@ -126,22 +122,19 @@ export class ConversationClient {
     const workspaceId = await this.getConversationWorkspaceId();
     const client = createAtlasClient();
 
-    const response = await client.POST(
-      "/api/workspaces/{workspaceId}/signals/{signalId}",
-      {
-        params: { path: { workspaceId, signalId: "conversation-stream" } },
-        body: {
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: {
+        streamId: sessionId,
+        payload: {
           streamId: sessionId,
-          payload: {
-            streamId: sessionId,
-            message,
-            userId: this.userId,
-            type,
-            ...(conversationId && { conversationId }), // Include conversationId if provided
-          },
+          message,
+          userId: this.userId,
+          type,
+          ...(conversationId && { conversationId }), // Include conversationId if provided
         },
       },
-    );
+    });
 
     if (response.error) {
       throw new Error(
@@ -168,20 +161,17 @@ export class ConversationClient {
     const workspaceId = await this.getConversationWorkspaceId();
     const client = createAtlasClient();
 
-    const response = await client.POST(
-      "/api/workspaces/{workspaceId}/signals/{signalId}",
-      {
-        params: { path: { workspaceId, signalId: "conversation-stream" } },
-        body: {
+    const response = await client.POST("/api/workspaces/{workspaceId}/signals/{signalId}", {
+      params: { path: { workspaceId, signalId: "conversation-stream" } },
+      body: {
+        streamId: sessionId,
+        payload: {
+          type: "prompt",
           streamId: sessionId,
-          payload: {
-            type: "prompt",
-            streamId: sessionId,
-            parameters,
-          },
+          parameters,
         },
       },
-    );
+    });
 
     if (response.error) {
       throw new Error(
@@ -253,35 +243,9 @@ export class ConversationClient {
         }
       }
     } catch (error) {
-      // Handle specific connection errors with user-friendly messages
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Check for daemon shutdown or connection loss
-      if (
-        errorMessage.includes("error reading a body from connection") ||
-        errorMessage.includes("Connection refused") ||
-        errorMessage.includes("ECONNREFUSED")
-      ) {
-        throw new Error(
-          "Connection to Atlas daemon lost. The daemon may have been stopped or restarted.",
-        );
-      }
-
-      // Check for network issues
-      if (
-        errorMessage.includes("Failed to fetch") ||
-        errorMessage.includes("NetworkError") ||
-        errorMessage.includes("ERR_NETWORK")
-      ) {
-        throw new Error(
-          "Network connection to Atlas daemon failed. Please check your network and daemon status.",
-        );
-      }
-
-      // Default error message for other cases
-      throw new Error(
-        `SSE connection error: ${errorMessage}`,
-      );
+      // throw new Error(
+      // 	`SSE connection failed: ${error instanceof Error ? error.message : String(error)}`
+      // );
     } finally {
       // Ensure the connection is closed
       if (eventSource && eventSource.close) {
@@ -296,6 +260,9 @@ export class ConversationClient {
   async getSession(sessionId: string): Promise<ConversationSession | null> {
     const response = await fetch(
       `${this.daemonUrl}/api/workspaces/${this.workspaceId}/conversation/sessions/${sessionId}`,
+      {
+        headers: { "Access-Control-Allow-Origin": "*" },
+      },
     );
 
     if (response.status === 404) {
@@ -303,9 +270,7 @@ export class ConversationClient {
     }
 
     if (!response.ok) {
-      throw new Error(
-        `Failed to get session: ${response.status} ${response.statusText}`,
-      );
+      throw new Error(`Failed to get session: ${response.status} ${response.statusText}`);
     }
 
     return await response.json();
@@ -317,6 +282,7 @@ export class ConversationClient {
   async healthCheck(): Promise<boolean> {
     try {
       const response = await fetch(`${this.daemonUrl}/health`, {
+        headers: { "Access-Control-Allow-Origin": "*" },
         method: "GET",
         signal: AbortSignal.timeout(5000), // 5 second timeout
       });
@@ -330,9 +296,25 @@ export class ConversationClient {
    * Get workspace information to verify workspace exists
    */
   async getWorkspace(): Promise<{ id: string; name: string; status: string }> {
-    const response = await fetch(
-      `${this.daemonUrl}/api/workspaces/${this.workspaceId}`,
-    );
+    const response = await fetch(`${this.daemonUrl}/api/workspaces/${this.workspaceId}`, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      throw new Error(`Workspace API error (${response.status}): ${errorText}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * Get workspace information to verify workspace exists
+   */
+  async getUser(): Promise<{ currentUser: string; success: boolean }> {
+    const response = await fetch(`${this.daemonUrl}/api/user`, {
+      headers: { "Access-Control-Allow-Origin": "*" },
+    });
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => response.statusText);

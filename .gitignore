@@ -1,5 +1,8 @@
 # Environment variables
 .env
+.env.*
+!.env.example
+!.env.test
 
 # Atlas local data
 .atlas/
@@ -45,3 +48,16 @@ tools/atlas-installer/*.bak
 
 # Test directories
 test-workspace-watcher*
+
+# Web Client Output
+apps/web-client/.output
+apps/web-client/.vercel
+apps/web-client/.netlify
+apps/web-client/.wrangler
+apps/web-client/.svelte-kit
+apps/web-client/build
+
+# Vite
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.vite/

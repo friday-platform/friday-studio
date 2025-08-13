@@ -1,4 +1,5 @@
 import { createFactory } from "hono/factory";
+import { cors } from "hono/cors";
 import type { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import type { WorkspaceManager } from "@atlas/workspace";
 
@@ -6,7 +7,10 @@ import type { WorkspaceManager } from "@atlas/workspace";
 export interface AppContext {
   runtimes: Map<string, WorkspaceRuntime>;
   startTime: number;
-  sseClients: Map<string, Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>>;
+  sseClients: Map<
+    string,
+    Array<{ controller: ReadableStreamDefaultController<Uint8Array> }>
+  >;
   getWorkspaceManager(): WorkspaceManager;
 
   // Signal route methods
@@ -35,6 +39,8 @@ export const createApp = (context: AppContext) => {
     c.set("app", context);
     await next();
   });
+
+  app.use("*", cors());
 
   return app;
 };
