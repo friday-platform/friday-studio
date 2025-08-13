@@ -112,7 +112,7 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
             `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
           );
         }
-      } catch (_error) {
+      } catch {
         throw new Error(
           "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
         );

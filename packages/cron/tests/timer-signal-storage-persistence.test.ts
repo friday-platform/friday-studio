@@ -91,9 +91,6 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
       await cronManager1.start();
       await cronManager1.registerTimer(validConfig);
 
-      const originalTimer = cronManager1.getTimer(validConfig.workspaceId, validConfig.signalId);
-      const _originalNextExecution = originalTimer?.nextExecution;
-
       // Simulate complete shutdown (as would happen in real Atlas shutdown)
       await cronManager1.shutdown();
 
@@ -172,7 +169,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     let registrationError = false;
     try {
       await cronManager.registerTimer(anotherConfig);
-    } catch (_error) {
+    } catch {
       registrationError = true;
     }
 
@@ -205,7 +202,7 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
     let startError = false;
     try {
       await cronManager.start();
-    } catch (_error) {
+    } catch {
       startError = true;
     }
 
@@ -265,11 +262,6 @@ Deno.test("Timer Signal - Storage Persistence", async (t) => {
 
   await t.step("should update persisted state after timer execution", async () => {
     await setup();
-
-    let _callbackExecuted = false;
-    cronManager.setWakeupCallback(() => {
-      _callbackExecuted = true;
-    });
 
     await cronManager.registerTimer(validConfig);
 

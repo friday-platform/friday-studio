@@ -151,7 +151,7 @@ async function loadCache(): Promise<VersionCache | null> {
     // Cache expired, remove it
     await Deno.remove(cacheFile).catch(() => {}); // Ignore errors
     return null;
-  } catch (_error) {
+  } catch {
     // Ignore cache read errors
     return null;
   }
@@ -172,7 +172,7 @@ async function saveCache(result: VersionCheckResult): Promise<void> {
 
     const cacheFile = getCacheFilePath();
     await Deno.writeTextFile(cacheFile, JSON.stringify(cache));
-  } catch (_error) {
+  } catch {
     // Ignore cache write errors - don't let them affect CLI
   }
 }
@@ -200,7 +200,7 @@ async function fetchLatestVersion(
     }
 
     return (await response.json()) as VersionResponse;
-  } catch (_error) {
+  } catch {
     // Fail silently - network errors should not interrupt CLI usage
     return null;
   }

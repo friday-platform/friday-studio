@@ -54,7 +54,6 @@ import type {
   SessionDetailedInfo,
   SessionInfo,
   SignalDetailedInfo,
-  SignalInfo,
   SignalResponse,
   SignalTriggerResponse,
   TemplateConfig,

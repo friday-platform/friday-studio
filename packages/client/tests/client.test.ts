@@ -87,7 +87,7 @@ Deno.test("AtlasClient - handles successful API responses", async () => {
     const workspaces = await client.listWorkspaces();
     expect(Array.isArray(workspaces)).toBe(true);
     expect(workspaces.length).toBe(1);
-    expect(workspaces[0].id).toBe("workspace_1");
+    expect(workspaces[0]?.id).toBe("workspace_1");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -168,8 +168,8 @@ Deno.test("AtlasClient - streamSessionLogs streams logs using Server-Sent Events
     }
 
     expect(logs.length).toBe(2);
-    expect(logs[0].message).toBe("Log 1");
-    expect(logs[1].message).toBe("Log 2");
+    expect(logs[0]?.message).toBe("Log 1");
+    expect(logs[1]?.message).toBe("Log 2");
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -215,7 +215,7 @@ jobs:
     name: "test-job"
     description: "Test job description"
     execution:
-      strategy: "sequential" 
+      strategy: "sequential"
       agents:
         - "agent1"
         - "agent2"
@@ -306,8 +306,8 @@ Deno.test("AtlasClient - listWorkspaceLibraryItems returns workspace library ite
     });
 
     expect(result.items.length).toBe(1);
-    expect(result.items[0].id).toBe("lib_1");
-    expect(result.items[0].workspace_id).toBe("test-workspace");
+    expect(result.items[0]?.id).toBe("lib_1");
+    expect(result.items[0]?.workspace_id).toBe("test-workspace");
     expect(result.total).toBe(1);
   } finally {
     globalThis.fetch = originalFetch;
@@ -355,7 +355,7 @@ Deno.test("AtlasClient - searchWorkspaceLibrary searches within workspace", asyn
     });
 
     expect(result.items.length).toBe(1);
-    expect(result.items[0].type).toBe("code");
+    expect(result.items[0]?.type).toBe("code");
     expect(result.query.query).toBe("test search");
   } finally {
     globalThis.fetch = originalFetch;

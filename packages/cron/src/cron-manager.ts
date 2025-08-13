@@ -610,6 +610,10 @@ export class CronManager {
           const persistedData = value as PersistedTimerData;
           const timerKey = key[key.length - 1]; // Last part of key is timerKey
 
+          if (!timerKey) {
+            throw new Error(`Invalid timer key: ${key}`);
+          }
+
           const timer: TimerInfo = {
             workspaceId: persistedData.workspaceId,
             signalId: persistedData.signalId,

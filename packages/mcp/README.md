@@ -8,18 +8,16 @@ This package provides the core MCP management functionality for Atlas, including
 
 - **MCPManager**: Handles MCP server lifecycle and tool registration using Vercel AI SDK
 - **MCPServerRegistry**: Workspace-level registry for MCP server configurations
-- **MCPConfigurationService**: Clean interface for MCP server configuration resolution
 - **MCP Adapter**: Remote agent communication adapter for MCP
 
 ## Usage
 
 ```typescript
-import { MCPConfigurationService, MCPManager, MCPServerRegistry } from "@atlas/mcp";
+import { MCPManager, MCPServerRegistry } from "@atlas/mcp";
 
 // Use MCP components in your Atlas application
 const mcpManager = new MCPManager(dependencies);
 const registry = new MCPServerRegistry(workspaceId, configLoader);
-const configService = new MCPConfigurationService(dependencies);
 ```
 
 ## Architecture

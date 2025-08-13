@@ -35,23 +35,20 @@ async function downloadFile(url: string, destPath: string): Promise<void> {
 async function extractZip(zipPath: string, destDir: string): Promise<void> {
   // Use native unzip command available on all platforms
   const platform = Deno.build.os;
-  let command: string[];
+  let process: Deno.Command;
 
   if (platform === "windows") {
     // Use PowerShell's Expand-Archive on Windows
-    command = [
-      "powershell",
-      "-Command",
-      `Expand-Archive -Path "${zipPath}" -DestinationPath "${destDir}" -Force`,
-    ];
+
+    process = new Deno.Command("powershell", {
+      args: ["-Command", `Expand-Archive -Path "${zipPath}" -DestinationPath "${destDir}" -Force`],
+    });
   } else {
     // Use unzip on macOS and Linux
-    command = ["unzip", "-q", "-o", zipPath, "-d", destDir];
+    process = new Deno.Command("unzip", {
+      args: ["-q", "-o", zipPath, "-d", destDir],
+    });
   }
-
-  const process = new Deno.Command(command[0], {
-    args: command.slice(1),
-  });
 
   const { success, stderr } = await process.output();
   if (!success) {

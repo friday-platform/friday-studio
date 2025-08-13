@@ -57,7 +57,7 @@ export const handler = async (argv: CleanupArgs): Promise<void> => {
         if (!dirExists) {
           invalidWorkspaces.push(workspace);
         }
-      } catch (_error) {
+      } catch {
         // If we can't access the path, consider it invalid
         invalidWorkspaces.push(workspace);
       }

@@ -27,7 +27,9 @@ allowing execution.
 #### 1.1 Modify `generateThinking` function
 
 ```typescript
-export async function generateThinking<TUserContext extends BaseReasoningContext>(
+export async function generateThinking<
+  TUserContext extends BaseReasoningContext,
+>(
   context: ReasoningContext<TUserContext>,
   customPrompt?: string,
 ): Promise<ReasoningCompletion> {
@@ -54,10 +56,7 @@ export async function generateThinking<TUserContext extends BaseReasoningContext
 
   // Since tool_choice is "none", toolCalls will be empty
   // The LLM will describe intended tool calls in the text
-  const confidence = calculateConfidence(
-    result.text,
-    context.currentIteration,
-  );
+  const confidence = calculateConfidence(result.text, context.currentIteration);
   const isComplete = result.text.includes("ACTION: complete") ||
     result.text.toLowerCase().includes("task complete") ||
     result.text.toLowerCase().includes("finished");
@@ -73,7 +72,9 @@ export async function generateThinking<TUserContext extends BaseReasoningContext
 #### 1.2 Enhance `parseAction` function
 
 ````typescript
-export function parseAction(thinking: ReasoningThinking): ReasoningAction | null {
+export function parseAction(
+  thinking: ReasoningThinking,
+): ReasoningAction | null {
   try {
     const text = thinking.text;
     const actionMatch = text.match(/ACTION:\s*(\w+)/i);
@@ -130,7 +131,7 @@ export function parseAction(thinking: ReasoningThinking): ReasoningAction | null
       reasoning: reasoningMatch?.[1]?.trim() || "No reasoning provided",
       toolCallId: toolCallIdMatch?.[1]?.trim(),
     };
-  } catch (_error) {
+  } catch {
     return null;
   }
 }
@@ -151,7 +152,9 @@ function createDefaultPrompt<TUserContext extends BaseReasoningContext>(
       if (tool.parameters) {
         // Extract parameter info from Zod schema if available
         try {
-          const shape = tool.parameters._def?.shape?.() || tool.parameters._def?.shape || {};
+          const shape = tool.parameters._def?.shape?.() ||
+            tool.parameters._def?.shape ||
+            {};
           paramDesc = Object.entries(shape)
             .map(([key, schema]: [string, any]) => {
               const description = schema._def?.description || "No description";
@@ -166,7 +169,10 @@ function createDefaultPrompt<TUserContext extends BaseReasoningContext>(
     })
     .join("\n\n");
 
-  const recentObservations = steps.slice(-2).map((s) => s.observation).join(" | ");
+  const recentObservations = steps
+    .slice(-2)
+    .map((s) => s.observation)
+    .join(" | ");
   const recentResults = Array.from(workingMemory.entries())
     .filter(([key]) => key.startsWith("result_"))
     .slice(-1)
@@ -189,7 +195,10 @@ Task: ${userContext.task || JSON.stringify(userContext)}
 **PREVIOUS STEPS:**
 ${
     steps.length > 0
-      ? steps.slice(-2).map((s) => `Step ${s.iteration}: ${s.thinking.text}`).join("\n")
+      ? steps
+        .slice(-2)
+        .map((s) => `Step ${s.iteration}: ${s.thinking.text}`)
+        .join("\n")
       : "No previous steps."
   }
 
@@ -222,37 +231,37 @@ Add assertions to verify:
 think: async (context) => {
   stepCount++;
   const result = await generateThinking(context);
-  
+
   // Verify no tool calls occurred during thinking
   assertEquals(
     result.thinking.toolCalls.length,
     0,
     "No tool calls should occur during thinking phase"
   );
-  
-  console.log({ 
+
+  console.log({
     thinking: result.thinking.text,
-    hasToolCalls: result.thinking.toolCalls.length > 0 
+    hasToolCalls: result.thinking.toolCalls.length > 0
   });
-  
+
   return result;
 },
 
 parseAction: (thinking) => {
   const action = parseAction(thinking);
-  
+
   // Log parsed action for debugging
   console.log({
     parsedAction: action,
     fromThinking: thinking.text.substring(0, 200)
   });
-  
+
   // Verify action was properly parsed from text
   if (action?.type === "tool_call") {
     assertExists(action.toolName, "Tool name must be parsed from thinking");
     assertExists(action.parameters, "Parameters must be parsed from thinking");
   }
-  
+
   return action;
 },
 ```
@@ -275,7 +284,9 @@ Deno.test({
 
         // Track if any tools were called during thinking
         if (result.thinking.toolCalls.length > 0) {
-          thinkingPhaseTools.push(...result.thinking.toolCalls.map((tc) => tc.toolName));
+          thinkingPhaseTools.push(
+            ...result.thinking.toolCalls.map((tc) => tc.toolName),
+          );
         }
 
         return result;

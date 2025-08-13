@@ -384,11 +384,11 @@ export class FilesystemProvider extends BaseEMCPProvider {
             size: stat.size,
             lastModified: stat.mtime || undefined,
           });
-        } catch (_error) {
+        } catch {
           // Skip files we can't stat
         }
       }
-    } catch (_error) {
+    } catch {
       // Skip directories we can't read
     }
   }

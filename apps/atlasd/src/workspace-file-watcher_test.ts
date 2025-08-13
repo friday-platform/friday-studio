@@ -11,7 +11,7 @@ Deno.test("WorkspaceFileWatcher - detects workspace.yml changes", async () => {
   // Clean up any existing directory first
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -88,7 +88,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -97,7 +97,7 @@ Deno.test("WorkspaceFileWatcher - ignores invalid configurations", async () => {
   const testDir = "./test-workspace-watcher-invalid";
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -163,7 +163,7 @@ invalid yaml {
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -172,7 +172,7 @@ Deno.test("WorkspaceFileWatcher - debounces rapid changes", async () => {
   const testDir = "./test-workspace-watcher-debounce";
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -249,7 +249,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -258,7 +258,7 @@ Deno.test("WorkspaceFileWatcher - hash-based change detection", async () => {
   const testDir = "./test-workspace-watcher-hash";
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -348,7 +348,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -357,7 +357,7 @@ Deno.test("WorkspaceFileWatcher - stops watching on unwatch", async () => {
   const testDir = "./test-workspace-watcher-unwatch";
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -444,7 +444,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -453,7 +453,7 @@ Deno.test("WorkspaceFileWatcher - handles race condition during unwatch", async 
   const testDir = "./test-workspace-watcher-race";
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -530,7 +530,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -540,12 +540,12 @@ Deno.test("WorkspaceFileWatcher - hash cleanup doesn't affect similar workspace 
   const testDir11 = "./test-workspace-11";
   try {
     await Deno.remove(testDir1, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   try {
     await Deno.remove(testDir11, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir1, { recursive: true });
@@ -682,12 +682,12 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir1, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
   try {
     await Deno.remove(testDir11, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });
@@ -697,7 +697,7 @@ Deno.test("WorkspaceFileWatcher - ignores files with same name in different path
   const subDir = join(testDir, "subdir");
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore if doesn't exist
   }
   await Deno.mkdir(testDir, { recursive: true });
@@ -817,7 +817,7 @@ signals:
   await watcher.stop();
   try {
     await Deno.remove(testDir, { recursive: true });
-  } catch (_error) {
+  } catch {
     // Ignore cleanup errors
   }
 });

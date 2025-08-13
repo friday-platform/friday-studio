@@ -106,14 +106,14 @@ export class CliSignalProvider implements IProvider {
     return { ...this.state };
   }
 
-  async checkHealth(): Promise<HealthStatus> {
-    return {
+  checkHealth(): Promise<HealthStatus> {
+    return Promise.resolve({
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
       message: this.state.status === ProviderStatus.READY
         ? "CLI signal provider ready"
         : `Provider status: ${this.state.status}`,
-    };
+    });
   }
 
   /**

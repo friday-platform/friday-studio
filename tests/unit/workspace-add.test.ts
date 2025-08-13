@@ -2,7 +2,6 @@ import { assertEquals, assertExists, assertRejects } from "@std/assert";
 import { join } from "@std/path";
 import { WorkspaceManager } from "@atlas/core";
 import { AtlasClient } from "@atlas/client";
-import { ensureDir, exists } from "@std/fs";
 
 // Mock server for testing daemon endpoints
 class MockDaemonServer {

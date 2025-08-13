@@ -32,7 +32,7 @@ export function getAtlasVersion(): string {
       const gitSha = decoder.decode(output.stdout).trim();
       return `dev-${gitSha}`;
     }
-  } catch (_error) {
+  } catch {
     // Git not available or not in git repository
   }
 

@@ -1,4 +1,4 @@
-import { jsonSchemaToZod, validateSignalPayload } from "@atlas/config";
+import { JsonSchema, jsonSchemaToZod, validateSignalPayload } from "@atlas/config";
 import { assertEquals, assertThrows } from "@std/assert";
 
 // Basic Type Tests
@@ -376,7 +376,7 @@ Deno.test("JSON Schema Validation - should handle anyOf", () => {
 
 // AllOf Tests
 Deno.test("JSON Schema Validation - should handle allOf (intersection types)", () => {
-  const schema = {
+  const schema: JsonSchema = {
     allOf: [
       {
         type: "object",

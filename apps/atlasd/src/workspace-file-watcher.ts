@@ -42,7 +42,7 @@ export class WorkspaceFileWatcher {
       // Initialize hash for existing file to prevent initial change detection
       try {
         await this.hasFileChanged(configPath);
-      } catch (_error) {
+      } catch {
         // File might not exist yet, that's okay
       }
 
@@ -122,7 +122,7 @@ export class WorkspaceFileWatcher {
     if (watcher) {
       try {
         watcher.close();
-      } catch (_error) {
+      } catch {
         // Ignore errors on close
       }
       this.watchers.delete(workspaceId);

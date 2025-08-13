@@ -91,7 +91,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
     "web_session_handle_consent",
     {
       description: `Automatically detects and handles cookie consent banners
-      
+
 - Detects common cookie consent patterns (OneTrust, CookieBot, Quantcast, etc.)
 - Can accept or reject cookies based on preference
 - Supports custom selectors for unusual consent implementations
@@ -197,7 +197,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
                   break;
                 }
               }
-            } catch (_error) {
+            } catch {
               // Continue to next selector
               continue;
             }
@@ -265,7 +265,7 @@ export function registerConsentTools(server: McpServer, ctx: ToolContext) {
     "web_session_wait_for_element",
     {
       description: `Waits for an element to appear, disappear, or become visible/hidden
-      
+
 - Useful for waiting for dynamic content to load
 - Can wait for elements to appear or disappear
 - Supports waiting for visibility changes
@@ -345,7 +345,7 @@ async function detectConsentBanners(page: unknown, _timeout: number): Promise<st
           foundBanners.push(selector);
         }
       }
-    } catch (_error) {
+    } catch {
       // Ignore errors for individual selectors
       continue;
     }

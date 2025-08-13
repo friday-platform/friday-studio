@@ -210,12 +210,7 @@ Deno.test("CronManager - Callback Management", async (t) => {
     const { cronManager } = await createTestCronManager();
     await cronManager.start();
 
-    let callbackExecuted = false;
-    let receivedData: unknown;
-
-    cronManager.setWakeupCallback((workspaceId, signalId, signalData) => {
-      callbackExecuted = true;
-      receivedData = signalData;
+    cronManager.setWakeupCallback((workspaceId, signalId) => {
       assertEquals(workspaceId, "test-workspace");
       assertEquals(signalId, "test-signal");
     });
@@ -233,19 +228,6 @@ Deno.test("CronManager - Callback Management", async (t) => {
   await t.step("should allow callback replacement", async () => {
     const { cronManager } = await createTestCronManager();
     await cronManager.start();
-
-    let callback1Called = false;
-    let callback2Called = false;
-
-    // Set first callback
-    cronManager.setWakeupCallback(() => {
-      callback1Called = true;
-    });
-
-    // Replace with second callback
-    cronManager.setWakeupCallback(() => {
-      callback2Called = true;
-    });
 
     const config = createTestTimerConfig();
     await cronManager.registerTimer(config);
@@ -332,7 +314,7 @@ Deno.test("CronManager - Lifecycle Management", async (t) => {
     // Only workspace2 timer should remain
     const activeTimers = cronManager.listActiveTimers();
     assertEquals(activeTimers.length, 1);
-    assertEquals(activeTimers[0].workspaceId, "workspace2");
+    assertEquals(activeTimers[0]?.workspaceId, "workspace2");
 
     await cronManager.shutdown();
   });

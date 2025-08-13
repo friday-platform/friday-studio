@@ -2552,7 +2552,7 @@ export class AtlasDaemon implements AppContext {
         if (now - client.lastActivity > timeoutMs) {
           try {
             client.controller.close();
-          } catch (_error) {
+          } catch {
             // Ignore close errors
           }
           prunedClients++;

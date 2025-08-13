@@ -547,6 +547,7 @@ Deno.test("Edge Cases - should handle large configurations efficiently", () => {
       config: {
         provider: "anthropic",
         model: "claude-3-5-haiku-latest",
+        temperature: 0.5,
         prompt: `Prompt for agent ${i}`,
       },
     };

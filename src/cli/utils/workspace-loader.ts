@@ -39,7 +39,7 @@ function getGitRoot(): string {
     }
 
     return new TextDecoder().decode(gitRoot.stdout).trim();
-  } catch (_error) {
+  } catch {
     throw new Error("Could not find git repository root");
   }
 }

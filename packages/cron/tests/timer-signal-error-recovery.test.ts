@@ -131,7 +131,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     let registrationError = false;
     try {
       await cronManager.registerTimer(invalidConfig);
-    } catch (_error) {
+    } catch {
       registrationError = true;
     }
 
@@ -167,12 +167,7 @@ Deno.test("Timer Signal - Error State Recovery", async (t) => {
     assertEquals(cronManager.isActive(), false, "CronManager should not be active initially");
 
     // Cannot register timers when not started
-    let _registrationError = false;
-    try {
-      await cronManager.registerTimer(validConfig);
-    } catch (_error) {
-      _registrationError = true;
-    }
+    await cronManager.registerTimer(validConfig);
 
     // Start CronManager
     await cronManager.start();

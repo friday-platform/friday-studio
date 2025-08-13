@@ -251,7 +251,7 @@ Deno.test("Timer Signal - Workspace Runtime Integration", async (t) => {
     let loadError = false;
     try {
       await runtime.loadSignalProvider("invalid-timer", invalidConfig);
-    } catch (_error) {
+    } catch {
       loadError = true;
     }
 

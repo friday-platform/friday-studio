@@ -55,7 +55,6 @@ export type AgentContext = z.infer<typeof AgentContextSchema>;
 // ==============================================================================
 
 const JobExecutionAgentSimpleSchema = z.string().describe("Simple agent ID reference");
-type JobExecutionAgentSimple = z.infer<typeof JobExecutionAgentSimpleSchema>;
 
 const JobExecutionAgentDetailedSchema = z.strictObject({
   id: z.string().describe("Agent ID"),
@@ -64,7 +63,6 @@ const JobExecutionAgentDetailedSchema = z.strictObject({
   dependencies: z.array(z.string()).optional().describe("Explicit agent dependencies"),
   tools: AllowDenyFilterSchema.optional().describe("Tool access override for this agent"),
 });
-type JobExecutionAgentDetailed = z.infer<typeof JobExecutionAgentDetailedSchema>;
 
 export const JobExecutionAgentSchema = z.union([
   JobExecutionAgentSimpleSchema,

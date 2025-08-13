@@ -24,7 +24,7 @@ export interface HTTPSignalData {
   id: string;
   type: string;
   timestamp: string;
-  data: any;
+  data: Record<string, unknown>;
 }
 
 /**
@@ -79,14 +79,14 @@ export class HTTPSignalProvider implements IProvider {
     return { ...this.state };
   }
 
-  async checkHealth(): Promise<HealthStatus> {
-    return {
+  checkHealth(): Promise<HealthStatus> {
+    return Promise.resolve({
       healthy: this.state.status === ProviderStatus.READY,
       lastCheck: new Date(),
       message: this.state.status === ProviderStatus.READY
         ? "HTTP signal provider ready"
         : `Provider status: ${this.state.status}`,
-    };
+    });
   }
 
   /**

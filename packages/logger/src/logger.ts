@@ -72,7 +72,7 @@ export class AtlasLoggerV2 implements Logger {
       const entry = this.formatLogEntry(level, message, finalContext);
       const jsonLine = JSON.stringify(entry);
       await this.writeToFile(jsonLine, finalContext.workspaceId);
-    } catch (_error) {
+    } catch {
       // Continue if file writing fails
     }
   }

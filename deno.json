@@ -19,6 +19,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },
+  "exclude": ["**/*.test.ts", "!integration-tests/**/*.test.ts"],
   "unstable": [
     "broadcast-channel",
     "worker-options",

@@ -94,7 +94,7 @@ export function parseAction(thinking: string): ReasoningAction | null {
       parameters,
       reasoning: reasoningMatch?.[1]?.trim() || "No reasoning provided",
     };
-  } catch (_error) {
+  } catch {
     return null;
   }
 }

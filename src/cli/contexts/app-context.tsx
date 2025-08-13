@@ -275,7 +275,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
 
       // Initialize MCP client now that daemon is running
       await initializeMcpClient();
-    } catch (_error) {
+    } catch {
       // Set daemon status to unhealthy when initialization fails
       setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
 
@@ -302,7 +302,7 @@ export const AppProvider = ({ children }: AppProviderProps) => {
         setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
         // Don't hide unhealthy status - it should persist
       }
-    } catch (_error) {
+    } catch {
       setDaemonStatusState(DAEMON_STATUS.UNHEALTHY);
       // Don't hide unhealthy status - it should persist
     }

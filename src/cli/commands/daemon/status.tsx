@@ -36,7 +36,7 @@ export const handler = async (argv: StatusArgs): Promise<void> => {
     let status;
     try {
       status = await client.getDaemonStatus();
-    } catch (_error) {
+    } catch {
       if (argv.json) {
         console.log(JSON.stringify({ status: "not_running", port }, null, 2));
       } else {

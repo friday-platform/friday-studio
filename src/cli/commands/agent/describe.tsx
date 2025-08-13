@@ -66,7 +66,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
         const workspace = await client.getWorkspace(argv.workspace);
         workspaceId = workspace.id;
         workspaceName = workspace.name;
-      } catch (_error) {
+      } catch {
         // Try to find by name if ID lookup failed
         const allWorkspaces = await client.listWorkspaces();
         const foundWorkspace = allWorkspaces.find((w) => w.name === argv.workspace);
@@ -97,7 +97,7 @@ export const handler = async (argv: DescribeArgs): Promise<void> => {
             `Current workspace '${currentWorkspaceName}' not found in daemon. Use --workspace to specify target.`,
           );
         }
-      } catch (_error) {
+      } catch {
         throw new Error(
           "No workspace.yml found in current directory. Use --workspace to specify target workspace.",
         );

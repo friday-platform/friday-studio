@@ -93,7 +93,7 @@ Deno.test("Streaming Error Recovery", async (t) => {
       // Wait for async flush to complete
       await new Promise((resolve) => setTimeout(resolve, 100));
       assertEquals(true, true);
-    } catch (_error) {
+    } catch {
       assertEquals(true, false, "Emit should not throw");
     } finally {
       // Clean up to prevent interval leak

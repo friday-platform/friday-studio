@@ -153,6 +153,8 @@ export class RaceConditionDetector {
         const op1 = completed[i];
         const op2 = completed[j];
 
+        if (!op1 || !op2) continue;
+
         // Check for time overlap
         const overlapStart = Math.max(op1.start, op2.start);
         const overlapEnd = Math.min(op1.end, op2.end);
@@ -352,7 +354,7 @@ export async function assertDataConsistency<T>(
   // This is a simplified consistency check - real implementations may vary
   const finalState = results[results.length - 1];
 
-  if (!validator(finalState)) {
+  if (!finalState || !validator(finalState)) {
     throw new Error(`${description} check failed. Final state: ${JSON.stringify(finalState)}`);
   }
 

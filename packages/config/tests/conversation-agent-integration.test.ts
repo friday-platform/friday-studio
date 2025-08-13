@@ -13,7 +13,7 @@ import { ConfigLoader, WorkspaceAgentConfigSchema } from "@atlas/config";
 class MockConversationAdapter {
   constructor(private workspacePath: string) {}
 
-  async readYaml(_path: string): Promise<unknown> {
+  readYaml(_path: string): Promise<unknown> {
     // This simulates YAML that a conversation agent might generate
     // with quoted numeric values (the original problem)
     const conversationGeneratedYaml = `
@@ -24,7 +24,7 @@ workspace:
 
 agents:
   file-classifier:
-    type: "llm" 
+    type: "llm"
     description: "Classifies files by type and importance"
     config:
       provider: "anthropic"
@@ -48,7 +48,7 @@ jobs:
     return Promise.resolve(parseYaml(conversationGeneratedYaml));
   }
 
-  async exists(_path: string): Promise<boolean> {
+  exists(_path: string): Promise<boolean> {
     return Promise.resolve(true);
   }
 
