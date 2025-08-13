@@ -130,13 +130,13 @@ export class AtlasLoggerV2 implements Logger {
   private formatConsoleOutput(level: string, message: string, context: LogContext): string {
     const timestamp = new Date().toISOString().slice(11, 23);
     const component = this.getComponentName(context);
-    
+
     // Process context to serialize Error objects for console output
     const processedContext = { ...context };
     if (processedContext.error !== undefined) {
       processedContext.error = this.serializeError(processedContext.error);
     }
-    
+
     const contextStr = Object.keys(processedContext).length > 0
       ? " " + JSON.stringify(processedContext, null, 0)
       : "";

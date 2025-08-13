@@ -79,7 +79,9 @@ export const generateWorkspace = tool({
           });
 
           if (response.error) {
-            throw new Error(`API error (${response.response.status}): ${JSON.stringify(response.error)}`);
+            throw new Error(
+              `API error (${response.response.status}): ${JSON.stringify(response.error)}`,
+            );
           }
 
           const creationResult = response.data as {

@@ -148,7 +148,8 @@ their prompts.
 - **Signal**: HTTP webhook with validation
 - **Trigger condition**: Filter for specific event types
 - **Agent pipeline**: Validator → Mapper → Syncer
-- **Tools**: atlas_fetch (for API calls), atlas_library_store (cache data), atlas_notify_email (error alerts)
+- **Tools**: atlas_fetch (for API calls), atlas_library_store (cache data), atlas_notify_email
+  (error alerts)
 
 **Critical configuration elements**:
 
@@ -512,9 +513,11 @@ There are two distinct tool contexts in Atlas:
    - `tavily_search` - Web research and data extraction
    - `atlas_bash` - System operations and commands
 
-**Critical**: When users ask about workspace tools (like `atlas_notify_email`), the conversation agent should respond with workspace creation capability, NOT claim the tool doesn't exist.
+**Critical**: When users ask about workspace tools (like `atlas_notify_email`), the conversation
+agent should respond with workspace creation capability, NOT claim the tool doesn't exist.
 
-All tools for Atlas workspaces are provided by the MCP Atlas server. Configure it in your workspace with:
+All tools for Atlas workspaces are provided by the MCP Atlas server. Configure it in your workspace
+with:
 
 ```yaml
 tools:
@@ -563,14 +566,16 @@ tools:
 
 **ALWAYS select ONLY the specific tools your workspace actually needs**
 
-- **Library Tools**: `atlas_library_list`, `atlas_library_get`, `atlas_library_get_stream`, `atlas_library_store`, `atlas_library_stats`, `atlas_library_templates`
+- **Library Tools**: `atlas_library_list`, `atlas_library_get`, `atlas_library_get_stream`,
+  `atlas_library_store`, `atlas_library_stats`, `atlas_library_templates`
   - Use when: Storing knowledge, templates, persistent data between runs
   - **Library Retrieval Strategy**:
     - Use `atlas_library_get` with `includeContent=false` to check `size_bytes`
     - Use `atlas_library_get` with `includeContent=true` for items ≤100KB
     - Use `atlas_library_get_stream` for items >100KB
     - The 100KB threshold prevents prompt overflow while maximizing efficiency
-- **Workspace Management**: `atlas_workspace_list`, `atlas_workspace_create`, `atlas_workspace_delete`, `atlas_workspace_describe`
+- **Workspace Management**: `atlas_workspace_list`, `atlas_workspace_create`,
+  `atlas_workspace_delete`, `atlas_workspace_describe`
   - Use when: Workspace introspection, management, or creation workflows
 - **Session Control**: `atlas_session_describe`, `atlas_session_cancel`
   - Use when: Session management, monitoring, or control needed
@@ -839,7 +844,8 @@ agents:
 
 ### Database Access
 
-For database operations, use external MCP servers designed for specific database types, or access via API endpoints when available.
+For database operations, use external MCP servers designed for specific database types, or access
+via API endpoints when available.
 
 ### Web Research and Content Extraction
 
@@ -870,7 +876,9 @@ agents:
 - **Define schemas**: Signal schemas validate input at runtime - always use them
 - **Clear naming**: Use descriptive names that reflect business purpose, not technical details
 - **Document intent**: Descriptions should explain the "why" behind each component
-- **CRITICAL - Numeric Values**: Always use unquoted numbers in YAML for numeric fields like `temperature: 0.1` and `max_tokens: 2000`. NEVER use quoted strings like `temperature: "0.1"` as this will cause validation errors. The schema requires actual numbers, not string representations.
+- **CRITICAL - Numeric Values**: Always use unquoted numbers in YAML for numeric fields like
+  `temperature: 0.1` and `max_tokens: 2000`. NEVER use quoted strings like `temperature: "0.1"` as
+  this will cause validation errors. The schema requires actual numbers, not string representations.
 
 ### Security & Credentials
 
@@ -911,4 +919,6 @@ For complete configuration examples and all available options, use:
 read_atlas_resource({ uri: "atlas://reference/workspace" })
 ```
 
-This provides the comprehensive workspace.yml reference with all signal types, job definitions, agent configurations, tool configurations, memory settings, success/error conditions, schemas, and best practices.
+This provides the comprehensive workspace.yml reference with all signal types, job definitions,
+agent configurations, tool configurations, memory settings, success/error conditions, schemas, and
+best practices.

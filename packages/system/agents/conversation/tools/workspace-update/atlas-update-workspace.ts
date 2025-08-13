@@ -61,7 +61,9 @@ export const updateWorkspace = tool({
           });
 
           if (response.error) {
-            throw new Error(`API error (${response.response.status}): ${JSON.stringify(response.error)}`);
+            throw new Error(
+              `API error (${response.response.status}): ${JSON.stringify(response.error)}`,
+            );
           }
 
           const updateResult = response.data as {

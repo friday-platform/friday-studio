@@ -19,9 +19,12 @@
 
 ### 1. GitHub Integration
 
-**Package**: `github-repos-manager-mcp` **Status**: Community-maintained **Atlas Use Cases**: Repository management, issue tracking, team collaboration
+**Package**: `github-repos-manager-mcp` **Status**: Community-maintained **Atlas Use Cases**:
+Repository management, issue tracking, team collaboration
 
-**Description**: Comprehensive GitHub repository automation and management with 89 tools for complete GitHub workflow integration. Features token-based authentication, direct API integration, and no Docker dependency for lightweight performance.
+**Description**: Comprehensive GitHub repository automation and management with 89 tools for
+complete GitHub workflow integration. Features token-based authentication, direct API integration,
+and no Docker dependency for lightweight performance.
 
 **Prerequisites**: GitHub Personal Access Token with scopes: `repo`, `user:read`, `read:org`
 
@@ -90,7 +93,8 @@ tools:
 - `upload_image`, `embed_image_in_issue`
 - `search_code`, `search_commits`, `get_commit_info`
 
-**Use Cases**: Repository management, issue tracking, team collaboration, code analysis, automated workflows, content management
+**Use Cases**: Repository management, issue tracking, team collaboration, code analysis, automated
+workflows, content management
 
 ---
 
@@ -99,7 +103,8 @@ tools:
 **Package**: `mcp-server-git` **Status**: Community-maintained **Atlas Use Cases**: Automated
 commits, branch analysis, repository maintenance
 
-**Description**: Local Git repository operations for Atlas agents. Enables version control automation within workspace contexts.
+**Description**: Local Git repository operations for Atlas agents. Enables version control
+automation within workspace contexts.
 
 **Atlas Configuration**:
 
@@ -139,9 +144,12 @@ tools:
 
 ### 3. Google GenAI Toolbox
 
-**Package**: `mcp-toolbox` **Status**: Beta **Atlas Use Cases**: Database integration, AI tool development, data access automation
+**Package**: `mcp-toolbox` **Status**: Beta **Atlas Use Cases**: Database integration, AI tool
+development, data access automation
 
-**Description**: Open-source database toolbox that acts as a control plane between AI applications and databases. Provides centralized tool management, enhanced performance, and end-to-end observability for GenAI applications.
+**Description**: Open-source database toolbox that acts as a control plane between AI applications
+and databases. Provides centralized tool management, enhanced performance, and end-to-end
+observability for GenAI applications.
 
 **Prerequisites**: Database connection and `tools.yaml` configuration file
 
@@ -174,7 +182,8 @@ tools:
 - **Connection Management**: `test_connection`, `pool_status`
 - **Configuration**: `validate_tools`, `get_config`
 
-**Use Cases**: Database integration for AI applications, centralized tool management, data access automation, GenAI application development
+**Use Cases**: Database integration for AI applications, centralized tool management, data access
+automation, GenAI application development
 
 ---
 
@@ -183,7 +192,8 @@ tools:
 **Package**: `mcp-server-time` **Status**: Community-maintained **Atlas Use Cases**: Scheduling,
 time-based automation, global coordination
 
-**Description**: Time operations for scheduling and coordination workflows. Essential for time-sensitive automation.
+**Description**: Time operations for scheduling and coordination workflows. Essential for
+time-sensitive automation.
 
 **Atlas Configuration**:
 
@@ -206,7 +216,8 @@ tools:
 - `get_current_time` - Get current time in specified IANA timezone
 - `convert_time` - Convert time between timezones with DST support
 
-**Use Cases**: Scheduling agents, time-based triggers, global workspace coordination, meeting scheduling across timezones
+**Use Cases**: Scheduling agents, time-based triggers, global workspace coordination, meeting
+scheduling across timezones
 
 ---
 
@@ -214,9 +225,12 @@ tools:
 
 ### 5. Azure Services
 
-**Package**: `@azure/mcp` **Status**: Production-ready **Atlas Use Cases**: Cloud infrastructure management, DevOps automation, security management
+**Package**: `@azure/mcp` **Status**: Production-ready **Atlas Use Cases**: Cloud infrastructure
+management, DevOps automation, security management
 
-**Description**: Official Microsoft Azure MCP Server with comprehensive Azure service integration. Features 30+ Azure services, hierarchical command routing, and integrated Azure CLI/Developer CLI support.
+**Description**: Official Microsoft Azure MCP Server with comprehensive Azure service integration.
+Features 30+ Azure services, hierarchical command routing, and integrated Azure CLI/Developer CLI
+support.
 
 **Prerequisites**: Azure CLI authentication or Azure credentials configured
 
@@ -303,15 +317,19 @@ tools:
 - `extension_azd` - Azure Developer CLI operations
 - `extension_azqr` - Azure Quick Review compliance reports
 
-**Use Cases**: Cloud infrastructure management, DevOps automation, security management, monitoring setup, compliance reporting, Infrastructure as Code generation
+**Use Cases**: Cloud infrastructure management, DevOps automation, security management, monitoring
+setup, compliance reporting, Infrastructure as Code generation
 
 ---
 
 ### 6. Stripe Payments
 
-**Package**: `@stripe/mcp` **Status**: Production-ready **Atlas Use Cases**: E-commerce automation, subscription management, payment processing
+**Package**: `@stripe/mcp` **Status**: Production-ready **Atlas Use Cases**: E-commerce automation,
+subscription management, payment processing
 
-**Description**: Official Stripe MCP server for comprehensive payment processing, subscription management, and financial operations. Features OAuth authentication, restricted API key support, and extensive tool coverage.
+**Description**: Official Stripe MCP server for comprehensive payment processing, subscription
+management, and financial operations. Features OAuth authentication, restricted API key support, and
+extensive tool coverage.
 
 **Prerequisites**: Stripe account and API key (restricted keys recommended)
 
@@ -394,7 +412,8 @@ tools:
 
 - `search_documentation` - Query Stripe API documentation
 
-**Use Cases**: E-commerce automation, subscription management, payment processing, financial reporting, invoice automation, customer lifecycle management
+**Use Cases**: E-commerce automation, subscription management, payment processing, financial
+reporting, invoice automation, customer lifecycle management
 
 ---
 
@@ -402,9 +421,11 @@ tools:
 
 ### 7. Playwright Browser Automation
 
-**Package**: `@executeautomation/playwright-mcp-server` **Status**: Community-maintained **Atlas Use Cases**: Automated testing, web scraping, UI automation
+**Package**: `@executeautomation/playwright-mcp-server` **Status**: Community-maintained **Atlas Use
+Cases**: Automated testing, web scraping, UI automation
 
-**Description**: Browser automation using Playwright for web page interaction, testing, and screenshot capture.
+**Description**: Browser automation using Playwright for web page interaction, testing, and
+screenshot capture.
 
 **Atlas Configuration**:
 
@@ -483,7 +504,8 @@ generation
 
 ### 8. Google Analytics 4
 
-**Package**: `mcp-server-google-analytics` **Status**: Community-maintained **Atlas Use Cases**: Website analytics, user behavior analysis, performance tracking
+**Package**: `mcp-server-google-analytics` **Status**: Community-maintained **Atlas Use Cases**:
+Website analytics, user behavior analysis, performance tracking
 
 **Description**: GA4 data access with 200+ dimensions and metrics through natural language queries.
 
@@ -525,9 +547,11 @@ tools:
 
 ### 9. Auth0 Identity Management
 
-**Package**: `@auth0/auth0-mcp-server` **Status**: Beta **Atlas Use Cases**: Identity management, authentication setup, security monitoring
+**Package**: `@auth0/auth0-mcp-server` **Status**: Beta **Atlas Use Cases**: Identity management,
+authentication setup, security monitoring
 
-**Description**: Auth0 tenant management through natural language with secure credential storage and OAuth 2.0 device authorization flow.
+**Description**: Auth0 tenant management through natural language with secure credential storage and
+OAuth 2.0 device authorization flow.
 
 **Atlas Configuration**:
 
@@ -557,14 +581,17 @@ tools:
 
 **Available Tools**:
 
-- **Applications**: `list_applications`, `get_application`, `create_application`, `update_application`
-- **Resource Servers**: `list_resource_servers`, `get_resource_server`, `create_resource_server`, `update_resource_server`
+- **Applications**: `list_applications`, `get_application`, `create_application`,
+  `update_application`
+- **Resource Servers**: `list_resource_servers`, `get_resource_server`, `create_resource_server`,
+  `update_resource_server`
 - **Actions**: `list_actions`, `get_action`, `create_action`, `update_action`, `deploy_action`
 - **Logs**: `list_logs`, `get_log_entry`
 - **Forms**: `list_forms`, `get_form`, `create_form`, `update_form`, `publish_form`
 - **Tenant**: `get_tenant_settings`
 
-**Use Cases**: Identity management, authentication setup, security monitoring, user access control, application configuration
+**Use Cases**: Identity management, authentication setup, security monitoring, user access control,
+application configuration
 
 ---
 
@@ -574,7 +601,8 @@ tools:
 
 **Package**: Official Linear MCP server (remote)
 
-**Description**: Linear project management integration for issue tracking, updates, and team coordination.
+**Description**: Linear project management integration for issue tracking, updates, and team
+coordination.
 
 **Atlas Configuration**:
 
@@ -602,9 +630,12 @@ tools:
 
 ### 11. Trello Board Management
 
-**Package**: `@delorenj/mcp-server-trello` **Status**: Community-maintained **Atlas Use Cases**: Kanban project management, task tracking, team coordination
+**Package**: `@delorenj/mcp-server-trello` **Status**: Community-maintained **Atlas Use Cases**:
+Kanban project management, task tracking, team coordination
 
-**Description**: Trello board management through natural language for kanban-style project management. Features built-in rate limiting, dynamic board selection, and comprehensive error handling.
+**Description**: Trello board management through natural language for kanban-style project
+management. Features built-in rate limiting, dynamic board selection, and comprehensive error
+handling.
 
 **Atlas Configuration**:
 
@@ -642,19 +673,23 @@ tools:
 - **Board Management**: `list_boards`, `set_active_board`
 - **Workspace Management**: `list_workspaces`
 - **List Operations**: `get_lists`
-- **Card Operations**: `get_cards_by_list_id`, `add_card_to_list`, `update_card_details`, `move_card`, `archive_card`
+- **Card Operations**: `get_cards_by_list_id`, `add_card_to_list`, `update_card_details`,
+  `move_card`, `archive_card`
 - **Attachments**: `attach_image_to_card`
 - **Activity**: `get_recent_activity`
 
-**Use Cases**: Kanban project management, task tracking, team coordination, workflow automation, project reporting
+**Use Cases**: Kanban project management, task tracking, team coordination, workflow automation,
+project reporting
 
 ---
 
 ### 12. Notion Workspace
 
-**Package**: Official Notion MCP server (remote) **Status**: Production-ready **Atlas Use Cases**: Knowledge management, documentation, project planning
+**Package**: Official Notion MCP server (remote) **Status**: Production-ready **Atlas Use Cases**:
+Knowledge management, documentation, project planning
 
-**Description**: Official Notion MCP server for database and page management through natural language. Provides live context from Notion workspace based on user access and permissions.
+**Description**: Official Notion MCP server for database and page management through natural
+language. Provides live context from Notion workspace based on user access and permissions.
 
 **Atlas Configuration**:
 
@@ -685,7 +720,8 @@ tools:
 - **Comments**: `create-comment`, `get-comments`
 - **User Management**: `get-users`, `get-user`, `get-self`
 
-**Use Cases**: Knowledge management, documentation, project planning, team collaboration, template creation, workspace organization
+**Use Cases**: Knowledge management, documentation, project planning, team collaboration, template
+creation, workspace organization
 
 ---
 
@@ -693,9 +729,11 @@ tools:
 
 ### 13. RSS Feed Management
 
-**Package**: `mcp_rss` **Status**: Community-maintained **Atlas Use Cases**: Content aggregation, news monitoring, research automation
+**Package**: `mcp_rss` **Status**: Community-maintained **Atlas Use Cases**: Content aggregation,
+news monitoring, research automation
 
-**Description**: RSS feed management with OPML support and automatic content aggregation. Features MySQL storage, automatic feed updates, and content filtering capabilities.
+**Description**: RSS feed management with OPML support and automatic content aggregation. Features
+MySQL storage, automatic feed updates, and content filtering capabilities.
 
 **Prerequisites**: MySQL database required
 
@@ -734,7 +772,8 @@ tools:
 - **get_sources**: List all configured RSS feed sources
 - **set_tag**: Update article status (mark as favorite or normal)
 
-**Use Cases**: Content aggregation, news monitoring, research automation, content curation, RSS feed management
+**Use Cases**: Content aggregation, news monitoring, research automation, content curation, RSS feed
+management
 
 ---
 
@@ -744,7 +783,8 @@ tools:
 
 **Package**: `@posthog/posthog-mcp`
 
-**Description**: Analytics, feature flags, and error tracking integration for product development insights.
+**Description**: Analytics, feature flags, and error tracking integration for product development
+insights.
 
 **Atlas Configuration**:
 
@@ -867,9 +907,11 @@ tools:
 
 ### 16. Weather Data Service
 
-**Package**: `@timlukahorstmann/mcp-weather` **Status**: Community-maintained **Atlas Use Cases**: Location-based applications, travel planning, weather-dependent automation
+**Package**: `@timlukahorstmann/mcp-weather` **Status**: Community-maintained **Atlas Use Cases**:
+Location-based applications, travel planning, weather-dependent automation
 
-**Description**: Real-time weather forecasts using AccuWeather API. Provides accurate hourly and daily weather data for any location with flexible unit systems.
+**Description**: Real-time weather forecasts using AccuWeather API. Provides accurate hourly and
+daily weather data for any location with flexible unit systems.
 
 **Prerequisites**: AccuWeather API key required
 
@@ -901,7 +943,8 @@ tools:
 - **weather-get_hourly**: Get 12-hour weather forecast
 - **weather-get_daily**: Get daily weather forecast
 
-**Use Cases**: Location-based applications, travel planning, weather-dependent automation, agriculture, event planning
+**Use Cases**: Location-based applications, travel planning, weather-dependent automation,
+agriculture, event planning
 
 ---
 

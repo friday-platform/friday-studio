@@ -1,10 +1,14 @@
 # Atlas Workspace Update System
 
-A comprehensive workspace update system that extends Atlas's proven workspace creation capabilities with intelligent AI orchestration for modifying existing workspaces.
+A comprehensive workspace update system that extends Atlas's proven workspace creation capabilities
+with intelligent AI orchestration for modifying existing workspaces.
 
 ## Overview
 
-The workspace update system provides natural language workspace modification through AI orchestration, maintaining the same reliability, validation, and user experience standards as workspace creation. It follows the proven Generate-Validate-Repair loop architecture with incremental updates and complete validation.
+The workspace update system provides natural language workspace modification through AI
+orchestration, maintaining the same reliability, validation, and user experience standards as
+workspace creation. It follows the proven Generate-Validate-Repair loop architecture with
+incremental updates and complete validation.
 
 ## Architecture
 
@@ -58,13 +62,15 @@ The workspace update system provides natural language workspace modification thr
 - **Reference Integrity**: Automatic validation and repair of component relationships
 - **Backup & Restore**: Automatic backup creation with rollback capability
 - **Tool Integration**: Comprehensive set of update tools for all workspace components
-- **Progressive Error Handling**: Temperature reduction (0.4 → 0.3 → 0.2) with detailed error tracking
+- **Progressive Error Handling**: Temperature reduction (0.4 → 0.3 → 0.2) with detailed error
+  tracking
 
 ## Usage
 
 ### Through Conversation Agent
 
-The workspace update functionality is integrated with the Atlas conversation agent, allowing natural language workspace modifications:
+The workspace update functionality is integrated with the Atlas conversation agent, allowing natural
+language workspace modifications:
 
 ```
 User: "Add Discord notifications to my Nike monitoring workspace"
@@ -110,7 +116,8 @@ if (result.success) {
 
 #### Agent Updates
 
-- **Update configuration**: "Change the analysis agent to use Claude Sonnet 4 with higher creativity"
+- **Update configuration**: "Change the analysis agent to use Claude Sonnet 4 with higher
+  creativity"
 - **Modify prompts**: "Update the agent prompt to be more detailed in error reporting"
 - **Remove agents**: "Remove the backup agent that's no longer needed"
 
@@ -122,8 +129,10 @@ if (result.success) {
 
 #### Complex Updates
 
-- **Multi-component changes**: "Add a new monitoring pipeline with webhook signal, analysis agent, and notification job"
-- **Reference updates**: "Rename the 'primary' agent to 'main-analyzer' and update all job references"
+- **Multi-component changes**: "Add a new monitoring pipeline with webhook signal, analysis agent,
+  and notification job"
+- **Reference updates**: "Rename the 'primary' agent to 'main-analyzer' and update all job
+  references"
 - **Bulk modifications**: "Update all agents to use the latest Claude model"
 
 ## Tool Reference
@@ -378,7 +387,10 @@ const result = await updateWorkspace({
 
 ## Summary
 
-The Atlas Workspace Update System provides a production-ready solution for modifying existing workspaces through natural language instructions. With comprehensive AI orchestration, validation, and error handling, it maintains the same reliability standards as workspace creation while enabling powerful modification capabilities.
+The Atlas Workspace Update System provides a production-ready solution for modifying existing
+workspaces through natural language instructions. With comprehensive AI orchestration, validation,
+and error handling, it maintains the same reliability standards as workspace creation while enabling
+powerful modification capabilities.
 
 **Current Status**: Phase 2 Complete (58% of planned features)
 
@@ -390,4 +402,5 @@ The Atlas Workspace Update System provides a production-ready solution for modif
 - ✅ Comprehensive Testing (61/61 tests passing)
 - ✅ Documentation (This guide)
 
-The system is ready for production use with natural language workspace modifications through the Atlas conversation agent.
+The system is ready for production use with natural language workspace modifications through the
+Atlas conversation agent.

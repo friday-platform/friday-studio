@@ -7,21 +7,35 @@
 
 ### Relationship to Conversation Agent Architecture
 
-This workspace creation system implements one domain of the conversation agent's resource-driven knowledge architecture (see `@specs/conversation-agent.md`). The conversation agent maintains a minimal core prompt focused on natural interaction, while delegating specialized technical knowledge to domain-specific systems like this one.
+This workspace creation system implements one domain of the conversation agent's resource-driven
+knowledge architecture (see `@specs/conversation-agent.md`). The conversation agent maintains a
+minimal core prompt focused on natural interaction, while delegating specialized technical knowledge
+to domain-specific systems like this one.
 
 The separation of concerns exists for architectural reasons:
 
-- **Intent Recognition**: The conversation agent handles natural language understanding and user goal interpretation
-- **Context Translation**: The bridge layer converts conversational context into structured requirements
-- **Technical Execution**: The workspace creation system contains Atlas-specific knowledge about schemas, components, and configuration patterns
+- **Intent Recognition**: The conversation agent handles natural language understanding and user
+  goal interpretation
+- **Context Translation**: The bridge layer converts conversational context into structured
+  requirements
+- **Technical Execution**: The workspace creation system contains Atlas-specific knowledge about
+  schemas, components, and configuration patterns
 
-This separation allows the conversation agent to maintain its task-focused, natural language interface while accessing deep technical expertise when needed. The conversation agent calls `atlas_create_workspace` when it recognizes workspace creation intent, providing user context without needing to understand Atlas configuration details.
+This separation allows the conversation agent to maintain its task-focused, natural language
+interface while accessing deep technical expertise when needed. The conversation agent calls
+`atlas_create_workspace` when it recognizes workspace creation intent, providing user context
+without needing to understand Atlas configuration details.
 
 ### Core Problem Addressed
 
-Atlas workspaces require understanding of component relationships, YAML syntax, and schema validation. Users need to know how signals connect to jobs, how agents are configured, and what constitutes valid configuration structure.
+Atlas workspaces require understanding of component relationships, YAML syntax, and schema
+validation. Users need to know how signals connect to jobs, how agents are configured, and what
+constitutes valid configuration structure.
 
-The workspace creation system handles this technical complexity internally, accepting natural language descriptions and producing valid configurations. This enables the conversation agent to maintain its principle of "tasks over architecture" - users describe what they want to accomplish, not how Atlas should implement it.
+The workspace creation system handles this technical complexity internally, accepting natural
+language descriptions and producing valid configurations. This enables the conversation agent to
+maintain its principle of "tasks over architecture" - users describe what they want to accomplish,
+not how Atlas should implement it.
 
 ## Architecture Overview
 
@@ -69,17 +83,22 @@ The workspace creation system handles this technical complexity internally, acce
 
 **Principle**: All schemas and validation logic live in `@atlas/config` - zero duplication.
 
-**Implementation**: Tools import schemas directly and use TypeScript types to ensure compatibility. When config schemas evolve, workspace generation automatically gets the updates.
+**Implementation**: Tools import schemas directly and use TypeScript types to ensure compatibility.
+When config schemas evolve, workspace generation automatically gets the updates.
 
-**Benefit**: Eliminates schema drift, reduces maintenance overhead, ensures consistency across the entire Atlas ecosystem.
+**Benefit**: Eliminates schema drift, reduces maintenance overhead, ensures consistency across the
+entire Atlas ecosystem.
 
 ### 2. Hidden Complexity, Clean Results
 
 **Principle**: Users see successful workspace creation, not retry mechanics or internal failures.
 
-**Implementation**: The Generate-Validate-Repair loop handles up to 3 attempts internally, with progressive temperature reduction and error context accumulation. Only final success or complete failure surfaces to users.
+**Implementation**: The Generate-Validate-Repair loop handles up to 3 attempts internally, with
+progressive temperature reduction and error context accumulation. Only final success or complete
+failure surfaces to users.
 
-**Benefit**: Separates user interface from internal retry complexity while preserving error handling.
+**Benefit**: Separates user interface from internal retry complexity while preserving error
+handling.
 
 ### 3. Schema Reuse Over Recreation
 
@@ -103,7 +122,9 @@ parameters: WorkspaceSignalConfigSchema.extend({
 
 **Principle**: Each repair attempt gets smarter by learning from previous failures.
 
-**Implementation**: Attempt history provides error context to subsequent generations. Temperature reduction (0.4 → 0.3 → 0.2) increases determinism for convergence. System prompt includes repair guidance and common error patterns.
+**Implementation**: Attempt history provides error context to subsequent generations. Temperature
+reduction (0.4 → 0.3 → 0.2) increases determinism for convergence. System prompt includes repair
+guidance and common error patterns.
 
 **Benefit**: Enables recovery from validation failures through error context accumulation.
 
@@ -119,7 +140,8 @@ parameters: WorkspaceSignalConfigSchema.extend({
 - `createJob`: Signal-to-agent execution pipelines
 - `validateWorkspace`: Final configuration verification
 
-**Benefit**: Structured thinking, better error localization, educational transparency through visible tool usage.
+**Benefit**: Structured thinking, better error localization, educational transparency through
+visible tool usage.
 
 ## Key Components
 
@@ -134,7 +156,8 @@ parameters: WorkspaceSignalConfigSchema.extend({
 - Reference integrity checking (no broken agent/signal/job links)
 - Clean export to final WorkspaceConfig format
 
-**Design Philosophy**: Never allow invalid state to persist. Validate immediately, fail fast, provide clear error context.
+**Design Philosophy**: Never allow invalid state to persist. Validate immediately, fail fast,
+provide clear error context.
 
 ### WorkspaceGenerator
 
@@ -147,7 +170,8 @@ parameters: WorkspaceSignalConfigSchema.extend({
 - Context-aware prompt building with user requirements
 - Clean separation of attempt complexity from user results
 
-**Design Philosophy**: Hide retry complexity but maintain detailed error context for debugging and improvement.
+**Design Philosophy**: Hide retry complexity but maintain detailed error context for debugging and
+improvement.
 
 ### Workspace Building Tools
 
@@ -160,17 +184,20 @@ parameters: WorkspaceSignalConfigSchema.extend({
 - Immediate validation feedback with descriptive error messages
 - Integration with singleton WorkspaceBuilder instance
 
-**Design Philosophy**: Tools should feel natural to the LLM while enforcing strict validation and maintaining type safety.
+**Design Philosophy**: Tools should feel natural to the LLM while enforcing strict validation and
+maintaining type safety.
 
 ## How It Works
 
 ### 1. Intent Processing
 
-User provides natural language description of their automation needs. The conversation agent calls `atlas_create_workspace` with structured context about triggers, integrations, and outputs.
+User provides natural language description of their automation needs. The conversation agent calls
+`atlas_create_workspace` with structured context about triggers, integrations, and outputs.
 
 ### 2. Generation Phase
 
-Claude Sonnet 4 analyzes the user intent and builds a workspace configuration by calling workspace building tools in logical sequence:
+Claude Sonnet 4 analyzes the user intent and builds a workspace configuration by calling workspace
+building tools in logical sequence:
 
 1. Initialize workspace identity
 2. Add trigger signals (schedule, webhook, system)
@@ -181,7 +208,8 @@ Claude Sonnet 4 analyzes the user intent and builds a workspace configuration by
 
 ### 3. Validation Phase
 
-Each tool call validates immediately using authoritative `@atlas/config` schemas. The final `validateWorkspace` call ensures:
+Each tool call validates immediately using authoritative `@atlas/config` schemas. The final
+`validateWorkspace` call ensures:
 
 - Complete schema compliance with WorkspaceConfigSchema
 - No broken references between components
@@ -198,7 +226,8 @@ If validation fails, the system captures error details and attempts regeneration
 
 ### 5. Result Export
 
-Successful generation returns a complete WorkspaceConfig that can be immediately written to the filesystem and loaded by Atlas runtime.
+Successful generation returns a complete WorkspaceConfig that can be immediately written to the
+filesystem and loaded by Atlas runtime.
 
 ## Implementation Characteristics
 
@@ -253,4 +282,6 @@ Successful generation returns a complete WorkspaceConfig that can be immediately
 
 ---
 
-This architecture implements one component of the conversation agent's resource-driven knowledge system. It handles workspace creation complexity internally while integrating with the conversation agent's natural language interface and structured event streaming patterns.
+This architecture implements one component of the conversation agent's resource-driven knowledge
+system. It handles workspace creation complexity internally while integrating with the conversation
+agent's natural language interface and structured event streaming patterns.
