@@ -30,6 +30,24 @@ runs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
+    - name: Configure gsutil for parallel composite uploads
+      shell: bash
+      run: |
+        # Create .boto configuration file for optimized uploads
+        # Threshold set to 50MB to enable parallel uploads for most artifacts:
+        # - macOS .zip: ~157 MB
+        # - Windows .exe: ~100 MB
+        # - Linux .tar.gz: ~53 MB
+        # - RPM/DEB: ~35-54 MB
+        cat > ~/.boto <<EOF
+        [GSUtil]
+        parallel_composite_upload_threshold = 50M
+        parallel_composite_upload_component_size = 25M
+        parallel_process_count = 4
+        parallel_thread_count = 5
+        EOF
+        echo "Configured gsutil for parallel composite uploads"
+
     - name: Upload artifacts to production GCS
       shell: bash
       run: |
