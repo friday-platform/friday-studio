@@ -46,7 +46,7 @@ export const YAMLLLMConfigSchema = z.object({
 
   model: z.string().min(1, {
     message: "Model is required for YAML agents",
-  }).describe("Specific model to use (e.g., 'claude-3-5-sonnet-20241022')"),
+  }).describe("Specific model to use (e.g., 'claude-3-7-sonnet-latest')"),
 
   prompt: z.string().min(1, {
     message: "System prompt is required for YAML agents",
@@ -151,7 +151,7 @@ export const DEFAULT_YAML_AGENT: Partial<YAMLAgentDefinition> = {
   },
   llm: {
     provider: "anthropic",
-    model: "claude-3-5-sonnet-20241022",
+    model: "claude-3-7-sonnet-latest",
     temperature: 0.3,
     max_tokens: 2000,
     prompt: "You are a domain expert. Help users with tasks in your domain.",

@@ -284,7 +284,7 @@ Deno.test({
         sessionId: "sess-789",
         workerId: "worker-abc",
         attributes: {
-          "agent.model": "claude-3-5-sonnet",
+          "agent.model": "claude-3-7-sonnet",
           "agent.temperature": 0.7,
         },
       };

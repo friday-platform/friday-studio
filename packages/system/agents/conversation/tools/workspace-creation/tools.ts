@@ -106,8 +106,8 @@ export const workspaceBuilderTools = {
       provider: z.enum(["anthropic", "openai", "google"]).describe(
         "LLM provider for this agent",
       ),
-      model: z.string().default("claude-3-5-sonnet-latest").describe(
-        "Model identifier from the selected provider, e.g., 'claude-3-5-sonnet-latest', 'gpt-4', 'gemini-pro'",
+      model: z.string().default("claude-3-7-sonnet-latest").describe(
+        "Model identifier from the selected provider, e.g., 'claude-3-7-sonnet-latest', 'gpt-4', 'gemini-pro'",
       ),
       prompt: z.string().describe(
         "System prompt that defines the agent's behavior and capabilities, e.g., 'You analyze Nike products for hype potential...', 'You generate engaging social media content...'",

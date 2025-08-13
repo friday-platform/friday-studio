@@ -217,7 +217,7 @@ agents:
     type: "llm"
     config:
       provider: "anthropic"
-      model: "claude-3-5-sonnet-latest"
+      model: "claude-3-7-sonnet-latest"
       prompt: |
         You are a research analyst. Use Tavily tools to:
         1. Search for recent information on your assigned topics

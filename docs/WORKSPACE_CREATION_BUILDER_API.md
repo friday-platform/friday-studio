@@ -467,7 +467,7 @@ const agentConfig: z.infer<typeof WorkspaceAgentConfigSchema> = {
   description: "AI analyst",
   config: {
     provider: "anthropic", // Defaults from schema
-    model: "claude-3-5-sonnet-latest",
+    model: "claude-3-7-sonnet-latest",
     prompt: "You are an AI analyst...",
     // All other fields get proper typing and defaults
   },

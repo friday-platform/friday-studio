@@ -152,7 +152,7 @@ webhook-github:
 data-analyzer:
   type: "llm"
   provider: "anthropic"
-  model: "claude-3-5-sonnet"
+  model: "claude-3-7-sonnet"
   purpose: "Analyze data"
   prompts:
     system: "..."
@@ -165,7 +165,7 @@ data-analyzer:
   description: "Analyze data" # Moved to top
   config: # All config under here
     provider: "anthropic"
-    model: "claude-3-5-sonnet"
+    model: "claude-3-7-sonnet"
     prompt: "..." # Single string
     success:
       condition:

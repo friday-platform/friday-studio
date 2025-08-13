@@ -117,7 +117,7 @@ agents:
     description: Analyze discount data and create comprehensive reports for library storage
     config:
       provider: anthropic
-      model: claude-3-5-sonnet-latest
+      model: claude-3-7-sonnet-latest
       timeout: "45s"
       prompt: |
         You are an autonomous discount report analyzer. You MUST immediately process the data and store reports without asking questions.

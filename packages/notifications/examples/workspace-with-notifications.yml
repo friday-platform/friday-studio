@@ -115,7 +115,7 @@ agents:
     type: "llm"
     description: "Agent that sends error notifications"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.1
       max_tokens: 1000
       system_prompt: |
@@ -139,7 +139,7 @@ agents:
     type: "llm"
     description: "Agent that generates and sends health reports"
     config:
-      model: "claude-3-5-sonnet-20241022"
+      model: "claude-3-7-sonnet-latest"
       temperature: 0.1
       max_tokens: 2000
       system_prompt: |

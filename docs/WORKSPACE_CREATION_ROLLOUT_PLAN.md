@@ -353,9 +353,9 @@ const workspaceBuilderTools = {
         description: "LLM provider for this agent",
         examples: ["anthropic", "openai", "google"],
       }),
-      model: z.string().default("claude-3-5-sonnet-latest").meta({
+      model: z.string().default("claude-3-7-sonnet-latest").meta({
         description: "Model identifier from the selected provider",
-        examples: ["claude-3-5-sonnet-latest", "gpt-4", "gemini-pro"],
+        examples: ["claude-3-7-sonnet-latest", "gpt-4", "gemini-pro"],
       }),
       prompt: z.string().meta({
         description: "System prompt that defines the agent's behavior and capabilities",

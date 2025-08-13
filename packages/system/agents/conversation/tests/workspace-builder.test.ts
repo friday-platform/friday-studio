@@ -138,7 +138,7 @@ Deno.test({
       description: "Test LLM agent",
       config: {
         provider: "anthropic",
-        model: "claude-3-5-sonnet-latest",
+        model: "claude-3-7-sonnet-latest",
         prompt: "You are a test agent",
         temperature: 0.3,
       },
@@ -182,7 +182,7 @@ Deno.test({
       description: "Test agent",
       config: {
         provider: "anthropic",
-        model: "claude-3-5-sonnet-latest",
+        model: "claude-3-7-sonnet-latest",
         prompt: "Test prompt",
         temperature: 0.3,
       },
@@ -214,7 +214,7 @@ function createJobTestBuilder(): WorkspaceBuilder {
     description: "Test agent",
     config: {
       provider: "anthropic",
-      model: "claude-3-5-sonnet-latest",
+      model: "claude-3-7-sonnet-latest",
       prompt: "Test prompt",
       temperature: 0.3,
     },
@@ -364,7 +364,7 @@ Deno.test({
       description: "LLM processor",
       config: {
         provider: "anthropic",
-        model: "claude-3-5-sonnet-latest",
+        model: "claude-3-7-sonnet-latest",
         prompt: "Process the input",
         temperature: 0.3,
       },
@@ -487,7 +487,7 @@ function createExistingConfig(): WorkspaceConfig {
         description: "Existing LLM agent",
         config: {
           provider: "anthropic",
-          model: "claude-3-5-sonnet-latest",
+          model: "claude-3-7-sonnet-latest",
           prompt: "Existing agent prompt",
           temperature: 0.3,
         },
@@ -613,7 +613,7 @@ function createBuilderWithComponents(): WorkspaceBuilder {
     description: "Original agent",
     config: {
       provider: "anthropic",
-      model: "claude-3-5-sonnet-latest",
+      model: "claude-3-7-sonnet-latest",
       prompt: "Original prompt",
       temperature: 0.3,
     },
@@ -808,7 +808,7 @@ function createBuilderWithRemovalComponents(): WorkspaceBuilder {
     description: "Test agent",
     config: {
       provider: "anthropic",
-      model: "claude-3-5-sonnet-latest",
+      model: "claude-3-7-sonnet-latest",
       prompt: "Test prompt",
       temperature: 0.3,
     },
@@ -819,7 +819,7 @@ function createBuilderWithRemovalComponents(): WorkspaceBuilder {
     description: "Unused agent",
     config: {
       provider: "anthropic",
-      model: "claude-3-5-sonnet-latest",
+      model: "claude-3-7-sonnet-latest",
       prompt: "Unused prompt",
       temperature: 0.3,
     },
