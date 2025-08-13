@@ -288,6 +288,7 @@ export class SessionSupervisorActor implements BaseActor {
       stopWhen: stepCountIs(10),
       temperature: 0.3, // Lower temperature for more consistent planning
       maxOutputTokens: 4000,
+      maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
       providerOptions: {
         anthropic: {
           thinking: { type: "enabled", budgetTokens: 15000 },

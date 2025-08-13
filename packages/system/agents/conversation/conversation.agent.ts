@@ -162,6 +162,7 @@ export const conversationAgent = createAgent({
       stopWhen: stepCountIs(20),
       temperature: 0.3,
       maxOutputTokens: 12000,
+      maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
       providerOptions: {
         anthropic: { thinking: { type: "enabled", budgetTokens: 25000 } },
       },

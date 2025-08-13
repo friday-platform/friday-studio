@@ -29,7 +29,7 @@ export function convertYAMLToAgent(yaml: YAMLAgentDefinition): AtlasAgent {
   const logger = createLogger({ component: "YAMLAgent" });
   const llmConfig = yaml.llm;
   const streaming = llmConfig.streaming?.enabled ?? true;
-  const maxRetries = 0;
+  const maxRetries = 3; // Enable retries for API resilience (e.g., 529 errors)
 
   validateProviderConfig(llmConfig.provider);
   const model = registry.languageModel(`${llmConfig.provider}:${llmConfig.model}`);

@@ -18,23 +18,9 @@ updates:
       - "github-actions"
     rebase-strategy: "auto"
 
-  # Keep Deno dependencies up to date
-  - package-ecosystem: "pub"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:00"
-    open-pull-requests-limit: 5
-    assignees:
-      - "ljagiello"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    labels:
-      - "dependencies"
-      - "deno"
-    rebase-strategy: "auto"
+  # Deno dependencies are handled by .github/workflows/update-deno-deps.yml
+  # using Deno's native `deno outdated` command (available in Deno 2.x+)
+  # GitHub Dependabot doesn't have native support for Deno's deno.json yet
 
   # Keep npm dependencies up to date (for tools/atlas-installer)
   - package-ecosystem: "npm"

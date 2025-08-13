@@ -68,6 +68,7 @@ export class WorkspaceGenerator {
           tools: workspaceBuilderTools,
           stopWhen: stepCountIs(60),
           temperature: this.getTemperatureForAttempt(attempt),
+          maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
           providerOptions: {
             anthropic: {
               thinking: { type: "enabled", budgetTokens: 7000 },

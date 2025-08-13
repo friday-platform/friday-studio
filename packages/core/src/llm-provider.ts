@@ -178,6 +178,7 @@ export class LLMProvider {
         stopWhen: stepCountIs(providerConfig.max_steps || 10),
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
+        maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
         abortSignal: watchdog.signal,
       });
 
@@ -341,6 +342,7 @@ export class LLMProvider {
         messages,
         maxOutputTokens: providerConfig.max_tokens,
         temperature: providerConfig.temperature,
+        maxRetries: 3, // Enable retries for API resilience (e.g., 529 errors)
         abortSignal: watchdog.signal,
       });
 

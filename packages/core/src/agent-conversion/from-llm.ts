@@ -7,6 +7,7 @@
  */
 
 import { generateText, stepCountIs } from "ai";
+import { APICallError } from "@ai-sdk/provider";
 import { createAgent } from "@atlas/agent-sdk";
 import type { AtlasAgent } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
@@ -22,7 +23,8 @@ export function convertLLMToAgent(
   agentId: string,
   logger: Logger,
 ): AtlasAgent {
-  const maxRetries = 0;
+  // Use configured retries or default to 3 for better resilience against 529 errors
+  const maxRetries = config.config.max_retries ?? 3;
 
   validateProviderConfig(config.config.provider);
   const model = registry.languageModel(`${config.config.provider}:${config.config.model}`);
@@ -55,7 +57,33 @@ export function convertLLMToAgent(
         //   return await handleNonStreamingResponse(commonOptions);
         // }
       } catch (error) {
-        logger.error("Error when  invoking wrapped agent", { error });
+        // Enhanced error logging for API overload situations
+        const isAPIError = error instanceof APICallError;
+        const errorDetails = {
+          agentId,
+          error,
+          errorType: error instanceof Error ? error.name : "Unknown",
+          errorMessage: error instanceof Error ? error.message : String(error),
+          statusCode: isAPIError ? error.statusCode : undefined,
+          isRetryable: isAPIError ? error.isRetryable : false,
+          // Specific handling for 529 Overloaded errors
+          isOverloaded: (isAPIError && error.statusCode === 529) ||
+            (error instanceof Error && error.message.includes("Overloaded")),
+        };
+
+        logger.error("Error when invoking wrapped agent", errorDetails);
+
+        // Log guidance for overload errors
+        if (errorDetails.isOverloaded) {
+          logger.warn(
+            `API overload detected for agent ${agentId}. The SDK will automatically retry up to ${maxRetries} times with exponential backoff.
+            Consider:
+            1. Adjusting max_retries in agent config (currently ${maxRetries})
+            2. Monitoring API status at status.anthropic.com
+            3. Implementing rate limiting if this persists`,
+          );
+        }
+
         // if (context.stream) {
         //   const errorEvent: StreamEvent = {
         //     type: "error",
