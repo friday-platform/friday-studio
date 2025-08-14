@@ -18,6 +18,7 @@ export type {
   AgentMCPServerConfig,
   AgentMetadata,
   AgentRegistry,
+  AgentResult,
   AgentSessionData,
   AgentSessionState,
   ApprovalRequest,
@@ -32,6 +33,8 @@ export type {
   MCPTransportConfig,
   StreamEmitter,
   StreamEvent,
+  ToolContext,
+  ToolResult,
 } from "./types.ts";
 
 // Zod Schemas for runtime validation

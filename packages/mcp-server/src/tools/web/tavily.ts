@@ -182,7 +182,9 @@ export function registerTavilyTools(server: McpServer, ctx: ToolContext) {
           ctx,
         );
 
-        return createSuccessResponse(processedData);
+        const finalResponse = createSuccessResponse(processedData);
+
+        return finalResponse;
       } catch (error) {
         ctx.logger.error("Tavily search error", { error: (error as Error).message, query });
         throw new Error(`Search failed: ${(error as Error).message}`);

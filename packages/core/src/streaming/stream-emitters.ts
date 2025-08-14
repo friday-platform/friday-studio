@@ -111,23 +111,51 @@ export class HTTPStreamEmitter implements StreamEmitter {
     const events = this.buffer.splice(0, this.buffer.length);
 
     try {
-      await fetch(`${this.daemonUrl}/api/sessions/${this.sessionId}/stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Stream-ID": this.streamId,
-        },
-        body: JSON.stringify({
-          events: events.map((event) => ({
-            id: crypto.randomUUID(),
-            type: event.type,
-            data: event,
-            timestamp: new Date().toISOString(),
-            sessionId: this.sessionId,
-            streamId: this.streamId,
-          })),
-        }),
-      });
+      // Emit each buffered event to the unified stream emit endpoint
+      for (const event of events) {
+        // Normalize event type for UI where applicable
+        const mappedType = event.type === "custom" ? event.eventType : event.type;
+
+        const data = (() => {
+          if (event.type === "custom") {
+            return event.data as Record<string, unknown>;
+          }
+          switch (event.type) {
+            case "thinking":
+              return { content: event.content };
+            case "error": {
+              const err = event.error;
+              return {
+                content: typeof err === "string" ? err : String((err as Error).message ?? err),
+              };
+            }
+            case "finish":
+              return { content: event.reason };
+            case "text":
+              return { content: event.content };
+            case "usage":
+            case "progress":
+            default:
+              return { content: JSON.stringify(event) } as Record<string, unknown>;
+          }
+        })();
+
+        const payload = {
+          id: crypto.randomUUID(),
+          type: mappedType,
+          data,
+          timestamp: new Date().toISOString(),
+          sessionId: this.sessionId,
+        };
+
+        await fetch(`${this.daemonUrl}/api/stream/${this.streamId}/emit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+      }
     } catch (error) {
       this.logger.error("Failed to flush stream events", {
         error: error instanceof Error ? error.message : String(error),
@@ -145,12 +173,20 @@ export class HTTPStreamEmitter implements StreamEmitter {
     this.ended = true;
 
     try {
-      await fetch(`${this.daemonUrl}/api/sessions/${this.sessionId}/stream/end`, {
+      // Emit a finish event
+      const payload = {
+        id: crypto.randomUUID(),
+        type: "finish",
+        data: { content: "Stream ended" },
+        timestamp: new Date().toISOString(),
+        sessionId: this.sessionId,
+      };
+      await fetch(`${this.daemonUrl}/api/stream/${this.streamId}/emit`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Stream-ID": this.streamId,
         },
+        body: JSON.stringify(payload),
       });
     } catch (error) {
       this.logger.error("Failed to send stream end", { error });

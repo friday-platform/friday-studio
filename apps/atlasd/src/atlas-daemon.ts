@@ -21,7 +21,7 @@ import { WorkspaceRuntime } from "../../../src/core/workspace-runtime.ts";
 import { Workspace } from "../../../src/core/workspace.ts";
 import { WorkspaceMemberRole } from "../../../src/types/core.ts";
 import { logger } from "@atlas/logger";
-import { SessionStatusEnum } from "../../../src/core/constants/session-status.ts";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import { healthRoutes } from "../routes/health.ts";
 import { createOpenAPIHandlers } from "../routes/openapi.ts";
 import { workspacesRoutes } from "../routes/workspaces/index.ts";
@@ -1845,8 +1845,8 @@ export class AtlasDaemon implements AppContext {
       const sessions = runtime.getSessions();
       const hasActiveSessions = sessions.some(
         (s) =>
-          s.status === SessionStatusEnum.RUNNING ||
-          s.status === SessionStatusEnum.STARTING,
+          s.status === WorkspaceSessionStatus.EXECUTING ||
+          s.status === WorkspaceSessionStatus.PENDING,
       );
 
       if (!hasActiveSessions) {
@@ -1905,7 +1905,9 @@ export class AtlasDaemon implements AppContext {
 
     const sessions = runtime.getSessions();
     const hasActiveSessions = sessions.some(
-      (s) => s.status === "running" || s.status === "starting",
+      (s) =>
+        s.status === WorkspaceSessionStatus.EXECUTING ||
+        s.status === WorkspaceSessionStatus.PENDING,
     );
 
     if (!hasActiveSessions) {

@@ -2,6 +2,7 @@ import { confirmAction } from "../../utils/confirm.tsx";
 import { errorOutput, infoOutput, successOutput } from "../../utils/output.ts";
 import { spinner } from "../../utils/prompts.tsx";
 import { getAtlasClient } from "@atlas/client";
+import { WorkspaceSessionStatus } from "@atlas/core";
 
 interface CancelArgs {
   id: string;
@@ -61,8 +62,8 @@ export const handler = async (argv: CancelArgs): Promise<void> => {
 
     // Check if session is already completed
     if (
-      session.status === "completed" || session.status === "failed" ||
-      session.status === "cancelled"
+      session.status === WorkspaceSessionStatus.COMPLETED ||
+      session.status === WorkspaceSessionStatus.FAILED
     ) {
       infoOutput(`Session '${argv.id}' is already ${session.status}`);
       Deno.exit(0);

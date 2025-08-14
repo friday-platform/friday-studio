@@ -8,7 +8,6 @@ import { type ActorRefFrom, createActor } from "xstate";
 import type { IWorkspace, IWorkspaceSession, IWorkspaceSignal } from "../types/core.ts";
 import { logger } from "@atlas/logger";
 import { AtlasTelemetry } from "../utils/telemetry.ts";
-import { Session } from "./session.ts";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
 import {
   createWorkspaceRuntimeMachine,
@@ -33,7 +32,6 @@ export class WorkspaceRuntime {
   private workspace: IWorkspace;
   private config?: MergedConfig;
   private stateMachine: ActorRefFrom<ReturnType<typeof createWorkspaceRuntimeMachine>>;
-  private sessions: Map<string, IWorkspaceSession> = new Map();
   private fsmId: string;
 
   constructor(
@@ -198,67 +196,11 @@ export class WorkspaceRuntime {
         const sessionId = (typeof payload?.sessionId === "string" ? payload.sessionId : null) ||
           crypto.randomUUID();
 
-        // Create session
-        const session = new Session(
-          this.workspace.id,
-          {
-            triggers: [{
-              ...signal,
-              provider: signal.provider || { id: "unknown", name: "unknown" },
-            } as IWorkspaceSignal], // Ensure provider field is present
-            callback: (result) => {
-              logger.info(`Session completed`, {
-                workspaceId: this.workspace.id,
-                sessionId: sessionId,
-                result,
-              });
-
-              // Notify state machine about completion
-              this.stateMachine.send({
-                type: "SESSION_COMPLETED",
-                sessionId: sessionId,
-                result,
-              });
-              return Promise.resolve();
-            },
-          },
-          undefined, // agents
-          undefined, // workflows
-          undefined, // sources
-          undefined, // intent
-          undefined, // storageAdapter
-          true, // enableCognitiveLoop
-        );
-
-        // Store session with proper ID
-        Object.defineProperty(session, "id", {
-          value: sessionId,
-          writable: false,
-          configurable: true,
-        });
-
-        // Store session
-        this.sessions.set(sessionId, session);
-        logger.debug("Session stored", {
-          sessionId,
-          originalSessionId: session.id,
-          sessionCount: this.sessions.size,
-        });
-
-        // Start the session to transition from "created" state
-        // Note: We don't await session.start() as it blocks until completion
-        // Instead, we just trigger the start asynchronously
-        session.start().catch((error) => {
-          logger.error("Session start failed", {
-            sessionId,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-
         // Create trace headers for supervisor communication
         const traceHeaders = await AtlasTelemetry.createTraceHeaders();
 
         // Send event to state machine for processing
+        // The state machine will create and manage the session
         this.stateMachine.send({
           type: "PROCESS_SIGNAL",
           signal: {
@@ -270,6 +212,27 @@ export class WorkspaceRuntime {
           streamId,
           traceHeaders,
         });
+
+        // Wait for the session to be created by the state machine
+        // We need to give it time to process the event
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        // Get the session from the state machine's context
+        const currentState = this.stateMachine.getSnapshot();
+        const session = currentState.context.sessions.get(sessionId);
+
+        if (!session) {
+          // If session not found yet, wait a bit more
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const retryState = this.stateMachine.getSnapshot();
+          const retrySession = retryState.context.sessions.get(sessionId);
+
+          if (!retrySession) {
+            throw new Error(`Session ${sessionId} was not created by state machine`);
+          }
+
+          return retrySession;
+        }
 
         return session;
       },
@@ -332,7 +295,7 @@ export class WorkspaceRuntime {
     return {
       workspace: this.workspace.id,
       supervisor: !!currentState.context.supervisor,
-      sessions: this.sessions.size,
+      sessions: currentState.context.sessions.size,
       state: this.getState(),
       stats: currentState.context.stats,
     };
@@ -353,24 +316,28 @@ export class WorkspaceRuntime {
    * Get all active sessions
    */
   getSessions(): IWorkspaceSession[] {
-    return Array.from(this.sessions.values());
+    // Get sessions from state machine context (source of truth)
+    const state = this.stateMachine.getSnapshot();
+    return Array.from(state.context.sessions.values());
   }
 
   /**
    * Get a specific session
    */
   getSession(sessionId: string): IWorkspaceSession | undefined {
-    return this.sessions.get(sessionId);
+    // Get session from state machine context (source of truth)
+    const state = this.stateMachine.getSnapshot();
+    return state.context.sessions.get(sessionId);
   }
 
   /**
    * Cancel a session
    */
   async cancelSession(sessionId: string): Promise<void> {
-    const session = this.sessions.get(sessionId);
+    const state = this.stateMachine.getSnapshot();
+    const session = state.context.sessions.get(sessionId);
     if (session) {
       await session.cancel();
-      this.sessions.delete(sessionId);
 
       // Notify state machine
       this.stateMachine.send({ type: "SESSION_COMPLETED", sessionId });
@@ -383,15 +350,16 @@ export class WorkspaceRuntime {
   saveStateCheckpoint(): void {
     logger.info("Saving state checkpoint", { workspaceId: this.workspace.id });
 
+    const snapshot = this.stateMachine.getSnapshot();
     const state = {
       workspace: this.workspace.snapshot(),
-      sessions: Array.from(this.sessions.entries()).map(([id, session]) => ({
+      sessions: Array.from(snapshot.context.sessions.entries()).map(([id, session]) => ({
         id,
         status: session.status,
         summary: session.summarize(),
       })),
       timestamp: new Date().toISOString(),
-      stats: this.stateMachine.getSnapshot().context.stats,
+      stats: snapshot.context.stats,
     };
 
     // TODO: Implement actual persistence
@@ -478,7 +446,8 @@ export class WorkspaceRuntime {
    * List all sessions in the workspace
    */
   listSessions(): Array<{ id: string; status: string; startedAt: string }> {
-    return Array.from(this.sessions.entries()).map(([id, session]) => ({
+    const state = this.stateMachine.getSnapshot();
+    return Array.from(state.context.sessions.entries()).map(([id, session]) => ({
       id,
       status: session.status,
       startedAt: new Date().toISOString(), // Use current time as fallback
@@ -489,7 +458,7 @@ export class WorkspaceRuntime {
    * Get detailed information about a session
    */
   describeSession(sessionId: string): Record<string, unknown> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getSession(sessionId);
     if (!session) {
       throw new Error(`Session '${sessionId}' not found`);
     }

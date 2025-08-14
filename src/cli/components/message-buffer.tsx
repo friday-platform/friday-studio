@@ -7,7 +7,7 @@ import { Header } from "./header.tsx";
 import { MessageHeader } from "./message-header.tsx";
 import { Spinner } from "@inkjs/ui";
 import { DAEMON_STATUS } from "../constants/daemon-status.ts";
-import { SSEEventSchema } from "@atlas/config";
+import { type SSEEvent, SSEEventSchema } from "@atlas/config";
 
 interface TypingState {
   isTyping: boolean;
@@ -28,9 +28,7 @@ export const MessageBuffer = () => {
     null,
   );
 
-  const [sseMessages, setSseMessages] = useState<
-    Map<string, ReturnType<typeof SSEEventSchema.parse>>
-  >(new Map());
+  const [sseMessages, setSseMessages] = useState<Map<string, SSEEvent>>(new Map());
   const [output, setOutput] = useState<OutputEntry[]>([]);
 
   const [typingState, setTypingState] = useState<TypingState>({
@@ -138,9 +136,7 @@ export const MessageBuffer = () => {
     };
   }, [sseStream, sseAbortControllerRef]);
 
-  function formatMessage(
-    messages: ReturnType<typeof SSEEventSchema.parse>[],
-  ): OutputEntry | undefined {
+  function formatMessage(messages: SSEEvent[]): OutputEntry | undefined {
     const currentUser = Deno.env.get("USER") || Deno.env.get("USERNAME") || "You";
 
     const firstMessage = messages[0];
@@ -149,18 +145,17 @@ export const MessageBuffer = () => {
       return;
     }
 
+    const normalizedType = firstMessage.type;
     return {
       id: firstMessage.id,
-      type: firstMessage.type,
+      type: normalizedType as OutputEntry["type"],
       timestamp: firstMessage.timestamp,
-      author: firstMessage.type === "text" ? "Atlas" : currentUser,
+      author: normalizedType === "text" ? "Atlas" : currentUser,
       content: messages.map((message) => message.data.content).join(""),
     };
   }
 
-  function getGroupedMessages(
-    messageValues: ReturnType<typeof SSEEventSchema.parse>[],
-  ) {
+  function getGroupedMessages(messageValues: SSEEvent[]) {
     // Group messages by ID
     return messageValues.reduce((groups, message) => {
       const id = message.id;
@@ -171,7 +166,7 @@ export const MessageBuffer = () => {
       groups[id].push(message);
 
       return groups;
-    }, {} as Record<string, typeof messageValues>);
+    }, {} as Record<string, SSEEvent[]>);
   }
 
   useEffect(() => {
@@ -198,7 +193,7 @@ export const MessageBuffer = () => {
   }, [typingState, setTypingState]);
 
   useEffect(() => {
-    const messageValues = Array.from(sseMessages.values());
+    const messageValues: SSEEvent[] = Array.from(sseMessages.values());
 
     // Get the latest message to check if it's streaming
     const latestMessage = messageValues[messageValues.length - 1];
@@ -223,16 +218,16 @@ export const MessageBuffer = () => {
       );
 
       setOutput(
-        Object.values(staticMessages)
-          .map(formatMessage)
+        (Object.values(staticMessages) as SSEEvent[][])
+          .map((messages: SSEEvent[]) => formatMessage(messages))
           .filter((message) => message !== undefined),
       );
     } else {
       const groupedMessages = getGroupedMessages(messageValues);
 
       setOutput(
-        Object.values(groupedMessages)
-          .map(formatMessage)
+        (Object.values(groupedMessages) as SSEEvent[][])
+          .map((messages: SSEEvent[]) => formatMessage(messages))
           .filter((message) => message !== undefined),
       );
     }

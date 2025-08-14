@@ -26,7 +26,7 @@ import { z } from "zod/v4";
 /**
  * Internal implementation of AtlasAgent
  */
-class AtlasAgentImpl implements AtlasAgent {
+class AtlasAgentImpl<T extends unknown = unknown> implements AtlasAgent<T> {
   metadata: AgentMetadata;
   private handler: AgentHandler;
   private environment?: AgentEnvironmentConfig;
@@ -87,10 +87,10 @@ class AtlasAgentImpl implements AtlasAgent {
     }
   }
 
-  async execute(prompt: string, context: AgentContext): Promise<unknown> {
+  async execute(prompt: string, context: AgentContext): Promise<T> {
     try {
       // Execute the handler with the prompt and context
-      return await this.handler(prompt, context);
+      return await this.handler(prompt, context) as T;
     } catch (error) {
       // Re-throw AwaitingSupervisorDecision exceptions
       if (error instanceof Error && error.name === "AwaitingSupervisorDecision") {
@@ -120,11 +120,24 @@ class AtlasAgentImpl implements AtlasAgent {
 }
 
 /**
- * Create a domain expert agent
+ * Create a domain expert agent with typed return values
+ *
+ * The generic type parameter T allows you to specify the exact return type
+ * of your agent handler, enabling full type safety for agent results.
+ * This is especially important for agents controlled by Atlas (like LLM agents)
+ * where we need to ensure consistent return structures.
+ *
+ * @param T - The return type of the agent handler (defaults to unknown)
  *
  * @example
  * ```typescript
- * export const githubAgent = createAgent({
+ * // Custom agent with typed return value
+ * interface MyAgentResult {
+ *   status: 'success' | 'error';
+ *   data: unknown;
+ * }
+ *
+ * export const githubAgent = createAgent<MyAgentResult>({
  *   id: "github",
  *   displayName: "GitHub Agent",
  *   version: "1.0.0",
@@ -143,25 +156,27 @@ class AtlasAgentImpl implements AtlasAgent {
  *     ]
  *   },
  *
- *   handler: async (prompt, { mcp, state, stream }) => {
- *     // Bring your own LLM
+ *   handler: async (prompt, { tools, logger }) => {
+ *     // Handler must return MyAgentResult type
  *     const { generateText } = await import('ai');
  *     const { anthropic } = await import('@ai-sdk/anthropic');
- *
- *     const githubTools = await mcp.getTools("github");
- *     const platformTools = await mcp.getTools("atlas-platform");
  *
  *     const result = await generateText({
  *       model: anthropic('claude-3-sonnet-20240229'),
  *       prompt,
- *       tools: { ...githubTools, ...platformTools }
+ *       tools
  *     });
  *
- *     return result;
+ *     return {
+ *       status: 'success' as const,
+ *       data: result.text
+ *     };
  *   }
  * });
  * ```
  */
-export function createAgent(config: CreateAgentConfig): AtlasAgent {
-  return new AtlasAgentImpl(config);
+export function createAgent<T extends unknown = unknown>(
+  config: CreateAgentConfig<T>,
+): AtlasAgent<T> {
+  return new AtlasAgentImpl<T>(config);
 }

@@ -21,7 +21,12 @@ import { Session } from "./session.ts";
 import { LLMProvider } from "@atlas/core";
 import { MCPServerRegistry } from "@atlas/mcp";
 import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts";
-import { AgentOrchestrator, convertLLMToAgent, GlobalMCPServerPool } from "@atlas/core";
+import {
+  AgentOrchestrator,
+  convertLLMToAgent,
+  GlobalMCPServerPool,
+  WorkspaceSessionStatus,
+} from "@atlas/core";
 
 interface StreamSignalData {
   runtimeSignal: unknown; // Runtime signal instance
@@ -369,16 +374,33 @@ export const workspaceRuntimeMachineSetup = setup({
         }
       }
 
-      // Cancel all active sessions
+      // Clean up all sessions (cancel active ones, cleanup resources for completed ones)
       for (const [sessionId, session] of context.sessions) {
         try {
-          logger.debug("Cancelling session", {
-            workspaceId: context.workspace.id,
-            sessionId,
-          });
-          session.cancel();
+          const sessionStatus = session.status;
+
+          if (
+            sessionStatus === WorkspaceSessionStatus.COMPLETED ||
+            sessionStatus === WorkspaceSessionStatus.FAILED
+          ) {
+            // For completed/failed sessions, only clean up resources without changing status
+            logger.debug("Cleaning up completed session resources", {
+              workspaceId: context.workspace.id,
+              sessionId,
+              status: sessionStatus,
+            });
+            session.cleanup();
+          } else {
+            // For active sessions, cancel them
+            logger.debug("Cancelling active session", {
+              workspaceId: context.workspace.id,
+              sessionId,
+              status: sessionStatus,
+            });
+            session.cancel();
+          }
         } catch (error) {
-          logger.error(`Failed to cancel session: ${sessionId}`, {
+          logger.error(`Failed to cleanup session: ${sessionId}`, {
             error: error instanceof Error ? error.message : String(error),
           });
         }
@@ -411,13 +433,14 @@ export const workspaceRuntimeMachineSetup = setup({
         ...context.stats,
         activeSessionCount: Math.max(0, context.stats.activeSessionCount - 1),
       }),
-      sessions: ({ context, event }) => {
-        const newSessions = new Map(context.sessions);
-        if ("sessionId" in event && event.sessionId) {
-          newSessions.delete(event.sessionId);
-        }
-        return newSessions;
-      },
+      // Don't delete sessions when they complete - keep them for history
+      // sessions: ({ context, event }) => {
+      //   const newSessions = new Map(context.sessions);
+      //   if ("sessionId" in event) {
+      //     newSessions.delete(event.sessionId);
+      //   }
+      //   return newSessions;
+      // },
     }),
     assignSupervisor: assign(({ event }) => {
       logger.info("assignSupervisor action called", {
@@ -675,13 +698,41 @@ export function createWorkspaceRuntimeMachine(
                         context.workspace.id,
                         {
                           triggers: [event.signal],
-                          // deno-lint-ignore require-await
-                          callback: async (result) => {
-                            logger.info("Session completed", {
-                              workspaceId: context.workspace.id,
-                              sessionId,
-                              result,
-                            });
+                          callback: {
+                            execute: () => {},
+                            validate: () => true,
+                            onSuccess: (result) => {
+                              logger.info("Session completed successfully", {
+                                workspaceId: context.workspace.id,
+                                sessionId,
+                                result,
+                              });
+                              // Remove session from the sessions map when it completes
+                              self.send({
+                                type: "SESSION_COMPLETED",
+                                sessionId,
+                                result,
+                              });
+                            },
+                            onError: (error) => {
+                              logger.error("Session failed", {
+                                workspaceId: context.workspace.id,
+                                sessionId,
+                                error: error.message,
+                              });
+                              // Remove session from the sessions map when it fails
+                              self.send({
+                                type: "SESSION_FAILED",
+                                sessionId,
+                                error: error.message,
+                              });
+                            },
+                            onComplete: () => {
+                              logger.info("Session finalized", {
+                                workspaceId: context.workspace.id,
+                                sessionId,
+                              });
+                            },
                           },
                         },
                         undefined, // agents
@@ -719,6 +770,21 @@ export function createWorkspaceRuntimeMachine(
                         sessionId,
                         event.streamId,
                       );
+
+                      // CRITICAL: Attach SessionSupervisorActor to Session
+                      if (result.sessionActor) {
+                        session.attachSessionActor(result.sessionActor);
+
+                        // ✅ FIX: Don't prematurely complete! Let the session machine handle execution completion
+                        // The session machine's executeSession actor will complete when sessionActor.executeSession() finishes
+                        logger.info("SessionSupervisorActor attached to session", {
+                          sessionId: session.id,
+                          actorId: result.sessionActor.id,
+                          status: result.status,
+                        });
+                      } else {
+                        session.fail(new Error(result.error || "Failed to create session actor"));
+                      }
 
                       return { sessionId, result };
                     }),

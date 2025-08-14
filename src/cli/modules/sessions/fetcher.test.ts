@@ -18,7 +18,7 @@ Deno.test("fetchSessions - should transform API response to UI format", async ()
     {
       id: "sess_123",
       workspaceId: "workspace_1",
-      status: "active",
+      status: "executing",
       summary: "Processing data",
       signal: "http-webhook",
       startTime: "2024-01-01T10:00:00Z",
@@ -52,7 +52,7 @@ Deno.test("fetchSessions - should transform API response to UI format", async ()
       assertEquals(result.sessions[0].id, "sess_123");
       assertEquals(result.sessions[0].workspaceName, "workspace_1");
       assertEquals(result.sessions[0].signal, "http-webhook");
-      assertEquals(result.sessions[0].status, "active");
+      assertEquals(result.sessions[0].status, "executing");
       assertEquals(result.sessions[0].startedAt, "2024-01-01T10:00:00Z");
       assertEquals(result.sessions[0].completedAt, undefined);
 
@@ -76,7 +76,7 @@ Deno.test("fetchSessions - should filter by workspace", async () => {
     {
       id: "sess_123",
       workspaceId: "workspace_1",
-      status: "active",
+      status: "executing",
       summary: "Processing",
       signal: "http",
       startTime: "2024-01-01T10:00:00Z",
@@ -85,7 +85,7 @@ Deno.test("fetchSessions - should filter by workspace", async () => {
     {
       id: "sess_456",
       workspaceId: "workspace_2",
-      status: "active",
+      status: "executing",
       summary: "Running",
       signal: "schedule",
       startTime: "2024-01-01T10:00:00Z",
@@ -131,7 +131,7 @@ Deno.test("fetchSessions - should make correct HTTP request to sessions endpoint
     {
       id: "sess_123",
       workspaceId: "workspace_1",
-      status: "active",
+      status: "executing",
       summary: "Test session",
       signal: "test",
       startTime: "2024-01-01T10:00:00Z",
@@ -168,7 +168,7 @@ Deno.test("fetchSessions - should use custom port in request URL", async () => {
   const mockSessionInfo: SessionInfo = {
     id: "sess_123",
     workspaceId: "workspace_1",
-    status: "active",
+    status: "executing",
     summary: "Test",
     signal: "test",
     startTime: "2024-01-01T10:00:00Z",
@@ -377,7 +377,7 @@ Deno.test("fetchSessions - should handle workspace filtering with no matches", a
     {
       id: "sess_123",
       workspaceId: "workspace_1",
-      status: "active",
+      status: "executing",
       summary: "Test",
       signal: "test",
       startTime: "2024-01-01T10:00:00Z",
@@ -450,7 +450,7 @@ Deno.test("fetchSessions - should handle missing optional endTime field", async 
     {
       id: "sess_ongoing",
       workspaceId: "workspace_active",
-      status: "active",
+      status: "executing",
       summary: "Ongoing session",
       signal: "webhook",
       startTime: "2024-01-01T10:00:00Z",
@@ -522,7 +522,7 @@ Deno.test("fetchSessions - should handle request with 5000ms timeout", async () 
     {
       id: "sess_timeout_test",
       workspaceId: "workspace_test",
-      status: "active",
+      status: "executing",
       summary: "Timeout test session",
       signal: "test",
       startTime: "2024-01-01T10:00:00Z",
@@ -592,7 +592,7 @@ Deno.test("fetchSessions - should pass through correct request headers", async (
     {
       id: "sess_headers_test",
       workspaceId: "workspace_test",
-      status: "active",
+      status: "executing",
       summary: "Headers test session",
       signal: "test",
       startTime: "2024-01-01T10:00:00Z",

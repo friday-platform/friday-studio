@@ -24,7 +24,7 @@ import type {
   SessionSupervisorConfig,
 } from "@atlas/core";
 import type { Tool } from "ai";
-import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
+import { generateText, stepCountIs } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
@@ -92,7 +92,18 @@ export interface IWorkspaceSupervisorForSession {
 }
 import { type Logger, logger } from "@atlas/logger";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
-import { AwaitingSupervisorDecision, StreamEmitter, StreamEvent } from "@atlas/agent-sdk";
+import {
+  ReasoningResultStatus,
+  type ReasoningResultStatusType,
+  SessionSupervisorStatus,
+  type SessionSupervisorStatusType,
+} from "@atlas/core";
+import {
+  type HallucinationAnalysis,
+  HallucinationDetector,
+  HallucinationPatternDetector,
+} from "../services/hallucination-detector.ts";
+import { AgentResult, AwaitingSupervisorDecision, StreamEmitter } from "@atlas/agent-sdk";
 import { HTTPStreamEmitter, NoOpStreamEmitter } from "@atlas/core";
 import {
   createConversationContext,
@@ -117,17 +128,7 @@ export interface SessionContext {
   };
 }
 
-export interface AgentResult {
-  agentId: string;
-  task: string;
-  input: unknown;
-  output: unknown;
-  duration: number;
-  timestamp: string;
-  reasoning?: string;
-  toolCalls?: unknown[];
-  toolResults?: unknown[];
-}
+// NOTE: Use AgentResult from @atlas/agent-sdk
 
 export interface ExecutionPlan {
   id: string;
@@ -148,12 +149,44 @@ export interface ExecutionPhase {
 
 export interface SessionSummary {
   sessionId: string;
-  status: "completed" | "failed" | "partial";
+  status: ReasoningResultStatusType;
   totalPhases: number;
   totalAgents: number;
+  completedPhases: number;
+  executedAgents: number;
   duration: number;
   reasoning: string;
   results: AgentResult[];
+  failureReason?: string;
+  confidence?: number;
+}
+
+// Helper types/guard to safely access optional tool metadata
+interface ToolMetadata {
+  toolCalls?: unknown[];
+  toolResults?: unknown[];
+}
+
+function hasToolMetadata(value: unknown): value is ToolMetadata {
+  return typeof value === "object" && value !== null && (
+    "toolCalls" in (value as Record<string, unknown>) ||
+    "toolResults" in (value as Record<string, unknown>)
+  );
+}
+
+export interface ConfidenceAnalysis {
+  averageConfidence: number;
+  lowConfidenceAgents: string[];
+  suspiciousPatterns: string[];
+  issues: string[];
+}
+
+export interface LLMValidationResult {
+  valid: boolean;
+  confidence: number;
+  issues: string[];
+  reasoning?: string;
+  source?: "llm" | "validation_unavailable" | "validation_failed";
 }
 
 export class SessionSupervisorActor implements BaseActor {
@@ -164,7 +197,7 @@ export class SessionSupervisorActor implements BaseActor {
   id: string;
   private sessionContext?: SessionContext;
   private supervisionLevel: SupervisionLevel = SupervisionLevel.STANDARD;
-  private status: "idle" | "planning" | "executing" | "completed" | "failed" = "idle";
+  private status: SessionSupervisorStatusType = SessionSupervisorStatus.IDLE;
   private config?: SessionSupervisorConfig;
   private cachedPlan?: ExecutionPlan;
   private agentOrchestrator?: IAgentOrchestrator; // Agent orchestrator for MCP-based execution
@@ -172,6 +205,18 @@ export class SessionSupervisorActor implements BaseActor {
   private llmProvider = createAnthropic({
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
+  private hallucinationDetector: HallucinationDetector;
+  private validationMap = new Map<string, { confidence: number; issues: string[] }>();
+  private hallucinationTermination?: { agentId: string; confidence: number; issues: string[] };
+
+  // Private state tracking for new Session integration
+  private hasStarted: boolean = false;
+  private isExecuting: boolean = false;
+  private lastSessionSummary?: SessionSummary;
+  private agentResults?: AgentResult[];
+  private executionStartTime?: Date;
+  private executionEndTime?: Date;
+  private executionPromise?: Promise<SessionSummary>; // Store the execution promise for external monitoring
   private workspaceSupervisor?: IWorkspaceSupervisorForSession; // WorkspaceSupervisorActor - set by runtime for memory streaming
   private mecmfManager?: MECMFMemoryManager; // MECMF memory manager for prompt enhancement
 
@@ -200,6 +245,16 @@ export class SessionSupervisorActor implements BaseActor {
       component: "SessionSupervisorActor",
       sessionId: this.sessionId,
       workspaceId: this.workspaceId,
+    });
+
+    // Initialize hallucination detection system
+    const supervisionConfig = getSupervisionConfig(this.supervisionLevel);
+    const isTestEnvironment = Deno.env.get("DENO_TESTING") === "true";
+
+    this.hallucinationDetector = new HallucinationDetector({
+      supervisionLevel: this.supervisionLevel,
+      logger: this.logger.child({ component: "hallucination-detector" }),
+      enableLLMValidation: isTestEnvironment ? false : supervisionConfig.postExecutionValidation,
     });
 
     this.logger.info("Session supervisor actor initialized");
@@ -243,12 +298,62 @@ export class SessionSupervisorActor implements BaseActor {
 
     this.logger.info("Initializing session supervisor actor");
 
+    // Determine supervision level first
     this.supervisionLevel = this.getSupervisionLevel();
+    // Ensure detector threshold aligns with current level
+    this.hallucinationDetector.setSupervisionLevel(this.supervisionLevel);
 
     this.logger.info("Session supervisor actor initialized", {
       supervisionLevel: this.supervisionLevel,
       workspaceId: this.workspaceId || "global",
     });
+  }
+
+  /**
+   * Configure supervision level for testing purposes
+   * This method allows tests to set supervision level without accessing private members
+   */
+  public configureSupervisionLevel(level: SupervisionLevel): void {
+    this.supervisionLevel = level;
+    this.hallucinationDetector.setSupervisionLevel(level);
+    this.logger.info("Supervision level configured", { level });
+  }
+
+  /**
+   * Get agent configuration and create execution config
+   * Centralizes agent configuration access
+   */
+  private getAgentExecutionConfig(agentId: string): AgentExecutionConfig {
+    const agentConfig = this.config?.agents?.[agentId];
+    if (!agentConfig) {
+      this.logger.error("Agent configuration not found", {
+        agentId,
+        availableAgents: Object.keys(this.config?.agents || {}),
+        hasConfig: !!this.config,
+        hasAgents: !!this.config?.agents,
+      });
+      throw new Error(`Agent configuration not found: ${agentId}`);
+    }
+
+    let tools: string[] = [];
+    if (agentConfig.type === "llm") {
+      tools = agentConfig.config?.tools ?? [];
+    } else if (agentConfig.type === "system") {
+      tools = agentConfig.config?.tools ?? [];
+    }
+
+    // Always include atlas-platform for all agents to access Atlas tools
+    if (!tools.includes("atlas-platform")) {
+      tools = ["atlas-platform", ...tools];
+    }
+
+    return {
+      agentId,
+      agent: agentConfig,
+      tools: tools,
+      memory: this.config?.memory,
+      workspaceTools: this.config?.tools,
+    };
   }
 
   shutdown(): void {
@@ -257,6 +362,16 @@ export class SessionSupervisorActor implements BaseActor {
       workspaceId: this.workspaceId,
       streamMetrics: this.streamMetrics,
     });
+    // Preserve final outcome if available, otherwise mark as completed
+    const resultStatus = this.lastSessionSummary?.status;
+    if (resultStatus === ReasoningResultStatus.FAILED) {
+      this.status = SessionSupervisorStatus.FAILED;
+    } else if (resultStatus === ReasoningResultStatus.COMPLETED) {
+      this.status = SessionSupervisorStatus.COMPLETED;
+    } else {
+      // PARTIAL or undefined maps to COMPLETED for lifecycle finalization
+      this.status = SessionSupervisorStatus.COMPLETED;
+    }
 
     // Clean up MECMF working memory for this session
     if (this.mecmfManager) {
@@ -278,8 +393,6 @@ export class SessionSupervisorActor implements BaseActor {
 
       void this.baseStreamEmitter.end();
     }
-
-    this.status = "completed";
   }
 
   /**
@@ -473,10 +586,164 @@ export class SessionSupervisorActor implements BaseActor {
     return plan;
   }
 
-  async executeSession(): Promise<SessionSummary> {
+  /**
+   * Get current session status
+   */
+  getSessionStatus(): SessionSupervisorStatusType {
+    if (!this.hasStarted) return SessionSupervisorStatus.IDLE;
+    if (this.isExecuting) return SessionSupervisorStatus.EXECUTING;
+    const resultStatus = this.lastSessionSummary?.status;
+    if (resultStatus === ReasoningResultStatus.COMPLETED) {
+      return SessionSupervisorStatus.COMPLETED;
+    }
+    if (resultStatus === ReasoningResultStatus.FAILED) {
+      return SessionSupervisorStatus.FAILED;
+    }
+    // Map PARTIAL or undefined final result to COMPLETED for public session status
+    return SessionSupervisorStatus.COMPLETED;
+  }
+
+  /**
+   * Get current execution progress (0-100)
+   */
+  getProgress(): number {
+    if (!this.lastSessionSummary) return 0;
+
+    const summary = this.lastSessionSummary;
+    if (summary.status === ReasoningResultStatus.COMPLETED) return 100;
+    if (summary.status === ReasoningResultStatus.FAILED) return 0;
+
+    // Calculate progress from phases
+    return Math.round((summary.completedPhases / summary.totalPhases) * 100);
+  }
+
+  /**
+   * Get human-readable summary
+   */
+  getSummary(): string {
+    if (!this.lastSessionSummary) return `Session ${this.sessionId}: pending`;
+
+    const summary = this.lastSessionSummary;
+    const duration = summary.duration || 0;
+
+    if (summary.failureReason) {
+      return `Session ${this.sessionId}: ${summary.status} - ${summary.failureReason} (${duration}ms)`;
+    }
+
+    return `Session ${this.sessionId}: ${summary.status} (${summary.completedPhases}/${summary.totalPhases} phases) - ${duration}ms`;
+  }
+
+  /**
+   * Get all execution artifacts including agent results
+   */
+  getExecutionArtifacts(): IWorkspaceArtifact[] {
+    const artifacts: IWorkspaceArtifact[] = [];
+
+    // Add session summary artifact
+    if (this.lastSessionSummary) {
+      artifacts.push({
+        id: crypto.randomUUID(),
+        type: "execution_results",
+        data: {
+          summary: this.lastSessionSummary,
+          results: this.lastSessionSummary.results,
+          confidence: this.lastSessionSummary.confidence,
+        },
+        createdAt: new Date(),
+        createdBy: "session-supervisor-actor",
+      });
+    }
+
+    // Add individual agent result artifacts
+    if (this.agentResults) {
+      this.agentResults.forEach((result, _) => {
+        artifacts.push({
+          id: crypto.randomUUID(),
+          type: "agent_result",
+          data: result as unknown as Record<string, unknown>,
+          createdAt: new Date(),
+          createdBy: `agent-${result.agentId}`,
+        });
+      });
+    }
+
+    return artifacts;
+  }
+
+  /**
+   * Get detailed execution metadata
+   */
+  getExecutionMetadata(): {
+    sessionId: string;
+    workspaceId: string;
+    startTime?: Date;
+    endTime?: Date;
+    totalPhases: number;
+    completedPhases: number;
+    totalAgents: number;
+    executedAgents: number;
+    confidence?: number;
+    supervisionLevel: string;
+  } {
+    return {
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId || "global",
+      startTime: this.executionStartTime,
+      endTime: this.executionEndTime,
+      totalPhases: this.lastSessionSummary?.totalPhases || 0,
+      completedPhases: this.lastSessionSummary?.completedPhases || 0,
+      totalAgents: this.lastSessionSummary?.totalAgents || 0,
+      executedAgents: this.lastSessionSummary?.results?.length || 0,
+      confidence: this.lastSessionSummary?.confidence,
+      supervisionLevel: this.supervisionLevel,
+    };
+  }
+
+  getExecutionPromise(): Promise<SessionSummary> | undefined {
+    return this.executionPromise;
+  }
+
+  getExecutionStatus(): string {
+    // Map internal status to external status strings
+    switch (this.status) {
+      case SessionSupervisorStatus.IDLE:
+        return "idle";
+      case SessionSupervisorStatus.PLANNING:
+        return "planning";
+      case SessionSupervisorStatus.EXECUTING:
+        return "executing";
+      case SessionSupervisorStatus.COMPLETED:
+        return "completed";
+      case SessionSupervisorStatus.FAILED:
+        return "failed";
+      default:
+        return "unknown";
+    }
+  }
+
+  executeSession(): Promise<SessionSummary> {
     if (!this.sessionContext) {
       throw new Error("Session not initialized");
     }
+
+    // If already executing, return the existing promise
+    if (this.executionPromise) {
+      return this.executionPromise;
+    }
+
+    // Create and store the execution promise
+    this.executionPromise = this.doExecuteSession();
+    return this.executionPromise;
+  }
+
+  private async doExecuteSession(): Promise<SessionSummary> {
+    if (!this.sessionContext) {
+      throw new Error("Session not initialized");
+    }
+
+    this.hasStarted = true;
+    this.isExecuting = true;
+    this.executionStartTime = new Date();
 
     const sessionStartTime = Date.now();
 
@@ -484,6 +751,7 @@ export class SessionSupervisorActor implements BaseActor {
     const plan = await this.createExecutionPlan();
 
     const allResults: AgentResult[] = [];
+    let lastConfidenceResults: ConfidenceAnalysis | undefined;
 
     // Execute each phase
     for (const [phaseIndex, phase] of plan.phases.entries()) {
@@ -497,10 +765,28 @@ export class SessionSupervisorActor implements BaseActor {
       const phaseResults = await this.executePhase(phase, allResults);
       allResults.push(...phaseResults);
 
-      // Evaluate progress after each phase
+      // Stop the session immediately if severe hallucination was detected
+      if (this.hallucinationTermination) {
+        this.logger.error("Session terminated due to severe hallucination", {
+          agentId: this.hallucinationTermination.agentId,
+          confidence: this.hallucinationTermination.confidence,
+          issues: this.hallucinationTermination.issues,
+        });
+        break;
+      }
+
+      // Evaluate progress after each phase (non-hallucination controls)
       const shouldContinue = this.evaluateProgress(allResults, plan);
       if (!shouldContinue) {
         this.logger.info("Session completion criteria met, stopping execution");
+        // Optional: capture confidence results for later summary
+        try {
+          lastConfidenceResults = await this.analyzeResultConfidence(allResults);
+        } catch (error) {
+          this.logger.warn("Confidence analysis failed after early stop", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
         break;
       }
     }
@@ -525,7 +811,13 @@ export class SessionSupervisorActor implements BaseActor {
 
     // Generate session summary
     const duration = Date.now() - sessionStartTime;
-    const summary = this.generateSessionSummary(allResults, plan, duration);
+    const summary = this.generateSessionSummary(allResults, plan, duration, lastConfidenceResults);
+
+    // Update execution tracking
+    this.lastSessionSummary = summary;
+    this.agentResults = allResults;
+    this.isExecuting = false;
+    this.executionEndTime = new Date();
 
     // Handle memory operations based on job configuration
     await this.handleMemoryOperations(summary);
@@ -554,15 +846,50 @@ export class SessionSupervisorActor implements BaseActor {
       for (const agentTask of phase.agents) {
         // Combine results from previous phases + current phase agents
         const allPreviousResults = [...previousResults, ...phaseResults];
-        const result = await this.executeAgent(agentTask, allPreviousResults, phaseResults);
+        const result = await this.executeAgent(
+          agentTask,
+          allPreviousResults,
+          phaseResults,
+          phase.name,
+        );
         phaseResults.push(result);
+
+        // CRITICAL: Validate agent result immediately after execution
+        const shouldContinueAfterAgent = await this.validateAgentResult(result, [
+          ...previousResults,
+          ...phaseResults,
+        ]);
+        if (!shouldContinueAfterAgent) {
+          this.logger.error("Agent validation failed - terminating session immediately", {
+            agentId: agentTask.agentId,
+            phaseIndex: phase.id,
+            reason: "Hallucination detected in agent output",
+          });
+          return phaseResults; // Stop phase execution immediately
+        }
       }
     } else {
       const promises = phase.agents.map((agentTask) =>
-        this.executeAgent(agentTask, previousResults, phaseResults)
+        this.executeAgent(agentTask, previousResults, phaseResults, phase.name)
       );
       const parallelResults = await Promise.all(promises);
       phaseResults.push(...parallelResults);
+
+      // CRITICAL: Validate all parallel results immediately after execution
+      for (const result of parallelResults) {
+        const shouldContinueAfterAgent = await this.validateAgentResult(result, [
+          ...previousResults,
+          ...phaseResults,
+        ]);
+        if (!shouldContinueAfterAgent) {
+          this.logger.error("Parallel agent validation failed - terminating session immediately", {
+            agentId: result.agentId,
+            phaseIndex: phase.id,
+            reason: "Hallucination detected in parallel agent output",
+          });
+          return phaseResults; // Stop phase execution immediately
+        }
+      }
     }
 
     return phaseResults;
@@ -572,6 +899,7 @@ export class SessionSupervisorActor implements BaseActor {
     agentTask: AgentTask,
     previousResults: AgentResult[],
     _phaseResults: AgentResult[],
+    phaseName: string,
   ): Promise<AgentResult> {
     const startTime = Date.now();
 
@@ -582,7 +910,7 @@ export class SessionSupervisorActor implements BaseActor {
       const lastOutput = previousResults[previousResults.length - 1]?.output;
       // If the output is an LLM response object, extract the actual response text
       if (typeof lastOutput === "object" && lastOutput !== null && "response" in lastOutput) {
-        input = (lastOutput as { response: unknown }).response;
+        input = lastOutput.response;
       } else {
         input = lastOutput;
       }
@@ -614,7 +942,7 @@ export class SessionSupervisorActor implements BaseActor {
     this.streamSessionEvent("agent.started", {
       agentId: agentTask.agentId,
       task: agentTask.task,
-      phase: agentTask.phase || "execution",
+      phase: phaseName,
     });
 
     let result;
@@ -706,14 +1034,15 @@ export class SessionSupervisorActor implements BaseActor {
         prompt = input;
       } else if (typeof input === "object" && input !== null && "message" in input) {
         // Extract message from signal payload
-        prompt = (input as { message: string }).message;
+        prompt = input.message;
       } else if (typeof input === "object" && input !== null && "text" in input) {
         // Extract text from signal payload (common field name)
-        prompt = (input as { text: string }).text;
+        prompt = input.text;
       } else {
         // Fallback to JSON representation
         prompt = JSON.stringify(input);
       }
+      const agentExecutionConfig = this.getAgentExecutionConfig(agentTask.agentId);
 
       // Enhance prompt with MECMF memory context
       if (this.mecmfManager) {
@@ -769,6 +1098,7 @@ export class SessionSupervisorActor implements BaseActor {
           workspaceId: this.workspaceId || "global",
           streamId: this.sessionContext?.streamId,
           previousResults,
+          agentTools: agentExecutionConfig.tools, // Pass agent-specific tools
           additionalContext: {
             input,
             reasoning: agentTask.reasoning,
@@ -777,17 +1107,28 @@ export class SessionSupervisorActor implements BaseActor {
           onStreamEvent: (event) => {
             this.handleAgentStreamEvent(
               agentTask.agentId,
-              agentTask.phase || "execution",
-              event,
+              phaseName,
+              event as { type: string; [key: string]: unknown },
             );
           },
         },
       );
 
-      // Extract output from orchestrator result
+      // Extract output and preserve tool metadata from orchestrator result
       result = {
         output: orchestratorResult.output,
         duration: orchestratorResult.duration,
+        ...(hasToolMetadata(orchestratorResult)
+          ? {
+            toolCalls: orchestratorResult.toolCalls,
+            toolResults: orchestratorResult.toolResults,
+          }
+          : {}),
+      } as {
+        output: unknown;
+        duration: number;
+        toolCalls?: unknown[];
+        toolResults?: unknown[];
       };
 
       // Stream agent completion
@@ -847,9 +1188,8 @@ export class SessionSupervisorActor implements BaseActor {
       output: result.output,
       duration,
       timestamp: new Date().toISOString(),
-      reasoning: agentTask.reasoning,
-      toolCalls: result.toolCalls,
-      toolResults: result.toolResults,
+      toolCalls: hasToolMetadata(result) ? result.toolCalls : undefined,
+      toolResults: hasToolMetadata(result) ? result.toolResults : undefined,
     };
 
     this.logger.info("Agent execution completed", {
@@ -1006,6 +1346,9 @@ export class SessionSupervisorActor implements BaseActor {
     const hasResults = results.length > 0;
     const hasFailures = results.some((r) => !r.output);
 
+    // Use paranoid mode to stop on any failure, otherwise continue
+    // Hallucination-based stopping is handled per-agent in validateAgentResult
+
     if (hasFailures && this.supervisionLevel === SupervisionLevel.PARANOID) {
       return false; // Stop on any failure in paranoid mode
     }
@@ -1013,12 +1356,172 @@ export class SessionSupervisorActor implements BaseActor {
     return hasResults;
   }
 
+  /**
+   * Validate a single agent result immediately after execution
+   * This prevents dangerous actions from proceeding if hallucination is detected
+   */
+  private async validateAgentResult(
+    result: AgentResult,
+    _allResults: AgentResult[],
+  ): Promise<boolean> {
+    // For now, only validate if we have at least one result to analyze
+    if (!result.output) {
+      return true; // Continue if agent had no output
+    }
+
+    // Skip hallucination detection for conversation agents
+    // They use natural language without source attribution, causing false positives
+    if (result.agentId === "conversation-agent") {
+      this.logger.debug("Skipping hallucination validation for conversation agent", {
+        agentId: result.agentId,
+        reason: "Conversation agents use natural language without source attribution",
+      });
+      return true;
+    }
+
+    // Run hallucination detection on just this single agent result
+    const singleAgentResults: AgentResult[] = [{
+      agentId: result.agentId,
+      task: result.task,
+      input: result.input,
+      output: result.output,
+      duration: result.duration,
+      timestamp: result.timestamp,
+      toolCalls: result.toolCalls,
+      toolResults: result.toolResults,
+    }];
+
+    try {
+      const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
+        singleAgentResults,
+      );
+      const confidenceThreshold = this.hallucinationDetector.getThreshold();
+
+      this.logger.info("Single agent confidence validation", {
+        agentId: result.agentId,
+        confidence: analysis.averageConfidence,
+        threshold: confidenceThreshold,
+        issues: analysis.issues,
+        issuesCount: analysis.issues.length,
+      });
+
+      // Check for immediate severe hallucinations that should stop execution
+      const isSevere = analysis.averageConfidence < 0.3 ||
+        HallucinationPatternDetector.containsSeverePatterns(analysis.issues);
+
+      if (isSevere) {
+        const severeIssues = HallucinationPatternDetector.getSevereIssues(analysis.issues);
+        this.logger.error("SEVERE HALLUCINATION DETECTED - BLOCKING FURTHER EXECUTION", {
+          agentId: result.agentId,
+          confidence: analysis.averageConfidence,
+          threshold: confidenceThreshold,
+          severeIssues,
+          allIssues: analysis.issues,
+        });
+        this.hallucinationTermination = {
+          agentId: result.agentId,
+          confidence: analysis.averageConfidence,
+          issues: severeIssues.length > 0 ? severeIssues : analysis.issues,
+        };
+        return false; // Stop execution immediately
+      }
+
+      // Cache validation results for later aggregation
+      this.validationMap.set(result.agentId, {
+        confidence: analysis.averageConfidence,
+        issues: analysis.issues,
+      });
+
+      // For non-severe cases, still log but continue
+      if (analysis.averageConfidence < confidenceThreshold) {
+        this.logger.warn("Low confidence agent detected but not severe - continuing", {
+          agentId: result.agentId,
+          confidence: analysis.averageConfidence,
+          threshold: confidenceThreshold,
+          issues: analysis.issues,
+        });
+      }
+
+      return true; // Continue execution
+    } catch (error) {
+      this.logger.error("Failed to validate agent result", {
+        agentId: result.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // On validation error, continue execution but log the issue
+      return true;
+    }
+  }
+
+  /**
+   * Analyze result confidence using hallucination detection service
+   * Made public for testing hallucination detection capabilities
+   */
+  public async analyzeResultConfidence(results: AgentResult[]): Promise<ConfidenceAnalysis> {
+    // Single-pass: analyze once using the detector on provided results
+    const analysis: HallucinationAnalysis = await this.hallucinationDetector.analyzeResults(
+      results,
+    );
+
+    // Cache per-agent confidence from detection methods
+    for (const d of analysis.detectionMethods) {
+      this.validationMap.set(d.agentId, { confidence: d.confidence, issues: d.issues });
+    }
+
+    return {
+      averageConfidence: analysis.averageConfidence,
+      lowConfidenceAgents: analysis.lowConfidenceAgents,
+      suspiciousPatterns: analysis.suspiciousPatterns,
+      issues: analysis.issues,
+    };
+  }
+
   private generateSessionSummary(
     results: AgentResult[],
     plan: ExecutionPlan,
     duration: number,
+    confidenceResults?: ConfidenceAnalysis,
   ): SessionSummary {
-    const status = results.every((r) => r.output) ? "completed" : "partial";
+    const hasAllResults = results.every((r) => r.output);
+    let status: "completed" | "failed" | "partial";
+    let failureReason: string | undefined;
+
+    // Check for hallucination first, regardless of output presence
+    const confidenceThreshold = this.supervisionLevel === SupervisionLevel.MINIMAL
+      ? 0.2
+      : this.supervisionLevel === SupervisionLevel.PARANOID
+      ? 0.7
+      : 0.5;
+
+    if (this.hallucinationTermination) {
+      status = ReasoningResultStatus.FAILED;
+      const issuesSummary = this.hallucinationTermination.issues.slice(0, 3).join("; ");
+      failureReason =
+        `Severe hallucination detected in agent ${this.hallucinationTermination.agentId}: ${issuesSummary}`;
+    } else if (confidenceResults && confidenceResults.averageConfidence < confidenceThreshold) {
+      // Determine severity based on confidence level and issue types
+      const isSevere = confidenceResults.averageConfidence < 0.3 ||
+        HallucinationPatternDetector.containsSeverePatterns(confidenceResults.issues);
+
+      status = isSevere ? ReasoningResultStatus.FAILED : ReasoningResultStatus.PARTIAL;
+
+      // Build detailed failure reason with specific issues
+      const issuesSummary = confidenceResults.issues.length > 0
+        ? ` Issues: ${confidenceResults.issues.slice(0, 3).join("; ")}${
+          confidenceResults.issues.length > 3 ? "..." : ""
+        }`
+        : "";
+
+      failureReason = `Hallucination detected: confidence ${
+        confidenceResults.averageConfidence.toFixed(2)
+      } below threshold ${confidenceThreshold}.${issuesSummary}`;
+    } else if (hasAllResults) {
+      status = ReasoningResultStatus.COMPLETED;
+    } else {
+      status = ReasoningResultStatus.PARTIAL;
+      const failedCount = results.filter((r) => !r.output).length;
+      failureReason = `${failedCount} agents failed to produce output`;
+    }
 
     const reasoning =
       `Session executed ${results.length} agents across ${plan.phases.length} phases. ` +
@@ -1029,10 +1532,21 @@ export class SessionSupervisorActor implements BaseActor {
       status,
       totalPhases: plan.phases.length,
       totalAgents: results.length,
+      completedPhases: results.length > 0 ? plan.phases.length : 0,
+      executedAgents: results.length,
       duration,
       reasoning,
       results,
+      failureReason,
+      confidence: confidenceResults?.averageConfidence ?? this.computeAggregateConfidence(),
     };
+  }
+
+  private computeAggregateConfidence(): number | undefined {
+    if (this.validationMap.size === 0) return undefined;
+    let sum = 0;
+    for (const v of this.validationMap.values()) sum += v.confidence;
+    return sum / this.validationMap.size;
   }
 
   private async handleMemoryOperations(summary: SessionSummary): Promise<void> {
@@ -1104,7 +1618,7 @@ Your role is to analyze the incoming signal and create an execution plan using a
 
 Signal Information:
 - Signal ID: ${context.signal.id}
-- Signal Type: ${context.signal.type || "unknown"}
+  - Signal Provider: ${context.signal.provider?.name || "unknown"}
 - Payload: ${JSON.stringify(context.payload)}
 
 Available Agents:
@@ -1158,9 +1672,18 @@ Think step by step about the best approach to handle this signal, then use the t
   private parsePlanFromResponse(
     text: string,
     reasoning: string | undefined,
-    toolCalls?: Array<ToolCallUnion<Record<string, Tool>>>,
-    toolResults?: Array<ToolResultUnion<Record<string, Tool>>>,
+    toolCalls?: Array<unknown>,
+    toolResults?: Array<unknown>,
   ): ExecutionPlan {
+    type PlanningToolInput = {
+      phase?: string;
+      executionStrategy?: "sequential" | "parallel";
+      agentId?: string;
+      task?: string;
+      inputSource?: string;
+      dependencies?: string[];
+    };
+    type PlanningToolCall = { toolName?: string; input?: PlanningToolInput };
     // Log the AI response for debugging
     this.logger.debug("AI Planning Response", {
       text: text?.substring(0, 500),
@@ -1180,7 +1703,7 @@ Think step by step about the best approach to handle this signal, then use the t
       // Group tool calls by phase
       const phaseMap = new Map<string, Array<AgentPlanInput>>();
 
-      for (const toolCall of toolCalls) {
+      for (const toolCall of toolCalls as PlanningToolCall[]) {
         if (toolCall.toolName === "plan_agent_execution") {
           const phase = toolCall.input?.phase || "Default Phase";
           if (!phaseMap.has(phase)) {
@@ -1190,19 +1713,20 @@ Think step by step about the best approach to handle this signal, then use the t
         }
       }
 
-      // Convert phases to ExecutionPhase format
+      // Convert phases to ExecutionPhase format`\
       const phases: ExecutionPhase[] = Array.from(phaseMap.entries()).map((
         [phaseName, agentPlans],
       ) => ({
         id: crypto.randomUUID(),
         name: phaseName,
-        executionStrategy: agentPlans[0]?.executionStrategy || "sequential",
-        agents: agentPlans.map((plan) => ({
-          agentId: plan.agentId,
-          task: plan.task,
+        executionStrategy: (agentPlans as PlanningToolInput[])[0]?.executionStrategy ||
+          "sequential",
+        agents: (agentPlans as PlanningToolInput[]).map((plan) => ({
+          agentId: plan.agentId || "",
+          task: plan.task || "",
           inputSource: plan.inputSource || "signal",
           dependencies: plan.dependencies,
-          reasoning: `AI planned: ${plan.task}`,
+          reasoning: `AI planned: ${plan.task || ""}`,
         })),
       }));
 
@@ -1297,14 +1821,16 @@ Think step by step about the best approach to handle this signal, then use the t
 
     const extractedAgents = matches
       .map((match) => match[1])
-      .filter((agent) => this.sessionContext?.availableAgents.includes(agent));
+      .filter((agent): agent is string =>
+        !!agent && this.sessionContext!.availableAgents.includes(agent)
+      );
 
     if (extractedAgents.length > 0) {
       this.logger.debug("Parsed agents from text phases", {
         extracted: extractedAgents,
         textSnippet: text.substring(0, 300),
       });
-      return extractedAgents;
+      return extractedAgents as string[];
     }
 
     // Alternative: Look for agent names mentioned in order
@@ -1811,26 +2337,35 @@ Think step by step about the best approach to handle this signal, then use the t
 
   async execute(): Promise<SessionResult> {
     const startTime = Date.now();
-    this.status = "executing";
+    this.status = SessionSupervisorStatus.EXECUTING;
 
     try {
       const summary = await this.executeSession();
       const duration = Date.now() - startTime;
-      this.status = "completed";
+
+      // Set session supervisor status based on execution outcome
+      if (summary.status === ReasoningResultStatus.COMPLETED) {
+        this.status = SessionSupervisorStatus.COMPLETED;
+      } else if (summary.status === ReasoningResultStatus.FAILED) {
+        this.status = SessionSupervisorStatus.FAILED;
+      } else {
+        this.status = SessionSupervisorStatus.COMPLETED; // Partial completion still counts as completed supervisor
+      }
 
       return {
         sessionId: this.sessionId,
-        status: summary.status === "completed" ? "success" : "error",
+        status: summary.status === ReasoningResultStatus.COMPLETED ? "success" : "error",
         result: {
           totalPhases: summary.totalPhases,
           totalAgents: summary.totalAgents,
           reasoning: summary.reasoning,
           results: summary.results,
+          failureReason: summary.failureReason, // Include failure details
         },
         duration,
       };
     } catch (error) {
-      this.status = "failed";
+      this.status = SessionSupervisorStatus.FAILED;
       return {
         sessionId: this.sessionId,
         status: "error",
@@ -1842,11 +2377,18 @@ Think step by step about the best approach to handle this signal, then use the t
 
   abort(): void {
     this.logger.info("Aborting session", { sessionId: this.sessionId });
-    this.status = "failed";
+    this.status = SessionSupervisorStatus.FAILED;
   }
 
-  getStatus(): "idle" | "planning" | "executing" | "completed" | "failed" {
+  getStatus(): SessionSupervisorStatusType {
     return this.status;
+  }
+
+  /**
+   * Get hallucination detection status
+   */
+  public getHallucinationReport(): { message: string } {
+    return { message: "Hallucination detection active with LLM validation" };
   }
 
   /**
@@ -1912,8 +2454,6 @@ Think step by step about the best approach to handle this signal, then use the t
       output: orchestratorResult.output,
       duration,
       timestamp: new Date().toISOString(),
-      reasoning: agentTask.reasoning,
-      approvalDecision: decision,
     };
   }
 
@@ -1921,7 +2461,7 @@ Think step by step about the best approach to handle this signal, then use the t
   private handleAgentStreamEvent(
     agentId: string,
     phase: string,
-    event: StreamEvent,
+    event: { type: string; [key: string]: unknown },
   ): void {
     // Update metrics
     this.streamMetrics.totalEvents++;
@@ -1937,7 +2477,11 @@ Think step by step about the best approach to handle this signal, then use the t
     this.streamMetrics.agentMetrics.set(agentId, agentMetrics);
 
     // Enrich event with session context
-    const enrichedEvent = this.enrichStreamEvent(event, agentId, phase);
+    const enrichedEvent = this.enrichStreamEvent(
+      event,
+      agentId,
+      phase,
+    ) as unknown as import("@atlas/agent-sdk").StreamEvent;
 
     // Emit supervised event
     this.baseStreamEmitter?.emit(enrichedEvent);
@@ -1945,7 +2489,7 @@ Think step by step about the best approach to handle this signal, then use the t
 
   // Enrich events with session metadata
   private enrichStreamEvent(
-    event: StreamEvent,
+    event: { type: string; [key: string]: unknown },
     agentId: string,
     phase: string,
   ): StreamEvent {
@@ -1986,10 +2530,12 @@ Think step by step about the best approach to handle this signal, then use the t
 
   // Stream session-level events
   private streamSessionEvent(eventType: string, data: unknown): void {
-    this.baseStreamEmitter?.emit({
-      type: "custom",
-      eventType: `session.${eventType}`,
-      data,
-    });
+    this.baseStreamEmitter?.emit(
+      {
+        type: "custom",
+        eventType: `session.${eventType}`,
+        data,
+      } as import("@atlas/agent-sdk").StreamEvent,
+    );
   }
 }

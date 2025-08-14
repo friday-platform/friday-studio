@@ -235,6 +235,13 @@ export interface ToolContext {
   messages: Array<{ role: string; content: string }>;
 }
 
+/** Tool execution result from agent runs */
+export interface ToolResult {
+  toolName: string;
+  isError: boolean;
+  input: unknown;
+}
+
 /**
  * Stream events that agents can emit back to Atlas
  *
@@ -338,10 +345,10 @@ export interface AgentContext {
  * This is where agents interpret requests and decide what to do.
  * No action routing or structured inputs - just natural language.
  */
-export type AgentHandler = (
+export type AgentHandler<T extends unknown = unknown> = (
   prompt: string,
   context: AgentContext,
-) => Promise<unknown>;
+) => Promise<T>;
 
 /**
  * Config for createAgent() function
@@ -349,9 +356,9 @@ export type AgentHandler = (
  * TypeScript interface because handler functions can't be validated with Zod.
  * Use CreateAgentConfigValidationSchema for validating the non-function parts.
  */
-export interface CreateAgentConfig extends AgentMetadata {
+export interface CreateAgentConfig<T extends unknown = unknown> extends AgentMetadata {
   /** Handler that processes all prompts for this agent */
-  handler: AgentHandler;
+  handler: AgentHandler<T>;
 
   /** Environment variables this agent needs */
   environment?: AgentEnvironmentConfig;
@@ -376,12 +383,12 @@ export const CreateAgentConfigValidationSchema = AgentMetadataSchema.extend({
  * Created by createAgent() function.
  * Stored in registry and executed by AtlasAgentsMCPServer.
  */
-export interface AtlasAgent {
+export interface AtlasAgent<T extends unknown = unknown> {
   /** Agent metadata for registry */
   metadata: AgentMetadata;
 
   /** Execute agent with natural language prompt */
-  execute(prompt: string, context: AgentContext): Promise<unknown>;
+  execute(prompt: string, context: AgentContext): Promise<T>;
 
   /** Environment config (used by server for validation) */
   readonly environmentConfig: AgentEnvironmentConfig | undefined;
@@ -488,3 +495,36 @@ export const AtlasAgentConfigSchema = z.object({
 });
 
 export type AtlasAgentConfig = z.infer<typeof AtlasAgentConfigSchema>;
+
+// ==============================================================================
+// AGENT EXECUTION RESULTS
+// ==============================================================================
+
+/**
+ * Result from agent execution - consolidated interface used across Atlas
+ *
+ * Contains execution metadata, timing, and tool usage information.
+ * Used by hallucination detector, orchestrator, and session supervisors.
+ */
+export interface AgentResult {
+  /** Agent identifier */
+  agentId: string;
+  /** Task or prompt that was executed */
+  task: string;
+  /** Input provided to the agent */
+  input: unknown;
+  /** Output produced by the agent */
+  output: unknown;
+  /** Error message if execution failed */
+  error?: string;
+  /** Execution duration in milliseconds */
+  duration: number;
+  /** ISO timestamp of execution */
+  timestamp: string;
+  /** Tool calls made during execution */
+  toolCalls?: unknown[];
+  /** Results from tool executions */
+  toolResults?: unknown[];
+  /** Memory context (optional, used by some services) */
+  memory?: unknown[];
+}

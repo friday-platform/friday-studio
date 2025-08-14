@@ -4,7 +4,7 @@ import { join } from "@std/path";
 import { stringify } from "@std/yaml";
 import { WorkspaceConfigSchema } from "@atlas/config";
 import { logger } from "@atlas/logger";
-import { SessionStatusEnum } from "../../../../src/core/constants/session-status.ts";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import type { IWorkspaceSession } from "../../../../src/types/core.ts";
 import {
   errorResponseSchema,
@@ -133,7 +133,8 @@ updateWorkspace.post(
             // Wait for active sessions with timeout
             const sessions = runtime.getSessions();
             const activeSessions = sessions.filter((s: IWorkspaceSession) =>
-              s.status === SessionStatusEnum.RUNNING || s.status === SessionStatusEnum.STARTING
+              s.status === WorkspaceSessionStatus.EXECUTING ||
+              s.status === WorkspaceSessionStatus.PENDING
             );
 
             if (activeSessions.length > 0) {
@@ -150,7 +151,7 @@ updateWorkspace.post(
 
               while (
                 activeSessions.some((s: IWorkspaceSession) =>
-                  s.status === SessionStatusEnum.RUNNING
+                  s.status === WorkspaceSessionStatus.EXECUTING
                 ) &&
                 Date.now() - startTime < timeout
               ) {
@@ -162,7 +163,7 @@ updateWorkspace.post(
                   workspaceId,
                   workspaceActualId: workspace.id,
                   remainingSessionCount: activeSessions.filter((s: IWorkspaceSession) =>
-                    s.status === SessionStatusEnum.RUNNING
+                    s.status === WorkspaceSessionStatus.EXECUTING
                   ).length,
                 });
               }

@@ -11,6 +11,7 @@ import type {
   ReasoningResult,
   ReasoningThinking,
 } from "./types.ts";
+import { ReasoningResultStatus, type ReasoningResultStatusType } from "@atlas/core";
 
 // Define the output types for actors
 type ThinkOutput = {
@@ -312,7 +313,7 @@ export function createReasoningMachine<TUserContext extends BaseReasoningContext
         (event.type === "xstate.done.state.reasoning.evaluating" &&
           context.currentStep?.isComplete);
 
-      const status = isCompleted ? "completed" : "failed";
+      const status = isCompleted ? ReasoningResultStatus.COMPLETED : ReasoningResultStatus.FAILED;
       return createReasoningResult<TUserContext>(context, status, options.jobGoal);
     },
 
@@ -532,7 +533,7 @@ export type ReasoningMachineActor<TUserContext extends BaseReasoningContext> = A
 // Helper function to create the reasoning result
 function createReasoningResult<TUserContext extends BaseReasoningContext>(
   context: ReasoningContext<TUserContext>,
-  status: "completed" | "failed" | "partial",
+  status: ReasoningResultStatusType,
   jobGoal?: string,
 ): ReasoningResult {
   const { steps, workingMemory } = context;
@@ -595,7 +596,7 @@ function createReasoningResult<TUserContext extends BaseReasoningContext>(
     },
     jobResults: {
       goal: jobGoal || "Process signal",
-      achieved: status === "completed",
+      achieved: status === ReasoningResultStatus.COMPLETED,
       output: lastStep?.result || lastStep?.observation || null,
       artifacts: Object.fromEntries(
         Array.from(workingMemory.entries())

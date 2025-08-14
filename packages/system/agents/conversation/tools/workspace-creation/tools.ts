@@ -142,7 +142,11 @@ export const workspaceBuilderTools = {
       if (!result.success) {
         throw new Error(`LLM agent creation failed: ${result.errors.join("; ")}`);
       }
-      return { status: "added", agentId, message: `LLM agent '${agentId}' added` };
+      return {
+        status: "added",
+        agentId,
+        message: `LLM agent '${agentId}' added successfully`,
+      };
     },
   }),
 

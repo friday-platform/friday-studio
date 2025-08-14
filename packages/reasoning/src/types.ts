@@ -3,6 +3,7 @@
  */
 
 import { Tool, ToolCallUnion } from "ai";
+import type { ReasoningResultStatusType } from "@atlas/core";
 
 /**
  * Base reasoning context that all reasoning contexts must extend.
@@ -133,7 +134,7 @@ export interface ExecutionDetails {
 }
 
 export interface ReasoningResult {
-  status: "completed" | "failed" | "partial";
+  status: ReasoningResultStatusType;
   reasoning: {
     steps: ReasoningStep[];
     totalIterations: number;

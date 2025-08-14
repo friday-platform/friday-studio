@@ -283,6 +283,20 @@ export const conversationAgent = createAgent({
       { toolCallId: crypto.randomUUID(), messages: [] },
     );
 
+    // Fallback: if no text chunks were streamed (e.g., only finish), emit final text once
+    if ((!executionFlow.responseBuffer || executionFlow.responseBuffer.length === 0) && finalText) {
+      await streamEvent.execute(
+        {
+          id: crypto.randomUUID(),
+          streamId: session.streamId,
+          eventType: "text",
+          content: finalText,
+          timestamp: new Date().toISOString(),
+        },
+        { toolCallId: crypto.randomUUID(), messages: [] },
+      );
+    }
+
     // Convert reasoning to proper format - prioritize collected reasoning if AI SDK reasoning is empty
     const processedReasoning = finalReasoning.length > 0
       ? finalReasoning.map((item) => item.text).join("\n")

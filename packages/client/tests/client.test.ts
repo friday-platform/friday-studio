@@ -74,7 +74,7 @@ Deno.test("AtlasClient - handles successful API responses", async () => {
   const mockWorkspaces = [{
     id: "workspace_1",
     name: "Test Workspace",
-    status: "active",
+    status: "executing",
     path: "/test/workspace",
     createdAt: "2024-01-01T10:00:00Z",
     lastSeen: "2024-01-01T10:00:00Z",

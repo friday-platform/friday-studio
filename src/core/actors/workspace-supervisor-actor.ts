@@ -21,19 +21,25 @@ import type { IWorkspaceSignal } from "../../types/core.ts";
 import type { JobSpecification, WorkspaceAgentConfig } from "@atlas/config";
 import { type Logger, logger } from "@atlas/logger";
 import { type SessionContext, SessionSupervisorActor } from "./session-supervisor-actor.ts";
+import {
+  ReasoningResultStatus,
+  WorkspaceSessionStatus,
+  type WorkspaceSessionStatusType,
+} from "@atlas/core";
 
 export interface SessionInfo {
   sessionId: string;
   actor: SessionSupervisorActor;
   workspaceId: string;
   createdAt: number;
-  status: "initializing" | "active" | "completed" | "failed";
+  status: WorkspaceSessionStatusType;
 }
 
 export interface ProcessSignalResult {
   sessionId: string;
   status: "session_created" | "session_failed";
   sessionActorCreated: boolean;
+  sessionActor?: SessionSupervisorActor; // Direct reference to execution engine
   error?: string;
 }
 
@@ -142,19 +148,19 @@ export class WorkspaceSupervisorActor implements BaseActor {
         actor: sessionActor,
         workspaceId: this.workspaceId,
         createdAt: Date.now(),
-        status: "initializing",
+        status: WorkspaceSessionStatus.PENDING,
       };
       this.sessions.set(sessionId, sessionInfo);
 
       sessionActor.initialize();
-      sessionInfo.status = "active";
+      sessionInfo.status = WorkspaceSessionStatus.EXECUTING;
 
       // Use queueMicrotask to defer the heavy processing until after this function returns.
       // queueMicrotask() schedules a function to run asynchronously in the next microtask,
       // allowing us to return immediately with a "session_created" status while the actual
       // signal processing happens in the background. This is similar to Promise.resolve().then()
       // but more explicit about the intent to defer work.
-      queueMicrotask(async () => {
+      queueMicrotask(() => {
         try {
           this.logger.info("Analyzing signal", {
             sessionId,
@@ -182,7 +188,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
               signalId: signal.id,
               sessionId,
             });
-            sessionInfo.status = "failed";
+            sessionInfo.status = WorkspaceSessionStatus.FAILED;
             return;
           }
 
@@ -220,32 +226,48 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
           sessionActor.initializeSession(sessionContext);
 
-          const sessionSummary = await sessionActor.executeSession();
+          // Start execution (this creates the execution promise)
+          // We don't await here - just start it
+          sessionActor.executeSession().then(
+            (sessionSummary) => {
+              this.logger.info("Session execution completed", {
+                sessionId,
+                status: sessionSummary.status,
+                failureReason: sessionSummary.failureReason,
+                totalPhases: sessionSummary.totalPhases,
+                totalAgents: sessionSummary.totalAgents,
+                duration: sessionSummary.duration,
+              });
 
-          this.logger.info("Session execution completed", {
-            sessionId,
-            status: sessionSummary.status,
-            totalPhases: sessionSummary.totalPhases,
-            totalAgents: sessionSummary.totalAgents,
-            duration: sessionSummary.duration,
-          });
-
-          sessionInfo.status = sessionSummary.status === "completed" ? "completed" : "failed";
+              sessionInfo.status = sessionSummary.status === ReasoningResultStatus.COMPLETED
+                ? WorkspaceSessionStatus.COMPLETED
+                : WorkspaceSessionStatus.FAILED;
+            },
+            (error) => {
+              this.logger.error("Session execution failed", {
+                sessionId,
+                signalId: signal.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+              sessionInfo.status = WorkspaceSessionStatus.FAILED;
+            },
+          );
         } catch (error) {
-          this.logger.error("Signal processing failed", {
+          this.logger.error("Signal processing setup failed", {
             sessionId,
             signalId: signal.id,
             error: error instanceof Error ? error.message : String(error),
           });
-          sessionInfo.status = "failed";
+          sessionInfo.status = WorkspaceSessionStatus.FAILED;
         }
       });
 
-      // Return immediately with success
+      // Return immediately with success and include sessionActor reference
       return Promise.resolve({
         sessionId,
         status: "session_created" as const,
         sessionActorCreated: true,
+        sessionActor, // Provide direct access to SessionSupervisorActor
       });
     } catch (error) {
       this.logger.error("Failed to process signal", {
@@ -278,11 +300,14 @@ export class WorkspaceSupervisorActor implements BaseActor {
     };
 
     for (const sessionInfo of this.sessions.values()) {
-      if (sessionInfo.status === "active" || sessionInfo.status === "initializing") {
+      if (
+        sessionInfo.status === WorkspaceSessionStatus.EXECUTING ||
+        sessionInfo.status === WorkspaceSessionStatus.PENDING
+      ) {
         sessionsByStatus.active++;
-      } else if (sessionInfo.status === "completed") {
+      } else if (sessionInfo.status === WorkspaceSessionStatus.COMPLETED) {
         sessionsByStatus.completed++;
-      } else if (sessionInfo.status === "failed") {
+      } else if (sessionInfo.status === WorkspaceSessionStatus.FAILED) {
         sessionsByStatus.failed++;
       }
     }
@@ -337,7 +362,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
   }
 
   getActiveSessionCount(): number {
-    return Array.from(this.sessions.values()).filter((s) => s.status === "active").length;
+    return Array.from(this.sessions.values()).filter((s) =>
+      s.status === WorkspaceSessionStatus.EXECUTING
+    ).length;
   }
 
   performPeriodicCleanup(): void {
@@ -346,7 +373,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
 
     for (const [sessionId, sessionInfo] of this.sessions) {
       if (
-        (sessionInfo.status === "completed" || sessionInfo.status === "failed") &&
+        (sessionInfo.status === WorkspaceSessionStatus.COMPLETED ||
+          sessionInfo.status === WorkspaceSessionStatus.FAILED) &&
         now - sessionInfo.createdAt > maxAge
       ) {
         this.logger.debug("Cleaning up old session", {

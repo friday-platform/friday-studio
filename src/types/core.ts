@@ -112,6 +112,7 @@ export interface IWorkspaceSession extends IAtlasScope {
   status: string; // 'pending' | 'running' | 'completed' | 'cancelled'
   start(): Promise<void>;
   cancel(): void;
+  cleanup(): void;
   progress(): number;
   summarize(): string;
   getArtifacts(): IWorkspaceArtifact[];

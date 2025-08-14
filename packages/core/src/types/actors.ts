@@ -14,6 +14,8 @@ import type {
   WorkspaceConfig,
   WorkspaceSignalConfig,
 } from "@atlas/config";
+import type { AgentResult } from "@atlas/agent-sdk";
+import type { SessionSupervisorStatusType } from "../constants/supervisor-status.ts";
 
 // Type aliases for clarity
 type AgentConfig = WorkspaceAgentConfig;
@@ -82,7 +84,7 @@ export type ActorConfig =
 
 export interface SessionInfo {
   id: string;
-  status: "initializing" | "active" | "completed" | "failed";
+  status: "pending" | "executing" | "completed" | "failed";
   startTime: number;
   endTime?: number;
   error?: string;
@@ -94,20 +96,6 @@ export interface SessionResult {
   result?: unknown;
   error?: string;
   duration: number;
-}
-
-/**
- * @deprecated Will be replaced by orchestrator's AgentResult
- */
-export interface LegacyAgentResult {
-  agentId: string;
-  output: unknown;
-  duration: number;
-  metadata?: {
-    tokensUsed?: number;
-    cost?: number;
-    toolCalls?: unknown[];
-  };
 }
 
 export interface AgentContext {
@@ -161,7 +149,7 @@ export interface SessionSupervisorActor extends BaseActor {
   type: "session";
   execute(): Promise<SessionResult>;
   abort(): Promise<void>;
-  getStatus(): "idle" | "planning" | "executing" | "completed" | "failed";
+  getStatus(): SessionSupervisorStatusType;
 }
 
 /**
@@ -169,7 +157,7 @@ export interface SessionSupervisorActor extends BaseActor {
  */
 export interface AgentExecutionActor extends BaseActor {
   type: "agent";
-  execute(context: AgentContext): Promise<LegacyAgentResult>;
+  execute(context: AgentContext): Promise<AgentResult>;
 }
 
 // ==============================================================================

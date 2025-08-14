@@ -5,7 +5,7 @@
  * replacing generic 'any' types with discriminated unions.
  */
 
-import type { ActorRefMap, AgentResult, SessionInfo, SessionResult } from "./actors.ts";
+import type { ActorRefMap, LegacyAgentResult as AgentResult, SessionResult } from "./actors.ts";
 import type { ExecutionPlan } from "./agent-execution.ts";
 
 // ==============================================================================

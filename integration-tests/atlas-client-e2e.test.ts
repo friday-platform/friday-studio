@@ -70,7 +70,7 @@ Deno.test("Atlas Client E2E - should fetch sessions through the complete stack",
         {
           id: "sess_e2e_1",
           workspaceId: "test_workspace",
-          status: "active",
+          status: "executing",
           summary: "E2E test session",
           signal: "manual",
           startTime: new Date().toISOString(),
@@ -96,7 +96,7 @@ Deno.test("Atlas Client E2E - should fetch sessions through the complete stack",
     if (result.success) {
       assertEquals(result.sessions.length, 2);
       assertEquals(result.sessions[0].id, "sess_e2e_1");
-      assertEquals(result.sessions[0].status, "active");
+      assertEquals(result.sessions[0].status, "executing");
       assertEquals(result.sessions[1].id, "sess_e2e_2");
       assertEquals(result.sessions[1].status, "completed");
     }
@@ -117,7 +117,7 @@ Deno.test("Atlas Client E2E - should handle workspace filtering end-to-end", asy
         {
           id: "sess_1",
           workspaceId: "workspace_a",
-          status: "active",
+          status: "executing",
           summary: "Session A",
           signal: "http",
           startTime: new Date().toISOString(),
@@ -126,7 +126,7 @@ Deno.test("Atlas Client E2E - should handle workspace filtering end-to-end", asy
         {
           id: "sess_2",
           workspaceId: "workspace_b",
-          status: "active",
+          status: "executing",
           summary: "Session B",
           signal: "http",
           startTime: new Date().toISOString(),

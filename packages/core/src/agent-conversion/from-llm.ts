@@ -9,10 +9,72 @@
 import { generateText, stepCountIs } from "ai";
 import { APICallError } from "@ai-sdk/provider";
 import { createAgent } from "@atlas/agent-sdk";
-import type { AtlasAgent } from "@atlas/agent-sdk";
+import type { AgentContext, AtlasAgent, ToolResult } from "@atlas/agent-sdk";
 import type { LLMAgentConfig } from "@atlas/config";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
 import type { Logger } from "@atlas/logger";
+import { ensureSourceAttributionProtocol } from "../prompts/source-attribution.ts";
+
+export type WrappedAgentResult = {
+  response: string;
+  reasoning?: string;
+  toolCalls?: string[];
+  toolResults?: ToolResult[];
+};
+export type WrappedAgent = AtlasAgent<WrappedAgentResult>;
+
+/**
+ * Extract tool calls and results from generateText response.
+ * Falls back to manual extraction from steps when direct access returns empty arrays.
+ */
+function extractToolData(res: any): { toolCalls: string[]; toolResults: ToolResult[] } {
+  let toolCalls: string[] = [];
+  let toolResults: ToolResult[] = [];
+
+  // Try direct access first and transform to required format
+  if (res.toolCalls && Array.isArray(res.toolCalls) && res.toolCalls.length > 0) {
+    toolCalls = res.toolCalls.map((call: any) => call.toolName || call.name || "").filter(Boolean);
+  }
+  if (res.toolResults && Array.isArray(res.toolResults) && res.toolResults.length > 0) {
+    toolResults = res.toolResults.map((result: any) => ({
+      toolName: result.toolName || result.name || "",
+      isError: Boolean(result.isError || result.error),
+      input: result.input || result.args || {},
+    })).filter((result: ToolResult) => result.toolName);
+  }
+
+  // If no direct data available, extract from steps
+  if (toolCalls.length === 0 && res.steps) {
+    const toolCallsFromSteps: string[] = [];
+    const toolResultsFromSteps: ToolResult[] = [];
+
+    for (const step of res.steps) {
+      if (step.content && Array.isArray(step.content)) {
+        for (const contentItem of step.content) {
+          if (contentItem.type === "tool-call" && contentItem.toolName) {
+            toolCallsFromSteps.push(contentItem.toolName);
+          }
+          if (contentItem.type === "tool-result" && contentItem.toolName) {
+            toolResultsFromSteps.push({
+              toolName: contentItem.toolName,
+              isError: Boolean(contentItem.isError),
+              input: contentItem.input || {},
+            });
+          }
+        }
+      }
+    }
+
+    if (toolCallsFromSteps.length > 0) {
+      toolCalls = toolCallsFromSteps;
+    }
+    if (toolResultsFromSteps.length > 0) {
+      toolResults = toolResultsFromSteps;
+    }
+  }
+
+  return { toolCalls, toolResults };
+}
 
 /**
  * Convert workspace LLM config to AtlasAgent.
@@ -29,19 +91,29 @@ export function convertLLMToAgent(
   validateProviderConfig(config.config.provider);
   const model = registry.languageModel(`${config.config.provider}:${config.config.model}`);
 
-  const agent = createAgent({
+  const agent = createAgent<WrappedAgentResult>({
     id: agentId,
     version: "1.0.0",
     description: config.description,
     metadata: {},
     expertise: { domains: ["general"], capabilities: ["general"], examples: [] },
-    handler: async (prompt, { tools }) => {
+    handler: async (prompt: string, context: AgentContext) => {
       try {
+        // Enforce source attribution protocol in system prompt (idempotent)
+        const systemPromptWithAttribution = ensureSourceAttributionProtocol(
+          `${config.config.prompt || ""}\n\n` +
+            "Do NOT include source tags inside tool arguments or user-facing content (e.g., emails, posts). Use tags in assistant responses only. Include plain URLs/paths in user-facing content when helpful.",
+        );
+
+        // Include current datetime for temporal grounding
+        const nowUtcIso = new Date().toISOString();
+        const datetimeHeader = `Current datetime (UTC): ${nowUtcIso}`;
+
         const res = await generateText({
           model,
-          system: config.config.prompt,
+          system: `${datetimeHeader}\n\n${systemPromptWithAttribution}`,
           messages: [{ role: "user" as const, content: prompt }],
-          tools,
+          tools: context.tools,
           toolChoice: config.config.tool_choice || "auto",
           temperature: config.config.temperature,
           maxOutputTokens: config.config.max_tokens,
@@ -50,7 +122,15 @@ export function convertLLMToAgent(
           ...(config.config.provider_options || {}),
         });
 
-        return res.text;
+        // Extract tool calls and results using the helper function
+        const { toolCalls, toolResults } = extractToolData(res);
+
+        return {
+          reasoning: res.reasoningText,
+          response: res.text,
+          toolCalls,
+          toolResults,
+        };
         // if (streaming && context.stream) {
         //   return await handleStreamingResponse(commonOptions, context);
         // } else {

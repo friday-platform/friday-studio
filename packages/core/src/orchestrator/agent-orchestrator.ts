@@ -15,6 +15,7 @@ import { Logger } from "@atlas/logger";
 import {
   type AgentContext,
   type AgentMetadata,
+  type AgentResult,
   ApprovalRequestSchema,
   type AtlasAgent,
   AwaitingSupervisorDecision,
@@ -24,6 +25,7 @@ import { StreamContentNotificationSchema, StreamEvent } from "../types/streaming
 import { z } from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
+import { WrappedAgentResult } from "../agent-conversion/from-llm.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
 import { CoALAMemoryManager, CoALAMemoryType, IMemoryScope } from "@atlas/memory";
 
@@ -44,16 +46,6 @@ const MCPToolResultSchema = z.object({
   ),
 });
 
-export interface AgentResult {
-  agentId: string;
-  task: string;
-  input: unknown;
-  output: unknown;
-  error?: string;
-  duration: number;
-  timestamp: string;
-}
-
 export interface AgentExecutionContext {
   sessionId: string;
   workspaceId: string;
@@ -62,6 +54,7 @@ export interface AgentExecutionContext {
   previousResults?: AgentResult[];
   additionalContext?: unknown;
   reasoning?: string;
+  agentTools?: string[]; // Agent-specific tools to filter from workspace tools
   onStreamEvent?: (event: StreamEvent) => void; // NEW: Callback for stream events
   /** Optional pre-provisioned session memory. If not provided, orchestrator creates one. */
   memoryManager?: CoALAMemoryManager;
@@ -178,7 +171,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   private logger: Logger;
   private approvalCleanupInterval?: number;
   private sessionCleanupInterval?: number;
-  private wrappedAgents = new Map<string, AtlasAgent>(); // LLM agents that bypass MCP
+  private wrappedAgents = new Map<string, AtlasAgent<WrappedAgentResult>>(); // LLM agents that bypass MCP
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
   private activeStreamHandlers = new Map<string, (event: StreamEvent) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
@@ -316,7 +309,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Register an LLM agent that runs in-process instead of via MCP.
    * Used for lightweight agents that don't need service isolation.
    */
-  registerWrappedAgent(agentId: string, agent: AtlasAgent): void {
+  registerWrappedAgent(agentId: string, agent: AtlasAgent<WrappedAgentResult>): void {
     this.wrappedAgents.set(agentId, agent);
     this.logger.debug("Registered wrapped agent for direct execution", {
       agentId,
@@ -340,6 +333,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
     try {
       const parsed = JSON.parse(textContent);
+
       return AgentExecutionResultSchema.parse(parsed);
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -508,6 +502,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        toolCalls: undefined,
+        toolResults: undefined,
       };
     } catch (error) {
       if (error instanceof AwaitingSupervisorDecision) {
@@ -539,6 +535,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         error: error instanceof Error ? error.message : String(error),
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        toolCalls: undefined,
+        toolResults: undefined,
       };
     }
   }
@@ -640,7 +638,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    * Execute in-process LLM agents without MCP overhead.
    */
   private async executeWrappedAgent(
-    agent: AtlasAgent,
+    agent: AtlasAgent<WrappedAgentResult>,
     agentId: string,
     prompt: string,
     context: AgentExecutionContext,
@@ -739,7 +737,25 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         };
       }
 
-      const result = await agent.execute(finalPrompt, agentContext);
+      const { withExponentialBackoff, isTransientError } = await import(
+        "../../../../src/utils/exponential-backoff.ts"
+      );
+
+      const result = await withExponentialBackoff(
+        () => agent.execute(finalPrompt, agentContext),
+        {
+          maxRetries: 10,
+          isRetryable: isTransientError,
+          onRetry: (attempt, delay, error) => {
+            logger.warn("Retrying wrapped agent execution due to transient LLM error", {
+              agentId,
+              attempt,
+              delay,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          },
+        },
+      );
 
       // Best-effort episodic persistence for wrapped-agent execution
       try {
@@ -775,6 +791,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         output: result,
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        toolCalls: result.toolCalls,
+        toolResults: result.toolResults,
       };
     } catch (error) {
       this.logger.error("Wrapped agent execution failed", { error });
@@ -790,6 +808,8 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         error: error instanceof Error ? error.message : String(error),
         duration: Date.now() - startTime,
         timestamp: new Date().toISOString(),
+        toolCalls: undefined,
+        toolResults: undefined,
       };
     }
   }

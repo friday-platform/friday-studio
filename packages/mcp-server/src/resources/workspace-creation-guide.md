@@ -562,7 +562,7 @@ agents:
         Send Discord webhook with new Nike drops:
 
         Format:
-        - 🔥 for high hype (8-10), ⚡ for medium (5-7), 📦 for low (1-4)
+        - HIGH for high hype (8-10), MEDIUM for medium (5-7), LOW for low (1-4)
         - Include product name, price, release date
         - Add hype analysis summary
         - Include product image if available
@@ -743,6 +743,77 @@ prompt: |
   Do not make predictions beyond the data provided.
   Flag any suspicious patterns that might indicate errors.
 ```
+
+### 5. **MANDATORY: Require Data Source Attribution**
+
+**CRITICAL**: All agents that fetch, retrieve, or access external data MUST include source
+attribution in their outputs. This prevents hallucination and provides user transparency.
+
+````yaml
+prompt: |
+  Fetch the latest product reviews from Amazon and analyze sentiment.
+
+  **MANDATORY OUTPUT REQUIREMENTS**:
+  - Include data source URLs for all information
+  - Show timestamps when data was retrieved
+  - Document which tools were used to access each data source
+  - Specify the total number of records processed from each source
+
+  **OUTPUT FORMAT**:
+  ```json
+  {
+    "analysis": { /* your analysis */ },
+    "data_sources": [
+      {
+        "source": "Amazon Product Reviews API",
+        "url": "https://api.amazon.com/products/B08N5WRWNW/reviews",
+        "tool_used": "amazon-api",
+        "retrieved_at": "2024-01-15T14:30:00Z",
+        "record_count": 150,
+        "status": "success"
+      }
+    ]
+  }
+````
+
+**IMPORTANT**: If you cannot access the required data sources, explicitly state:
+
+- Which data sources you attempted to access
+- What tools you tried to use
+- The specific error or limitation encountered
+- That your response contains no external data
+
+````
+#### Why Data Source Attribution Matters
+
+1. **User Trust**: Users can verify information and understand data origins
+2. **Hallucination Prevention**: Clear attribution prevents agents from fabricating data
+3. **Debugging**: When data seems incorrect, users can check the actual sources
+4. **Compliance**: Many domains require data provenance for regulatory reasons
+
+#### Enforce Attribution in All Data-Heavy Domains
+
+```yaml
+# Financial Analysis
+prompt: |
+  Analyze stock performance with data from Yahoo Finance.
+  Include source URLs, timestamps, and tool names for all financial data.
+
+# Web Scraping  
+prompt: |
+  Extract product information from e-commerce sites.
+  Document which CSS selectors were used and which pages were accessed.
+
+# API Integration
+prompt: |
+  Fetch user metrics from Google Analytics.
+  Show API endpoints called, response codes, and data freshness timestamps.
+
+# Database Queries
+prompt: |
+  Generate sales reports from the customer database.
+  Include table names, query execution times, and row counts processed.
+````
 
 ## Defining Success and Error Conditions
 

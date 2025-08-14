@@ -421,6 +421,13 @@ export class LLMProvider {
   ): ModelMessage[] {
     const messages: ModelMessage[] = [];
 
+    // Always provide current datetime to the model for time awareness
+    const nowUtcIso = new Date().toISOString();
+    messages.push({
+      role: "system",
+      content: `Current datetime (UTC): ${nowUtcIso}`,
+    });
+
     if (context.systemPrompt) {
       messages.push({
         role: "system",

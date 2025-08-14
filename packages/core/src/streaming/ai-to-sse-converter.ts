@@ -19,9 +19,117 @@ import type {
 // Track unique IDs for streaming events that share the same ID
 let currentStreamId: string | undefined;
 
+type NormalizedType =
+  | "text"
+  | "reasoning"
+  | "tool_call"
+  | "tool_result"
+  | "finish"
+  | "error";
+
+interface TextChunk {
+  type: "text";
+  text: string;
+}
+
+interface ReasoningChunk {
+  type: "reasoning";
+  text: string;
+}
+
+interface ToolCallChunk {
+  type: "tool_call";
+  toolName: string;
+  input?: Record<string, unknown>;
+  toolCallId?: string;
+}
+
+interface FinishChunk {
+  type: "finish";
+  finishReason?: string;
+}
+
+interface ErrorChunk {
+  type: "error";
+  error: unknown;
+}
+
+type NormalizedChunk = TextChunk | ReasoningChunk | ToolCallChunk | FinishChunk | ErrorChunk;
+
+function normalizeType(type?: string): NormalizedType | undefined {
+  if (!type) return undefined;
+  const t = String(type).toLowerCase();
+
+  // Primary content streams
+  if (t === "text" || t.startsWith("text-")) return "text";
+  if (t === "reasoning" || t.startsWith("reasoning-")) return "reasoning";
+
+  // Tool interactions
+  if (t === "tool-call" || t === "tool_call") return "tool_call";
+  if (t === "tool-result" || t === "tool_result") return "tool_result";
+
+  // Terminal and error states
+  if (t === "error") return "error";
+  if (t === "finish" || t === "finish-step" || t.endsWith("finish")) return "finish";
+
+  // Non-display or structural events → skip
+  if (t === "start" || t === "start-step") return undefined;
+  if (t.startsWith("tool-input")) return undefined;
+
+  // Unknown types: skip rather than leaking raw events to UI
+  return undefined;
+}
+
+function toNormalizedChunk(
+  part: TextStreamPart<ToolSet>,
+): NormalizedChunk | undefined {
+  const anyPart = part as unknown as Record<string, unknown> & {
+    type?: string;
+    text?: unknown;
+    delta?: unknown;
+    toolName?: string;
+    input?: unknown;
+    toolCallId?: string;
+    finishReason?: string;
+    error?: unknown;
+  };
+
+  const normalized = normalizeType(anyPart.type as string | undefined);
+  if (!normalized) return undefined;
+
+  const getText = (): string => {
+    if (typeof anyPart.text === "string") return anyPart.text;
+    if (typeof anyPart.delta === "string") return anyPart.delta;
+    return "";
+  };
+
+  switch (normalized) {
+    case "text":
+      return { type: "text", text: getText() };
+    case "reasoning":
+      return { type: "reasoning", text: getText() };
+    case "tool_call":
+      return {
+        type: "tool_call",
+        toolName: (anyPart.toolName as string) ?? "tool",
+        input: anyPart.input as Record<string, unknown> | undefined,
+        toolCallId: anyPart.toolCallId as string | undefined,
+      };
+    case "finish":
+      return { type: "finish", finishReason: anyPart.finishReason as string | undefined };
+    case "error":
+      return { type: "error", error: anyPart.error };
+    case "tool_result":
+    default:
+      return undefined; // not displayed currently
+  }
+}
+
 function getUniqueId(type: string, prevType?: string): string {
+  const current = normalizeType(type);
+  const previous = normalizeType(prevType);
   // For continuous text or thinking chunks, maintain the same ID
-  if (type === prevType && currentStreamId) {
+  if (current === previous && currentStreamId) {
     return currentStreamId;
   }
   currentStreamId = crypto.randomUUID();
@@ -41,13 +149,17 @@ export function convertAIStreamToSSE(
   prevChunk?: TextStreamPart<ToolSet>,
 ): SSEEvent | null {
   const timestamp = new Date().toISOString();
+  const prevType = prevChunk?.type;
 
-  switch (chunk.type) {
+  const normalizedChunk = toNormalizedChunk(chunk);
+  if (!normalizedChunk) return null;
+
+  switch (normalizedChunk.type) {
     case "reasoning": {
       const event: ThinkingEvent = {
-        id: getUniqueId("reasoning", prevChunk?.type),
+        id: getUniqueId("reasoning", prevType),
         type: "thinking",
-        data: { content: chunk.text },
+        data: { content: normalizedChunk.text },
         timestamp,
       };
       return event;
@@ -55,23 +167,23 @@ export function convertAIStreamToSSE(
 
     case "text": {
       const event: MessageEvent = {
-        id: getUniqueId("text", prevChunk?.type),
+        id: getUniqueId("text", prevType),
         type: "text",
-        data: { content: chunk.text || "" },
+        data: { content: normalizedChunk.text },
         timestamp,
       };
       return event;
     }
 
-    case "tool-call": {
+    case "tool_call": {
       const event: ToolCallEvent = {
         id: getUniqueId("tool_call"),
         type: "tool_call",
         data: {
-          content: `Calling ${chunk.toolName}`,
-          toolName: chunk.toolName,
-          args: chunk.input,
-          toolCallId: chunk.toolCallId,
+          content: `Calling ${normalizedChunk.toolName}`,
+          toolName: normalizedChunk.toolName,
+          args: normalizedChunk.input,
+          toolCallId: normalizedChunk.toolCallId,
         },
         timestamp,
       };
@@ -80,9 +192,9 @@ export function convertAIStreamToSSE(
 
     case "finish": {
       const event: FinishEvent = {
-        id: getUniqueId("tool_call"),
+        id: getUniqueId("finish"),
         type: "finish",
-        data: { content: chunk.finishReason },
+        data: { content: normalizedChunk.finishReason ?? "" },
         timestamp,
       };
       return event;
@@ -90,16 +202,15 @@ export function convertAIStreamToSSE(
 
     case "error": {
       const event: ErrorEvent = {
-        id: getUniqueId("tool_call"),
+        id: getUniqueId("error"),
         type: "error",
-        data: { content: JSON.stringify(chunk.error, null, 2) },
+        data: { content: JSON.stringify(normalizedChunk.error, null, 2) },
         timestamp,
       };
       return event;
     }
 
     default:
-      // Skip unhandled chunk types
       return null;
   }
 }

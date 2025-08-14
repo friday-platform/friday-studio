@@ -207,6 +207,12 @@ Create a complete Atlas workspace configuration using the provided tools. You MU
 - Focus agent prompts on WHAT they should do, not HOW (tools will be selected automatically)
 - For critical operations (like email), you can still use tool_choice: "required" to ensure tools are used
 
+**ANTI-HALLUCINATION SAFEGUARDS**:
+- YOU are responsible for identifying data-fetching agents and enhancing their prompts
+- Data-fetching agents (prices, stocks, articles, weather, etc.) must include anti-hallucination instructions in their prompts
+- See the system prompt for specific anti-hallucination instructions to add to data-fetching agent prompts
+- Content creation agents (blog writers, email composers) do not need anti-hallucination enhancements
+
 1. REQUIRED: Call initializeWorkspace first
 2. REQUIRED: Call addScheduleSignal OR addWebhookSignal for triggers
 3. REQUIRED: Call addLLMAgent AND/OR addRemoteAgent for workers

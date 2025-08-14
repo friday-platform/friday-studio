@@ -28,6 +28,7 @@ export * from "./src/types/actors.ts";
 export * from "./src/types/agent-execution.ts";
 export * from "./src/types/xstate-events.ts";
 export * from "./src/types/xstate-contexts.ts";
+export * from "./src/constants/supervisor-status.ts";
 
 // Stream Emitters
 export {

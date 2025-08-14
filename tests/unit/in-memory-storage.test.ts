@@ -3,6 +3,7 @@ Deno.env.set("DENO_TESTING", "true");
 
 import { assertEquals, assertExists } from "@std/assert";
 import { InMemoryStorageAdapter } from "@atlas/storage";
+import { WorkspaceSessionStatus } from "@atlas/core";
 import {
   createTestScope,
   createTestSession,
@@ -191,8 +192,8 @@ Deno.test("Session with InMemoryStorage - should preserve memory across session 
   // Session should have stored some memory during initialization
   assertEquals(types.length > 0, true);
 
-  // Check session state
-  assertEquals(session.status, "completed");
+  // Check session state - session should be pending after start
+  assertEquals(session.status, WorkspaceSessionStatus.PENDING);
 
   // Clean up
   await (session.memory as any).dispose();
