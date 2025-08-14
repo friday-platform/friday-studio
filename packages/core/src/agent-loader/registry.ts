@@ -133,7 +133,7 @@ export class AgentRegistry {
   }
 
   /** Register an SDK agent programmatically */
-  registerAgent(agent: AtlasAgent): void {
+  async registerAgent(agent: AtlasAgent): Promise<void> {
     if (!this.sdkAdapter) {
       throw new Error("SDK adapter not initialized");
     }
@@ -243,9 +243,33 @@ export class AgentRegistry {
     };
   }
 
+  /** Search agents by query string */
+  async searchAgents(query: string): Promise<AgentMetadata[]> {
+    const agents = await this.listAgents();
+    const lowercaseQuery = query.toLowerCase();
+
+    return agents.filter((agent) => {
+      const searchText = [
+        agent.id,
+        agent.displayName,
+        agent.description,
+        ...agent.expertise.domains,
+        ...agent.expertise.capabilities,
+        ...(agent.metadata?.tags || []),
+      ].join(" ").toLowerCase();
+
+      return searchText.includes(lowercaseQuery);
+    });
+  }
+
+  /** Get agents by domain */
+  async getAgentsByDomain(domain: string): Promise<AgentMetadata[]> {
+    return await this.listAgents({ domains: [domain] });
+  }
+
   /** Check if an agent is a system agent */
   private isSystemAgent(agentIdOrAgent: string | AtlasAgent): boolean {
-    const id = typeof agentIdOrAgent === "string" ? agentIdOrAgent : (agentIdOrAgent.metadata.id);
+    const id = typeof agentIdOrAgent === "string" ? agentIdOrAgent : agentIdOrAgent.metadata.id;
     return this.agentSourceTypes.get(id) === "system";
   }
 }

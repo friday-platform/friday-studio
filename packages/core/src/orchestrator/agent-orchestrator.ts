@@ -14,6 +14,7 @@ import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
 import { Logger } from "@atlas/logger";
 import {
   type AgentContext,
+  type AgentMetadata,
   ApprovalRequestSchema,
   type AtlasAgent,
   AwaitingSupervisorDecision,
@@ -24,6 +25,7 @@ import { z } from "zod";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "../mcp-server-pool.ts";
 import type { AgentToolParams } from "../agent-server/types.ts";
+import { CoALAMemoryManager, CoALAMemoryType, IMemoryScope } from "@atlas/memory";
 
 // FIXME: this is wrong.
 const MCPToolResultSchema = z.object({
@@ -61,6 +63,8 @@ export interface AgentExecutionContext {
   additionalContext?: unknown;
   reasoning?: string;
   onStreamEvent?: (event: StreamEvent) => void; // NEW: Callback for stream events
+  /** Optional pre-provisioned session memory. If not provided, orchestrator creates one. */
+  memoryManager?: CoALAMemoryManager;
 }
 
 export interface ApprovalDecision {
@@ -130,6 +134,9 @@ export interface IAgentOrchestrator {
   /** Initialize the orchestrator */
   initialize(): void;
 
+  /** Discover available agents via MCP */
+  discoverAgents(): Promise<AgentMetadata[]>;
+
   /** Run an agent with a task */
   executeAgent(
     agentId: string,
@@ -175,6 +182,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
   // Track active stream handlers by sessionId:agentId to handle multi-workspace scenarios
   private activeStreamHandlers = new Map<string, (event: StreamEvent) => void>();
   private buildAgentContext?: ReturnType<typeof createAgentContextBuilder>;
+  // Cache CoALA session memories per workspaceId:sessionId
+  private sessionMemories = new Map<string, CoALAMemoryManager>();
+
+  // (No ad-hoc resource parsing; we read the typed agents list resource instead)
 
   /**
    * @param config Connection settings for atlas-agents MCP server
@@ -203,6 +214,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       });
 
       this.logger.info("Initialized agent context builder for wrapped agents", {
+        component: "AgentOrchestrator",
         hasMcpServerPool: true,
         daemonUrl: config.daemonUrl,
       });
@@ -210,10 +222,93 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       this.logger.warn(
         "No MCP server pool or daemon URL provided - wrapped agents will have no tool access",
         {
+          component: "AgentOrchestrator",
           hasMcpServerPool: !!config.mcpServerPool,
           hasDaemonUrl: !!config.daemonUrl,
+          mcpServerPoolType: config.mcpServerPool ? typeof config.mcpServerPool : "undefined",
+          daemonUrlValue: config.daemonUrl || "undefined",
         },
       );
+    }
+  }
+
+  /**
+   * Discover available agents by querying the agent server via MCP.
+   * Returns metadata about all registered agents.
+   */
+  async discoverAgents(): Promise<AgentMetadata[]> {
+    try {
+      // Create a default session to query for agents
+      const discoverySessionId = `discovery-${Date.now()}`;
+      const mcpSetup = await this.getOrCreateSessionClient(discoverySessionId);
+
+      // Query MCP server for available resources (agents register as resources)
+      const resources = await mcpSetup.client.listResources();
+
+      const agents: AgentMetadata[] = [];
+
+      // Parse agent metadata from MCP resources (KISS)
+      for (const resource of resources.resources) {
+        if (!resource.uri.startsWith("agent://")) continue;
+        try {
+          const agentId = resource.uri.replace("agent://", "");
+          const meta = resource.metadata as
+            | { expertise?: { domains?: string[]; capabilities?: string[]; examples?: string[] } }
+            | undefined;
+          const expertise = meta?.expertise
+            ? {
+              domains: meta.expertise.domains ?? [],
+              capabilities: meta.expertise.capabilities ?? [],
+              examples: meta.expertise.examples ?? [],
+            }
+            : { domains: [], capabilities: [], examples: [] };
+          const agentMetadata: AgentMetadata = {
+            id: agentId,
+            version: "0.0.0",
+            description: resource.description || "",
+            expertise,
+            displayName: resource.name,
+          };
+          agents.push(agentMetadata);
+        } catch (parseError) {
+          this.logger.warn("Failed to parse agent metadata from resource", {
+            resource,
+            error: parseError,
+          });
+        }
+      }
+
+      this.logger.debug("Discovered agents via MCP", { agentCount: agents.length });
+      return agents;
+    } catch (error) {
+      this.logger.error("Failed to discover agents", { error });
+
+      // If MCP discovery fails, check for wrapped agents
+      const wrappedAgents: AgentMetadata[] = [];
+      for (const [agentId, agent] of this.wrappedAgents.entries()) {
+        wrappedAgents.push({
+          id: agentId,
+          version: agent.metadata.version,
+          description: agent.metadata.description,
+          expertise: {
+            domains: agent.metadata.expertise.domains,
+            capabilities: agent.metadata.expertise.capabilities,
+            examples: agent.metadata.expertise.examples || [],
+          },
+          displayName: agent.metadata.displayName,
+          metadata: agent.metadata.metadata,
+        } as AgentMetadata);
+      }
+
+      if (wrappedAgents.length > 0) {
+        this.logger.debug("Returning wrapped agents as fallback", {
+          wrappedAgentCount: wrappedAgents.length,
+        });
+        return wrappedAgents;
+      }
+
+      // Return empty array if no agents can be discovered
+      return [];
     }
   }
 
@@ -286,6 +381,27 @@ export class AgentOrchestrator implements IAgentOrchestrator {
    */
   getStreamHandlerKey(sessionId: string, agentId: string): string {
     return `${sessionId}:${agentId}`;
+  }
+
+  /**
+   * Get or create a CoALAMemoryManager for a given session within a workspace.
+   */
+  private getOrCreateSessionMemory(
+    sessionId: string,
+    workspaceId: string,
+  ): CoALAMemoryManager {
+    const key = `${workspaceId}:${sessionId}`;
+    const existing = this.sessionMemories.get(key);
+    if (existing) return existing;
+
+    // Create a properly typed scope for CoALAMemoryManager
+    const scope: IMemoryScope = {
+      id: sessionId,
+      workspaceId,
+    };
+    const memory = new CoALAMemoryManager(scope);
+    this.sessionMemories.set(key, memory);
+    return memory;
   }
 
   /**
@@ -382,9 +498,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         duration: Date.now() - startTime,
       });
 
+      // Create a brief summary of the task instead of storing the entire prompt
+      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+
       return {
         agentId,
-        task: prompt,
+        task: taskSummary,
         input: context,
         output,
         duration: Date.now() - startTime,
@@ -409,9 +528,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         duration: Date.now() - startTime,
       });
 
+      // Create a brief summary of the task instead of storing the entire prompt
+      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+
       return {
         agentId,
-        task: prompt,
+        task: taskSummary,
         input: context,
         output: null,
         error: error instanceof Error ? error.message : String(error),
@@ -538,6 +660,10 @@ export class AgentOrchestrator implements IAgentOrchestrator {
       let agentContext: AgentContext;
       let finalPrompt = prompt;
 
+      // Resolve session memory (caller-provided or orchestrator-managed)
+      const sessionMemory = context.memoryManager ??
+        this.getOrCreateSessionMemory(context.sessionId, context.workspaceId);
+
       if (this.buildAgentContext) {
         // Use the context builder to get proper tools and enriched prompt
         try {
@@ -549,7 +675,7 @@ export class AgentOrchestrator implements IAgentOrchestrator {
               userId: context.userId,
               streamId: context.streamId,
             },
-            null, // No session memory for now
+            sessionMemory,
             prompt,
             {
               stream: streamEmitter, // Override with our stream emitter
@@ -587,7 +713,18 @@ export class AgentOrchestrator implements IAgentOrchestrator {
         }
       } else {
         // No context builder available - use minimal context
-        logger.warn("No context builder available for wrapped agent", { agentId });
+        logger.warn(
+          "No context builder available for wrapped agent - agent will run without tool access",
+          {
+            component: "AgentOrchestrator",
+            workspaceId: context.workspaceId,
+            agentId,
+            sessionId: context.sessionId,
+            hasContextBuilder: false,
+            hasMcpServerPool: !!this.config.mcpServerPool,
+            hasDaemonUrl: !!this.config.daemonUrl,
+          },
+        );
 
         agentContext = {
           logger: logger.child({ agentId, sessionId: context.sessionId }),
@@ -604,9 +741,36 @@ export class AgentOrchestrator implements IAgentOrchestrator {
 
       const result = await agent.execute(finalPrompt, agentContext);
 
+      // Best-effort episodic persistence for wrapped-agent execution
+      try {
+        const eventKey = `epi:${Date.now()}:${agentId}`;
+        await sessionMemory.rememberWithMetadata?.(
+          eventKey,
+          {
+            agentId,
+            task: prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt,
+            output: result,
+            duration: Date.now() - startTime,
+          },
+          {
+            memoryType: CoALAMemoryType.EPISODIC,
+            tags: ["agent-execution", agentId],
+            relevanceScore: 0.5,
+            confidence: 0.9,
+          },
+        );
+      } catch (memErr) {
+        logger.debug("Failed to persist episodic memory for wrapped agent", {
+          error: memErr instanceof Error ? memErr.message : String(memErr),
+        });
+      }
+
+      // Create a brief summary of the task instead of storing the entire prompt
+      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+
       return {
         agentId,
-        task: prompt,
+        task: taskSummary,
         input: context,
         output: result,
         duration: Date.now() - startTime,
@@ -615,9 +779,12 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     } catch (error) {
       this.logger.error("Wrapped agent execution failed", { error });
 
+      // Create a brief summary of the task instead of storing the entire prompt
+      const taskSummary = prompt.length > 100 ? prompt.substring(0, 97) + "..." : prompt;
+
       return {
         agentId,
-        task: prompt,
+        task: taskSummary,
         input: context,
         output: null,
         error: error instanceof Error ? error.message : String(error),
@@ -771,6 +938,16 @@ export class AgentOrchestrator implements IAgentOrchestrator {
     }
 
     this.pendingApprovals.clear();
+
+    // Dispose session memories
+    for (const memory of this.sessionMemories.values()) {
+      try {
+        await memory.dispose();
+      } catch (error) {
+        this.logger.error("Error disposing session memory", { error });
+      }
+    }
+    this.sessionMemories.clear();
 
     for (const [sessionId, setup] of this.mcpSessions.entries()) {
       try {

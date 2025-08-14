@@ -27,7 +27,7 @@ import {
   type AtlasAgent,
   AwaitingSupervisorDecision,
 } from "@atlas/agent-sdk";
-import { CoALAMemoryManager } from "@atlas/memory";
+import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import type { Logger } from "@atlas/logger";
 import type { CollectableStreamEmitter } from "../streaming/stream-emitters.ts";
 
@@ -188,10 +188,36 @@ export function createAgentExecutionMachine(
         },
       ),
 
-      persistResults: fromPromise<PersistResultsOutput, PersistResultsInput>((res) => {
-        logger.debug("persisting results", { res });
-        // TODO: Implement CoALA memory persistence
-        // This will store execution results as episodic memory
+      persistResults: fromPromise<PersistResultsOutput, PersistResultsInput>(({ input }) => {
+        try {
+          const coala = sessionMemory;
+          if (!coala) {
+            logger.debug("No session memory available; skipping episodic persistence");
+            return Promise.resolve();
+          }
+
+          const eventId = `epi:${Date.now()}:${input.agentId}`;
+          coala.rememberWithMetadata(
+            eventId,
+            {
+              eventType: "agent_execution",
+              agentId: input.agentId,
+              prompt: input.prompt,
+              output: input.result,
+              duration: input.duration,
+              timestamp: Date.now(),
+            },
+            // Using CoALAMemoryType enum for type safety
+            {
+              memoryType: CoALAMemoryType.EPISODIC,
+              tags: ["agent_execution", "episodic", input.agentId],
+              relevanceScore: Math.min(1, Math.max(0.3, input.duration / 5000)),
+              confidence: 0.9,
+            },
+          );
+        } catch (e) {
+          logger.error("Failed to persist episodic result", { error: e });
+        }
         return Promise.resolve();
       }),
     },

@@ -68,6 +68,27 @@ export class AgentExecutionManager {
   }
 
   /**
+   * Update the session memory used for future agent executions.
+   * Clears any cached actors so new machines pick up the updated memory.
+   */
+  setSessionMemory(memory: CoALAMemoryManager): void {
+    this.sessionMemory = memory;
+    // Recreate machines with updated memory for future executions
+    for (const [agentId, actor] of this.activeAgents) {
+      try {
+        actor.stop();
+      } catch (error) {
+        this.logger.error("Error stopping actor during memory update", {
+          agentId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    this.activeAgents.clear();
+    this.logger.info("AgentExecutionManager session memory updated; cleared active actors");
+  }
+
+  /**
    * Get or create an execution actor for the specified agent.
    * Actors are reused across executions for the same agent.
    */

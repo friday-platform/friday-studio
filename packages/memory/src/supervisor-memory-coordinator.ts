@@ -42,6 +42,112 @@ export class SupervisorMemoryCoordinator {
     this.filteringPolicy = filteringPolicy || new DefaultMemoryFilteringPolicy();
   }
 
+  /**
+   * Consolidate working memories for a session
+   * Promotes important working memories to long-term storage
+   */
+  async consolidateWorkingMemories(
+    sessionId: string,
+    options: {
+      minAccessCount?: number;
+      minRelevance?: number;
+      markImportant?: boolean;
+    } = {},
+  ): Promise<void> {
+    const { minAccessCount = 3, minRelevance = 0.8, markImportant = false } = options;
+
+    // Get session memory manager
+    const sessionMemory = this.sessionMemories.get(sessionId) || this.workspaceMemory;
+
+    // Query working memories for this session
+    const workingMemories = sessionMemory.queryMemories({
+      memoryType: CoALAMemoryType.WORKING,
+      sourceScope: sessionId,
+      minRelevance,
+    });
+
+    // Filter for consolidation candidates
+    const toConsolidate = workingMemories.filter((memory) =>
+      memory.accessCount >= minAccessCount ||
+      memory.relevanceScore >= minRelevance ||
+      (markImportant && memory.tags.includes("important"))
+    );
+
+    // Promote each qualified memory
+    for (const memory of toConsolidate) {
+      // Determine target memory type based on content
+      const newType = this.determinePromotionType(memory);
+
+      // Update memory type and boost relevance
+      memory.memoryType = newType;
+      memory.relevanceScore = Math.min(1.0, memory.relevanceScore * 1.2);
+      memory.tags.push("consolidated", `from-session-${sessionId}`);
+
+      // Store in workspace memory for cross-session access
+      this.workspaceMemory.rememberWithMetadata(
+        memory.id,
+        memory.content,
+        {
+          memoryType: newType,
+          tags: memory.tags,
+          relevanceScore: memory.relevanceScore,
+          confidence: memory.confidence,
+          associations: memory.associations,
+        },
+      );
+    }
+  }
+
+  /**
+   * Clear working memory for a specific session
+   */
+  async clearWorkingMemoryBySession(sessionId: string): Promise<number> {
+    // Get session memory manager
+    const sessionMemory = this.sessionMemories.get(sessionId);
+
+    if (sessionMemory) {
+      // Clear working memory in session-specific manager
+      const clearedCount = sessionMemory.clearWorkingBySession(sessionId);
+
+      // Also clear from workspace memory if any were stored there
+      this.workspaceMemory.clearWorkingBySession(sessionId);
+
+      // Remove session memory manager if no longer needed
+      this.sessionMemories.delete(sessionId);
+
+      return clearedCount;
+    } else {
+      // Clear from workspace memory directly
+      return this.workspaceMemory.clearWorkingBySession(sessionId);
+    }
+  }
+
+  /**
+   * Determine the appropriate memory type for promotion
+   */
+  private determinePromotionType(memory: any): CoALAMemoryType {
+    const content = JSON.stringify(memory.content).toLowerCase();
+
+    // Check for procedural patterns
+    if (
+      content.includes("step") || content.includes("process") ||
+      content.includes("workflow") || memory.tags.includes("tool")
+    ) {
+      return CoALAMemoryType.PROCEDURAL;
+    }
+
+    // Check for episodic patterns
+    if (
+      content.includes("success") || content.includes("failure") ||
+      content.includes("result") || memory.tags.includes("agent")
+    ) {
+      return CoALAMemoryType.EPISODIC;
+    }
+
+    // Default to semantic for factual content
+    return CoALAMemoryType.SEMANTIC;
+  }
+
   // WorkspaceSupervisor Memory Operations
   async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
     relevantMemories: any[];

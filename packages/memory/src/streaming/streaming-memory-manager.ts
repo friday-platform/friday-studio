@@ -6,12 +6,11 @@ import {
   EpisodicEventProcessor,
   ProceduralPatternProcessor,
   SemanticFactProcessor,
+  WorkingContextProcessor,
 } from "./memory-stream-processors.ts";
 import type {
   AgentResultStream,
-  ContextualUpdateStream,
   EpisodicEventStream,
-  MemoryStream,
   ProceduralPatternStream,
   SemanticFactStream,
   SessionCompleteStream,
@@ -37,6 +36,7 @@ export class StreamingMemoryManager {
   private proceduralProcessor: ProceduralPatternProcessor;
   private episodicProcessor: EpisodicEventProcessor;
   private agentResultProcessor: AgentResultProcessor;
+  private workingProcessor: WorkingContextProcessor;
   private isShutdown = false;
   private performanceMetrics = {
     streamsProcessed: 0,
@@ -58,16 +58,22 @@ export class StreamingMemoryManager {
     this.proceduralProcessor = new ProceduralPatternProcessor(memoryManager);
     this.episodicProcessor = new EpisodicEventProcessor(memoryManager);
     this.agentResultProcessor = new AgentResultProcessor(
+      memoryManager,
       this.semanticProcessor,
       this.proceduralProcessor,
       this.episodicProcessor,
     );
+    // Working context processor writes WORKING memory entries
+    this.workingProcessor = new WorkingContextProcessor(memoryManager);
 
     // Register processors with queue
     this.queue.registerProcessor("semantic_fact", this.semanticProcessor);
     this.queue.registerProcessor("procedural_pattern", this.proceduralProcessor);
     this.queue.registerProcessor("episodic_event", this.episodicProcessor);
     this.queue.registerProcessor("agent_result", this.agentResultProcessor);
+    this.queue.registerProcessor("contextual_update", this.workingProcessor);
+    // Also allow working processor to observe agent_result streams
+    this.queue.registerProcessor("agent_result", this.workingProcessor);
     this.queue.registerProcessor("session_complete", {
       canProcess: (stream) => stream.type === "session_complete",
       process: this.processSessionComplete.bind(this),
@@ -246,6 +252,116 @@ export class StreamingMemoryManager {
       streamId: stream.id,
       sessionId: this.context.sessionId,
     });
+  }
+
+  /**
+   * Stream tool call for working memory capture
+   */
+  async streamToolCall(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    args: any,
+  ): Promise<void> {
+    if (this.isShutdown) return;
+
+    try {
+      // Store directly as working memory
+      this.memoryManager.rememberWorking(
+        sessionId,
+        {
+          kind: "tool_call",
+          agentId,
+          toolName,
+          arguments: args,
+          timestamp: Date.now(),
+        },
+        {
+          tags: ["working", "session", "tool", "tool_call", agentId, toolName],
+          relevanceScore: 0.7,
+          confidence: 0.95,
+        },
+      );
+
+      logger.debug("Tool call stored in working memory", {
+        sessionId,
+        agentId,
+        toolName,
+      });
+    } catch (error) {
+      logger.warn("Failed to store tool call in working memory", {
+        sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Stream tool result for working memory capture
+   */
+  async streamToolResult(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    result: any,
+  ): Promise<void> {
+    if (this.isShutdown) return;
+
+    try {
+      // Store directly as working memory
+      this.memoryManager.rememberWorking(
+        sessionId,
+        {
+          kind: "tool_result",
+          agentId,
+          toolName,
+          result,
+          timestamp: Date.now(),
+        },
+        {
+          tags: ["working", "session", "tool", "tool_result", agentId, toolName],
+          relevanceScore: 0.75,
+          confidence: 0.95,
+        },
+      );
+
+      // Also extract entities from tool results if they contain data
+      if (result && typeof result === "object") {
+        const resultStr = JSON.stringify(result);
+        const classifier = await import("../memory-classifier.ts").then((m) =>
+          m.createMemoryClassifier()
+        );
+        const entities = classifier.extractKeyEntities(resultStr);
+
+        // Store extracted entities as semantic memory
+        for (const entity of entities) {
+          if (entity.confidence > 0.7) {
+            await this.streamSemanticFact(
+              `${entity.type}:${entity.name}`,
+              entity.confidence,
+              "tool_result",
+              { toolName, agentId, entityType: entity.type },
+            );
+          }
+        }
+      }
+
+      logger.debug("Tool result stored in working memory", {
+        sessionId,
+        agentId,
+        toolName,
+        hasEntities: result && typeof result === "object",
+      });
+    } catch (error) {
+      logger.warn("Failed to store tool result in working memory", {
+        sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   /**

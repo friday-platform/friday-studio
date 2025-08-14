@@ -21,6 +21,7 @@ import { type AgentServerDependencies, AgentToolParamsSchema } from "./types.ts"
 import { AgentExecutionManager } from "./agent-execution-manager.ts";
 import { createAgentContextBuilder } from "../agent-context/index.ts";
 import { GlobalMCPServerPool } from "@atlas/core";
+import { CoALAMemoryManager, IMemoryScope } from "@atlas/memory";
 
 export class AtlasAgentsMCPServer implements AgentServerAdapter {
   #logger: Logger;
@@ -33,6 +34,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
   private isRunning = false;
   private sessionId: string;
   private hasActiveSSEFn?: (sessionId?: string) => boolean;
+  private sessionMemory?: CoALAMemoryManager;
 
   constructor(deps: AgentServerDependencies & { disableTimeouts?: boolean; sessionId: string }) {
     this.agentRegistry = deps.agentRegistry;
@@ -85,14 +87,11 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       hasActiveSSE: (sessionId?: string) => this.hasActiveSSE(sessionId),
     });
 
-    // TODO: Initialize with actual CoALA memory when available
-    const sessionMemory = null; // Stub for CoALA integration
-
     // Initialize execution manager with enhanced features
     this.executionManager = new AgentExecutionManager(
       (agentId) => this.loadAgent(agentId),
       this.buildAgentContext,
-      sessionMemory,
+      this.sessionMemory ?? null,
       this.approvalQueue,
       deps.logger.child({ component: "agent-execution-manager" }),
     );
@@ -105,6 +104,81 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     this.registerAgentResources();
   }
 
+  /** Register a single agent as MCP tool */
+  private registerSingleAgentTool(agent: AgentMetadata): void {
+    const toolName = agent.id;
+    this.server.registerTool(
+      toolName,
+      {
+        title: agent.displayName,
+        description: this.formatAgentDescription(agent),
+        inputSchema: AgentToolParamsSchema.shape,
+      },
+      async (args) => {
+        const agentId = agent.id;
+
+        // Ensure session memory is initialized once we know the workspace
+        try {
+          const workspaceId = args._sessionContext?.workspaceId;
+          if (workspaceId && !this.sessionMemory) {
+            this.ensureSessionMemory(workspaceId);
+          }
+        } catch (e) {
+          this.#logger.warn("Failed to initialize session memory; proceeding without it", { e });
+        }
+
+        this.#logger.debug("MCP tool handler called for agent", {
+          args: JSON.stringify(args),
+          agentId,
+          displayName: agent.displayName,
+        });
+
+        // Approval flow remains the same
+        if (args._approvalId && args._approvalDecision) {
+          const result = await this.resumeWithApproval(
+            args._approvalId,
+            args._approvalDecision,
+          );
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        }
+
+        // Session still comes from _sessionContext parameter - no changes!
+        const session = args._sessionContext;
+
+        this.#logger.info("Session context", {
+          hasSession: !!session,
+          orchestratorSessionId: session?.sessionId,
+          serverSessionId: this.sessionId,
+          streamId: session?.streamId,
+          workspaceId: session?.workspaceId,
+          agentId,
+        });
+
+        if (!session) {
+          throw new Error("No session data available - authentication required");
+        }
+
+        const result = await this.executeAgent(agentId, args.prompt, session);
+
+        this.#logger.debug("Agent execution result", {
+          agentId,
+          result: JSON.stringify(result),
+          resultType: typeof result,
+        });
+
+        return { content: [{ type: "text", text: JSON.stringify(result) }] };
+      },
+    );
+
+    this.#logger.info("Registered agent as MCP tool", {
+      toolName,
+      agentId: agent.id,
+      displayName: agent.displayName,
+      domains: agent.expertise.domains,
+      capabilities: agent.expertise.capabilities.length,
+    });
+  }
+
   /**
    * Register all agents from the registry as MCP tools.
    * Each agent becomes a callable MCP tool with lazy loading support.
@@ -112,70 +186,8 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
    */
   private async registerAgentTools(): Promise<void> {
     const agents = await this.agentRegistry.listAgents();
-
     for (const agent of agents) {
-      // Key change: registerTool instead of addTool
-      const toolName = agent.id;
-      this.server.registerTool(
-        toolName,
-        {
-          title: agent.displayName,
-          description: this.formatAgentDescription(agent),
-          inputSchema: AgentToolParamsSchema.shape,
-        },
-        async (args) => {
-          const agentId = agent.id;
-
-          this.#logger.debug("MCP tool handler called for agent", {
-            args: JSON.stringify(args),
-            agentId,
-            displayName: agent.displayName,
-          });
-
-          // Approval flow remains the same
-          if (args._approvalId && args._approvalDecision) {
-            const result = await this.resumeWithApproval(
-              args._approvalId,
-              args._approvalDecision,
-            );
-            return { content: [{ type: "text", text: JSON.stringify(result) }] };
-          }
-
-          // Session still comes from _sessionContext parameter - no changes!
-          const session = args._sessionContext;
-
-          this.#logger.info("Session context", {
-            hasSession: !!session,
-            orchestratorSessionId: session?.sessionId,
-            serverSessionId: this.sessionId,
-            streamId: session?.streamId,
-            workspaceId: session?.workspaceId,
-            agentId,
-          });
-
-          if (!session) {
-            throw new Error("No session data available - authentication required");
-          }
-
-          const result = await this.executeAgent(agentId, args.prompt, session);
-
-          this.#logger.debug("Agent execution result", {
-            agentId,
-            result: JSON.stringify(result),
-            resultType: typeof result,
-          });
-
-          return { content: [{ type: "text", text: JSON.stringify(result) }] };
-        },
-      );
-
-      this.#logger.info("Registered agent as MCP tool", {
-        toolName,
-        agentId: agent.id,
-        displayName: agent.displayName,
-        domains: agent.expertise.domains,
-        capabilities: agent.expertise.capabilities.length,
-      });
+      this.registerSingleAgentTool(agent);
     }
   }
 
@@ -320,7 +332,7 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
    */
   async registerAgent(agent: AtlasAgent): Promise<void> {
     await this.agentRegistry.registerAgent(agent);
-    await this.registerAgentTools();
+    await this.registerSingleAgentTool(agent.metadata);
     const agentId = agent.metadata.id;
     this.server.registerResource(
       `agents/${agentId}/expertise`,
@@ -453,8 +465,9 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
     const approvalDecision = {
       approved: Boolean(decisionObj?.approved),
       reason: decisionObj?.reason,
-      modifiedAction: decisionObj?.modifiedAction,
-      conditions: decisionObj?.conditions,
+      conditions: Array.isArray(decisionObj?.conditions)
+        ? (decisionObj?.conditions as string[])
+        : undefined,
     };
 
     try {
@@ -551,6 +564,19 @@ export class AtlasAgentsMCPServer implements AgentServerAdapter {
       ...config,
       logger: config.logger.child({ sessionId: config.sessionId }),
     });
+  }
+
+  // Lazily create session-scoped CoALA memory once workspaceId is known
+  private ensureSessionMemory(workspaceId: string): void {
+    if (this.sessionMemory) return;
+    // Create a properly typed scope for CoALAMemoryManager
+    const scope: IMemoryScope = {
+      id: this.sessionId,
+      workspaceId,
+    };
+    this.sessionMemory = new CoALAMemoryManager(scope);
+    this.executionManager.setSessionMemory(this.sessionMemory);
+    this.#logger.info("Initialized session memory for MCP server", { workspaceId });
   }
 
   /**

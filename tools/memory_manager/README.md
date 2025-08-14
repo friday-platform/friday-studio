@@ -1,17 +1,21 @@
 # Atlas Memory Manager
 
-A terminal-based tool for navigating and managing Atlas workspace memory across different memory
-types (Working, Episodic, Semantic, Procedural).
+A terminal-based tool for navigating and managing Atlas workspace memory using the new MECMF
+(Memory-Enhanced Context Management Framework). This tool has been updated to work with Atlas's
+latest memory system.
 
 ## Features
 
+- **MECMF Integration**: Uses the new Memory-Enhanced Context Management Framework for advanced
+  memory operations
+- **Vector Search**: Supports semantic vector search for episodic and semantic memories
 - **Tab-based Navigation**: Switch between different memory types using Tab/Shift+Tab
 - **Memory Browsing**: List and navigate through memory entries with arrow keys or vim-style j/k
 - **Detailed View**: View complete memory entry details in a formatted table with progress bars,
   relative timestamps, and smart content parsing
-- **Search**: Search within memory types using pattern matching
-- **Statistics**: View memory usage statistics and storage information
-- **CRUD Operations**: Create, read, update, and delete memory entries (view/read implemented)
+- **Search**: Search within memory types using pattern matching and vector similarity
+- **Statistics**: View memory usage statistics from workspace-specific storage
+- **CRUD Operations**: Create, read, update, and delete memory entries through MECMF
 - **Export/Import**: Export memory data to JSON format
 - **Data Validation**: Validate memory data integrity
 
@@ -24,27 +28,51 @@ No installation required. Run directly with Deno from the Atlas repository.
 ### Interactive Mode (Default)
 
 ```bash
-# From Atlas root directory
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts
+# Start with workspace selection (recommended)
+./memory-manager.sh
+
+# From Atlas root directory (requires full permissions for MECMF)
+deno run --allow-all tools/memory_manager/main.ts
 
 # Or specify a workspace path
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts /path/to/workspace
+deno run --allow-all tools/memory_manager/main.ts /path/to/workspace
+./memory-manager.sh --workspace /path/to/workspace
 ```
+
+### Workspace Selection
+
+When you run `./memory-manager.sh` without specifying a workspace, the tool displays an interactive
+workspace selector that lists all available Atlas workspaces on your system. You can:
+
+- Use **↑/↓** arrow keys or **j/k** to navigate
+- Press **Enter** to select a workspace
+- Press **q** to quit
+- Press **h** to see help
+
+The workspace selector shows:
+
+- Workspace name and status (running/stopped/etc.)
+- Workspace path
+- Description (if available)
 
 ### Command Line Options
 
 ```bash
-# Show memory statistics
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts --stats
+# Show memory statistics for a workspace
+./memory-manager.sh --stats --workspace /path/to/workspace
+deno run --allow-all tools/memory_manager/main.ts --stats --workspace /path/to/workspace
 
-# Export all memory to JSON
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts --export > backup.json
+# Export all memory to JSON from a workspace
+./memory-manager.sh --export --workspace /path/to/workspace > backup.json
+deno run --allow-all tools/memory_manager/main.ts --export --workspace /path/to/workspace > backup.json
 
-# Validate memory data integrity
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts --validate
+# Validate memory data integrity for a workspace
+./memory-manager.sh --validate --workspace /path/to/workspace
+deno run --allow-all tools/memory_manager/main.ts --validate --workspace /path/to/workspace
 
 # Show help
-deno run --allow-read --allow-write --unstable tools/memory_manager/main.ts --help
+./memory-manager.sh --help
+deno run --allow-all tools/memory_manager/main.ts --help
 ```
 
 ### Using Deno Tasks
@@ -120,14 +148,15 @@ tools/memory_manager/
     └── tui.ts                 # Terminal UI implementation
 ```
 
-## Memory File Format
+## Memory Storage Format
 
-Memory is stored in separate JSON files in the workspace's `.atlas/memory/` directory:
+Memory is now stored using the MECMF system in workspace-specific directories under
+`~/.atlas/memory/[workspace-name]/`:
 
-- `working.json` - Working memory entries
-- `episodic.json` - Episodic memory entries
-- `semantic.json` - Semantic memory entries
-- `procedural.json` - Procedural memory entries
+- Uses CoALA memory management with structured JSON storage
+- Vector embeddings for semantic and episodic memories
+- Knowledge graph integration for semantic relationships
+- Workspace isolation for multi-project support
 
 Each entry contains:
 
@@ -152,14 +181,15 @@ Each entry contains:
 
 ## Integration with Atlas
 
-The memory manager reads from the same memory files used by Atlas workspaces. Changes made through
-the memory manager will be reflected in Atlas and vice versa.
+The memory manager now integrates directly with the MECMF system used by Atlas workspaces. It
+provides real-time access to the same memory data that Atlas agents use.
 
-To ensure data consistency:
+Key integration features:
 
-1. Save changes with `s` before exiting
-2. Use `r` to reload if memory was modified externally
-3. Run validation with `--validate` to check data integrity
+1. **Direct MECMF Access**: Uses the same CoALAMemoryManager as Atlas workspaces
+2. **Vector Search**: Leverages the same embedding system for semantic search
+3. **Workspace Isolation**: Respects workspace boundaries and memory scoping
+4. **Real-time Sync**: Changes are immediately reflected in the Atlas system
 
 ## Limitations
 
@@ -185,11 +215,14 @@ deno task check
 
 ### "Permission denied" errors
 
-Ensure you're running with proper permissions:
+The MECMF system requires extensive permissions for vector operations and embedding generation:
 
 ```bash
---allow-read --allow-write --unstable
+deno run --allow-all tools/memory_manager/main.ts
 ```
+
+Specific permissions needed: `--allow-read`, `--allow-write`, `--allow-env`, `--allow-ffi`,
+`--allow-net`, `--allow-sys`
 
 ### "No memory files found"
 

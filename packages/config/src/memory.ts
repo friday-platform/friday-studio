@@ -41,7 +41,6 @@ const MemoryTypeConfigSchema = z.strictObject({
   max_age_days: z.number().positive().optional(),
   max_entries: z.number().int().min(0).optional(),
 });
-type MemoryTypeConfig = z.infer<typeof MemoryTypeConfigSchema>;
 
 /**
  * Memory scope configuration (reused for agent/session/workspace)
@@ -65,7 +64,6 @@ const MemoryScopeConfigSchema = z.strictObject({
     contextual: MemoryTypeConfigSchema.optional(),
   }).describe("Different types of memory with individual configurations"),
 });
-type MemoryScopeConfig = z.infer<typeof MemoryScopeConfigSchema>;
 
 /**
  * Atlas memory configuration (complex, platform-level)

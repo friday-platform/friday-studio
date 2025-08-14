@@ -320,15 +320,15 @@ Deno.test("Integration - storage adapter functionality", async () => {
 
   // Test CoALA memory operations
   const testData = {
-    "test-key": { data: "test-value", memoryType: "working" },
-    "task1": { task: "debug", memoryType: "working" },
-    "task2": { task: "test", memoryType: "working" },
-    "concept1": { concept: "React", memoryType: "semantic" },
+    "test-key": { data: "test-value", memoryType: CoALAMemoryType.WORKING },
+    "task1": { task: "debug", memoryType: CoALAMemoryType.WORKING },
+    "task2": { task: "test", memoryType: CoALAMemoryType.WORKING },
+    "concept1": { concept: "React", memoryType: CoALAMemoryType.SEMANTIC },
   };
 
   await memoryAdapter.commit(testData);
   const allData = await memoryAdapter.load();
-  expect(allData["test-key"]).toEqual({ data: "test-value", memoryType: "working" });
+  expect(allData["test-key"]).toEqual({ data: "test-value", memoryType: CoALAMemoryType.WORKING });
 
   // Test memory type operations
   await memoryAdapter.commitByType("working", { "new-task": { task: "new-debug" } });

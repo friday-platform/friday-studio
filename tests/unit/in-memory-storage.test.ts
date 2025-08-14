@@ -15,8 +15,8 @@ Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () =>
   const adapter = new InMemoryStorageAdapter();
 
   const testData = {
-    key1: { value: "test1", memoryType: "working" },
-    key2: { value: "test2", memoryType: "semantic" },
+    key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
+    key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
   };
 
   await adapter.commit(testData);

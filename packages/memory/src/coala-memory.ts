@@ -24,8 +24,11 @@ import {
   type VectorSearchQuery,
 } from "@atlas/storage";
 import { logger } from "@atlas/logger";
-import { getAtlasHome } from "../../../src/utils/paths.ts";
-import { join } from "@std/path";
+import {
+  getWorkspaceKnowledgeGraphDir,
+  getWorkspaceMemoryDir,
+  getWorkspaceVectorDir,
+} from "../../../src/utils/paths.ts";
 import {
   ExtractedFact,
   type IKnowledgeGraphStorageAdapter,
@@ -50,6 +53,14 @@ export interface CoALAMemoryEntry {
   tags: string[];
   confidence: number; // How confident we are in this memory
   decayRate: number; // How quickly this memory should fade
+  source?: string; // Source of the memory (user_input, agent_output, etc.)
+  sourceMetadata?: {
+    agentId?: string;
+    toolName?: string;
+    sessionId?: string;
+    userId?: string;
+    workspaceId?: string;
+  };
 }
 
 export enum CoALAMemoryType {
@@ -77,11 +88,17 @@ export interface CoALAMemoryQuery {
   limit?: number;
 }
 
+// Minimal interface for what CoALAMemoryManager actually needs
+export interface IMemoryScope {
+  id: string;
+  workspaceId?: string;
+}
+
 export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitiveLoop {
   private store: ICoALAMemoryStorageAdapter;
   private memories: Map<string, CoALAMemoryEntry> = new Map();
   private memoriesByType: Map<CoALAMemoryType, Map<string, CoALAMemoryEntry>> = new Map();
-  private scope: IAtlasScope;
+  private scope: IMemoryScope;
   private cognitiveLoopInterval: number = 300000; // 5 minutes
   private loopTimer?: number;
   private knowledgeGraph?: KnowledgeGraphManager;
@@ -96,9 +113,11 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
   private commitDebounceTimer?: number;
   private commitDebounceDelay = 500; // 500ms debounce
   private pendingCommit = false;
+  // Working memory helpers
+  private workingKeyCounters: Map<string, number> = new Map();
 
   constructor(
-    scope: IAtlasScope,
+    scope: IMemoryScope | IAtlasScope,
     storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter,
     enableCognitiveLoop: boolean = true,
     options?: {
@@ -113,14 +132,17 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       this.commitDebounceDelay = options.commitDebounceDelay;
     }
 
-    // Use CoALA storage adapter if provided, otherwise create new one
+    // Use CoALA storage adapter if provided, otherwise create workspace-specific one
     if (storageAdapter && "commitByType" in storageAdapter) {
       this.store = storageAdapter as ICoALAMemoryStorageAdapter;
     } else if (storageAdapter) {
       // Wrap legacy adapter for backwards compatibility
-      this.store = new CoALALocalFileStorageAdapter();
+      const workspaceId = scope.workspaceId || scope.id;
+      this.store = new CoALALocalFileStorageAdapter(getWorkspaceMemoryDir(workspaceId));
     } else {
-      this.store = new CoALALocalFileStorageAdapter();
+      // Create new workspace-specific storage adapter
+      const workspaceId = scope.workspaceId || scope.id;
+      this.store = new CoALALocalFileStorageAdapter(getWorkspaceMemoryDir(workspaceId));
     }
 
     // Initialize memory type maps
@@ -180,6 +202,14 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       associations?: string[];
       confidence?: number;
       decayRate?: number;
+      source?: string;
+      sourceMetadata?: {
+        agentId?: string;
+        toolName?: string;
+        sessionId?: string;
+        userId?: string;
+        workspaceId?: string;
+      };
     },
   ): void {
     const memory: CoALAMemoryEntry = {
@@ -190,11 +220,13 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
       lastAccessed: new Date(),
       memoryType: metadata.memoryType,
       relevanceScore: metadata.relevanceScore,
-      sourceScope: this.scope.id,
+      sourceScope: this.scope.workspaceId || this.scope.id,
       associations: metadata.associations || [],
       tags: metadata.tags,
       confidence: metadata.confidence || 1.0,
       decayRate: metadata.decayRate || 0.1,
+      source: metadata.source || "system_generated", // Default to system_generated for backward compatibility
+      sourceMetadata: metadata.sourceMetadata,
     };
 
     // Store in both global and type-specific maps
@@ -214,6 +246,96 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     }
 
     this.debouncedCommitToStorage();
+  }
+
+  /**
+   * Generate a stable, incrementing key for WORKING memory entries scoped by session
+   * Format: wrk:{sessionId}:{n}
+   */
+  generateWorkingKey(sessionId: string): string {
+    const current = this.workingKeyCounters.get(sessionId) || 0;
+    const next = current + 1;
+    this.workingKeyCounters.set(sessionId, next);
+    return `wrk:${sessionId}:${next}`;
+  }
+
+  /**
+   * Store a single WORKING memory entry with automatic keying
+   */
+  rememberWorking(
+    sessionId: string,
+    content: any,
+    options?: { tags?: string[]; relevanceScore?: number; confidence?: number; decayRate?: number },
+  ): string {
+    const key = this.generateWorkingKey(sessionId);
+    this.rememberWithMetadata(
+      key,
+      { ...content, sessionId },
+      {
+        memoryType: CoALAMemoryType.WORKING,
+        tags: ["working", "session", ...(options?.tags || [])],
+        relevanceScore: options?.relevanceScore ?? 0.6,
+        confidence: options?.confidence ?? 0.9,
+        decayRate: options?.decayRate ?? 0.5,
+      },
+    );
+    return key;
+  }
+
+  /**
+   * Store multiple WORKING entries efficiently
+   */
+  rememberWorkingBatch(
+    sessionId: string,
+    entries: Array<{ content: any; tags?: string[]; relevanceScore?: number; confidence?: number }>,
+  ): string[] {
+    const keys: string[] = [];
+    for (const entry of entries) {
+      const key = this.rememberWorking(sessionId, entry.content, {
+        tags: entry.tags,
+        relevanceScore: entry.relevanceScore,
+        confidence: entry.confidence,
+      });
+      keys.push(key);
+    }
+    return keys;
+  }
+
+  /**
+   * Clear all WORKING memory entries that belong to a given session
+   */
+  clearWorkingBySession(sessionId: string): number {
+    const typeMap = this.memoriesByType.get(CoALAMemoryType.WORKING);
+    if (!typeMap) return 0;
+
+    const toDelete: string[] = [];
+    for (const [key, memory] of typeMap.entries()) {
+      // Prefer explicit sessionId on content; also support key prefix match
+      const contentSessionId = (memory?.content && typeof memory.content === "object")
+        ? (memory.content.sessionId as string | undefined)
+        : undefined;
+      const belongsToSession = contentSessionId === sessionId ||
+        key.startsWith(`wrk:${sessionId}:`);
+      if (belongsToSession) {
+        toDelete.push(key);
+      }
+    }
+
+    for (const key of toDelete) {
+      this.memories.delete(key);
+      typeMap.delete(key);
+      // WORKING memories are not vector-indexed by design; no vector cleanup needed
+    }
+
+    // Reset session counter to 0 so keys start fresh on next run
+    this.workingKeyCounters.delete(sessionId);
+
+    // Commit changes
+    if (toDelete.length > 0) {
+      this.debouncedCommitToStorage();
+    }
+
+    return toDelete.length;
   }
 
   queryMemories(query: CoALAMemoryQuery): CoALAMemoryEntry[] {
@@ -362,7 +484,7 @@ export class CoALAMemoryManager implements ITempestMemoryManager, CoALACognitive
     const memoryStats = this.getMemoryStatistics();
     return `CoALA Memory Summary:
 Working: ${memoryStats.working} memories
-Episodic: ${memoryStats.episodic} memories  
+Episodic: ${memoryStats.episodic} memories
 Semantic: ${memoryStats.semantic} memories
 Procedural: ${memoryStats.procedural} memories
 Total: ${this.memories.size} memories
@@ -692,22 +814,20 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       const kgStorageAdapter = this.createKnowledgeGraphAdapter(storageAdapter);
       this.knowledgeGraph = new KnowledgeGraphManager(kgStorageAdapter, this.scope.id);
     } catch (error) {
-      logger.warn("Failed to initialize knowledge graph for semantic memory", { error });
+      logger.warn("Failed to initialize knowledge graph for semantic memory", {
+        error: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack,
+        },
+      });
     }
   }
 
   private getKnowledgeGraphBasePath(): string {
-    // Try to extract base path from existing storage adapter
-    if (this.store instanceof CoALALocalFileStorageAdapter) {
-      // Access the storagePath if available
-      const storagePath = (this.store as any).storagePath;
-      if (storagePath) {
-        const memoryDir = storagePath.endsWith("/memory") ? storagePath.slice(0, -7) : storagePath;
-        return `${memoryDir}/knowledge-graph`;
-      }
-    }
-    // Fallback to centralized getAtlasHome
-    return join(getAtlasHome(), "memory", "knowledge-graph");
+    // Use workspace-specific knowledge graph directory
+    const workspaceId = this.scope.workspaceId || this.scope.id;
+    return getWorkspaceKnowledgeGraphDir(workspaceId);
   }
 
   // Store facts in knowledge graph (called from semantic memory operations)
@@ -1044,15 +1164,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
   }
 
   private getVectorSearchBasePath(): string {
-    if (this.store instanceof CoALALocalFileStorageAdapter) {
-      // Access the storagePath if available
-      const storagePath = (this.store as any).storagePath;
-      if (storagePath) {
-        return join(storagePath, "vectors");
-      }
-    }
-    // Fallback to centralized getAtlasHome
-    return join(getAtlasHome(), "memory", "vectors");
+    // Use workspace-specific vector directory
+    const workspaceId = this.scope.workspaceId || this.scope.id;
+    return getWorkspaceVectorDir(workspaceId);
   }
 
   /**
@@ -1490,20 +1604,22 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return context;
   }
 
-  private formatDetailedContext(memoryTypeGroups: Record<string, any[]>): string {
+  private formatDetailedContext(
+    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
+  ): string {
     let context = "\n## RELEVANT MEMORY CONTEXT\n\n";
 
-    if (memoryTypeGroups.working.length > 0) {
+    if ((memoryTypeGroups.working || []).length > 0) {
       context += "### Current Working Context:\n";
-      memoryTypeGroups.working.forEach((memory, index) => {
+      (memoryTypeGroups.working || []).forEach((memory, index) => {
         context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
       });
       context += "\n";
     }
 
-    if (memoryTypeGroups.procedural.length > 0) {
+    if ((memoryTypeGroups.procedural || []).length > 0) {
       context += "### Relevant Procedures & Workflows:\n";
-      memoryTypeGroups.procedural.forEach((memory, index) => {
+      (memoryTypeGroups.procedural || []).forEach((memory, index) => {
         context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
         if (memory.similarity) {
           context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
@@ -1512,9 +1628,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       context += "\n";
     }
 
-    if (memoryTypeGroups.semantic.length > 0) {
+    if ((memoryTypeGroups.semantic || []).length > 0) {
       context += "### Relevant Knowledge:\n";
-      memoryTypeGroups.semantic.forEach((memory, index) => {
+      (memoryTypeGroups.semantic || []).forEach((memory, index) => {
         context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
         if (memory.similarity) {
           context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
@@ -1523,9 +1639,9 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
       context += "\n";
     }
 
-    if (memoryTypeGroups.episodic.length > 0) {
+    if ((memoryTypeGroups.episodic || []).length > 0) {
       context += "### Past Experiences:\n";
-      memoryTypeGroups.episodic.forEach((memory, index) => {
+      (memoryTypeGroups.episodic || []).forEach((memory, index) => {
         context += `${index + 1}. **${memory.id}**: ${this.extractMemoryContent(memory.content)}\n`;
         if (memory.similarity) {
           context += `   (Relevance: ${(memory.similarity * 100).toFixed(1)}%)\n`;
@@ -1536,39 +1652,45 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return context;
   }
 
-  private formatSummaryContext(memoryTypeGroups: Record<string, any[]>): string {
+  private formatSummaryContext(
+    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
+  ): string {
     const contextParts: string[] = [];
 
-    if (memoryTypeGroups.working.length > 0) {
+    if ((memoryTypeGroups.working || []).length > 0) {
       contextParts.push(
         `Current context: ${
-          memoryTypeGroups.working.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+          (memoryTypeGroups.working || []).map((m) => this.extractMemoryContent(m.content, 100))
+            .join("; ")
         }`,
       );
     }
 
-    if (memoryTypeGroups.procedural.length > 0) {
+    if ((memoryTypeGroups.procedural || []).length > 0) {
       contextParts.push(
         `Relevant procedures: ${
-          memoryTypeGroups.procedural.map((m) => this.extractMemoryContent(m.content, 100)).join(
-            "; ",
-          )
+          (memoryTypeGroups.procedural || []).map((m) => this.extractMemoryContent(m.content, 100))
+            .join(
+              "; ",
+            )
         }`,
       );
     }
 
-    if (memoryTypeGroups.semantic.length > 0) {
+    if ((memoryTypeGroups.semantic || []).length > 0) {
       contextParts.push(
         `Related knowledge: ${
-          memoryTypeGroups.semantic.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+          (memoryTypeGroups.semantic || []).map((m) => this.extractMemoryContent(m.content, 100))
+            .join("; ")
         }`,
       );
     }
 
-    if (memoryTypeGroups.episodic.length > 0) {
+    if ((memoryTypeGroups.episodic || []).length > 0) {
       contextParts.push(
         `Past experiences: ${
-          memoryTypeGroups.episodic.map((m) => this.extractMemoryContent(m.content, 100)).join("; ")
+          (memoryTypeGroups.episodic || []).map((m) => this.extractMemoryContent(m.content, 100))
+            .join("; ")
         }`,
       );
     }
@@ -1576,22 +1698,24 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
     return contextParts.length > 0 ? `\n[Memory Context: ${contextParts.join(" | ")}]\n\n` : "";
   }
 
-  private formatBulletContext(memoryTypeGroups: Record<string, any[]>): string {
+  private formatBulletContext(
+    memoryTypeGroups: { working: any[]; procedural: any[]; semantic: any[]; episodic: any[] },
+  ): string {
     const bullets: string[] = [];
 
-    memoryTypeGroups.working.forEach((m) => {
+    (memoryTypeGroups.working || []).forEach((m) => {
       bullets.push(`• [Working] ${this.extractMemoryContent(m.content, 150)}`);
     });
 
-    memoryTypeGroups.procedural.forEach((m) => {
+    (memoryTypeGroups.procedural || []).forEach((m) => {
       bullets.push(`• [Procedure] ${this.extractMemoryContent(m.content, 150)}`);
     });
 
-    memoryTypeGroups.semantic.forEach((m) => {
+    (memoryTypeGroups.semantic || []).forEach((m) => {
       bullets.push(`• [Knowledge] ${this.extractMemoryContent(m.content, 150)}`);
     });
 
-    memoryTypeGroups.episodic.forEach((m) => {
+    (memoryTypeGroups.episodic || []).forEach((m) => {
       bullets.push(`• [Experience] ${this.extractMemoryContent(m.content, 150)}`);
     });
 
@@ -1768,7 +1892,7 @@ Avg Relevance: ${memoryStats.avgRelevance.toFixed(2)}`;
 
       // Graph operations - pass through
       getNeighbors: storageAdapter.getNeighbors.bind(storageAdapter),
-      findPath: storageAdapter.findPath.bind(storageAdapter),
+      findPaths: storageAdapter.findPaths.bind(storageAdapter),
     };
   }
 

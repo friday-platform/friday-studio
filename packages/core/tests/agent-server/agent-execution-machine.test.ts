@@ -13,6 +13,7 @@ import { createActor } from "xstate";
 import type { AgentContext, AgentSessionData, AtlasAgent } from "@atlas/agent-sdk";
 import { createLogger } from "@atlas/logger";
 import type { Logger } from "@atlas/logger";
+import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.env.set("DENO_TESTING", "true");
 
@@ -185,7 +186,7 @@ describe("Enhanced Agent Execution Machine", () => {
     memoryManager.rememberWithMetadata(
       "test-memory",
       { content: "test" },
-      { memoryType: "semantic", sourceScope: "agent:test-agent" },
+      { memoryType: CoALAMemoryType.SEMANTIC, sourceScope: "agent:test-agent" },
     );
 
     const logger = createLogger();
@@ -335,7 +336,7 @@ describe("Enhanced Agent Execution Manager", () => {
 
     // Add some memories to the manager
     memoryManager.memories.set("memory1", {
-      memoryType: "episodic",
+      memoryType: CoALAMemoryType.EPISODIC,
       prompt: "previous interaction",
       timestamp: new Date(),
       sourceScope: "agent:test-agent",

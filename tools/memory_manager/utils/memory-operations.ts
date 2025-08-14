@@ -5,24 +5,23 @@
  */
 
 import {
+  CoALAMemoryManager,
+  CoALAMemoryType,
   type MemoryEntry,
   type MemoryOperations,
   type MemoryStorage,
-  MemoryType,
   type VectorSearchResult,
 } from "../types/memory-types.ts";
-import { CoALAMemoryManager } from "@atlas/memory";
 
 export class AtlasMemoryOperations implements MemoryOperations {
   private storage: MemoryStorage;
-  private data: Record<MemoryType, Record<string, MemoryEntry>> = {
-    [MemoryType.WORKING]: {},
-    [MemoryType.EPISODIC]: {},
-    [MemoryType.SEMANTIC]: {},
-    [MemoryType.PROCEDURAL]: {},
-    [MemoryType.VECTOR_SEARCH]: {}, // Not used for storage, just for type compatibility
+  private data: Record<CoALAMemoryType, Record<string, MemoryEntry>> = {
+    [CoALAMemoryType.WORKING]: {},
+    [CoALAMemoryType.EPISODIC]: {},
+    [CoALAMemoryType.SEMANTIC]: {},
+    [CoALAMemoryType.PROCEDURAL]: {},
+    [CoALAMemoryType.CONTEXTUAL]: {},
   };
-  private coalaMemoryManager?: CoALAMemoryManager;
 
   constructor(storage: MemoryStorage) {
     this.storage = storage;
@@ -32,8 +31,8 @@ export class AtlasMemoryOperations implements MemoryOperations {
     this.data = await this.storage.loadAll();
   }
 
-  create(
-    type: MemoryType,
+  async create(
+    type: CoALAMemoryType,
     key: string,
     content: unknown,
     metadata?: Partial<MemoryEntry>,
@@ -56,11 +55,30 @@ export class AtlasMemoryOperations implements MemoryOperations {
       ...metadata,
     };
 
+    // Store in local data structure
     this.data[type][key] = entry;
-    return Promise.resolve();
+
+    // Also save directly to CoALA manager for vector indexing
+    try {
+      const loader = this.storage as any;
+      if (loader.getCoALAManagerPublic) {
+        const manager = await loader.getCoALAManagerPublic();
+        await manager.remember(key, content, {
+          memoryType: type,
+          relevanceScore: entry.relevanceScore,
+          sourceScope: entry.sourceScope,
+          tags: entry.tags,
+          confidence: entry.confidence,
+          decayRate: entry.decayRate,
+          associations: entry.associations,
+        });
+      }
+    } catch (error) {
+      console.warn(`Failed to index memory ${key} for vector search:`, error);
+    }
   }
 
-  read(type: MemoryType, key: string): Promise<MemoryEntry | null> {
+  read(type: CoALAMemoryType, key: string): Promise<MemoryEntry | null> {
     const entry = this.data[type][key];
     if (entry) {
       // Update access patterns
@@ -72,7 +90,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
   }
 
   update(
-    type: MemoryType,
+    type: CoALAMemoryType,
     key: string,
     updates: Partial<MemoryEntry>,
   ): Promise<void> {
@@ -87,7 +105,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
     return Promise.resolve();
   }
 
-  delete(type: MemoryType, key: string): Promise<void> {
+  delete(type: CoALAMemoryType, key: string): Promise<void> {
     if (!this.data[type][key]) {
       throw new Error(`Memory entry '${key}' not found in ${type} memory`);
     }
@@ -96,7 +114,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
     return Promise.resolve();
   }
 
-  list(type: MemoryType): Promise<MemoryEntry[]> {
+  list(type: CoALAMemoryType): Promise<MemoryEntry[]> {
     return Promise.resolve(
       Object.values(this.data[type]).sort((a, b) =>
         b.lastAccessed.getTime() - a.lastAccessed.getTime()
@@ -104,7 +122,54 @@ export class AtlasMemoryOperations implements MemoryOperations {
     );
   }
 
-  async search(type: MemoryType, query: string): Promise<MemoryEntry[]> {
+  async search(type: CoALAMemoryType, query: string): Promise<MemoryEntry[]> {
+    // For vector-indexed memory types (EPISODIC, SEMANTIC, PROCEDURAL), use vector search if available
+    const vectorIndexedTypes = new Set([
+      CoALAMemoryType.EPISODIC,
+      CoALAMemoryType.SEMANTIC,
+      CoALAMemoryType.PROCEDURAL,
+    ]);
+
+    if (vectorIndexedTypes.has(type)) {
+      try {
+        const loader = this.storage as any;
+        if (loader.getCoALAManagerPublic) {
+          const manager = await loader.getCoALAManagerPublic();
+
+          // Try vector search first for indexed memory types
+          try {
+            const vectorResults = await manager.searchMemoriesByVector(query, {
+              memoryTypes: [type],
+              limit: 50,
+              minSimilarity: 0.3,
+            });
+
+            if (vectorResults.length > 0) {
+              return vectorResults.map((memory: any) => ({
+                id: memory.id,
+                content: memory.content,
+                timestamp: memory.timestamp,
+                accessCount: memory.accessCount,
+                lastAccessed: memory.lastAccessed,
+                memoryType: memory.memoryType,
+                relevanceScore: memory.relevanceScore,
+                sourceScope: memory.sourceScope,
+                associations: memory.associations,
+                tags: memory.tags,
+                confidence: memory.confidence,
+                decayRate: memory.decayRate,
+              }));
+            }
+          } catch (error) {
+            console.warn(`Vector search failed for ${type}, continuing with fallback:`, error);
+          }
+        }
+      } catch (error) {
+        console.warn(`Vector search failed for ${type}, falling back to text search:`, error);
+      }
+    }
+
+    // Fallback to traditional text-based search for WORKING/CONTEXTUAL memory or when vector search fails
     const entries = await this.list(type);
     const lowerQuery = query.toLowerCase();
 
@@ -146,40 +211,40 @@ export class AtlasMemoryOperations implements MemoryOperations {
 
   // Additional utility methods
 
-  getAll(): Record<MemoryType, Record<string, MemoryEntry>> {
+  getAll(): Record<CoALAMemoryType, Record<string, MemoryEntry>> {
     return this.data;
   }
 
-  getAllByType(type: MemoryType): Record<string, MemoryEntry> {
+  getAllByType(type: CoALAMemoryType): Record<string, MemoryEntry> {
     return { ...this.data[type] };
   }
 
-  getStats(): Record<MemoryType, {
+  getStats(): Record<CoALAMemoryType, {
     count: number;
     totalRelevance: number;
     avgRelevance: number;
     mostRecent?: Date;
     oldestEntry?: Date;
   }> {
-    const stats: Record<MemoryType, {
+    const stats: Record<CoALAMemoryType, {
       count: number;
       totalRelevance: number;
       avgRelevance: number;
       mostRecent?: Date;
       oldestEntry?: Date;
     }> = {
-      [MemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [MemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [MemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [MemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
-      [MemoryType.VECTOR_SEARCH]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.WORKING]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.EPISODIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.SEMANTIC]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.PROCEDURAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
+      [CoALAMemoryType.CONTEXTUAL]: { count: 0, totalRelevance: 0, avgRelevance: 0 },
     };
 
     for (const [memoryType, entries] of Object.entries(this.data)) {
       const entryValues = Object.values(entries);
       const timestamps = entryValues.map((e) => e.timestamp);
 
-      stats[memoryType as MemoryType] = {
+      stats[memoryType as CoALAMemoryType] = {
         count: entryValues.length,
         totalRelevance: entryValues.reduce(
           (sum, e) => sum + e.relevanceScore,
@@ -234,62 +299,55 @@ export class AtlasMemoryOperations implements MemoryOperations {
   }
 
   async vectorSearch(query: string): Promise<VectorSearchResult[]> {
-    // Initialize CoALA memory manager if not already done
-    if (!this.coalaMemoryManager) {
-      const mockScope = {
-        id: "memory-manager-scope",
-      } as any;
-
-      this.coalaMemoryManager = new CoALAMemoryManager(
-        mockScope,
-        undefined, // Use default storage
-        false, // Disable cognitive loop
-        {
-          vectorSearchConfig: {
-            autoIndexOnWrite: true,
-            batchSize: 10,
-            similarityThreshold: 0.3,
-          },
-        },
-      );
-    }
-
     try {
-      // Perform vector search across all indexed memory types
-      const results = await this.coalaMemoryManager.getRelevantMemoriesForPrompt(
-        query,
-        {
-          includeWorking: false, // WORKING memory doesn't use vector search
-          includeEpisodic: true,
-          includeSemantic: true,
-          includeProcedural: true,
-          limit: 20,
-          minSimilarity: 0.2,
-        },
-      );
+      // Use the storage's CoALA manager directly for vector search
+      const loader = this.storage as any;
+      if (loader.getCoALAManagerPublic) {
+        const manager = await loader.getCoALAManagerPublic();
 
-      // Convert CoALA results to VectorSearchResult format
-      const vectorResults: VectorSearchResult[] = results.memories.map((memory) => ({
-        id: memory.id,
-        content: memory.content,
-        timestamp: memory.timestamp,
-        accessCount: memory.accessCount,
-        lastAccessed: memory.lastAccessed,
-        memoryType: memory.memoryType as unknown as MemoryType, // Convert CoALA type to MemoryType
-        relevanceScore: memory.relevanceScore,
-        sourceScope: memory.sourceScope,
-        associations: memory.associations,
-        tags: memory.tags,
-        confidence: memory.confidence,
-        decayRate: memory.decayRate,
-        similarity: memory.similarity || 0,
-        matchedContent: typeof memory.content === "string"
-          ? memory.content.substring(0, 200) + "..."
-          : JSON.stringify(memory.content).substring(0, 200) + "...",
-      }));
+        // Perform vector search across all indexed memory types using the updated Atlas interface
+        const results = await manager.getRelevantMemoriesForPrompt(
+          query,
+          {
+            includeWorking: false, // WORKING memory doesn't use vector search
+            includeEpisodic: true,
+            includeSemantic: true,
+            includeProcedural: true,
+            limit: 20,
+            minSimilarity: 0.2,
+            maxAge: undefined, // No age restriction
+            tags: undefined, // No tag filtering
+          },
+        );
 
-      // Sort by similarity score (highest first)
-      return vectorResults.sort((a, b) => b.similarity - a.similarity);
+        // Convert CoALA results to VectorSearchResult format
+        // Note: Don't filter by source here - CoALA returns all relevant memories whether from vector or fallback search
+        const vectorResults: VectorSearchResult[] = results.memories
+          .map((memory: any) => ({
+            id: memory.id,
+            content: memory.content,
+            timestamp: memory.timestamp,
+            accessCount: memory.accessCount,
+            lastAccessed: memory.lastAccessed,
+            memoryType: memory.memoryType,
+            relevanceScore: memory.relevanceScore,
+            sourceScope: memory.sourceScope,
+            associations: memory.associations,
+            tags: memory.tags,
+            confidence: memory.confidence,
+            decayRate: memory.decayRate,
+            similarity: memory.similarity || 0,
+            matchedContent: typeof memory.content === "string"
+              ? memory.content.substring(0, 200) + (memory.content.length > 200 ? "..." : "")
+              : JSON.stringify(memory.content).substring(0, 200) + "...",
+          }));
+
+        // Sort by similarity score (highest first)
+        return vectorResults.sort((a, b) => b.similarity - a.similarity);
+      }
+
+      console.warn("Vector search not available - CoALA manager not found");
+      return [];
     } catch (error) {
       console.error("Vector search failed:", error);
       return [];
@@ -305,7 +363,7 @@ export class AtlasMemoryOperations implements MemoryOperations {
       const importedData = JSON.parse(jsonData);
 
       // Validate structure
-      for (const memoryType of Object.values(MemoryType)) {
+      for (const memoryType of Object.values(CoALAMemoryType)) {
         if (!importedData[memoryType]) {
           importedData[memoryType] = {};
         }
@@ -325,6 +383,101 @@ export class AtlasMemoryOperations implements MemoryOperations {
       throw new Error(
         `Failed to import JSON data: ${error instanceof Error ? error.message : String(error)}`,
       );
+    }
+  }
+
+  /**
+   * Get vector search statistics from the CoALA manager
+   */
+  async getVectorSearchStats(): Promise<unknown> {
+    try {
+      const loader = this.storage as any;
+      if (loader.getCoALAManagerPublic) {
+        const manager = await loader.getCoALAManagerPublic();
+        return await manager.getVectorSearchStats();
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to get vector search stats:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Rebuild the vector search index for all indexed memory types
+   */
+  async rebuildVectorIndex(): Promise<void> {
+    try {
+      const loader = this.storage as any;
+      if (loader.getCoALAManagerPublic) {
+        const manager = await loader.getCoALAManagerPublic();
+        await manager.rebuildVectorIndex();
+        console.log("Vector index rebuild completed successfully");
+      } else {
+        console.warn("CoALA manager not available for vector index rebuild");
+      }
+    } catch (error) {
+      console.error("Failed to rebuild vector index:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Enhanced search that combines traditional and vector search for optimal results
+   */
+  async enhancedSearch(query: string, options?: {
+    memoryTypes?: CoALAMemoryType[];
+    limit?: number;
+    minSimilarity?: number;
+  }): Promise<Array<MemoryEntry & { similarity?: number; source: string }>> {
+    const { memoryTypes, limit = 20, minSimilarity = 0.3 } = options || {};
+
+    try {
+      const loader = this.storage as any;
+      if (loader.getCoALAManagerPublic) {
+        const manager = await loader.getCoALAManagerPublic();
+
+        // Use the CoALA manager's enhanced search for best results
+        const results = await manager.getRelevantMemoriesForPrompt(query, {
+          includeWorking: !memoryTypes || memoryTypes.includes(CoALAMemoryType.WORKING),
+          includeEpisodic: !memoryTypes || memoryTypes.includes(CoALAMemoryType.EPISODIC),
+          includeSemantic: !memoryTypes || memoryTypes.includes(CoALAMemoryType.SEMANTIC),
+          includeProcedural: !memoryTypes || memoryTypes.includes(CoALAMemoryType.PROCEDURAL),
+          limit,
+          minSimilarity,
+        });
+
+        return results.memories.map((memory: any) => ({
+          id: memory.id,
+          content: memory.content,
+          timestamp: memory.timestamp,
+          accessCount: memory.accessCount,
+          lastAccessed: memory.lastAccessed,
+          memoryType: memory.memoryType,
+          relevanceScore: memory.relevanceScore,
+          sourceScope: memory.sourceScope,
+          associations: memory.associations,
+          tags: memory.tags,
+          confidence: memory.confidence,
+          decayRate: memory.decayRate,
+          similarity: memory.similarity,
+          source: memory.source,
+        }));
+      }
+
+      // Fallback to traditional search across all specified types
+      const results: Array<MemoryEntry & { similarity?: number; source: string }> = [];
+      const typesToSearch = memoryTypes || Object.values(CoALAMemoryType);
+
+      for (const type of typesToSearch) {
+        const typeResults = await this.search(type, query);
+        results.push(...typeResults.map((entry) => ({ ...entry, source: "traditional" })));
+      }
+
+      return results.slice(0, limit);
+    } catch (error) {
+      console.error("Enhanced search failed:", error);
+      return [];
     }
   }
 }

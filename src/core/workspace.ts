@@ -25,7 +25,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
   // Note: supervisor is inherited from AtlasScope and created by runtime, not by workspace
 
   constructor(owner: IWorkspaceMember) {
-    super();
+    super({ id: owner.id });
     this.members = owner;
   }
 
@@ -142,10 +142,7 @@ export class Workspace extends AtlasScope implements IWorkspace {
   static fromConfig(config: WorkspaceConfig, owner: IWorkspaceMember): Workspace {
     const workspace = new Workspace(owner);
 
-    // Set ID from owner (which comes from registry entry)
-    if (owner.id) {
-      (workspace as any).id = owner.id;
-    }
+    // ID is now set automatically in constructor via AtlasScope options
 
     // Add signals - handle both array and object formats
     if (config.signals) {

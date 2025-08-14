@@ -4,11 +4,51 @@ import { Logger } from "@atlas/logger";
 import { StreamEvent } from "../types/streaming.ts";
 
 /**
+ * MCP Content Item type for testing stream conversion
+ */
+export type MCPContentItem = {
+  type: "text";
+  text: string;
+} | {
+  type: "image";
+  data: string;
+  mimeType: string;
+};
+
+/**
  * Stream emitter that buffers events for later retrieval.
  * Used for testing and scenarios where events need to be inspected.
  */
 export interface CollectableStreamEmitter extends StreamEmitter {
   getCollectedEvents(): StreamEvent[];
+}
+
+/**
+ * Stream emitter implementation that collects events in memory.
+ * Used for testing and scenarios where events need to be inspected.
+ */
+export class CollectingStreamEmitter implements CollectableStreamEmitter {
+  private events: StreamEvent[] = [];
+  private ended = false;
+
+  emit(event: StreamEvent): void {
+    if (this.ended) {
+      return; // Stop collecting after end() is called to prevent memory leaks
+    }
+    this.events.push(event);
+  }
+
+  end(): void {
+    this.ended = true;
+  }
+
+  error(error: Error): void {
+    this.emit({ type: "error", error });
+  }
+
+  getCollectedEvents(): StreamEvent[] {
+    return [...this.events];
+  }
 }
 
 /**

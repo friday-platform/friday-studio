@@ -17,7 +17,6 @@ import type {
 import type { YAMLAgentDefinition } from "./yaml/schema.ts";
 import { extractToolAllowlist, extractToolDenylist } from "./yaml/parser.ts";
 import { registry, validateProviderConfig } from "../llm-provider-registry/index.ts";
-import { createLogger } from "@atlas/logger";
 
 /**
  * Convert parsed YAML definition to AtlasAgent.
@@ -26,7 +25,6 @@ import { createLogger } from "@atlas/logger";
 export function convertYAMLToAgent(yaml: YAMLAgentDefinition): AtlasAgent {
   // Environment validation is handled during YAML parsing in parseYAMLAgentContent
 
-  const logger = createLogger({ component: "YAMLAgent" });
   const llmConfig = yaml.llm;
   const streaming = llmConfig.streaming?.enabled ?? true;
   const maxRetries = 3; // Enable retries for API resilience (e.g., 529 errors)
@@ -35,9 +33,7 @@ export function convertYAMLToAgent(yaml: YAMLAgentDefinition): AtlasAgent {
   const model = registry.languageModel(`${llmConfig.provider}:${llmConfig.model}`);
   const handler: AgentHandler = async (prompt: string, context: AgentContext): Promise<unknown> => {
     try {
-      const allowlists = extractToolAllowlist(yaml);
-      const denylists = extractToolDenylist(yaml);
-      const allTools = await collectAndFilterTools(context, allowlists, denylists, logger);
+      const allTools = filterTools(context, extractToolAllowlist(yaml), extractToolDenylist(yaml));
       const commonOptions = {
         model,
         system: llmConfig.prompt,
@@ -80,35 +76,18 @@ export function convertYAMLToAgent(yaml: YAMLAgentDefinition): AtlasAgent {
   });
 }
 
-/** Collect MCP tools and apply YAML-defined allow/deny filters. */
-async function collectAndFilterTools(
+/**
+ * Collect MCP tools and apply YAML-defined allow/deny filters.
+ * @FIXME: MCP_TOOL_FILTERING tool filtering should be encapsulated in @atlas/mcp.
+ */
+function filterTools(
   context: AgentContext,
-  allowlists: Record<string, string[]>,
-  denylists: Record<string, string[]>,
-  logger: ReturnType<typeof createLogger>,
-): Promise<Record<string, AtlasTool>> {
-  const allTools: Record<string, AtlasTool> = {};
-
-  try {
-    const tools = await context.mcp.getTools();
-    const filteredTools = filterAllTools(tools, allowlists, denylists);
-    Object.assign(allTools, filteredTools);
-  } catch (error) {
-    logger.error("Failed to get tools from MCP", { error });
-  }
-
-  return allTools;
-}
-
-/** Apply server-specific tool allow/deny lists. */
-function filterAllTools(
-  tools: Record<string, AtlasTool>,
   allowlists: Record<string, string[]>,
   denylists: Record<string, string[]>,
 ): Record<string, AtlasTool> {
   const filtered: Record<string, AtlasTool> = {};
 
-  for (const [toolName, tool] of Object.entries(tools)) {
+  for (const [toolName, tool] of Object.entries(context.tools)) {
     let shouldInclude = true;
     for (const allowlist of Object.values(allowlists)) {
       if (allowlist.length > 0 && !allowlist.includes(toolName)) {

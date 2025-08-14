@@ -3,13 +3,14 @@ Deno.env.set("DENO_TESTING", "true");
 
 import { assertEquals, assertExists } from "@std/assert";
 import { InMemoryStorageAdapter } from "../../src/memory/in-memory.ts";
+import { CoALAMemoryType } from "@atlas/memory";
 
 Deno.test("InMemoryStorageAdapter - should store and retrieve data", async () => {
   const adapter = new InMemoryStorageAdapter();
 
   const testData = {
-    key1: { value: "test1", memoryType: "working" },
-    key2: { value: "test2", memoryType: "semantic" },
+    key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
+    key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
   };
 
   await adapter.commit(testData);
@@ -119,8 +120,8 @@ Deno.test("InMemoryStorageAdapter - should handle getAllData helper method", asy
   const adapter = new InMemoryStorageAdapter();
 
   const testData = {
-    key1: { value: "test1", memoryType: "working" },
-    key2: { value: "test2", memoryType: "semantic" },
+    key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
+    key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
   };
 
   await adapter.commit(testData);

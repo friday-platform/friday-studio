@@ -28,10 +28,79 @@ import { generateText, stepCountIs, ToolCallUnion, ToolResultUnion } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { z } from "zod/v4";
 import type { IWorkspaceArtifact, IWorkspaceSignal } from "../../types/core.ts";
+
+// Interface for tool call objects
+interface ToolCallObject {
+  toolName: string;
+  args: unknown;
+}
+
+// Interface for tool result objects
+interface ToolResultObject {
+  toolName: string;
+  result: unknown;
+}
+
+// Interface for agent plan from AI tool calls
+interface AgentPlanInput {
+  agentId: string;
+  task: string;
+  inputSource: "signal" | "previous" | "combined";
+  dependencies?: string[];
+  phase: string;
+  executionStrategy: "sequential" | "parallel";
+}
+
+// Interface for workspace supervisor methods used by session supervisor
+export interface IWorkspaceSupervisorForSession {
+  streamAgentResult(
+    sessionId: string,
+    agentId: string,
+    input: unknown,
+    output: unknown,
+    duration: number,
+    success: boolean,
+    metadata?: { tokensUsed?: number; error?: string },
+  ): Promise<void>;
+  streamToolCall(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    args: unknown,
+  ): Promise<void>;
+  streamToolResult(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    result: unknown,
+  ): Promise<void>;
+  streamEpisodicEvent(
+    eventType: string,
+    description: string,
+    entities: string[],
+    outcome: string,
+    confidence: number,
+    metadata?: Record<string, unknown>,
+  ): Promise<void>;
+  memoryCoordinator?: {
+    consolidateWorkingMemories(
+      sessionId: string,
+      options: { minAccessCount: number; minRelevance: number; markImportant: boolean },
+    ): Promise<void>;
+    clearWorkingMemoryBySession(sessionId: string): Promise<number>;
+  };
+}
 import { type Logger, logger } from "@atlas/logger";
 import { getSupervisionConfig, SupervisionLevel } from "../supervision-levels.ts";
 import { AwaitingSupervisorDecision, StreamEmitter, StreamEvent } from "@atlas/agent-sdk";
 import { HTTPStreamEmitter, NoOpStreamEmitter } from "@atlas/core";
+import {
+  createConversationContext,
+  type MECMFMemoryManager,
+  MemorySource,
+  MemoryType,
+  setupMECMF,
+} from "@atlas/memory";
 
 export interface SessionContext {
   sessionId: string;
@@ -103,6 +172,8 @@ export class SessionSupervisorActor implements BaseActor {
   private llmProvider = createAnthropic({
     apiKey: Deno.env.get("ANTHROPIC_API_KEY"),
   });
+  private workspaceSupervisor?: IWorkspaceSupervisorForSession; // WorkspaceSupervisorActor - set by runtime for memory streaming
+  private mecmfManager?: MECMFMemoryManager; // MECMF memory manager for prompt enhancement
 
   // Stream management
   private baseStreamEmitter?: StreamEmitter;
@@ -150,6 +221,13 @@ export class SessionSupervisorActor implements BaseActor {
     });
   }
 
+  setWorkspaceSupervisor(supervisor: IWorkspaceSupervisorForSession): void {
+    this.workspaceSupervisor = supervisor;
+    this.logger.info("Workspace supervisor set for memory streaming", {
+      sessionId: this.sessionId,
+    });
+  }
+
   initialize(params?: ActorInitParams): void {
     if (params && "actorId" in params) {
       this.id = params.actorId;
@@ -180,6 +258,16 @@ export class SessionSupervisorActor implements BaseActor {
       streamMetrics: this.streamMetrics,
     });
 
+    // Clean up MECMF working memory for this session
+    if (this.mecmfManager) {
+      this.cleanupWorkingMemory().catch((error) => {
+        this.logger.warn("Failed to cleanup working memory on shutdown", {
+          error: error instanceof Error ? error.message : String(error),
+          sessionId: this.sessionId,
+        });
+      });
+    }
+
     // End streaming
     if (this.baseStreamEmitter) {
       this.streamSessionEvent("session.completed", {
@@ -194,10 +282,78 @@ export class SessionSupervisorActor implements BaseActor {
     this.status = "completed";
   }
 
-  initializeSession(context: SessionContext): void {
+  /**
+   * Clean up working memory for this session
+   */
+  private async cleanupWorkingMemory(): Promise<void> {
+    if (!this.mecmfManager) {
+      return;
+    }
+
+    try {
+      this.logger.info("Cleaning up session working memory", {
+        sessionId: this.sessionId,
+        workspaceId: this.workspaceId,
+      });
+
+      // Consolidate important working memories to long-term storage
+      await this.mecmfManager.consolidateWorkingMemory();
+
+      // Note: The actual clearing of working memory would need to be implemented
+      // in the MECMF manager. For now, consolidation promotes important memories.
+
+      this.logger.info("Working memory cleanup completed", {
+        sessionId: this.sessionId,
+      });
+    } catch (error) {
+      this.logger.error("Failed to cleanup working memory", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't rethrow - memory cleanup failure shouldn't break shutdown
+    }
+  }
+
+  async initializeSession(context: SessionContext): Promise<void> {
     this.sessionContext = context;
     // Clear cached plan when context changes
     this.cachedPlan = undefined;
+
+    // Initialize MECMF manager for prompt enhancement
+    if (context.workspaceId) {
+      try {
+        const scope = {
+          id: context.workspaceId,
+          type: "workspace" as const,
+          name: `Workspace ${context.workspaceId}`,
+        };
+        this.mecmfManager = await setupMECMF(scope, {
+          workspaceId: context.workspaceId,
+          enableVectorSearch: true,
+          tokenBudgets: {
+            defaultBudget: 8000,
+            modelLimits: {
+              "claude-3.5-sonnet": 200000,
+              "claude-3-sonnet": 200000,
+              "claude-3-haiku": 200000,
+              "gpt-4": 128000,
+            },
+          },
+        });
+        this.logger.info("MECMF memory manager initialized for prompt enhancement", {
+          workspaceId: context.workspaceId,
+          sessionId: context.sessionId,
+        });
+      } catch (error) {
+        this.logger.warn(
+          "Failed to initialize MECMF manager, continuing without prompt enhancement",
+          {
+            error: error instanceof Error ? error.message : String(error),
+            workspaceId: context.workspaceId,
+          },
+        );
+      }
+    }
 
     // Initialize streaming if streamId provided
     if (context.streamId) {
@@ -372,7 +528,10 @@ export class SessionSupervisorActor implements BaseActor {
     const summary = this.generateSessionSummary(allResults, plan, duration);
 
     // Handle memory operations based on job configuration
-    this.handleMemoryOperations(summary);
+    await this.handleMemoryOperations(summary);
+
+    // Perform session lifecycle memory management
+    await this.performSessionMemoryLifecycle(summary);
 
     this.logger.info("Session execution completed", {
       sessionId: this.sessionId,
@@ -423,7 +582,7 @@ export class SessionSupervisorActor implements BaseActor {
       const lastOutput = previousResults[previousResults.length - 1]?.output;
       // If the output is an LLM response object, extract the actual response text
       if (typeof lastOutput === "object" && lastOutput !== null && "response" in lastOutput) {
-        input = (lastOutput as any).response;
+        input = (lastOutput as { response: unknown }).response;
       } else {
         input = lastOutput;
       }
@@ -483,18 +642,123 @@ export class SessionSupervisorActor implements BaseActor {
       if (agentTask.task && agentTask.task !== "Execute job task") {
         // Use explicit task if provided
         prompt = agentTask.task;
+      } else if (agentConfig?.config?.prompt && agentConfig?.type !== "system") {
+        // For non-system agents, use the agent's configured prompt from workspace and append the input
+        // System agents (like conversation) manage their own system prompts internally
+        let inputText = "";
+        let inputLabel = "";
+
+        // Determine the input text and appropriate label based on source
+        if (agentTask.inputSource === "previous" && previousResults.length > 0) {
+          // For sequential execution, clearly label the previous agent's output
+          inputLabel = "## Previous Agent Output to Process:\n";
+          if (typeof input === "string") {
+            inputText = input;
+          } else if (input !== undefined && input !== null) {
+            // Pretty print JSON for better readability
+            inputText = JSON.stringify(input, null, 2);
+          }
+        } else {
+          // For initial agents or signal-based input
+          inputLabel = "## Input Data:\n";
+          if (typeof input === "string") {
+            inputText = input;
+          } else if (typeof input === "object" && input !== null && "message" in input) {
+            inputText = (input as { message: string }).message;
+          } else if (typeof input === "object" && input !== null && "text" in input) {
+            inputText = (input as { text: string }).text;
+          } else if (input !== undefined && input !== null) {
+            inputText = JSON.stringify(input, null, 2);
+          }
+        }
+
+        // Build facts section with current context
+        const facts = this.buildFactsSection();
+
+        // Combine all sections: Facts + Input + Prompt
+        // Structure: Facts (always present) -> Input (if available) -> Agent Instructions
+        const promptSections = [];
+
+        // Always include facts section first
+        promptSections.push(facts);
+
+        // Include input if available
+        if (inputText) {
+          promptSections.push(inputLabel + inputText);
+        }
+
+        // Add the agent's configured prompt instructions
+        promptSections.push(agentConfig.config.prompt);
+
+        // Join all sections with clear separation
+        prompt = promptSections.join("\n\n");
+
+        this.logger.debug("Using agent configured prompt with facts and input", {
+          agentId: agentTask.agentId,
+          promptLength: agentConfig.config.prompt.length,
+          inputLength: inputText.length,
+          factsLength: facts.length,
+          combinedLength: prompt.length,
+          inputSource: agentTask.inputSource,
+        });
       } else if (typeof input === "string") {
         // Direct string input (e.g., from previous agent)
         prompt = input;
       } else if (typeof input === "object" && input !== null && "message" in input) {
         // Extract message from signal payload
-        prompt = (input as any).message;
+        prompt = (input as { message: string }).message;
       } else if (typeof input === "object" && input !== null && "text" in input) {
         // Extract text from signal payload (common field name)
-        prompt = (input as any).text;
+        prompt = (input as { text: string }).text;
       } else {
         // Fallback to JSON representation
         prompt = JSON.stringify(input);
+      }
+
+      // Enhance prompt with MECMF memory context
+      if (this.mecmfManager) {
+        try {
+          const _conversationContext = createConversationContext(
+            this.sessionId,
+            this.workspaceId || "global",
+            {
+              currentTask: agentTask.task,
+              activeAgents: [agentTask.agentId],
+            },
+          );
+
+          const enhancedPrompt = await this.mecmfManager.enhancePromptWithMemory(
+            String(prompt), // Ensure prompt is a string
+            {
+              tokenBudget: 4000, // Reserve tokens for memory context
+              contextFormat: "summary",
+              includeTypes: [
+                MemoryType.WORKING,
+                MemoryType.EPISODIC,
+                MemoryType.SEMANTIC,
+                MemoryType.PROCEDURAL,
+              ],
+              maxMemories: 10,
+            },
+          );
+
+          // Use enhanced prompt if available
+          if (enhancedPrompt && enhancedPrompt.enhancedPrompt) {
+            this.logger.debug("Prompt enhanced with MECMF memory context", {
+              originalLength: prompt.length,
+              enhancedLength: enhancedPrompt.enhancedPrompt.length,
+              memoriesIncluded: enhancedPrompt.memoriesIncluded,
+              tokenUsage: enhancedPrompt.tokenUsage,
+              agentId: agentTask.agentId,
+            });
+            prompt = enhancedPrompt.enhancedPrompt;
+          }
+        } catch (error) {
+          this.logger.warn("Failed to enhance prompt with MECMF, using original", {
+            error: error instanceof Error ? error.message : String(error),
+            agentId: agentTask.agentId,
+          });
+        }
       }
 
       const orchestratorResult = await this.agentOrchestrator.executeAgent(
@@ -549,6 +813,28 @@ export class SessionSupervisorActor implements BaseActor {
         agentId: agentTask.agentId,
         error: error instanceof Error ? error.message : String(error),
       });
+
+      // Stream failed agent result to memory for learning
+      const duration = Date.now() - startTime;
+      await this.streamAgentResultToMemory(
+        {
+          agentId: agentTask.agentId,
+          task: String(prompt).length > 100
+            ? String(prompt).substring(0, 97) + "..."
+            : String(prompt), // Truncate long prompts
+          input,
+          output: null,
+          duration,
+          timestamp: new Date().toISOString(),
+          reasoning: agentTask.reasoning,
+          toolCalls: undefined,
+          toolResults: undefined,
+        },
+        false, // success = false
+        0, // no tokens used
+        error instanceof Error ? error.message : String(error),
+      );
+
       throw error;
     }
 
@@ -556,7 +842,7 @@ export class SessionSupervisorActor implements BaseActor {
 
     const agentResult: AgentResult = {
       agentId: agentTask.agentId,
-      task: agentTask.task,
+      task: String(prompt), // Store the actual prompt sent to agent
       input,
       output: result.output,
       duration,
@@ -572,6 +858,137 @@ export class SessionSupervisorActor implements BaseActor {
       success: true,
       hasToolCalls: !!agentResult.toolCalls?.length,
     });
+
+    // Capture working memory from agent interactions using MECMF
+    if (this.mecmfManager) {
+      try {
+        const conversationContext = createConversationContext(
+          this.sessionId,
+          this.workspaceId || "global",
+          {
+            currentTask: agentTask.task,
+            activeAgents: [agentTask.agentId],
+          },
+        );
+
+        // Store agent prompt as working memory
+        const promptMemoryId = await this.mecmfManager.classifyAndStore(
+          `Agent ${agentTask.agentId} prompt: ${String(prompt)}`,
+          conversationContext,
+          MemorySource.SYSTEM_GENERATED, // Prompts are system-generated
+          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
+        );
+
+        // Store agent response as working memory
+        const responseMemoryId = await this.mecmfManager.classifyAndStore(
+          `Agent ${agentTask.agentId} response: ${JSON.stringify(result.output)}`,
+          conversationContext,
+          MemorySource.AGENT_OUTPUT, // Agent outputs
+          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
+        );
+
+        // Store episodic memory for the agent execution outcome
+        const episodicContent =
+          `Agent ${agentTask.agentId} completed task "${agentTask.task}" in ${duration}ms. ` +
+          `Input type: ${typeof input}. Output type: ${typeof result.output}. ` +
+          `${
+            result.toolCalls?.length ? `Used ${result.toolCalls.length} tools.` : "No tools used."
+          }`;
+
+        const episodicMemoryId = await this.mecmfManager.classifyAndStore(
+          episodicContent,
+          conversationContext,
+          MemorySource.SYSTEM_GENERATED, // Episodic summaries are system-generated
+          { agentId: agentTask.agentId, sessionId: this.sessionId, workspaceId: this.workspaceId },
+        );
+
+        // Extract and store semantic facts from agent output
+        if (result.output) {
+          const outputText = typeof result.output === "string"
+            ? result.output
+            : JSON.stringify(result.output);
+
+          // Extract entities using the memory classifier
+          const classifier = this.mecmfManager as {
+            memoryClassifier?: {
+              extractKeyEntities(
+                text: string,
+              ): Array<{ type: string; name: string; confidence: number }>;
+            };
+          }; // Access internal classifier
+          if (classifier.memoryClassifier) {
+            const entities = classifier.memoryClassifier.extractKeyEntities(outputText);
+
+            // Store each extracted entity as semantic memory
+            for (const entity of entities) {
+              const semanticContent =
+                `Entity ${entity.type}: ${entity.name} (confidence: ${entity.confidence})`;
+              await this.mecmfManager.classifyAndStore(
+                semanticContent,
+                conversationContext,
+                MemorySource.AGENT_OUTPUT, // Entities extracted from agent output - WILL BE PII FILTERED
+                {
+                  agentId: agentTask.agentId,
+                  sessionId: this.sessionId,
+                  workspaceId: this.workspaceId,
+                },
+              );
+            }
+
+            if (entities.length > 0) {
+              this.logger.debug("Extracted entities from agent output", {
+                agentId: agentTask.agentId,
+                entityCount: entities.length,
+                entityTypes: [...new Set(entities.map((e) => e.type))],
+              });
+            }
+          }
+        }
+
+        this.logger.debug("Agent interaction captured in MECMF memory", {
+          agentId: agentTask.agentId,
+          promptMemoryId,
+          responseMemoryId,
+          episodicMemoryId,
+          sessionId: this.sessionId,
+        });
+      } catch (error) {
+        this.logger.warn("Failed to capture agent interaction in MECMF memory", {
+          error: error instanceof Error ? error.message : String(error),
+          agentId: agentTask.agentId,
+        });
+      }
+    }
+
+    // Stream tool calls and results to working memory if present
+    if (result.toolCalls && Array.isArray(result.toolCalls)) {
+      for (const toolCall of result.toolCalls) {
+        if (toolCall && typeof toolCall === "object" && "toolName" in toolCall) {
+          const typedToolCall = toolCall as ToolCallObject;
+          await this.streamToolCallToMemory(
+            agentTask.agentId,
+            typedToolCall.toolName,
+            typedToolCall.args,
+          );
+        }
+      }
+    }
+
+    if (result.toolResults && Array.isArray(result.toolResults)) {
+      for (const toolResult of result.toolResults) {
+        if (toolResult && typeof toolResult === "object" && "toolName" in toolResult) {
+          const typedToolResult = toolResult as ToolResultObject;
+          await this.streamToolResultToMemory(
+            agentTask.agentId,
+            typedToolResult.toolName,
+            typedToolResult.result,
+          );
+        }
+      }
+    }
+
+    // Stream agent result to workspace memory system for automatic processing
+    await this.streamAgentResultToMemory(agentResult, true, result.tokensUsed);
 
     return agentResult;
   }
@@ -618,7 +1035,7 @@ export class SessionSupervisorActor implements BaseActor {
     };
   }
 
-  private handleMemoryOperations(summary: SessionSummary): void {
+  private async handleMemoryOperations(summary: SessionSummary): Promise<void> {
     const jobSpec = this.sessionContext?.jobSpec;
     const memoryConfig = jobSpec?.config?.memory;
     const memoryEnabled = memoryConfig?.enabled !== false;
@@ -628,26 +1045,40 @@ export class SessionSupervisorActor implements BaseActor {
       return;
     }
 
+    // Run memory operations in parallel for better performance
+    const memoryPromises: Promise<void>[] = [];
+
     if (memoryConfig?.fact_extraction !== false) {
-      try {
-        this.extractAndStoreSemanticFacts(summary);
-        this.logger.info("Semantic facts extracted and stored");
-      } catch (error) {
-        this.logger.warn("Failed to extract semantic facts", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      memoryPromises.push(
+        this.extractAndStoreSemanticFacts(summary).then(() => {
+          this.logger.info("Semantic facts extracted and stored");
+        }).catch((error) => {
+          this.logger.warn("Failed to extract semantic facts", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
+      );
     }
 
     if (memoryConfig?.summary !== false) {
-      try {
-        this.generateWorkingMemorySummary(summary);
-        this.logger.info("Working memory summary generated");
-      } catch (error) {
-        this.logger.warn("Failed to generate working memory summary", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      memoryPromises.push(
+        this.generateWorkingMemorySummary(summary).then(() => {
+          this.logger.info("Working memory summary generated");
+        }).catch((error) => {
+          this.logger.warn("Failed to generate working memory summary", {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }),
+      );
+    }
+
+    // Wait for all memory operations to complete
+    if (memoryPromises.length > 0) {
+      await Promise.allSettled(memoryPromises);
+      this.logger.info("Memory operations completed", {
+        sessionId: this.sessionId,
+        operationsRun: memoryPromises.length,
+      });
     }
   }
 
@@ -747,7 +1178,7 @@ Think step by step about the best approach to handle this signal, then use the t
       });
 
       // Group tool calls by phase
-      const phaseMap = new Map<string, Array<any>>();
+      const phaseMap = new Map<string, Array<AgentPlanInput>>();
 
       for (const toolCall of toolCalls) {
         if (toolCall.toolName === "plan_agent_execution") {
@@ -936,12 +1367,434 @@ Think step by step about the best approach to handle this signal, then use the t
     };
   }
 
-  private extractAndStoreSemanticFacts(_summary: SessionSummary): void {
-    this.logger.debug("Extracting semantic facts", { sessionId: this.sessionId });
+  private async extractAndStoreSemanticFacts(summary: SessionSummary): Promise<void> {
+    // TODO: Replace with new SDK-based fact extraction
+    // The FactExtractor system agent was removed in favor of SDK agents
+    // This functionality needs to be reimplemented using the new conversation agent tools
+    this.logger.info("Semantic fact extraction temporarily disabled", {
+      sessionId: this.sessionId,
+      reason: "FactExtractor migrated to SDK - reimplementation pending",
+    });
   }
 
-  private generateWorkingMemorySummary(_summary: SessionSummary): void {
-    this.logger.debug("Generating working memory summary", { sessionId: this.sessionId });
+  private async generateWorkingMemorySummary(summary: SessionSummary): Promise<void> {
+    try {
+      this.logger.info("Generating working memory summary", {
+        sessionId: this.sessionId,
+        totalAgents: summary.totalAgents,
+      });
+
+      // Import memory manager dynamically
+      const { CoALAMemoryManager, CoALAMemoryType } = await import("@atlas/memory");
+      const { getWorkspaceMemoryDir } = await import("../../utils/paths.ts");
+      const { CoALALocalFileStorageAdapter } = await import("@atlas/storage");
+
+      // Initialize memory manager for the workspace
+      const workspaceId = this.workspaceId || "default";
+      const memoryPath = getWorkspaceMemoryDir(workspaceId);
+      const memoryAdapter = new CoALALocalFileStorageAdapter(memoryPath);
+
+      const scope = {
+        id: this.sessionId,
+        workspaceId: workspaceId,
+        type: "session" as const,
+      };
+
+      const memoryManager = new CoALAMemoryManager(
+        scope,
+        memoryAdapter,
+        false, // Don't start cognitive loop for this temporary instance
+        { commitDebounceDelay: 0 }, // Immediate commits
+      );
+
+      // Create working memory summary from session results
+      const summaryContent = this.buildWorkingMemorySummary(summary);
+
+      await memoryManager.rememberWithMetadata(
+        `session-summary-${this.sessionId}`,
+        summaryContent,
+        {
+          memoryType: CoALAMemoryType.WORKING,
+          tags: ["session-summary", "completion", summary.status],
+          relevanceScore: summary.status === "completed" ? 0.9 : 0.6,
+          confidence: 0.95,
+          associations: summary.results.map((r) => `agent-${r.agentId}`),
+          source: MemorySource.SYSTEM_GENERATED,
+          sourceMetadata: { sessionId: this.sessionId, workspaceId: this.workspaceId },
+        },
+      );
+
+      // Store individual agent results as working memories
+      for (const result of summary.results) {
+        await memoryManager.rememberWithMetadata(
+          `agent-result-${result.agentId}-${this.sessionId}`,
+          {
+            agentId: result.agentId,
+            task: result.task,
+            output: result.output,
+            duration: result.duration,
+            reasoning: result.reasoning,
+            toolCalls: result.toolCalls?.length || 0,
+            success: true, // Assume success if in results
+          },
+          {
+            memoryType: CoALAMemoryType.WORKING,
+            tags: ["agent-result", result.agentId, "execution"],
+            relevanceScore: 0.8,
+            confidence: 0.9,
+            associations: [`session-summary-${this.sessionId}`],
+            source: MemorySource.AGENT_OUTPUT,
+            sourceMetadata: {
+              agentId: result.agentId,
+              sessionId: this.sessionId,
+              workspaceId: this.workspaceId,
+            },
+          },
+        );
+      }
+
+      await memoryManager.dispose(); // Ensure final commit
+
+      this.logger.info("Working memory summary generated successfully", {
+        sessionId: this.sessionId,
+        agentResults: summary.results.length,
+        summaryGenerated: true,
+      });
+    } catch (error) {
+      this.logger.error("Failed to generate working memory summary", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // Don't rethrow - memory summary failure shouldn't break the session
+    }
+  }
+
+  private buildSessionContentForFactExtraction(summary: SessionSummary): string {
+    const content = [
+      `# Session Execution Summary`,
+      `Session ID: ${this.sessionId}`,
+      `Status: ${summary.status}`,
+      `Duration: ${summary.duration}ms`,
+      `Total Phases: ${summary.totalPhases}`,
+      `Total Agents: ${summary.totalAgents}`,
+      ``,
+      `## Session Reasoning`,
+      summary.reasoning,
+      ``,
+      `## Agent Execution Results`,
+    ];
+
+    for (const result of summary.results) {
+      content.push(`### Agent: ${result.agentId}`);
+      content.push(`Task: ${result.task}`);
+      content.push(`Duration: ${result.duration}ms`);
+      content.push(`Timestamp: ${result.timestamp}`);
+
+      if (result.reasoning) {
+        content.push(`Reasoning: ${result.reasoning}`);
+      }
+
+      if (result.output) {
+        content.push(`Output: ${JSON.stringify(result.output, null, 2)}`);
+      }
+
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        content.push(`Tool Calls: ${result.toolCalls.length} calls executed`);
+      }
+
+      content.push("");
+    }
+
+    return content.join("\n");
+  }
+
+  private buildWorkingMemorySummary(summary: SessionSummary): object {
+    return {
+      sessionId: this.sessionId,
+      workspaceId: this.workspaceId,
+      status: summary.status,
+      duration: summary.duration,
+      totalPhases: summary.totalPhases,
+      totalAgents: summary.totalAgents,
+      reasoning: summary.reasoning,
+      completionTime: new Date().toISOString(),
+      agentIds: summary.results.map((r) => r.agentId),
+      averageDuration: summary.results.length > 0
+        ? summary.results.reduce((sum, r) => sum + r.duration, 0) / summary.results.length
+        : 0,
+      toolUsage: summary.results.reduce((total, r) => total + (r.toolCalls?.length || 0), 0),
+      signal: {
+        id: this.sessionContext?.signal?.id,
+        provider: this.sessionContext?.signal?.provider?.name,
+      },
+    };
+  }
+
+  private getWorkingMemoryEntries(): unknown[] {
+    // For now, return empty array - could be enhanced to actually fetch working memory
+    // This would require access to the workspace memory manager
+    return [];
+  }
+
+  /**
+   * Build a facts section with current context information
+   * This is easily extensible by adding more facts to the array
+   */
+  private buildFactsSection(): string {
+    const now = new Date();
+
+    // Build an array of facts - easy to extend with more facts later
+    const facts: string[] = [
+      `Current Date: ${
+        now.toLocaleDateString("en-US", {
+          weekday: "long",
+          year: "numeric",
+          month: "long",
+          day: "numeric",
+        })
+      }`,
+      `Current Time: ${
+        now.toLocaleTimeString("en-US", {
+          hour12: true,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          timeZoneName: "short",
+        })
+      }`,
+      `Timestamp: ${now.toISOString()}`,
+    ];
+
+    // Add session-specific facts if available
+    if (this.sessionId) {
+      facts.push(`Session ID: ${this.sessionId}`);
+    }
+
+    if (this.workspaceId) {
+      facts.push(`Workspace ID: ${this.workspaceId}`);
+    }
+
+    // Add job-specific facts if available
+    if (this.sessionContext?.jobSpec?.name) {
+      facts.push(`Job Name: ${this.sessionContext.jobSpec.name}`);
+    }
+
+    // Future extensibility: Add more facts here as needed
+    // Example additions could include:
+    // - User timezone
+    // - User locale
+    // - Environment (development/staging/production)
+    // - API endpoints
+    // - Available resources
+    // - System capabilities
+
+    // Format the facts section
+    return "## Context Facts\n" + facts.map((fact) => `- ${fact}`).join("\n");
+  }
+
+  /**
+   * Stream agent result to workspace memory system for automatic procedural pattern learning
+   */
+  private async streamAgentResultToMemory(
+    agentResult: AgentResult,
+    success: boolean,
+    tokensUsed?: number,
+    errorMessage?: string,
+  ): Promise<void> {
+    // Only stream if workspace supervisor with memory is available
+    if (
+      !this.workspaceSupervisor || typeof this.workspaceSupervisor.streamAgentResult !== "function"
+    ) {
+      this.logger.debug("Workspace supervisor not available for memory streaming", {
+        sessionId: this.sessionId,
+        agentId: agentResult.agentId,
+      });
+      return;
+    }
+
+    try {
+      await this.workspaceSupervisor.streamAgentResult(
+        this.sessionId,
+        agentResult.agentId,
+        agentResult.input,
+        agentResult.output,
+        agentResult.duration,
+        success,
+        {
+          tokensUsed,
+          error: errorMessage,
+        },
+      );
+
+      this.logger.debug("Agent result streamed to workspace memory", {
+        sessionId: this.sessionId,
+        agentId: agentResult.agentId,
+        success,
+        duration: agentResult.duration,
+        tokensUsed,
+      });
+    } catch (error) {
+      this.logger.warn("Failed to stream agent result to workspace memory", {
+        sessionId: this.sessionId,
+        agentId: agentResult.agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't rethrow - memory streaming failure shouldn't break agent execution
+    }
+  }
+
+  /**
+   * Perform session lifecycle memory management
+   * - Consolidate important working memories to long-term storage
+   * - Clear working memory for the session
+   */
+  private async performSessionMemoryLifecycle(summary: SessionSummary): Promise<void> {
+    try {
+      this.logger.info("Starting session memory lifecycle management", {
+        sessionId: this.sessionId,
+        status: summary.status,
+      });
+
+      // Only perform lifecycle if workspace supervisor has memory coordinator
+      if (!this.workspaceSupervisor || !this.workspaceSupervisor.memoryCoordinator) {
+        this.logger.debug("Memory coordinator not available for lifecycle management");
+        return;
+      }
+
+      // Get the memory coordinator
+      const memoryCoordinator = this.workspaceSupervisor.memoryCoordinator;
+
+      // 1. Consolidate important working memories before clearing
+      try {
+        await memoryCoordinator.consolidateWorkingMemories(this.sessionId, {
+          minAccessCount: 3, // Memories accessed 3+ times
+          minRelevance: 0.8, // High relevance memories
+          markImportant: summary.status === "completed", // Mark as important if session succeeded
+        });
+
+        this.logger.info("Working memory consolidation completed", {
+          sessionId: this.sessionId,
+        });
+      } catch (consolidationError) {
+        this.logger.warn("Failed to consolidate working memories", {
+          sessionId: this.sessionId,
+          error: consolidationError instanceof Error
+            ? consolidationError.message
+            : String(consolidationError),
+        });
+      }
+
+      // 2. Clear working memory for this session
+      try {
+        const clearedCount = await memoryCoordinator.clearWorkingMemoryBySession(this.sessionId);
+
+        this.logger.info("Working memory cleared for session", {
+          sessionId: this.sessionId,
+          clearedCount,
+        });
+      } catch (clearError) {
+        this.logger.warn("Failed to clear working memory", {
+          sessionId: this.sessionId,
+          error: clearError instanceof Error ? clearError.message : String(clearError),
+        });
+      }
+
+      // 3. Store final session episodic memory
+      try {
+        await this.workspaceSupervisor.streamEpisodicEvent(
+          "session_complete",
+          `Session ${this.sessionId} completed with status: ${summary.status}`,
+          [this.sessionId, ...summary.results.map((r) => r.agentId)],
+          summary.status === "completed"
+            ? "success"
+            : summary.status === "failed"
+            ? "failure"
+            : "partial",
+          summary.status === "completed" ? 0.9 : 0.7,
+          {
+            sessionId: this.sessionId,
+            totalPhases: summary.totalPhases,
+            totalAgents: summary.totalAgents,
+            duration: summary.duration,
+            reasoning: summary.reasoning,
+          },
+        );
+
+        this.logger.info("Session completion episodic memory stored", {
+          sessionId: this.sessionId,
+        });
+      } catch (episodicError) {
+        this.logger.warn("Failed to store session completion episodic memory", {
+          sessionId: this.sessionId,
+          error: episodicError instanceof Error ? episodicError.message : String(episodicError),
+        });
+      }
+    } catch (error) {
+      this.logger.error("Session memory lifecycle management failed", {
+        sessionId: this.sessionId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      // Don't rethrow - lifecycle management failure shouldn't break the session
+    }
+  }
+
+  /**
+   * Stream tool call to working memory
+   */
+  private async streamToolCallToMemory(
+    agentId: string,
+    toolName: string,
+    args: unknown,
+  ): Promise<void> {
+    if (!this.workspaceSupervisor) {
+      return;
+    }
+
+    try {
+      await this.workspaceSupervisor.streamToolCall(
+        this.sessionId,
+        agentId,
+        toolName,
+        args,
+      );
+    } catch (error) {
+      this.logger.debug("Failed to stream tool call to memory", {
+        sessionId: this.sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Stream tool result to working memory
+   */
+  private async streamToolResultToMemory(
+    agentId: string,
+    toolName: string,
+    result: unknown,
+  ): Promise<void> {
+    if (!this.workspaceSupervisor) {
+      return;
+    }
+
+    try {
+      await this.workspaceSupervisor.streamToolResult(
+        this.sessionId,
+        agentId,
+        toolName,
+        result,
+      );
+    } catch (error) {
+      this.logger.debug("Failed to stream tool result to memory", {
+        sessionId: this.sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // Placeholder for future tool execution
@@ -1096,28 +1949,39 @@ Think step by step about the best approach to handle this signal, then use the t
     agentId: string,
     phase: string,
   ): StreamEvent {
-    // Add metadata to all events
-    const enriched = {
-      ...event,
-      metadata: {
-        ...(event as any).metadata,
-        sessionId: this.sessionId,
-        agentId,
-        phase,
-        timestamp: Date.now(),
-        sequenceNumber: this.streamMetrics.totalEvents,
-      },
-    } as any;
+    // Create session metadata
+    const sessionMetadata = {
+      sessionId: this.sessionId,
+      agentId,
+      phase,
+      timestamp: Date.now(),
+      sequenceNumber: this.streamMetrics.totalEvents,
+    };
 
     // Special handling for text events - add agent prefix
     if (event.type === "text") {
       return {
-        ...enriched,
+        type: "text",
         content: `[${agentId}]: ${event.content}`,
+        metadata: sessionMetadata,
+      } as StreamEvent & { metadata: typeof sessionMetadata };
+    }
+
+    // For other event types, add metadata if supported
+    if (event.type === "custom") {
+      return {
+        ...event,
+        data: {
+          ...((typeof event.data === "object" && event.data !== null)
+            ? event.data as Record<string, unknown>
+            : { originalData: event.data }),
+          metadata: sessionMetadata,
+        },
       };
     }
 
-    return enriched;
+    // For events that don't support metadata, return as-is
+    return event;
   }
 
   // Stream session-level events

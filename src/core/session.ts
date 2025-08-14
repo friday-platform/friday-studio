@@ -8,7 +8,7 @@ import type {
   IWorkspaceWorkflow,
 } from "../types/core.ts";
 import { AtlasScope } from "./scope.ts";
-import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
+import { CoALAMemoryManager, CoALAMemoryType, MemorySource } from "@atlas/memory";
 import { assign, createActor, createMachine, fromPromise } from "xstate";
 import { type Logger, logger } from "@atlas/logger";
 import { globalFSMMonitor } from "./fsm/fsm-monitoring.ts";
@@ -918,7 +918,11 @@ export class Session extends AtlasScope implements IWorkspaceSession {
     enableCognitiveLoop: boolean = true,
     // Response config removed - handled at daemon layer
   ) {
-    super(workspaceId, undefined, storageAdapter, enableCognitiveLoop);
+    super({
+      workspaceId,
+      storageAdapter,
+      enableCognitiveLoop,
+    });
 
     // Initialize logger for this session
     this.logger = logger.child({
@@ -1033,6 +1037,13 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         );
         this.signals.callback.onSuccess(this._artifacts);
         this.signals.callback.onComplete();
+        // Clear session-scoped WORKING memory at end of session
+        try {
+          const cleared = coalaMemory.clearWorkingBySession(this.id);
+          this.logger.debug("Cleared working memory for session", { sessionId: this.id, cleared });
+        } catch (e) {
+          this.logger.warn("Failed to clear working memory for session", { error: e });
+        }
       } else if (snapshot.matches("failed")) {
         this._isRunning = false;
         // Remember failure for learning
@@ -1054,6 +1065,16 @@ export class Session extends AtlasScope implements IWorkspaceSession {
         this.signals.callback.onError(
           context.error || new Error("Session failed"),
         );
+        // Always attempt to clear WORKING memory on failure as well
+        try {
+          const cleared = coalaMemory.clearWorkingBySession(this.id);
+          this.logger.debug("Cleared working memory after failure", {
+            sessionId: this.id,
+            cleared,
+          });
+        } catch (e) {
+          this.logger.warn("Failed to clear working memory after failure", { error: e });
+        }
       } else if (
         snapshot.matches("processingSignals") ||
         snapshot.matches("executingAgents")
@@ -1065,29 +1086,32 @@ export class Session extends AtlasScope implements IWorkspaceSession {
       if (
         snapshot.matches("processingSignals") && context.artifacts.length > 0
       ) {
-        const lastArtifact = context.artifacts[context.artifacts.length - 1];
+        const lastArtifact = context.artifacts[context.artifacts.length - 1] as any;
+        if (!lastArtifact) {
+          return;
+        }
         this.context.add({
           source: {
             type: "signal",
-            id: lastArtifact.data.signalId,
+            id: lastArtifact?.data?.signalId,
           },
           detail:
-            `Signal from ${lastArtifact.data.provider.name} processed at ${lastArtifact.data.processedAt}`,
+            `Signal from ${lastArtifact?.data?.provider?.name} processed at ${lastArtifact?.data?.processedAt}`,
         });
 
         // Store signal processing result in CoALA memory
         coalaMemory.rememberWithMetadata(
-          `signal-processed-${lastArtifact.data.signalId}`,
+          `signal-processed-${lastArtifact?.data?.signalId}`,
           {
-            signalId: lastArtifact.data.signalId,
-            provider: lastArtifact.data.provider.name,
-            processedAt: lastArtifact.data.processedAt,
+            signalId: lastArtifact?.data?.signalId,
+            provider: lastArtifact?.data?.provider?.name,
+            processedAt: lastArtifact?.data?.processedAt,
             sessionId: this.id,
             artifactType: lastArtifact.type,
           },
           {
             memoryType: CoALAMemoryType.EPISODIC,
-            tags: ["signal", "processed", lastArtifact.data.provider.name],
+            tags: ["signal", "processed", String(lastArtifact?.data?.provider?.name || "unknown")],
             relevanceScore: 0.6,
             confidence: 1.0,
           },

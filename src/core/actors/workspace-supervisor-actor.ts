@@ -46,6 +46,8 @@ export class WorkspaceSupervisorActor implements BaseActor {
   private config: WorkspaceSupervisorConfig;
   private agents: Record<string, WorkspaceAgentConfig> = {};
   private agentOrchestrator?: any; // Will be set by workspace runtime
+  private streamingMemoryManager?: any; // StreamingMemoryManager - loaded dynamically
+  private memoryCoordinator?: any; // SupervisorMemoryCoordinator - loaded dynamically
 
   constructor(workspaceId: string, config: WorkspaceSupervisorConfig, id?: string) {
     this.id = id || crypto.randomUUID();
@@ -64,7 +66,7 @@ export class WorkspaceSupervisorActor implements BaseActor {
     });
   }
 
-  initialize(params: ActorInitParams): void {
+  async initialize(params: ActorInitParams): Promise<void> {
     this.id = params.actorId;
     this.logger = logger.child({
       actorId: this.id,
@@ -72,9 +74,21 @@ export class WorkspaceSupervisorActor implements BaseActor {
       workspaceId: this.workspaceId,
     });
 
+    this.logger.info("Workspace supervisor actor initializing", {
+      workspaceId: this.workspaceId,
+      actorId: this.id,
+    });
+
+    // Initialize memory systems if memory is enabled
+    if (this.config.memory?.enabled !== false) {
+      await this.initializeMemorySystems();
+    }
+
     this.logger.info("Workspace supervisor actor initialized", {
       workspaceId: this.workspaceId,
       actorId: this.id,
+      memoryEnabled: this.config.memory?.enabled !== false,
+      streamingMemoryInitialized: !!this.streamingMemoryManager,
     });
   }
 
@@ -119,6 +133,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
       if (this.agentOrchestrator) {
         sessionActor.setAgentOrchestrator(this.agentOrchestrator);
       }
+
+      // Connect session to workspace supervisor for memory streaming
+      sessionActor.setWorkspaceSupervisor(this);
 
       const sessionInfo: SessionInfo = {
         sessionId,
@@ -314,8 +331,9 @@ export class WorkspaceSupervisorActor implements BaseActor {
     }
   }
 
-  shutdown(): void {
+  async shutdown(): Promise<void> {
     this.cleanup();
+    await this.shutdownMemorySystems();
   }
 
   getActiveSessionCount(): number {
@@ -337,6 +355,438 @@ export class WorkspaceSupervisorActor implements BaseActor {
           age: now - sessionInfo.createdAt,
         });
         this.sessions.delete(sessionId);
+      }
+    }
+  }
+
+  /**
+   * Initialize memory systems for the workspace
+   */
+  private async initializeMemorySystems(): Promise<void> {
+    try {
+      this.logger.info("Initializing memory systems", { workspaceId: this.workspaceId });
+
+      // Dynamic imports to avoid circular dependencies
+      const [
+        { StreamingMemoryManager },
+        { SupervisorMemoryCoordinator },
+        { CoALAMemoryManager, MemorySource },
+        { getWorkspaceMemoryDir },
+      ] = await Promise.all([
+        import("@atlas/memory"),
+        import("@atlas/memory"),
+        import("@atlas/memory"),
+        import("../../utils/paths.ts"),
+      ]);
+
+      // Initialize CoALA memory manager for the workspace
+      const workspaceScope = {
+        id: this.workspaceId,
+        workspaceId: this.workspaceId,
+        type: "workspace" as const,
+      };
+
+      const memoryManager = new CoALAMemoryManager(workspaceScope);
+
+      // Initialize streaming memory manager
+      this.streamingMemoryManager = new StreamingMemoryManager(
+        memoryManager,
+        {
+          queue_max_size: 1000,
+          batch_size: 10,
+          flush_interval_ms: 5000,
+          background_processing: true,
+          dual_write_enabled: true,
+          legacy_batch_enabled: false,
+          stream_everything: false,
+          performance_tracking: true,
+        },
+        {
+          workspaceId: this.workspaceId,
+          sessionId: undefined, // Will be set per session
+        },
+      );
+
+      // Initialize memory coordinator
+      this.memoryCoordinator = new SupervisorMemoryCoordinator(workspaceScope);
+
+      // Ingest rules.md if present in workspace
+      await this.ingestProceduralRules(memoryManager);
+
+      this.logger.info("Memory systems initialized successfully", {
+        workspaceId: this.workspaceId,
+        streamingMemoryEnabled: true,
+        memoryCoordinatorEnabled: true,
+      });
+    } catch (error) {
+      this.logger.error("Failed to initialize memory systems", {
+        workspaceId: this.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      // Don't throw - memory failure shouldn't prevent workspace startup
+    }
+  }
+
+  /**
+   * Stream agent result to memory system for automatic processing
+   */
+  async streamAgentResult(
+    sessionId: string,
+    agentId: string,
+    input: any,
+    output: any,
+    duration: number,
+    success: boolean,
+    options: { tokensUsed?: number; error?: string } = {},
+  ): Promise<void> {
+    if (!this.streamingMemoryManager) {
+      this.logger.debug("Streaming memory manager not available - skipping agent result streaming");
+      return;
+    }
+
+    try {
+      await this.streamingMemoryManager.streamAgentResult(
+        agentId,
+        input,
+        output,
+        duration,
+        success,
+        {
+          tokensUsed: options.tokensUsed,
+          error: options.error,
+          priority: success ? "normal" : "high", // Prioritize failures for learning
+        },
+      );
+
+      this.logger.debug("Agent result streamed to memory", {
+        sessionId,
+        agentId,
+        success,
+        duration,
+        tokensUsed: options.tokensUsed,
+      });
+    } catch (error) {
+      this.logger.warn("Failed to stream agent result to memory", {
+        sessionId,
+        agentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async streamToolCall(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    args: any,
+  ): Promise<void> {
+    if (!this.streamingMemoryManager) {
+      return;
+    }
+
+    try {
+      await this.streamingMemoryManager.streamToolCall(
+        sessionId,
+        agentId,
+        toolName,
+        args,
+      );
+
+      this.logger.debug("Tool call streamed to memory", {
+        sessionId,
+        agentId,
+        toolName,
+      });
+    } catch (error) {
+      this.logger.warn("Failed to stream tool call to memory", {
+        sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async streamToolResult(
+    sessionId: string,
+    agentId: string,
+    toolName: string,
+    result: any,
+  ): Promise<void> {
+    if (!this.streamingMemoryManager) {
+      return;
+    }
+
+    try {
+      await this.streamingMemoryManager.streamToolResult(
+        sessionId,
+        agentId,
+        toolName,
+        result,
+      );
+
+      this.logger.debug("Tool result streamed to memory", {
+        sessionId,
+        agentId,
+        toolName,
+      });
+    } catch (error) {
+      this.logger.warn("Failed to stream tool result to memory", {
+        sessionId,
+        agentId,
+        toolName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  async streamEpisodicEvent(
+    eventType: "agent_execution" | "context_change" | "user_interaction" | "session_complete",
+    description: string,
+    participants: string[],
+    outcome: "success" | "failure" | "partial",
+    significance: number,
+    metadata?: any,
+  ): Promise<void> {
+    if (!this.streamingMemoryManager) {
+      return;
+    }
+
+    try {
+      await this.streamingMemoryManager.streamEpisodicEvent(
+        eventType as any,
+        description,
+        participants,
+        outcome,
+        significance,
+        metadata,
+      );
+
+      this.logger.debug("Episodic event streamed to memory", {
+        eventType,
+        description: description.substring(0, 100),
+        outcome,
+        significance,
+      });
+    } catch (error) {
+      this.logger.warn("Failed to stream episodic event to memory", {
+        eventType,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Ingest rules.md into procedural memory if present
+   */
+  private async ingestProceduralRules(memoryManager: any): Promise<void> {
+    try {
+      // Try to find rules.md in workspace directory
+      const workspacePath = this.config.workspacePath || Deno.cwd();
+      const rulesPath = `${workspacePath}/rules.md`;
+
+      try {
+        const rulesContent = await Deno.readTextFile(rulesPath);
+
+        if (rulesContent && rulesContent.trim().length > 0) {
+          this.logger.info("Found rules.md, ingesting into procedural memory", {
+            workspaceId: this.workspaceId,
+            rulesPath,
+            contentLength: rulesContent.length,
+          });
+
+          // Parse rules into sections
+          const sections = this.parseRulesContent(rulesContent);
+
+          // Also initialize MECMF for better procedural memory classification
+          const { setupMECMF, createConversationContext, MemorySource, CoALAMemoryType } =
+            await import(
+              "@atlas/memory"
+            );
+          const workspaceScope = {
+            id: this.workspaceId,
+            workspaceId: this.workspaceId,
+            type: "workspace" as const,
+          };
+
+          const mecmfManager = await setupMECMF(workspaceScope, {
+            workspaceId: this.workspaceId,
+            enableVectorSearch: false, // Procedural memory doesn't need vectors
+          });
+
+          const context = createConversationContext(
+            "workspace-init",
+            this.workspaceId,
+            {
+              currentTask: "Loading workspace procedural rules",
+            },
+          );
+
+          // Store each section as a procedural memory entry
+          for (const section of sections) {
+            const key = `proc:rule:${section.slug}`;
+            await memoryManager.rememberWithMetadata(
+              key,
+              {
+                type: "procedural_rule",
+                title: section.title,
+                content: section.content,
+                source: "rules.md",
+                readOnly: true,
+                ingestionTime: Date.now(),
+              },
+              {
+                memoryType: CoALAMemoryType.PROCEDURAL,
+                tags: ["rules", "procedural", "workspace", "read-only", section.slug],
+                relevanceScore: 0.95,
+                confidence: 1.0,
+                readOnly: true,
+                source: MemorySource.SYSTEM_GENERATED,
+                sourceMetadata: { workspaceId: this.workspaceId },
+              },
+            );
+
+            // Also store in MECMF for enhanced retrieval during prompt construction
+            const proceduralContent =
+              `Workspace Procedural Rule - ${section.title}:\n${section.content}`;
+            await mecmfManager.classifyAndStore(
+              proceduralContent,
+              context,
+              MemorySource.SYSTEM_GENERATED, // Rules content is system-generated
+              { workspaceId: this.workspaceId },
+            );
+          }
+
+          this.logger.info("Rules.md ingested successfully into both CoALA and MECMF memory", {
+            workspaceId: this.workspaceId,
+            sectionCount: sections.length,
+          });
+        }
+      } catch (fileError) {
+        // File doesn't exist or can't be read - this is OK
+        this.logger.debug("No rules.md found in workspace", {
+          workspaceId: this.workspaceId,
+          path: rulesPath,
+        });
+      }
+    } catch (error) {
+      this.logger.warn("Failed to ingest procedural rules", {
+        workspaceId: this.workspaceId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  /**
+   * Parse rules.md content into sections
+   */
+  private parseRulesContent(
+    content: string,
+  ): Array<{ slug: string; title: string; content: string }> {
+    const sections: Array<{ slug: string; title: string; content: string }> = [];
+
+    // Split by headings (# or ##)
+    const lines = content.split("\n");
+    let currentSection: { slug: string; title: string; content: string } | null = null;
+
+    for (const line of lines) {
+      const headingMatch = line.match(/^#{1,2}\s+(.+)$/);
+
+      if (headingMatch) {
+        // Save previous section if exists
+        if (currentSection && currentSection.content.trim()) {
+          sections.push(currentSection);
+        }
+
+        // Start new section
+        const title = headingMatch[1].trim();
+        const slug = title.toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+
+        currentSection = {
+          slug,
+          title,
+          content: "",
+        };
+      } else if (currentSection) {
+        // Add content to current section
+        currentSection.content += line + "\n";
+      }
+    }
+
+    // Don't forget the last section
+    if (currentSection && currentSection.content.trim()) {
+      sections.push(currentSection);
+    }
+
+    // If no sections found, treat entire content as one section
+    if (sections.length === 0 && content.trim()) {
+      sections.push({
+        slug: "general-rules",
+        title: "General Rules",
+        content: content,
+      });
+    }
+
+    return sections;
+  }
+
+  /**
+   * Analyze signal with memory context to provide better session planning
+   */
+  async analyzeSignalWithMemory(signal: IWorkspaceSignal): Promise<{
+    relevantMemories: any[];
+    analysisContext: string;
+    suggestedAgents: string[];
+  }> {
+    if (!this.memoryCoordinator) {
+      this.logger.debug("Memory coordinator not available - using fallback signal analysis");
+      return {
+        relevantMemories: [],
+        analysisContext: "No memory context available",
+        suggestedAgents: [],
+      };
+    }
+
+    try {
+      const analysis = await this.memoryCoordinator.analyzeSignalWithMemory(signal);
+
+      this.logger.info("Signal analyzed with memory context", {
+        signalId: signal.id,
+        relevantMemories: analysis.relevantMemories.length,
+        suggestedAgents: analysis.suggestedAgents.length,
+      });
+
+      return analysis;
+    } catch (error) {
+      this.logger.error("Failed to analyze signal with memory", {
+        signalId: signal.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+
+      return {
+        relevantMemories: [],
+        analysisContext: "Memory analysis failed",
+        suggestedAgents: [],
+      };
+    }
+  }
+
+  /**
+   * Shutdown memory systems cleanly
+   */
+  async shutdownMemorySystems(): Promise<void> {
+    if (this.streamingMemoryManager) {
+      try {
+        await this.streamingMemoryManager.shutdown();
+        this.logger.info("Streaming memory manager shut down", { workspaceId: this.workspaceId });
+      } catch (error) {
+        this.logger.error("Error shutting down streaming memory manager", {
+          workspaceId: this.workspaceId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }

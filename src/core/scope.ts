@@ -13,6 +13,8 @@ import { CoALAMemoryManager, CoALAMemoryType } from "@atlas/memory";
 import { MessageManager } from "./messages.ts";
 
 export interface AtlasScopeOptions {
+  id?: string;
+  workspaceId?: string;
   parentScopeId?: string;
   supervisor?: IWorkspaceSupervisor;
   storageAdapter?: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter;
@@ -21,6 +23,7 @@ export interface AtlasScopeOptions {
 
 export class AtlasScope implements IAtlasScope {
   public readonly id: string;
+  public readonly workspaceId?: string;
   public parentScopeId?: string;
   public supervisor?: IWorkspaceSupervisor;
   public context: ITempestContextManager;
@@ -43,6 +46,8 @@ export class AtlasScope implements IAtlasScope {
     enableCognitiveLoop?: boolean,
   ) {
     // Handle overloaded constructor
+    let actualId: string | undefined;
+    let actualWorkspaceId: string | undefined;
     let actualParentScopeId: string | undefined;
     let actualSupervisor: IWorkspaceSupervisor | undefined;
     let actualStorageAdapter: ITempestMemoryStorageAdapter | ICoALAMemoryStorageAdapter | undefined;
@@ -50,6 +55,8 @@ export class AtlasScope implements IAtlasScope {
 
     if (typeof parentScopeIdOrOptions === "object" && parentScopeIdOrOptions !== null) {
       // Options object provided
+      actualId = parentScopeIdOrOptions.id;
+      actualWorkspaceId = parentScopeIdOrOptions.workspaceId;
       actualParentScopeId = parentScopeIdOrOptions.parentScopeId;
       actualSupervisor = parentScopeIdOrOptions.supervisor;
       actualStorageAdapter = parentScopeIdOrOptions.storageAdapter;
@@ -68,7 +75,8 @@ export class AtlasScope implements IAtlasScope {
       actualEnableCognitiveLoop = true;
     }
 
-    this.id = crypto.randomUUID();
+    this.id = actualId || crypto.randomUUID();
+    this.workspaceId = actualWorkspaceId;
     this.parentScopeId = actualParentScopeId;
     this.supervisor = actualSupervisor;
     this.context = new ContextManager();

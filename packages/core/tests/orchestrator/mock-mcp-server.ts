@@ -108,6 +108,27 @@ export class MockMCPServer {
           };
           break;
 
+        case "resources/list":
+          response = {
+            jsonrpc: "2.0",
+            id: request.id,
+            result: {
+              resources: [{
+                uri: "agent://test-agent",
+                name: "test-agent",
+                description: "Test agent for orchestrator integration testing",
+                metadata: {
+                  expertise: {
+                    domains: ["testing"],
+                    capabilities: ["echo messages", "simple calculations"],
+                    examples: ["echo hello world", "calculate 2 + 2"],
+                  },
+                },
+              }],
+            },
+          };
+          break;
+
         case "tools/call":
           response = await this.handleToolCall(request);
           break;

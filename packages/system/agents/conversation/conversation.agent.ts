@@ -46,6 +46,48 @@ function getSystemPrompt(
 }
 
 /**
+ * Checks if thinking content contains system prompt information that should not be exposed to users.
+ * Filters out internal instructions, configuration details, and other sensitive prompt content.
+ *
+ * @param content - The thinking/reasoning content to check
+ * @returns true if content should be filtered out, false if it's safe to show
+ */
+function shouldFilterThinkingContent(content: string): boolean {
+  // Common system prompt indicators that should not be exposed
+  const systemPromptIndicators = [
+    "You are Atlas",
+    "<identity>",
+    "<personality_traits>",
+    "<core_principles>",
+    "<todo_memory>",
+    "<information_gathering_strategy>",
+    "<communication_approach>",
+    "<workspace_creation_confirmation>",
+    "<resource_knowledge>",
+    "<example_interactions>",
+    "<library_streaming_guidance>",
+    "<input_context>",
+    "<available_tools>",
+    "{{AVAILABLE_TOOLS}}",
+    "{{CONVERSATION_HISTORY}}",
+    "CRITICAL:",
+    "MANDATORY:",
+    "IMPORTANT:",
+    "NEVER mention",
+    "DO NOT",
+    "Always ask",
+    "Never ask",
+    "Step 1 -",
+    "Step 2 -",
+    "Phase 1",
+    "Phase 2",
+  ];
+
+  // Check if content contains any system prompt indicators
+  return systemPromptIndicators.some((indicator) => content.includes(indicator));
+}
+
+/**
  * Extracts metadata from SSE events for tool calls and results.
  * Captures tool names, call IDs, arguments, and results for tracing.
  *
@@ -185,6 +227,12 @@ export const conversationAgent = createAgent({
       if (!sseEvent) {
         logger.debug("Skipped null event from chunk", { chunkType: chunk.type });
         continue;
+      }
+
+      // Filter thinking content before streaming and processing
+      if (sseEvent.type === "thinking" && shouldFilterThinkingContent(sseEvent.data.content)) {
+        logger.debug("Filtered thinking content containing system prompt information");
+        continue; // Skip this event entirely
       }
 
       await streamEvent.execute(

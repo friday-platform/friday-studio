@@ -14,26 +14,53 @@ import {
   type TabInfo,
   type TUIState,
   type VectorSearchResult,
+  type WorkspaceEntry,
+  type WorkspaceSelectionState,
 } from "../types/memory-types.ts";
 import { AtlasMemoryOperations } from "../utils/memory-operations.ts";
+import { MemoryManagerWorkspaceService } from "../utils/workspace-manager.ts";
 
 export class MemoryManagerTUI {
-  private operations: AtlasMemoryOperations;
+  private operations?: AtlasMemoryOperations;
+  private workspaceService = new MemoryManagerWorkspaceService();
   private state: TUIState = {
     currentTab: MemoryType.WORKING,
     selectedIndex: 0,
     scrollOffset: 0,
     searchQuery: "",
     showHelp: false,
-    mode: "list" as const,
+    mode: "workspace-selector" as const,
     showOverlay: false,
   };
   private running = true;
   private terminalSize = { width: 80, height: 24 };
 
-  constructor(operations: AtlasMemoryOperations) {
+  constructor(operations?: AtlasMemoryOperations) {
     this.operations = operations;
     this.updateTerminalSize();
+
+    // If operations are provided, skip workspace selection
+    if (operations) {
+      this.state.mode = "list" as const;
+    }
+  }
+
+  /**
+   * Start workspace selection mode
+   */
+  async selectWorkspace(): Promise<WorkspaceEntry | null> {
+    // Setup terminal for workspace selection
+    this.setupTerminal();
+
+    try {
+      // Initialize workspace selection state
+      await this.initializeWorkspaceSelection();
+
+      // Run selection loop
+      return await this.workspaceSelectionLoop();
+    } finally {
+      this.restoreTerminal();
+    }
   }
 
   async start(): Promise<void> {
@@ -81,6 +108,9 @@ export class MemoryManagerTUI {
 
     // Render current content based on mode
     switch (this.state.mode) {
+      case "workspace-selector":
+        await this.renderWorkspaceSelector();
+        break;
       case "list":
         await this.renderMemoryList();
         break;
@@ -112,14 +142,18 @@ export class MemoryManagerTUI {
     const title = "Atlas Memory Manager";
     let headerText: string;
 
-    if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
+    if (this.state.mode === "workspace-selector") {
+      headerText = `${title} | Workspace Selection`;
+    } else if (this.state.currentTab === MemoryType.VECTOR_SEARCH) {
       const resultCount = this.state.vectorSearchResults?.length || 0;
       headerText = `${title} | VECTOR SEARCH (${resultCount} results)`;
-    } else {
+    } else if (this.operations) {
       const stats = this.operations.getStats();
       const currentStats = stats[this.state.currentTab];
       headerText =
         `${title} | ${this.state.currentTab.toUpperCase()} Memory (${currentStats.count} entries)`;
+    } else {
+      headerText = title;
     }
 
     console.log(this.colorize(headerText, "bold", "blue"));
@@ -127,6 +161,17 @@ export class MemoryManagerTUI {
   }
 
   private async renderTabs(): Promise<void> {
+    // Skip tabs in workspace selector mode
+    if (this.state.mode === "workspace-selector") {
+      console.log(this.colorize("Select a workspace to access its memory", "dim"));
+      console.log("─".repeat(this.terminalSize.width));
+      return;
+    }
+
+    if (!this.operations) {
+      return;
+    }
+
     const tabs: TabInfo[] = [
       { type: MemoryType.WORKING, title: "Working", count: 0, color: "yellow" },
       {
@@ -760,8 +805,14 @@ export class MemoryManagerTUI {
 
   private renderFooter(): void {
     const modeText = this.state.mode.toUpperCase();
-    const footer =
-      `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
+    let footer: string;
+
+    if (this.state.mode === "workspace-selector") {
+      footer = `${modeText} | h:help q:quit ↑↓:navigate Enter:select`;
+    } else {
+      footer =
+        `${modeText} | h:help q:quit ↑↓:navigate Tab:switch Enter:view f:overlay e:edit n:new d:delete /:search v:vector r:reload s:save`;
+    }
 
     console.log("\n" + "─".repeat(this.terminalSize.width));
     console.log(this.colorize(footer, "dim"));
@@ -812,22 +863,39 @@ export class MemoryManagerTUI {
       } else if (key === "SHIFT_TAB") {
         this.switchTab(-1);
         return;
-      } else if (key === "ARROW_UP" || key === "k" || key === "K") {
-        // Navigate up in vector search results
+      } else if (key === "ARROW_UP") {
+        // Navigate up in vector search results (only arrow keys for navigation to avoid conflicts)
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
           this.navigateUp();
         }
         return;
-      } else if (key === "ARROW_DOWN" || key === "j" || key === "J") {
-        // Navigate down in vector search results
+      } else if (key === "ARROW_DOWN") {
+        // Navigate down in vector search results (only arrow keys for navigation to avoid conflicts)
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
           this.navigateDown();
         }
         return;
+      } else if (
+        (key === "k" || key === "K") && this.state.vectorSearchResults &&
+        this.state.vectorSearchResults.length > 0
+      ) {
+        // Only use k for navigation when we have search results to navigate
+        this.navigateUp();
+        return;
+      } else if (
+        (key === "j" || key === "J") && this.state.vectorSearchResults &&
+        this.state.vectorSearchResults.length > 0
+      ) {
+        // Only use j for navigation when we have search results to navigate
+        this.navigateDown();
+        return;
       } else if (key === "\r") { // Enter
-        // Switch to view mode for selected vector search result
+        // If we have results, view selected one; otherwise perform search
         if (this.state.vectorSearchResults && this.state.vectorSearchResults.length > 0) {
           this.state.mode = "view" as const;
+        } else {
+          // Perform vector search
+          await this.handleVectorSearchInput(key);
         }
         return;
       } else if (key === "f" || key === "F") {
@@ -1433,5 +1501,209 @@ export class MemoryManagerTUI {
       0,
       Math.min(newOffset, this.state.overlayContent.maxScroll),
     );
+  }
+
+  // Workspace selection methods
+
+  /**
+   * Initialize workspace selection state
+   */
+  private async initializeWorkspaceSelection(): Promise<void> {
+    this.state.workspaceSelection = {
+      availableWorkspaces: [],
+      selectedWorkspaceIndex: 0,
+      loading: true,
+    };
+
+    try {
+      const workspaces = await this.workspaceService.listWorkspaces(false);
+      this.state.workspaceSelection.availableWorkspaces = workspaces;
+      this.state.workspaceSelection.loading = false;
+
+      if (workspaces.length === 0) {
+        this.state.workspaceSelection.error =
+          "No workspaces found. Please create a workspace first.";
+      }
+    } catch (error) {
+      this.state.workspaceSelection.loading = false;
+      this.state.workspaceSelection.error = `Failed to load workspaces: ${
+        error instanceof Error ? error.message : String(error)
+      }`;
+    }
+  }
+
+  /**
+   * Run workspace selection loop
+   */
+  private async workspaceSelectionLoop(): Promise<WorkspaceEntry | null> {
+    while (this.running) {
+      await this.render();
+
+      if (this.state.mode !== "workspace-selector") {
+        // User selected a workspace
+        break;
+      }
+
+      const selectedWorkspace = await this.handleWorkspaceSelectionInput();
+      if (selectedWorkspace) {
+        return selectedWorkspace;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Render workspace selector
+   */
+  private async renderWorkspaceSelector(): Promise<void> {
+    const selection = this.state.workspaceSelection;
+
+    if (!selection) {
+      console.log(this.colorize("Initializing workspace selection...", "dim"));
+      return;
+    }
+
+    if (selection.loading) {
+      console.log(this.colorize("Loading available workspaces...", "dim", "yellow"));
+      return;
+    }
+
+    if (selection.error) {
+      console.log(this.colorize("Error: " + selection.error, "bold", "red"));
+      console.log(this.colorize("Press 'q' to quit", "dim"));
+      return;
+    }
+
+    const workspaces = selection.availableWorkspaces;
+
+    if (workspaces.length === 0) {
+      console.log(this.colorize("No workspaces found", "dim"));
+      console.log(this.colorize("Press 'q' to quit", "dim"));
+      return;
+    }
+
+    console.log(this.colorize(`Found ${workspaces.length} workspace(s):`, "bold"));
+    console.log("");
+
+    const visibleHeight = this.terminalSize.height - 12; // Account for header, footer, instructions
+    const startIndex = Math.max(
+      0,
+      selection.selectedWorkspaceIndex - Math.floor(visibleHeight / 2),
+    );
+    const endIndex = Math.min(workspaces.length, startIndex + visibleHeight);
+
+    const visibleWorkspaces = workspaces.slice(startIndex, endIndex);
+
+    visibleWorkspaces.forEach((workspace, index) => {
+      const absoluteIndex = startIndex + index;
+      const isSelected = absoluteIndex === selection.selectedWorkspaceIndex;
+
+      const statusColor = this.getStatusColor(workspace.status);
+      const statusText = workspace.status.toUpperCase();
+
+      let line = `${workspace.name.padEnd(30)} │ ${statusText.padEnd(8)} │ ${workspace.path}`;
+
+      if (workspace.metadata?.description) {
+        const maxDescLength = Math.max(20, this.terminalSize.width - line.length - 5);
+        const truncatedDesc = workspace.metadata.description.length > maxDescLength
+          ? workspace.metadata.description.substring(0, maxDescLength - 3) + "..."
+          : workspace.metadata.description;
+        line += ` │ ${this.colorize(truncatedDesc, "dim")}`;
+      }
+
+      if (line.length > this.terminalSize.width - 2) {
+        line = line.substring(0, this.terminalSize.width - 5) + "...";
+      }
+
+      if (isSelected) {
+        console.log(this.colorize(`> ${line}`, "bold", "white", "blue"));
+      } else {
+        const statusPart = line.includes(statusText)
+          ? line.replace(statusText, this.colorize(statusText, "", statusColor))
+          : line;
+        console.log(`  ${statusPart}`);
+      }
+    });
+
+    if (workspaces.length > visibleHeight) {
+      console.log("");
+      console.log(this.colorize(
+        `Showing ${startIndex + 1}-${endIndex} of ${workspaces.length} workspaces`,
+        "dim",
+      ));
+    }
+  }
+
+  /**
+   * Handle workspace selection input
+   */
+  private async handleWorkspaceSelectionInput(): Promise<WorkspaceEntry | null> {
+    const key = await this.readKey();
+    const selection = this.state.workspaceSelection;
+
+    if (!selection || selection.loading || selection.error) {
+      if (key === "q") {
+        this.running = false;
+      }
+      return null;
+    }
+
+    const workspaces = selection.availableWorkspaces;
+
+    switch (key) {
+      case "q":
+        this.running = false;
+        return null;
+
+      case "ARROW_UP":
+      case "k":
+      case "K":
+        if (selection.selectedWorkspaceIndex > 0) {
+          selection.selectedWorkspaceIndex--;
+        }
+        break;
+
+      case "ARROW_DOWN":
+      case "j":
+      case "J":
+        if (selection.selectedWorkspaceIndex < workspaces.length - 1) {
+          selection.selectedWorkspaceIndex++;
+        }
+        break;
+
+      case "\r": // Enter
+        if (workspaces.length > 0) {
+          const selectedWorkspace = workspaces[selection.selectedWorkspaceIndex];
+          return selectedWorkspace;
+        }
+        break;
+
+      case "h":
+      case "?":
+        this.state.showHelp = !this.state.showHelp;
+        break;
+    }
+
+    return null;
+  }
+
+  /**
+   * Get color for workspace status
+   */
+  private getStatusColor(status: string): string {
+    switch (status) {
+      case "running":
+        return "green";
+      case "stopped":
+        return "red";
+      case "starting":
+      case "stopping":
+        return "yellow";
+      case "crashed":
+        return "red";
+      default:
+        return "white";
+    }
   }
 }

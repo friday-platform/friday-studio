@@ -121,3 +121,67 @@ export function getAtlasConfigDir(): string {
 export function getAtlasCacheDir(): string {
   return join(getAtlasHome(), "cache");
 }
+
+/**
+ * Sanitize workspace name for use as folder name
+ * Converts workspace IDs to safe filesystem folder names
+ */
+function sanitizeWorkspaceName(workspaceId: string): string {
+  return workspaceId
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, "-") // Replace invalid chars with dash
+    .replace(/-+/g, "-") // Collapse multiple dashes
+    .replace(/^-|-$/g, ""); // Remove leading/trailing dashes
+}
+
+/**
+ * Get the Atlas memory directory (global)
+ */
+export function getAtlasMemoryDir(): string {
+  return join(getAtlasHome(), "memory");
+}
+
+/**
+ * Get workspace-specific memory directory
+ * Each workspace gets its own isolated memory folder
+ */
+export function getWorkspaceMemoryDir(workspaceId: string): string {
+  const sanitizedName = sanitizeWorkspaceName(workspaceId);
+  return join(getAtlasMemoryDir(), sanitizedName);
+}
+
+/**
+ * Get workspace-specific memory file path for a given memory type
+ */
+export function getWorkspaceMemoryFilePath(workspaceId: string, memoryType: string): string {
+  return join(getWorkspaceMemoryDir(workspaceId), `${memoryType}.json`);
+}
+
+/**
+ * Get workspace-specific vector search directory
+ */
+export function getWorkspaceVectorDir(workspaceId: string): string {
+  return join(getWorkspaceMemoryDir(workspaceId), "vectors");
+}
+
+/**
+ * Get workspace-specific knowledge graph directory
+ */
+export function getWorkspaceKnowledgeGraphDir(workspaceId: string): string {
+  return join(getWorkspaceMemoryDir(workspaceId), "knowledge-graph");
+}
+
+/**
+ * Get MECMF cache directory (global)
+ * Used for caching embeddings models and tokenizers
+ */
+export function getMECMFCacheDir(): string {
+  return join(getAtlasMemoryDir(), ".cache");
+}
+
+/**
+ * Get workspace-specific MECMF cache directory
+ */
+export function getWorkspaceMECMFCacheDir(workspaceId: string): string {
+  return join(getWorkspaceMemoryDir(workspaceId), ".cache");
+}

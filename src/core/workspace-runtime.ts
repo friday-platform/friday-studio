@@ -31,7 +31,6 @@ export interface WorkspaceRuntimeOptions {
  */
 export class WorkspaceRuntime {
   private workspace: IWorkspace;
-  private options: WorkspaceRuntimeOptions;
   private config?: MergedConfig;
   private stateMachine: ActorRefFrom<ReturnType<typeof createWorkspaceRuntimeMachine>>;
   private sessions: Map<string, IWorkspaceSession> = new Map();
@@ -44,7 +43,6 @@ export class WorkspaceRuntime {
   ) {
     this.workspace = workspace;
     this.config = config;
-    this.options = options;
 
     // Create unique FSM instance ID for monitoring
     this.fsmId = crypto.randomUUID().slice(0, 8);
@@ -116,7 +114,7 @@ export class WorkspaceRuntime {
       [key: string]: unknown;
     },
     payload: Record<string, unknown>,
-    sessionId?: string,
+    _sessionId?: string,
     streamId?: string,
   ): Promise<IWorkspaceSession> {
     return await AtlasTelemetry.withServerSpan(
@@ -204,7 +202,10 @@ export class WorkspaceRuntime {
         const session = new Session(
           this.workspace.id,
           {
-            triggers: [signal],
+            triggers: [{
+              ...signal,
+              provider: signal.provider || { id: "unknown", name: "unknown" },
+            } as IWorkspaceSignal], // Ensure provider field is present
             callback: (result) => {
               logger.info(`Session completed`, {
                 workspaceId: this.workspace.id,
@@ -260,7 +261,10 @@ export class WorkspaceRuntime {
         // Send event to state machine for processing
         this.stateMachine.send({
           type: "PROCESS_SIGNAL",
-          signal,
+          signal: {
+            ...signal,
+            provider: signal.provider || { id: "unknown", name: "unknown" },
+          } as IWorkspaceSignal, // Ensure provider field is present
           payload,
           sessionId,
           streamId,

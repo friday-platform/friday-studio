@@ -1661,6 +1661,21 @@ export class AtlasDaemon implements AppContext {
     try {
       logger.debug("getOrCreateWorkspaceRuntime called", { workspaceId });
 
+      // Ensure daemon is properly initialized before creating runtimes
+      if (!this.isInitialized) {
+        throw new Error("Atlas daemon not fully initialized - cannot create workspace runtime");
+      }
+
+      // Verify required services are available
+      if (!this.mcpServerPool) {
+        logger.warn(
+          "MCP server pool not initialized - workspace runtime will have limited tool access",
+          {
+            workspaceId,
+          },
+        );
+      }
+
       // Check if runtime already exists
       let runtime = this.runtimes.get(workspaceId);
       if (runtime) {

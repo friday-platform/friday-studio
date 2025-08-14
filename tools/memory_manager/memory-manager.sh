@@ -10,13 +10,16 @@ set -e
 # Get the script directory (where this script is located)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Default to current directory as workspace
-WORKSPACE_PATH="${PWD}"
+# No default workspace path - let the main.ts handle workspace selection
+WORKSPACE_PATH=""
 
 # Help function
 show_help() {
     cat << EOF
-Atlas Memory Manager
+Atlas Memory Manager - MECMF Edition
+
+A terminal-based tool for navigating and managing Atlas workspace memory using 
+the Memory-Enhanced Context Management Framework (MECMF).
 
 USAGE:
     ./memory-manager.sh [OPTIONS] [WORKSPACE_PATH]
@@ -28,12 +31,21 @@ OPTIONS:
     -v, --validate          Validate memory data integrity and exit
     -h, --help              Show this help message
 
+FEATURES:
+    • MECMF Integration: Uses Atlas's advanced memory system
+    • Vector Search: Semantic search for episodic and semantic memories
+    • Workspace Isolation: Respects workspace boundaries
+    • Real-time Sync: Direct integration with Atlas memory system
+
 EXAMPLES:
-    # Start interactive manager in current directory
+    # Start interactive manager with workspace selection
     ./memory-manager.sh
 
+    # Start interactive manager in specific directory
+    ./memory-manager.sh --workspace /path/to/workspace
+
     # Show stats for current workspace
-    ./memory-manager.sh --stats
+    ./memory-manager.sh --stats --workspace /path/to/workspace
 
     # Export memory from specific workspace
     ./memory-manager.sh --export --workspace /path/to/workspace > backup.json
@@ -41,6 +53,11 @@ EXAMPLES:
     # Run from anywhere in Atlas repo (finds nearest workspace)
     cd /path/to/atlas/examples/workspaces/telephone
     /path/to/atlas/tools/memory_manager/memory-manager.sh --stats
+
+SYSTEM REQUIREMENTS:
+    • Deno runtime
+    • Full system permissions (--allow-all) for ONNX runtime and embeddings
+    • Network access for downloading embedding models (first run)
 
 EOF
 }
@@ -60,12 +77,36 @@ if ! command -v deno &> /dev/null; then
     exit 1
 fi
 
-# If a workspace path is provided as the last argument (and it's a directory), use it
-if [[ $# -gt 0 ]] && [[ -d "${!#}" ]]; then
-    WORKSPACE_PATH="${!#}"
-fi
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -w|--workspace)
+            WORKSPACE_PATH="$2"
+            shift 2
+            ;;
+        -s|--stats)
+            STATS_MODE=true
+            shift
+            ;;
+        -e|--export)
+            EXPORT_MODE=true
+            shift
+            ;;
+        -v|--validate)
+            VALIDATE_MODE=true
+            shift
+            ;;
+        *)
+            # If it's a directory, treat it as workspace path
+            if [[ -d "$1" ]]; then
+                WORKSPACE_PATH="$1"
+            fi
+            shift
+            ;;
+    esac
+done
 
-# Look for workspace in current directory or parent directories
+# Look for workspace in current directory or parent directories if no workspace specified
 find_workspace() {
     local current_dir="$1"
     while [[ "$current_dir" != "/" ]]; do
@@ -75,25 +116,57 @@ find_workspace() {
         fi
         current_dir="$(dirname "$current_dir")"
     done
-    echo "$WORKSPACE_PATH"  # Fallback to provided/current path
+    echo ""  # No workspace found
 }
 
-# If current directory doesn't look like a workspace, try to find one
-if [[ ! -f "$WORKSPACE_PATH/workspace.yml" ]] && [[ ! -d "$WORKSPACE_PATH/.atlas" ]]; then
-    DETECTED_WORKSPACE=$(find_workspace "$WORKSPACE_PATH")
-    if [[ "$DETECTED_WORKSPACE" != "$WORKSPACE_PATH" ]]; then
+# If no workspace path provided and we're in stats/export/validate mode, try to find one
+if [[ -z "$WORKSPACE_PATH" ]] && [[ "$STATS_MODE" == true || "$EXPORT_MODE" == true || "$VALIDATE_MODE" == true ]]; then
+    DETECTED_WORKSPACE=$(find_workspace "$PWD")
+    if [[ -n "$DETECTED_WORKSPACE" ]]; then
         echo "📁 Detected workspace: $DETECTED_WORKSPACE"
         WORKSPACE_PATH="$DETECTED_WORKSPACE"
+    else
+        echo "❌ No workspace found. Please specify a workspace path with --workspace"
+        exit 1
     fi
 fi
 
-echo "🧠 Atlas Memory Manager"
-echo "📂 Workspace: $WORKSPACE_PATH"
+echo "🧠 Atlas Memory Manager - MECMF Edition"
+if [[ -n "$WORKSPACE_PATH" ]]; then
+    echo "📂 Workspace: $WORKSPACE_PATH"
+else
+    echo "📂 Starting workspace selection..."
+fi
 
-# Run the Deno application with the workspace path
+# Check if this is the first run (no model cache exists)
+if [[ ! -d "$HOME/.atlas/memory/.cache" ]]; then
+    echo "🔄 First run detected - MECMF will download embedding models (~200MB)"
+    echo "⏳ This may take a few minutes on first startup..."
+fi
+
+# Run the Deno application with full permissions required for MECMF
+# The MECMF system needs extensive permissions for:
+# - FFI: ONNX runtime for embeddings
+# - Net: Downloading embedding models
+# - Env: Environment variable access
+# - Sys: System information access
+
+# Build arguments for main.ts
+MAIN_ARGS=""
+if [[ -n "$WORKSPACE_PATH" ]]; then
+    MAIN_ARGS="$MAIN_ARGS --workspace $WORKSPACE_PATH"
+fi
+if [[ "$STATS_MODE" == true ]]; then
+    MAIN_ARGS="$MAIN_ARGS --stats"
+fi
+if [[ "$EXPORT_MODE" == true ]]; then
+    MAIN_ARGS="$MAIN_ARGS --export"
+fi
+if [[ "$VALIDATE_MODE" == true ]]; then
+    MAIN_ARGS="$MAIN_ARGS --validate"
+fi
+
 exec deno run \
-    --allow-read \
-    --allow-write \
+    --allow-all \
     "$SCRIPT_DIR/main.ts" \
-    --workspace "$WORKSPACE_PATH" \
-    "$@"
+    $MAIN_ARGS

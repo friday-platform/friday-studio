@@ -1,31 +1,23 @@
 /**
  * Memory Manager Types
  *
- * Defines types for the ncurses-based memory navigation tool
+ * Defines types for the memory navigation tool that align with MECMF
  */
 
-export enum MemoryType {
+// Use the MECMF MemoryType enum
+export { MemoryType } from "@atlas/memory";
+
+// Local MemoryType for backward compatibility
+export enum LocalMemoryType {
   WORKING = "working",
   EPISODIC = "episodic",
   SEMANTIC = "semantic",
   PROCEDURAL = "procedural",
-  VECTOR_SEARCH = "vector-search",
 }
 
-export interface MemoryEntry {
-  id: string;
-  content: unknown;
-  timestamp: Date;
-  accessCount: number;
-  lastAccessed: Date;
-  memoryType: MemoryType;
-  relevanceScore: number;
-  sourceScope: string;
-  associations: string[];
-  tags: string[];
-  confidence: number;
-  decayRate: number;
-}
+// Use the MECMF CoALAMemoryEntry interface and CoALAMemoryType enum
+export type { CoALAMemoryEntry as MemoryEntry, CoALAMemoryManager } from "@atlas/memory";
+export { CoALAMemoryType } from "@atlas/memory";
 
 export interface VectorSearchResult extends MemoryEntry {
   similarity: number;
@@ -35,22 +27,22 @@ export interface VectorSearchResult extends MemoryEntry {
 export interface MemoryOperations {
   // CRUD operations
   create(
-    type: MemoryType,
+    type: CoALAMemoryType,
     key: string,
     content: unknown,
     metadata?: Partial<MemoryEntry>,
   ): Promise<void>;
-  read(type: MemoryType, key: string): Promise<MemoryEntry | null>;
+  read(type: CoALAMemoryType, key: string): Promise<MemoryEntry | null>;
   update(
-    type: MemoryType,
+    type: CoALAMemoryType,
     key: string,
     updates: Partial<MemoryEntry>,
   ): Promise<void>;
-  delete(type: MemoryType, key: string): Promise<void>;
+  delete(type: CoALAMemoryType, key: string): Promise<void>;
 
   // List and search
-  list(type: MemoryType): Promise<MemoryEntry[]>;
-  search(type: MemoryType, query: string): Promise<MemoryEntry[]>;
+  list(type: CoALAMemoryType): Promise<MemoryEntry[]>;
+  search(type: CoALAMemoryType, query: string): Promise<MemoryEntry[]>;
 
   // Vector search operations
   vectorSearch(query: string): Promise<VectorSearchResult[]>;
@@ -61,27 +53,36 @@ export interface MemoryOperations {
 }
 
 export interface MemoryStorage {
-  loadAll(): Promise<Record<MemoryType, Record<string, MemoryEntry>>>;
-  saveAll(data: Record<MemoryType, Record<string, MemoryEntry>>): Promise<void>;
-  loadByType(type: MemoryType): Promise<Record<string, MemoryEntry>>;
+  loadAll(): Promise<Record<CoALAMemoryType, Record<string, MemoryEntry>>>;
+  saveAll(data: Record<CoALAMemoryType, Record<string, MemoryEntry>>): Promise<void>;
+  loadByType(type: CoALAMemoryType): Promise<Record<string, MemoryEntry>>;
   saveByType(
-    type: MemoryType,
+    type: CoALAMemoryType,
     data: Record<string, MemoryEntry>,
   ): Promise<void>;
 }
 
 export interface TUIState {
-  currentTab: MemoryType;
+  currentTab: CoALAMemoryType;
   selectedIndex: number;
   scrollOffset: number;
   searchQuery: string;
   showHelp: boolean;
-  mode: "list" | "view" | "edit" | "create" | "delete" | "search" | "vector-search";
+  mode:
+    | "workspace-selector"
+    | "list"
+    | "view"
+    | "edit"
+    | "create"
+    | "delete"
+    | "search"
+    | "vector-search";
   editState?: EditState;
   showOverlay: boolean;
   overlayContent?: OverlayContent;
   vectorSearchQuery?: string;
   vectorSearchResults?: VectorSearchResult[];
+  workspaceSelection?: WorkspaceSelectionState;
 }
 
 export interface OverlayContent {
@@ -98,7 +99,7 @@ export interface KeyBinding {
 }
 
 export interface TabInfo {
-  type: MemoryType;
+  type: CoALAMemoryType;
   title: string;
   count: number;
   color: string;
@@ -117,4 +118,19 @@ export enum EditableField {
   RELEVANCE_SCORE = "relevanceScore",
   CONFIDENCE = "confidence",
   ASSOCIATIONS = "associations",
+}
+
+// Workspace selection types
+export interface WorkspaceEntry {
+  id: string;
+  name: string;
+  path: string;
+  description?: string;
+}
+
+export interface WorkspaceSelectionState {
+  availableWorkspaces: WorkspaceEntry[];
+  selectedWorkspaceIndex: number;
+  loading: boolean;
+  error?: string;
 }

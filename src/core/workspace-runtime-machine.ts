@@ -24,7 +24,7 @@ import type { LibraryStorageAdapter } from "./storage/library-storage-adapter.ts
 import { AgentOrchestrator, convertLLMToAgent, GlobalMCPServerPool } from "@atlas/core";
 
 interface StreamSignalData {
-  runtimeSignal: any; // Runtime signal instance
+  runtimeSignal: unknown; // Runtime signal instance
   signalConfig: Record<string, unknown>;
 }
 
@@ -36,7 +36,11 @@ export interface WorkspaceRuntimeContext {
     supervisorModel?: string;
     workspacePath?: string;
     libraryStorage?: LibraryStorageAdapter;
+    mcpServerPool?: GlobalMCPServerPool;
+    daemonUrl?: string;
   };
+  mcpServerPool?: GlobalMCPServerPool;
+  daemonUrl?: string;
   supervisor?: WorkspaceSupervisorActor;
   agentOrchestrator?: AgentOrchestrator;
   sessions: Map<string, IWorkspaceSession>;
@@ -243,7 +247,7 @@ export const workspaceRuntimeMachineSetup = setup({
 
               logger.info(`Successfully wrapped and registered LLM agent: ${agentId}`, {
                 workspaceId: context.workspace.id,
-                agentName: wrappedAgent.metadata.name,
+                agentId: wrappedAgent.metadata.id,
                 domains: wrappedAgent.metadata.expertise.domains,
               });
             } catch (error) {
@@ -352,7 +356,12 @@ export const workspaceRuntimeMachineSetup = setup({
       for (const [signalId, streamData] of context.activeStreamSignals) {
         try {
           logger.info(`Cleaning up stream signal: ${signalId}`);
-          await streamData.runtimeSignal.teardown();
+          if (
+            streamData.runtimeSignal && typeof streamData.runtimeSignal === "object" &&
+            "teardown" in streamData.runtimeSignal
+          ) {
+            await (streamData.runtimeSignal as { teardown(): Promise<void> }).teardown();
+          }
         } catch (error) {
           logger.error(`Failed to cleanup stream signal: ${signalId}`, {
             error: error instanceof Error ? error.message : String(error),
@@ -404,7 +413,7 @@ export const workspaceRuntimeMachineSetup = setup({
       }),
       sessions: ({ context, event }) => {
         const newSessions = new Map(context.sessions);
-        if ("sessionId" in event) {
+        if ("sessionId" in event && event.sessionId) {
           newSessions.delete(event.sessionId);
         }
         return newSessions;
@@ -414,8 +423,8 @@ export const workspaceRuntimeMachineSetup = setup({
       logger.info("assignSupervisor action called", {
         eventType: event.type,
         eventKeys: Object.keys(event),
-        hasOutput: !!(event as any).output,
-        hasSupervisor: !!((event as any).output?.supervisor),
+        hasOutput: !!(event as { output?: unknown }).output,
+        hasSupervisor: !!((event as { output?: { supervisor?: unknown } }).output?.supervisor),
       });
 
       if (event.type === "xstate.done.actor.initializeWorkspace") {
@@ -487,6 +496,8 @@ export function createWorkspaceRuntimeMachine(
         mcpServerPool: input.mcpServerPool,
         daemonUrl: input.daemonUrl,
       },
+      mcpServerPool: input.mcpServerPool,
+      daemonUrl: input.daemonUrl,
       sessions: new Map(),
       activeStreamSignals: new Map(),
       isShuttingDown: false,
@@ -565,30 +576,34 @@ export function createWorkspaceRuntimeMachine(
 
                 // Initialize stream connections after entering ready state
                 for (const [signalId, streamData] of context.activeStreamSignals) {
-                  streamData.runtimeSignal.initialize({
-                    id: signalId,
-                    processSignal: (signalId: string, payload: Record<string, unknown>) => {
-                      // Send signal to state machine for processing
-                      const signal = {
-                        id: signalId,
-                        provider: {
-                          id: streamData.signalConfig.provider,
-                          name: streamData.signalConfig.provider,
-                        },
-                        config: streamData.signalConfig,
-                      };
+                  if (
+                    streamData.runtimeSignal && typeof streamData.runtimeSignal === "object" &&
+                    "initialize" in streamData.runtimeSignal
+                  ) {
+                    (streamData.runtimeSignal as { initialize(config: unknown): void }).initialize({
+                      id: signalId,
+                      processSignal: (signalId: string, payload: Record<string, unknown>) => {
+                        // Send signal to state machine for processing
+                        const signal = {
+                          id: signalId,
+                          provider: {
+                            id: streamData.signalConfig.provider,
+                            name: streamData.signalConfig.provider,
+                          },
+                          config: streamData.signalConfig,
+                        } as unknown as IWorkspaceSignal; // Convert to proper signal type
 
-                      self.send({
-                        type: "PROCESS_SIGNAL",
-                        signal: signal,
-                        payload,
-                      });
-                    },
-                  }).catch((error: unknown) => {
-                    logger.error(`Failed to initialize stream signal: ${signalId}`, {
-                      error: error instanceof Error ? error.message : String(error),
+                        self.send({
+                          type: "PROCESS_SIGNAL",
+                          signal: {
+                            ...signal,
+                            provider: signal.provider || { id: "unknown", name: "unknown" },
+                          } as IWorkspaceSignal,
+                          payload,
+                        });
+                      },
                     });
-                  });
+                  }
                 }
               },
             ],

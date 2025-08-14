@@ -8,7 +8,7 @@ import type {
   MemoryStreamProcessor,
   ProceduralPatternStream,
   SemanticFactStream,
-  SessionCompleteStream,
+  SessionCompleteStream as _SessionCompleteStream,
 } from "./memory-stream.ts";
 
 /**
@@ -185,6 +185,7 @@ export class EpisodicEventProcessor implements MemoryStreamProcessor {
         significance: stream.data.significance,
         timestamp: stream.timestamp,
         sessionId: stream.sessionId,
+        metadata: stream.data.metadata,
       });
 
       logger.debug("Episodic event processed", {
@@ -241,6 +242,7 @@ export class EpisodicEventProcessor implements MemoryStreamProcessor {
  */
 export class AgentResultProcessor implements MemoryStreamProcessor {
   constructor(
+    private memoryManager: CoALAMemoryManager,
     private semanticProcessor: SemanticFactProcessor,
     private proceduralProcessor: ProceduralPatternProcessor,
     private episodicProcessor: EpisodicEventProcessor,
@@ -296,23 +298,28 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
         priority: "normal",
       };
 
-      // Extract episodic event
+      // Extract episodic event with detailed outcome information
       const episodicEvent: EpisodicEventStream = {
         id: `${stream.id}-episodic`,
         type: "episodic_event",
         data: {
           event_type: "agent_execution",
-          description: `Agent ${stream.data.agent_id} ${
-            stream.data.success ? "successfully" : "unsuccessfully"
-          } executed`,
+          description: this.buildEpisodicDescription(stream.data),
           participants: [stream.data.agent_id],
           outcome: stream.data.success ? "success" : "failure",
           significance: this.calculateSignificance(stream.data),
+          metadata: {
+            inputSummary: this.summarizeInput(stream.data.input),
+            outputSummary: this.summarizeOutput(stream.data.output),
+            durationMs: stream.data.duration_ms,
+            tokensUsed: stream.data.tokens_used,
+            error: stream.data.error,
+          },
         },
         timestamp: stream.timestamp,
         sessionId: stream.sessionId,
         agentId: stream.agentId,
-        priority: "normal",
+        priority: stream.data.success ? "normal" : "high", // Prioritize failures for learning
       };
 
       // Process all extracted memories
@@ -321,6 +328,27 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
         this.proceduralProcessor.process(proceduralPattern),
         this.episodicProcessor.process(episodicEvent),
       ]);
+
+      // Write a WORKING memory entry capturing the raw agent result for session context
+      try {
+        const tags = ["working", "session", "agent", stream.data.agent_id];
+        this.memoryManager.rememberWorking(stream.sessionId, {
+          kind: "agent_result",
+          agentId: stream.data.agent_id,
+          input: stream.data.input,
+          output: stream.data.output,
+          success: stream.data.success,
+          tokensUsed: stream.data.tokens_used,
+          error: stream.data.error,
+          durationMs: stream.data.duration_ms,
+          timestamp: stream.timestamp,
+        }, { tags, relevanceScore: 0.65, confidence: 0.9 });
+      } catch (e) {
+        logger.debug("Failed to write working memory for agent_result", {
+          error: e instanceof Error ? e.message : String(e),
+          streamId: stream.id,
+        });
+      }
 
       logger.debug("Agent result processed and decomposed into memory streams", {
         streamId: stream.id,
@@ -365,7 +393,7 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     return {
       length: inputStr.length,
       type: typeof input,
-      hasMessage: "message" in input,
+      hasMessage: typeof input === "object" && input !== null && "message" in input,
       complexity: inputStr.length > 100 ? "high" : inputStr.length > 20 ? "medium" : "low",
     };
   }
@@ -380,5 +408,117 @@ export class AgentResultProcessor implements MemoryStreamProcessor {
     if (data.error) significance += 0.2; // Errors are significant for learning
 
     return Math.min(1.0, significance);
+  }
+
+  private buildEpisodicDescription(data: any): string {
+    const inputSize = JSON.stringify(data.input).length;
+    const outputSize = data.output ? JSON.stringify(data.output).length : 0;
+
+    if (data.success) {
+      return `Agent ${data.agent_id} successfully processed ${inputSize} chars of input, ` +
+        `produced ${outputSize} chars of output in ${data.duration_ms}ms using ${
+          data.tokens_used || 0
+        } tokens`;
+    } else {
+      return `Agent ${data.agent_id} failed to process ${inputSize} chars of input after ${data.duration_ms}ms. ` +
+        `Error: ${data.error || "unknown error"}`;
+    }
+  }
+
+  private summarizeInput(input: any): string {
+    if (!input) return "No input";
+
+    const inputStr = typeof input === "string" ? input : JSON.stringify(input);
+    if (inputStr.length <= 100) return inputStr;
+
+    // Extract key information from input
+    if (typeof input === "object" && input !== null) {
+      if ("message" in input) return `Message: ${String(input.message).substring(0, 100)}...`;
+      if ("text" in input) return `Text: ${String(input.text).substring(0, 100)}...`;
+      if ("task" in input) return `Task: ${String(input.task).substring(0, 100)}...`;
+    }
+
+    return inputStr.substring(0, 100) + "...";
+  }
+
+  private summarizeOutput(output: any): string {
+    if (!output) return "No output";
+
+    const outputStr = typeof output === "string" ? output : JSON.stringify(output);
+    if (outputStr.length <= 100) return outputStr;
+
+    // Extract key information from output
+    if (typeof output === "object" && output !== null) {
+      if ("response" in output) return `Response: ${String(output.response).substring(0, 100)}...`;
+      if ("result" in output) return `Result: ${String(output.result).substring(0, 100)}...`;
+      if ("data" in output) return `Data: ${JSON.stringify(output.data).substring(0, 100)}...`;
+    }
+
+    return outputStr.substring(0, 100) + "...";
+  }
+}
+
+/**
+ * Processor for working context streams
+ * Creates WORKING memory entries from agent results and contextual updates
+ */
+export class WorkingContextProcessor implements MemoryStreamProcessor {
+  constructor(private memoryManager: CoALAMemoryManager) {}
+
+  canProcess(stream: MemoryStream): boolean {
+    return stream.type === "agent_result" || stream.type === "contextual_update";
+  }
+
+  async process(stream: MemoryStream): Promise<void> {
+    try {
+      const sessionId = stream.sessionId || "unknown";
+      if (stream.type === "agent_result") {
+        const data = (stream as AgentResultStream).data;
+        const tags = ["working", "session", "agent", data.agent_id];
+        this.memoryManager.rememberWorking(
+          sessionId,
+          {
+            kind: "agent_result",
+            agentId: data.agent_id,
+            input: data.input,
+            output: data.output,
+            success: data.success,
+            tokensUsed: data.tokens_used,
+            error: data.error,
+            durationMs: data.duration_ms,
+            timestamp: stream.timestamp,
+          },
+          { tags, relevanceScore: 0.65, confidence: 0.9 },
+        );
+      } else if (stream.type === "contextual_update") {
+        const ctx = (stream as ContextualUpdateStream).data;
+        const tags = ["working", "session", "context"];
+        this.memoryManager.rememberWorking(
+          sessionId,
+          {
+            kind: "context_update",
+            updateType: ctx.update_type,
+            key: ctx.key,
+            oldValue: ctx.old_value,
+            newValue: ctx.new_value,
+            relevanceScore: ctx.relevance_score,
+            timestamp: stream.timestamp,
+          },
+          { tags, relevanceScore: ctx.relevance_score ?? 0.6, confidence: 0.9 },
+        );
+      }
+    } catch (error) {
+      logger.warn("Failed to process working context stream", {
+        error: error instanceof Error ? error.message : String(error),
+        streamId: stream.id,
+        type: stream.type,
+      });
+    }
+  }
+
+  async processBatch(streams: MemoryStream[]): Promise<void> {
+    for (const s of streams) {
+      await this.process(s);
+    }
   }
 }

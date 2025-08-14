@@ -1,45 +1,96 @@
 /**
  * Memory Loader
  *
- * Loads and saves memory data from Atlas workspace memory files
+ * Loads and saves memory data from Atlas workspace memory files using the current MECMF system
  */
 
 import { join } from "@std/path";
 import { ensureDir } from "@std/fs";
-import { type MemoryEntry, type MemoryStorage, MemoryType } from "../types/memory-types.ts";
+import { CoALAMemoryType, type MemoryEntry, type MemoryStorage } from "../types/memory-types.ts";
+import { CoALAMemoryManager } from "@atlas/memory";
+import { WebEmbeddingProvider } from "../../../packages/memory/src/web-embedding-provider.ts";
+import { getWorkspaceMemoryDir } from "../../../src/utils/paths.ts";
 
 export class AtlasMemoryLoader implements MemoryStorage {
-  private storagePath: string;
-  private memoryTypeFiles: Record<MemoryType, string> = {
-    [MemoryType.WORKING]: "working.json",
-    [MemoryType.EPISODIC]: "episodic.json",
-    [MemoryType.SEMANTIC]: "semantic.json",
-    [MemoryType.PROCEDURAL]: "procedural.json",
-    [MemoryType.VECTOR_SEARCH]: "vector_search.json", // Not used for storage but needed for completeness
-  };
+  private workspacePath: string;
+  private workspaceId: string;
+  private coalaManager?: CoALAMemoryManager;
+  private embeddingProvider?: WebEmbeddingProvider;
 
-  constructor(workspacePath?: string) {
-    this.storagePath = workspacePath
-      ? join(workspacePath, ".atlas", "memory")
-      : join(Deno.cwd(), ".atlas", "memory");
+  constructor(workspacePath?: string, workspaceId?: string) {
+    this.workspacePath = workspacePath || Deno.cwd();
+    // Use provided workspace ID, or derive from path as fallback
+    if (workspaceId) {
+      this.workspaceId = workspaceId;
+    } else {
+      this.workspaceId = this.workspacePath.split("/").pop() || "default-workspace";
+    }
   }
 
-  async loadAll(): Promise<Record<MemoryType, Record<string, MemoryEntry>>> {
-    const result: Record<MemoryType, Record<string, MemoryEntry>> = {
-      [MemoryType.WORKING]: {},
-      [MemoryType.EPISODIC]: {},
-      [MemoryType.SEMANTIC]: {},
-      [MemoryType.PROCEDURAL]: {},
-      [MemoryType.VECTOR_SEARCH]: {}, // Not used for storage but needed for completeness
-    };
+  private async getCoALAManager(): Promise<CoALAMemoryManager> {
+    if (!this.coalaManager) {
+      // Initialize the WebEmbeddingProvider
+      if (!this.embeddingProvider) {
+        this.embeddingProvider = new WebEmbeddingProvider({
+          model: "sentence-transformers/all-MiniLM-L6-v2",
+          backend: "onnxruntime-node",
+          batchSize: 10,
+          maxSequenceLength: 512,
+          cacheDirectory: getWorkspaceMemoryDir(this.workspaceId),
+        });
 
-    for (const memoryType of Object.values(MemoryType)) {
-      // Skip vector search as it's not persisted to disk
-      if (memoryType === MemoryType.VECTOR_SEARCH) {
-        result[memoryType] = {};
-        continue;
+        // Warm up the embedding provider
+        try {
+          await this.embeddingProvider.warmup();
+        } catch (error) {
+          console.warn("Failed to warm up embedding provider:", error);
+        }
       }
 
+      // Create a proper scope for the memory manager
+      const scope = {
+        id: this.workspaceId,
+        workspaceId: this.workspaceId,
+        type: "workspace" as const,
+      } as any;
+
+      // Create CoALA manager with vector search enabled
+      this.coalaManager = new CoALAMemoryManager(scope, undefined, true);
+
+      // Initialize vector search capabilities using the WebEmbeddingProvider
+      try {
+        await this.coalaManager.initializeVectorSearch({
+          embeddingProvider: this.embeddingProvider,
+          dimension: 384, // all-MiniLM-L6-v2 produces 384-dimensional embeddings
+          similarityThreshold: 0.3,
+          batchSize: 10,
+          autoIndexOnWrite: true,
+        });
+      } catch (error) {
+        console.warn("Failed to initialize vector search, continuing without it:", error);
+      }
+
+      // Load existing memories from storage
+      try {
+        await this.coalaManager.loadFromStorage();
+      } catch (error) {
+        console.warn("Failed to load existing memories from storage:", error);
+      }
+    }
+    return this.coalaManager;
+  }
+
+  async loadAll(): Promise<Record<CoALAMemoryType, Record<string, MemoryEntry>>> {
+    const manager = await this.getCoALAManager();
+    const result: Record<CoALAMemoryType, Record<string, MemoryEntry>> = {
+      [CoALAMemoryType.WORKING]: {},
+      [CoALAMemoryType.EPISODIC]: {},
+      [CoALAMemoryType.SEMANTIC]: {},
+      [CoALAMemoryType.PROCEDURAL]: {},
+      [CoALAMemoryType.CONTEXTUAL]: {},
+    };
+
+    for (const memoryType of Object.values(CoALAMemoryType)) {
       try {
         result[memoryType] = await this.loadByType(memoryType);
       } catch (error) {
@@ -52,133 +103,150 @@ export class AtlasMemoryLoader implements MemoryStorage {
   }
 
   async saveAll(
-    data: Record<MemoryType, Record<string, MemoryEntry>>,
+    data: Record<CoALAMemoryType, Record<string, MemoryEntry>>,
   ): Promise<void> {
-    await ensureDir(this.storagePath);
+    const manager = await this.getCoALAManager();
 
-    const savePromises = Object.entries(data).map(([memoryType, entries]) =>
-      this.saveByType(memoryType as MemoryType, entries)
-    );
+    // Use the CoALA manager to save data
+    for (const [memoryType, entries] of Object.entries(data)) {
+      for (const [key, entry] of Object.entries(entries)) {
+        try {
+          await manager.remember(key, entry.content, {
+            memoryType: memoryType as CoALAMemoryType,
+            relevanceScore: entry.relevanceScore,
+            sourceScope: entry.sourceScope,
+            tags: entry.tags,
+            confidence: entry.confidence,
+            decayRate: entry.decayRate,
+            associations: entry.associations,
+          });
+        } catch (error) {
+          console.warn(`Failed to save memory ${key}:`, error);
+        }
+      }
+    }
 
-    await Promise.all(savePromises);
+    // Force a commit to storage
+    await manager.commitToStorage();
   }
 
-  async loadByType(type: MemoryType): Promise<Record<string, MemoryEntry>> {
-    const fileName = this.memoryTypeFiles[type];
-    const filePath = join(this.storagePath, fileName);
+  async loadByType(type: CoALAMemoryType): Promise<Record<string, MemoryEntry>> {
+    const manager = await this.getCoALAManager();
 
     try {
-      const content = await Deno.readTextFile(filePath);
+      // Get memories by type using the CoALA interface
+      const memories = manager.getMemoriesByType(type);
 
-      if (!content.trim()) {
-        return {};
-      }
-
-      const rawData = JSON.parse(content);
       const entries: Record<string, MemoryEntry> = {};
 
-      // Convert raw data to MemoryEntry objects
-      for (const [key, rawEntry] of Object.entries(rawData)) {
-        const entry = rawEntry as Record<string, unknown>;
-        entries[key] = {
-          id: key,
-          content: entry.content,
-          timestamp: new Date(entry.timestamp as string),
-          accessCount: (entry.accessCount as number) || 0,
-          lastAccessed: new Date((entry.lastAccessed as string) || (entry.timestamp as string)),
-          memoryType: type,
-          relevanceScore: (entry.relevanceScore as number) || 0.5,
-          sourceScope: (entry.sourceScope as string) || "unknown",
-          associations: (entry.associations as string[]) || [],
-          tags: (entry.tags as string[]) || [],
-          confidence: (entry.confidence as number) || 1.0,
-          decayRate: (entry.decayRate as number) || 0.1,
-        };
+      for (const memory of memories) {
+        // Ensure proper MemoryEntry structure with all required fields
+        entries[memory.id] = {
+          id: memory.id,
+          content: memory.content,
+          timestamp: memory.timestamp,
+          accessCount: memory.accessCount || 0,
+          lastAccessed: memory.lastAccessed,
+          memoryType: memory.memoryType,
+          relevanceScore: memory.relevanceScore,
+          sourceScope: memory.sourceScope,
+          associations: memory.associations || [],
+          tags: memory.tags || [],
+          confidence: memory.confidence,
+          decayRate: memory.decayRate,
+        } as MemoryEntry;
       }
 
       return entries;
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
-        return {};
-      }
-
-      if (error instanceof SyntaxError) {
-        console.warn(`Failed to parse JSON in ${filePath}: ${error.message}`);
-        return {};
-      }
-
-      throw error;
+      console.warn(`Failed to load ${type} memories from CoALA manager:`, error);
+      return {};
     }
   }
 
   async saveByType(
-    type: MemoryType,
+    type: CoALAMemoryType,
     data: Record<string, MemoryEntry>,
   ): Promise<void> {
-    await ensureDir(this.storagePath);
+    const manager = await this.getCoALAManager();
 
-    const fileName = this.memoryTypeFiles[type];
-    const filePath = join(this.storagePath, fileName);
-
-    // Convert MemoryEntry objects to serializable format
-    const serializable: Record<string, unknown> = {};
+    // Save each memory entry using the CoALA manager
     for (const [key, entry] of Object.entries(data)) {
-      serializable[key] = {
-        ...entry,
-        timestamp: entry.timestamp.toISOString(),
-        lastAccessed: entry.lastAccessed.toISOString(),
-      };
+      try {
+        await manager.remember(key, entry.content, {
+          memoryType: type,
+          relevanceScore: entry.relevanceScore,
+          sourceScope: entry.sourceScope,
+          tags: entry.tags,
+          confidence: entry.confidence,
+          decayRate: entry.decayRate,
+          associations: entry.associations,
+        });
+      } catch (error) {
+        console.warn(`Failed to save memory ${key} of type ${type}:`, error);
+      }
     }
 
-    await Deno.writeTextFile(filePath, JSON.stringify(serializable, null, 2));
+    // Force a commit to storage
+    await manager.commitToStorage();
   }
 
   async getStorageStats(): Promise<{
     path: string;
     memoryTypes: Record<
-      MemoryType,
+      CoALAMemoryType,
       { count: number; lastModified?: Date; size?: number }
     >;
   }> {
+    const manager = await this.getCoALAManager();
     const stats: Record<
-      MemoryType,
+      CoALAMemoryType,
       { count: number; lastModified?: Date; size?: number }
     > = {
-      [MemoryType.WORKING]: { count: 0 },
-      [MemoryType.EPISODIC]: { count: 0 },
-      [MemoryType.SEMANTIC]: { count: 0 },
-      [MemoryType.PROCEDURAL]: { count: 0 },
-      [MemoryType.VECTOR_SEARCH]: { count: 0 },
+      [CoALAMemoryType.WORKING]: { count: 0 },
+      [CoALAMemoryType.EPISODIC]: { count: 0 },
+      [CoALAMemoryType.SEMANTIC]: { count: 0 },
+      [CoALAMemoryType.PROCEDURAL]: { count: 0 },
+      [CoALAMemoryType.CONTEXTUAL]: { count: 0 },
     };
 
-    for (const memoryType of Object.values(MemoryType)) {
-      // Skip vector search as it's not persisted to disk
-      if (memoryType === MemoryType.VECTOR_SEARCH) {
-        stats[memoryType] = { count: 0 };
-        continue;
-      }
-
-      const fileName = this.memoryTypeFiles[memoryType];
-      const filePath = join(this.storagePath, fileName);
-
+    for (const memoryType of Object.values(CoALAMemoryType)) {
       try {
-        const fileInfo = await Deno.stat(filePath);
         const data = await this.loadByType(memoryType);
+        const entries = Object.values(data);
 
         stats[memoryType] = {
-          count: Object.keys(data).length,
-          lastModified: fileInfo.mtime || undefined,
-          size: fileInfo.size,
+          count: entries.length,
+          lastModified: entries.length > 0
+            ? new Date(Math.max(...entries.map((e) => e.lastAccessed.getTime())))
+            : undefined,
+          size: undefined, // Size calculation would require accessing file system directly
         };
       } catch {
-        // File doesn't exist or can't be read
         stats[memoryType] = { count: 0 };
       }
     }
 
+    // Get the actual storage path from the workspace memory directory
+    const storagePath = getWorkspaceMemoryDir(this.workspaceId);
+
     return {
-      path: this.storagePath,
+      path: storagePath,
       memoryTypes: stats,
     };
+  }
+
+  // Public method to access the CoALA manager for vector search
+  async getCoALAManagerPublic(): Promise<CoALAMemoryManager> {
+    return await this.getCoALAManager();
+  }
+
+  // Cleanup method to dispose of resources
+  async dispose(): Promise<void> {
+    if (this.embeddingProvider) {
+      await this.embeddingProvider.dispose();
+      this.embeddingProvider = undefined;
+    }
+    this.coalaManager = undefined;
   }
 }

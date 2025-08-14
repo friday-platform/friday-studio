@@ -1,66 +1,110 @@
 version: "1.0"
 workspace:
   name: top-stocks-emailer
-  description: Fetches top 5 performing stocks from Barchart, summarizes them, and sends via email
-
+  description: "Fetches top 5 performing stocks from Barchart, summarizes them, and sends via email"
+tools:
+  mcp:
+    client_config:
+      timeout:
+        progressTimeout: 2m
+        maxTotalTimeout: 30m
+    servers:
+      atlas-platform:
+        transport:
+          type: http
+          url: "http://localhost:8080/mcp"
+        tools:
+          allow:
+            - atlas_fetch
+            - atlas_notify_email
+            - web_session_create
+            - web_session_navigate
+            - web_session_handle_consent
+            - web_session_extract
+            - web_session_close
+            - web_session_click
+            - web_session_wait_for_element
+            - web_session_list
 signals:
   fetch-stocks:
-    description: "Manually trigger stock fetching and email process"
-    provider: "http"
+    description: Manually trigger stock fetching and email process
+    provider: http
     config:
-      path: "/trigger/fetch-stocks"
-
+      path: /trigger/fetch-stocks
 jobs:
   process-stocks:
     name: process-stocks
-    description: Fetch stocks, analyze performance, and send email
+    description: "Fetch stocks, analyze performance, and send email"
     triggers:
       - signal: fetch-stocks
     execution:
       strategy: sequential
       agents:
-        - id: "stock-fetcher"
+        - id: stock-fetcher
           context:
             signal: true
-        - id: "stock-analyzer"
+        - id: stock-analyzer
           context:
-            steps: "previous"
-        - id: "email-sender"
+            steps: previous
+        - id: email-sender
           context:
-            steps: "previous"
-
+            steps: previous
 agents:
   stock-fetcher:
+    description: >-
+      Fetch top 5 performing stocks from finance.yahoo.com using session-based automation. MUST
+      capture and include specific source URLs where each piece of stock data was obtained
+      (individual stock pages, screener results) so recipients can verify the information. Include
+      both the main source URL and individual stock page URLs in the output.
     type: llm
-    description: Fetch top 5 performing stocks from finance.yahoo.com using session-based automation.
     config:
       provider: anthropic
       model: claude-3-5-haiku-latest
-      prompt: |
-        You fetch the top 5 performing stocks from finance.yahoo.com using session-based web automation.
+      prompt: >
+        You fetch the top 5 performing stocks from finance.yahoo.com using session-based web
+        automation.
+
 
         Follow this workflow:
+
         1. Create a web session using web_session_create with sessionId "stocks-session"
+
         2. Navigate to https://finance.yahoo.com/markets/stocks/gainers/ using web_session_navigate
+
         3. Handle any cookie consent banners using web_session_handle_consent with action "accept"
+
         4. Extract the page content using web_session_extract with format "markdown"
+
         5. Close the session using web_session_close when done
 
+
         From the extracted data, identify the top 5 stocks and extract:
+
         - Symbol
+
         - Name
+
         - Price
+
         - Price change
+
         - Percent change
+
         - Volume
+
         - Weighted Alpha (performance metric)
 
-        Output the result as a well formatted JSON document.
-      tools: ["atlas-platform"]
 
+        Output the result as a well formatted JSON document.
+      temperature: 0.3
+      tools:
+        - atlas-platform
   stock-analyzer:
+    description: >-
+      Analyze and summarize stock performance data. MUST preserve all source URLs from the fetched
+      data and include them in the analysis output. Ensure source links are maintained throughout
+      the analysis for verification purposes.
     type: llm
-    description: Analyze and summarize stock performance
     config:
       provider: anthropic
       model: claude-3-7-sonnet-latest
@@ -77,10 +121,14 @@ agents:
         Include a brief market overview at the beginning.
 
         Format the output in HTML to make it look good in an email.
-
+      temperature: 0.3
   email-sender:
+    description: >-
+      Send email with stock performance report including source links. MUST format the email to
+      include clickable source URLs for each stock so recipients can verify and explore the
+      information further. Use atlas_notify_email to send the formatted report with proper HTML
+      formatting for links.
     type: llm
-    description: Send email with stock performance report
     config:
       provider: anthropic
       model: claude-3-5-haiku-latest
@@ -94,24 +142,6 @@ agents:
         Add a brief introduction and conclusion to the email.
 
         Use the atlas_notify_email from the atlas-platform tool to send the email.
-      tools: ["atlas-platform"]
-
-tools:
-  mcp:
-    servers:
-      atlas-platform:
-        transport:
-          type: "http"
-          url: "http://localhost:8080/mcp"
-        tools:
-          allow:
-            - "atlas_fetch"
-            - "atlas_notify_email"
-            - "web_session_create"
-            - "web_session_navigate"
-            - "web_session_handle_consent"
-            - "web_session_extract"
-            - "web_session_close"
-            - "web_session_click"
-            - "web_session_wait_for_element"
-            - "web_session_list"
+      temperature: 0.3
+      tools:
+        - atlas-platform

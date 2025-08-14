@@ -50,6 +50,14 @@ export interface EpisodicEventStream extends MemoryStream {
     participants: string[];
     outcome: "success" | "failure" | "partial";
     significance: number; // 0-1 scale
+    metadata?: {
+      inputSummary?: string;
+      outputSummary?: string;
+      durationMs?: number;
+      tokensUsed?: number;
+      error?: string;
+      [key: string]: any;
+    };
   };
 }
 

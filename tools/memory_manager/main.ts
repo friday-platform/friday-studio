@@ -44,8 +44,42 @@ async function main() {
     return;
   }
 
-  // Get workspace path from args or use current directory
-  const workspacePath = args.workspace || args._[0]?.toString() || Deno.cwd();
+  // Get workspace path from args
+  let workspacePath = args.workspace || args._[0]?.toString();
+  let selectedWorkspace: any = null;
+
+  // If no workspace path provided and we're in interactive mode (not stats/export/validate),
+  // show workspace selector
+  const isInteractiveMode = !args.stats && !args.export && !args.validate;
+
+  if (!workspacePath && isInteractiveMode) {
+    // Start TUI in workspace selector mode
+    console.log(`Atlas Memory Manager - Workspace Selection`);
+    console.log(`Loading available workspaces...`);
+
+    // Small delay to let user read the message
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    try {
+      const tui = new MemoryManagerTUI();
+      selectedWorkspace = await tui.selectWorkspace();
+
+      if (!selectedWorkspace) {
+        console.log("No workspace selected. Exiting...");
+        return;
+      }
+
+      workspacePath = selectedWorkspace.path;
+    } catch (error) {
+      console.error(
+        `Error in workspace selection: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      Deno.exit(1);
+    }
+  } else if (!workspacePath) {
+    // For non-interactive modes, fall back to current directory
+    workspacePath = Deno.cwd();
+  }
 
   console.log(`Atlas Memory Manager`);
   console.log(`Workspace: ${workspacePath}`);
@@ -53,7 +87,16 @@ async function main() {
 
   try {
     // Initialize memory loader and operations
-    const loader = new AtlasMemoryLoader(workspacePath);
+    let workspaceId: string | undefined;
+
+    // If we have a selected workspace object, use its ID
+    if (typeof selectedWorkspace !== "undefined" && selectedWorkspace) {
+      workspaceId = selectedWorkspace.id;
+    }
+
+    const loader = workspaceId
+      ? new AtlasMemoryLoader(workspacePath, workspaceId)
+      : new AtlasMemoryLoader(workspacePath);
     const operations = new AtlasMemoryOperations(loader);
 
     await operations.initialize();

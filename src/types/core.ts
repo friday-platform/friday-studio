@@ -4,6 +4,7 @@ import type { AgentOrchestrator } from "@atlas/core";
 
 export interface IAtlasScope {
   id: string;
+  workspaceId?: string;
   parentScopeId?: string;
   supervisor?: IWorkspaceSupervisor;
   context: ITempestContextManager;
@@ -206,6 +207,14 @@ export interface ITempestMemoryManager {
     associations?: string[];
     confidence?: number;
     decayRate?: number;
+    source?: string;
+    sourceMetadata?: {
+      agentId?: string;
+      toolName?: string;
+      sessionId?: string;
+      userId?: string;
+      workspaceId?: string;
+    };
   }): void;
 
   queryMemories?(query: {

@@ -4,6 +4,7 @@ Deno.env.set("DENO_TESTING", "true");
 import { assertEquals, assertExists } from "@std/assert";
 import { join } from "@std/path";
 import { CoALALocalFileStorageAdapter } from "../../src/memory/coala-local.ts";
+import { CoALAMemoryType } from "@atlas/memory";
 
 // Helper function to create temporary directory for tests
 async function createTempDir(): Promise<string> {
@@ -26,8 +27,8 @@ Deno.test("CoALALocalFileStorageAdapter - should store and retrieve data", async
 
   try {
     const testData = {
-      key1: { value: "test1", memoryType: "working" },
-      key2: { value: "test2", memoryType: "semantic" },
+      key1: { value: "test1", memoryType: CoALAMemoryType.WORKING },
+      key2: { value: "test2", memoryType: CoALAMemoryType.SEMANTIC },
     };
 
     await adapter.commit(testData);
